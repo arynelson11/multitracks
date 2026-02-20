@@ -622,19 +622,18 @@ export function useAudioEngine() {
         return JSON.stringify({ version: 5, songs: exportData }, null, 2);
     };
 
-    // V5: Import playlist from JSON (metadata only)
-    const importPlaylist = (jsonString: string) => {
+    // V5: Import playlist from JSON (metadata only — auto-reloads to restore)
+    const importPlaylist = async (jsonString: string) => {
         try {
             const data = JSON.parse(jsonString);
             if (!data.songs || !Array.isArray(data.songs)) return;
 
             const importedMeta: SavedSong[] = data.songs;
-            // Save meta without audio — user needs to reimport stems
-            set('mt_meta_playlist', importedMeta);
-            alert('Metadados do repertório importados. Recarregue a página e reimporte os stems de áudio.');
+            await set('mt_meta_playlist', importedMeta);
+            // Auto-reload so initEngine restore logic picks up the saved metadata
+            window.location.reload();
         } catch (e) {
             console.error('Failed to import playlist', e);
-            alert('Arquivo inválido.');
         }
     };
 
