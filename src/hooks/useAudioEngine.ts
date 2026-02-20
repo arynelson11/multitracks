@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { get, set } from 'idb-keyval';
+import JSZip from 'jszip';
 import type { Channel, Song } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 
@@ -602,9 +603,12 @@ export function useAudioEngine() {
         updatePlaylistAndSave(newPlaylist);
     };
 
-    // V5: Export playlist as JSON
-    const exportPlaylist = (): string => {
-        const exportData = playlist.map(song => ({
+    // V5: Export playlist as ZIP (with full audio files)
+    const exportPlaylist = async (): Promise<void> => {
+        const zip = new JSZip();
+        const filesDb = await get<Map<string, File>>('mt_files') || new Map<string, File>();
+
+        const manifest = playlist.map(song => ({
             id: song.id,
             name: song.name,
             coverImage: song.coverImage,
@@ -619,18 +623,101 @@ export function useAudioEngine() {
                 bus: ch.bus
             }))
         }));
-        return JSON.stringify({ version: 5, songs: exportData }, null, 2);
+
+        zip.file('manifest.json', JSON.stringify({ version: 5, songs: manifest }, null, 2));
+
+        // Add each audio file to the zip
+        for (const song of playlist) {
+            for (const ch of song.channels) {
+                const file = filesDb.get(ch.id);
+                if (file) {
+                    const ext = file.name.split('.').pop() || 'wav';
+                    zip.file(`audio/${ch.id}.${ext}`, file);
+                }
+            }
+        }
+
+        // Add custom pad files
+        const padFiles = await get<Map<string, File>>('mt_custom_pads');
+        if (padFiles) {
+            for (const [note, file] of padFiles.entries()) {
+                const ext = file.name.split('.').pop() || 'wav';
+                zip.file(`pads/${note}.${ext}`, file);
+            }
+        }
+        const padNames = await get<Map<string, string>>('mt_custom_pad_names');
+        if (padNames) {
+            const obj: Record<string, string> = {};
+            padNames.forEach((v, k) => { obj[k] = v });
+            zip.file('pad_names.json', JSON.stringify(obj));
+        }
+
+        const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 1 } });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `repertorio-${new Date().toISOString().slice(0, 10)}.multitracks.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     };
 
-    // V5: Import playlist from JSON (metadata only — auto-reloads to restore)
-    const importPlaylist = async (jsonString: string) => {
+    // V5: Import playlist from ZIP (with full audio files)
+    const importPlaylist = async (file: File): Promise<void> => {
         try {
-            const data = JSON.parse(jsonString);
+            const zip = await JSZip.loadAsync(file);
+            const manifestFile = zip.file('manifest.json');
+            if (!manifestFile) return;
+
+            const manifestText = await manifestFile.async('string');
+            const data = JSON.parse(manifestText);
             if (!data.songs || !Array.isArray(data.songs)) return;
 
             const importedMeta: SavedSong[] = data.songs;
+            const filesMap = new Map<string, File>();
+
+            // Restore audio files
+            for (const song of importedMeta) {
+                for (const ch of song.channels) {
+                    // Find audio file for this channel ID
+                    const audioFiles = zip.file(new RegExp(`audio/${ch.id}\\.`));
+                    if (audioFiles.length > 0) {
+                        const audioBlob = await audioFiles[0].async('blob');
+                        const ext = audioFiles[0].name.split('.').pop() || 'wav';
+                        const audioFile = new File([audioBlob], `${ch.name}.${ext}`, { type: `audio/${ext}` });
+                        filesMap.set(ch.id, audioFile);
+                    }
+                }
+            }
+
+            // Restore custom pads
+            const padFilesMap = new Map<string, File>();
+            const padFolder = zip.folder('pads');
+            if (padFolder) {
+                const padEntries = zip.file(/^pads\//);
+                for (const entry of padEntries) {
+                    const note = entry.name.replace('pads/', '').replace(/\.[^/.]+$/, '');
+                    const blob = await entry.async('blob');
+                    const ext = entry.name.split('.').pop() || 'wav';
+                    padFilesMap.set(note, new File([blob], `${note}.${ext}`, { type: `audio/${ext}` }));
+                }
+            }
+            if (padFilesMap.size > 0) {
+                await set('mt_custom_pads', padFilesMap);
+            }
+
+            const padNamesFile = zip.file('pad_names.json');
+            if (padNamesFile) {
+                const padNamesText = await padNamesFile.async('string');
+                const padNamesObj = JSON.parse(padNamesText);
+                const padNamesMap = new Map<string, string>(Object.entries(padNamesObj));
+                await set('mt_custom_pad_names', padNamesMap);
+            }
+
             await set('mt_meta_playlist', importedMeta);
-            // Auto-reload so initEngine restore logic picks up the saved metadata
+            await set('mt_files', filesMap);
+
             window.location.reload();
         } catch (e) {
             console.error('Failed to import playlist', e);

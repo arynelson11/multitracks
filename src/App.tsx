@@ -15,8 +15,6 @@ export default function App() {
   } = useAudioEngine()
 
   const { playPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume } = usePadSynth()
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const importInputRef = useRef<HTMLInputElement>(null)
   const mixerRef = useRef<HTMLDivElement>(null)
 
   const [isEditMode, setIsEditMode] = useState(false)
@@ -24,6 +22,7 @@ export default function App() {
   const [isSetlistMenuOpen, setIsSetlistMenuOpen] = useState(false)
   const [isPadEditMode, setIsPadEditMode] = useState(false)
   const [mobileView, setMobileView] = useState<'mixer' | 'pads'>('mixer')
+  const [isSaving, setIsSaving] = useState(false)
 
   // Drag-and-drop state
   const [dragIndex, setDragIndex] = useState<number | null>(null)
@@ -70,32 +69,18 @@ export default function App() {
     if (mixerRef.current) mixerRef.current.style.cursor = 'grab'
   }
 
-  // Export handler
-  const handleExport = () => {
-    const json = exportPlaylist()
-    const data = JSON.parse(json)
-    const padNamesObj: Record<string, string> = {}
-    customPadNames.forEach((v, k) => { padNamesObj[k] = v })
-    data.customPadNames = padNamesObj
-    const finalJson = JSON.stringify(data, null, 2)
-    const blob = new Blob([finalJson], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `repertorio-${new Date().toISOString().slice(0, 10)}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+  // Export handler (ZIP with audio)
+  const handleExport = async () => {
+    setIsSaving(true)
     setIsSetlistMenuOpen(false)
+    await exportPlaylist()
+    setIsSaving(false)
   }
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => { importPlaylist(ev.target?.result as string) }
-    reader.readAsText(file)
     setIsSetlistMenuOpen(false)
+    importPlaylist(file)
   }
 
   // ───────────────── SPLASH ─────────────────
@@ -152,25 +137,30 @@ export default function App() {
                         <span className="text-white font-medium flex items-center gap-3"><Plus size={18} className="text-[#0A84FF]" />Novo Repertório</span>
                         <ChevronRight size={16} className="text-text-muted" />
                       </button>
-                      <button onClick={() => { fileInputRef.current?.click(); setIsSetlistMenuOpen(false); }}
+                      <label
                         className="w-full text-left px-4 py-3 rounded-lg hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors">
                         <span className="text-white font-medium flex items-center gap-3"><FolderOpen size={18} className="text-[#0A84FF]" />Importar Stems</span>
                         <ChevronRight size={16} className="text-text-muted" />
-                      </button>
+                        <input type="file" multiple accept="audio/*" className="hidden"
+                          onChange={(e) => { if (e.target.files) { loadFiles(e.target.files); setIsSetlistMenuOpen(false) } }} />
+                      </label>
                       <hr className="border-white/5 my-1" />
                       {playlist.length > 0 && (
-                        <button onClick={handleExport}
+                        <button onClick={handleExport} disabled={isSaving}
                           className="w-full text-left px-4 py-3 rounded-lg hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors">
-                          <span className="text-white font-medium flex items-center gap-3"><Download size={18} className="text-emerald-400" />Salvar (.json)</span>
+                          <span className="text-white font-medium flex items-center gap-3">
+                            {isSaving ? <Loader2 size={18} className="text-emerald-400 animate-spin" /> : <Download size={18} className="text-emerald-400" />}
+                            {isSaving ? 'Salvando...' : 'Salvar Repertório (.zip)'}
+                          </span>
                           <ChevronRight size={16} className="text-text-muted" />
                         </button>
                       )}
-                      <button onClick={() => importInputRef.current?.click()}
+                      <label
                         className="w-full text-left px-4 py-3 rounded-lg hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors">
-                        <span className="text-white font-medium flex items-center gap-3"><Upload size={18} className="text-cyan-400" />Carregar (.json)</span>
+                        <span className="text-white font-medium flex items-center gap-3"><Upload size={18} className="text-cyan-400" />Carregar Repertório (.zip)</span>
                         <ChevronRight size={16} className="text-text-muted" />
-                      </button>
-                      <input ref={importInputRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
+                        <input type="file" accept=".zip" className="hidden" onChange={handleImport} />
+                      </label>
                     </div>
                     {playlist.length > 0 && (
                       <div className="border-t border-white/10 p-2">
@@ -193,13 +183,13 @@ export default function App() {
               )}
             </div>
 
-            <button onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium border border-white/5 transition-colors cursor-pointer">
+            <label
+              className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium border border-white/5 transition-colors cursor-pointer min-h-[44px]">
               <Music size={14} />
               <span className="hidden sm:inline">+</span> Stems
-            </button>
-            <input type="file" ref={fileInputRef} multiple accept="audio/*" className="hidden"
-              onChange={(e) => { if (e.target.files) loadFiles(e.target.files) }} />
+              <input type="file" multiple accept="audio/*" className="hidden"
+                onChange={(e) => { if (e.target.files) loadFiles(e.target.files) }} />
+            </label>
           </div>
 
           {/* Right: Actions + Timer */}
