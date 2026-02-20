@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react'
-import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Image, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Image, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud } from 'lucide-react'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { usePadSynth } from './hooks/usePadSynth'
 import { SettingsModal } from './components/SettingsModal'
+import { LibraryModal } from './components/LibraryModal'
 
 export default function App() {
   const {
@@ -19,6 +20,7 @@ export default function App() {
 
   const [isEditMode, setIsEditMode] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false)
   const [isSetlistMenuOpen, setIsSetlistMenuOpen] = useState(false)
   const [isPadEditMode, setIsPadEditMode] = useState(false)
   const [mobileView, setMobileView] = useState<'mixer' | 'pads'>('mixer')
@@ -190,6 +192,11 @@ export default function App() {
               <input type="file" multiple accept="audio/*" className="hidden"
                 onChange={(e) => { if (e.target.files) loadFiles(e.target.files) }} />
             </label>
+            <button onClick={() => setIsLibraryOpen(true)}
+              className="flex items-center gap-1.5 bg-secondary/10 hover:bg-secondary/20 text-secondary px-3 py-2 rounded-lg text-xs sm:text-sm font-medium border border-secondary/20 transition-colors cursor-pointer min-h-[44px]">
+              <Cloud size={14} />
+              <span className="hidden sm:inline">Biblioteca</span>
+            </button>
           </div>
 
           {/* Right: Actions + Timer */}
@@ -460,6 +467,23 @@ export default function App() {
 
       {/* Settings Modal */}
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} channels={channels} onSetChannelBus={setChannelBus} />
+
+      {/* Library Modal */}
+      <LibraryModal
+        isOpen={isLibraryOpen}
+        onClose={() => setIsLibraryOpen(false)}
+        onDownload={async (files, songName, coverUrl) => {
+          // Convert File[] to FileList-like and load through engine
+          const dt = new DataTransfer();
+          files.forEach(f => dt.items.add(f));
+          await loadFiles(dt.files, songName);
+          // Set cover if available
+          if (coverUrl && playlist.length > 0) {
+            const lastSong = playlist[playlist.length - 1];
+            if (lastSong) setCoverImage(lastSong.id, coverUrl);
+          }
+        }}
+      />
     </div>
   )
 }

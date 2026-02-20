@@ -386,7 +386,7 @@ export function useAudioEngine() {
     }, [isPlaying, updateTime]);
 
     // Load files
-    const loadFiles = async (files: FileList) => {
+    const loadFiles = async (files: FileList, overrideSongName?: string) => {
         if (!audioCtxRef.current || !masterGainRef.current) return;
         setIsLoading(true);
 
@@ -446,9 +446,12 @@ export function useAudioEngine() {
 
         await set('mt_files', filesDb);
 
-        // Use folder name or first file name heurist as Song Name
-        const pathParts = files[0].webkitRelativePath ? files[0].webkitRelativePath.split('/') : [];
-        const songName = pathParts.length > 1 ? pathParts[0] : (files[0].name.split('-')[0] || `Música ${playlist.length + 1}`);
+        // Use override name, folder name, or first file name as Song Name
+        let songName = overrideSongName;
+        if (!songName) {
+            const pathParts = files[0].webkitRelativePath ? files[0].webkitRelativePath.split('/') : [];
+            songName = pathParts.length > 1 ? pathParts[0] : (files[0].name.split('-')[0] || `Música ${playlist.length + 1}`);
+        }
 
         const newSong: Song = {
             id: crypto.randomUUID(),
