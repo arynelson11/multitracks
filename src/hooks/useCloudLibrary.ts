@@ -53,7 +53,14 @@ export function useCloudLibrary() {
                 return file;
             };
 
-            const filesResults = await Promise.all(stems.map(downloadTask));
+            const filesResults: (File | null)[] = [];
+            const BATCH_SIZE = 4;
+            for (let i = 0; i < stems.length; i += BATCH_SIZE) {
+                const batch = stems.slice(i, i + BATCH_SIZE);
+                const batchResults = await Promise.all(batch.map(downloadTask));
+                filesResults.push(...batchResults);
+            }
+
             const files: File[] = filesResults.filter((f): f is File => f !== null);
 
             // Get cover URL from the song

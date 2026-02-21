@@ -397,53 +397,60 @@ export function useAudioEngine() {
 
         const filesDb = await get<Map<string, File>>('mt_files') || new Map<string, File>();
 
-        const channelPromises = Array.from(files).map(async (file) => {
-            if (!audioCtxRef.current || !masterGainRef.current) return null;
+        const filesArray = Array.from(files);
+        const results: (Channel | null)[] = [];
+        const BATCH_SIZE = 4;
 
-            const arrayBuffer = await file.arrayBuffer();
-            const audioBuffer = await audioCtxRef.current.decodeAudioData(arrayBuffer);
+        for (let i = 0; i < filesArray.length; i += BATCH_SIZE) {
+            const batch = filesArray.slice(i, i + BATCH_SIZE);
+            const batchPromises = batch.map(async (file) => {
+                if (!audioCtxRef.current || !masterGainRef.current) return null;
 
-            const panner = audioCtxRef.current.createStereoPanner();
-            const gain = audioCtxRef.current.createGain();
+                const arrayBuffer = await file.arrayBuffer();
+                const audioBuffer = await audioCtxRef.current.decodeAudioData(arrayBuffer);
 
-            const fileNameLower = file.name.toLowerCase();
-            let panValue = 0;
-            if (settings.autoPan) {
-                if (fileNameLower.includes('click') || fileNameLower.includes('metronomo') || fileNameLower.includes('guia') || fileNameLower.includes('guide')) {
-                    panValue = -1;
-                } else {
-                    panValue = 1;
+                const panner = audioCtxRef.current.createStereoPanner();
+                const gain = audioCtxRef.current.createGain();
+
+                const fileNameLower = file.name.toLowerCase();
+                let panValue = 0;
+                if (settings.autoPan) {
+                    if (fileNameLower.includes('click') || fileNameLower.includes('metronomo') || fileNameLower.includes('guia') || fileNameLower.includes('guide')) {
+                        panValue = -1;
+                    } else {
+                        panValue = 1;
+                    }
                 }
-            }
 
-            panner.pan.value = panValue;
-            gain.gain.value = 1;
+                panner.pan.value = panValue;
+                gain.gain.value = 1;
 
-            panner.connect(gain);
-            gain.connect(masterGainRef.current);
+                panner.connect(gain);
+                gain.connect(masterGainRef.current);
 
-            const uuid = crypto.randomUUID();
-            filesDb.set(uuid, file);
+                const uuid = crypto.randomUUID();
+                filesDb.set(uuid, file);
 
-            const busValue: '1' | '2' | '1/2' = panValue === -1 ? '1' : panValue === 1 ? '2' : '1/2';
+                const busValue: '1' | '2' | '1/2' = panValue === -1 ? '1' : panValue === 1 ? '2' : '1/2';
 
-            return {
-                id: uuid,
-                name: file.name.replace(/\.[^/.]+$/, ""), // remove extension
-                buffer: audioBuffer,
-                file: file,
-                gainNode: gain,
-                pannerNode: panner,
-                sourceNode: null,
-                volume: 1,
-                muted: false,
-                soloed: false,
-                pan: panValue,
-                bus: busValue,
-            } as Channel;
-        });
-
-        const results = await Promise.all(channelPromises);
+                return {
+                    id: uuid,
+                    name: file.name.replace(/\.[^/.]+$/, ""), // remove extension
+                    buffer: audioBuffer,
+                    file: file,
+                    gainNode: gain,
+                    pannerNode: panner,
+                    sourceNode: null,
+                    volume: 1,
+                    muted: false,
+                    soloed: false,
+                    pan: panValue,
+                    bus: busValue,
+                } as Channel;
+            });
+            const batchResults = await Promise.all(batchPromises);
+            results.push(...batchResults);
+        }
         const newChannels: Channel[] = results.filter((ch): ch is Channel => ch !== null);
 
         let maxDuration = 0;
