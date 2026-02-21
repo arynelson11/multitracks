@@ -135,7 +135,7 @@ export default function App() {
           <div className="flex items-center gap-2 sm:gap-4">
             <div className="relative">
               <button onClick={() => setIsSetlistMenuOpen(!isSetlistMenuOpen)}
-                className="text-base sm:text-xl font-bold tracking-tighter hover:text-primary transition-colors cursor-pointer flex items-center gap-1.5">
+                className="text-base sm:text-xl font-bold tracking-tighter hover:text-primary active:scale-95 transition-all duration-200 cursor-pointer flex items-center gap-1.5 focus:outline-none">
                 <ListMusic size={18} className="text-primary" />
                 <span className="hidden xs:inline">PLAYBACK</span>
               </button>
@@ -203,14 +203,14 @@ export default function App() {
             </div>
 
             <label
-              className="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-4 py-2.5 rounded-lg text-sm sm:text-base font-semibold border border-white/5 transition-colors cursor-pointer min-h-[48px]">
+              className="flex items-center gap-2 bg-white/5 hover:bg-white/10 active:scale-95 px-4 py-2.5 rounded-xl text-sm sm:text-base font-semibold border border-white/5 transition-all duration-200 cursor-pointer min-h-[48px] focus-within:ring-2 focus-within:ring-primary/50">
               <Music size={18} />
               <span className="hidden sm:inline">+</span> Stems
               <input type="file" multiple accept="audio/*" className="hidden"
                 onChange={(e) => { if (e.target.files) loadFiles(e.target.files) }} />
             </label>
             <button onClick={() => setIsLibraryOpen(true)}
-              className="flex items-center gap-2 bg-secondary/10 hover:bg-secondary/20 text-secondary px-4 py-2.5 rounded-lg text-sm sm:text-base font-semibold border border-secondary/20 transition-colors cursor-pointer min-h-[48px]">
+              className="flex items-center gap-2 bg-secondary/10 hover:bg-secondary/20 active:scale-95 text-secondary px-4 py-2.5 rounded-xl text-sm sm:text-base font-semibold border border-secondary/20 transition-all duration-200 cursor-pointer min-h-[48px] focus:outline-none focus:ring-2 focus:ring-secondary/50">
               <Cloud size={18} />
               <span className="hidden sm:inline">Biblioteca</span>
             </button>
@@ -231,11 +231,11 @@ export default function App() {
             <div className="h-6 w-px bg-white/10 hidden sm:block mx-1"></div>
 
             {playlist.length > 0 && (
-              <button onClick={clearSession} className="p-2 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"><Trash2 size={20} /></button>
+              <button onClick={clearSession} className="p-2 rounded-xl text-red-400 hover:bg-red-500/10 active:scale-90 transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400/50"><Trash2 size={20} /></button>
             )}
-            <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-lg text-text-muted hover:bg-white/10 hover:text-white transition-colors cursor-pointer"><Settings size={20} /></button>
+            <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-xl text-text-muted hover:bg-white/10 hover:text-white active:scale-90 transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20"><Settings size={20} /></button>
             <button onClick={() => setIsEditMode(!isEditMode)}
-              className={`items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors border cursor-pointer hidden sm:flex ${isEditMode ? 'bg-secondary/20 text-secondary border-secondary/30' : 'bg-transparent text-text-muted border-white/5 hover:bg-white/10'}`}>
+              className={`items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-200 active:scale-95 border cursor-pointer hidden sm:flex focus:outline-none focus:ring-2 focus:ring-secondary/50 ${isEditMode ? 'bg-secondary/20 text-secondary border-secondary/30' : 'bg-transparent text-text-muted border-white/5 hover:bg-white/10'}`}>
               {isEditMode ? <Check size={16} /> : <Edit2 size={16} />}
               {isEditMode ? 'OK' : 'Editar'}
             </button>
@@ -247,13 +247,13 @@ export default function App() {
         </div>
 
         {/* Transport Controls Row */}
-        <div className="flex items-center justify-center gap-1 px-3 pb-2 sm:pb-3">
-          <button onClick={prevSong} className="p-2 hover:bg-white/10 rounded-lg transition-colors active:bg-white/20 cursor-pointer"><SkipBack size={20} /></button>
+        <div className="flex items-center justify-center gap-2 px-3 pb-2 sm:pb-3">
+          <button onClick={prevSong} className="p-2.5 text-text-muted hover:text-white hover:bg-white/10 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20"><SkipBack size={22} /></button>
           <button onClick={isPlaying ? pause : play}
-            className={`p-2.5 rounded-xl transition-colors cursor-pointer ${isPlaying ? 'bg-primary/20 text-primary hover:bg-primary/30' : 'hover:bg-white/10'}`}>
-            {isPlaying ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" />}
+            className={`p-3.5 rounded-2xl transition-all duration-300 active:scale-90 shadow-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50 ${isPlaying ? 'bg-primary/20 text-primary hover:bg-primary/30 shadow-primary/20' : 'bg-white/5 text-white hover:bg-white/15'}`}>
+            {isPlaying ? <Pause size={30} fill="currentColor" /> : <Play size={30} fill="currentColor" className="ml-1" />}
           </button>
-          <button onClick={nextSong} className="p-2 hover:bg-white/10 rounded-lg transition-colors active:bg-white/20 cursor-pointer"><SkipForward size={20} /></button>
+          <button onClick={nextSong} className="p-2.5 text-text-muted hover:text-white hover:bg-white/10 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20"><SkipForward size={22} /></button>
 
           {/* Mobile edit toggle */}
           <button onClick={() => setIsEditMode(!isEditMode)}
@@ -391,9 +391,9 @@ export default function App() {
                 <div className="absolute top-1.5 right-1.5 opacity-30">
                   <div className="text-[7px] sm:text-[8px]">{ch.bus === '1' ? 'L' : ch.bus === '2' ? 'R' : 'C'}</div>
                 </div>
-                <div className="flex gap-0.5 sm:gap-1 mb-2 sm:mb-4 w-full px-0.5">
-                  <button onClick={() => toggleMute(ch.id)} className={`flex-1 h-6 sm:h-8 rounded text-[10px] sm:text-xs font-bold transition-colors cursor-pointer ${ch.muted ? 'bg-red-500 text-black' : 'bg-black/40 text-text-muted hover:bg-white/10'}`}>M</button>
-                  <button onClick={() => toggleSolo(ch.id)} className={`flex-1 h-6 sm:h-8 rounded text-[10px] sm:text-xs font-bold transition-colors cursor-pointer ${ch.soloed ? 'bg-yellow-500 text-black' : 'bg-black/40 text-text-muted hover:bg-white/10'}`}>S</button>
+                <div className="flex gap-1 mb-2 sm:mb-4 w-full px-0.5">
+                  <button onClick={() => toggleMute(ch.id)} className={`flex-1 h-7 sm:h-9 rounded-md text-[10px] sm:text-xs font-bold transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/50 ${ch.muted ? 'bg-red-500 text-white shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 'bg-red-500/10 text-red-500/50 border border-red-500/20 hover:bg-red-500/30 text-red-400'}`}>M</button>
+                  <button onClick={() => toggleSolo(ch.id)} className={`flex-1 h-7 sm:h-9 rounded-md text-[10px] sm:text-xs font-bold transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none focus:ring-2 focus:ring-yellow-500/50 ${ch.soloed ? 'bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.5)]' : 'bg-yellow-500/10 text-yellow-500/50 border border-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400'}`}>S</button>
                 </div>
                 <div className="flex-1 w-full flex justify-center py-1 sm:py-2 relative">
                   <input type="range" min="0" max="1.2" step="0.01" value={ch.volume}
@@ -401,11 +401,11 @@ export default function App() {
                     onChange={(e) => updateVolume(ch.id, parseFloat(e.target.value))}
                     className="absolute h-full w-full bg-transparent appearance-none cursor-pointer z-10 opacity-0"
                     style={{ writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' } as any} />
-                  <div className="h-full w-1.5 sm:w-2 bg-black/60 rounded-full relative overflow-hidden pointer-events-none border border-white/5">
+                  <div className="h-full w-2 sm:w-2.5 bg-black/60 rounded-full relative overflow-hidden pointer-events-none border border-white/5 shadow-inner">
                     <div className="absolute bottom-0 w-full transition-all duration-75" style={{ height: `${(ch.volume / 1.2) * 100}%`, backgroundColor: (channels.some(c => c.soloed) && !ch.soloed) || ch.muted ? '#ef4444' : '#06b6d4' }}></div>
                   </div>
-                  <div className="absolute w-7 sm:w-8 h-3.5 sm:h-4 bg-white/20 rounded border border-white/20 shadow-lg pointer-events-none transition-all duration-75 z-20" style={{ bottom: `calc(${(ch.volume / 1.2) * 100}% - 7px)` }}>
-                    <div className="w-full h-px bg-white/50 mt-1 sm:mt-1.5"></div>
+                  <div className="absolute w-8 sm:w-10 h-4 sm:h-5 bg-white/10 rounded-sm border border-white/20 shadow-lg pointer-events-none transition-all duration-75 z-20 backdrop-blur-sm" style={{ bottom: `calc(${(ch.volume / 1.2) * 100}% - 8px)` }}>
+                    <div className="w-full h-[2px] bg-white/80 mt-1.5 sm:mt-2 shadow-[0_0_5px_rgba(255,255,255,0.5)]"></div>
                   </div>
                 </div>
                 <div className="mt-2 sm:mt-4 text-[10px] sm:text-xs font-mono text-white/40">{Math.round(ch.volume * 100)}%</div>
@@ -430,11 +430,11 @@ export default function App() {
                   onChange={(e) => updateMasterVolume(parseFloat(e.target.value))}
                   className="absolute h-full w-full bg-transparent appearance-none cursor-pointer z-10 opacity-0"
                   style={{ writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' } as any} />
-                <div className="h-full w-2.5 sm:w-3 bg-black/60 rounded-full relative overflow-hidden pointer-events-none border border-white/5 shadow-inner">
+                <div className="h-full w-3 sm:w-4 bg-black/60 rounded-full relative overflow-hidden pointer-events-none border border-white/5 shadow-inner">
                   <div className="absolute bottom-0 w-full transition-all duration-75 bg-primary" style={{ height: `${(masterVolume / 1.2) * 100}%` }}></div>
                 </div>
-                <div className="absolute w-10 sm:w-12 h-5 sm:h-6 bg-[#333] border border-white/20 shadow-2xl rounded pointer-events-none transition-all duration-75 z-20" style={{ bottom: `calc(${(masterVolume / 1.2) * 100}% - 10px)` }}>
-                  <div className="w-full h-0.5 bg-primary mt-2 sm:mt-2.5"></div>
+                <div className="absolute w-12 sm:w-14 h-6 sm:h-7 bg-[#222] border border-primary/40 shadow-2xl rounded-sm pointer-events-none transition-all duration-75 z-20 overflow-hidden" style={{ bottom: `calc(${(masterVolume / 1.2) * 100}% - 12px)` }}>
+                  <div className="w-full h-1 bg-primary mt-2.5 sm:mt-3 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>
                 </div>
               </div>
               <div className="mt-2 sm:mt-4 text-[10px] sm:text-xs font-mono text-primary/80 font-bold mb-1">{Math.round(masterVolume * 100)}%</div>
@@ -447,16 +447,16 @@ export default function App() {
             <div className="font-semibold text-xs tracking-wider text-text-muted mb-2 flex justify-between uppercase items-center">
               <span>Ambient Pad Player</span>
               <button onClick={() => setIsPadEditMode(!isPadEditMode)}
-                className={`text-[10px] border px-2 py-0.5 rounded-full font-bold cursor-pointer transition-colors ${isPadEditMode ? 'bg-secondary/20 text-secondary border-secondary/30' : 'border-secondary/30 text-secondary bg-secondary/5 hover:bg-secondary/15'}`}>
+                className={`text-[10px] border px-2 py-0.5 rounded-lg font-bold cursor-pointer transition-all duration-200 active:scale-95 focus:outline-none focus:ring-2 focus:ring-secondary/50 ${isPadEditMode ? 'bg-secondary/20 text-secondary border-secondary/30' : 'border-secondary/30 text-secondary bg-secondary/5 hover:bg-secondary/15'}`}>
                 {isPadEditMode ? 'OK' : 'EDITAR'}
               </button>
             </div>
 
             {/* Pad Source Selector */}
-            <div className="flex bg-black/40 rounded-lg p-1 mb-3 border border-white/5">
-              <button onClick={() => updatePadMode('system')} className={`flex-1 py-1 text-[10px] sm:text-[11px] font-bold rounded flex items-center justify-center transition-colors cursor-pointer ${padMode === 'system' ? 'bg-secondary/20 text-secondary border border-secondary/30' : 'text-text-muted hover:text-white border border-transparent'}`}>NUVEM</button>
-              <button onClick={() => updatePadMode('synth')} className={`flex-1 py-1 text-[10px] sm:text-[11px] font-bold rounded flex items-center justify-center transition-colors cursor-pointer ${padMode === 'synth' ? 'bg-secondary/20 text-secondary border border-secondary/30' : 'text-text-muted hover:text-white border border-transparent'}`}>SYNTH</button>
-              <button onClick={() => updatePadMode('custom')} className={`flex-1 py-1 text-[10px] sm:text-[11px] font-bold rounded flex items-center justify-center transition-colors cursor-pointer ${padMode === 'custom' ? 'bg-secondary/20 text-secondary border border-secondary/30' : 'text-text-muted hover:text-white border border-transparent'}`}>LOCAL</button>
+            <div className="flex bg-black/40 rounded-xl p-1 mb-3 border border-white/5">
+              <button onClick={() => updatePadMode('system')} className={`flex-1 py-1.5 text-[10px] sm:text-[11px] font-bold rounded-lg flex items-center justify-center transition-all duration-200 cursor-pointer active:scale-95 focus:outline-none focus:ring-2 focus:ring-secondary/50 ${padMode === 'system' ? 'bg-secondary/20 text-secondary shadow-[0_0_10px_rgba(6,182,212,0.2)]' : 'text-text-muted hover:text-white hover:bg-white/5'}`}>NUVEM</button>
+              <button onClick={() => updatePadMode('synth')} className={`flex-1 py-1.5 text-[10px] sm:text-[11px] font-bold rounded-lg flex items-center justify-center transition-all duration-200 cursor-pointer active:scale-95 focus:outline-none focus:ring-2 focus:ring-secondary/50 ${padMode === 'synth' ? 'bg-secondary/20 text-secondary shadow-[0_0_10px_rgba(6,182,212,0.2)]' : 'text-text-muted hover:text-white hover:bg-white/5'}`}>SYNTH</button>
+              <button onClick={() => updatePadMode('custom')} className={`flex-1 py-1.5 text-[10px] sm:text-[11px] font-bold rounded-lg flex items-center justify-center transition-all duration-200 cursor-pointer active:scale-95 focus:outline-none focus:ring-2 focus:ring-secondary/50 ${padMode === 'custom' ? 'bg-secondary/20 text-secondary shadow-[0_0_10px_rgba(6,182,212,0.2)]' : 'text-text-muted hover:text-white hover:bg-white/5'}`}>LOCAL</button>
             </div>
 
             {/* Volume */}
@@ -473,10 +473,10 @@ export default function App() {
                 <div key={note} className="relative">
                   <button onClick={() => !isPadEditMode && playPad(note)}
                     className={`
-                      w-full h-full rounded-xl flex flex-col items-center justify-center text-lg sm:text-2xl font-bold transition-all border cursor-pointer min-h-[50px] sm:min-h-[60px]
+                      w-full h-full rounded-2xl flex flex-col items-center justify-center text-lg sm:text-2xl font-bold transition-all duration-200 cursor-pointer min-h-[50px] sm:min-h-[60px] active:scale-95 focus:outline-none focus:ring-2 focus:ring-secondary/50
                       ${activeNote === note
-                        ? 'bg-secondary/20 text-secondary border-secondary/50 shadow-[0_0_25px_rgba(6,182,212,0.3)] ring-1 ring-secondary scale-[1.02]'
-                        : customPads.has(note) ? 'bg-purple-900/30 text-purple-300 border-purple-500/30 hover:bg-purple-900/50' : 'bg-[#1e1e1e] text-text-main hover:bg-white/10 border-white/5'}
+                        ? 'bg-secondary/20 text-secondary border border-secondary/50 shadow-[0_0_20px_rgba(6,182,212,0.4)] ring-1 ring-secondary scale-[1.02]'
+                        : customPads.has(note) ? 'bg-purple-900/30 text-purple-300 border border-purple-500/30 hover:bg-purple-900/50 hover:shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'bg-white/5 text-text-main hover:bg-white/10 border border-white/5'}
                     `}>
                     <span>{note}</span>
                     {customPads.has(note) && <span className="text-[7px] sm:text-[8px] mt-0.5 opacity-60 truncate max-w-full px-1">{customPadNames.get(note) || 'Custom'}</span>}
