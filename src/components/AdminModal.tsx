@@ -73,8 +73,9 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
 
         const newMap = new Map<string, File>();
         Array.from(files).forEach(file => {
-            // Remove extension
+            // Remove extension, trim edge spaces, remove inner spaces, and uppercase
             let nameWithoutExt = file.name.replace(/\.[^/.]+$/, "").toUpperCase();
+            nameWithoutExt = nameWithoutExt.replace(/\s+/g, "");
 
             // Normalize sharp to flat if needed
             if (sharpToFlat[nameWithoutExt]) {
