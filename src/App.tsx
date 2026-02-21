@@ -17,7 +17,7 @@ export default function App() {
     masterVolume, updateVolume, toggleMute, toggleSolo, updateMasterVolume
   } = useAudioEngine()
 
-  const { playPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume } = usePadSynth()
+  const { playPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume, padMode, updatePadMode } = usePadSynth()
   const { user, loading, signOut } = useAuth()
   const mixerRef = useRef<HTMLDivElement>(null)
 
@@ -451,6 +451,14 @@ export default function App() {
                 {isPadEditMode ? 'OK' : 'EDITAR'}
               </button>
             </div>
+
+            {/* Pad Source Selector */}
+            <div className="flex bg-black/40 rounded-lg p-1 mb-3 border border-white/5">
+              <button onClick={() => updatePadMode('system')} className={`flex-1 py-1 text-[10px] sm:text-[11px] font-bold rounded flex items-center justify-center transition-colors cursor-pointer ${padMode === 'system' ? 'bg-secondary/20 text-secondary border border-secondary/30' : 'text-text-muted hover:text-white border border-transparent'}`}>NUVEM</button>
+              <button onClick={() => updatePadMode('synth')} className={`flex-1 py-1 text-[10px] sm:text-[11px] font-bold rounded flex items-center justify-center transition-colors cursor-pointer ${padMode === 'synth' ? 'bg-secondary/20 text-secondary border border-secondary/30' : 'text-text-muted hover:text-white border border-transparent'}`}>SYNTH</button>
+              <button onClick={() => updatePadMode('custom')} className={`flex-1 py-1 text-[10px] sm:text-[11px] font-bold rounded flex items-center justify-center transition-colors cursor-pointer ${padMode === 'custom' ? 'bg-secondary/20 text-secondary border border-secondary/30' : 'text-text-muted hover:text-white border border-transparent'}`}>LOCAL</button>
+            </div>
+
             {/* Volume */}
             <div className="flex items-center gap-3 mb-3 px-1">
               <span className="text-[10px] text-text-muted uppercase tracking-wider font-bold shrink-0">Vol</span>

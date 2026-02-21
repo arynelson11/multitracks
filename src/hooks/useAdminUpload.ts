@@ -98,12 +98,55 @@ export function useAdminUpload() {
         }
     }, []);
 
+    const uploadSystemPads = useCallback(async (
+        padFiles: Map<string, File>
+    ) => {
+        setIsUploading(true);
+        setProgress(0);
+        setStatus('Iniciando upload dos Pads do Sistema...');
+        setError(null);
+
+        try {
+            const totalSteps = padFiles.size;
+            let i = 0;
+
+            for (const [note, file] of padFiles.entries()) {
+                const stepProgress = Math.floor(((i + 1) / totalSteps) * 100);
+                setStatus(`Subindo Pad ${note} (${i + 1} de ${totalSteps})...`);
+
+                // To ensure consistent fetch URLs, we'll store the file without extension using the exact note name, e.g., 'C', 'Db'.
+                // Supabase will serve it according to the uploaded content type. Note encoding avoids slash conflicts.
+                const noteFileName = encodeURIComponent(note);
+                const uploadResult = await uploadFile('system_pads', noteFileName, file);
+
+                if (uploadResult.error) {
+                    throw new Error(`Erro no Pad ${note}: ${uploadResult.error}. Verifique se o bucket "system_pads" público existe.`);
+                }
+
+                setProgress(stepProgress);
+                i++;
+            }
+
+            setProgress(100);
+            setStatus('Sucesso! Banco de Pads Global publicado.');
+            return true;
+        } catch (e: any) {
+            console.error('Pad Upload failed:', e);
+            setError(e.message || 'Erro desconhecido durante o upload dos pads');
+            setStatus('Erro no processo.');
+            return false;
+        } finally {
+            setIsUploading(false);
+        }
+    }, []);
+
     return {
         isUploading,
         progress,
         status,
         error,
         uploadProject,
+        uploadSystemPads,
         resetState: () => {
             setProgress(0);
             setStatus('');
