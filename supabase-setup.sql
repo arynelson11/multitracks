@@ -7,8 +7,8 @@
 CREATE TABLE songs (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
-  artist TEXT DEFAULT '',
-  key TEXT DEFAULT '',
+  "Artista" TEXT DEFAULT '',
+  "Tom" TEXT DEFAULT '',
   bpm INT DEFAULT 0,
   cover_url TEXT DEFAULT NULL,
   created_at TIMESTAMPTZ DEFAULT now()
@@ -27,22 +27,9 @@ CREATE TABLE stems (
 CREATE INDEX idx_stems_song_id ON stems(song_id);
 CREATE INDEX idx_songs_name ON songs(name);
 
--- Habilitar RLS (Row Level Security)
-ALTER TABLE songs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE stems ENABLE ROW LEVEL SECURITY;
-
--- Política: leitura pública (qualquer pessoa pode ver as músicas)
-CREATE POLICY "Leitura pública de songs" ON songs FOR SELECT USING (true);
-CREATE POLICY "Leitura pública de stems" ON stems FOR SELECT USING (true);
-
--- Política: escrita pública (para você poder inserir pelo dashboard)
--- Em produção, troque por autenticação
-CREATE POLICY "Inserção livre de songs" ON songs FOR INSERT WITH CHECK (true);
-CREATE POLICY "Update livre de songs" ON songs FOR UPDATE USING (true);
-CREATE POLICY "Delete livre de songs" ON songs FOR DELETE USING (true);
-CREATE POLICY "Inserção livre de stems" ON stems FOR INSERT WITH CHECK (true);
-CREATE POLICY "Update livre de stems" ON stems FOR UPDATE USING (true);
-CREATE POLICY "Delete livre de stems" ON stems FOR DELETE USING (true);
+-- Desabilitar RLS (Row Level Security) para acesso livre simplificado (DEV)
+ALTER TABLE songs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE stems DISABLE ROW LEVEL SECURITY;
 
 -- ============================================
 -- Storage Buckets (criar pelo Dashboard > Storage)
