@@ -15,8 +15,8 @@ if (!supabase) {
 export interface CloudSong {
     id: string;
     name: string;
-    Artista: string;
-    Tom: string;
+    artist: string;
+    key: string;
     bpm: number;
     cover_url: string | null;
     created_at: string;
@@ -51,7 +51,7 @@ export async function searchSongs(query: string): Promise<CloudSong[]> {
     const { data, error } = await supabase
         .from('songs')
         .select('*')
-        .or(`name.ilike.%${q}%,Artista.ilike.%${q}%,Tom.ilike.%${q}%`)
+        .or(`name.ilike.%${q}%,artist.ilike.%${q}%,key.ilike.%${q}%`)
         .order('name', { ascending: true });
 
     if (error) { console.error('Error searching songs:', error); return []; }
