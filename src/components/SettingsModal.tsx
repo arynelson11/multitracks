@@ -33,14 +33,14 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
-                                className={`flex-1 text-xs font-semibold py-1.5 rounded-md transition-colors cursor-pointer ${activeTab === tab ? 'bg-white/20 text-white shadow' : 'text-text-muted hover:bg-white/5'}`}
+                                className={`flex-1 text-xs font-semibold py-1.5 rounded-md transition-all duration-200 active:scale-95 focus:outline-none focus:ring-2 focus:ring-white/20 cursor-pointer ${activeTab === tab ? 'bg-white/20 text-white shadow' : 'text-text-muted hover:bg-white/5'}`}
                             >
                                 {tab}
                             </button>
                         ))}
                     </div>
                     <div className="flex-1 flex justify-end">
-                        <button onClick={onClose} className="p-1.5 bg-white/10 hover:bg-white/20 rounded-full text-text-muted transition-colors cursor-pointer">
+                        <button onClick={onClose} className="p-1.5 bg-white/10 hover:bg-white/20 rounded-full text-text-muted transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20">
                             <X size={20} />
                         </button>
                     </div>
@@ -70,14 +70,14 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                                 <div className="flex-1 pr-4">
                                     <h3 className="text-white text-base font-medium flex items-center gap-2">
                                         Dispositivo de Áudio
-                                        <button onClick={refreshAudioDevices} className="opacity-50 hover:opacity-100 transition-opacity cursor-pointer"><RefreshCcw size={14} /></button>
+                                        <button onClick={refreshAudioDevices} className="opacity-50 hover:opacity-100 transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none"><RefreshCcw size={14} /></button>
                                     </h3>
                                     <p className="text-text-muted text-xs">Selecione por onde o som master vai sair (Placa de Áudio / Fone)</p>
                                 </div>
                                 <div className="shrink-0 flex items-center justify-end">
                                     <div className="relative">
                                         <select
-                                            className="appearance-none bg-transparent hover:bg-white/5 border border-white/10 text-white text-sm font-medium py-2 pl-4 pr-10 rounded-lg cursor-pointer outline-none transition-colors max-w-[200px] truncate"
+                                            className="appearance-none bg-transparent hover:bg-white/5 border border-white/10 text-white text-sm font-medium py-2 pl-4 pr-10 rounded-lg cursor-pointer outline-none focus:border-secondary/50 focus:ring-2 focus:ring-secondary/20 transition-all duration-200 max-w-[200px] truncate"
                                             value={settings.audioDeviceId}
                                             onChange={(e) => updateSetting('audioDeviceId', e.target.value)}
                                         >
@@ -137,7 +137,7 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                                         <div key={ch.id} className="flex items-center justify-between py-3 border-b border-white/5 last:border-b-0">
                                             <span className="text-white font-medium text-sm">{ch.name}</span>
                                             <select
-                                                className="bg-transparent border border-white/10 text-white text-sm font-medium py-1.5 px-3 rounded-lg cursor-pointer outline-none hover:bg-white/5 transition-colors"
+                                                className="bg-transparent border border-white/10 text-white text-sm font-medium py-1.5 px-3 rounded-lg cursor-pointer outline-none hover:bg-white/5 focus:border-secondary/50 focus:ring-2 focus:ring-secondary/20 transition-all duration-200"
                                                 value={ch.bus}
                                                 onChange={(e) => onSetChannelBus(ch.id, e.target.value as '1' | '2' | '1/2')}
                                             >
@@ -161,6 +161,6 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                     )}
                 </div>
             </div>
-        </div>
+        </div >
     );
 }

@@ -43,10 +43,10 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
                         <h2 className="text-white font-bold text-base sm:text-lg">Biblioteca na Nuvem</h2>
                     </div>
                     <div className="flex items-center gap-2">
-                        <button onClick={refreshSongs} className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer">
+                        <button onClick={refreshSongs} className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20">
                             <RefreshCcw size={16} />
                         </button>
-                        <button onClick={onClose} className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer">
+                        <button onClick={onClose} className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20">
                             <X size={18} />
                         </button>
                     </div>
@@ -61,10 +61,10 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
                             placeholder="Buscar por nome, artista ou tom..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full bg-black/40 text-white text-sm pl-10 pr-4 py-2.5 rounded-xl border border-white/10 outline-none focus:border-secondary/50 transition-colors placeholder:text-text-muted/50"
+                            className="w-full bg-black/40 text-white text-sm pl-10 pr-4 py-2.5 rounded-xl border border-white/10 outline-none focus:border-secondary/50 focus:ring-2 focus:ring-secondary/20 transition-all duration-200 placeholder:text-text-muted/50"
                         />
                         {searchQuery && (
-                            <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-white cursor-pointer">
+                            <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-white transition-all active:scale-90 cursor-pointer p-1">
                                 <X size={14} />
                             </button>
                         )}
@@ -140,7 +140,7 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
                                                 <button
                                                     onClick={() => handleDownload(song.id, song.name)}
                                                     disabled={!!downloadingSongId}
-                                                    className="flex items-center gap-1.5 bg-secondary/15 hover:bg-secondary/25 text-secondary px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px]">
+                                                    className="flex items-center gap-1.5 bg-secondary/15 hover:bg-secondary/25 text-secondary px-3 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all duration-200 active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px] focus:outline-none focus:ring-2 focus:ring-secondary/50">
                                                     <Download size={16} />
                                                     <span className="hidden sm:inline">Baixar</span>
                                                 </button>

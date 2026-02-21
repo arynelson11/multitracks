@@ -124,7 +124,7 @@ export function AuthPage({ }: AuthPageProps) {
                             <div className="flex flex-col gap-4 mb-8">
                                 <button
                                     onClick={handleGoogleLogin}
-                                    className="flex items-center justify-center gap-2 h-12 w-full rounded-lg border border-zinc-800 text-white font-medium hover:bg-zinc-900 transition-colors cursor-pointer"
+                                    className="flex items-center justify-center gap-2 h-12 w-full rounded-lg border border-zinc-800 text-white font-medium hover:bg-zinc-900 transition-all duration-200 active:scale-95 cursor-pointer focus:outline-none focus:ring-2 focus:ring-zinc-700"
                                 >
                                     <svg className="w-5 h-5" viewBox="0 0 24 24">
                                         <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -157,7 +157,7 @@ export function AuthPage({ }: AuthPageProps) {
                                     required
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    className="w-full bg-zinc-900 border border-zinc-800 text-white rounded-lg pl-11 pr-4 py-3 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-all placeholder:text-zinc-600"
+                                    className="w-full bg-zinc-900 border border-zinc-800 text-white rounded-xl pl-11 pr-4 py-3 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/50 transition-all duration-200 placeholder:text-zinc-600"
                                     placeholder="ex. seuemail@exemplo.com"
                                 />
                             </div>
@@ -173,7 +173,7 @@ export function AuthPage({ }: AuthPageProps) {
                                         required
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        className="w-full bg-zinc-900 border border-zinc-800 text-white rounded-lg pl-11 pr-4 py-3 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-all placeholder:text-zinc-600"
+                                        className="w-full bg-zinc-900 border border-zinc-800 text-white rounded-xl pl-11 pr-4 py-3 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/50 transition-all duration-200 placeholder:text-zinc-600"
                                         placeholder="Digite sua senha"
                                         minLength={6}
                                     />
@@ -187,7 +187,7 @@ export function AuthPage({ }: AuthPageProps) {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="w-full mt-4 h-12 bg-white text-black font-bold rounded-lg flex items-center justify-center gap-2 hover:bg-gray-200 disabled:opacity-50 transition-colors cursor-pointer"
+                            className="w-full mt-4 h-12 bg-white text-black font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-gray-200 disabled:opacity-50 transition-all duration-200 active:scale-[0.98] cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500/50 hover:shadow-[0_0_15px_rgba(255,255,255,0.3)]"
                         >
                             {loading ? <Loader2 size={18} className="animate-spin" /> : (
                                 <>

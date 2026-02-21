@@ -106,7 +106,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                             <p className="text-xs text-text-muted">Gerencie a biblioteca online global</p>
                         </div>
                     </div>
-                    <button onClick={handleClose} disabled={isUploading} className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer disabled:opacity-20">
+                    <button onClick={handleClose} disabled={isUploading} className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer disabled:opacity-20 focus:outline-none focus:ring-2 focus:ring-white/20">
                         <X size={20} />
                     </button>
                 </div>
@@ -115,11 +115,11 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                 {!isSuccess && !isUploading && (
                     <div className="flex px-4 pt-4 border-b border-white/5 gap-4">
                         <button onClick={() => setActiveTab('music')}
-                            className={`pb-3 text-sm font-semibold transition-colors flex items-center gap-2 ${activeTab === 'music' ? 'text-secondary border-b-2 border-secondary' : 'text-text-muted hover:text-white'}`}>
+                            className={`pb-3 text-sm font-semibold transition-all duration-200 active:scale-95 flex items-center gap-2 focus:outline-none ${activeTab === 'music' ? 'text-secondary border-b-2 border-secondary' : 'text-text-muted hover:text-white'}`}>
                             <Music size={16} /> Músicas (Stems)
                         </button>
                         <button onClick={() => setActiveTab('pads')}
-                            className={`pb-3 text-sm font-semibold transition-colors flex items-center gap-2 ${activeTab === 'pads' ? 'text-secondary border-b-2 border-secondary' : 'text-text-muted hover:text-white'}`}>
+                            className={`pb-3 text-sm font-semibold transition-all duration-200 active:scale-95 flex items-center gap-2 focus:outline-none ${activeTab === 'pads' ? 'text-secondary border-b-2 border-secondary' : 'text-text-muted hover:text-white'}`}>
                             <Layers size={16} /> Pads do Sistema
                         </button>
                     </div>
@@ -153,7 +153,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                                 value={metadata.name}
                                                 onChange={e => setMetadata({ ...metadata, name: e.target.value })}
                                                 placeholder="Ex: Grande é o Senhor"
-                                                className="w-full bg-black/40 text-white text-sm pl-10 pr-4 py-3 rounded-xl border border-white/10 outline-none focus:border-secondary/50 transition-colors"
+                                                className="w-full bg-black/40 text-white text-sm pl-10 pr-4 py-3 rounded-xl border border-white/10 outline-none focus:border-secondary/50 focus:ring-2 focus:ring-secondary/20 transition-all duration-200"
                                             />
                                         </div>
                                     </div>
@@ -165,7 +165,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                             value={metadata.artist}
                                             onChange={e => setMetadata({ ...metadata, artist: e.target.value })}
                                             placeholder="Ex: Adhemar de Campos"
-                                            className="w-full bg-black/40 text-white text-sm px-4 py-3 rounded-xl border border-white/10 outline-none focus:border-secondary/50 transition-colors"
+                                            className="w-full bg-black/40 text-white text-sm px-4 py-3 rounded-xl border border-white/10 outline-none focus:border-secondary/50 focus:ring-2 focus:ring-secondary/20 transition-all duration-200"
                                         />
                                     </div>
 
@@ -178,7 +178,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                                 value={metadata.key}
                                                 onChange={e => setMetadata({ ...metadata, key: e.target.value })}
                                                 placeholder="Ex: G, Dbm, F#"
-                                                className="w-full bg-black/40 text-white text-sm pl-10 pr-4 py-3 rounded-xl border border-white/10 outline-none focus:border-secondary/50 transition-colors"
+                                                className="w-full bg-black/40 text-white text-sm pl-10 pr-4 py-3 rounded-xl border border-white/10 outline-none focus:border-secondary/50 focus:ring-2 focus:ring-secondary/20 transition-all duration-200"
                                             />
                                         </div>
                                     </div>
@@ -192,7 +192,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                                 value={metadata.bpm || ''}
                                                 onChange={e => setMetadata({ ...metadata, bpm: parseInt(e.target.value) || 0 })}
                                                 placeholder="Ex: 72"
-                                                className="w-full bg-black/40 text-white text-sm pl-10 pr-4 py-3 rounded-xl border border-white/10 outline-none focus:border-secondary/50 transition-colors"
+                                                className="w-full bg-black/40 text-white text-sm pl-10 pr-4 py-3 rounded-xl border border-white/10 outline-none focus:border-secondary/50 focus:ring-2 focus:ring-secondary/20 transition-all duration-200"
                                             />
                                         </div>
                                     </div>
@@ -202,7 +202,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div
                                         onClick={() => coverInputRef.current?.click()}
-                                        className={`relative h-32 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all overflow-hidden ${coverFile ? 'border-primary/50 bg-primary/5' : 'border-white/10 bg-black/20 hover:border-white/20'
+                                        className={`relative h-32 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all duration-200 active:scale-[0.98] overflow-hidden ${coverFile ? 'border-primary/50 bg-primary/5' : 'border-white/10 bg-black/20 hover:border-white/20 hover:bg-white/5'
                                             }`}>
                                         {coverFile ? (
                                             <>
@@ -223,7 +223,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
 
                                     <div
                                         onClick={() => stemsInputRef.current?.click()}
-                                        className={`h-32 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${stemFiles.length > 0 ? 'border-secondary/50 bg-secondary/5' : 'border-white/10 bg-black/20 hover:border-white/20'
+                                        className={`h-32 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all duration-200 active:scale-[0.98] ${stemFiles.length > 0 ? 'border-secondary/50 bg-secondary/5' : 'border-white/10 bg-black/20 hover:border-white/20 hover:bg-white/5'
                                             }`}>
                                         {stemFiles.length > 0 ? (
                                             <>
@@ -251,7 +251,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
 
                                 <div
                                     onClick={() => padsInputRef.current?.click()}
-                                    className={`h-32 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${padFiles.size === 12 ? 'border-primary/50 bg-primary/5' : 'border-white/10 bg-black/20 hover:border-white/20'
+                                    className={`h-32 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all duration-200 active:scale-[0.98] ${padFiles.size === 12 ? 'border-primary/50 bg-primary/5' : 'border-white/10 bg-black/20 hover:border-white/20 hover:bg-white/5'
                                         }`}>
                                     <Layers size={24} className={padFiles.size === 12 ? 'text-primary' : 'text-text-muted'} />
                                     <span className="text-xs text-white font-medium">
@@ -308,9 +308,9 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                         <button
                             type="submit"
                             disabled={isUploading || (activeTab === 'music' ? (!metadata.name || stemFiles.length === 0) : (padFiles.size !== 12))}
-                            className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${(isUploading || (activeTab === 'music' ? (!metadata.name || stemFiles.length === 0) : (padFiles.size !== 12)))
+                            className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-secondary/50 ${(isUploading || (activeTab === 'music' ? (!metadata.name || stemFiles.length === 0) : (padFiles.size !== 12)))
                                 ? 'bg-white/5 text-text-muted cursor-not-allowed'
-                                : 'bg-secondary text-black hover:shadow-[0_0_20px_rgba(5,209,255,0.3)] cursor-pointer'
+                                : 'bg-secondary text-black hover:shadow-[0_0_20px_rgba(6,182,212,0.3)] cursor-pointer'
                                 }`}>
                             {isUploading ? (
                                 <>Processando...</>
