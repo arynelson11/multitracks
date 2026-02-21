@@ -4,6 +4,7 @@ import { useAudioEngine } from './hooks/useAudioEngine'
 import { usePadSynth } from './hooks/usePadSynth'
 import { SettingsModal } from './components/SettingsModal'
 import { LibraryModal } from './components/LibraryModal'
+import { AdminModal } from './components/AdminModal'
 
 export default function App() {
   const {
@@ -21,6 +22,7 @@ export default function App() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isLibraryOpen, setIsLibraryOpen] = useState(false)
+  const [isAdminOpen, setIsAdminOpen] = useState(false)
   const [isSetlistMenuOpen, setIsSetlistMenuOpen] = useState(false)
   const [isPadEditMode, setIsPadEditMode] = useState(false)
   const [mobileView, setMobileView] = useState<'mixer' | 'pads'>('mixer')
@@ -466,7 +468,13 @@ export default function App() {
       </main>
 
       {/* Settings Modal */}
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} channels={channels} onSetChannelBus={setChannelBus} />
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        channels={channels}
+        onSetChannelBus={setChannelBus}
+        onOpenAdmin={() => setIsAdminOpen(true)}
+      />
 
       {/* Library Modal */}
       <LibraryModal
@@ -484,6 +492,9 @@ export default function App() {
           }
         }}
       />
+
+      {/* Admin Modal */}
+      <AdminModal isOpen={isAdminOpen} onClose={() => setIsAdminOpen(false)} />
     </div>
   )
 }

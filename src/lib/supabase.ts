@@ -79,3 +79,44 @@ export function getStorageUrl(bucket: string, path: string): string {
     const { data } = supabase.storage.from(bucket).getPublicUrl(path);
     return data.publicUrl;
 }
+
+// Admin: Upload a file to storage
+export async function uploadFile(bucket: string, path: string, file: File): Promise<string | null> {
+    const { data, error } = await supabase.storage.from(bucket).upload(path, file, {
+        upsert: true
+    });
+
+    if (error) {
+        console.error(`Error uploading to ${bucket}:`, error);
+        return null;
+    }
+    return getStorageUrl(bucket, data.path);
+}
+
+// Admin: Insert song metadata
+export async function insertSong(song: Omit<CloudSong, 'id' | 'created_at'>): Promise<string | null> {
+    const { data, error } = await supabase
+        .from('songs')
+        .insert(song)
+        .select('id')
+        .single();
+
+    if (error) {
+        console.error('Error inserting song:', error);
+        return null;
+    }
+    return data?.id || null;
+}
+
+// Admin: Insert multiple stems
+export async function insertStems(stems: Omit<CloudStem, 'id'>[]): Promise<boolean> {
+    const { error } = await supabase
+        .from('stems')
+        .insert(stems);
+
+    if (error) {
+        console.error('Error inserting stems:', error);
+        return false;
+    }
+    return true;
+}

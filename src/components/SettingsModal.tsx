@@ -8,11 +8,12 @@ interface SettingsModalProps {
     onClose: () => void;
     channels: Channel[];
     onSetChannelBus: (channelId: string, bus: '1' | '2' | '1/2') => void;
+    onOpenAdmin: () => void;
 }
 
 type Tab = 'Geral' | 'Canais' | 'Buses' | 'MIDI' | 'Sobre';
 
-export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin }: SettingsModalProps) {
     const { settings, updateSetting, availableAudioDevices, refreshAudioDevices } = useSettings();
     const [activeTab, setActiveTab] = useState<Tab>('Geral');
 
@@ -103,6 +104,22 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus }: Se
                                     <input type="checkbox" className="sr-only peer" checked readOnly />
                                     <div className="w-11 h-6 bg-white/20 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0A84FF]"></div>
                                 </label>
+                            </div>
+
+                            <hr className="border-white/5" />
+
+                            {/* Cloud Admin Access */}
+                            <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-xl border border-secondary/20">
+                                <div>
+                                    <h3 className="text-secondary text-base font-bold">Painel de Upload</h3>
+                                    <p className="text-text-muted text-xs">Publicar novas músicas na biblioteca da nuvem</p>
+                                </div>
+                                <button
+                                    onClick={() => { onClose(); onOpenAdmin(); }}
+                                    className="px-4 py-2 bg-secondary text-black text-xs font-bold rounded-lg hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                                >
+                                    Acessar Painel
+                                </button>
                             </div>
                         </div>
                     )}
