@@ -43,8 +43,8 @@ export function useAdminUpload() {
             setStatus('Gravando metadados da música...');
             const songId = await insertSong({
                 name: metadata.name,
-                artist: metadata.artist,
-                key: metadata.key,
+                Artista: metadata.artist,
+                Tom: metadata.key,
                 bpm: metadata.bpm,
                 cover_url
             });

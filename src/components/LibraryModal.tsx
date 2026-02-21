@@ -94,8 +94,8 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
                                 return (
                                     <div key={song.id}
                                         className={`flex items-center gap-3 sm:gap-4 p-3 rounded-xl border transition-all ${isDownloaded
-                                                ? 'bg-primary/5 border-primary/20'
-                                                : 'bg-black/20 border-white/5 hover:border-white/15 hover:bg-white/5'
+                                            ? 'bg-primary/5 border-primary/20'
+                                            : 'bg-black/20 border-white/5 hover:border-white/15 hover:bg-white/5'
                                             }`}>
 
                                         {/* Cover */}
@@ -110,11 +110,11 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
                                         {/* Info */}
                                         <div className="flex-1 min-w-0">
                                             <div className="font-semibold text-sm sm:text-base text-white truncate">{song.name}</div>
-                                            <div className="text-xs text-text-muted truncate">{song.artist || 'Artista desconhecido'}</div>
+                                            <div className="text-xs text-text-muted truncate">{song.Artista || 'Artista desconhecido'}</div>
                                             <div className="flex items-center gap-3 mt-1">
-                                                {song.key && (
+                                                {song.Tom && (
                                                     <span className="text-[10px] sm:text-xs font-bold bg-secondary/15 text-secondary px-2 py-0.5 rounded-full">
-                                                        Tom: {song.key}
+                                                        Tom: {song.Tom}
                                                     </span>
                                                 )}
                                                 {song.bpm > 0 && (
