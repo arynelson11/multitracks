@@ -137,57 +137,62 @@ export function useAudioEngine() {
 
             if (savedMeta && savedMeta.length > 0 && savedFiles) {
                 setIsRestoring(true);
-                const restoredPlaylist: Song[] = [];
 
-                for (let i = 0; i < savedMeta.length; i++) {
-                    const metaSong = savedMeta[i];
-                    const newChannels: Channel[] = [];
-
-                    for (const metaCh of metaSong.channels) {
+                const restoreSongs = async (metaSong: SavedSong): Promise<Song | null> => {
+                    const channelPromises = metaSong.channels.map(async (metaCh): Promise<Channel | null> => {
                         const file = savedFiles.get(metaCh.id);
-                        if (!file) continue;
+                        if (!file || !ctx) return null;
 
-                        const arrayBuffer = await file.arrayBuffer();
-                        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+                        try {
+                            const arrayBuffer = await file.arrayBuffer();
+                            const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
 
-                        const panner = ctx.createStereoPanner();
-                        const gain = ctx.createGain();
+                            const panner = ctx.createStereoPanner();
+                            const gain = ctx.createGain();
 
-                        panner.pan.value = metaCh.pan;
-                        let effectiveVol = metaCh.volume;
-                        if (metaCh.muted) effectiveVol = 0;
-                        if (metaSong.channels.some(c => c.soloed) && !metaCh.soloed) effectiveVol = 0;
-                        gain.gain.value = effectiveVol;
+                            panner.pan.value = metaCh.pan;
+                            let effectiveVol = metaCh.volume;
+                            if (metaCh.muted) effectiveVol = 0;
+                            if (metaSong.channels.some(c => c.soloed) && !metaCh.soloed) effectiveVol = 0;
+                            gain.gain.value = effectiveVol;
 
-                        panner.connect(gain);
-                        gain.connect(master);
+                            panner.connect(gain);
+                            gain.connect(master);
 
-                        newChannels.push({
-                            id: metaCh.id,
-                            name: metaCh.name,
-                            buffer: audioBuffer,
-                            file: file,
-                            gainNode: gain,
-                            pannerNode: panner,
-                            sourceNode: null,
-                            volume: metaCh.volume,
-                            muted: metaCh.muted,
-                            soloed: metaCh.soloed,
-                            pan: metaCh.pan,
-                            bus: metaCh.bus || '1/2'
-                        });
-                    }
+                            return {
+                                id: metaCh.id,
+                                name: metaCh.name,
+                                buffer: audioBuffer,
+                                file: file,
+                                gainNode: gain,
+                                pannerNode: panner,
+                                sourceNode: null,
+                                volume: metaCh.volume,
+                                muted: metaCh.muted,
+                                soloed: metaCh.soloed,
+                                pan: metaCh.pan,
+                                bus: metaCh.bus || '1/2'
+                            };
+                        } catch (e) {
+                            console.error(`Failed to restore channel ${metaCh.name}`, e);
+                            return null;
+                        }
+                    });
 
-                    if (newChannels.length > 0) {
-                        restoredPlaylist.push({
-                            id: metaSong.id,
-                            name: metaSong.name,
-                            coverImage: metaSong.coverImage,
-                            duration: metaSong.duration,
-                            channels: newChannels
-                        });
-                    }
-                }
+                    const channels = (await Promise.all(channelPromises)).filter((c): c is Channel => c !== null);
+                    if (channels.length === 0) return null;
+
+                    return {
+                        id: metaSong.id,
+                        name: metaSong.name,
+                        coverImage: metaSong.coverImage,
+                        duration: metaSong.duration,
+                        channels
+                    };
+                };
+
+                const songResults = await Promise.all(savedMeta.map(restoreSongs));
+                const restoredPlaylist = songResults.filter((s): s is Song => s !== null);
 
                 if (restoredPlaylist.length > 0) {
                     setPlaylist(restoredPlaylist);
@@ -390,19 +395,13 @@ export function useAudioEngine() {
         if (!audioCtxRef.current || !masterGainRef.current) return;
         setIsLoading(true);
 
-        const newChannels: Channel[] = [];
-        let maxDuration = 0; // Starts from 0 for the new song
-
         const filesDb = await get<Map<string, File>>('mt_files') || new Map<string, File>();
 
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
+        const channelPromises = Array.from(files).map(async (file) => {
+            if (!audioCtxRef.current || !masterGainRef.current) return null;
+
             const arrayBuffer = await file.arrayBuffer();
             const audioBuffer = await audioCtxRef.current.decodeAudioData(arrayBuffer);
-
-            if (audioBuffer.duration > maxDuration) {
-                maxDuration = audioBuffer.duration;
-            }
 
             const panner = audioCtxRef.current.createStereoPanner();
             const gain = audioCtxRef.current.createGain();
@@ -428,7 +427,7 @@ export function useAudioEngine() {
 
             const busValue: '1' | '2' | '1/2' = panValue === -1 ? '1' : panValue === 1 ? '2' : '1/2';
 
-            newChannels.push({
+            return {
                 id: uuid,
                 name: file.name.replace(/\.[^/.]+$/, ""), // remove extension
                 buffer: audioBuffer,
@@ -441,8 +440,16 @@ export function useAudioEngine() {
                 soloed: false,
                 pan: panValue,
                 bus: busValue,
-            });
-        }
+            } as Channel;
+        });
+
+        const results = await Promise.all(channelPromises);
+        const newChannels: Channel[] = results.filter((ch): ch is Channel => ch !== null);
+
+        let maxDuration = 0;
+        newChannels.forEach(ch => {
+            if (ch.buffer.duration > maxDuration) maxDuration = ch.buffer.duration;
+        });
 
         await set('mt_files', filesDb);
 
