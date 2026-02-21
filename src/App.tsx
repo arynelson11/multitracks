@@ -7,6 +7,8 @@ import { LibraryModal } from './components/LibraryModal'
 import { AdminModal } from './components/AdminModal'
 import { AuthPage } from './components/AuthPage'
 import { useAuth } from './hooks/useAuth'
+import { supabase } from './lib/supabase'
+
 export default function App() {
   const {
     isReady, initEngine, loadFiles, isLoading, isRestoring,
@@ -94,6 +96,26 @@ export default function App() {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <Loader2 size={40} className="text-orange-500 animate-spin" />
+      </div>
+    )
+  }
+
+  if (!supabase) {
+    return (
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center text-white px-6">
+        <h1 className="text-3xl font-bold mb-4 text-orange-500">Configuração Incompleta</h1>
+        <p className="text-gray-400 text-center max-w-md mb-6 leading-relaxed">
+          As variáveis de ambiente do banco de dados (<strong>VITE_SUPABASE_URL</strong> e <strong>VITE_SUPABASE_ANON_KEY</strong>) não foram configuradas neste servidor.
+        </p>
+        <div className="bg-white/5 border border-white/10 p-6 rounded-2xl max-w-lg text-sm text-zinc-400 text-center">
+          <p className="mb-2"><strong>Como resolver:</strong></p>
+          <p>
+            1. Acesse o painel da <strong>Vercel</strong>.<br />
+            2. Vá em <strong>Settings &gt; Environment Variables</strong>.<br />
+            3. Adicione as mesmas chaves que estão no seu arquivo <code>.env</code> local.<br />
+            4. Vá em <strong>Deployments</strong> e clique em <strong>Redeploy</strong> no último build.
+          </p>
+        </div>
       </div>
     )
   }
