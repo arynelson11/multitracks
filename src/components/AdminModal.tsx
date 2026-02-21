@@ -62,12 +62,27 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
 
     const handlePadsSelection = (files: FileList | null) => {
         if (!files) return;
+
+        const sharpToFlat: Record<string, string> = {
+            'C#': 'Db',
+            'D#': 'Eb',
+            'F#': 'Gb',
+            'G#': 'Ab',
+            'A#': 'Bb'
+        };
+
         const newMap = new Map<string, File>();
         Array.from(files).forEach(file => {
-            // Find if the filename (e.g. C.mp3, Db.wav) matches a required note
-            const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
-            // Allow exact match or case insensitive match
-            const matchedNote = REQUIRED_NOTES.find(n => n.toLowerCase() === nameWithoutExt.toLowerCase());
+            // Remove extension
+            let nameWithoutExt = file.name.replace(/\.[^/.]+$/, "").toUpperCase();
+
+            // Normalize sharp to flat if needed
+            if (sharpToFlat[nameWithoutExt]) {
+                nameWithoutExt = sharpToFlat[nameWithoutExt].toUpperCase();
+            }
+
+            // Find exact match
+            const matchedNote = REQUIRED_NOTES.find(n => n.toUpperCase() === nameWithoutExt);
             if (matchedNote) {
                 newMap.set(matchedNote, file);
             }
@@ -293,8 +308,8 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                             type="submit"
                             disabled={isUploading || (activeTab === 'music' ? (!metadata.name || stemFiles.length === 0) : (padFiles.size !== 12))}
                             className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${(isUploading || (activeTab === 'music' ? (!metadata.name || stemFiles.length === 0) : (padFiles.size !== 12)))
-                                    ? 'bg-white/5 text-text-muted cursor-not-allowed'
-                                    : 'bg-secondary text-black hover:shadow-[0_0_20px_rgba(5,209,255,0.3)] cursor-pointer'
+                                ? 'bg-white/5 text-text-muted cursor-not-allowed'
+                                : 'bg-secondary text-black hover:shadow-[0_0_20px_rgba(5,209,255,0.3)] cursor-pointer'
                                 }`}>
                             {isUploading ? (
                                 <>Processando...</>
