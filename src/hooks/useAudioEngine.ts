@@ -386,7 +386,7 @@ export function useAudioEngine() {
     }, [isPlaying, updateTime]);
 
     // Load files
-    const loadFiles = async (files: FileList, overrideSongName?: string) => {
+    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string) => {
         if (!audioCtxRef.current || !masterGainRef.current) return;
         setIsLoading(true);
 
@@ -456,6 +456,7 @@ export function useAudioEngine() {
         const newSong: Song = {
             id: crypto.randomUUID(),
             name: songName,
+            coverImage: coverImage,
             channels: newChannels,
             duration: maxDuration
         };

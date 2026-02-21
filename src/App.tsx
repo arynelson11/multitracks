@@ -484,12 +484,8 @@ export default function App() {
           // Convert File[] to FileList-like and load through engine
           const dt = new DataTransfer();
           files.forEach(f => dt.items.add(f));
-          await loadFiles(dt.files, songName);
-          // Set cover if available
-          if (coverUrl && playlist.length > 0) {
-            const lastSong = playlist[playlist.length - 1];
-            if (lastSong) setCoverImage(lastSong.id, coverUrl);
-          }
+          // Load files with cover already associated
+          await loadFiles(dt.files, songName, coverUrl || undefined);
         }}
       />
 

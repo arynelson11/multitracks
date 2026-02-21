@@ -44,17 +44,17 @@ export function useCloudLibrary() {
                 return null;
             }
 
-            const files: File[] = [];
-            for (let i = 0; i < stems.length; i++) {
-                const stem = stems[i];
-                setDownloadProgress(`Baixando ${stem.name} (${i + 1}/${stems.length})...`);
-
+            let completed = 0;
+            const downloadTask = async (stem: CloudStem) => {
                 const ext = stem.file_url.split('.').pop() || 'wav';
                 const file = await downloadFileAsBlob(stem.file_url, `${stem.name}.${ext}`);
-                if (file) {
-                    files.push(file);
-                }
-            }
+                completed++;
+                setDownloadProgress(`Baixando stems (${completed}/${stems.length})...`);
+                return file;
+            };
+
+            const filesResults = await Promise.all(stems.map(downloadTask));
+            const files: File[] = filesResults.filter((f): f is File => f !== null);
 
             // Get cover URL from the song
             const song = songs.find(s => s.id === songId);
