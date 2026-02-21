@@ -1,5 +1,36 @@
 import { useState, useCallback } from 'react';
-import { uploadFile, insertSong, insertStems, type CloudStem } from '../lib/supabase';
+import { insertSong, insertStems, type CloudStem } from '../lib/supabase';
+
+const uploadToR2 = async (bucketFolder: string, fileName: string, file: File) => {
+    try {
+        const type = file.type || 'application/octet-stream';
+        const res = await fetch(`/api/get-upload-url?filename=${encodeURIComponent(fileName)}&contentType=${encodeURIComponent(type)}&bucketFolder=${encodeURIComponent(bucketFolder)}`);
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(`[API Error ${res.status}] ${data.error || 'Falha ao conectar com Vercel API'}`);
+        }
+        const { uploadUrl, key } = await res.json();
+
+        const uploadRes = await fetch(uploadUrl, {
+            method: 'PUT',
+            body: file,
+            headers: {
+                'Content-Type': type
+            }
+        });
+        if (!uploadRes.ok) throw new Error(`[R2 PUT Error ${uploadRes.status}] Falha no upload para Cloudflare`);
+
+        const publicUrlBase = import.meta.env.VITE_R2_PUBLIC_URL;
+        if (!publicUrlBase) throw new Error('Variável VITE_R2_PUBLIC_URL não configurada no ambiente (.env/Vercel)');
+
+        const baseUrl = publicUrlBase.replace(/\/$/, "");
+        const cleanKey = key.replace(/^\//, "");
+
+        return { url: `${baseUrl}/${cleanKey}`, error: null };
+    } catch (e: any) {
+        return { url: null, error: e.message };
+    }
+}
 
 export interface UploadMetadata {
     name: string;
@@ -30,10 +61,10 @@ export function useAdminUpload() {
             if (coverFile) {
                 setStatus('Subindo capa...');
                 const fileName = `${Date.now()}_${coverFile.name.replace(/\s+/g, '_')}`;
-                const uploadResult = await uploadFile('covers', fileName, coverFile);
+                const uploadResult = await uploadToR2('covers', fileName, coverFile);
 
                 if (uploadResult.error) {
-                    throw new Error(`Erro na Capa: ${uploadResult.error}. Verifique se o bucket "covers" existe no Storage.`);
+                    throw new Error(`Erro na Capa: ${uploadResult.error}.`);
                 }
                 cover_url = uploadResult.url;
             }
@@ -62,10 +93,10 @@ export function useAdminUpload() {
                 setStatus(`Subindo stem ${i + 1} de ${totalSteps}: ${file.name}...`);
 
                 const fileName = `${songId}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
-                const uploadResult = await uploadFile('stems', fileName, file);
+                const uploadResult = await uploadToR2('stems', fileName, file);
 
                 if (uploadResult.error) {
-                    throw new Error(`Erro no Stem ${file.name}: ${uploadResult.error}. Verifique se o bucket "stems" existe.`);
+                    throw new Error(`Erro no Stem ${file.name}: ${uploadResult.error}.`);
                 }
 
                 stemsData.push({
@@ -117,10 +148,10 @@ export function useAdminUpload() {
                 // To ensure consistent fetch URLs, we'll store the file without extension using the exact note name, e.g., 'C', 'Db'.
                 // Supabase will serve it according to the uploaded content type. Note encoding avoids slash conflicts.
                 const noteFileName = encodeURIComponent(note);
-                const uploadResult = await uploadFile('system_pads', noteFileName, file);
+                const uploadResult = await uploadToR2('system_pads', noteFileName, file);
 
                 if (uploadResult.error) {
-                    throw new Error(`Erro no Pad ${note}: ${uploadResult.error}. Verifique se o bucket "system_pads" público existe.`);
+                    throw new Error(`Erro no Pad ${note}: ${uploadResult.error}.`);
                 }
 
                 setProgress(stepProgress);
