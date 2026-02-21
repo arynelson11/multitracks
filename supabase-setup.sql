@@ -71,4 +71,26 @@ CREATE POLICY "Delete livre de stems" ON stems FOR DELETE USING (true);
 -- ('UUID-DA-MUSICA', 'Click', 'https://SEU-PROJETO.supabase.co/storage/v1/object/public/stems/click.wav', 1),
 -- ('UUID-DA-MUSICA', 'Guia', 'https://SEU-PROJETO.supabase.co/storage/v1/object/public/stems/guia.wav', 2),
 -- ('UUID-DA-MUSICA', 'Bass', 'https://SEU-PROJETO.supabase.co/storage/v1/object/public/stems/bass.wav', 3),
--- ('UUID-DA-MUSICA', 'Keys', 'https://SEU-PROJETO.supabase.co/storage/v1/object/public/stems/keys.wav', 4);
+-- ============================================
+-- Políticas de STORAGE (Importante para o Upload Funcionar)
+-- ============================================
+
+-- Remover políticas antigas se existirem para evitar conflitos
+DROP POLICY IF EXISTS "Public Upload" ON storage.objects;
+DROP POLICY IF EXISTS "Public View" ON storage.objects;
+
+-- Permitir que qualquer pessoa veja arquivos (Leitura Pública)
+CREATE POLICY "Public View"
+ON storage.objects FOR SELECT
+USING ( bucket_id IN ('covers', 'stems') );
+
+-- Permitir que qualquer pessoa faça Upload (Escrita Pública)
+-- Em um app profissional, você usaria autenticação aqui.
+CREATE POLICY "Public Upload"
+ON storage.objects FOR INSERT
+WITH CHECK ( bucket_id IN ('covers', 'stems') );
+
+-- Permitir que qualquer pessoa atualize arquivos
+CREATE POLICY "Public Update"
+ON storage.objects FOR UPDATE
+USING ( bucket_id IN ('covers', 'stems') );

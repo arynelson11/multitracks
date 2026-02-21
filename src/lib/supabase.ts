@@ -92,17 +92,17 @@ export function getStorageUrl(bucket: string, path: string): string {
 }
 
 // Admin: Upload a file to storage
-export async function uploadFile(bucket: string, path: string, file: File): Promise<string | null> {
-    if (!supabase) return null;
+export async function uploadFile(bucket: string, path: string, file: File): Promise<{ url: string | null; error: string | null }> {
+    if (!supabase) return { url: null, error: 'Supabase não inicializado' };
     const { data, error } = await supabase.storage.from(bucket).upload(path, file, {
         upsert: true
     });
 
     if (error) {
         console.error(`Error uploading to ${bucket}:`, error);
-        return null;
+        return { url: null, error: error.message };
     }
-    return getStorageUrl(bucket, data.path);
+    return { url: getStorageUrl(bucket, data.path), error: null };
 }
 
 // Admin: Insert song metadata

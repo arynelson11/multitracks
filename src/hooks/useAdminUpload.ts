@@ -30,8 +30,12 @@ export function useAdminUpload() {
             if (coverFile) {
                 setStatus('Subindo capa...');
                 const fileName = `${Date.now()}_${coverFile.name.replace(/\s+/g, '_')}`;
-                cover_url = await uploadFile('covers', fileName, coverFile);
-                if (!cover_url) throw new Error('Falha no upload da capa');
+                const uploadResult = await uploadFile('covers', fileName, coverFile);
+
+                if (uploadResult.error) {
+                    throw new Error(`Erro na Capa: ${uploadResult.error}. Verifique se o bucket "covers" existe no Storage.`);
+                }
+                cover_url = uploadResult.url;
             }
             setProgress(10);
 
@@ -44,7 +48,7 @@ export function useAdminUpload() {
                 bpm: metadata.bpm,
                 cover_url
             });
-            if (!songId) throw new Error('Falha ao gravar música no banco');
+            if (!songId) throw new Error('Falha ao gravar música no banco de dados. Verifique a tabela "songs".');
             setProgress(20);
 
             // 3. Upload Stems
@@ -58,17 +62,16 @@ export function useAdminUpload() {
                 setStatus(`Subindo stem ${i + 1} de ${totalSteps}: ${file.name}...`);
 
                 const fileName = `${songId}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
-                const file_url = await uploadFile('stems', fileName, file);
+                const uploadResult = await uploadFile('stems', fileName, file);
 
-                if (!file_url) {
-                    console.warn(`Falha no upload do stem: ${file.name}`);
-                    continue;
+                if (uploadResult.error) {
+                    throw new Error(`Erro no Stem ${file.name}: ${uploadResult.error}. Verifique se o bucket "stems" existe.`);
                 }
 
                 stemsData.push({
                     song_id: songId,
                     name: file.name.replace(/\.[^/.]+$/, ""), // remove ext
-                    file_url,
+                    file_url: uploadResult.url!,
                     order: i + 1
                 });
 
