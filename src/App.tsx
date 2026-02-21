@@ -5,7 +5,7 @@ import { usePadSynth } from './hooks/usePadSynth'
 import { SettingsModal } from './components/SettingsModal'
 import { LibraryModal } from './components/LibraryModal'
 import { AdminModal } from './components/AdminModal'
-import { AuthModal } from './components/AuthModal'
+import { AuthPage } from './components/AuthPage'
 import { useAuth } from './hooks/useAuth'
 export default function App() {
   const {
@@ -18,14 +18,13 @@ export default function App() {
   } = useAudioEngine()
 
   const { playPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume } = usePadSynth()
-  const { user, signOut } = useAuth()
+  const { user, loading, signOut } = useAuth()
   const mixerRef = useRef<HTMLDivElement>(null)
 
   const [isEditMode, setIsEditMode] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isLibraryOpen, setIsLibraryOpen] = useState(false)
   const [isAdminOpen, setIsAdminOpen] = useState(false)
-  const [isAuthOpen, setIsAuthOpen] = useState(false)
   const [isSetlistMenuOpen, setIsSetlistMenuOpen] = useState(false)
   const [isPadEditMode, setIsPadEditMode] = useState(false)
   const [mobileView, setMobileView] = useState<'mixer' | 'pads'>('mixer')
@@ -88,6 +87,19 @@ export default function App() {
     const file = e.target.files?.[0]; if (!file) return
     setIsSetlistMenuOpen(false)
     importPlaylist(file)
+  }
+
+  // ───────────────── AUTH BLOCKING ─────────────────
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <Loader2 size={40} className="text-orange-500 animate-spin" />
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <AuthPage />
   }
 
   // ───────────────── SPLASH ─────────────────
@@ -208,19 +220,13 @@ export default function App() {
           <div className="flex items-center gap-3 sm:gap-4">
 
             {/* User Auth Profile */}
-            {user ? (
-              <div className="flex items-center gap-2">
-                <span className="text-white text-xs font-medium hidden sm:block bg-white/5 px-2 py-1 rounded-md">{user.email?.split('@')[0]}</span>
-                <button onClick={signOut} className="text-xs text-text-muted hover:text-white transition-colors cursor-pointer hidden sm:block">Sair</button>
-                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold shadow-inner cursor-pointer" onClick={signOut}>
-                  {user.email?.charAt(0).toUpperCase()}
-                </div>
+            <div className="flex items-center gap-2">
+              <span className="text-white text-xs font-medium hidden sm:block bg-white/5 px-2 py-1 rounded-md">{user.email?.split('@')[0]}</span>
+              <button onClick={signOut} className="text-xs text-text-muted hover:text-white transition-colors cursor-pointer hidden sm:block">Sair</button>
+              <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold shadow-inner cursor-pointer" onClick={signOut}>
+                {user.email?.charAt(0).toUpperCase()}
               </div>
-            ) : (
-              <button onClick={() => setIsAuthOpen(true)} className="px-4 py-1.5 rounded-lg bg-primary text-black font-bold text-sm hover:scale-105 transition-all cursor-pointer shadow-[0_0_15px_rgba(16,185,129,0.2)]">
-                Entrar
-              </button>
-            )}
+            </div>
 
             <div className="h-6 w-px bg-white/10 hidden sm:block mx-1"></div>
 
@@ -514,9 +520,6 @@ export default function App() {
       {user?.email === 'arynelson11@gmail.com' && (
         <AdminModal isOpen={isAdminOpen} onClose={() => setIsAdminOpen(false)} />
       )}
-
-      {/* Auth Modal */}
-      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
     </div>
   )
 }
