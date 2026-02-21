@@ -5,7 +5,8 @@ import { usePadSynth } from './hooks/usePadSynth'
 import { SettingsModal } from './components/SettingsModal'
 import { LibraryModal } from './components/LibraryModal'
 import { AdminModal } from './components/AdminModal'
-
+import { AuthModal } from './components/AuthModal'
+import { useAuth } from './hooks/useAuth'
 export default function App() {
   const {
     isReady, initEngine, loadFiles, isLoading, isRestoring,
@@ -17,12 +18,14 @@ export default function App() {
   } = useAudioEngine()
 
   const { playPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume } = usePadSynth()
+  const { user, signOut } = useAuth()
   const mixerRef = useRef<HTMLDivElement>(null)
 
   const [isEditMode, setIsEditMode] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isLibraryOpen, setIsLibraryOpen] = useState(false)
   const [isAdminOpen, setIsAdminOpen] = useState(false)
+  const [isAuthOpen, setIsAuthOpen] = useState(false)
   const [isSetlistMenuOpen, setIsSetlistMenuOpen] = useState(false)
   const [isPadEditMode, setIsPadEditMode] = useState(false)
   const [mobileView, setMobileView] = useState<'mixer' | 'pads'>('mixer')
@@ -188,33 +191,51 @@ export default function App() {
             </div>
 
             <label
-              className="flex items-center gap-1.5 bg-white/5 hover:bg-white/10 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium border border-white/5 transition-colors cursor-pointer min-h-[44px]">
-              <Music size={14} />
+              className="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-4 py-2.5 rounded-lg text-sm sm:text-base font-semibold border border-white/5 transition-colors cursor-pointer min-h-[48px]">
+              <Music size={18} />
               <span className="hidden sm:inline">+</span> Stems
               <input type="file" multiple accept="audio/*" className="hidden"
                 onChange={(e) => { if (e.target.files) loadFiles(e.target.files) }} />
             </label>
             <button onClick={() => setIsLibraryOpen(true)}
-              className="flex items-center gap-1.5 bg-secondary/10 hover:bg-secondary/20 text-secondary px-3 py-2 rounded-lg text-xs sm:text-sm font-medium border border-secondary/20 transition-colors cursor-pointer min-h-[44px]">
-              <Cloud size={14} />
+              className="flex items-center gap-2 bg-secondary/10 hover:bg-secondary/20 text-secondary px-4 py-2.5 rounded-lg text-sm sm:text-base font-semibold border border-secondary/20 transition-colors cursor-pointer min-h-[48px]">
+              <Cloud size={18} />
               <span className="hidden sm:inline">Biblioteca</span>
             </button>
           </div>
 
           {/* Right: Actions + Timer */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            {playlist.length > 0 && (
-              <button onClick={clearSession} className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"><Trash2 size={16} /></button>
+          <div className="flex items-center gap-3 sm:gap-4">
+
+            {/* User Auth Profile */}
+            {user ? (
+              <div className="flex items-center gap-2">
+                <span className="text-white text-xs font-medium hidden sm:block bg-white/5 px-2 py-1 rounded-md">{user.email?.split('@')[0]}</span>
+                <button onClick={signOut} className="text-xs text-text-muted hover:text-white transition-colors cursor-pointer hidden sm:block">Sair</button>
+                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold shadow-inner cursor-pointer" onClick={signOut}>
+                  {user.email?.charAt(0).toUpperCase()}
+                </div>
+              </div>
+            ) : (
+              <button onClick={() => setIsAuthOpen(true)} className="px-4 py-1.5 rounded-lg bg-primary text-black font-bold text-sm hover:scale-105 transition-all cursor-pointer shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+                Entrar
+              </button>
             )}
-            <button onClick={() => setIsSettingsOpen(true)} className="p-1.5 rounded-lg text-text-muted hover:bg-white/10 hover:text-white transition-colors cursor-pointer"><Settings size={16} /></button>
+
+            <div className="h-6 w-px bg-white/10 hidden sm:block mx-1"></div>
+
+            {playlist.length > 0 && (
+              <button onClick={clearSession} className="p-2 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"><Trash2 size={20} /></button>
+            )}
+            <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-lg text-text-muted hover:bg-white/10 hover:text-white transition-colors cursor-pointer"><Settings size={20} /></button>
             <button onClick={() => setIsEditMode(!isEditMode)}
-              className={`items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium transition-colors border cursor-pointer hidden sm:flex ${isEditMode ? 'bg-secondary/20 text-secondary border-secondary/30' : 'bg-transparent text-text-muted border-white/5 hover:bg-white/10'}`}>
-              {isEditMode ? <Check size={14} /> : <Edit2 size={14} />}
+              className={`items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors border cursor-pointer hidden sm:flex ${isEditMode ? 'bg-secondary/20 text-secondary border-secondary/30' : 'bg-transparent text-text-muted border-white/5 hover:bg-white/10'}`}>
+              {isEditMode ? <Check size={16} /> : <Edit2 size={16} />}
               {isEditMode ? 'OK' : 'Editar'}
             </button>
-            <div className="font-mono text-sm sm:text-lg tracking-wider text-secondary flex items-baseline gap-1 bg-black/40 px-2 sm:px-3 py-1 rounded-lg font-light">
+            <div className="font-mono text-base sm:text-xl tracking-wider text-secondary flex items-baseline gap-1.5 bg-black/40 px-3 sm:px-4 py-1.5 rounded-lg font-light">
               {formatTime(currentTime)}
-              <span className="text-[10px] sm:text-sm text-text-muted">/ {formatTime(duration)}</span>
+              <span className="text-xs sm:text-sm text-text-muted">/ {formatTime(duration)}</span>
             </div>
           </div>
         </div>
@@ -490,7 +511,12 @@ export default function App() {
       />
 
       {/* Admin Modal */}
-      <AdminModal isOpen={isAdminOpen} onClose={() => setIsAdminOpen(false)} />
+      {user?.email === 'arynelson11@gmail.com' && (
+        <AdminModal isOpen={isAdminOpen} onClose={() => setIsAdminOpen(false)} />
+      )}
+
+      {/* Auth Modal */}
+      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
     </div>
   )
 }

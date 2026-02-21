@@ -1,4 +1,4 @@
-import { X, ChevronRight, MonitorSpeaker, RefreshCcw } from 'lucide-react';
+import { X, MonitorSpeaker, RefreshCcw } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
 import { useState } from 'react';
 import type { Channel } from '../types';
@@ -11,7 +11,7 @@ interface SettingsModalProps {
     onOpenAdmin: () => void;
 }
 
-type Tab = 'Geral' | 'Canais' | 'Buses' | 'MIDI' | 'Sobre';
+type Tab = 'Geral' | 'Buses' | 'Sobre';
 
 export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin }: SettingsModalProps) {
     const { settings, updateSetting, availableAudioDevices, refreshAudioDevices } = useSettings();
@@ -19,7 +19,7 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
 
     if (!isOpen) return null;
 
-    const tabs: Tab[] = ['Geral', 'Canais', 'Buses', 'MIDI', 'Sobre'];
+    const tabs: Tab[] = ['Geral', 'Buses', 'Sobre'];
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
@@ -157,15 +157,6 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                             <div className="text-4xl font-bold tracking-tighter text-primary">MULTITRACKS</div>
                             <div className="text-text-muted text-sm">Playback WebApp v5.0</div>
                             <div className="text-text-muted/50 text-xs max-w-sm">Sistema de reprodução multitrack para uso ao vivo. Desenvolvido com Web Audio API, React e IndexedDB.</div>
-                        </div>
-                    )}
-
-                    {(activeTab === 'Canais' || activeTab === 'MIDI') && (
-                        <div className="flex items-center justify-center h-full text-text-muted/50 flex-col gap-2 py-12">
-                            <div className="flex items-center justify-center p-4 rounded-full border border-white/5 bg-white/5">
-                                <ChevronRight size={32} className="opacity-30" />
-                            </div>
-                            <span>Em Desenvolvimento</span>
                         </div>
                     )}
                 </div>
