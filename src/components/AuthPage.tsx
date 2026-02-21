@@ -63,7 +63,7 @@ export function AuthPage({ }: AuthPageProps) {
                 {/* Main Branding Content */}
                 <div className="max-w-md relative z-10 my-auto">
                     <h1 className="text-4xl lg:text-5xl font-bold text-white mb-6 leading-tight tracking-tight">
-                        Get Started <br />with Us
+                        Comece a usar <br />agora mesmo
                     </h1>
                     <p className="text-gray-300 text-lg mb-12">
                         Sistema profissional para reprodução contínua de multitracks e cliques ao vivo.
@@ -109,10 +109,10 @@ export function AuthPage({ }: AuthPageProps) {
                 <div className="w-full max-w-md">
                     <div className="mb-10 text-center lg:text-left">
                         <h2 className="text-3xl font-bold text-white mb-2 tracking-tight">
-                            {mode === 'login' ? 'Log in Account' : mode === 'register' ? 'Sign Up Account' : 'Reset Password'}
+                            {mode === 'login' ? 'Acesse sua Conta' : mode === 'register' ? 'Crie sua Conta' : 'Recuperar Senha'}
                         </h2>
                         <p className="text-gray-400 text-sm">
-                            {mode === 'login' ? 'Welcome back! Please enter your details.' : mode === 'register' ? 'Enter your personal data to create your account.' : 'Enter your email to receive recovery instructions.'}
+                            {mode === 'login' ? 'Bem-vindo de volta! Insira seus dados.' : mode === 'register' ? 'Insira seus dados para criar sua conta.' : 'Insira seu email para receber instruções de recuperação.'}
                         </p>
                     </div>
 
@@ -136,7 +136,7 @@ export function AuthPage({ }: AuthPageProps) {
 
                             <div className="flex items-center gap-4 mb-8">
                                 <div className="h-px bg-zinc-800 flex-1"></div>
-                                <span className="text-zinc-500 text-xs font-medium uppercase tracking-widest">Or</span>
+                                <span className="text-zinc-500 text-xs font-medium uppercase tracking-widest">Ou</span>
                                 <div className="h-px bg-zinc-800 flex-1"></div>
                             </div>
                         </>
@@ -156,14 +156,14 @@ export function AuthPage({ }: AuthPageProps) {
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     className="w-full bg-zinc-900 border border-zinc-800 text-white rounded-lg pl-11 pr-4 py-3 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-all placeholder:text-zinc-600"
-                                    placeholder="eg. john.frans@gmail.com"
+                                    placeholder="ex. seuemail@exemplo.com"
                                 />
                             </div>
                         </div>
 
                         {mode !== 'forgot' && (
                             <div>
-                                <label className="block text-zinc-400 text-xs font-semibold mb-2">Password</label>
+                                <label className="block text-zinc-400 text-xs font-semibold mb-2">Senha</label>
                                 <div className="relative">
                                     <Lock size={16} className="absolute left-4 top-3.5 text-zinc-500" />
                                     <input
@@ -172,11 +172,11 @@ export function AuthPage({ }: AuthPageProps) {
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         className="w-full bg-zinc-900 border border-zinc-800 text-white rounded-lg pl-11 pr-4 py-3 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-all placeholder:text-zinc-600"
-                                        placeholder="Enter your password"
+                                        placeholder="Digite sua senha"
                                         minLength={6}
                                     />
                                     <div className="absolute right-4 top-3.5 text-zinc-500 text-xs font-medium">
-                                        Must be at least 6 characters.
+                                        Mínimo 6 caracteres.
                                     </div>
                                 </div>
                             </div>
@@ -189,7 +189,7 @@ export function AuthPage({ }: AuthPageProps) {
                         >
                             {loading ? <Loader2 size={18} className="animate-spin" /> : (
                                 <>
-                                    {mode === 'login' ? 'Log in' : mode === 'register' ? 'Sign up' : 'Send Instructions'}
+                                    {mode === 'login' ? 'Entrar' : mode === 'register' ? 'Cadastrar' : 'Enviar Instruções'}
                                     <ArrowRight size={18} />
                                 </>
                             )}
@@ -199,14 +199,14 @@ export function AuthPage({ }: AuthPageProps) {
                     <div className="mt-8 text-center text-sm">
                         {mode === 'login' ? (
                             <div className="flex flex-col gap-3">
-                                <button onClick={() => setMode('forgot')} className="text-zinc-400 hover:text-white transition-colors cursor-pointer">Forgot your password?</button>
+                                <button onClick={() => setMode('forgot')} className="text-zinc-400 hover:text-white transition-colors cursor-pointer">Esqueceu sua senha?</button>
                                 <div className="text-zinc-400">
-                                    Don't have an account? <button onClick={() => setMode('register')} className="text-white font-bold hover:underline cursor-pointer">Sign up</button>
+                                    Não tem uma conta? <button onClick={() => setMode('register')} className="text-white font-bold hover:underline cursor-pointer">Faça cadastro</button>
                                 </div>
                             </div>
                         ) : (
                             <div className="text-zinc-400">
-                                Already have an account? <button onClick={() => setMode('login')} className="text-white font-bold hover:underline cursor-pointer">Log in</button>
+                                Já tem uma conta? <button onClick={() => setMode('login')} className="text-white font-bold hover:underline cursor-pointer">Entrar</button>
                             </div>
                         )}
                     </div>
