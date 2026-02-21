@@ -3,7 +3,14 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+// Safe initialization to prevent crashing the whole app if env vars are missing
+export const supabase = (supabaseUrl && supabaseKey)
+    ? createClient(supabaseUrl, supabaseKey)
+    : null;
+
+if (!supabase) {
+    console.warn('Supabase credentials missing. Cloud Library and Admin Upload features will be disabled. Please check your .env file or Vercel environment variables.');
+}
 
 export interface CloudSong {
     id: string;
@@ -25,6 +32,7 @@ export interface CloudStem {
 
 // Fetch all songs
 export async function fetchSongs(): Promise<CloudSong[]> {
+    if (!supabase) return [];
     const { data, error } = await supabase
         .from('songs')
         .select('*')
@@ -36,6 +44,7 @@ export async function fetchSongs(): Promise<CloudSong[]> {
 
 // Search songs by name, artist, or key
 export async function searchSongs(query: string): Promise<CloudSong[]> {
+    if (!supabase) return [];
     const q = query.trim().toLowerCase();
     if (!q) return fetchSongs();
 
@@ -51,6 +60,7 @@ export async function searchSongs(query: string): Promise<CloudSong[]> {
 
 // Fetch stems for a song
 export async function fetchStems(songId: string): Promise<CloudStem[]> {
+    if (!supabase) return [];
     const { data, error } = await supabase
         .from('stems')
         .select('*')
@@ -76,12 +86,14 @@ export async function downloadFileAsBlob(url: string, filename: string): Promise
 
 // Get public URL for a storage path
 export function getStorageUrl(bucket: string, path: string): string {
+    if (!supabase) return '';
     const { data } = supabase.storage.from(bucket).getPublicUrl(path);
     return data.publicUrl;
 }
 
 // Admin: Upload a file to storage
 export async function uploadFile(bucket: string, path: string, file: File): Promise<string | null> {
+    if (!supabase) return null;
     const { data, error } = await supabase.storage.from(bucket).upload(path, file, {
         upsert: true
     });
@@ -95,6 +107,7 @@ export async function uploadFile(bucket: string, path: string, file: File): Prom
 
 // Admin: Insert song metadata
 export async function insertSong(song: Omit<CloudSong, 'id' | 'created_at'>): Promise<string | null> {
+    if (!supabase) return null;
     const { data, error } = await supabase
         .from('songs')
         .insert(song)
@@ -110,6 +123,7 @@ export async function insertSong(song: Omit<CloudSong, 'id' | 'created_at'>): Pr
 
 // Admin: Insert multiple stems
 export async function insertStems(stems: Omit<CloudStem, 'id'>[]): Promise<boolean> {
+    if (!supabase) return false;
     const { error } = await supabase
         .from('stems')
         .insert(stems);
