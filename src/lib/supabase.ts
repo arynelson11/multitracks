@@ -71,12 +71,40 @@ export async function fetchStems(songId: string): Promise<CloudStem[]> {
     return data || [];
 }
 
-// Download a file from URL and return as File object
-export async function downloadFileAsBlob(url: string, filename: string): Promise<File | null> {
+// Download a file from URL, track bytes downloaded, and return as File object
+export async function downloadFileAsBlobWithProgress(
+    url: string,
+    filename: string,
+    onProgress?: (loaded: number, total: number) => void
+): Promise<File | null> {
     try {
         const response = await fetch(url);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const blob = await response.blob();
+
+        const contentLength = response.headers.get('content-length');
+        const total = contentLength ? parseInt(contentLength, 10) : 0;
+        let loaded = 0;
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+            // Fallback if ReadableStream is not supported
+            const blob = await response.blob();
+            if (onProgress) onProgress(blob.size, blob.size);
+            return new File([blob], filename, { type: blob.type });
+        }
+
+        const chunks = [];
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) {
+                chunks.push(value);
+                loaded += value.length;
+                if (onProgress) onProgress(loaded, total);
+            }
+        }
+
+        const blob = new Blob(chunks, { type: response.headers.get('content-type') || 'audio/wav' });
         return new File([blob], filename, { type: blob.type });
     } catch (e) {
         console.error('Error downloading file:', e);

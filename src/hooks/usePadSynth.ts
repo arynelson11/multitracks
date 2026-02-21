@@ -127,32 +127,44 @@ export function usePadSynth() {
             source.start();
             activeNodeRef.current = { source, gain };
         } else {
-            // Synthesize pad
+            // Synthesize Worship Pad
             const freq = noteFreqs[note] || noteFreqs['C'];
+
+            // 3 Oscillators for a rich, detuned sound
             const osc1 = ctx.createOscillator();
             const osc2 = ctx.createOscillator();
+            const osc3 = ctx.createOscillator(); // Sub bass
             const filter = ctx.createBiquadFilter();
             const gain = ctx.createGain();
 
             osc1.type = 'sawtooth';
             osc1.frequency.value = freq;
-            osc2.type = 'sine';
-            osc2.frequency.value = freq / 2;
+
+            osc2.type = 'sawtooth';
+            osc2.frequency.value = freq;
+            osc2.detune.value = 15; // Phasing effect
+
+            osc3.type = 'sine';
+            osc3.frequency.value = freq / 2; // Sub bass
 
             filter.type = 'lowpass';
-            filter.frequency.value = 400;
+            filter.frequency.value = 800; // Brighter than before
+            filter.Q.value = 1.5;
 
             osc1.connect(filter);
             osc2.connect(filter);
+            osc3.connect(filter);
             filter.connect(gain);
             gain.connect(ctx.destination);
 
+            // Longer attack (3s)
             gain.gain.setValueAtTime(0, ctx.currentTime);
-            gain.gain.linearRampToValueAtTime(padVolume, ctx.currentTime + 2);
+            gain.gain.linearRampToValueAtTime(padVolume, ctx.currentTime + 3);
 
             osc1.start();
             osc2.start();
-            activeNodeRef.current = { osc1, osc2, gain, filter };
+            osc3.start();
+            activeNodeRef.current = { osc1, osc2, osc3, gain, filter } as PlayingNode;
         }
 
         setActiveNote(note);

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchSongs, searchSongs, fetchStems, downloadFileAsBlob, type CloudSong, type CloudStem } from '../lib/supabase';
+import { fetchSongs, searchSongs, fetchStems, downloadFileAsBlobWithProgress, type CloudSong, type CloudStem } from '../lib/supabase';
 
 export function useCloudLibrary() {
     const [songs, setSongs] = useState<CloudSong[]>([]);
@@ -45,11 +45,27 @@ export function useCloudLibrary() {
             }
 
             let completed = 0;
+            const loadedBytesPerStem: Record<string, number> = {};
+
+            const updateGlobalProgress = () => {
+                const totalLoaded = Object.values(loadedBytesPerStem).reduce((a, b) => a + b, 0);
+                const mbTotal = (totalLoaded / (1024 * 1024)).toFixed(1);
+                setDownloadProgress(`Baixando Rede: ${mbTotal} MB lidos (${completed}/${stems.length} concluídos)`);
+            };
+
             const downloadTask = async (stem: CloudStem) => {
+                updateGlobalProgress();
                 const ext = stem.file_url.split('.').pop() || 'wav';
-                const file = await downloadFileAsBlob(stem.file_url, `${stem.name}.${ext}`);
+                const file = await downloadFileAsBlobWithProgress(
+                    stem.file_url,
+                    `${stem.name}.${ext}`,
+                    (loaded: number) => {
+                        loadedBytesPerStem[stem.id] = loaded;
+                        updateGlobalProgress();
+                    }
+                );
                 completed++;
-                setDownloadProgress(`Baixando stems (${completed}/${stems.length})...`);
+                updateGlobalProgress();
                 return file;
             };
 
