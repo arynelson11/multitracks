@@ -1079,6 +1079,7 @@ export function useAudioEngine() {
         playbackMode,
         setPlaybackMode,
         vampActive,
-        toggleVamp
+        toggleVamp,
+        addChannelToActiveSong
     };
 }

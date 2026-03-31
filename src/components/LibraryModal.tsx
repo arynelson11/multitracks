@@ -174,7 +174,14 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
                                         {/* Download and Delete Buttons */}
                                         <div className="flex-shrink-0 flex items-center gap-2">
                                             {isAdmin && (
-                                                <button
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        onClick={() => setEditingSong({ id: song.id })}
+                                                        className="p-2 sm:px-4 sm:py-2 rounded-xl text-xs sm:text-sm font-medium flex items-center justify-center transition-all cursor-pointer bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white border border-blue-500/20 active:scale-95"
+                                                    >
+                                                        <Edit2 size={16} />
+                                                    </button>
+                                                    <button
                                                     onClick={async () => {
                                                         if (window.confirm(`Tem certeza que deseja apagar a música "${song.name}" da Nuvem? Isso deletará todos os Stems permanentemente para todos os usuários.`)) {
                                                             await removeSong(song.id);
@@ -192,6 +199,7 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
                                                         <Trash2 size={16} />
                                                     )}
                                                 </button>
+                                                </div>
                                             )}
                                             {isDownloading ? (
                                                 <div className="flex flex-col items-center gap-1 min-w-[80px]">
