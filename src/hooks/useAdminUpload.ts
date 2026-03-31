@@ -14,6 +14,8 @@ const uploadToR2 = async (bucketFolder: string, fileName: string, file: File) =>
         const uploadRes = await fetch(uploadUrl, {
             method: 'PUT',
             body: file,
+            mode: 'cors',
+            credentials: 'omit',
             headers: {
                 'Content-Type': type
             }

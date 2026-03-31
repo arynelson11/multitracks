@@ -1,5 +1,6 @@
 import { X, MonitorSpeaker, RefreshCcw } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
+import { useAuth } from '../hooks/useAuth';
 import { useState } from 'react';
 import type { Channel } from '../types';
 
@@ -15,7 +16,10 @@ type Tab = 'Geral' | 'Buses' | 'Sobre';
 
 export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin }: SettingsModalProps) {
     const { settings, updateSetting, availableAudioDevices, refreshAudioDevices } = useSettings();
+    const { user } = useAuth();
     const [activeTab, setActiveTab] = useState<Tab>('Geral');
+
+    const isAdmin = user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com';
 
     if (!isOpen) return null;
 
@@ -81,9 +85,9 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                                             value={settings.audioDeviceId}
                                             onChange={(e) => updateSetting('audioDeviceId', e.target.value)}
                                         >
-                                            <option value="default">Padrão do Sistema</option>
+                                            <option value="default" className="bg-[#1c1c1e] text-white">Padrão do Sistema</option>
                                             {availableAudioDevices.filter(d => d.deviceId !== 'default' && d.deviceId !== 'communications').map(device => (
-                                                <option key={device.deviceId} value={device.deviceId}>
+                                                <option key={device.deviceId} value={device.deviceId} className="bg-[#1c1c1e] text-white">
                                                     {device.label || `Dispositivo (${device.deviceId.substring(0, 5)}...)`}
                                                 </option>
                                             ))}
@@ -109,18 +113,20 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                             <hr className="border-white/5" />
 
                             {/* Cloud Admin Access */}
-                            <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-xl border border-secondary/20">
-                                <div>
-                                    <h3 className="text-secondary text-base font-bold">Painel de Upload</h3>
-                                    <p className="text-text-muted text-xs">Publicar novas músicas na biblioteca da nuvem</p>
+                            {isAdmin && (
+                                <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-xl border border-secondary/20 mt-4">
+                                    <div>
+                                        <h3 className="text-secondary text-base font-bold">Painel de Upload</h3>
+                                        <p className="text-text-muted text-xs">Publicar novas músicas na biblioteca da nuvem</p>
+                                    </div>
+                                    <button
+                                        onClick={() => { onClose(); onOpenAdmin(); }}
+                                        className="px-4 py-2 bg-secondary text-black text-xs font-bold rounded-lg hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                                    >
+                                        Acessar Painel
+                                    </button>
                                 </div>
-                                <button
-                                    onClick={() => { onClose(); onOpenAdmin(); }}
-                                    className="px-4 py-2 bg-secondary text-black text-xs font-bold rounded-lg hover:scale-105 active:scale-95 transition-all cursor-pointer"
-                                >
-                                    Acessar Painel
-                                </button>
-                            </div>
+                            )}
                         </div>
                     )}
 
@@ -141,9 +147,9 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                                                 value={ch.bus}
                                                 onChange={(e) => onSetChannelBus(ch.id, e.target.value as '1' | '2' | '1/2')}
                                             >
-                                                <option value="1">1 (L)</option>
-                                                <option value="2">2 (R)</option>
-                                                <option value="1/2">1/2 (Stereo)</option>
+                                                <option value="1" className="bg-[#1c1c1e] text-white">1 (L)</option>
+                                                <option value="2" className="bg-[#1c1c1e] text-white">2 (R)</option>
+                                                <option value="1/2" className="bg-[#1c1c1e] text-white">1/2 (Stereo)</option>
                                             </select>
                                         </div>
                                     ))}

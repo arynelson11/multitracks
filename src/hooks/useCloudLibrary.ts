@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchSongs, searchSongs, fetchStems, downloadFileAsBlobWithProgress, type CloudSong, type CloudStem } from '../lib/supabase';
+import { fetchSongs, searchSongs, fetchStems, downloadFileAsBlobWithProgress, deleteSongFromCloud, type CloudSong, type CloudStem } from '../lib/supabase';
 
 export function useCloudLibrary() {
     const [songs, setSongs] = useState<CloudSong[]>([]);
@@ -7,6 +7,7 @@ export function useCloudLibrary() {
     const [isLoadingList, setIsLoadingList] = useState(false);
     const [downloadingSongId, setDownloadingSongId] = useState<string | null>(null);
     const [downloadProgress, setDownloadProgress] = useState('');
+    const [deletingSongId, setDeletingSongId] = useState<string | null>(null);
 
     // Load songs on mount
     useEffect(() => {
@@ -32,7 +33,7 @@ export function useCloudLibrary() {
     }, [searchQuery]);
 
     // Download a song's stems and return as File[]
-    const downloadSong = useCallback(async (songId: string): Promise<{ files: File[], coverUrl: string | null } | null> => {
+    const downloadSong = useCallback(async (songId: string): Promise<{ files: File[], coverUrl: string | null, markers: any[] | null } | null> => {
         setDownloadingSongId(songId);
         setDownloadProgress('Buscando stems...');
 
@@ -85,7 +86,9 @@ export function useCloudLibrary() {
 
             setDownloadProgress('');
             setDownloadingSongId(null);
-            return { files, coverUrl };
+            // Pass markers along
+            const markers = song?.markers || null;
+            return { files, coverUrl, markers };
         } catch (e) {
             console.error('Error downloading song:', e);
             setDownloadProgress('Erro ao baixar.');
@@ -94,6 +97,16 @@ export function useCloudLibrary() {
         }
     }, [songs]);
 
+    const removeSong = useCallback(async (songId: string) => {
+        setDeletingSongId(songId);
+        const success = await deleteSongFromCloud(songId);
+        if (success) {
+            setSongs(prev => prev.filter(s => s.id !== songId));
+        }
+        setDeletingSongId(null);
+        return success;
+    }, []);
+
     return {
         songs,
         searchQuery,
@@ -101,7 +114,9 @@ export function useCloudLibrary() {
         isLoadingList,
         downloadingSongId,
         downloadProgress,
+        deletingSongId,
         downloadSong,
-        refreshSongs: loadSongs
+        refreshSongs: loadSongs,
+        removeSong
     };
 }

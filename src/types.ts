@@ -11,6 +11,7 @@ export interface Channel {
     soloed: boolean;
     pan: number;
     bus: '1' | '2' | '1/2';
+    pitchShiftNode?: any;
 }
 
 export interface Song {
@@ -19,4 +20,14 @@ export interface Song {
     coverImage?: string;
     channels: Channel[];
     duration: number;
+    pitch?: number;
+    markers?: Marker[];
+}
+
+export interface Marker {
+    id: string; // generated UUID 
+    time: number; // in seconds
+    label: string; // e.g., 'Intro', 'Coro 1', 'Ponte'
+    lyrics?: string; // Multiline text for teleprompter 
+    color?: string; // Optional hex for the timeline UI dot
 }

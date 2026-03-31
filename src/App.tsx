@@ -7,7 +7,7 @@ import { LibraryModal } from './components/LibraryModal'
 import { AdminModal } from './components/AdminModal'
 import { AuthPage } from './components/AuthPage'
 import { useAuth } from './hooks/useAuth'
-import { supabase } from './lib/supabase'
+import { supabase, updateSongMarkers as saveMkToCloud, fetchSongs as fetchCloudSongs } from './lib/supabase'
 
 export default function App() {
   const {
@@ -15,8 +15,12 @@ export default function App() {
     playlist, activeSongIndex, setPlaylistOrder, jumpToSong,
     renameSong, setCoverImage, clearSession,
     setChannelBus, exportPlaylist, importPlaylist,
-    channels, play, pause, prevSong, nextSong, isPlaying, currentTime, duration,
-    masterVolume, updateVolume, toggleMute, toggleSolo, updateMasterVolume
+    channels, play, pause, seekTo, prevSong, nextSong, isPlaying, currentTime, duration,
+    masterVolume, updateVolume, toggleMute, toggleSolo, updateMasterVolume,
+    changePitch, currentMarker, setSongMarkers,
+    playbackMode, setPlaybackMode, vampActive, toggleVamp,
+    bus1Volume, bus2Volume, updateBus1Volume, updateBus2Volume,
+    timeStretch, updateTimeStretch
   } = useAudioEngine()
 
   const { playPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume, padMode, updatePadMode } = usePadSynth()
@@ -29,6 +33,11 @@ export default function App() {
   const [isAdminOpen, setIsAdminOpen] = useState(false)
   const [isSetlistMenuOpen, setIsSetlistMenuOpen] = useState(false)
   const [isPadEditMode, setIsPadEditMode] = useState(false)
+  const [isTeleprompterMode, setIsTeleprompterMode] = useState(false)
+  const [isMarkerEditorOpen, setIsMarkerEditorOpen] = useState(false)
+  const [markerLabel, setMarkerLabel] = useState('')
+  const [markerLyrics, setMarkerLyrics] = useState('')
+  const [markerColor, setMarkerColor] = useState('#10b981')
   const [mobileView, setMobileView] = useState<'mixer' | 'pads'>('mixer')
   const [isSaving, setIsSaving] = useState(false)
 
@@ -38,6 +47,10 @@ export default function App() {
 
   // Touch/drag scroll for mixer
   const mixerDragState = useRef({ isDown: false, startX: 0, scrollLeft: 0 })
+
+  // V5: Scrubbing state
+  const [isDraggingTimeline, setIsDraggingTimeline] = useState(false);
+  const [localDragTime, setLocalDragTime] = useState(0);
 
   const formatTime = (time: number) => {
     if (isNaN(time)) time = 0;
@@ -65,6 +78,7 @@ export default function App() {
     mixerDragState.current = { isDown: true, startX: e.pageX - el.offsetLeft, scrollLeft: el.scrollLeft }
     el.style.cursor = 'grabbing'
   }
+
   const onMixerMouseMove = (e: React.MouseEvent) => {
     if (!mixerDragState.current.isDown) return
     const el = mixerRef.current; if (!el) return
@@ -261,6 +275,30 @@ export default function App() {
               {isEditMode ? <Check size={16} /> : <Edit2 size={16} />}
               {isEditMode ? 'OK' : 'Editar'}
             </button>
+            <div className="flex items-center bg-black/40 rounded-lg overflow-hidden border border-white/10 mr-1 sm:mr-3">
+              <button
+                onClick={() => changePitch((playlist[activeSongIndex]?.pitch || 0) - 1)}
+                className="px-2 sm:px-3 py-1 sm:py-1.5 text-text-muted hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              >-</button>
+              <div className="px-1 sm:px-2 py-1 sm:py-1.5 text-[10px] sm:text-xs font-bold text-white min-w-[36px] sm:min-w-[48px] text-center border-l border-r border-white/10 uppercase">
+                {playlist[activeSongIndex]?.pitch ? (playlist[activeSongIndex].pitch > 0 ? '+' : '') + playlist[activeSongIndex].pitch : '0'} ST
+              </div>
+              <button
+                onClick={() => changePitch((playlist[activeSongIndex]?.pitch || 0) + 1)}
+                className="px-2 sm:px-3 py-1 sm:py-1.5 text-text-muted hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              >+</button>
+            </div>
+
+            {/* Time-Stretch Speed Control */}
+            <div className="flex items-center bg-white/5 rounded-lg border border-white/10">
+              <span className="text-[9px] text-text-muted font-bold px-1.5">SPD</span>
+              <button onClick={() => updateTimeStretch(Math.max(0.5, timeStretch - 0.05))} className="px-1.5 py-1 sm:py-1.5 text-text-muted hover:text-white hover:bg-white/10 transition-colors cursor-pointer text-xs">-</button>
+              <div className="px-1 py-1 sm:py-1.5 text-[10px] sm:text-xs font-bold text-white min-w-[36px] text-center border-l border-r border-white/10">{(timeStretch * 100).toFixed(0)}%</div>
+              <button onClick={() => updateTimeStretch(Math.min(1.5, timeStretch + 0.05))} className="px-1.5 py-1 sm:py-1.5 text-text-muted hover:text-white hover:bg-white/10 transition-colors cursor-pointer text-xs">+</button>
+              {timeStretch !== 1 && <button onClick={() => updateTimeStretch(1)} className="text-[8px] text-red-400 cursor-pointer px-1.5 hover:bg-white/5 py-1">RST</button>}
+            </div>
+
+
             <div className="font-mono text-base sm:text-xl tracking-wider text-secondary flex items-baseline gap-1.5 bg-black/40 px-3 sm:px-4 py-1.5 rounded-lg font-light">
               {formatTime(currentTime)}
               <span className="text-xs sm:text-sm text-text-muted">/ {formatTime(duration)}</span>
@@ -276,6 +314,40 @@ export default function App() {
             {isPlaying ? <Pause size={30} fill="currentColor" /> : <Play size={30} fill="currentColor" className="ml-1" />}
           </button>
           <button onClick={nextSong} className="p-2.5 text-text-muted hover:text-white hover:bg-white/10 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20"><SkipForward size={22} /></button>
+
+          {/* VAMP Toggle */}
+          <button
+            onClick={toggleVamp}
+            className={`ml-1 px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 active:scale-90 cursor-pointer border ${vampActive
+                ? 'bg-amber-500/20 text-amber-400 border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.3)] animate-pulse'
+                : 'bg-white/5 text-text-muted border-white/10 hover:bg-white/10 hover:text-white'
+              }`}
+            title={vampActive ? 'Desativar VAMP (Loop Infinito)' : 'Ativar VAMP: loop seção atual'}
+          >
+            {vampActive ? '🔁 VAMP' : '🔁'}
+          </button>
+
+          {/* Playback Mode Selector */}
+          <div className="hidden sm:flex items-center bg-black/40 rounded-lg overflow-hidden border border-white/10 ml-1">
+            <button
+              onClick={() => setPlaybackMode('continue')}
+              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase transition-all cursor-pointer ${playbackMode === 'continue' ? 'bg-primary/20 text-primary' : 'text-text-muted hover:text-white hover:bg-white/5'
+                }`}
+              title="Continuar para próxima música"
+            >▶ Auto</button>
+            <button
+              onClick={() => setPlaybackMode('stop')}
+              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase border-l border-r border-white/10 transition-all cursor-pointer ${playbackMode === 'stop' ? 'bg-red-500/20 text-red-400' : 'text-text-muted hover:text-white hover:bg-white/5'
+                }`}
+              title="Parar ao final da música"
+            >⏹ Stop</button>
+            <button
+              onClick={() => setPlaybackMode('fade-out')}
+              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase transition-all cursor-pointer ${playbackMode === 'fade-out' ? 'bg-purple-500/20 text-purple-400' : 'text-text-muted hover:text-white hover:bg-white/5'
+                }`}
+              title="Fade out nos últimos 5 segundos"
+            >🔉 Fade</button>
+          </div>
 
           {/* Mobile edit toggle */}
           <button onClick={() => setIsEditMode(!isEditMode)}
@@ -373,11 +445,200 @@ export default function App() {
       <main className="flex-1 flex flex-col overflow-hidden">
 
         {/* Timeline */}
-        <section className="h-10 sm:h-16 border-b border-white/5 px-3 sm:px-4 py-1.5 sm:py-2 flex flex-col relative shrink-0">
-          <div className="flex-1 bg-surface rounded-md relative overflow-hidden border border-white/5 cursor-crosshair">
-            <div className="absolute inset-y-0 left-0 bg-primary/10 transition-none" style={{ width: duration > 0 ? `${(currentTime / duration) * 100}%` : '0%' }} />
-            <div className="absolute inset-y-0 w-px bg-primary shadow-[0_0_8px_rgba(16,185,129,0.8)] z-10" style={{ left: duration > 0 ? `${(currentTime / duration) * 100}%` : '0%' }} />
+        <section className="border-b border-white/5 px-3 sm:px-4 py-1.5 sm:py-2 flex flex-col relative shrink-0">
+          {/* Progress Bar */}
+          <div className="h-6 sm:h-8 bg-surface rounded-md relative overflow-hidden border border-white/5 cursor-pointer group">
+            {/* Fill */}
+            <div className="absolute inset-y-0 left-0 bg-primary/20 transition-none pointer-events-none" style={{ width: duration > 0 ? `${((isDraggingTimeline ? localDragTime : currentTime) / duration) * 100}%` : '0%' }} />
+            {/* Playhead */}
+            <div className="absolute inset-y-0 w-0.5 bg-primary shadow-[0_0_8px_rgba(16,185,129,0.8)] z-10 pointer-events-none" style={{ left: duration > 0 ? `${((isDraggingTimeline ? localDragTime : currentTime) / duration) * 100}%` : '0%' }} />
+
+            {/* Marker lines inside bar */}
+            {playlist[activeSongIndex]?.markers?.map((marker) => (
+              <div
+                key={marker.id}
+                className="absolute inset-y-0 w-px pointer-events-none z-[5]"
+                style={{
+                  left: duration > 0 ? `${(marker.time / duration) * 100}%` : '0%',
+                  backgroundColor: `${marker.color || '#fff'}40`
+                }}
+              />
+            ))}
+
+            <input
+              type="range"
+              min="0"
+              max={duration || 1}
+              step="0.01"
+              value={isDraggingTimeline ? localDragTime : currentTime}
+              onMouseDown={() => {
+                setIsDraggingTimeline(true);
+                setLocalDragTime(currentTime);
+              }}
+              onTouchStart={() => {
+                setIsDraggingTimeline(true);
+                setLocalDragTime(currentTime);
+              }}
+              onChange={(e) => {
+                setLocalDragTime(parseFloat(e.target.value));
+              }}
+              onMouseUp={(e) => {
+                setIsDraggingTimeline(false);
+                seekTo(parseFloat((e.target as HTMLInputElement).value));
+              }}
+              onTouchEnd={(e) => {
+                setIsDraggingTimeline(false);
+                seekTo(parseFloat((e.target as HTMLInputElement).value));
+              }}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+            />
           </div>
+
+          {/* Section Markers Row (below bar) */}
+          {playlist[activeSongIndex]?.markers && playlist[activeSongIndex].markers!.length > 0 && (
+            <div className="flex items-center gap-1.5 mt-1.5 overflow-x-auto scrollbar-hide">
+              {playlist[activeSongIndex].markers!.map((marker) => {
+                const isActive = currentMarker?.id === marker.id;
+                return (
+                  <button
+                    key={marker.id}
+                    onClick={() => seekTo(marker.time)}
+                    className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold tracking-wide transition-all duration-200 cursor-pointer active:scale-95 border ${isActive
+                      ? 'shadow-lg scale-105'
+                      : 'opacity-60 hover:opacity-100'
+                      }`}
+                    style={{
+                      color: marker.color || '#fff',
+                      borderColor: isActive ? marker.color || '#fff' : `${marker.color || '#fff'}30`,
+                      backgroundColor: isActive ? `${marker.color || '#fff'}20` : 'transparent',
+                      boxShadow: isActive ? `0 0 12px ${marker.color || '#fff'}30` : 'none'
+                    }}
+                  >
+                    {marker.label}
+                  </button>
+                );
+              })}
+              {/* Marker Editor Toggle (Admin only) */}
+              {user?.email === 'arynelson11@gmail.com' && (
+                <button
+                  onClick={() => setIsMarkerEditorOpen(!isMarkerEditorOpen)}
+                  className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold tracking-wide cursor-pointer active:scale-95 border transition-all ${isMarkerEditorOpen ? 'bg-primary/20 text-primary border-primary/40' : 'text-text-muted border-white/10 hover:bg-white/5'}`}
+                >
+                  ✏️ Editar
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* No markers yet + admin can add */}
+          {(!playlist[activeSongIndex]?.markers || playlist[activeSongIndex].markers!.length === 0) && user?.email === 'arynelson11@gmail.com' && (
+            <div className="flex items-center gap-1.5 mt-1.5">
+              <button
+                onClick={() => setIsMarkerEditorOpen(!isMarkerEditorOpen)}
+                className="shrink-0 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold tracking-wide cursor-pointer active:scale-95 border text-text-muted border-white/10 hover:bg-white/5"
+              >
+                + Adicionar Marcadores
+              </button>
+            </div>
+          )}
+
+          {/* ─── Marker Editor Panel (Admin) ─── */}
+          {isMarkerEditorOpen && user?.email === 'arynelson11@gmail.com' && (
+            <div className="mt-1.5 bg-black/40 rounded-lg border border-white/10 p-2 sm:p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Editor de Marcadores</span>
+                <button onClick={() => setIsMarkerEditorOpen(false)} className="text-text-muted hover:text-white text-xs cursor-pointer">✕</button>
+              </div>
+              {/* Add Marker Form */}
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <input
+                  type="text"
+                  value={markerLabel}
+                  onChange={(e) => setMarkerLabel(e.target.value)}
+                  placeholder="Seção (ex: Verso 1)"
+                  className="bg-white/5 border border-white/10 rounded-md px-2 py-1 text-xs text-white placeholder-text-muted/50 w-28 sm:w-36 focus:outline-none focus:ring-1 focus:ring-primary/50"
+                />
+                <input
+                  type="text"
+                  value={markerLyrics}
+                  onChange={(e) => setMarkerLyrics(e.target.value)}
+                  placeholder="Letra (opcional)"
+                  className="bg-white/5 border border-white/10 rounded-md px-2 py-1 text-xs text-white placeholder-text-muted/50 flex-1 min-w-[100px] focus:outline-none focus:ring-1 focus:ring-primary/50"
+                />
+                <div className="flex items-center gap-1">
+                  {['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'].map(c => (
+                    <button
+                      key={c}
+                      onClick={() => setMarkerColor(c)}
+                      className={`w-4 h-4 rounded-full cursor-pointer transition-all ${markerColor === c ? 'ring-2 ring-white scale-110' : 'opacity-50 hover:opacity-100'}`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+                <button
+                  onClick={() => {
+                    if (!markerLabel.trim()) return;
+                    const activeSong = playlist[activeSongIndex];
+                    if (!activeSong) return;
+                    const newMarker = {
+                      id: crypto.randomUUID(),
+                      time: currentTime,
+                      label: markerLabel.trim(),
+                      lyrics: markerLyrics.trim() || undefined,
+                      color: markerColor
+                    };
+                    const newMarkers = [...(activeSong.markers || []), newMarker].sort((a, b) => a.time - b.time);
+                    setSongMarkers(activeSong.id, newMarkers);
+                    setMarkerLabel('');
+                    setMarkerLyrics('');
+                  }}
+                  className="bg-primary/20 text-primary px-3 py-1 rounded-md text-xs font-bold hover:bg-primary/30 cursor-pointer active:scale-95 transition-all border border-primary/30"
+                >
+                  + {formatTime(currentTime)}
+                </button>
+              </div>
+              {/* Existing Markers List */}
+              {playlist[activeSongIndex]?.markers && playlist[activeSongIndex].markers!.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {playlist[activeSongIndex].markers!.map((m) => (
+                    <div key={m.id} className="flex items-center gap-1 bg-white/5 rounded-md px-1.5 py-0.5 text-[10px] border border-white/5">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.color || '#fff' }}></span>
+                      <span className="text-white/80 font-medium">{formatTime(m.time)}</span>
+                      <span className="text-white/60">{m.label}</span>
+                      <button
+                        onClick={() => {
+                          const activeSong = playlist[activeSongIndex];
+                          if (!activeSong) return;
+                          const newMarkers = (activeSong.markers || []).filter(x => x.id !== m.id);
+                          setSongMarkers(activeSong.id, newMarkers);
+                        }}
+                        className="text-red-400/60 hover:text-red-400 cursor-pointer ml-0.5"
+                      >×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Save to Cloud button */}
+              <button
+                onClick={async () => {
+                  const activeSong = playlist[activeSongIndex];
+                  if (!activeSong?.markers) return;
+                  const cloudSongs = await fetchCloudSongs();
+                  const match = cloudSongs.find((cs: any) => activeSong.name.includes(cs.name) || cs.name.includes(activeSong.name));
+                  if (match) {
+                    const ok = await saveMkToCloud(match.id, activeSong.markers);
+                    if (ok) alert('Marcadores salvos na nuvem! ☁️');
+                    else alert('Erro ao salvar marcadores.');
+                  } else {
+                    alert('Música não encontrada na biblioteca cloud. Salve apenas localmente.');
+                  }
+                }}
+                className="mt-2 bg-secondary/10 text-secondary px-3 py-1 rounded-md text-[10px] font-bold hover:bg-secondary/20 cursor-pointer active:scale-95 transition-all border border-secondary/20 w-full text-center"
+              >
+                ☁️ Salvar Marcadores na Nuvem
+              </button>
+            </div>
+          )}
         </section>
 
         {/* ─── Mobile View Toggle ─── */}
@@ -537,12 +798,10 @@ export default function App() {
       <LibraryModal
         isOpen={isLibraryOpen}
         onClose={() => setIsLibraryOpen(false)}
-        onDownload={async (files, songName, coverUrl) => {
-          // Convert File[] to FileList-like and load through engine
+        onDownload={async (files, songName, coverUrl, markers) => {
           const dt = new DataTransfer();
           files.forEach(f => dt.items.add(f));
-          // Load files with cover already associated
-          await loadFiles(dt.files, songName, coverUrl || undefined);
+          await loadFiles(dt.files, songName, coverUrl || undefined, markers);
         }}
       />
 
@@ -550,6 +809,58 @@ export default function App() {
       {user?.email === 'arynelson11@gmail.com' && (
         <AdminModal isOpen={isAdminOpen} onClose={() => setIsAdminOpen(false)} />
       )}
+
+      {/* ═══ TELEPROMPTER OVERLAY ═══ */}
+      {isTeleprompterMode && (
+        <div className="fixed inset-0 z-50 bg-[#050505] flex flex-col">
+          {/* Header */}
+          <div className="flex justify-between items-center p-4 sm:p-6 border-b border-white/5">
+            <h2 className="text-lg sm:text-xl font-bold tracking-tight text-white/50">Teleprompter</h2>
+            <button onClick={() => setIsTeleprompterMode(false)} className="p-2 sm:p-3 hover:bg-white/10 rounded-full transition-colors cursor-pointer text-white/80 border border-white/10">
+              <X size={24} />
+            </button>
+          </div>
+          {/* Body */}
+          <div className="flex-1 flex flex-col items-center justify-center p-8 lg:p-16 relative">
+            {!playlist[activeSongIndex]?.markers || playlist[activeSongIndex].markers!.length === 0 ? (
+              <div className="text-text-muted/50 text-xl font-medium tracking-wide">
+                Nenhum marcador configurado para esta música.
+              </div>
+            ) : (
+              <div className="w-full max-w-5xl flex flex-col gap-6 lg:gap-8 items-center text-center">
+                {currentMarker ? (
+                  <>
+                    <span
+                      className="px-4 py-1.5 rounded-full text-base font-bold tracking-widest uppercase mb-4"
+                      style={{ backgroundColor: `${currentMarker.color || '#10b981'}20`, color: currentMarker.color || '#10b981' }}
+                    >
+                      {currentMarker.label}
+                    </span>
+                    <h1
+                      className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-black tracking-tight leading-tight text-white/95"
+                      style={{ whiteSpace: 'pre-wrap', textShadow: '0 4px 20px rgba(0,0,0,0.5)' }}
+                    >
+                      {currentMarker.lyrics || '—'}
+                    </h1>
+                  </>
+                ) : (
+                  <div className="text-text-muted/50 text-3xl font-bold tracking-wide animate-pulse">
+                    Aguardando Seção...
+                  </div>
+                )}
+              </div>
+            )}
+            {/* Mini progress bar */}
+            <div className="absolute bottom-8 left-8 right-8 text-center text-text-muted/30 font-mono tracking-widest uppercase text-sm font-bold flex flex-col items-center gap-2">
+              <div className="h-1 w-full max-w-md bg-white/5 rounded-full overflow-hidden">
+                <div className="h-full bg-white/20 transition-all duration-75" style={{ width: duration > 0 ? `${(currentTime / duration) * 100}%` : '0%' }}></div>
+              </div>
+              {playlist[activeSongIndex]?.name || 'Nenhuma Selecionada'}
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

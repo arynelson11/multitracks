@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { get, set } from 'idb-keyval';
 import JSZip from 'jszip';
-import type { Channel, Song } from '../types';
+import * as Tone from 'tone';
+import type { Channel, Song, Marker } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 
 interface SavedChannel {
@@ -13,12 +14,14 @@ interface SavedChannel {
     pan: number;
     bus: '1' | '2' | '1/2';
 }
+
 interface SavedSong {
     id: string;
     name: string;
     coverImage?: string;
     channels: SavedChannel[];
     duration: number;
+    pitch?: number;
 }
 
 export function useAudioEngine() {
@@ -34,6 +37,20 @@ export function useAudioEngine() {
 
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
+    const [currentMarker, setCurrentMarker] = useState<Marker | null>(null);
+
+    // === Phase 2: Playback Modes & VAMP ===
+    const [playbackMode, setPlaybackMode] = useState<'continue' | 'stop' | 'fade-out'>('continue');
+    const [vampActive, setVampActive] = useState(false);
+    const vampStartRef = useRef<number | null>(null);
+    const vampEndRef = useRef<number | null>(null);
+
+    // === Phase 3: Bus Groups & Time-Stretch ===
+    const bus1GainRef = useRef<GainNode | null>(null);
+    const bus2GainRef = useRef<GainNode | null>(null);
+    const [bus1Volume, setBus1Volume] = useState(1);
+    const [bus2Volume, setBus2Volume] = useState(1);
+    const [timeStretch, setTimeStretch] = useState(1); // 1.0 = normal speed
     const [masterVolume, setMasterVolume] = useState(1);
     const [isLoading, setIsLoading] = useState(false);
     const [isRestoring, setIsRestoring] = useState(false);
@@ -62,7 +79,8 @@ export function useAudioEngine() {
                 soloed: ch.soloed,
                 pan: ch.pan,
                 bus: ch.bus || '1/2'
-            }))
+            })),
+            pitch: song.pitch || 0
         }));
         await set('mt_meta_playlist', metaFormat);
     };
@@ -129,6 +147,7 @@ export function useAudioEngine() {
 
             audioCtxRef.current = ctx;
             masterGainRef.current = master;
+            Tone.setContext(ctx);
             setIsReady(true);
 
             // Try Restore
@@ -156,7 +175,16 @@ export function useAudioEngine() {
                             if (metaSong.channels.some(c => c.soloed) && !metaCh.soloed) effectiveVol = 0;
                             gain.gain.value = effectiveVol;
 
-                            panner.connect(gain);
+                            const fileNameLower = metaCh.name.toLowerCase();
+                            const isClickOrGuide = fileNameLower.includes('click') || fileNameLower.includes('metronomo') || fileNameLower.includes('guia') || fileNameLower.includes('guide');
+
+                            const pitchShiftNode = new Tone.PitchShift({
+                                pitch: isClickOrGuide ? 0 : (metaSong.pitch || 0),
+                                windowSize: 0.1
+                            });
+
+                            Tone.connect(panner, pitchShiftNode);
+                            Tone.connect(pitchShiftNode, gain);
                             gain.connect(master);
 
                             return {
@@ -171,7 +199,8 @@ export function useAudioEngine() {
                                 muted: metaCh.muted,
                                 soloed: metaCh.soloed,
                                 pan: metaCh.pan,
-                                bus: metaCh.bus || '1/2'
+                                bus: metaCh.bus || '1/2',
+                                pitchShiftNode: pitchShiftNode
                             };
                         } catch (e) {
                             console.error(`Failed to restore channel ${metaCh.name}`, e);
@@ -187,6 +216,7 @@ export function useAudioEngine() {
                         name: metaSong.name,
                         coverImage: metaSong.coverImage,
                         duration: metaSong.duration,
+                        pitch: metaSong.pitch || 0,
                         channels
                     };
                 };
@@ -231,6 +261,8 @@ export function useAudioEngine() {
             const source = ctx.createBufferSource();
             source.buffer = ch.buffer;
             source.connect(ch.pannerNode);
+            // Phase 3: Apply time-stretch
+            source.playbackRate.value = timeStretch;
             source.start(0, pausedAtRef.current);
             ch.sourceNode = source;
         });
@@ -288,12 +320,36 @@ export function useAudioEngine() {
         }
     }, [currentTime, isPlaying, play, activeSongIndex, playlist, stopAllNodes]);
 
+    const seekTo = useCallback((time: number) => {
+        if (!audioCtxRef.current || duration === 0) return;
+
+        // Bound time
+        const targetTime = Math.max(0, Math.min(time, duration));
+
+        const wasPlaying = isPlaying;
+
+        stopAllNodes();
+        pausedAtRef.current = targetTime;
+        setCurrentTime(targetTime);
+
+        // Clear any auto track switch timeouts
+        if (autoNextTimeoutRef.current) {
+            clearTimeout(autoNextTimeoutRef.current);
+            autoNextTimeoutRef.current = null;
+        }
+
+        if (wasPlaying) {
+            play();
+        }
+    }, [duration, isPlaying, play, stopAllNodes]);
+
     const executeNextSong = useCallback(() => {
         if (activeSongIndex >= playlist.length - 1) return;
 
         stopAllNodes();
         pausedAtRef.current = 0;
         setCurrentTime(0);
+        setCurrentMarker(null);
         setActiveSongIndex(prev => prev + 1);
         setDuration(playlist[activeSongIndex + 1].duration);
         setShouldAutoPlayNext(true);
@@ -358,15 +414,46 @@ export function useAudioEngine() {
     // Update time loop
     const updateTime = useCallback(() => {
         if (!audioCtxRef.current || !isPlaying) return;
-        const elapsed = audioCtxRef.current.currentTime - startTimeRef.current + pausedAtRef.current;
+        const elapsed = (audioCtxRef.current.currentTime - startTimeRef.current) * timeStretch + pausedAtRef.current;
+
+        // Active Marker tracking
+        if (playlist[activeSongIndex]?.markers) {
+            const markers = playlist[activeSongIndex].markers!;
+            let active = null;
+            for (let i = markers.length - 1; i >= 0; i--) {
+                if (elapsed >= markers[i].time) {
+                    active = markers[i];
+                    break;
+                }
+            }
+            setCurrentMarker(active);
+        }
+
+        // === VAMP: Loop between markers ===
+        if (vampActive && vampEndRef.current !== null && elapsed >= vampEndRef.current) {
+            const loopStart = vampStartRef.current || 0;
+            seekTo(loopStart);
+            return;
+        }
 
         if (elapsed >= duration) {
             setCurrentTime(duration);
             setIsPlaying(false);
             stopAllNodes();
 
+            // Playback Mode logic
+            if (playbackMode === 'stop') {
+                // Just stop, don't advance
+                return;
+            }
+
+            if (playbackMode === 'fade-out') {
+                // Already stopped - no auto-advance
+                return;
+            }
+
+            // playbackMode === 'continue' (default)
             if (activeSongIndex < playlist.length - 1) {
-                // Auto Transition timeout
                 if (autoNextTimeoutRef.current) clearTimeout(autoNextTimeoutRef.current);
                 autoNextTimeoutRef.current = window.setTimeout(() => {
                     executeNextSong();
@@ -375,9 +462,18 @@ export function useAudioEngine() {
             return;
         }
 
+        // Fade-out mode: fade in the last 5 seconds
+        if (playbackMode === 'fade-out' && duration > 5 && elapsed >= duration - 5) {
+            const remaining = duration - elapsed;
+            const fadeGain = Math.max(0.001, remaining / 5);
+            if (masterGainRef.current && audioCtxRef.current) {
+                masterGainRef.current.gain.setTargetAtTime(fadeGain * masterVolume, audioCtxRef.current.currentTime, 0.1);
+            }
+        }
+
         setCurrentTime(elapsed);
         animationRef.current = requestAnimationFrame(updateTime);
-    }, [isPlaying, duration, activeSongIndex, playlist.length, stopAllNodes, executeNextSong]);
+    }, [isPlaying, duration, activeSongIndex, playlist.length, stopAllNodes, executeNextSong, vampActive, playbackMode, masterVolume, seekTo]);
 
     useEffect(() => {
         if (isPlaying) {
@@ -391,7 +487,7 @@ export function useAudioEngine() {
     }, [isPlaying, updateTime]);
 
     // Load files
-    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string) => {
+    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string, songMarkers?: Marker[]) => {
         if (!audioCtxRef.current || !masterGainRef.current) return;
         setIsLoading(true);
 
@@ -425,13 +521,37 @@ export function useAudioEngine() {
                 panner.pan.value = panValue;
                 gain.gain.value = 1;
 
-                panner.connect(gain);
-                gain.connect(masterGainRef.current);
+
+                const pitchShiftNode = new Tone.PitchShift({
+                    pitch: 0,
+                    windowSize: 0.1
+                });
+                // Disable effect initially to avoid phase distortion on original pitch
+                pitchShiftNode.wet.value = 0;
+
+                Tone.connect(panner, pitchShiftNode);
+                Tone.connect(pitchShiftNode, gain);
+
 
                 const uuid = crypto.randomUUID();
                 filesDb.set(uuid, file);
 
                 const busValue: '1' | '2' | '1/2' = panValue === -1 ? '1' : panValue === 1 ? '2' : '1/2';
+
+                // Route through bus nodes based on assignment
+                if (busValue === '1' && bus1GainRef.current) {
+                    gain.connect(bus1GainRef.current);
+                } else if (busValue === '2' && bus2GainRef.current) {
+                    gain.connect(bus2GainRef.current);
+                } else {
+                    // '1/2' = goes to both buses (or direct to master as fallback)
+                    if (bus1GainRef.current && bus2GainRef.current) {
+                        gain.connect(bus1GainRef.current);
+                        gain.connect(bus2GainRef.current);
+                    } else {
+                        gain.connect(masterGainRef.current!);
+                    }
+                }
 
                 return {
                     id: uuid,
@@ -446,6 +566,7 @@ export function useAudioEngine() {
                     soloed: false,
                     pan: panValue,
                     bus: busValue,
+                    pitchShiftNode: pitchShiftNode
                 } as Channel;
             });
             const batchResults = await Promise.all(batchPromises);
@@ -472,7 +593,8 @@ export function useAudioEngine() {
             name: songName,
             coverImage: coverImage,
             channels: newChannels,
-            duration: maxDuration
+            duration: maxDuration,
+            markers: songMarkers || undefined
         };
 
         const newPlaylist = [...playlist, newSong];
@@ -483,6 +605,12 @@ export function useAudioEngine() {
         }
         updatePlaylistAndSave(newPlaylist);
         setIsLoading(false);
+    };
+
+    // Update markers on a song
+    const setSongMarkers = (songId: string, markers: Marker[]) => {
+        const newPlaylist = playlist.map(s => s.id === songId ? { ...s, markers } : s);
+        updatePlaylistAndSave(newPlaylist);
     };
 
     // Setlist actions
@@ -508,6 +636,7 @@ export function useAudioEngine() {
         stopAllNodes();
         pausedAtRef.current = 0;
         setCurrentTime(0);
+        setCurrentMarker(null);
         setActiveSongIndex(index);
         setDuration(playlist[index].duration);
 
@@ -595,6 +724,30 @@ export function useAudioEngine() {
             setMasterVolume(volume);
         }
     };
+
+    const changePitch = useCallback((newPitch: number) => {
+        if (!activeSong) return;
+
+        // Clamp to -12 / +12 Semitones
+        const clampedPitch = Math.max(-12, Math.min(12, newPitch));
+
+        const newPlaylist = [...playlist];
+        const song = { ...newPlaylist[activeSongIndex] };
+        song.pitch = clampedPitch;
+
+        song.channels.forEach(ch => {
+            const fileNameLower = ch.name.toLowerCase();
+            const isClickOrGuide = fileNameLower.includes('click') || fileNameLower.includes('metronomo') || fileNameLower.includes('guia') || fileNameLower.includes('guide');
+            if (!isClickOrGuide && ch.pitchShiftNode) {
+                ch.pitchShiftNode.pitch = clampedPitch;
+                // Bypass PitchShift algorithm entirely when at 0 to explicitly prevent any processing distortion
+                ch.pitchShiftNode.wet.value = clampedPitch === 0 ? 0 : 1;
+            }
+        });
+
+        newPlaylist[activeSongIndex] = song;
+        updatePlaylistAndSave(newPlaylist);
+    }, [playlist, activeSongIndex, activeSong]);
 
     // Clear Session
     const clearSession = async () => {
@@ -742,6 +895,58 @@ export function useAudioEngine() {
         }
     };
 
+    // Bus volume controls
+    const updateBus1Volume = useCallback((v: number) => {
+        setBus1Volume(v);
+        if (bus1GainRef.current) bus1GainRef.current.gain.value = v;
+    }, []);
+
+    const updateBus2Volume = useCallback((v: number) => {
+        setBus2Volume(v);
+        if (bus2GainRef.current) bus2GainRef.current.gain.value = v;
+    }, []);
+
+    const updateTimeStretch = useCallback((speed: number) => {
+        setTimeStretch(speed);
+        // Apply to all playing sources
+        channels.forEach(ch => {
+            if (ch.sourceNode) {
+                ch.sourceNode.playbackRate.value = speed;
+            }
+        });
+    }, [channels]);
+
+    // VAMP controls
+    const toggleVamp = useCallback(() => {
+        if (vampActive) {
+            // Deactivate VAMP
+            setVampActive(false);
+            vampStartRef.current = null;
+            vampEndRef.current = null;
+        } else {
+            // Activate VAMP - loop current marker section
+            const song = playlist[activeSongIndex];
+            if (!song?.markers || song.markers.length === 0) return;
+
+            const markers = song.markers;
+            let currentIdx = -1;
+            for (let i = markers.length - 1; i >= 0; i--) {
+                if (currentTime >= markers[i].time) {
+                    currentIdx = i;
+                    break;
+                }
+            }
+
+            if (currentIdx === -1) return;
+
+            vampStartRef.current = markers[currentIdx].time;
+            vampEndRef.current = currentIdx < markers.length - 1
+                ? markers[currentIdx + 1].time
+                : duration;
+            setVampActive(true);
+        }
+    }, [vampActive, playlist, activeSongIndex, currentTime, duration]);
+
     return {
         isReady,
         initEngine,
@@ -763,6 +968,7 @@ export function useAudioEngine() {
         channels,
         play,
         pause,
+        seekTo,
         skipBack,
         nextSong,
         prevSong,
@@ -775,6 +981,23 @@ export function useAudioEngine() {
         updateVolume,
         toggleMute,
         toggleSolo,
-        updateMasterVolume
+        updateMasterVolume,
+        changePitch,
+        currentMarker,
+        setSongMarkers,
+
+        // Phase 3
+        bus1Volume,
+        bus2Volume,
+        updateBus1Volume,
+        updateBus2Volume,
+        timeStretch,
+        updateTimeStretch,
+
+        // Phase 2
+        playbackMode,
+        setPlaybackMode,
+        vampActive,
+        toggleVamp
     };
 }

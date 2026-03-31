@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Search, X, Download, Cloud, Loader2, Music, RefreshCcw } from 'lucide-react';
+import { Search, X, Download, Cloud, Loader2, Music, RefreshCcw, Trash2 } from 'lucide-react';
 import { useCloudLibrary } from '../hooks/useCloudLibrary';
+import { useAuth } from '../hooks/useAuth';
+import type { CloudSong } from '../lib/supabase';
 
 interface LibraryModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onDownload: (files: File[], songName: string, coverUrl: string | null) => void;
+    onDownload: (files: File[], songName: string, coverUrl: string | null, markers?: any[]) => void;
 }
 
 export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps) {
@@ -16,9 +18,14 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
         isLoadingList,
         downloadingSongId,
         downloadProgress,
+        deletingSongId,
         downloadSong,
-        refreshSongs
+        refreshSongs,
+        removeSong
     } = useCloudLibrary();
+
+    const { user } = useAuth();
+    const isAdmin = user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com';
 
     const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
 
@@ -27,7 +34,7 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
     const handleDownload = async (songId: string, songName: string) => {
         const result = await downloadSong(songId);
         if (result && result.files.length > 0) {
-            onDownload(result.files, songName, result.coverUrl);
+            onDownload(result.files, songName, result.coverUrl, result.markers || undefined);
             setDownloadedIds(prev => new Set(prev).add(songId));
         }
     };
@@ -87,7 +94,7 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
                         </div>
                     ) : (
                         <div className="grid gap-2 sm:gap-3">
-                            {songs.map(song => {
+                            {songs.map((song: CloudSong) => {
                                 const isDownloading = downloadingSongId === song.id;
                                 const isDownloaded = downloadedIds.has(song.id);
 
@@ -125,8 +132,28 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
                                             </div>
                                         </div>
 
-                                        {/* Download Button */}
-                                        <div className="flex-shrink-0">
+                                        {/* Download and Delete Buttons */}
+                                        <div className="flex-shrink-0 flex items-center gap-2">
+                                            {isAdmin && (
+                                                <button
+                                                    onClick={async () => {
+                                                        if (window.confirm(`Tem certeza que deseja apagar a música "${song.name}" da Nuvem? Isso deletará todos os Stems permanentemente para todos os usuários.`)) {
+                                                            await removeSong(song.id);
+                                                        }
+                                                    }}
+                                                    disabled={deletingSongId === song.id}
+                                                    className={`p-2 sm:px-4 sm:py-2 rounded-xl text-xs sm:text-sm font-medium flex items-center justify-center transition-all cursor-pointer ${deletingSongId === song.id
+                                                        ? 'bg-red-500/20 text-red-500/50 cursor-not-allowed'
+                                                        : 'bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border border-red-500/20 active:scale-95'
+                                                        }`}
+                                                >
+                                                    {deletingSongId === song.id ? (
+                                                        <Loader2 size={16} className="animate-spin" />
+                                                    ) : (
+                                                        <Trash2 size={16} />
+                                                    )}
+                                                </button>
+                                            )}
                                             {isDownloading ? (
                                                 <div className="flex flex-col items-center gap-1 min-w-[80px]">
                                                     <Loader2 size={20} className="animate-spin text-secondary" />

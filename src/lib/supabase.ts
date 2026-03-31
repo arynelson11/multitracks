@@ -19,6 +19,7 @@ export interface CloudSong {
     key: string;
     bpm: number;
     cover_url: string | null;
+    markers: any[] | null;
     created_at: string;
 }
 
@@ -134,7 +135,7 @@ export async function uploadFile(bucket: string, path: string, file: File): Prom
 }
 
 // Admin: Insert song metadata
-export async function insertSong(song: Omit<CloudSong, 'id' | 'created_at'>): Promise<string | null> {
+export async function insertSong(song: Omit<CloudSong, 'id' | 'created_at' | 'markers'>): Promise<string | null> {
     if (!supabase) return null;
     const { data, error } = await supabase
         .from('songs')
@@ -158,6 +159,60 @@ export async function insertStems(stems: Omit<CloudStem, 'id'>[]): Promise<boole
 
     if (error) {
         console.error('Error inserting stems:', error);
+        return false;
+    }
+    return true;
+}
+// Delete a song and all its stems from DB
+export async function deleteSongFromCloud(songId: string): Promise<boolean> {
+    if (!supabase) return false;
+
+    // Deleting stems exactly
+    const { error: stemsError } = await supabase
+        .from('stems')
+        .delete()
+        .eq('song_id', songId);
+
+    if (stemsError) {
+        console.error('Error deleting stems:', stemsError);
+        return false;
+    }
+
+    // Now parent song
+    const { error: songError } = await supabase
+        .from('songs')
+        .delete()
+        .eq('id', songId);
+
+    if (songError) {
+        console.error('Error deleting song:', songError);
+        return false;
+    }
+
+    return true;
+}
+
+// Fetch markers for a song
+export async function fetchSongMarkers(songId: string): Promise<any[]> {
+    if (!supabase) return [];
+    const { data, error } = await supabase
+        .from('songs')
+        .select('markers')
+        .eq('id', songId)
+        .single();
+    if (error) { console.error('Error fetching markers:', error); return []; }
+    return data?.markers || [];
+}
+
+// Update markers for a song
+export async function updateSongMarkers(songId: string, markers: any[]): Promise<boolean> {
+    if (!supabase) return false;
+    const { error } = await supabase
+        .from('songs')
+        .update({ markers })
+        .eq('id', songId);
+    if (error) {
+        console.error('Error updating markers:', error);
         return false;
     }
     return true;
