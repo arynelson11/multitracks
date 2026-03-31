@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Settings, Play, Cpu, Keyboard, Loader2, X } from 'lucide-react';
 import { analyzeAudioAndGenerateClick, generateManualClickTrack } from '../lib/AudioAnalyzer';
-import { Channel } from '../hooks/useAudioEngine';
+import type { Channel } from '../types';
 
 interface MetronomeModalProps {
   isOpen: boolean;

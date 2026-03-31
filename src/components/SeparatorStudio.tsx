@@ -543,6 +543,21 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                      </select>
                    </div>
                  </div>
+                  <div className="mt-4">
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Imagem de Capa (Opcional)</label>
+                    <div className="flex items-center gap-3">
+                      <label className="flex flex-1 items-center gap-2 bg-[#09090b] border border-[#27272a] hover:border-primary/50 cursor-pointer rounded-xl px-4 py-3 text-gray-400 text-sm transition-colors overflow-hidden">
+                        <UploadCloud size={16} className="text-primary flex-shrink-0" />
+                        <span className="truncate">{coverFile ? coverFile.name : 'Selecionar imagem do computador...'}</span>
+                        <input type="file" accept="image/*" className="hidden" onChange={e => setCoverFile(e.target.files?.[0] || null)} />
+                      </label>
+                      {coverFile && (
+                        <button onClick={() => setCoverFile(null)} className="p-3 text-gray-500 hover:text-red-400 bg-[#09090b] border border-[#27272a] rounded-xl transition-colors shrink-0">
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                  <button onClick={handleSaveToDatabase} className="w-full bg-primary text-black font-bold py-4 rounded-xl mt-4 hover:bg-emerald-400 transition-colors shadow-[0_0_20px_rgba(16,185,129,0.2)] cursor-pointer">
                    Salvar e Oficializar
                  </button>
