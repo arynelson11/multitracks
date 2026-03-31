@@ -120,3 +120,51 @@ export async function analyzeAudioAndGenerateClick(
     return { bpm: 120, clickTrackUrl: '' };
   }
 }
+
+export async function generateManualClickTrack(
+  bpm: number,
+  durationInSeconds: number,
+  onProgress: (msg: string) => void
+): Promise<{ bpm: number; clickTrackUrl: string }> {
+  try {
+    const sampleRate = 44100;
+    const length = sampleRate * durationInSeconds;
+    const offlineCtx = new OfflineAudioContext(1, length, sampleRate);
+
+    onProgress(`Sintetizando faixa de Metrônomo Manual (${bpm} BPM)...`);
+
+    const secondsPerBeat = 60 / bpm;
+    let beatTime = 0;
+
+    // Gerar os blips até o fim da trilha
+    while (beatTime < durationInSeconds) {
+      const osc = offlineCtx.createOscillator();
+      const gain = offlineCtx.createGain();
+      
+      // Beep de 1000Hz, caindo rápido em 50ms
+      osc.frequency.setValueAtTime(1000, beatTime);
+      osc.frequency.exponentialRampToValueAtTime(0.001, beatTime + 0.05);
+
+      gain.gain.setValueAtTime(1, beatTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, beatTime + 0.05);
+
+      osc.connect(gain);
+      gain.connect(offlineCtx.destination);
+
+      osc.start(beatTime);
+      osc.stop(beatTime + 0.05);
+
+      beatTime += secondsPerBeat;
+    }
+
+    onProgress("Convertendo áudio sintetizado...");
+    const renderedBuffer = await offlineCtx.startRendering();
+    const clickBlob = audioBufferToWavBlob(renderedBuffer);
+    const clickTrackUrl = URL.createObjectURL(clickBlob);
+
+    return { bpm, clickTrackUrl };
+  } catch (error) {
+    console.error("Erro ao gerar metrônomo manual", error);
+    return { bpm, clickTrackUrl: '' };
+  }
+}

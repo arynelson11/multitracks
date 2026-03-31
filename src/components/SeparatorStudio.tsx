@@ -51,6 +51,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const [artist, setArtist] = useState('');
   const [bpm, setBpm] = useState('120');
   const [songKey, setSongKey] = useState('C');
+  const [coverFile, setCoverFile] = useState<File | null>(null);
 
   // Controle de Master e Mute/Solo
   useEffect(() => {
@@ -282,10 +283,18 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     setSaveProgress(0);
     setSaveStatus('Gravando banco de dados...');
 
+    let cover_url = null;
     try {
+      if (coverFile) {
+         setSaveStatus('Subindo imagem de capa...');
+         const cName = `${Date.now()}_${coverFile.name.replace(/\\s+/g, '_')}`;
+         const rRes = await uploadToR2('covers', cName, coverFile);
+         if (!rRes.error) cover_url = rRes.url;
+      }
+
       const songId = await insertSong({
         name: songName, artist: artist || 'Desconhecido',
-        key: songKey, bpm: Number(bpm), cover_url: null
+        key: songKey, bpm: Number(bpm), cover_url: cover_url
       });
 
       if (!songId) throw new Error("Falha ao criar música");

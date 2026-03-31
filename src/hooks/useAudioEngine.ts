@@ -607,6 +607,87 @@ export function useAudioEngine() {
         setIsLoading(false);
     };
 
+    const addChannelToActiveSong = async (file: File) => {
+        if (!audioCtxRef.current || !masterGainRef.current || playlist.length === 0 || activeSongIndex < 0) return;
+        setIsLoading(true);
+
+        const filesDb = await get('mt_files') || new Map();
+
+        try {
+            const arrayBuffer = await file.arrayBuffer();
+            const audioBuffer = await audioCtxRef.current.decodeAudioData(arrayBuffer);
+
+            const panner = audioCtxRef.current.createStereoPanner();
+            const gain = audioCtxRef.current.createGain();
+
+            const fileNameLower = file.name.toLowerCase();
+            let panValue = 0;
+            if (settings.autoPan && (fileNameLower.includes('click') || fileNameLower.includes('metronomo') || fileNameLower.includes('guia') || fileNameLower.includes('guide'))) {
+                panValue = -1;
+            } else if (settings.autoPan) {
+                panValue = 1;
+            }
+
+            panner.pan.value = panValue;
+            gain.gain.value = 1;
+
+            const pitchShiftNode = new Tone.PitchShift({ pitch: 0, windowSize: 0.1 });
+            pitchShiftNode.wet.value = 0;
+
+            Tone.connect(panner, pitchShiftNode);
+            Tone.connect(pitchShiftNode, gain);
+
+            if (panValue === -1 && bus1GainRef.current) {
+                gain.connect(bus1GainRef.current);
+            } else if (panValue === 1 && bus2GainRef.current) {
+                gain.connect(bus2GainRef.current);
+            } else {
+                if (bus1GainRef.current && bus2GainRef.current) {
+                    gain.connect(bus1GainRef.current);
+                    gain.connect(bus2GainRef.current);
+                } else {
+                    gain.connect(masterGainRef.current);
+                }
+            }
+
+            const uuid = crypto.randomUUID();
+            filesDb.set(uuid, file);
+            await set('mt_files', filesDb);
+
+            const newChannel: Channel = {
+                id: uuid,
+                name: file.name.replace(/\.[^/.]+$/, ''),
+                buffer: audioBuffer,
+                file: file,
+                gainNode: gain,
+                pannerNode: panner,
+                sourceNode: null,
+                volume: 1,
+                muted: false,
+                soloed: false,
+                pan: panValue,
+                bus: panValue === -1 ? '1' : panValue === 1 ? '2' : '1/2',
+                pitchShiftNode: pitchShiftNode
+            };
+
+            const newPlaylist = [...playlist];
+            const song = { ...newPlaylist[activeSongIndex] };
+            song.channels = [...song.channels, newChannel];
+
+            if (audioBuffer.duration > song.duration) {
+                song.duration = audioBuffer.duration;
+                setDuration(audioBuffer.duration);
+            }
+
+            newPlaylist[activeSongIndex] = song;
+            updatePlaylistAndSave(newPlaylist);
+        } catch (e) {
+            console.error('Failed to add channel to active song:', e);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     // Update markers on a song
     const setSongMarkers = (songId: string, markers: Marker[]) => {
         const newPlaylist = playlist.map(s => s.id === songId ? { ...s, markers } : s);

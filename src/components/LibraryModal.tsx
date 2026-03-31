@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Search, X, Download, Cloud, Loader2, Music, RefreshCcw, Trash2 } from 'lucide-react';
+import { Search, X, Download, Cloud, Loader2, Music, RefreshCcw, Trash2, Edit2, Save, UploadCloud } from 'lucide-react';
 import { useCloudLibrary } from '../hooks/useCloudLibrary';
 import { useAuth } from '../hooks/useAuth';
-import type { CloudSong } from '../lib/supabase';
+import { updateSong, type CloudSong } from '../lib/supabase';
+import { uploadToR2 } from '../lib/r2';
 
 interface LibraryModalProps {
     isOpen: boolean;
@@ -28,6 +29,44 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
     const isAdmin = user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com';
 
     const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+    const [editingSong, setEditingSong] = useState<Partial<CloudSong> & { file?: File | null }>({});
+    const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+    const handleEditSave = async (song: CloudSong) => {
+        setIsSavingEdit(true);
+        try {
+            let newCoverUrl = song.cover_url;
+            if (editingSong.file) {
+                const cName = `${Date.now()}_${editingSong.file.name.replace(/\s+/g, '_')}`;
+                const rRes = await uploadToR2('covers', cName, editingSong.file);
+                if (!rRes.error && rRes.url) {
+                    newCoverUrl = rRes.url;
+                }
+            }
+            
+            const updates = {
+                name: editingSong.name ?? song.name,
+                artist: editingSong.artist ?? song.artist,
+                bpm: editingSong.bpm ?? song.bpm,
+                key: editingSong.key ?? song.key,
+                cover_url: newCoverUrl
+            };
+            
+            const ok = await updateSong(song.id, updates);
+            if (ok) {
+                await refreshSongs();
+                setEditingSong({});
+            } else {
+                alert("Erro ao salvar alterações na música.");
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Erro ao editar.");
+        } finally {
+            setIsSavingEdit(false);
+        }
+    };
+
 
     if (!isOpen) return null;
 

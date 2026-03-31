@@ -150,6 +150,21 @@ export async function insertSong(song: Omit<CloudSong, 'id' | 'created_at' | 'ma
     return data?.id || null;
 }
 
+// Admin: Update song metadata
+export async function updateSong(songId: string, updates: Partial<Omit<CloudSong, 'id' | 'created_at'>>): Promise<boolean> {
+    if (!supabase) return false;
+    const { error } = await supabase
+        .from('songs')
+        .update(updates)
+        .eq('id', songId);
+
+    if (error) {
+        console.error('Error updating song:', error);
+        return false;
+    }
+    return true;
+}
+
 // Admin: Insert multiple stems
 export async function insertStems(stems: Omit<CloudStem, 'id'>[]): Promise<boolean> {
     if (!supabase) return false;
