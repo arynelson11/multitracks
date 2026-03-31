@@ -19,7 +19,6 @@ export default function App() {
     masterVolume, updateVolume, toggleMute, toggleSolo, updateMasterVolume,
     changePitch, currentMarker, setSongMarkers,
     playbackMode, setPlaybackMode, vampActive, toggleVamp,
-    bus1Volume, bus2Volume, updateBus1Volume, updateBus2Volume,
     timeStretch, updateTimeStretch
   } = useAudioEngine()
 
