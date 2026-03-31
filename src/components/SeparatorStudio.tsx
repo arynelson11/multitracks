@@ -262,28 +262,28 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, onImp
             <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mb-6 text-primary shadow-[0_0_20px_rgba(16,185,129,0.3)]">
               <SparklesIcon />
             </div>
-            <h2 className="text-xl font-bold text-white mb-2text-center text-center">Separação de Áudio (Demucs)</h2>
-            <p className="text-text-muted text-sm text-center mb-8">
-              Nossa IA de ponta consegue isolar perfeitamente Bateria, Baixo, Guitarra, Piano, Vocais e mais de qualquer música.
+            <h2 className="text-2xl font-bold text-white mb-3 text-center">Extraia Multitracks com Inteligência Artificial</h2>
+            <p className="text-text-muted text-sm text-center mb-8 px-2">
+              Transforme qualquer música em um ensaio profissional. Nossa IA com qualidade de estúdio isola com perfeição a <span className="text-white">Bateria, Baixo, Guitarra, Teclado e Vocais</span> para você tocar junto.
             </p>
 
             {!isProcessing ? (
               <>
-                <label className="w-full flex-1 border-2 border-dashed border-white/20 hover:border-primary/50 bg-black/40 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all hover:bg-white/5">
-                  <UploadCloud size={32} className="text-text-muted mb-3" />
-                  <span className="text-white font-medium mb-1">
-                    {file ? file.name : "Clique para selecionar um áudio"}
+                <label className="w-full flex-1 border-2 border-dashed border-white/20 hover:border-primary/50 bg-[#1e1e21] rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all hover:bg-white/5 shadow-inner">
+                  <UploadCloud size={40} className="text-primary/80 mb-4" />
+                  <span className="text-white font-bold text-lg mb-2 text-center">
+                    {file ? file.name : "Toque aqui para escolher sua música"}
                   </span>
-                  <span className="text-xs text-text-muted">.MP3, .WAV (max 20MB)</span>
+                  <span className="text-sm text-text-muted">Suporta formato .MP3 ou .WAV</span>
                   <input type="file" accept="audio/*" className="hidden" onChange={e => e.target.files && setFile(e.target.files[0])} />
                 </label>
                 
                 <button 
                   onClick={handleUpload}
                   disabled={!file}
-                  className="w-full mt-6 py-3 bg-primary text-black font-bold rounded-xl disabled:opacity-50 hover:bg-emerald-400 transition-colors cursor-pointer"
+                  className="w-full mt-6 py-4 bg-primary text-black font-bold text-lg rounded-xl disabled:opacity-50 hover:bg-emerald-400 transition-colors cursor-pointer shadow-[0_0_20px_rgba(16,185,129,0.2)]"
                 >
-                  Processar com Inteligência Artificial
+                  Extrair Instrumentos com IA
                 </button>
               </>
             ) : (
