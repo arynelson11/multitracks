@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, Volume2, VolumeX } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 
 interface StemData {
   id: string;
@@ -9,6 +8,39 @@ interface StemData {
   url: string;
   color: string;
 }
+
+const uploadToR2 = async (bucketFolder: string, fileName: string, file: File) => {
+    try {
+        const type = file.type || 'application/octet-stream';
+        const res = await fetch(`/api/get-upload-url?filename=${encodeURIComponent(fileName)}&contentType=${encodeURIComponent(type)}&bucketFolder=${encodeURIComponent(bucketFolder)}`);
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(`[API Error ${res.status}] ${data.error || 'Falha ao conectar'}`);
+        }
+        const { uploadUrl, key } = await res.json();
+
+        const uploadRes = await fetch(uploadUrl, {
+            method: 'PUT',
+            body: file,
+            mode: 'cors',
+            credentials: 'omit',
+            headers: {
+                'Content-Type': type
+            }
+        });
+        if (!uploadRes.ok) throw new Error(`[R2 PUT Error ${uploadRes.status}] Falha no upload para Cloudflare`);
+
+        const publicUrlBase = import.meta.env.VITE_R2_PUBLIC_URL;
+        if (!publicUrlBase) throw new Error('Variável VITE_R2_PUBLIC_URL não configurada');
+
+        const baseUrl = publicUrlBase.replace(/\/$/, "");
+        const cleanKey = key.replace(/^\//, "");
+
+        return { url: `${baseUrl}/${cleanKey}`, error: null };
+    } catch (e: any) {
+        return { url: null, error: e.message };
+    }
+};
 
 interface SeparatorStudioProps {
   onClose: () => void;
@@ -35,16 +67,17 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, onImp
     setProgress(5);
 
     try {
-      // a. Upload local file to Supabase Temp Bucket (ensure a bucket named 'temp_audio' exists or use existing)
+      // a. Upload local file to Cloudflare R2 Bucket (temp path)
       const fileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-      const { error } = await supabase!.storage.from('stems').upload(`temp/${fileName}`, file);
+      const uploadResult = await uploadToR2('temp', fileName, file);
       
-      if (error) throw new Error('Erro no upload: ' + error.message);
+      if (uploadResult.error || !uploadResult.url) {
+        throw new Error('Erro no upload para R2: ' + uploadResult.error);
+      }
       
       setProgress(20);
 
-      // Get public URL
-      const { data: { publicUrl } } = supabase!.storage.from('stems').getPublicUrl(`temp/${fileName}`);
+      const publicUrl = uploadResult.url;
       
       setProgress(40);
 
