@@ -879,6 +879,15 @@ export default function App() {
           onClose={() => setIsSeparatorOpen(false)}
         />
       )}
+
+      {isMetronomeModalOpen && playlist[activeSongIndex] && (
+        <MetronomeModal 
+          isOpen={isMetronomeModalOpen} 
+          onClose={() => setIsMetronomeModalOpen(false)} 
+          playlistCurrentSong={playlist[activeSongIndex]}
+          onAddClick={addChannelToActiveSong} 
+        />
+      )}
     </div>
   )
 }
