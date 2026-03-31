@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react'
-import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Image, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Image, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2 } from 'lucide-react'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { usePadSynth } from './hooks/usePadSynth'
 import { SettingsModal } from './components/SettingsModal'
 import { LibraryModal } from './components/LibraryModal'
 import { AdminModal } from './components/AdminModal'
 import { AuthPage } from './components/AuthPage'
+import { SeparatorStudio } from './components/SeparatorStudio'
 import { useAuth } from './hooks/useAuth'
 import { supabase, updateSongMarkers as saveMkToCloud, fetchSongs as fetchCloudSongs } from './lib/supabase'
 
@@ -27,6 +28,7 @@ export default function App() {
   const mixerRef = useRef<HTMLDivElement>(null)
 
   const [isEditMode, setIsEditMode] = useState(false)
+  const [isSeparatorOpen, setIsSeparatorOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isLibraryOpen, setIsLibraryOpen] = useState(false)
   const [isAdminOpen, setIsAdminOpen] = useState(false)
@@ -248,6 +250,11 @@ export default function App() {
               className="flex items-center gap-2 bg-secondary/10 hover:bg-secondary/20 active:scale-95 text-secondary px-4 py-2.5 rounded-xl text-sm sm:text-base font-semibold border border-secondary/20 transition-all duration-200 cursor-pointer min-h-[48px] focus:outline-none focus:ring-2 focus:ring-secondary/50">
               <Cloud size={18} />
               <span className="hidden sm:inline">Biblioteca</span>
+            </button>
+            <button onClick={() => setIsSeparatorOpen(true)}
+              className="flex items-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 active:scale-95 text-purple-400 px-4 py-2.5 rounded-xl text-sm sm:text-base font-semibold border border-purple-500/20 transition-all duration-200 cursor-pointer min-h-[48px] focus:outline-none focus:ring-2 focus:ring-purple-500/50">
+              <Wand2 size={18} />
+              <span className="hidden sm:inline">Separar Faixas</span>
             </button>
           </div>
 
@@ -860,6 +867,14 @@ export default function App() {
         </div>
       )}
 
+      {isSeparatorOpen && (
+        <SeparatorStudio
+          onClose={() => setIsSeparatorOpen(false)}
+          onImportToLibrary={() => {
+             alert("Faixas exportadas com sucesso! Implementar o download para o formato do player principal.")
+          }}
+        />
+      )}
     </div>
   )
 }
