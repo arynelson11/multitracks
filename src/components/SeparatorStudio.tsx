@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import WaveSurfer from 'wavesurfer.js';
-import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, Volume2, Save, Disc3, Settings2 } from 'lucide-react';
+import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, Volume2, Save, Disc3 } from 'lucide-react';
 import { insertSong, insertStems, type CloudStem } from '../lib/supabase';
 import { analyzeAudioAndGenerateClick } from '../lib/AudioAnalyzer';
 import { uploadToR2 } from '../lib/r2';
@@ -503,11 +503,21 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
              
              {!isSaving ? (
                <div className="flex flex-col gap-5">
-                 <div>
-                   <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Nome Opcional</label>
-                   <input value={songName} onChange={e => setSongName(e.target.value)} 
-                     className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors"
-                   />
+                 <div className="grid grid-cols-2 gap-4">
+                   <div>
+                     <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Música *</label>
+                     <input value={songName} onChange={e => setSongName(e.target.value)} 
+                       className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors"
+                       placeholder="Ex: Lindo És"
+                     />
+                   </div>
+                   <div>
+                     <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Artista</label>
+                     <input value={artist} onChange={e => setArtist(e.target.value)} 
+                       className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors"
+                       placeholder="Ex: Livres"
+                     />
+                   </div>
                  </div>
                  <div className="grid grid-cols-2 gap-4">
                    <div>
