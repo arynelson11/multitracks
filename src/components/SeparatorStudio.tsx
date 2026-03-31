@@ -48,7 +48,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, onImp
       
       setProgress(40);
 
-      // b. Call Vercel API to Replicate
+      // b. Call Vercel API to Replicate (Async job creation)
       const res = await fetch('/api/separate-audio', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -57,11 +57,36 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, onImp
 
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error || 'Falha na separação da IA.');
+        throw new Error(err.error || 'Falha ao iniciar IA.');
       }
 
-      const { stems: output } = await res.json();
-      setProgress(80);
+      const { prediction } = await res.json();
+      setProgress(50);
+      
+      // c. Polling loop
+      let status = prediction.status;
+      let finalOutput = null;
+      
+      while (status !== 'succeeded' && status !== 'failed') {
+        await new Promise(resolve => setTimeout(resolve, 3000)); // wait 3s
+        // Update progress visually to show it's working
+        setProgress(p => (p < 90 ? p + 2 : p)); 
+        
+        const checkRes = await fetch(`/api/check-separation?predictionId=${prediction.id}`);
+        const checkData = await checkRes.json();
+        if (checkData.error) throw new Error(checkData.error);
+        
+        status = checkData.prediction.status;
+        if (status === 'succeeded') {
+          finalOutput = checkData.prediction.output;
+        } else if (status === 'failed') {
+          throw new Error('Processamento na IA falhou.');
+        }
+      }
+
+      if (!finalOutput) throw new Error("Sem saída da IA.");
+
+      setProgress(95);
 
       const colors: Record<string, string> = {
         vocals: '#06b6d4',
@@ -82,7 +107,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, onImp
       };
 
       let stemsArray: StemData[] = [];
-      Object.entries(output).forEach(([key, url]) => {
+      Object.entries(finalOutput).forEach(([key, url]) => {
         if (typeof url === 'string') {
           stemsArray.push({
             id: key,
