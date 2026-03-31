@@ -85,14 +85,17 @@ export async function analyzeAudioAndGenerateClick(
     // @ts-ignore
     const mt = new MusicTempo(audioData);
     const bpm = Math.round(Number(mt.tempo));
+    const firstBeat = mt.beats.length > 0 ? Number(mt.beats[0]) : 0;
     
     onProgress(`Detectado BPM ${bpm}. Sintetizando nova Trilha de Click...`);
     
-    // Criando a trilha do Metrônomo offline em cima do tempo exato
+    // Gerar um grid matemático para não correr risco da matriz de batidas ficar vazia/corrompida
+    const durationInSeconds = audioBuffer.duration;
     const offlineCtx = new OfflineAudioContext(1, audioBuffer.length, audioBuffer.sampleRate);
-    
-    mt.beats.forEach((beatTime: number) => {
-        // Toca um 'blip' em cada beat calculado pelo `music-tempo`
+    const secondsPerBeat = 60 / bpm;
+    let beatTime = firstBeat;
+
+    while (beatTime < durationInSeconds) {
         const osc = offlineCtx.createOscillator();
         const gain = offlineCtx.createGain();
         osc.frequency.setValueAtTime(1000, beatTime);
@@ -106,7 +109,9 @@ export async function analyzeAudioAndGenerateClick(
         
         osc.start(beatTime);
         osc.stop(beatTime + 0.05);
-    });
+        
+        beatTime += secondsPerBeat;
+    }
 
     onProgress("Finalizando trilha de Metrônomo...");
     const renderedBuffer = await offlineCtx.startRendering();

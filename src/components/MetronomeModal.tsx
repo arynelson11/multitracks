@@ -15,7 +15,6 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
   const [bpm, setBpm] = useState<number>(120);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
-  const [selectedChannelId, setSelectedChannelId] = useState<string>('');
 
   if (!isOpen) return null;
 
@@ -51,22 +50,30 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
 
   const handleAIGenerate = async () => {
     if (!playlistCurrentSong) return;
-    if (!selectedChannelId) {
-      alert("Selecione uma faixa para a IA analisar o BPM.");
-      return;
+
+    // Achar o melhor canal: preferir Bateria, senão Baixo, senão o primeiro.
+    let targetChannel = playlistCurrentSong.channels.find(c => 
+      c.name.toLowerCase().includes('drum') || c.name.toLowerCase().includes('bateria')
+    );
+    if (!targetChannel) {
+      targetChannel = playlistCurrentSong.channels.find(c => 
+        c.name.toLowerCase().includes('bass') || c.name.toLowerCase().includes('baixo')
+      );
+    }
+    if (!targetChannel) {
+      targetChannel = playlistCurrentSong.channels[0];
     }
 
-    const channel = playlistCurrentSong.channels.find(c => c.id === selectedChannelId);
-    if (!channel || !channel.file) {
-      alert("Arquivo de áudio não encontrado na faixa selecionada.");
+    if (!targetChannel || !targetChannel.file) {
+      alert("A música não possui áudio ou faixas válidas para análise.");
       return;
     }
 
     setIsSynthesizing(true);
-    setStatusMsg("Preparando arquivo para IA...");
+    setStatusMsg(`Extraindo dados da faixa ${targetChannel.name}...`);
 
     try {
-      const audioUrl = URL.createObjectURL(channel.file);
+      const audioUrl = URL.createObjectURL(targetChannel.file);
       const { clickTrackUrl } = await analyzeAudioAndGenerateClick(audioUrl, setStatusMsg);
       
       if (clickTrackUrl) {
@@ -159,18 +166,11 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
           ) : (
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-text-muted mb-2">Faixa Base para a IA analisar o BPM</label>
-                <select 
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors"
-                  value={selectedChannelId}
-                  onChange={(e) => setSelectedChannelId(e.target.value)}
-                >
-                  <option value="" disabled>Selecione uma faixa da música...</option>
-                  {playlistCurrentSong && playlistCurrentSong.channels.map(ch => (
-                    <option key={ch.id} value={ch.id}>{ch.name}</option>
-                  ))}
-                </select>
-                <p className="text-xs text-text-muted mt-2 ml-1">Para melhores resultados, selecione a Bateria (Drums) ou o Baixo (Bass).</p>
+                <label className="block text-sm font-medium text-text-muted mb-2">Faixa Base para Análise</label>
+                <div className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white transition-colors cursor-default text-sm flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.8)] animate-pulse"></div>
+                  A Inteligência Artificial buscará a Bateria em segundo plano automaticamente.
+                </div>
               </div>
 
               <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-4 flex gap-3 text-sm text-purple-400">
@@ -180,7 +180,7 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
 
               <button 
                 onClick={handleAIGenerate}
-                disabled={isSynthesizing || !playlistCurrentSong || !selectedChannelId}
+                disabled={isSynthesizing || !playlistCurrentSong}
                 className="w-full bg-purple-500 hover:bg-purple-400 text-white py-4 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(168,85,247,0.3)]"
               >
                 {isSynthesizing ? <Loader2 size={20} className="animate-spin" /> : <Cpu size={20} />}
