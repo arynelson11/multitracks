@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import WaveSurfer from 'wavesurfer.js';
-import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, Volume2, VolumeX } from 'lucide-react';
+import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, Volume2, VolumeX, Save } from 'lucide-react';
+import { insertSong, insertStems, type CloudStem } from '../lib/supabase';
 
 interface StemData {
   id: string;
@@ -44,16 +45,32 @@ const uploadToR2 = async (bucketFolder: string, fileName: string, file: File) =>
 
 interface SeparatorStudioProps {
   onClose: () => void;
-  onImportToLibrary: (stems: any) => void;
 }
 
-export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, onImportToLibrary }) => {
+export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => {
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [stems, setStems] = useState<StemData[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
   
+  // Save State
+  const [showSaveForm, setShowSaveForm] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveProgress, setSaveProgress] = useState(0);
+  const [saveStatus, setSaveStatus] = useState('');
+  
+  const [songName, setSongName] = useState('');
+  const [artist, setArtist] = useState('');
+  const [bpm, setBpm] = useState('120');
+  const [songKey, setSongKey] = useState('C');
+
+  useEffect(() => {
+    if (file && !songName) {
+      setSongName(file.name.replace(/\.[^/.]+$/, ""));
+    }
+  }, [file]);
+
   // Stem State (Mute, Solo, Volume)
   const [stemStates, setStemStates] = useState<Record<string, { muted: boolean, soloed: boolean, volume: number }>>({});
 
@@ -240,6 +257,83 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, onImp
     }
   };
 
+  const handleSaveToDatabase = async () => {
+    if (!songName) {
+      alert("Por favor, preencha o Nome da Música.");
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveProgress(0);
+    setSaveStatus('Gravando informações da música...');
+
+    try {
+      // 1. Insert Song
+      const songId = await insertSong({
+        name: songName,
+        artist: artist || 'Desconhecido',
+        key: songKey,
+        bpm: Number(bpm),
+        cover_url: null
+      });
+
+      if (!songId) throw new Error("Falha ao criar música no banco");
+
+      setSaveProgress(10);
+      
+      // 2. Download temporary Replicate files and upload to R2
+      const stemsData: Omit<CloudStem, 'id'>[] = [];
+      const totalStems = stems.length;
+
+      for (let i = 0; i < stems.length; i++) {
+        const stem = stems[i];
+        setSaveStatus(`Baixando e salvando: ${stem.name} (${i+1}/${totalStems})...`);
+        
+        // Fetch file from replicate URL allowing CORS
+        const response = await fetch(stem.url);
+        if (!response.ok) throw new Error("Falha ao baixar áudio temporário da Replicate");
+        const blob = await response.blob();
+        
+        const stemFile = new File([blob], `${stem.id}.wav`, { type: blob.type || 'audio/wav' });
+
+        // Upload to Cloudflare R2 definitively
+        const r2FileName = `${songId}/IA_${Date.now()}_${stem.id}.wav`;
+        const uploadResult = await uploadToR2('stems', r2FileName, stemFile);
+
+        if (uploadResult.error || !uploadResult.url) {
+          throw new Error(`Erro no upload do stem ${stem.name}: ${uploadResult.error}`);
+        }
+
+        stemsData.push({
+          song_id: songId,
+          name: stem.id, // ID refers to vocals, bass, drums etc so standard naming applies
+          file_url: uploadResult.url,
+          order: i + 1
+        });
+
+        setSaveProgress(10 + Math.floor(((i + 1) / totalStems) * 80));
+      }
+
+      setSaveStatus('Registrando multitracks...');
+      const success = await insertStems(stemsData);
+      if (!success) throw new Error("Falha ao inserir links dos stems no Supabase");
+
+      setSaveProgress(100);
+      setSaveStatus('Sucesso! Música devidamente cadastrada na sua Biblioteca.');
+
+      setTimeout(() => {
+         setIsSaving(false);
+         setShowSaveForm(false);
+         onClose(); // Auto close the Studio
+      }, 3000);
+
+    } catch (e: any) {
+      console.error(e);
+      alert("Ops! Erro ao salvar permanentemente: " + e.message);
+      setIsSaving(false);
+    }
+  };
+
   // UI Handlers
   const toggleMute = (id: string) => setStemStates(p => ({ ...p, [id]: { ...p[id], muted: !p[id].muted } }));
   const toggleSolo = (id: string) => setStemStates(p => ({ ...p, [id]: { ...p[id], soloed: !p[id].soloed } }));
@@ -318,18 +412,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, onImp
         
         <div className="flex items-center gap-4">
           <button 
-            onClick={() => {
-              // Extract to library action
-              const libraryStems = stems.map(s => ({
-                 name: s.name,
-                 url: s.url,
-                 bus: s.id === 'vocals' ? '1' : s.id === 'drums' ? '2' : '0' // Default mapping
-              }));
-              onImportToLibrary(libraryStems);
-              onClose();
-            }}
-            className="flex items-center gap-2 bg-transparent border border-white/20 hover:bg-white/5 px-4 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer">
-            Exportar Stems
+            onClick={() => setShowSaveForm(true)}
+            className="flex items-center gap-2 bg-primary hover:bg-emerald-400 px-5 py-2.5 rounded-xl text-black text-sm font-bold transition-colors cursor-pointer shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+            <Save size={18} />
+            Salvar no Repertório
           </button>
         </div>
       </header>
@@ -390,6 +476,75 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, onImp
             <button className="text-text-muted hover:text-white transition-colors cursor-pointer"><ChevronLeft size={24} className="opacity-50 rotate-180"/></button>
          </div>
       </footer>
+
+      {/* SAVE MODAL OVERLAY */}
+      {showSaveForm && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-surface border border-white/10 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
+             
+             {!isSaving && <button onClick={() => setShowSaveForm(false)} className="absolute top-4 right-4 text-text-muted hover:text-white cursor-pointer"><X size={20}/></button>}
+             
+             <h2 className="text-xl font-bold text-white mb-2">Salvar Permanentemente</h2>
+             <p className="text-text-muted text-sm mb-6">As multitracks geradas serão armazenadas na nuvem e ficarão disponíveis para sempre na sua Biblioteca de Repertório.</p>
+             
+             {!isSaving ? (
+               <div className="flex flex-col gap-4">
+                 <div>
+                   <label className="text-xs font-bold text-text-muted uppercase tracking-wider mb-1 block">Nome da Música *</label>
+                   <input 
+                     value={songName} onChange={e => setSongName(e.target.value)} 
+                     className="w-full bg-[#1e1e21] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors"
+                     placeholder="Ex: Lindo És"
+                   />
+                 </div>
+                 <div>
+                   <label className="text-xs font-bold text-text-muted uppercase tracking-wider mb-1 block">Artista / Banda</label>
+                   <input 
+                     value={artist} onChange={e => setArtist(e.target.value)} 
+                     className="w-full bg-[#1e1e21] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors"
+                     placeholder="Ex: Livres"
+                   />
+                 </div>
+                 <div className="grid grid-cols-2 gap-4">
+                   <div>
+                     <label className="text-xs font-bold text-text-muted uppercase tracking-wider mb-1 block">BPM</label>
+                     <input 
+                       type="number" value={bpm} onChange={e => setBpm(e.target.value)} 
+                       className="w-full bg-[#1e1e21] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors"
+                     />
+                   </div>
+                   <div>
+                     <label className="text-xs font-bold text-text-muted uppercase tracking-wider mb-1 block">Tom</label>
+                     <select 
+                       value={songKey} onChange={e => setSongKey(e.target.value)}
+                       className="w-full bg-[#1e1e21] border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors appearance-none">
+                       {['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'].map(k => <option key={k} value={k}>{k}</option>)}
+                     </select>
+                   </div>
+                 </div>
+
+                 <button 
+                   onClick={handleSaveToDatabase}
+                   className="w-full bg-primary text-black font-bold py-4 rounded-xl mt-4 hover:bg-emerald-400 transition-colors shadow-[0_0_20px_rgba(16,185,129,0.2)] cursor-pointer flex justify-center items-center gap-2"
+                 >
+                   <Save size={20} />
+                   Publicar na Biblioteca
+                 </button>
+               </div>
+             ) : (
+               <div className="flex flex-col items-center py-8">
+                  <Loader2 size={40} className="text-primary animate-spin mb-6" />
+                  <div className="text-white font-bold text-lg mb-2">{saveProgress >= 100 ? 'Feito!' : 'Salvando...'}</div>
+                  <div className="text-text-muted text-sm text-center mb-6">{saveStatus}</div>
+                  
+                  <div className="w-full bg-black/60 rounded-full h-2 overflow-hidden border border-white/10">
+                    <div className="bg-primary h-full transition-all duration-300" style={{ width: `${saveProgress}%` }}></div>
+                  </div>
+               </div>
+             )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

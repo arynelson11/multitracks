@@ -870,9 +870,6 @@ export default function App() {
       {isSeparatorOpen && (
         <SeparatorStudio
           onClose={() => setIsSeparatorOpen(false)}
-          onImportToLibrary={() => {
-             alert("Faixas exportadas com sucesso! Implementar o download para o formato do player principal.")
-          }}
         />
       )}
     </div>
