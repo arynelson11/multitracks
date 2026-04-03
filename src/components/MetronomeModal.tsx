@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Settings, Play, Cpu, Keyboard, Loader2, X } from 'lucide-react';
-import { analyzeAudioAndGenerateClick, generateManualClickTrack } from '../lib/AudioAnalyzer';
+import { Settings, Play, Cpu, Keyboard, Loader2, X, CheckCircle } from 'lucide-react';
+import { analyzeBufferAndGenerateClick, generateManualClickTrack } from '../lib/AudioAnalyzer';
 import type { Channel } from '../types';
 
 interface MetronomeModalProps {
@@ -13,28 +13,46 @@ interface MetronomeModalProps {
 export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClick }: MetronomeModalProps) {
   const [activeTab, setActiveTab] = useState<'manual' | 'ai'>('manual');
   const [bpm, setBpm] = useState<number>(120);
+  const [bpmInput, setBpmInput] = useState<string>('120');
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
+  const [detectedBpm, setDetectedBpm] = useState<number | null>(null);
 
   if (!isOpen) return null;
+
+  const handleBpmChange = (value: number) => {
+    const clamped = Math.max(40, Math.min(300, value));
+    setBpm(clamped);
+    setBpmInput(String(clamped));
+  };
+
+  const handleBpmInputChange = (raw: string) => {
+    setBpmInput(raw);
+    const parsed = parseInt(raw);
+    if (!isNaN(parsed) && parsed >= 40 && parsed <= 300) {
+      setBpm(parsed);
+    }
+  };
+
+  const handleBpmInputBlur = () => {
+    const parsed = parseInt(bpmInput);
+    if (isNaN(parsed) || parsed < 40) handleBpmChange(40);
+    else if (parsed > 300) handleBpmChange(300);
+    else handleBpmChange(parsed);
+  };
+
+  const songDuration = playlistCurrentSong?.duration ?? 300;
+  const songDurationStr = `${Math.floor(songDuration / 60)}:${Math.floor(songDuration % 60).toString().padStart(2, '0')}`;
 
   const handleManualGenerate = async () => {
     if (!playlistCurrentSong) return;
     setIsSynthesizing(true);
-    setStatusMsg(`Sintetizando faixa de Metrônomo Manual (${bpm} BPM)...`);
-
     try {
-      const { clickTrackUrl } = await generateManualClickTrack(
-        bpm, 
-        playlistCurrentSong.duration > 0 ? playlistCurrentSong.duration : 300, 
-        setStatusMsg
-      );
-      
+      const { clickTrackUrl } = await generateManualClickTrack(bpm, songDuration, setStatusMsg);
       if (clickTrackUrl) {
-        setStatusMsg('Convertendo para inserção...');
         const res = await fetch(clickTrackUrl);
         const blob = await res.blob();
-        const file = new File([blob], `Click_Metronomo_${bpm}bpm.wav`, { type: 'audio/wav' });
+        const file = new File([blob], `Click_${bpm}bpm.wav`, { type: 'audio/wav' });
         onAddClick(file);
         URL.revokeObjectURL(clickTrackUrl);
       }
@@ -51,43 +69,53 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
   const handleAIGenerate = async () => {
     if (!playlistCurrentSong) return;
 
-    // Achar o melhor canal: preferir Bateria, senão Baixo, senão o primeiro.
-    let targetChannel = playlistCurrentSong.channels.find(c => 
+    // Prefere Bateria → Baixo → qualquer canal que não seja click/guia
+    let targetChannel: Channel | undefined = playlistCurrentSong.channels.find(c =>
       c.name.toLowerCase().includes('drum') || c.name.toLowerCase().includes('bateria')
     );
     if (!targetChannel) {
-      targetChannel = playlistCurrentSong.channels.find(c => 
+      targetChannel = playlistCurrentSong.channels.find(c =>
         c.name.toLowerCase().includes('bass') || c.name.toLowerCase().includes('baixo')
       );
     }
     if (!targetChannel) {
-      targetChannel = playlistCurrentSong.channels[0];
+      targetChannel = playlistCurrentSong.channels.find(c => {
+        const n = c.name.toLowerCase();
+        return !n.includes('click') && !n.includes('metronomo') && !n.includes('guia') && !n.includes('guide');
+      });
     }
+    if (!targetChannel) targetChannel = playlistCurrentSong.channels[0];
 
-    if (!targetChannel || !targetChannel.file) {
-      alert("A música não possui áudio ou faixas válidas para análise.");
+    if (!targetChannel?.buffer) {
+      alert('Nenhuma faixa disponível para análise.');
       return;
     }
 
     setIsSynthesizing(true);
-    setStatusMsg(`Extraindo dados da faixa ${targetChannel.name}...`);
+    setDetectedBpm(null);
+    setStatusMsg(`Analisando faixa "${targetChannel.name}"...`);
 
     try {
-      const audioUrl = URL.createObjectURL(targetChannel.file);
-      const { clickTrackUrl } = await analyzeAudioAndGenerateClick(audioUrl, setStatusMsg);
-      
+      const { bpm: detected, clickTrackUrl } = await analyzeBufferAndGenerateClick(
+        targetChannel.buffer,
+        setStatusMsg
+      );
+
+      setDetectedBpm(detected);
+
       if (clickTrackUrl) {
-        setStatusMsg('Convertendo para inserção...');
+        setStatusMsg('Inserindo canal de click...');
         const res = await fetch(clickTrackUrl);
         const blob = await res.blob();
-        const file = new File([blob], `Click_Metronomo_IA.wav`, { type: 'audio/wav' });
+        const file = new File([blob], `Click_IA_${detected}bpm.wav`, { type: 'audio/wav' });
         onAddClick(file);
         URL.revokeObjectURL(clickTrackUrl);
+      } else {
+        alert(`BPM detectado: ${detected}, mas não foi possível gerar o click. Tente o modo manual.`);
       }
-      URL.revokeObjectURL(audioUrl);
     } catch (e) {
       console.error(e);
-      alert('Erro ao gerar metrônomo pela IA.');
+      alert('Erro ao analisar a música.');
     } finally {
       setIsSynthesizing(false);
       setStatusMsg('');
@@ -98,6 +126,7 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
       <div className="bg-surface border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
+
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/5 bg-black/20">
           <div className="flex items-center gap-3">
@@ -116,45 +145,51 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
 
         {/* Tabs */}
         <div className="flex border-b border-white/5 bg-black/10">
-          <button 
-            onClick={() => setActiveTab('manual')} 
+          <button
+            onClick={() => setActiveTab('manual')}
             className={`flex-1 py-3 text-sm font-semibold tracking-wide transition-all ${activeTab === 'manual' ? 'text-primary border-b-2 border-primary' : 'text-text-muted hover:bg-white/5'}`}>
             <div className="flex justify-center items-center gap-2"><Keyboard size={16} /> Manual</div>
           </button>
-          <button 
-            onClick={() => setActiveTab('ai')} 
+          <button
+            onClick={() => setActiveTab('ai')}
             className={`flex-1 py-3 text-sm font-semibold tracking-wide transition-all ${activeTab === 'ai' ? 'text-purple-400 border-b-2 border-purple-400' : 'text-text-muted hover:bg-white/5'}`}>
-            <div className="flex justify-center items-center gap-2"><Cpu size={16} /> IA (Analisar)</div>
+            <div className="flex justify-center items-center gap-2"><Cpu size={16} /> Detectar BPM</div>
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6">
+        <div className="p-6 space-y-5">
           {activeTab === 'manual' ? (
-            <div className="space-y-6">
+            <>
               <div>
-                <label className="block text-sm font-medium text-text-muted mb-2">BPM (Batidas por Minuto)</label>
-                <div className="flex items-center gap-4">
+                <label className="block text-sm font-medium text-text-muted mb-3">BPM (Batidas por Minuto)</label>
+                <div className="flex items-center gap-3">
                   <input
                     type="range"
                     min="40"
-                    max="220"
+                    max="300"
                     value={bpm}
-                    onChange={(e) => setBpm(parseInt(e.target.value))}
-                    className="flex-1 accent-primary"
+                    onChange={(e) => handleBpmChange(parseInt(e.target.value))}
+                    className="flex-1 accent-primary h-2"
                   />
-                  <div className="w-16 h-10 flex items-center justify-center bg-black/40 border border-white/10 rounded-xl font-mono text-white font-bold">
-                    {bpm}
-                  </div>
+                  <input
+                    type="number"
+                    min="40"
+                    max="300"
+                    value={bpmInput}
+                    onChange={(e) => handleBpmInputChange(e.target.value)}
+                    onBlur={handleBpmInputBlur}
+                    className="w-20 h-10 text-center bg-black/40 border border-white/20 rounded-xl font-mono text-white font-bold text-lg focus:outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/40 transition-all"
+                  />
                 </div>
               </div>
 
-              <div className="bg-primary/10 border border-primary/20 rounded-xl p-4 flex gap-3 text-sm text-primary">
-                <Settings size={18} className="shrink-0 mt-0.5" />
-                <p>O click manual usa a duração ({playlistCurrentSong ? Math.floor(playlistCurrentSong.duration / 60) + ':' + Math.floor(playlistCurrentSong.duration % 60).toString().padStart(2, '0') : '0:00'}) da música atual.</p>
+              <div className="bg-primary/10 border border-primary/20 rounded-xl p-3 flex gap-3 text-sm text-primary">
+                <Settings size={16} className="shrink-0 mt-0.5" />
+                <p>Duração da música: <span className="font-bold">{songDurationStr}</span></p>
               </div>
 
-              <button 
+              <button
                 onClick={handleManualGenerate}
                 disabled={isSynthesizing || !playlistCurrentSong}
                 className="w-full bg-primary hover:bg-emerald-400 text-black py-4 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(16,185,129,0.2)]"
@@ -162,37 +197,39 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
                 {isSynthesizing ? <Loader2 size={20} className="animate-spin" /> : <Play size={20} />}
                 Gerar Metrônomo
               </button>
-            </div>
+            </>
           ) : (
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-text-muted mb-2">Faixa Base para Análise</label>
-                <div className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white transition-colors cursor-default text-sm flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.8)] animate-pulse"></div>
-                  A Inteligência Artificial buscará a Bateria em segundo plano automaticamente.
+            <>
+              <div className="bg-black/30 border border-white/10 rounded-xl p-4 text-sm text-text-muted space-y-2">
+                <div className="flex items-center gap-2 text-purple-300 font-semibold">
+                  <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
+                  Análise automática
                 </div>
+                <p>A IA analisa o ritmo das faixas de <span className="text-white font-medium">Bateria</span> ou <span className="text-white font-medium">Baixo</span> para detectar o BPM exato e sincronizar o click com a música.</p>
               </div>
 
-              <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-4 flex gap-3 text-sm text-purple-400">
-                <Cpu size={24} className="shrink-0 mt-0.5" />
-                <p>A IA "music-tempo" tentará descobrir o andamento (BPM) e a primeira batida exata, gerando o click perfeitamente sincronizado.</p>
-              </div>
+              {detectedBpm && (
+                <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/30 rounded-xl p-3">
+                  <CheckCircle size={18} className="text-green-400 shrink-0" />
+                  <span className="text-green-300 font-semibold">BPM detectado: <span className="text-white">{detectedBpm}</span></span>
+                </div>
+              )}
 
-              <button 
+              <button
                 onClick={handleAIGenerate}
                 disabled={isSynthesizing || !playlistCurrentSong}
                 className="w-full bg-purple-500 hover:bg-purple-400 text-white py-4 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(168,85,247,0.3)]"
               >
                 {isSynthesizing ? <Loader2 size={20} className="animate-spin" /> : <Cpu size={20} />}
-                Descobrir BPM & Gerar Click
+                Detectar BPM & Gerar Click
               </button>
-            </div>
+            </>
           )}
 
           {isSynthesizing && statusMsg && (
-             <div className="mt-4 text-center text-xs font-medium text-emerald-400 animate-pulse">
-               {statusMsg}
-             </div>
+            <div className="text-center text-xs font-medium text-purple-300 animate-pulse">
+              {statusMsg}
+            </div>
           )}
         </div>
       </div>

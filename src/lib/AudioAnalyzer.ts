@@ -125,75 +125,112 @@ function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   return new Blob([bufferArray], { type: "audio/wav" });
 }
 
+// Gera posições de click a partir de beats detectados + extrapolação
+function buildClickPositions(beats: number[], bpm: number, duration: number): number[] {
+  const secondsPerBeat = 60 / bpm;
+  const positions: number[] = [];
+
+  if (beats.length > 0) {
+    // Extrapolate backward from first beat to t=0
+    let t = beats[0];
+    while (t - secondsPerBeat >= -0.01) {
+      t -= secondsPerBeat;
+      if (t >= 0) positions.push(t);
+    }
+    // Add all detected beats
+    for (const b of beats) {
+      if (b < duration) positions.push(b);
+    }
+    // Extrapolate forward from last beat
+    const lastBeat = beats[beats.length - 1];
+    t = lastBeat + secondsPerBeat;
+    while (t < duration) {
+      positions.push(t);
+      t += secondsPerBeat;
+    }
+  } else {
+    // No beats detected: pure mathematical grid from 0
+    let t = 0;
+    while (t < duration) {
+      positions.push(t);
+      t += secondsPerBeat;
+    }
+  }
+
+  return positions.sort((a, b) => a - b);
+}
+
+function renderClickPositions(positions: number[], duration: number, sampleRate: number): Promise<AudioBuffer> {
+  const length = Math.ceil(duration * sampleRate);
+  const offlineCtx = new OfflineAudioContext(1, length, sampleRate);
+  for (const pos of positions) {
+    const osc = offlineCtx.createOscillator();
+    const gain = offlineCtx.createGain();
+    osc.frequency.setValueAtTime(1000, pos);
+    gain.gain.setValueAtTime(0.9, pos);
+    gain.gain.exponentialRampToValueAtTime(0.001, pos + 0.05);
+    osc.connect(gain);
+    gain.connect(offlineCtx.destination);
+    osc.start(pos);
+    osc.stop(pos + 0.06);
+  }
+  return offlineCtx.startRendering();
+}
+
+// Analisa um AudioBuffer já decodificado (sem precisar de arquivo/URL)
+export async function analyzeBufferAndGenerateClick(
+  audioBuffer: AudioBuffer,
+  onProgress: (msg: string) => void
+): Promise<{ bpm: number, clickTrackUrl: string }> {
+  try {
+    onProgress("Preparando áudio para análise...");
+
+    // Mix to mono
+    let audioData: Float32Array;
+    if (audioBuffer.numberOfChannels >= 2) {
+      const ch1 = audioBuffer.getChannelData(0);
+      const ch2 = audioBuffer.getChannelData(1);
+      audioData = new Float32Array(ch1.length);
+      for (let i = 0; i < ch1.length; i++) audioData[i] = (ch1[i] + ch2[i]) * 0.5;
+    } else {
+      audioData = new Float32Array(audioBuffer.getChannelData(0));
+    }
+
+    onProgress("Analisando os tempos da música...");
+    // @ts-ignore — passa o sampleRate correto para timing preciso
+    const mt = new MusicTempo(audioData, { sampleRate: audioBuffer.sampleRate });
+    const bpm = Math.round(Number(mt.tempo));
+    const beats: number[] = (mt.beats as any[]).map(b => Number(b));
+
+    onProgress(`BPM detectado: ${bpm}. Gerando click sincronizado...`);
+
+    const positions = buildClickPositions(beats, bpm, audioBuffer.duration);
+    const rendered = await renderClickPositions(positions, audioBuffer.duration, audioBuffer.sampleRate);
+    const clickBlob = audioBufferToWavBlob(rendered);
+    const clickTrackUrl = URL.createObjectURL(clickBlob);
+
+    return { bpm, clickTrackUrl };
+  } catch (error) {
+    console.error("Erro na análise de BPM", error);
+    return { bpm: 120, clickTrackUrl: '' };
+  }
+}
+
+// Mantido para compatibilidade (caso ainda seja chamado com URL)
 export async function analyzeAudioAndGenerateClick(
-  audioUrl: string, 
+  audioUrl: string,
   onProgress: (msg: string) => void
 ): Promise<{ bpm: number, clickTrackUrl: string }> {
   try {
     const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
     const ctx = new AudioContext();
-
-    onProgress("Descompactando áudio para encontrar Metrônomo...");
+    onProgress("Decodificando áudio...");
     const response = await fetch(audioUrl);
     const arrayBuffer = await response.arrayBuffer();
-
-    onProgress("Analisando os tempos da música...");
     const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-    
-    // Preparando os dados para a biblioteca music-tempo
-    let audioData: Float32Array;
-    if (audioBuffer.numberOfChannels === 2) {
-      const channel1 = audioBuffer.getChannelData(0);
-      const channel2 = audioBuffer.getChannelData(1);
-      audioData = new Float32Array(channel1.length);
-      for (let i = 0; i < channel1.length; i++) {
-        audioData[i] = (channel1[i] + channel2[i]) / 2;
-      }
-    } else {
-      audioData = audioBuffer.getChannelData(0);
-    }
-    
-    // Mágica acontecendo (achando o BPM)
-    // @ts-ignore
-    const mt = new MusicTempo(audioData);
-    const bpm = Math.round(Number(mt.tempo));
-    const firstBeat = mt.beats.length > 0 ? Number(mt.beats[0]) : 0;
-    
-    onProgress(`Detectado BPM ${bpm}. Sintetizando nova Trilha de Click...`);
-    
-    // Gerar um grid matemático para não correr risco da matriz de batidas ficar vazia/corrompida
-    const durationInSeconds = audioBuffer.duration;
-    const offlineCtx = new OfflineAudioContext(1, audioBuffer.length, audioBuffer.sampleRate);
-    const secondsPerBeat = 60 / bpm;
-    let beatTime = firstBeat;
-
-    while (beatTime < durationInSeconds) {
-        const osc = offlineCtx.createOscillator();
-        const gain = offlineCtx.createGain();
-        osc.frequency.setValueAtTime(1000, beatTime);
-        osc.frequency.exponentialRampToValueAtTime(0.001, beatTime + 0.05); // click rápido
-        
-        gain.gain.setValueAtTime(1, beatTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, beatTime + 0.05);
-        
-        osc.connect(gain);
-        gain.connect(offlineCtx.destination);
-        
-        osc.start(beatTime);
-        osc.stop(beatTime + 0.05);
-        
-        beatTime += secondsPerBeat;
-    }
-
-    onProgress("Finalizando trilha de Metrônomo...");
-    const renderedBuffer = await offlineCtx.startRendering();
-    const clickBlob = audioBufferToWavBlob(renderedBuffer);
-    const clickTrackUrl = URL.createObjectURL(clickBlob);
-
-    return { bpm, clickTrackUrl };
+    return analyzeBufferAndGenerateClick(audioBuffer, onProgress);
   } catch (error) {
-    console.error("Erro na detecção de BPM", error);
-    // Fallback silently if it fails
+    console.error("Erro ao decodificar áudio para análise", error);
     return { bpm: 120, clickTrackUrl: '' };
   }
 }
