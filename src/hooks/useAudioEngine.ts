@@ -22,6 +22,7 @@ interface SavedSong {
     channels: SavedChannel[];
     duration: number;
     pitch?: number;
+    originalKey?: string | null;
 }
 
 export function useAudioEngine() {
@@ -80,7 +81,8 @@ export function useAudioEngine() {
                 pan: ch.pan,
                 bus: ch.bus || '1/2'
             })),
-            pitch: song.pitch || 0
+            pitch: song.pitch || 0,
+            originalKey: song.originalKey || null
         }));
         await set('mt_meta_playlist', metaFormat);
     };
@@ -180,7 +182,7 @@ export function useAudioEngine() {
 
                             const pitchShiftNode = new Tone.PitchShift({
                                 pitch: isClickOrGuide ? 0 : (metaSong.pitch || 0),
-                                windowSize: 0.1
+                                windowSize: 0.3
                             });
 
                             Tone.connect(panner, pitchShiftNode);
@@ -217,6 +219,7 @@ export function useAudioEngine() {
                         coverImage: metaSong.coverImage,
                         duration: metaSong.duration,
                         pitch: metaSong.pitch || 0,
+                        originalKey: metaSong.originalKey || null,
                         channels
                     };
                 };
@@ -524,7 +527,7 @@ export function useAudioEngine() {
 
                 const pitchShiftNode = new Tone.PitchShift({
                     pitch: 0,
-                    windowSize: 0.1
+                    windowSize: 0.3
                 });
                 // Disable effect initially to avoid phase distortion on original pitch
                 pitchShiftNode.wet.value = 0;
@@ -631,7 +634,7 @@ export function useAudioEngine() {
             panner.pan.value = panValue;
             gain.gain.value = 1;
 
-            const pitchShiftNode = new Tone.PitchShift({ pitch: 0, windowSize: 0.1 });
+            const pitchShiftNode = new Tone.PitchShift({ pitch: 0, windowSize: 0.3 });
             pitchShiftNode.wet.value = 0;
 
             Tone.connect(panner, pitchShiftNode);
@@ -805,6 +808,15 @@ export function useAudioEngine() {
             setMasterVolume(volume);
         }
     };
+
+    const setOriginalKey = useCallback((key: string | null) => {
+        if (!activeSong) return;
+        const newPlaylist = [...playlist];
+        const song = { ...newPlaylist[activeSongIndex] };
+        song.originalKey = key;
+        newPlaylist[activeSongIndex] = song;
+        updatePlaylistAndSave(newPlaylist);
+    }, [playlist, activeSongIndex, activeSong]);
 
     const changePitch = useCallback((newPitch: number) => {
         if (!activeSong) return;
@@ -1064,6 +1076,7 @@ export function useAudioEngine() {
         toggleSolo,
         updateMasterVolume,
         changePitch,
+        setOriginalKey,
         currentMarker,
         setSongMarkers,
 

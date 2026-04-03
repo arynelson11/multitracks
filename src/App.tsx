@@ -19,7 +19,7 @@ export default function App() {
     setChannelBus, exportPlaylist, importPlaylist,
     channels, play, pause, seekTo, prevSong, nextSong, isPlaying, currentTime, duration,
     masterVolume, updateVolume, toggleMute, toggleSolo, updateMasterVolume,
-    changePitch, currentMarker, setSongMarkers,
+    changePitch, setOriginalKey, currentMarker, setSongMarkers,
     playbackMode, setPlaybackMode, vampActive, toggleVamp,
     timeStretch, updateTimeStretch, addChannelToActiveSong
   } = useAudioEngine()
@@ -43,6 +43,16 @@ export default function App() {
   const [markerColor, setMarkerColor] = useState('#10b981')
   const [mobileView, setMobileView] = useState<'mixer' | 'pads'>('mixer')
   const [isSaving, setIsSaving] = useState(false)
+  const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false)
+
+  const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+  const KEY_TO_SEMITONE: Record<string, number> = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 }
+
+  const activePitch = playlist[activeSongIndex]?.pitch || 0
+  const activeOriginalKey = playlist[activeSongIndex]?.originalKey || null
+  const currentKeyName = activeOriginalKey
+    ? KEYS[((KEY_TO_SEMITONE[activeOriginalKey] + activePitch) % 12 + 12) % 12]
+    : null
 
   // Drag-and-drop state
   const [dragIndex, setDragIndex] = useState<number | null>(null)
@@ -288,18 +298,62 @@ export default function App() {
               {isEditMode ? <Check size={16} /> : <Edit2 size={16} />}
               {isEditMode ? 'OK' : 'Editar'}
             </button>
-            <div className="flex items-center bg-black/40 rounded-lg overflow-hidden border border-white/10 mr-1 sm:mr-3">
+            {/* Key Selector */}
+            <div className="relative mr-1 sm:mr-3">
               <button
-                onClick={() => changePitch((playlist[activeSongIndex]?.pitch || 0) - 1)}
-                className="px-2 sm:px-3 py-1 sm:py-1.5 text-text-muted hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-              >-</button>
-              <div className="px-1 sm:px-2 py-1 sm:py-1.5 text-[10px] sm:text-xs font-bold text-white min-w-[36px] sm:min-w-[48px] text-center border-l border-r border-white/10 uppercase">
-                {playlist[activeSongIndex]?.pitch ? (playlist[activeSongIndex].pitch > 0 ? '+' : '') + playlist[activeSongIndex].pitch : '0'} ST
-              </div>
-              <button
-                onClick={() => changePitch((playlist[activeSongIndex]?.pitch || 0) + 1)}
-                className="px-2 sm:px-3 py-1 sm:py-1.5 text-text-muted hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-              >+</button>
+                onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)}
+                className="flex items-center gap-1.5 bg-black/40 rounded-lg border border-white/10 px-2 sm:px-3 py-1 sm:py-1.5 hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <span className="text-[8px] sm:text-[10px] font-bold text-text-muted uppercase">Tom</span>
+                <span className="text-[10px] sm:text-xs font-bold text-white min-w-[20px] text-center">
+                  {currentKeyName ?? (activePitch !== 0 ? (activePitch > 0 ? '+' : '') + activePitch : '?')}
+                </span>
+              </button>
+              {isKeyPickerOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsKeyPickerOpen(false)} />
+                  <div className="absolute top-full mt-1 right-0 bg-gray-900 border border-white/20 rounded-xl shadow-xl z-50 p-3 w-48">
+                    {!activeOriginalKey ? (
+                      <>
+                        <p className="text-[10px] text-text-muted mb-2">Qual é o tom original?</p>
+                        <div className="grid grid-cols-4 gap-1">
+                          {KEYS.map(key => (
+                            <button key={key} onClick={() => { setOriginalKey(key); changePitch(0); setIsKeyPickerOpen(false); }}
+                              className="py-1.5 text-xs font-bold rounded-lg text-white bg-white/10 hover:bg-secondary/30 hover:text-secondary transition-colors cursor-pointer">
+                              {key}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-[10px] text-text-muted mb-2">Selecione o tom:</p>
+                        <div className="grid grid-cols-4 gap-1">
+                          {KEYS.map(key => {
+                            const isCurrent = key === currentKeyName
+                            const isOriginal = key === activeOriginalKey
+                            return (
+                              <button key={key} onClick={() => {
+                                const diff = KEY_TO_SEMITONE[key] - KEY_TO_SEMITONE[activeOriginalKey]
+                                const semitones = diff > 6 ? diff - 12 : diff < -6 ? diff + 12 : diff
+                                changePitch(semitones)
+                                setIsKeyPickerOpen(false)
+                              }}
+                                className={`py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${isCurrent ? 'bg-secondary text-black' : isOriginal ? 'bg-white/20 text-white border border-white/30' : 'text-white bg-white/10 hover:bg-secondary/30 hover:text-secondary'}`}>
+                                {key}
+                              </button>
+                            )
+                          })}
+                        </div>
+                        <button onClick={() => { setOriginalKey(null); changePitch(0); setIsKeyPickerOpen(false); }}
+                          className="mt-2 w-full text-[9px] text-red-400 hover:text-red-300 cursor-pointer text-center">
+                          Redefinir tom original
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Time-Stretch Speed Control */}

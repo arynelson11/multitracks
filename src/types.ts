@@ -21,6 +21,7 @@ export interface Song {
     channels: Channel[];
     duration: number;
     pitch?: number;
+    originalKey?: string | null;
     markers?: Marker[];
 }
 
