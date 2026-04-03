@@ -2,16 +2,9 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { get, set } from 'idb-keyval';
 import JSZip from 'jszip';
 import * as Tone from 'tone';
-import { createRubberBandNode } from 'rubberband-web';
 import type { Channel, Song, Marker } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { detectKey } from '../lib/AudioAnalyzer';
-
-const RUBBERBAND_PROCESSOR_URL = '/rubberband-processor.js';
-
-function semitoneRatio(semitones: number): number {
-    return Math.pow(2, semitones / 12);
-}
 
 interface SavedChannel {
     id: string;
@@ -69,6 +62,7 @@ export function useAudioEngine() {
     const startTimeRef = useRef<number>(0);
     const pausedAtRef = useRef<number>(0);
     const autoNextTimeoutRef = useRef<number | null>(null);
+    const currentPitchRef = useRef<number>(0);
 
     const activeSong = playlist[activeSongIndex];
     const channels = activeSong?.channels || [];
@@ -147,6 +141,11 @@ export function useAudioEngine() {
         });
     }, [settings.autoPan, activeSongIndex, isReady]);
 
+    // Sync pitch ref whenever the active song or its pitch changes
+    useEffect(() => {
+        currentPitchRef.current = activeSong?.pitch ?? 0;
+    }, [activeSong?.pitch, activeSongIndex]);
+
     // Initialize engine
     const initEngine = useCallback(async () => {
         if (!audioCtxRef.current) {
@@ -185,15 +184,7 @@ export function useAudioEngine() {
                             if (metaSong.channels.some(c => c.soloed) && !metaCh.soloed) effectiveVol = 0;
                             gain.gain.value = effectiveVol;
 
-                            const fileNameLower = metaCh.name.toLowerCase();
-                            const isClickOrGuide = fileNameLower.includes('click') || fileNameLower.includes('metronomo') || fileNameLower.includes('guia') || fileNameLower.includes('guide');
-
-                            const pitchShiftNode = await createRubberBandNode(ctx, RUBBERBAND_PROCESSOR_URL);
-                            const pitchSemitones = isClickOrGuide ? 0 : (metaSong.pitch || 0);
-                            pitchShiftNode.setPitch(semitoneRatio(pitchSemitones));
-
-                            panner.connect(pitchShiftNode);
-                            pitchShiftNode.connect(gain);
+                            panner.connect(gain);
                             gain.connect(master);
 
                             return {
@@ -208,8 +199,7 @@ export function useAudioEngine() {
                                 muted: metaCh.muted,
                                 soloed: metaCh.soloed,
                                 pan: metaCh.pan,
-                                bus: metaCh.bus || '1/2',
-                                pitchShiftNode: pitchShiftNode
+                                bus: metaCh.bus || '1/2'
                             };
                         } catch (e) {
                             console.error(`Failed to restore channel ${metaCh.name}`, e);
@@ -279,6 +269,12 @@ export function useAudioEngine() {
         channels.forEach(ch => {
             const source = ctx.createBufferSource();
             source.buffer = ch.buffer;
+            // Apply pitch via native detune (cents = semitones * 100) — zero overhead, no WASM
+            const nameL = ch.name.toLowerCase();
+            const isClickOrGuide = nameL.includes('click') || nameL.includes('metronomo') || nameL.includes('guia') || nameL.includes('guide');
+            if (!isClickOrGuide) {
+                source.detune.value = currentPitchRef.current * 100;
+            }
             source.connect(ch.pannerNode);
             // Phase 3: Apply time-stretch
             source.playbackRate.value = timeStretch;
@@ -541,12 +537,7 @@ export function useAudioEngine() {
                 gain.gain.value = 1;
 
 
-                const pitchShiftNode = await createRubberBandNode(audioCtxRef.current!, RUBBERBAND_PROCESSOR_URL);
-                pitchShiftNode.setPitch(1.0); // no pitch change initially
-
-                panner.connect(pitchShiftNode);
-                pitchShiftNode.connect(gain);
-
+                panner.connect(gain);
 
                 const uuid = crypto.randomUUID();
                 filesDb.set(uuid, file);
@@ -580,8 +571,7 @@ export function useAudioEngine() {
                     muted: false,
                     soloed: false,
                     pan: panValue,
-                    bus: busValue,
-                    pitchShiftNode: pitchShiftNode
+                    bus: busValue
                 } as Channel;
             });
             const batchResults = await Promise.all(batchPromises);
@@ -656,11 +646,7 @@ export function useAudioEngine() {
             panner.pan.value = panValue;
             gain.gain.value = 1;
 
-            const pitchShiftNode = await createRubberBandNode(audioCtxRef.current!, RUBBERBAND_PROCESSOR_URL);
-            pitchShiftNode.setPitch(1.0);
-
-            panner.connect(pitchShiftNode);
-            pitchShiftNode.connect(gain);
+            panner.connect(gain);
 
             if (panValue === -1 && bus1GainRef.current) {
                 gain.connect(bus1GainRef.current);
@@ -691,8 +677,7 @@ export function useAudioEngine() {
                 muted: false,
                 soloed: false,
                 pan: panValue,
-                bus: panValue === -1 ? '1' : panValue === 1 ? '2' : '1/2',
-                pitchShiftNode: pitchShiftNode
+                bus: panValue === -1 ? '1' : panValue === 1 ? '2' : '1/2'
             };
 
             const newPlaylist = [...playlist];
@@ -850,11 +835,14 @@ export function useAudioEngine() {
         const song = { ...newPlaylist[activeSongIndex] };
         song.pitch = clampedPitch;
 
+        currentPitchRef.current = clampedPitch;
+
+        // Update detune on currently playing source nodes (live, zero-latency)
         song.channels.forEach(ch => {
-            const fileNameLower = ch.name.toLowerCase();
-            const isClickOrGuide = fileNameLower.includes('click') || fileNameLower.includes('metronomo') || fileNameLower.includes('guia') || fileNameLower.includes('guide');
-            if (!isClickOrGuide && ch.pitchShiftNode) {
-                ch.pitchShiftNode.setPitch(semitoneRatio(clampedPitch));
+            const nameL = ch.name.toLowerCase();
+            const isClickOrGuide = nameL.includes('click') || nameL.includes('metronomo') || nameL.includes('guia') || nameL.includes('guide');
+            if (!isClickOrGuide && ch.sourceNode) {
+                ch.sourceNode.detune.value = clampedPitch * 100;
             }
         });
 

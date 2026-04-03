@@ -11,7 +11,6 @@ export interface Channel {
     soloed: boolean;
     pan: number;
     bus: '1' | '2' | '1/2';
-    pitchShiftNode?: any;
 }
 
 export interface Song {
