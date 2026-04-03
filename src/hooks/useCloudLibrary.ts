@@ -33,7 +33,7 @@ export function useCloudLibrary() {
     }, [searchQuery]);
 
     // Download a song's stems and return as File[]
-    const downloadSong = useCallback(async (songId: string): Promise<{ files: File[], coverUrl: string | null, markers: any[] | null } | null> => {
+    const downloadSong = useCallback(async (songId: string): Promise<{ files: File[], coverUrl: string | null, markers: any[] | null, originalKey: string | null } | null> => {
         setDownloadingSongId(songId);
         setDownloadProgress('Buscando stems...');
 
@@ -86,9 +86,10 @@ export function useCloudLibrary() {
 
             setDownloadProgress('');
             setDownloadingSongId(null);
-            // Pass markers along
+            // Pass markers and original key along
             const markers = song?.markers || null;
-            return { files, coverUrl, markers };
+            const originalKey = song?.key || null;
+            return { files, coverUrl, markers, originalKey };
         } catch (e) {
             console.error('Error downloading song:', e);
             setDownloadProgress('Erro ao baixar.');

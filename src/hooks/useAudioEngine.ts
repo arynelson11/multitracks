@@ -2,9 +2,16 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { get, set } from 'idb-keyval';
 import JSZip from 'jszip';
 import * as Tone from 'tone';
+import { createRubberBandNode } from 'rubberband-web';
 import type { Channel, Song, Marker } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { detectKey } from '../lib/AudioAnalyzer';
+
+const RUBBERBAND_PROCESSOR_URL = '/rubberband-processor.js';
+
+function semitoneRatio(semitones: number): number {
+    return Math.pow(2, semitones / 12);
+}
 
 interface SavedChannel {
     id: string;
@@ -181,13 +188,12 @@ export function useAudioEngine() {
                             const fileNameLower = metaCh.name.toLowerCase();
                             const isClickOrGuide = fileNameLower.includes('click') || fileNameLower.includes('metronomo') || fileNameLower.includes('guia') || fileNameLower.includes('guide');
 
-                            const pitchShiftNode = new Tone.PitchShift({
-                                pitch: isClickOrGuide ? 0 : (metaSong.pitch || 0),
-                                windowSize: 0.3
-                            });
+                            const pitchShiftNode = await createRubberBandNode(ctx, RUBBERBAND_PROCESSOR_URL);
+                            const pitchSemitones = isClickOrGuide ? 0 : (metaSong.pitch || 0);
+                            pitchShiftNode.setPitch(semitoneRatio(pitchSemitones));
 
-                            Tone.connect(panner, pitchShiftNode);
-                            Tone.connect(pitchShiftNode, gain);
+                            panner.connect(pitchShiftNode);
+                            pitchShiftNode.connect(gain);
                             gain.connect(master);
 
                             return {
@@ -500,7 +506,7 @@ export function useAudioEngine() {
     }, [isPlaying, updateTime]);
 
     // Load files
-    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string, songMarkers?: Marker[]) => {
+    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string, songMarkers?: Marker[], overrideOriginalKey?: string | null) => {
         if (!audioCtxRef.current || !masterGainRef.current) return;
         setIsLoading(true);
 
@@ -535,15 +541,11 @@ export function useAudioEngine() {
                 gain.gain.value = 1;
 
 
-                const pitchShiftNode = new Tone.PitchShift({
-                    pitch: 0,
-                    windowSize: 0.3
-                });
-                // Disable effect initially to avoid phase distortion on original pitch
-                pitchShiftNode.wet.value = 0;
+                const pitchShiftNode = await createRubberBandNode(audioCtxRef.current!, RUBBERBAND_PROCESSOR_URL);
+                pitchShiftNode.setPitch(1.0); // no pitch change initially
 
-                Tone.connect(panner, pitchShiftNode);
-                Tone.connect(pitchShiftNode, gain);
+                panner.connect(pitchShiftNode);
+                pitchShiftNode.connect(gain);
 
 
                 const uuid = crypto.randomUUID();
@@ -605,7 +607,9 @@ export function useAudioEngine() {
             const n = ch.name.toLowerCase();
             return !n.includes('click') && !n.includes('metronomo') && !n.includes('guia') && !n.includes('guide');
         });
-        const detectedKey = mainChannel ? detectKey(mainChannel.buffer) : undefined;
+        const originalKey = overrideOriginalKey !== undefined
+            ? overrideOriginalKey
+            : (mainChannel ? detectKey(mainChannel.buffer) : null);
 
         const newSong: Song = {
             id: crypto.randomUUID(),
@@ -614,7 +618,7 @@ export function useAudioEngine() {
             channels: newChannels,
             duration: maxDuration,
             pitch: 0,
-            originalKey: detectedKey ?? null,
+            originalKey,
             markers: songMarkers || undefined
         };
 
@@ -652,11 +656,11 @@ export function useAudioEngine() {
             panner.pan.value = panValue;
             gain.gain.value = 1;
 
-            const pitchShiftNode = new Tone.PitchShift({ pitch: 0, windowSize: 0.3 });
-            pitchShiftNode.wet.value = 0;
+            const pitchShiftNode = await createRubberBandNode(audioCtxRef.current!, RUBBERBAND_PROCESSOR_URL);
+            pitchShiftNode.setPitch(1.0);
 
-            Tone.connect(panner, pitchShiftNode);
-            Tone.connect(pitchShiftNode, gain);
+            panner.connect(pitchShiftNode);
+            pitchShiftNode.connect(gain);
 
             if (panValue === -1 && bus1GainRef.current) {
                 gain.connect(bus1GainRef.current);
@@ -850,9 +854,7 @@ export function useAudioEngine() {
             const fileNameLower = ch.name.toLowerCase();
             const isClickOrGuide = fileNameLower.includes('click') || fileNameLower.includes('metronomo') || fileNameLower.includes('guia') || fileNameLower.includes('guide');
             if (!isClickOrGuide && ch.pitchShiftNode) {
-                ch.pitchShiftNode.pitch = clampedPitch;
-                // Bypass PitchShift algorithm entirely when at 0 to explicitly prevent any processing distortion
-                ch.pitchShiftNode.wet.value = clampedPitch === 0 ? 0 : 1;
+                ch.pitchShiftNode.setPitch(semitoneRatio(clampedPitch));
             }
         });
 

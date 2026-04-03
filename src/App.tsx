@@ -858,10 +858,10 @@ export default function App() {
       <LibraryModal
         isOpen={isLibraryOpen}
         onClose={() => setIsLibraryOpen(false)}
-        onDownload={async (files, songName, coverUrl, markers) => {
+        onDownload={async (files, songName, coverUrl, markers, originalKey) => {
           const dt = new DataTransfer();
           files.forEach(f => dt.items.add(f));
-          await loadFiles(dt.files, songName, coverUrl || undefined, markers);
+          await loadFiles(dt.files, songName, coverUrl || undefined, markers, originalKey ?? null);
         }}
       />
 
