@@ -1,5 +1,77 @@
 import MusicTempo from 'music-tempo';
 
+const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+// Krumhansl-Schmuckler key profiles
+const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+const MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+
+export function detectKey(buffer: AudioBuffer): string {
+  const sampleRate = buffer.sampleRate;
+  const downsample = 8;
+  const effSampleRate = sampleRate / downsample;
+
+  // Mix to mono
+  const ch0 = buffer.getChannelData(0);
+  let mono: Float32Array;
+  if (buffer.numberOfChannels >= 2) {
+    const ch1 = buffer.getChannelData(1);
+    mono = new Float32Array(ch0.length);
+    for (let i = 0; i < ch0.length; i++) mono[i] = (ch0[i] + ch1[i]) * 0.5;
+  } else {
+    mono = new Float32Array(ch0);
+  }
+
+  // Downsample and use first 20 seconds
+  const maxLen = Math.min(mono.length, Math.floor(sampleRate * 20));
+  const downLen = Math.floor(maxLen / downsample);
+  const signal = new Float32Array(downLen);
+  for (let i = 0; i < downLen; i++) signal[i] = mono[i * downsample];
+
+  // Chromagram via Goertzel algorithm (octaves 2–6)
+  const chromagram = new Float32Array(12);
+  for (let pc = 0; pc < 12; pc++) {
+    let energy = 0;
+    for (let octave = 2; octave <= 6; octave++) {
+      const freq = 261.63 * Math.pow(2, octave - 4 + pc / 12);
+      if (freq >= effSampleRate / 2) continue;
+      const omega = 2 * Math.PI * freq / effSampleRate;
+      const coeff = 2 * Math.cos(omega);
+      let s1 = 0, s2 = 0;
+      for (let n = 0; n < downLen; n++) {
+        const s0 = signal[n] + coeff * s1 - s2;
+        s2 = s1;
+        s1 = s0;
+      }
+      energy += s1 * s1 + s2 * s2 - coeff * s1 * s2;
+    }
+    chromagram[pc] = energy;
+  }
+
+  // Pearson correlation
+  function pearson(a: number[], b: number[]): number {
+    const n = a.length;
+    let sumA = 0, sumB = 0;
+    for (let i = 0; i < n; i++) { sumA += a[i]; sumB += b[i]; }
+    const mA = sumA / n, mB = sumB / n;
+    let num = 0, vA = 0, vB = 0;
+    for (let i = 0; i < n; i++) {
+      const da = a[i] - mA, db = b[i] - mB;
+      num += da * db; vA += da * da; vB += db * db;
+    }
+    return num / (Math.sqrt(vA * vB) || 1);
+  }
+
+  let bestKey = 'C';
+  let bestScore = -Infinity;
+  for (let root = 0; root < 12; root++) {
+    const rotated = Array.from({ length: 12 }, (_, i) => chromagram[(root + i) % 12]);
+    const score = Math.max(pearson(rotated, MAJOR_PROFILE), pearson(rotated, MINOR_PROFILE));
+    if (score > bestScore) { bestScore = score; bestKey = KEYS[root]; }
+  }
+  return bestKey;
+}
+
 // Converte um AudioBuffer em um arquivo Wav (Blob) que pode ser tocado pelo navegador.
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   const numOfChan = buffer.numberOfChannels;

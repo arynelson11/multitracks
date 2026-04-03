@@ -313,43 +313,36 @@ export default function App() {
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setIsKeyPickerOpen(false)} />
                   <div className="absolute top-full mt-1 right-0 bg-gray-900 border border-white/20 rounded-xl shadow-xl z-50 p-3 w-48">
-                    {!activeOriginalKey ? (
-                      <>
-                        <p className="text-[10px] text-text-muted mb-2">Qual é o tom original?</p>
-                        <div className="grid grid-cols-4 gap-1">
-                          {KEYS.map(key => (
-                            <button key={key} onClick={() => { setOriginalKey(key); changePitch(0); setIsKeyPickerOpen(false); }}
-                              className="py-1.5 text-xs font-bold rounded-lg text-white bg-white/10 hover:bg-secondary/30 hover:text-secondary transition-colors cursor-pointer">
-                              {key}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-[10px] text-text-muted mb-2">Selecione o tom:</p>
-                        <div className="grid grid-cols-4 gap-1">
-                          {KEYS.map(key => {
-                            const isCurrent = key === currentKeyName
-                            const isOriginal = key === activeOriginalKey
-                            return (
-                              <button key={key} onClick={() => {
-                                const diff = KEY_TO_SEMITONE[key] - KEY_TO_SEMITONE[activeOriginalKey]
-                                const semitones = diff > 6 ? diff - 12 : diff < -6 ? diff + 12 : diff
-                                changePitch(semitones)
-                                setIsKeyPickerOpen(false)
-                              }}
-                                className={`py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${isCurrent ? 'bg-secondary text-black' : isOriginal ? 'bg-white/20 text-white border border-white/30' : 'text-white bg-white/10 hover:bg-secondary/30 hover:text-secondary'}`}>
-                                {key}
-                              </button>
-                            )
-                          })}
-                        </div>
-                        <button onClick={() => { setOriginalKey(null); changePitch(0); setIsKeyPickerOpen(false); }}
-                          className="mt-2 w-full text-[9px] text-red-400 hover:text-red-300 cursor-pointer text-center">
-                          Redefinir tom original
-                        </button>
-                      </>
+                    <p className="text-[10px] text-text-muted mb-2">
+                      {activeOriginalKey ? 'Selecione o tom:' : 'Tom original não detectado. Selecione manualmente:'}
+                    </p>
+                    <div className="grid grid-cols-4 gap-1">
+                      {KEYS.map(key => {
+                        const isCurrent = key === currentKeyName
+                        const isOriginal = key === activeOriginalKey && !isCurrent
+                        return (
+                          <button key={key} onClick={() => {
+                            if (activeOriginalKey) {
+                              const diff = KEY_TO_SEMITONE[key] - KEY_TO_SEMITONE[activeOriginalKey]
+                              const semitones = diff > 6 ? diff - 12 : diff < -6 ? diff + 12 : diff
+                              changePitch(semitones)
+                            } else {
+                              setOriginalKey(key)
+                              changePitch(0)
+                            }
+                            setIsKeyPickerOpen(false)
+                          }}
+                            className={`py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${isCurrent ? 'bg-secondary text-black' : isOriginal ? 'bg-white/20 text-white border border-white/30' : 'text-white bg-white/10 hover:bg-secondary/30 hover:text-secondary'}`}>
+                            {key}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {activeOriginalKey && (
+                      <button onClick={() => { setOriginalKey(null); changePitch(0); setIsKeyPickerOpen(false); }}
+                        className="mt-2 w-full text-[9px] text-text-muted hover:text-red-400 cursor-pointer text-center transition-colors">
+                        Re-detectar tom
+                      </button>
                     )}
                   </div>
                 </>

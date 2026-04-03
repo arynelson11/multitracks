@@ -4,6 +4,7 @@ import JSZip from 'jszip';
 import * as Tone from 'tone';
 import type { Channel, Song, Marker } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
+import { detectKey } from '../lib/AudioAnalyzer';
 
 interface SavedChannel {
     id: string;
@@ -213,13 +214,22 @@ export function useAudioEngine() {
                     const channels = (await Promise.all(channelPromises)).filter((c): c is Channel => c !== null);
                     if (channels.length === 0) return null;
 
+                    let originalKey = metaSong.originalKey || null;
+                    if (!originalKey) {
+                        const mainCh = channels.find(ch => {
+                            const n = ch.name.toLowerCase();
+                            return !n.includes('click') && !n.includes('metronomo') && !n.includes('guia') && !n.includes('guide');
+                        });
+                        if (mainCh) originalKey = detectKey(mainCh.buffer);
+                    }
+
                     return {
                         id: metaSong.id,
                         name: metaSong.name,
                         coverImage: metaSong.coverImage,
                         duration: metaSong.duration,
                         pitch: metaSong.pitch || 0,
-                        originalKey: metaSong.originalKey || null,
+                        originalKey,
                         channels
                     };
                 };
@@ -591,12 +601,20 @@ export function useAudioEngine() {
             songName = pathParts.length > 1 ? pathParts[0] : (files[0].name.split('-')[0] || `Música ${playlist.length + 1}`);
         }
 
+        const mainChannel = newChannels.find(ch => {
+            const n = ch.name.toLowerCase();
+            return !n.includes('click') && !n.includes('metronomo') && !n.includes('guia') && !n.includes('guide');
+        });
+        const detectedKey = mainChannel ? detectKey(mainChannel.buffer) : undefined;
+
         const newSong: Song = {
             id: crypto.randomUUID(),
             name: songName,
             coverImage: coverImage,
             channels: newChannels,
             duration: maxDuration,
+            pitch: 0,
+            originalKey: detectedKey ?? null,
             markers: songMarkers || undefined
         };
 
