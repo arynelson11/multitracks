@@ -54,70 +54,70 @@ export function AuthPage({ }: AuthPageProps) {
     };
 
     return (
-        <div className="min-h-screen bg-black text-white font-sans flex font-inter">
+        <div className="min-h-screen bg-[#0a0a0c] text-white flex">
             {/* Left Column (Branding) */}
-            <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-b from-orange-600 via-orange-900 to-black p-12 flex-col justify-between relative overflow-hidden">
+            <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-b from-[#2a2218] via-[#141210] to-[#0a0a0c] p-12 flex-col justify-between relative overflow-hidden">
                 {/* Minimalist Header Logo */}
                 <div className="flex items-center gap-3 relative z-10">
-                    <div className="w-10 h-10 rounded-full border-2 border-white flex items-center justify-center">
-                        <div className="w-3 h-3 bg-white rounded-full"></div>
+                    <div className="w-10 h-10 rounded-lg border-2 border-primary/60 flex items-center justify-center">
+                        <div className="w-3 h-3 bg-primary rounded-full animate-led"></div>
                     </div>
-                    <span className="text-xl font-bold tracking-tight">Multitracks</span>
+                    <span className="text-lg font-black tracking-[0.12em] uppercase">Playback</span>
                 </div>
 
                 {/* Main Branding Content */}
                 <div className="max-w-md relative z-10 my-auto">
-                    <h1 className="text-4xl lg:text-5xl font-bold text-white mb-6 leading-tight tracking-tight">
-                        Comece a usar <br />agora mesmo
+                    <h1 className="text-4xl lg:text-5xl font-black text-white mb-6 leading-tight tracking-tight">
+                        Professional<br />Multitrack Engine
                     </h1>
-                    <p className="text-gray-300 text-lg mb-12">
-                        Sistema profissional para reprodução contínua de multitracks e cliques ao vivo.
+                    <p className="text-text-muted text-base mb-12 font-mono">
+                        Live playback system for multitracks, click tracks, and stems.
                     </p>
 
                     {/* Component Steps */}
-                    <div className="flex flex-col gap-4">
-                        <div className="flex items-center gap-4 bg-white text-black p-4 rounded-xl shadow-lg transform transition-transform hover:scale-[1.02]">
-                            <div className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center font-bold text-sm">1</div>
-                            <span className="font-semibold text-sm">Crie sua conta</span>
+                    <div className="flex flex-col gap-3">
+                        <div className="flex items-center gap-4 bg-primary/10 text-white p-4 rounded-lg border border-primary/20">
+                            <div className="w-8 h-8 rounded-md bg-primary text-black flex items-center justify-center font-bold text-xs font-mono">01</div>
+                            <span className="font-bold text-sm tracking-wider uppercase">Create Account</span>
                         </div>
-                        <div className="flex items-center gap-4 bg-white/5 text-gray-400 p-4 rounded-xl border border-white/5">
-                            <div className="w-8 h-8 rounded-full bg-black/50 text-gray-400 border border-white/10 flex items-center justify-center font-bold text-sm">2</div>
-                            <span className="font-medium text-sm">Configure seu repertório</span>
+                        <div className="flex items-center gap-4 bg-white/3 text-text-muted p-4 rounded-lg border border-border">
+                            <div className="w-8 h-8 rounded-md bg-surface text-text-muted border border-border flex items-center justify-center font-bold text-xs font-mono">02</div>
+                            <span className="font-medium text-sm tracking-wider uppercase">Import Stems</span>
                         </div>
-                        <div className="flex items-center gap-4 bg-white/5 text-gray-400 p-4 rounded-xl border border-white/5">
-                            <div className="w-8 h-8 rounded-full bg-black/50 text-gray-400 border border-white/10 flex items-center justify-center font-bold text-sm">3</div>
-                            <span className="font-medium text-sm">De play e conduza</span>
+                        <div className="flex items-center gap-4 bg-white/3 text-text-muted p-4 rounded-lg border border-border">
+                            <div className="w-8 h-8 rounded-md bg-surface text-text-muted border border-border flex items-center justify-center font-bold text-xs font-mono">03</div>
+                            <span className="font-medium text-sm tracking-wider uppercase">Press Play</span>
                         </div>
                     </div>
                 </div>
 
                 {/* Footer Brand */}
-                <div className="relative z-10 text-xs text-white/40 tracking-widest uppercase font-bold text-center">
-                    Multitracks Playback
+                <div className="relative z-10 text-[10px] text-white/20 tracking-[0.3em] uppercase font-bold text-center font-mono">
+                    Playback Studio v5.0
                 </div>
 
                 {/* Decorative glowing orb */}
-                <div className="absolute top-1/4 -right-32 w-96 h-96 bg-orange-500 rounded-full mix-blend-screen filter blur-[120px] opacity-40"></div>
+                <div className="absolute top-1/4 -right-32 w-96 h-96 bg-primary rounded-full mix-blend-screen filter blur-[120px] opacity-15"></div>
             </div>
 
             {/* Right Column (Form) */}
             <div className="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-12 relative">
 
                 {/* Mobile Header Logo */}
-                <div className="absolute top-8 left-8 flex items-center gap-3 lg:hidden">
-                    <div className="w-8 h-8 rounded-full border-2 border-orange-500 flex items-center justify-center">
-                        <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                <div className="absolute top-8 left-8 flex items-center gap-2 lg:hidden">
+                    <div className="w-7 h-7 rounded-md border-2 border-primary/60 flex items-center justify-center">
+                        <div className="w-2 h-2 bg-primary rounded-full animate-led"></div>
                     </div>
-                    <span className="text-lg font-bold tracking-tight text-white">Multitracks</span>
+                    <span className="text-sm font-black tracking-[0.1em] uppercase text-white">PLAYBACK</span>
                 </div>
 
                 <div className="w-full max-w-md">
                     <div className="mb-10 text-center lg:text-left">
-                        <h2 className="text-3xl font-bold text-white mb-2 tracking-tight">
-                            {mode === 'login' ? 'Acesse sua Conta' : mode === 'register' ? 'Crie sua Conta' : 'Recuperar Senha'}
+                        <h2 className="text-2xl font-black text-white mb-2 tracking-tight uppercase">
+                            {mode === 'login' ? 'Sign In' : mode === 'register' ? 'Create Account' : 'Reset Password'}
                         </h2>
-                        <p className="text-gray-400 text-sm">
-                            {mode === 'login' ? 'Bem-vindo de volta! Insira seus dados.' : mode === 'register' ? 'Insira seus dados para criar sua conta.' : 'Insira seu email para receber instruções de recuperação.'}
+                        <p className="text-text-muted text-xs font-mono tracking-wider">
+                            {mode === 'login' ? 'Welcome back. Enter your credentials.' : mode === 'register' ? 'Enter your details to get started.' : 'We will send reset instructions to your email.'}
                         </p>
                     </div>
 
@@ -127,7 +127,7 @@ export function AuthPage({ }: AuthPageProps) {
                             <div className="flex flex-col gap-4 mb-8">
                                 <button
                                     onClick={handleGoogleLogin}
-                                    className="flex items-center justify-center gap-2 h-12 w-full rounded-lg border border-zinc-800 text-white font-medium hover:bg-zinc-900 transition-all duration-200 active:scale-95 cursor-pointer focus:outline-none focus:ring-2 focus:ring-zinc-700"
+                                    className="hw-btn flex items-center justify-center gap-2 h-12 w-full rounded-md text-white font-bold tracking-wider uppercase text-xs cursor-pointer active:scale-95"
                                 >
                                     <svg className="w-5 h-5" viewBox="0 0 24 24">
                                         <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -140,48 +140,48 @@ export function AuthPage({ }: AuthPageProps) {
                             </div>
 
                             <div className="flex items-center gap-4 mb-8">
-                                <div className="h-px bg-zinc-800 flex-1"></div>
-                                <span className="text-zinc-500 text-xs font-medium uppercase tracking-widest">Ou</span>
-                                <div className="h-px bg-zinc-800 flex-1"></div>
+                                <div className="h-px bg-border flex-1"></div>
+                                <span className="text-text-muted text-[9px] font-bold uppercase tracking-[0.2em] font-mono">OR</span>
+                                <div className="h-px bg-border flex-1"></div>
                             </div>
                         </>
                     )}
 
-                    {error && <div className="p-4 mb-6 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">{error}</div>}
-                    {message && <div className="p-4 mb-6 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">{message}</div>}
+                    {error && <div className="p-3 mb-6 rounded-md bg-accent-red/10 border border-accent-red/20 text-accent-red text-xs font-mono">{error}</div>}
+                    {message && <div className="p-3 mb-6 rounded-md bg-accent-green/10 border border-accent-green/20 text-accent-green text-xs font-mono">{message}</div>}
 
                     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                         <div>
-                            <label className="block text-zinc-400 text-xs font-semibold mb-2">Email</label>
+                            <label className="block text-text-muted text-[10px] font-bold mb-2 uppercase tracking-wider font-mono">Email</label>
                             <div className="relative">
-                                <Mail size={16} className="absolute left-4 top-3.5 text-zinc-500" />
+                                <Mail size={14} className="absolute left-4 top-3.5 text-text-muted" />
                                 <input
                                     type="email"
                                     required
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    className="w-full bg-zinc-900 border border-zinc-800 text-white rounded-xl pl-11 pr-4 py-3 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/50 transition-all duration-200 placeholder:text-zinc-600"
-                                    placeholder="ex. seuemail@exemplo.com"
+                                    className="w-full daw-input rounded-md pl-11 pr-4 py-3 placeholder:text-text-muted/30 font-mono text-sm"
+                                    placeholder="your@email.com"
                                 />
                             </div>
                         </div>
 
                         {mode !== 'forgot' && (
                             <div>
-                                <label className="block text-zinc-400 text-xs font-semibold mb-2">Senha</label>
+                                <label className="block text-text-muted text-[10px] font-bold mb-2 uppercase tracking-wider font-mono">Password</label>
                                 <div className="relative">
-                                    <Lock size={16} className="absolute left-4 top-3.5 text-zinc-500" />
+                                    <Lock size={14} className="absolute left-4 top-3.5 text-text-muted" />
                                     <input
                                         type="password"
                                         required
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        className="w-full bg-zinc-900 border border-zinc-800 text-white rounded-xl pl-11 pr-4 py-3 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/50 transition-all duration-200 placeholder:text-zinc-600"
-                                        placeholder="Digite sua senha"
+                                        className="w-full daw-input rounded-md pl-11 pr-4 py-3 placeholder:text-text-muted/30 font-mono text-sm"
+                                        placeholder="Enter password"
                                         minLength={6}
                                     />
-                                    <div className="absolute right-4 top-3.5 text-zinc-500 text-xs font-medium">
-                                        Mínimo 6 caracteres.
+                                    <div className="absolute right-4 top-3.5 text-text-muted/40 text-[9px] font-mono">
+                                        MIN 6 CHARS
                                     </div>
                                 </div>
                             </div>
@@ -190,12 +190,12 @@ export function AuthPage({ }: AuthPageProps) {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="w-full mt-4 h-12 bg-white text-black font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-gray-200 disabled:opacity-50 transition-all duration-200 active:scale-[0.98] cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500/50 hover:shadow-[0_0_15px_rgba(255,255,255,0.3)]"
+                            className="w-full mt-4 h-12 bg-primary text-black font-black rounded-md flex items-center justify-center gap-2 hover:bg-primary-dim disabled:opacity-50 transition-all active:scale-[0.98] cursor-pointer uppercase tracking-wider text-sm shadow-[0_0_20px_rgba(212,168,67,0.15)]"
                         >
                             {loading ? <Loader2 size={18} className="animate-spin" /> : (
                                 <>
-                                    {mode === 'login' ? 'Entrar' : mode === 'register' ? 'Cadastrar' : 'Enviar Instruções'}
-                                    <ArrowRight size={18} />
+                                    {mode === 'login' ? 'Sign In' : mode === 'register' ? 'Register' : 'Send Instructions'}
+                                    <ArrowRight size={16} />
                                 </>
                             )}
                         </button>
@@ -204,14 +204,14 @@ export function AuthPage({ }: AuthPageProps) {
                     <div className="mt-8 text-center text-sm">
                         {mode === 'login' ? (
                             <div className="flex flex-col gap-3">
-                                <button onClick={() => setMode('forgot')} className="text-zinc-400 hover:text-white transition-colors cursor-pointer">Esqueceu sua senha?</button>
-                                <div className="text-zinc-400">
-                                    Não tem uma conta? <button onClick={() => setMode('register')} className="text-white font-bold hover:underline cursor-pointer">Faça cadastro</button>
+                                <button onClick={() => setMode('forgot')} className="text-text-muted hover:text-white transition-colors cursor-pointer text-xs font-mono">Forgot password?</button>
+                                <div className="text-text-muted text-xs font-mono">
+                                    No account? <button onClick={() => setMode('register')} className="text-primary font-bold hover:underline cursor-pointer">Register</button>
                                 </div>
                             </div>
                         ) : (
-                            <div className="text-zinc-400">
-                                Já tem uma conta? <button onClick={() => setMode('login')} className="text-white font-bold hover:underline cursor-pointer">Entrar</button>
+                            <div className="text-text-muted text-xs font-mono">
+                                Have an account? <button onClick={() => setMode('login')} className="text-primary font-bold hover:underline cursor-pointer">Sign In</button>
                             </div>
                         )}
                     </div>

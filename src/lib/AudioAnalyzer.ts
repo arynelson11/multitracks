@@ -1,5 +1,3 @@
-import MusicTempo from 'music-tempo';
-
 const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 // Krumhansl-Schmuckler key profiles
@@ -125,6 +123,221 @@ function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   return new Blob([bufferArray], { type: "audio/wav" });
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// NOVO ALGORITMO DE DETECÇÃO DE BPM — Spectral Flux + Autocorrelação
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Detecta BPM usando Spectral Flux Onset Detection + Autocorrelação.
+ * Muito mais preciso que o music-tempo para faixas reais de bateria/baixo.
+ */
+function detectBPM(audioBuffer: AudioBuffer): { bpm: number; beats: number[] } {
+  const sampleRate = audioBuffer.sampleRate;
+
+  // 1) Mix to mono
+  const ch0 = audioBuffer.getChannelData(0);
+  let mono: Float32Array;
+  if (audioBuffer.numberOfChannels >= 2) {
+    const ch1 = audioBuffer.getChannelData(1);
+    mono = new Float32Array(ch0.length);
+    for (let i = 0; i < ch0.length; i++) mono[i] = (ch0[i] + ch1[i]) * 0.5;
+  } else {
+    mono = new Float32Array(ch0);
+  }
+
+  // 2) Calcular onset envelope via energia em janelas curtas
+  const hopSize = Math.round(sampleRate * 0.01); // 10ms hop
+  const windowSize = Math.round(sampleRate * 0.023); // ~23ms window
+  const numFrames = Math.floor((mono.length - windowSize) / hopSize);
+  const onsetEnvelope = new Float32Array(numFrames);
+
+  for (let frame = 0; frame < numFrames; frame++) {
+    const start = frame * hopSize;
+    let energy = 0;
+    for (let j = 0; j < windowSize; j++) {
+      const s = mono[start + j];
+      energy += s * s;
+    }
+    onsetEnvelope[frame] = Math.sqrt(energy / windowSize);
+  }
+
+  // 3) Diferenciação (half-wave rectification) — detectar apenas subidas de energia
+  const diff = new Float32Array(numFrames);
+  for (let i = 1; i < numFrames; i++) {
+    const d = onsetEnvelope[i] - onsetEnvelope[i - 1];
+    diff[i] = d > 0 ? d : 0;
+  }
+
+  // 4) Low-pass filter na onset function para suavizar
+  const smoothed = new Float32Array(numFrames);
+  const smoothWindow = 5;
+  for (let i = 0; i < numFrames; i++) {
+    let sum = 0;
+    let count = 0;
+    for (let j = -smoothWindow; j <= smoothWindow; j++) {
+      const idx = i + j;
+      if (idx >= 0 && idx < numFrames) {
+        sum += diff[idx];
+        count++;
+      }
+    }
+    smoothed[i] = sum / count;
+  }
+
+  // 5) Autocorrelação na onset envelope suavizada
+  // Range de BPM: 60-200 BPM
+  const framesPerSecond = sampleRate / hopSize;
+  const minBPM = 60;
+  const maxBPM = 200;
+  const minLag = Math.floor(framesPerSecond * 60 / maxBPM);
+  const maxLag = Math.ceil(framesPerSecond * 60 / minBPM);
+
+  // Usar apenas uma janela de análise (os primeiros 30s ou toda a música)
+  const analysisFrames = Math.min(numFrames, Math.floor(30 * framesPerSecond));
+  const autocorr = new Float32Array(maxLag + 1);
+
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    let sum = 0;
+    let count = 0;
+    for (let i = 0; i < analysisFrames - lag; i++) {
+      sum += smoothed[i] * smoothed[i + lag];
+      count++;
+    }
+    autocorr[lag] = count > 0 ? sum / count : 0;
+  }
+
+  // 6) Encontrar picos na autocorrelação
+  interface BpmCandidate {
+    bpm: number;
+    score: number;
+    lag: number;
+  }
+  const candidates: BpmCandidate[] = [];
+
+  for (let lag = minLag + 1; lag < maxLag; lag++) {
+    // Pico local
+    if (autocorr[lag] > autocorr[lag - 1] && autocorr[lag] > autocorr[lag + 1]) {
+      const bpmVal = (framesPerSecond * 60) / lag;
+      candidates.push({ bpm: Math.round(bpmVal), score: autocorr[lag], lag });
+    }
+  }
+
+  // Ordenar por score
+  candidates.sort((a, b) => b.score - a.score);
+
+  if (candidates.length === 0) {
+    // Fallback: pegar o lag com maior autocorrelação
+    let bestLag = minLag;
+    let bestVal = -Infinity;
+    for (let lag = minLag; lag <= maxLag; lag++) {
+      if (autocorr[lag] > bestVal) {
+        bestVal = autocorr[lag];
+        bestLag = lag;
+      }
+    }
+    const bpm = Math.round((framesPerSecond * 60) / bestLag);
+    return { bpm, beats: generateBeatsFromBPM(bpm, audioBuffer.duration) };
+  }
+
+  // 7) Selecionar melhor candidato, preferindo BPMs comuns de música
+  // Músicas geralmente ficam entre 80-160 BPM
+  let bestBpm = candidates[0].bpm;
+  const topScore = candidates[0].score;
+
+  // Verificar se algum candidato no range 80-160 tem score similar (>70% do top)
+  for (const c of candidates) {
+    if (c.bpm >= 80 && c.bpm <= 170 && c.score > topScore * 0.7) {
+      bestBpm = c.bpm;
+      break;
+    }
+  }
+
+  // 8) Verificar harmônicas: se 2x do BPM encontrado tem score alto, pode ser que
+  // estamos detectando metade do tempo real
+  const doubleBpmLag = Math.round(framesPerSecond * 60 / (bestBpm * 2));
+  if (doubleBpmLag >= minLag && doubleBpmLag <= maxLag) {
+    const doubleScore = autocorr[doubleBpmLag];
+    if (doubleScore > topScore * 0.85 && bestBpm * 2 <= 200) {
+      // O dobro é quase tão forte, verificar se faz mais sentido musical
+      if (bestBpm < 80) {
+        bestBpm = bestBpm * 2;
+      }
+    }
+  }
+
+  // 9) Verificar sub-harmônica: se metade do BPM tem score alto, pode ser que
+  // estamos detectando o dobro
+  const halfBpmLag = Math.round(framesPerSecond * 60 / (bestBpm / 2));
+  if (halfBpmLag >= minLag && halfBpmLag <= maxLag) {
+    const halfScore = autocorr[halfBpmLag];
+    if (halfScore > topScore * 0.85 && bestBpm > 160) {
+      bestBpm = Math.round(bestBpm / 2);
+    }
+  }
+
+  // 10) Refinar com resolução mais fina em torno do candidato
+  const refinedBpm = refineBPM(smoothed, analysisFrames, framesPerSecond, bestBpm);
+
+  // 11) Gerar posições de beats
+  const beats = generateBeatsFromBPM(refinedBpm, audioBuffer.duration);
+
+  return { bpm: refinedBpm, beats };
+}
+
+/**
+ * Refina o BPM com resolução de 0.5 BPM em torno do valor candidato
+ */
+function refineBPM(
+  envelope: Float32Array,
+  analysisFrames: number,
+  framesPerSecond: number,
+  roughBpm: number
+): number {
+  let bestBpm = roughBpm;
+  let bestScore = -Infinity;
+
+  // Testar BPMs com resolução de 0.5 num range de ±5 BPM
+  for (let bpmTest = roughBpm - 5; bpmTest <= roughBpm + 5; bpmTest += 0.5) {
+    if (bpmTest < 40 || bpmTest > 250) continue;
+    const lag = framesPerSecond * 60 / bpmTest;
+    const lagFloor = Math.floor(lag);
+    const lagCeil = lagFloor + 1;
+    const frac = lag - lagFloor;
+
+    // Interpolação linear da autocorrelação
+    let sum = 0;
+    let count = 0;
+    for (let i = 0; i < analysisFrames - lagCeil; i++) {
+      const valFloor = envelope[i] * envelope[i + lagFloor];
+      const valCeil = envelope[i] * envelope[i + lagCeil];
+      sum += valFloor * (1 - frac) + valCeil * frac;
+      count++;
+    }
+    const score = count > 0 ? sum / count : 0;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestBpm = bpmTest;
+    }
+  }
+
+  return Math.round(bestBpm);
+}
+
+/**
+ * Gera posições de beats uniformemente espaçadas a partir do BPM
+ */
+function generateBeatsFromBPM(bpm: number, duration: number): number[] {
+  const secondsPerBeat = 60 / bpm;
+  const beats: number[] = [];
+  let t = 0;
+  while (t < duration) {
+    beats.push(t);
+    t += secondsPerBeat;
+  }
+  return beats;
+}
+
 // Gera posições de click a partir de beats detectados + extrapolação
 function buildClickPositions(beats: number[], bpm: number, duration: number): number[] {
   const secondsPerBeat = 60 / bpm;
@@ -185,22 +398,9 @@ export async function analyzeBufferAndGenerateClick(
   try {
     onProgress("Preparando áudio para análise...");
 
-    // Mix to mono
-    let audioData: Float32Array;
-    if (audioBuffer.numberOfChannels >= 2) {
-      const ch1 = audioBuffer.getChannelData(0);
-      const ch2 = audioBuffer.getChannelData(1);
-      audioData = new Float32Array(ch1.length);
-      for (let i = 0; i < ch1.length; i++) audioData[i] = (ch1[i] + ch2[i]) * 0.5;
-    } else {
-      audioData = new Float32Array(audioBuffer.getChannelData(0));
-    }
+    onProgress("Analisando os tempos da música (onset detection + autocorrelação)...");
 
-    onProgress("Analisando os tempos da música...");
-    // @ts-ignore — passa o sampleRate correto para timing preciso
-    const mt = new MusicTempo(audioData, { sampleRate: audioBuffer.sampleRate });
-    const bpm = Math.round(Number(mt.tempo));
-    const beats: number[] = (mt.beats as any[]).map(b => Number(b));
+    const { bpm, beats } = detectBPM(audioBuffer);
 
     onProgress(`BPM detectado: ${bpm}. Gerando click sincronizado...`);
 

@@ -26,62 +26,62 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
     const tabs: Tab[] = ['Geral', 'Buses', 'Sobre'];
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-            <div className="bg-[#1c1c1e] w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-white/10" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
+            <div className="daw-panel w-full max-w-2xl rounded-lg flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
 
                 {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b border-white/10 shrink-0">
+                <div className="flex items-center justify-between p-3 border-b border-border shrink-0">
                     <div className="flex-1"></div>
-                    <div className="flex bg-black/40 rounded-lg p-1 w-full max-w-md">
+                    <div className="flex lcd-display rounded-md p-0.5 w-full max-w-md">
                         {tabs.map(tab => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
-                                className={`flex-1 text-xs font-semibold py-1.5 rounded-md transition-all duration-200 active:scale-95 focus:outline-none focus:ring-2 focus:ring-white/20 cursor-pointer ${activeTab === tab ? 'bg-white/20 text-white shadow' : 'text-text-muted hover:bg-white/5'}`}
+                                className={`flex-1 text-[10px] font-bold py-1.5 rounded transition-all active:scale-95 cursor-pointer uppercase tracking-wider font-mono ${activeTab === tab ? 'bg-primary/15 text-primary' : 'text-text-muted hover:bg-white/5 hover:text-white'}`}
                             >
                                 {tab}
                             </button>
                         ))}
                     </div>
                     <div className="flex-1 flex justify-end">
-                        <button onClick={onClose} className="p-1.5 bg-white/10 hover:bg-white/20 rounded-full text-text-muted transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20">
-                            <X size={20} />
+                        <button onClick={onClose} className="p-1.5 hover:bg-white/5 rounded-md text-text-muted transition-all active:scale-90 cursor-pointer">
+                            <X size={18} />
                         </button>
                     </div>
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto min-h-[400px] max-h-[70vh] p-6 bg-[#000000]">
+                <div className="flex-1 overflow-y-auto min-h-[400px] max-h-[70vh] p-6 bg-[#0e0e10]">
 
                     {activeTab === 'Geral' && (
                         <div className="flex flex-col gap-6">
                             {/* Auto Pan */}
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <h3 className="text-white text-base font-medium">Auto Pan Estéreo</h3>
-                                    <p className="text-text-muted text-xs">Enviar Metrônomo & Guia para canal esquerdo (L) e tracks para o direito (R)</p>
+                                    <h3 className="text-white text-sm font-bold">Auto Pan Stereo</h3>
+                                    <p className="text-text-muted text-[10px] font-mono">Route Click & Guide to L channel, tracks to R</p>
                                 </div>
                                 <label className="relative inline-flex items-center cursor-pointer ml-4 shrink-0">
                                     <input type="checkbox" className="sr-only peer" checked={settings.autoPan} onChange={(e) => updateSetting('autoPan', e.target.checked)} />
-                                    <div className="w-11 h-6 bg-white/20 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0A84FF]"></div>
+                                    <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                                 </label>
                             </div>
 
-                            <hr className="border-white/5" />
+                            <hr className="border-border" />
 
                             {/* Audio Device */}
                             <div className="flex items-center justify-between">
                                 <div className="flex-1 pr-4">
-                                    <h3 className="text-white text-base font-medium flex items-center gap-2">
-                                        Dispositivo de Áudio
-                                        <button onClick={refreshAudioDevices} className="opacity-50 hover:opacity-100 transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none"><RefreshCcw size={14} /></button>
+                                    <h3 className="text-white text-sm font-bold flex items-center gap-2">
+                                        Audio Device
+                                        <button onClick={refreshAudioDevices} className="opacity-40 hover:opacity-100 transition-all active:scale-90 cursor-pointer"><RefreshCcw size={12} /></button>
                                     </h3>
-                                    <p className="text-text-muted text-xs">Selecione por onde o som master vai sair (Placa de Áudio / Fone)</p>
+                                    <p className="text-text-muted text-[10px] font-mono">Select master output device</p>
                                 </div>
                                 <div className="shrink-0 flex items-center justify-end">
                                     <div className="relative">
                                         <select
-                                            className="appearance-none bg-transparent hover:bg-white/5 border border-white/10 text-white text-sm font-medium py-2 pl-4 pr-10 rounded-lg cursor-pointer outline-none focus:border-secondary/50 focus:ring-2 focus:ring-secondary/20 transition-all duration-200 max-w-[200px] truncate"
+                                            className="appearance-none daw-input hover:bg-white/5 text-white text-[10px] font-bold py-2 pl-3 pr-8 rounded-md cursor-pointer max-w-[200px] truncate font-mono"
                                             value={settings.audioDeviceId}
                                             onChange={(e) => updateSetting('audioDeviceId', e.target.value)}
                                         >
@@ -97,33 +97,33 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                                 </div>
                             </div>
 
-                            <hr className="border-white/5" />
+                            <hr className="border-border" />
 
                             <div className="flex items-center justify-between opacity-50 pointer-events-none">
                                 <div>
-                                    <h3 className="text-white text-base font-medium">Grade da Waveform</h3>
-                                    <p className="text-text-muted text-xs">Sobrepor grade de compasso e beat na onda wave (Em Breve)</p>
+                                    <h3 className="text-white text-sm font-bold">Waveform Grid</h3>
+                                    <p className="text-text-muted text-[10px] font-mono">Overlay beat grid on waveform (Coming Soon)</p>
                                 </div>
                                 <label className="relative inline-flex items-center ml-4 shrink-0">
                                     <input type="checkbox" className="sr-only peer" checked readOnly />
-                                    <div className="w-11 h-6 bg-white/20 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0A84FF]"></div>
+                                    <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                                 </label>
                             </div>
 
-                            <hr className="border-white/5" />
+                            <hr className="border-border" />
 
                             {/* Cloud Admin Access */}
                             {isAdmin && (
-                                <div className="flex items-center justify-between p-4 bg-secondary/10 rounded-xl border border-secondary/20 mt-4">
+                                <div className="flex items-center justify-between p-3 bg-secondary/5 rounded-md border border-secondary/15 mt-4">
                                     <div>
-                                        <h3 className="text-secondary text-base font-bold">Painel de Upload</h3>
-                                        <p className="text-text-muted text-xs">Publicar novas músicas na biblioteca da nuvem</p>
+                                        <h3 className="text-secondary text-sm font-bold uppercase tracking-wider">Upload Panel</h3>
+                                        <p className="text-text-muted text-[10px] font-mono">Publish songs to cloud library</p>
                                     </div>
                                     <button
                                         onClick={() => { onClose(); onOpenAdmin(); }}
-                                        className="px-4 py-2 bg-secondary text-black text-xs font-bold rounded-lg hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                                        className="px-3 py-1.5 bg-secondary text-black text-[10px] font-bold rounded-md hover:scale-105 active:scale-95 transition-all cursor-pointer uppercase tracking-wider"
                                     >
-                                        Acessar Painel
+                                        Open Panel
                                     </button>
                                 </div>
                             )}
@@ -138,12 +138,12 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                                 </div>
                             ) : (
                                 <>
-                                    <p className="text-text-muted text-xs mb-4">Defina para qual bus estéreo (saída) cada canal será direcionado. Bus 1 = Esquerdo (L), Bus 2 = Direito (R), 1/2 = Centro (Estéreo).</p>
+                            <p className="text-text-muted text-[10px] mb-4 font-mono">Define which stereo bus each channel routes to. Bus 1 = L, Bus 2 = R, 1/2 = Stereo.</p>
                                     {channels.map(ch => (
-                                        <div key={ch.id} className="flex items-center justify-between py-3 border-b border-white/5 last:border-b-0">
-                                            <span className="text-white font-medium text-sm">{ch.name}</span>
+                                        <div key={ch.id} className="flex items-center justify-between py-2.5 border-b border-border last:border-b-0">
+                                            <span className="text-white font-bold text-xs font-mono uppercase tracking-wider">{ch.name}</span>
                                             <select
-                                                className="bg-transparent border border-white/10 text-white text-sm font-medium py-1.5 px-3 rounded-lg cursor-pointer outline-none hover:bg-white/5 focus:border-secondary/50 focus:ring-2 focus:ring-secondary/20 transition-all duration-200"
+                                                className="daw-input text-white text-[10px] font-bold py-1 px-2 rounded-md cursor-pointer font-mono"
                                                 value={ch.bus}
                                                 onChange={(e) => onSetChannelBus(ch.id, e.target.value as '1' | '2' | '1/2')}
                                             >
@@ -159,10 +159,10 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                     )}
 
                     {activeTab === 'Sobre' && (
-                        <div className="flex flex-col items-center justify-center h-full gap-4 text-center py-8">
-                            <div className="text-4xl font-bold tracking-tighter text-primary">MULTITRACKS</div>
-                            <div className="text-text-muted text-sm">Playback WebApp v5.0</div>
-                            <div className="text-text-muted/50 text-xs max-w-sm">Sistema de reprodução multitrack para uso ao vivo. Desenvolvido com Web Audio API, React e IndexedDB.</div>
+                        <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-8">
+                            <div className="text-3xl font-black tracking-[0.15em] text-primary uppercase font-mono">PLAYBACK</div>
+                            <div className="text-text-muted text-[10px] font-mono tracking-wider">Studio Engine v5.0</div>
+                            <div className="text-text-muted/40 text-[9px] max-w-sm font-mono">Professional multitrack playback system. Built with Web Audio API, React, and IndexedDB.</div>
                         </div>
                     )}
                 </div>

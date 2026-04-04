@@ -340,19 +340,19 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
   if (!file && stems.length === 0) {
     return (
-      <div className="fixed inset-0 z-50 bg-[#0f0f11] flex flex-col items-center justify-center p-6">
-        <button onClick={onClose} className="absolute top-6 left-6 text-gray-400 hover:text-white flex items-center gap-2 cursor-pointer">
-          <ChevronLeft size={24}/> Voltar
+      <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col items-center justify-center p-6">
+        <button onClick={onClose} className="absolute top-5 left-5 text-text-muted hover:text-white flex items-center gap-1.5 cursor-pointer text-xs font-mono uppercase tracking-wider">
+          <ChevronLeft size={18}/> BACK
         </button>
         <div className="max-w-xl w-full text-center">
-           <Disc3 size={80} className="mx-auto text-primary mb-6 animate-[spin_10s_linear_infinite]" />
-           <h1 className="text-4xl font-black text-white mb-4">DAW Inteligente</h1>
-           <p className="text-gray-400 mb-10 text-lg">Envie seu MP3. A Inteligência Artificial separará e mixará todos os instrumentos, descobrirá o Click exato, e gerará um Repertório Profissional de ensaio Muti-canal.</p>
+           <Disc3 size={60} className="mx-auto text-primary mb-5 animate-[spin_10s_linear_infinite]" />
+           <h1 className="text-2xl font-black text-white mb-3 uppercase tracking-wider">AI Stem Separator</h1>
+           <p className="text-text-muted mb-8 text-xs font-mono leading-relaxed max-w-md mx-auto">Upload your audio. AI will separate and mix all instruments, detect exact BPM, and generate a professional multi-channel rehearsal project.</p>
            
-           <label className="border-2 border-dashed border-primary/40 bg-primary/5 hover:bg-primary/10 rounded-3xl p-16 flex flex-col items-center justify-center cursor-pointer transition-colors shadow-[0_0_50px_rgba(16,185,129,0.1)]">
-             <UploadCloud size={48} className="text-primary mb-4" />
-             <span className="text-xl font-bold text-white">Carregar Áudio e Iniciar</span>
-             <span className="text-sm text-gray-500 mt-2">MP3, WAV ou AAC</span>
+           <label className="border-2 border-dashed border-primary/30 bg-primary/3 hover:bg-primary/5 rounded-lg p-12 flex flex-col items-center justify-center cursor-pointer transition-colors shadow-[0_0_40px_rgba(16,185,129,0.05)]">
+             <UploadCloud size={40} className="text-primary mb-3" />
+             <span className="text-sm font-black text-white uppercase tracking-wider">Load Audio & Start</span>
+             <span className="text-[10px] text-text-muted/50 mt-1.5 font-mono">MP3, WAV, or AAC</span>
              <input type="file" accept="audio/*" onChange={handleFileUpload} className="hidden" />
            </label>
         </div>
@@ -362,85 +362,83 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
   if (isProcessing) {
     return (
-      <div className="fixed inset-0 z-50 bg-[#0f0f11] flex flex-col items-center justify-center p-6">
-        <Loader2 size={64} className="text-primary animate-spin mb-8" />
-        <h2 className="text-3xl font-black text-white tracking-widest uppercase mb-4 text-transparent bg-clip-text bg-gradient-to-r from-primary to-[#059669]">
-           Analisando Frequências
+      <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col items-center justify-center p-6">
+        <Loader2 size={48} className="text-primary animate-spin mb-6" />
+        <h2 className="text-xl font-black text-white tracking-widest uppercase mb-3 text-transparent bg-clip-text bg-gradient-to-r from-primary to-[#059669]">
+           Analyzing Frequencies
         </h2>
-        <div className="text-xl text-gray-400 max-w-lg text-center font-medium h-20">{progressMsg}</div>
-        <div className="w-full max-w-md bg-gray-900 rounded-full h-3 mt-8 overflow-hidden border border-white/5 shadow-inner">
+        <div className="text-xs text-text-muted max-w-lg text-center font-mono h-16">{progressMsg}</div>
+        <div className="w-full max-w-md bg-surface rounded-full h-1.5 mt-6 overflow-hidden border border-border">
           <div className="bg-primary h-full transition-all duration-300 ease-out" style={{ width: `${progress}%` }}></div>
         </div>
-        <p className="text-gray-500 text-sm mt-4 font-mono">{progress}% COMPLETED</p>
+        <p className="text-text-muted/50 text-[10px] mt-3 font-mono uppercase tracking-widest">{progress}% COMPLETED</p>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#121214] flex flex-col font-sans select-none overflow-hidden text-gray-200">
+    <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col font-sans select-none overflow-hidden text-gray-200">
       
       {/* HEADER DAW */}
-      <header className="h-16 bg-[#09090b] border-b border-white/5 flex items-center justify-between px-6 shrink-0 shadow-sm z-10">
-        <div className="flex items-center gap-4">
-          <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg transition-colors cursor-pointer text-gray-400">
-            <ChevronLeft size={24} />
+      <header className="h-14 bg-surface border-b border-border flex items-center justify-between px-4 shrink-0 z-10">
+        <div className="flex items-center gap-3">
+          <button onClick={onClose} className="p-1.5 hover:bg-white/5 rounded-md transition-colors cursor-pointer text-text-muted">
+            <ChevronLeft size={20} />
           </button>
-          <div className="flex items-center gap-3">
-             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-blue-600 flex items-center justify-center">
-                <Disc3 size={16} className="text-white" />
+          <div className="flex items-center gap-2">
+             <div className="w-7 h-7 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center">
+                <Disc3 size={14} className="text-primary" />
              </div>
              <div>
-                <h1 className="font-bold text-white text-base leading-tight">Painel Moises (DAW Mode)</h1>
-                <h2 className="text-xs font-mono text-gray-500 truncate max-w-xs">{songName}</h2>
+                <h1 className="font-black text-white text-xs uppercase tracking-wider leading-tight">Stem Separator (DAW)</h1>
+                <h2 className="text-[9px] font-mono text-text-muted truncate max-w-xs">{songName}</h2>
              </div>
           </div>
         </div>
         <button 
           onClick={() => setShowSaveForm(true)}
-          className="flex items-center gap-2 bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 px-4 py-2 rounded-lg text-sm font-bold transition-all cursor-pointer">
-          <Save size={16} /> Exportar
+          className="flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/15 hover:bg-primary/15 px-3 py-1.5 rounded-md text-[10px] font-bold transition-all cursor-pointer uppercase tracking-wider">
+          <Save size={14} /> EXPORT
         </button>
       </header>
 
       {/* CORE WORKSPACE */}
       <div className="flex-1 flex overflow-hidden">
-         {/* TRACK CONTROLS: ESQUERDA FIXA */}
-         <div className="w-[300px] bg-[#18181b] border-r border-[#27272a] flex flex-col overflow-y-auto overflow-x-hidden pt-8 shrink-0 z-10 custom-scrollbar shadow-2xl">
+         {/* TRACK CONTROLS: LEFT FIXED */}
+         <div className="w-[280px] bg-surface border-r border-border flex flex-col overflow-y-auto overflow-x-hidden pt-7 shrink-0 z-10 custom-scrollbar">
             {stems.map((stem) => {
                const state = stemStates[stem.id];
                if(!state) return null;
                
                return (
-                  <div key={`ctrl-${stem.id}`} className="flex flex-col h-[70px] border-b border-[#27272a] px-4 justify-center bg-[#18181b] relative group">
-                     {/* Borda indicadora da cor */}
-                     <div className="absolute left-0 top-0 bottom-0 w-1" style={{ backgroundColor: stem.color }}></div>
+                  <div key={`ctrl-${stem.id}`} className="flex flex-col h-[70px] border-b border-border px-3 justify-center bg-surface relative group">
+                     {/* Color indicator border */}
+                     <div className="absolute left-0 top-0 bottom-0 w-0.5" style={{ backgroundColor: stem.color }}></div>
                      
-                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-bold uppercase tracking-wider pl-2" style={{ color: stem.color }}>{stem.name}</span>
-                        <div className="flex gap-1">
+                     <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[10px] font-black uppercase tracking-wider pl-2 font-mono" style={{ color: stem.color }}>{stem.name}</span>
+                        <div className="flex gap-0.5">
                            <button 
                               onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], muted: !p[stem.id].muted } }))}
-                              className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-black cursor-pointer transition-colors ${state.muted ? 'bg-red-500 text-white' : 'bg-[#27272a] text-gray-400 hover:bg-gray-700'}`}>M</button>
+                              className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-black cursor-pointer transition-colors ${state.muted ? 'bg-accent-red text-white' : 'bg-black/30 text-text-muted hover:bg-white/10'}`}>M</button>
                            <button 
                               onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], soloed: !p[stem.id].soloed } }))}
-                              className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-black cursor-pointer transition-colors ${state.soloed ? 'bg-[#f59e0b] text-white' : 'bg-[#27272a] text-gray-400 hover:bg-gray-700'}`}>S</button>
+                              className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-black cursor-pointer transition-colors ${state.soloed ? 'bg-secondary text-black' : 'bg-black/30 text-text-muted hover:bg-white/10'}`}>S</button>
                         </div>
                      </div>
-                     <div className="flex items-center gap-3 pl-2">
-                        {/* PAN KNOB ALGORITHM VISUAL */}
-                        <div className="w-6 h-6 rounded-full border-2 border-[#27272a] flex items-center justify-center relative bg-black shrink-0" 
+                     <div className="flex items-center gap-2 pl-2">
+                        {/* PAN KNOB */}
+                        <div className="w-5 h-5 rounded-full border-2 border-border flex items-center justify-center relative bg-black/50 shrink-0" 
                              style={{ cursor: 'ew-resize' }}
-                             title="Deslize o mouse (L/R) ou clique"
+                             title="Pan L/R"
                              onWheel={(e) => {
                                 const newPan = Math.max(-1, Math.min(1, state.pan + (e.deltaY > 0 ? -0.1 : 0.1)));
                                 setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], pan: newPan } }));
                              }}
                              onClick={() => {
-                               // Reset on click
                                setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], pan: 0 } }));
                              }}>
-                             {/* Knob pointer */}
-                             <div className="w-1 h-3 bg-gray-400 rounded-full origin-bottom absolute top-0.5" 
+                             <div className="w-0.5 h-2.5 bg-text-muted rounded-full origin-bottom absolute top-0.5" 
                                   style={{ transform: `rotate(${state.pan * 45}deg)` }}></div>
                         </div>
                         {/* VOLUME FADER */}
@@ -448,7 +446,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                            type="range" min="0" max="1" step="0.01"
                            value={state.volume}
                            onChange={(e) => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], volume: parseFloat(e.target.value) } }))}
-                           className="w-full h-1 bg-[#27272a] rounded-lg appearance-none cursor-pointer accent-[#a1a1aa] hover:accent-white transition-all outline-none" 
+                           className="w-full h-0.5 bg-border rounded-lg appearance-none cursor-pointer accent-[#a1a1aa] hover:accent-white transition-all outline-none" 
                         />
                      </div>
                   </div>
@@ -456,17 +454,16 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
             })}
          </div>
 
-         {/* WAVEFORMS: DIREITA */}
-         <div className="flex-1 bg-[#09090b] relative overflow-y-auto overflow-x-hidden pt-8">
-            {/* Linha Playhead Sync */}
-            <div className="absolute top-8 bottom-0 w-px bg-white/70 z-10 pointer-events-none drop-shadow-[0_0_5px_rgba(255,255,255,0.8)]" 
+         {/* WAVEFORMS: RIGHT */}
+         <div className="flex-1 bg-[#0a0a0c] relative overflow-y-auto overflow-x-hidden pt-7">
+            {/* Playhead Sync Line */}
+            <div className="absolute top-7 bottom-0 w-px bg-white/60 z-10 pointer-events-none drop-shadow-[0_0_3px_rgba(255,255,255,0.6)]" 
                  style={{ left: `${progressPlayback}%` }}>
-                 {/* Traingle na ponta */}
-                 <div className="absolute -top-2 left-[-5px] w-0 h-0 border-l-[5px] border-r-[5px] border-t-[8px] border-transparent border-t-white"></div>
+                 <div className="absolute -top-1.5 left-[-4px] w-0 h-0 border-l-[4px] border-r-[4px] border-t-[6px] border-transparent border-t-white"></div>
             </div>
 
             {stems.map((stem) => (
-               <div key={`wavewrap-${stem.id}`} className="h-[70px] border-b border-[#27272a] relative hover:bg-white/5 transition-colors">
+               <div key={`wavewrap-${stem.id}`} className="h-[70px] border-b border-border relative hover:bg-white/3 transition-colors">
                   <div id={`waveform-${stem.id}`} className="absolute w-full top-0 h-full" />
                </div>
             ))}
@@ -474,28 +471,28 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       </div>
 
       {/* TRANSPORT BAR */}
-      <footer className="h-20 bg-[#18181b] border-t border-[#27272a] shrink-0 px-8 flex items-center justify-between z-20 shadow-[0_-5px_30px_rgba(0,0,0,0.5)]">
+      <footer className="h-16 bg-surface border-t border-border shrink-0 px-6 flex items-center justify-between z-20">
          <div className="flex-1">
-            <span className="text-xs font-mono font-bold text-gray-500 uppercase tracking-widest">{bpm} BPM <span className="mx-2">•</span> {songKey}</span>
+            <span className="text-[10px] font-mono font-black text-text-muted uppercase tracking-widest">{bpm} BPM <span className="mx-1.5 text-border">|</span> {songKey}</span>
          </div>
-         <div className="flex gap-6 items-center flex-1 justify-center">
+         <div className="flex gap-4 items-center flex-1 justify-center">
             <button 
                onClick={() => { Object.values(wavesurfers.current).forEach(ws => ws.setTime(0)) }}
-               className="text-gray-500 hover:text-white transition-colors cursor-pointer"><ChevronLeft size={24}/></button>
+               className="text-text-muted hover:text-white transition-colors cursor-pointer"><ChevronLeft size={20}/></button>
             <button 
                onClick={togglePlay}
-               className="w-14 h-14 bg-primary text-black rounded-full flex items-center justify-center transition-transform hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(16,185,129,0.3)] cursor-pointer">
-               {isPlaying ? <Pause size={24} fill="currentColor"/> : <Play size={24} fill="currentColor" className="ml-1"/>}
+               className="w-12 h-12 bg-primary text-black rounded-md flex items-center justify-center transition-transform hover:scale-105 active:scale-95 shadow-[0_0_15px_rgba(16,185,129,0.2)] cursor-pointer">
+               {isPlaying ? <Pause size={20} fill="currentColor"/> : <Play size={20} fill="currentColor" className="ml-0.5"/>}
             </button>
-            <button className="text-gray-500 transition-colors pointer-events-none opacity-50"><ChevronLeft size={24} className="rotate-180"/></button>
+            <button className="text-text-muted/30 transition-colors pointer-events-none"><ChevronLeft size={20} className="rotate-180"/></button>
          </div>
-         <div className="flex-1 flex items-center justify-end gap-3 px-4">
-            <span className="text-gray-500"><Volume2 size={16}/></span>
+         <div className="flex-1 flex items-center justify-end gap-2 px-3">
+            <span className="text-text-muted"><Volume2 size={14}/></span>
             <input 
                type="range" min="0" max="1" step="0.01"
                value={masterVolume}
                onChange={(e) => setMasterVolume(parseFloat(e.target.value))}
-               className="w-32 h-1 bg-[#27272a] rounded-lg appearance-none cursor-pointer accent-primary" 
+               className="w-28 h-0.5 bg-border rounded-lg appearance-none cursor-pointer accent-primary" 
                title="Master Volume"
             />
          </div>
@@ -503,72 +500,72 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
       {/* SAVE MODAL */}
       {showSaveForm && (
-        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-[#18181b] border border-[#27272a] rounded-2xl w-full max-w-md p-8 shadow-2xl relative">
-             {!isSaving && <button onClick={() => setShowSaveForm(false)} className="absolute top-4 right-4 text-gray-500 hover:text-white cursor-pointer"><X size={20}/></button>}
+        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="daw-panel w-full max-w-md p-6 rounded-lg relative">
+             {!isSaving && <button onClick={() => setShowSaveForm(false)} className="absolute top-3 right-3 text-text-muted hover:text-white cursor-pointer"><X size={16}/></button>}
              
-             <h2 className="text-2xl font-black text-white mb-2 tracking-tight">Publicar no Banco</h2>
-             <p className="text-gray-400 text-sm mb-6 leading-relaxed">Você está guardando o multitrack de {stems.length} trilhas para sempre na sua Central.</p>
+             <h2 className="text-lg font-black text-white mb-1.5 uppercase tracking-wider">Publish to Cloud</h2>
+             <p className="text-text-muted text-[10px] mb-5 font-mono">Saving {stems.length}-track multitrack project to your library.</p>
              
              {!isSaving ? (
-               <div className="flex flex-col gap-5">
-                 <div className="grid grid-cols-2 gap-4">
+               <div className="flex flex-col gap-4">
+                 <div className="grid grid-cols-2 gap-3">
                    <div>
-                     <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Música *</label>
+                     <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Song *</label>
                      <input value={songName} onChange={e => setSongName(e.target.value)} 
-                       className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors"
-                       placeholder="Ex: Lindo És"
+                       className="w-full daw-input rounded-md px-3 py-2 text-white text-xs font-mono"
+                       placeholder="e.g. Beautiful"
                      />
                    </div>
                    <div>
-                     <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Artista</label>
+                     <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Artist</label>
                      <input value={artist} onChange={e => setArtist(e.target.value)} 
-                       className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors"
-                       placeholder="Ex: Livres"
+                       className="w-full daw-input rounded-md px-3 py-2 text-white text-xs font-mono"
+                       placeholder="e.g. Hillsong"
                      />
                    </div>
                  </div>
-                 <div className="grid grid-cols-2 gap-4">
+                 <div className="grid grid-cols-2 gap-3">
                    <div>
-                     <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">BPM I.A.</label>
+                     <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">BPM (AI)</label>
                      <input type="number" value={bpm} onChange={e => setBpm(e.target.value)} 
-                       className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors font-mono"
+                       className="w-full daw-input rounded-md px-3 py-2 text-white text-xs font-mono"
                      />
                    </div>
                    <div>
-                     <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Tom (Chute)</label>
+                     <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Key</label>
                      <select value={songKey} onChange={e => setSongKey(e.target.value)}
-                       className="w-full bg-[#09090b] border border-[#27272a] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors appearance-none font-mono">
+                       className="w-full daw-input rounded-md px-3 py-2 text-white text-xs font-mono appearance-none">
                        {['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'].map(k => <option key={k} value={k}>{k}</option>)}
                      </select>
                    </div>
                  </div>
-                  <div className="mt-4">
-                    <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">Imagem de Capa (Opcional)</label>
-                    <div className="flex items-center gap-3">
-                      <label className="flex flex-1 items-center gap-2 bg-[#09090b] border border-[#27272a] hover:border-primary/50 cursor-pointer rounded-xl px-4 py-3 text-gray-400 text-sm transition-colors overflow-hidden">
-                        <UploadCloud size={16} className="text-primary flex-shrink-0" />
-                        <span className="truncate">{coverFile ? coverFile.name : 'Selecionar imagem do computador...'}</span>
+                  <div className="mt-1">
+                    <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Cover Image (Optional)</label>
+                    <div className="flex items-center gap-2">
+                      <label className="flex flex-1 items-center gap-2 daw-input rounded-md px-3 py-2 cursor-pointer text-text-muted text-xs font-mono overflow-hidden">
+                        <UploadCloud size={14} className="text-primary flex-shrink-0" />
+                        <span className="truncate">{coverFile ? coverFile.name : 'Select image...'}</span>
                         <input type="file" accept="image/*" className="hidden" onChange={e => setCoverFile(e.target.files?.[0] || null)} />
                       </label>
                       {coverFile && (
-                        <button onClick={() => setCoverFile(null)} className="p-3 text-gray-500 hover:text-red-400 bg-[#09090b] border border-[#27272a] rounded-xl transition-colors shrink-0">
-                          <X size={16} />
+                        <button onClick={() => setCoverFile(null)} className="p-2 text-text-muted hover:text-accent-red daw-input rounded-md transition-colors shrink-0">
+                          <X size={14} />
                         </button>
                       )}
                     </div>
                   </div>
-                 <button onClick={handleSaveToDatabase} className="w-full bg-primary text-black font-bold py-4 rounded-xl mt-4 hover:bg-emerald-400 transition-colors shadow-[0_0_20px_rgba(16,185,129,0.2)] cursor-pointer">
-                   Salvar e Oficializar
+                 <button onClick={handleSaveToDatabase} className="w-full bg-primary text-black font-black py-3 rounded-md mt-3 uppercase tracking-wider text-xs active:scale-[0.98] transition-all shadow-[0_0_15px_rgba(16,185,129,0.15)] cursor-pointer">
+                   SAVE & PUBLISH
                  </button>
                </div>
              ) : (
-               <div className="flex flex-col items-center py-10">
-                  <UploadCloud size={48} className="text-primary animate-pulse mb-6" />
-                  <div className="text-white font-bold text-xl mb-2">{saveProgress >= 100 ? 'Feito!' : 'Publicando...'}</div>
-                  <div className="text-gray-400 text-sm text-center mb-8 h-6 font-mono">{saveStatus}</div>
+               <div className="flex flex-col items-center py-8">
+                  <UploadCloud size={36} className="text-primary animate-pulse mb-4" />
+                  <div className="text-white font-black text-sm uppercase tracking-wider mb-1">{saveProgress >= 100 ? 'DONE!' : 'PUBLISHING...'}</div>
+                  <div className="text-text-muted text-[10px] text-center mb-6 h-5 font-mono">{saveStatus}</div>
                   
-                  <div className="w-full bg-[#09090b] rounded-full h-2 overflow-hidden border border-[#27272a]">
+                  <div className="w-full lcd-display rounded-md h-1.5 overflow-hidden">
                     <div className="bg-primary h-full transition-all duration-300" style={{ width: `${saveProgress}%` }}></div>
                   </div>
                </div>

@@ -124,45 +124,45 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="bg-surface border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="daw-panel w-full max-w-md overflow-hidden flex flex-col rounded-lg">
 
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-white/5 bg-black/20">
+        <div className="flex items-center justify-between p-3 border-b border-border bg-black/30">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center text-purple-400">
-              <Settings size={20} />
+            <div className="w-8 h-8 rounded-md bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+              <Settings size={16} />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white tracking-tight">Gerador de Click</h2>
-              <p className="text-xs text-text-muted">Adicione um metrônomo instantaneamente</p>
+              <h2 className="text-sm font-black text-white tracking-wider uppercase">Click Generator</h2>
+              <p className="text-[9px] text-text-muted font-mono">Add metronome instantly</p>
             </div>
           </div>
           <button onClick={onClose} disabled={isSynthesizing} className="text-text-muted hover:text-white transition-colors cursor-pointer">
-            <X size={24} />
+            <X size={18} />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-white/5 bg-black/10">
+        <div className="flex border-b border-border bg-black/20">
           <button
             onClick={() => setActiveTab('manual')}
-            className={`flex-1 py-3 text-sm font-semibold tracking-wide transition-all ${activeTab === 'manual' ? 'text-primary border-b-2 border-primary' : 'text-text-muted hover:bg-white/5'}`}>
-            <div className="flex justify-center items-center gap-2"><Keyboard size={16} /> Manual</div>
+            className={`flex-1 py-2.5 text-[10px] font-bold tracking-wider uppercase font-mono transition-all ${activeTab === 'manual' ? 'text-primary border-b-2 border-primary' : 'text-text-muted hover:bg-white/5'}`}>
+            <div className="flex justify-center items-center gap-2"><Keyboard size={14} /> MANUAL</div>
           </button>
           <button
             onClick={() => setActiveTab('ai')}
-            className={`flex-1 py-3 text-sm font-semibold tracking-wide transition-all ${activeTab === 'ai' ? 'text-purple-400 border-b-2 border-purple-400' : 'text-text-muted hover:bg-white/5'}`}>
-            <div className="flex justify-center items-center gap-2"><Cpu size={16} /> Detectar BPM</div>
+            className={`flex-1 py-2.5 text-[10px] font-bold tracking-wider uppercase font-mono transition-all ${activeTab === 'ai' ? 'text-purple-400 border-b-2 border-purple-400' : 'text-text-muted hover:bg-white/5'}`}>
+            <div className="flex justify-center items-center gap-2"><Cpu size={14} /> DETECT BPM</div>
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-5">
+        <div className="p-5 space-y-4 bg-[#0e0e10]">
           {activeTab === 'manual' ? (
             <>
               <div>
-                <label className="block text-sm font-medium text-text-muted mb-3">BPM (Batidas por Minuto)</label>
+                <label className="block text-[10px] font-bold text-text-muted mb-3 uppercase tracking-wider font-mono">BPM (Beats Per Minute)</label>
                 <div className="flex items-center gap-3">
                   <input
                     type="range"
@@ -170,7 +170,7 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
                     max="300"
                     value={bpm}
                     onChange={(e) => handleBpmChange(parseInt(e.target.value))}
-                    className="flex-1 accent-primary h-2"
+                    className="flex-1 accent-primary h-1.5 rounded"
                   />
                   <input
                     type="number"
@@ -179,55 +179,55 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
                     value={bpmInput}
                     onChange={(e) => handleBpmInputChange(e.target.value)}
                     onBlur={handleBpmInputBlur}
-                    className="w-20 h-10 text-center bg-black/40 border border-white/20 rounded-xl font-mono text-white font-bold text-lg focus:outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/40 transition-all"
+                    className="w-20 h-10 text-center lcd-display rounded-md font-mono text-primary font-bold text-lg"
                   />
                 </div>
               </div>
 
-              <div className="bg-primary/10 border border-primary/20 rounded-xl p-3 flex gap-3 text-sm text-primary">
-                <Settings size={16} className="shrink-0 mt-0.5" />
-                <p>Duração da música: <span className="font-bold">{songDurationStr}</span></p>
+              <div className="lcd-display rounded-md p-3 flex gap-3 text-[10px] text-primary font-mono">
+                <Settings size={14} className="shrink-0 mt-0.5" />
+                <p>Duration: <span className="font-bold">{songDurationStr}</span></p>
               </div>
 
               <button
                 onClick={handleManualGenerate}
                 disabled={isSynthesizing || !playlistCurrentSong}
-                className="w-full bg-primary hover:bg-emerald-400 text-black py-4 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(16,185,129,0.2)]"
+                className="w-full bg-primary hover:bg-primary-dim text-black py-3 rounded-md font-black transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 uppercase tracking-wider text-xs shadow-[0_0_15px_rgba(212,168,67,0.15)]"
               >
-                {isSynthesizing ? <Loader2 size={20} className="animate-spin" /> : <Play size={20} />}
-                Gerar Metrônomo
+                {isSynthesizing ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} />}
+                GENERATE CLICK
               </button>
             </>
           ) : (
             <>
-              <div className="bg-black/30 border border-white/10 rounded-xl p-4 text-sm text-text-muted space-y-2">
-                <div className="flex items-center gap-2 text-purple-300 font-semibold">
+              <div className="lcd-display rounded-md p-3 text-[10px] text-text-muted space-y-2 font-mono">
+                <div className="flex items-center gap-2 text-purple-300 font-bold uppercase tracking-wider">
                   <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
-                  Análise automática
+                  Auto Analysis
                 </div>
-                <p>A IA analisa o ritmo das faixas de <span className="text-white font-medium">Bateria</span> ou <span className="text-white font-medium">Baixo</span> para detectar o BPM exato e sincronizar o click com a música.</p>
+                <p>AI analyzes <span className="text-white font-bold">Drums</span> or <span className="text-white font-bold">Bass</span> tracks to detect exact BPM and sync click with the song.</p>
               </div>
 
               {detectedBpm && (
-                <div className="flex items-center gap-3 bg-green-500/10 border border-green-500/30 rounded-xl p-3">
-                  <CheckCircle size={18} className="text-green-400 shrink-0" />
-                  <span className="text-green-300 font-semibold">BPM detectado: <span className="text-white">{detectedBpm}</span></span>
+                <div className="flex items-center gap-3 bg-accent-green/5 border border-accent-green/20 rounded-md p-3">
+                  <CheckCircle size={16} className="text-accent-green shrink-0" />
+                  <span className="text-accent-green font-bold text-xs font-mono uppercase">BPM Detected: <span className="text-white">{detectedBpm}</span></span>
                 </div>
               )}
 
               <button
                 onClick={handleAIGenerate}
                 disabled={isSynthesizing || !playlistCurrentSong}
-                className="w-full bg-purple-500 hover:bg-purple-400 text-white py-4 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(168,85,247,0.3)]"
+                className="w-full bg-purple-600 hover:bg-purple-500 text-white py-3 rounded-md font-black transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 uppercase tracking-wider text-xs shadow-[0_0_15px_rgba(168,85,247,0.2)]"
               >
-                {isSynthesizing ? <Loader2 size={20} className="animate-spin" /> : <Cpu size={20} />}
-                Detectar BPM & Gerar Click
+                {isSynthesizing ? <Loader2 size={18} className="animate-spin" /> : <Cpu size={18} />}
+                DETECT BPM & GENERATE
               </button>
             </>
           )}
 
           {isSynthesizing && statusMsg && (
-            <div className="text-center text-xs font-medium text-purple-300 animate-pulse">
+            <div className="text-center text-[10px] font-bold text-purple-300 animate-pulse font-mono uppercase tracking-wider">
               {statusMsg}
             </div>
           )}

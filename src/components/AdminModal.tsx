@@ -92,130 +92,130 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
     };
 
     return (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-md p-3 sm:p-6 overflow-y-auto">
-            <div className="bg-[#1c1c1e] w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col border border-white/10 my-auto animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 backdrop-blur-md p-3 sm:p-6 overflow-y-auto">
+            <div className="daw-panel w-full max-w-2xl rounded-lg flex flex-col my-auto">
 
                 {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b border-white/10">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-secondary/20 rounded-lg">
-                            <Upload size={20} className="text-secondary" />
+                <div className="flex items-center justify-between p-3 border-b border-border">
+                    <div className="flex items-center gap-2">
+                        <div className="p-1.5 bg-secondary/10 rounded-md border border-secondary/15">
+                            <Upload size={16} className="text-secondary" />
                         </div>
                         <div>
-                            <h2 className="text-white font-bold text-lg">Painel Admin: Cloud Storage</h2>
-                            <p className="text-xs text-text-muted">Gerencie a biblioteca online global</p>
+                            <h2 className="text-white font-black text-sm uppercase tracking-wider">Admin: Cloud Storage</h2>
+                            <p className="text-[9px] text-text-muted font-mono">Manage global online library</p>
                         </div>
                     </div>
-                    <button onClick={handleClose} disabled={isUploading} className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer disabled:opacity-20 focus:outline-none focus:ring-2 focus:ring-white/20">
-                        <X size={20} />
+                    <button onClick={handleClose} disabled={isUploading} className="p-1.5 text-text-muted hover:text-white hover:bg-white/5 rounded-md transition-all active:scale-90 cursor-pointer disabled:opacity-20">
+                        <X size={18} />
                     </button>
                 </div>
 
                 {/* Tabs */}
                 {!isSuccess && !isUploading && (
-                    <div className="flex px-4 pt-4 border-b border-white/5 gap-4">
+                    <div className="flex px-3 pt-3 border-b border-border gap-3">
                         <button onClick={() => setActiveTab('music')}
-                            className={`pb-3 text-sm font-semibold transition-all duration-200 active:scale-95 flex items-center gap-2 focus:outline-none ${activeTab === 'music' ? 'text-secondary border-b-2 border-secondary' : 'text-text-muted hover:text-white'}`}>
-                            <Music size={16} /> Músicas (Stems)
+                            className={`pb-2.5 text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1.5 uppercase tracking-wider font-mono ${activeTab === 'music' ? 'text-secondary border-b-2 border-secondary' : 'text-text-muted hover:text-white'}`}>
+                            <Music size={14} /> STEMS
                         </button>
                         <button onClick={() => setActiveTab('pads')}
-                            className={`pb-3 text-sm font-semibold transition-all duration-200 active:scale-95 flex items-center gap-2 focus:outline-none ${activeTab === 'pads' ? 'text-secondary border-b-2 border-secondary' : 'text-text-muted hover:text-white'}`}>
-                            <Layers size={16} /> Pads do Sistema
+                            className={`pb-2.5 text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1.5 uppercase tracking-wider font-mono ${activeTab === 'pads' ? 'text-secondary border-b-2 border-secondary' : 'text-text-muted hover:text-white'}`}>
+                            <Layers size={14} /> SYSTEM PADS
                         </button>
                     </div>
                 )}
 
                 {isSuccess ? (
-                    <div className="p-8 flex flex-col items-center justify-center text-center gap-4 animate-in fade-in slide-in-from-bottom-4">
-                        <div className="w-20 h-20 bg-primary/20 rounded-full flex items-center justify-center mb-2">
-                            <CheckCircle2 size={48} className="text-primary" />
+                    <div className="p-8 flex flex-col items-center justify-center text-center gap-3">
+                        <div className="w-16 h-16 bg-primary/10 rounded-lg border border-primary/20 flex items-center justify-center mb-2">
+                            <CheckCircle2 size={36} className="text-primary" />
                         </div>
-                        <h3 className="text-xl font-bold text-white">Upload Concluído!</h3>
-                        <p className="text-text-muted max-w-xs">Arquivos armazenados no Supabase Storage com sucesso.</p>
-                        <button onClick={handleClose} className="mt-4 px-8 py-3 bg-primary text-black font-bold rounded-xl hover:scale-105 active:scale-95 transition-all cursor-pointer">
-                            Fechar Painel
+                        <h3 className="text-lg font-black text-white uppercase tracking-wider">Upload Complete</h3>
+                        <p className="text-text-muted text-[10px] font-mono max-w-xs">Files stored successfully in cloud storage.</p>
+                        <button onClick={handleClose} className="mt-4 px-6 py-2.5 bg-primary text-black font-black rounded-md uppercase tracking-wider text-xs active:scale-95 transition-all cursor-pointer">
+                            Close Panel
                         </button>
                     </div>
                 ) : (
-                    <form onSubmit={handleHandleUpload} className="p-4 sm:p-6 space-y-6">
+                    <form onSubmit={handleHandleUpload} className="p-4 space-y-5 bg-[#0e0e10]">
 
                         {activeTab === 'music' ? (
                             <>
                                 {/* Music Metadata Grid */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] uppercase font-bold text-text-muted tracking-wider ml-1">Nome da Música *</label>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] uppercase font-bold text-text-muted tracking-wider ml-1 font-mono">Song Name *</label>
                                         <div className="relative">
-                                            <Music size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+                                            <Music size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
                                             <input
                                                 type="text"
                                                 required
                                                 value={metadata.name}
                                                 onChange={e => setMetadata({ ...metadata, name: e.target.value })}
-                                                placeholder="Ex: Grande é o Senhor"
-                                                className="w-full bg-black/40 text-white text-sm pl-10 pr-4 py-3 rounded-xl border border-white/10 outline-none focus:border-secondary/50 focus:ring-2 focus:ring-secondary/20 transition-all duration-200"
+                                                placeholder="e.g. Great is the Lord"
+                                                className="w-full daw-input text-white text-xs pl-9 pr-3 py-2.5 rounded-md font-mono"
                                             />
                                         </div>
                                     </div>
 
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] uppercase font-bold text-text-muted tracking-wider ml-1">Artista / Banda</label>
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] uppercase font-bold text-text-muted tracking-wider ml-1 font-mono">Artist</label>
                                         <input
                                             type="text"
                                             value={metadata.artist}
                                             onChange={e => setMetadata({ ...metadata, artist: e.target.value })}
-                                            placeholder="Ex: Adhemar de Campos"
-                                            className="w-full bg-black/40 text-white text-sm px-4 py-3 rounded-xl border border-white/10 outline-none focus:border-secondary/50 focus:ring-2 focus:ring-secondary/20 transition-all duration-200"
+                                            placeholder="e.g. Hillsong"
+                                            className="w-full daw-input text-white text-xs px-3 py-2.5 rounded-md font-mono"
                                         />
                                     </div>
 
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] uppercase font-bold text-text-muted tracking-wider ml-1">Tom Musical</label>
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] uppercase font-bold text-text-muted tracking-wider ml-1 font-mono">Musical Key</label>
                                         <div className="relative">
-                                            <Hash size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+                                            <Hash size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
                                             <input
                                                 type="text"
                                                 value={metadata.key}
                                                 onChange={e => setMetadata({ ...metadata, key: e.target.value })}
-                                                placeholder="Ex: G, Dbm, F#"
-                                                className="w-full bg-black/40 text-white text-sm pl-10 pr-4 py-3 rounded-xl border border-white/10 outline-none focus:border-secondary/50 focus:ring-2 focus:ring-secondary/20 transition-all duration-200"
+                                                placeholder="e.g. G, Dbm, F#"
+                                                className="w-full daw-input text-white text-xs pl-9 pr-3 py-2.5 rounded-md font-mono"
                                             />
                                         </div>
                                     </div>
 
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] uppercase font-bold text-text-muted tracking-wider ml-1">BPM</label>
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] uppercase font-bold text-text-muted tracking-wider ml-1 font-mono">BPM</label>
                                         <div className="relative">
-                                            <Activity size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+                                            <Activity size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
                                             <input
                                                 type="number"
                                                 value={metadata.bpm || ''}
                                                 onChange={e => setMetadata({ ...metadata, bpm: parseInt(e.target.value) || 0 })}
-                                                placeholder="Ex: 72"
-                                                className="w-full bg-black/40 text-white text-sm pl-10 pr-4 py-3 rounded-xl border border-white/10 outline-none focus:border-secondary/50 focus:ring-2 focus:ring-secondary/20 transition-all duration-200"
+                                                placeholder="e.g. 72"
+                                                className="w-full daw-input text-white text-xs pl-9 pr-3 py-2.5 rounded-md font-mono"
                                             />
                                         </div>
                                     </div>
                                 </div>
 
                                 {/* Music File Pickers */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div
                                         onClick={() => coverInputRef.current?.click()}
-                                        className={`relative h-32 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all duration-200 active:scale-[0.98] overflow-hidden ${coverFile ? 'border-primary/50 bg-primary/5' : 'border-white/10 bg-black/20 hover:border-white/20 hover:bg-white/5'
+                                        className={`relative h-28 rounded-md border-2 border-dashed flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-[0.98] overflow-hidden ${coverFile ? 'border-primary/40 bg-primary/5' : 'border-border bg-black/20 hover:border-white/15 hover:bg-white/3'
                                             }`}>
                                         {coverFile ? (
                                             <>
-                                                <img src={URL.createObjectURL(coverFile)} className="absolute inset-0 w-full h-full object-cover opacity-30" alt="" />
-                                                <CheckCircle2 size={24} className="text-primary z-10" />
-                                                <span className="text-xs text-white font-medium z-10">Capa Selecionada</span>
-                                                <span className="text-[10px] text-text-muted z-10 truncate max-w-[150px]">{coverFile.name}</span>
+                                                <img src={URL.createObjectURL(coverFile)} className="absolute inset-0 w-full h-full object-cover opacity-20" alt="" />
+                                                <CheckCircle2 size={20} className="text-primary z-10" />
+                                                <span className="text-[10px] text-white font-bold z-10 uppercase tracking-wider">Cover Selected</span>
+                                                <span className="text-[9px] text-text-muted z-10 truncate max-w-[130px] font-mono">{coverFile.name}</span>
                                             </>
                                         ) : (
                                             <>
-                                                <ImageIcon size={24} className="text-text-muted" />
-                                                <span className="text-xs text-text-muted font-medium">Upload da Capa</span>
-                                                <span className="text-[10px] text-text-muted/50">JPG ou PNG</span>
+                                                <ImageIcon size={20} className="text-text-muted" />
+                                                <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider">Upload Cover</span>
+                                                <span className="text-[9px] text-text-muted/30 font-mono">JPG / PNG</span>
                                             </>
                                         )}
                                         <input type="file" ref={coverInputRef} accept="image/*" className="hidden" onChange={e => setCoverFile(e.target.files?.[0] || null)} />
@@ -223,21 +223,21 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
 
                                     <div
                                         onClick={() => stemsInputRef.current?.click()}
-                                        className={`h-32 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all duration-200 active:scale-[0.98] ${stemFiles.length > 0 ? 'border-secondary/50 bg-secondary/5' : 'border-white/10 bg-black/20 hover:border-white/20 hover:bg-white/5'
+                                        className={`h-28 rounded-md border-2 border-dashed flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-[0.98] ${stemFiles.length > 0 ? 'border-secondary/40 bg-secondary/5' : 'border-border bg-black/20 hover:border-white/15 hover:bg-white/3'
                                             }`}>
                                         {stemFiles.length > 0 ? (
                                             <>
-                                                <Music size={24} className="text-secondary" />
-                                                <span className="text-xs text-white font-medium">{stemFiles.length} Stems selecionados</span>
-                                                <div className="flex gap-1 h-1 w-20 bg-white/10 rounded-full overflow-hidden">
+                                                <Music size={20} className="text-secondary" />
+                                                <span className="text-[10px] text-white font-bold uppercase tracking-wider">{stemFiles.length} Stems Selected</span>
+                                                <div className="flex gap-1 h-1 w-16 bg-white/5 rounded-full overflow-hidden">
                                                     <div className="h-full bg-secondary w-full"></div>
                                                 </div>
                                             </>
                                         ) : (
                                             <>
-                                                <Music size={24} className="text-text-muted" />
-                                                <span className="text-xs text-text-muted font-medium">Upload dos Áudios *</span>
-                                                <span className="text-[10px] text-text-muted/50">Selecione todos os stems</span>
+                                                <Music size={20} className="text-text-muted" />
+                                                <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider">Upload Audio *</span>
+                                                <span className="text-[9px] text-text-muted/30 font-mono">Select all stems</span>
                                             </>
                                         )}
                                         <input type="file" ref={stemsInputRef} multiple accept="audio/*" className="hidden" onChange={e => setStemFiles(Array.from(e.target.files || []))} />
@@ -246,28 +246,28 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                             </>
                         ) : (
                             // Pads Upload View
-                            <div className="space-y-4">
-                                <p className="text-sm text-text-muted">Faça o upload de 12 arquivos de áudio, um para cada nota musical. O nome do arquivo <strong className="text-white">DEVE</strong> ser o nome da nota (Ex: <code className="bg-black/40 px-1 rounded">C.mp3</code>, <code className="bg-black/40 px-1 rounded">Db.wav</code>, etc).</p>
+                            <div className="space-y-3">
+                                <p className="text-[10px] text-text-muted font-mono">Upload 12 audio files, one per note. Filename <strong className="text-white">MUST</strong> be the note name (e.g. <code className="lcd-display px-1 rounded text-primary">C.mp3</code>, <code className="lcd-display px-1 rounded text-primary">Db.wav</code>).</p>
 
                                 <div
                                     onClick={() => padsInputRef.current?.click()}
-                                    className={`h-32 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all duration-200 active:scale-[0.98] ${padFiles.size === 12 ? 'border-primary/50 bg-primary/5' : 'border-white/10 bg-black/20 hover:border-white/20 hover:bg-white/5'
+                                    className={`h-28 rounded-md border-2 border-dashed flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-[0.98] ${padFiles.size === 12 ? 'border-primary/40 bg-primary/5' : 'border-border bg-black/20 hover:border-white/15 hover:bg-white/3'
                                         }`}>
-                                    <Layers size={24} className={padFiles.size === 12 ? 'text-primary' : 'text-text-muted'} />
-                                    <span className="text-xs text-white font-medium">
-                                        {padFiles.size === 12 ? '12 Pads Selecionados Prontos!' : `${padFiles.size}/12 Pads Detectados`}
+                                    <Layers size={20} className={padFiles.size === 12 ? 'text-primary' : 'text-text-muted'} />
+                                    <span className="text-[10px] text-white font-bold uppercase tracking-wider">
+                                        {padFiles.size === 12 ? '12 PADS READY' : `${padFiles.size}/12 PADS DETECTED`}
                                     </span>
                                     {padFiles.size > 0 && padFiles.size !== 12 && (
-                                        <span className="text-[10px] text-yellow-500 font-bold">Atenção: Você precisa de exatos 12 arquivos válidos!</span>
+                                        <span className="text-[9px] text-yellow-500 font-bold font-mono">Need exactly 12 valid files!</span>
                                     )}
                                     <input type="file" ref={padsInputRef} multiple accept="audio/*" className="hidden" onChange={e => handlePadsSelection(e.target.files)} />
                                 </div>
 
                                 {padFiles.size > 0 && (
-                                    <div className="bg-black/40 rounded-xl p-4 border border-white/5">
-                                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                                    <div className="lcd-display rounded-md p-3 border border-border">
+                                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
                                             {REQUIRED_NOTES.map(note => (
-                                                <div key={note} className={`text-center py-2 rounded-lg border text-xs font-bold ${padFiles.has(note) ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-white/5 border-white/5 text-text-muted/30'}`}>
+                                                <div key={note} className={`text-center py-1.5 rounded-md border text-[10px] font-bold font-mono ${padFiles.has(note) ? 'bg-primary/10 border-primary/20 text-primary' : 'bg-white/3 border-border text-text-muted/20'}`}>
                                                     {note}
                                                 </div>
                                             ))}
@@ -279,23 +279,23 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
 
                         {/* Error Message */}
                         {error && (
-                            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-3 text-red-500 text-xs animate-in shake duration-300">
-                                <AlertCircle size={16} className="shrink-0" />
+                            <div className="p-2.5 bg-accent-red/5 border border-accent-red/15 rounded-md flex items-center gap-2 text-accent-red text-[10px] font-mono">
+                                <AlertCircle size={14} className="shrink-0" />
                                 <span>{error}</span>
                             </div>
                         )}
 
                         {/* Progress Bar */}
                         {isUploading && (
-                            <div className="space-y-3 p-4 bg-black/40 rounded-xl border border-white/5 animate-in slide-in-from-top-2">
-                                <div className="flex items-center justify-between text-xs font-medium">
-                                    <span className="text-secondary flex items-center gap-2">
-                                        <Loader2 size={14} className="animate-spin" />
+                            <div className="space-y-2 p-3 lcd-display rounded-md">
+                                <div className="flex items-center justify-between text-[10px] font-bold font-mono uppercase tracking-wider">
+                                    <span className="text-secondary flex items-center gap-1.5">
+                                        <Loader2 size={12} className="animate-spin" />
                                         {status}
                                     </span>
-                                    <span className="text-white">{progress}%</span>
+                                    <span className="text-primary">{progress}%</span>
                                 </div>
-                                <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+                                <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
                                     <div
                                         className="h-full bg-secondary transition-all duration-300 ease-out"
                                         style={{ width: `${progress}%` }}
@@ -308,16 +308,16 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                         <button
                             type="submit"
                             disabled={isUploading || (activeTab === 'music' ? (!metadata.name || stemFiles.length === 0) : (padFiles.size !== 12))}
-                            className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-secondary/50 ${(isUploading || (activeTab === 'music' ? (!metadata.name || stemFiles.length === 0) : (padFiles.size !== 12)))
+                            className={`w-full py-3 rounded-md font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] uppercase tracking-wider text-xs ${(isUploading || (activeTab === 'music' ? (!metadata.name || stemFiles.length === 0) : (padFiles.size !== 12)))
                                 ? 'bg-white/5 text-text-muted cursor-not-allowed'
-                                : 'bg-secondary text-black hover:shadow-[0_0_20px_rgba(6,182,212,0.3)] cursor-pointer'
+                                : 'bg-secondary text-black shadow-[0_0_15px_rgba(6,182,212,0.15)] cursor-pointer'
                                 }`}>
                             {isUploading ? (
-                                <>Processando...</>
+                                <>PROCESSING...</>
                             ) : (
                                 <>
-                                    Publicar na Nuvem
-                                    <ChevronRight size={18} />
+                                    PUBLISH TO CLOUD
+                                    <ChevronRight size={16} />
                                 </>
                             )}
                         </button>

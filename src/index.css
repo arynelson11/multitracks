@@ -1,32 +1,376 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #121212;
-  --color-surface: #18181b;
-  --color-primary: #10b981;
+  --color-background: #121214;
+  --color-surface: #1a1a1e;
+  --color-surface-raised: #222226;
+  --color-primary: #d4a843;
+  --color-primary-dim: #b8922e;
   --color-secondary: #06b6d4;
-  --color-text-main: #f4f4f5;
-  --color-text-muted: #a1a1aa;
+  --color-accent-green: #4ade80;
+  --color-accent-red: #ef4444;
+  --color-accent-amber: #f59e0b;
+  --color-text-main: #d0d0d4;
+  --color-text-muted: #71717a;
+  --color-border: #2a2a2e;
+  --color-border-light: #333338;
+
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', monospace;
 }
 
 @layer base {
   body {
-    @apply bg-background text-text-main antialiased selection:bg-primary/30;
+    @apply bg-background text-text-main antialiased;
+    font-family: var(--font-sans);
   }
 }
 
-/* Base custom transparent scrollbar */
+/* ═══ DAW SCROLLBAR ═══ */
 ::-webkit-scrollbar {
-  height: 6px;
-  width: 6px;
+  height: 5px;
+  width: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: #0e0e10;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
+  background: #333338;
+  border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: #444448;
 }
+
+/* ═══ DAW RANGE SLIDER (Horizontal) ═══ */
+input[type="range"].daw-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  height: 20px;
+}
+input[type="range"].daw-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: linear-gradient(to right, #333338, #444);
+  border-radius: 2px;
+  border: 1px solid #222;
+}
+input[type="range"].daw-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #888, #555);
+  border: 2px solid #666;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.2);
+  margin-top: -5px;
+  transition: box-shadow 0.15s;
+}
+input[type="range"].daw-slider::-webkit-slider-thumb:hover {
+  box-shadow: 0 1px 8px rgba(212,168,67,0.4), inset 0 1px 0 rgba(255,255,255,0.3);
+}
+input[type="range"].daw-slider::-moz-range-track {
+  height: 4px;
+  background: linear-gradient(to right, #333338, #444);
+  border-radius: 2px;
+  border: 1px solid #222;
+}
+input[type="range"].daw-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #888, #555);
+  border: 2px solid #666;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.6);
+}
+
+/* ═══ LOGIC PRO FADER (Transparent Glass Style) ═══ */
+.logic-fader-track {
+  background: linear-gradient(180deg, 
+    rgba(30,30,34,0.6) 0%, 
+    rgba(20,20,24,0.75) 50%, 
+    rgba(30,30,34,0.6) 100%
+  );
+  border: 1px solid rgba(255,255,255,0.06);
+  box-shadow: 
+    inset 0 2px 12px rgba(0,0,0,0.5),
+    inset 0 0 1px rgba(255,255,255,0.05);
+  border-radius: 3px;
+  position: relative;
+}
+
+.logic-fader-track::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; top: 0; bottom: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 7px,
+    rgba(255,255,255,0.03) 7px,
+    rgba(255,255,255,0.03) 8px
+  );
+  pointer-events: none;
+  border-radius: 3px;
+}
+
+.logic-fader-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  border-radius: 2px;
+  transition: height 0.06s linear;
+  opacity: 0.6;
+}
+
+.logic-fader-knob {
+  width: 44px;
+  height: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: 
+    repeating-linear-gradient(180deg, transparent, transparent 3px, rgba(0,0,0,0.2) 3px, rgba(0,0,0,0.2) 4px),
+    linear-gradient(180deg, #b0b0b5 0%, #999 15%, #777 45%, #666 85%, #555 100%);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-bottom-color: rgba(0,0,0,0.4);
+  box-shadow: 
+    0 4px 10px rgba(0,0,0,0.8), 
+    0 1px 4px rgba(0,0,0,0.5),
+    inset 0 1px 2px rgba(255,255,255,0.5),
+    inset 0 -1px 0 rgba(0,0,0,0.3);
+  border-radius: 3px;
+  position: absolute;
+}
+
+.logic-fader-knob.master {
+  width: 56px;
+  height: 60px;
+}
+
+.logic-fader-knob::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: -1px;
+  width: 40%;
+  height: 4px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.8);
+  transform: translateY(-50%);
+  border-top-right-radius: 2px;
+  border-bottom-right-radius: 2px;
+}
+
+/* ═══ VU METER (LED Segments) ═══ */
+.vu-meter {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 1px;
+  width: 5px;
+  border-radius: 1px;
+  overflow: hidden;
+  background-color: #111;
+  padding: 1px;
+}
+
+.vu-segment {
+  width: 100%;
+  flex: 1;
+  border-radius: 0.5px;
+  opacity: 0.12;
+  transition: opacity 0.06s linear;
+}
+
+.vu-segment.active {
+  opacity: 1;
+  box-shadow: 0 0 3px currentColor;
+}
+
+.vu-segment.green { color: #4ade80; background: #4ade80; }
+.vu-segment.yellow { color: #fbbf24; background: #fbbf24; }
+.vu-segment.red { color: #ef4444; background: #ef4444; }
+
+/* ═══ PAN KNOB ═══ */
+.logic-pan-knob-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.logic-pan-knob {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #666;
+  border: 1px solid #444;
+  box-shadow: 
+    0 2px 4px rgba(0,0,0,0.5), 
+    inset 0 1px 1px rgba(255,255,255,0.15);
+  position: relative;
+  cursor: ew-resize;
+  transition: filter 0.15s;
+}
+
+.logic-pan-knob:hover {
+  filter: brightness(1.1);
+}
+
+.logic-pan-indicator {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  width: 2px;
+  height: 8px;
+  background-color: #fff;
+  transform-origin: center 10px;
+  border-radius: 1px;
+  box-shadow: 0 0 2px rgba(255,255,255,0.4);
+}
+
+.pan-knob-ring {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+/* ═══ CHANNEL STRIP (Updated) ═══ */
+.channel-strip {
+  background: #38383a;
+  border: 1px solid #28282a;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+.channel-strip:hover {
+  border-color: #3a3a3e;
+}
+.channel-strip.active {
+  border-color: #444;
+  box-shadow: 0 0 12px rgba(255,255,255,0.03);
+}
+
+/* Group color strip at top */
+.channel-group-strip {
+  height: 3px;
+  width: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+/* Channel edit mode */
+.channel-edit-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(2px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  z-index: 20;
+  border-radius: inherit;
+}
+
+/* ═══ TRANSPORT BUTTON ═══ */
+.transport-btn {
+  background: linear-gradient(180deg, #2a2a2e 0%, #1e1e22 100%);
+  border: 1px solid #3a3a3e;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+  transition: all 0.15s;
+}
+.transport-btn:hover {
+  background: linear-gradient(180deg, #333338 0%, #2a2a2e 100%);
+  border-color: #4a4a4e;
+}
+.transport-btn:active {
+  background: linear-gradient(180deg, #1e1e22 0%, #2a2a2e 100%);
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+}
+.transport-btn.active {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 12px rgba(212,168,67,0.2), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+/* ═══ LCD DISPLAY ═══ */
+.lcd-display {
+  background: #0a0a0c;
+  border: 1px solid #222;
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.8), 0 1px 0 rgba(255,255,255,0.03);
+  font-family: var(--font-mono);
+}
+
+/* ═══ PAD (MPC style) ═══ */
+.mpc-pad {
+  background: linear-gradient(180deg, #222226 0%, #1a1a1e 100%);
+  border: 1px solid #333338;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04);
+  transition: all 0.12s;
+}
+.mpc-pad:hover {
+  border-color: #444;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.mpc-pad:active, .mpc-pad.pressed {
+  background: linear-gradient(180deg, #1a1a1e 0%, #222226 100%);
+  box-shadow: inset 0 2px 6px rgba(0,0,0,0.6);
+}
+
+/* ═══ MODAL PANEL ═══ */
+.daw-panel {
+  background: #1a1a1e;
+  border: 1px solid #2a2a2e;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.03);
+}
+.daw-input {
+  background: #0e0e10;
+  border: 1px solid #2a2a2e;
+  color: #d0d0d4;
+  font-family: var(--font-sans);
+  transition: border-color 0.2s;
+}
+.daw-input:focus {
+  border-color: var(--color-primary);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(212,168,67,0.15);
+}
+
+/* ═══ HARDWARE BUTTON ═══ */
+.hw-btn {
+  background: linear-gradient(180deg, #2a2a2e 0%, #222226 100%);
+  border: 1px solid #3a3a3e;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  transition: all 0.15s;
+}
+.hw-btn:hover {
+  background: linear-gradient(180deg, #333338 0%, #2a2a2e 100%);
+}
+.hw-btn:active {
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+}
+
+/* ═══ KEYFRAMES ═══ */
+@keyframes led-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+@keyframes boot-glow {
+  0% { box-shadow: 0 0 0 rgba(212,168,67,0); }
+  50% { box-shadow: 0 0 40px rgba(212,168,67,0.3); }
+  100% { box-shadow: 0 0 0 rgba(212,168,67,0); }
+}
+.animate-led { animation: led-pulse 1.5s ease-in-out infinite; }
+.animate-boot { animation: boot-glow 2s ease-in-out infinite; }
+
+/* ═══ UTILITY ═══ */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }

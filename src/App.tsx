@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Image, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Cpu } from 'lucide-react'
+import { useRef, useState, useEffect, useCallback } from 'react'
+import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Image, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Cpu, Move } from 'lucide-react'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { usePadSynth } from './hooks/usePadSynth'
 import { SettingsModal } from './components/SettingsModal'
@@ -21,7 +21,8 @@ export default function App() {
     masterVolume, updateVolume, toggleMute, toggleSolo, updateMasterVolume,
     changePitch, setOriginalKey, currentMarker, setSongMarkers,
     playbackMode, setPlaybackMode, vampActive, toggleVamp,
-    timeStretch, updateTimeStretch, addChannelToActiveSong
+    timeStretch, updateTimeStretch, addChannelToActiveSong,
+    updatePan, removeChannel, reorderChannels
   } = useAudioEngine()
 
   const { playPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume, padMode, updatePadMode } = usePadSynth()
@@ -29,6 +30,7 @@ export default function App() {
   const mixerRef = useRef<HTMLDivElement>(null)
 
   const [isEditMode, setIsEditMode] = useState(false)
+  const [isChannelEditMode, setIsChannelEditMode] = useState(false)
   const [isSeparatorOpen, setIsSeparatorOpen] = useState(false)
   const [isMetronomeModalOpen, setIsMetronomeModalOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -44,6 +46,129 @@ export default function App() {
   const [mobileView, setMobileView] = useState<'mixer' | 'pads'>('mixer')
   const [isSaving, setIsSaving] = useState(false)
   const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false)
+  const [chDragIdx, setChDragIdx] = useState<number | null>(null)
+  const [chDragOverIdx, setChDragOverIdx] = useState<number | null>(null)
+  const [vuLevels, setVuLevels] = useState<Record<string, number>>({})
+  const analysersRef = useRef<Record<string, AnalyserNode>>({})
+  const vuAnimRef = useRef<number>(0)
+
+  // ── Instrument group classification ──
+  const getChannelGroup = useCallback((name: string): { group: string; color: string; order: number } => {
+    const n = name.toLowerCase()
+    if (n.includes('click') || n.includes('metronom') || n.includes('metro')) return { group: 'Click', color: '#94a3b8', order: 0 }
+    if (n.includes('vocal') || n.includes('voz') || n.includes('guia') || n.includes('guide') || n.includes('voc')) return { group: 'Vocais', color: '#06b6d4', order: 1 }
+    if (n.includes('drum') || n.includes('bater') || n.includes('perc') || n.includes('kick') || n.includes('snare') || n.includes('hat')) return { group: 'Bateria', color: '#f59e0b', order: 2 }
+    if (n.includes('bass') || n.includes('baixo') || n.includes('sub')) return { group: 'Baixo', color: '#10b981', order: 3 }
+    if (n.includes('eg') || n.includes('guitar') || n.includes('guit') || n.includes('ag') || n.includes('violao') || n.includes('violão')) return { group: 'Guitarra', color: '#ef4444', order: 4 }
+    if (n.includes('piano') || n.includes('synth') || n.includes('pad') || n.includes('keys') || n.includes('tecl') || n.includes('organ') || n.includes('rhodes')) return { group: 'Teclado', color: '#8b5cf6', order: 5 }
+    return { group: 'Outros', color: '#ec4899', order: 6 }
+  }, [])
+
+  // ── VU Meter animation loop ──
+  useEffect(() => {
+    if (!isPlaying || channels.length === 0) {
+      if (vuAnimRef.current) cancelAnimationFrame(vuAnimRef.current)
+      return
+    }
+
+    // Create AnalyserNodes for channels that don't have one yet
+    channels.forEach(ch => {
+      if (!analysersRef.current[ch.id]) {
+        try {
+          const ctx = ch.gainNode.context as AudioContext
+          const analyser = ctx.createAnalyser()
+          analyser.fftSize = 256
+          analyser.smoothingTimeConstant = 0.7
+          ch.gainNode.connect(analyser)
+          analysersRef.current[ch.id] = analyser
+        } catch (_) { /* ok */ }
+      }
+    })
+
+    const updateVU = () => {
+      const levels: Record<string, number> = {}
+      let masterPeak = 0
+
+      channels.forEach(ch => {
+        const analyser = analysersRef.current[ch.id]
+        let chLevel = 0
+        if (analyser) {
+          const data = new Uint8Array(analyser.frequencyBinCount)
+          analyser.getByteFrequencyData(data)
+          let sum = 0
+          for (let i = 0; i < data.length; i++) sum += data[i]
+          chLevel = sum / data.length / 255
+        }
+        levels[ch.id] = chLevel
+
+        if (!ch.muted && (!channels.some(c => c.soloed) || ch.soloed)) {
+          masterPeak = Math.max(masterPeak, chLevel * ch.volume)
+        }
+      })
+      
+      levels['master'] = masterPeak * masterVolume
+      setVuLevels(levels)
+      vuAnimRef.current = requestAnimationFrame(updateVU)
+    }
+    vuAnimRef.current = requestAnimationFrame(updateVU)
+
+    return () => {
+      if (vuAnimRef.current) cancelAnimationFrame(vuAnimRef.current)
+    }
+  }, [isPlaying, channels])
+
+  // Channel drag handlers
+  const onChDragStart = (idx: number) => setChDragIdx(idx)
+  const onChDragOver = (e: React.DragEvent, idx: number) => { e.preventDefault(); setChDragOverIdx(idx) }
+  const onChDrop = (idx: number) => {
+    if (chDragIdx === null || chDragIdx === idx) { setChDragIdx(null); setChDragOverIdx(null); return }
+    const arr = [...channels]
+    const [moved] = arr.splice(chDragIdx, 1)
+    arr.splice(idx, 0, moved)
+    reorderChannels(arr)
+    setChDragIdx(null); setChDragOverIdx(null)
+  }
+  const onChDragEnd = () => { setChDragIdx(null); setChDragOverIdx(null) }
+
+  // VU Meter rendering helper
+  const renderVU = (channelId: string, isMaster = false) => {
+    const level = isMaster && channelId === 'master' ? (vuLevels['master'] || 0) : (vuLevels[channelId] || 0)
+    const totalSegments = 40
+    const activeCount = Math.round(level * totalSegments)
+    return (
+      <div className="vu-meter h-full">
+        {Array.from({ length: totalSegments }).map((_, i) => {
+          const isActive = i < activeCount
+          let colorClass = 'green'
+          if (i >= totalSegments * 0.85) colorClass = 'red'
+          else if (i >= totalSegments * 0.65) colorClass = 'yellow'
+          return <div key={i} className={`vu-segment ${colorClass} ${isActive ? 'active' : ''}`} />
+        })}
+      </div>
+    )
+  }
+
+  // Pan Knob Drag State
+  const activePanDrag = useRef<{id: string, startY: number, startPan: number} | null>(null)
+
+  const handlePanPointerDown = (e: React.PointerEvent<HTMLDivElement>, id: string, pan: number) => {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    activePanDrag.current = { id, startY: e.clientY, startPan: pan }
+  }
+  const handlePanPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePanDrag.current) {
+      const dy = activePanDrag.current.startY - e.clientY
+      let newPan = activePanDrag.current.startPan + (dy / 100)
+      newPan = Math.max(-1, Math.min(1, newPan))
+      updatePan(activePanDrag.current.id, Math.round(newPan * 10) / 10)
+    }
+  }
+  const handlePanPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePanDrag.current) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+      activePanDrag.current = null
+    }
+  }
 
   const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
   const KEY_TO_SEMITONE: Record<string, number> = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 }
@@ -154,18 +279,18 @@ export default function App() {
   // ───────────────── SPLASH ─────────────────
   if (!isReady) {
     return (
-      <div className="min-h-screen bg-background text-text-main flex flex-col items-center justify-center font-sans px-6">
-        <div className="w-20 h-20 sm:w-24 sm:h-24 mb-6 bg-surface rounded-3xl flex items-center justify-center border border-white/5 shadow-2xl relative overflow-hidden">
-          <Music size={36} className="text-primary relative z-10" />
-          <div className="absolute inset-0 bg-primary/10 animate-pulse"></div>
+      <div className="min-h-screen bg-[#0a0a0c] text-text-main flex flex-col items-center justify-center px-6">
+        <div className="w-16 h-16 sm:w-20 sm:h-20 mb-8 rounded-2xl flex items-center justify-center border border-border-light bg-surface relative animate-boot">
+          <Music size={32} className="text-primary relative z-10" />
+          <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-primary animate-led"></div>
         </div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2 text-center">Multitracks Playback</h1>
-        <p className="text-text-muted mb-8 max-w-md text-center text-sm">
-          Bem-vindo ao sistema de reprodução. O motor conectará ao seu banco de dados local.
+        <h1 className="text-2xl sm:text-4xl font-black tracking-[0.15em] uppercase mb-1 text-center text-white">PLAYBACK STUDIO</h1>
+        <p className="text-text-muted mb-10 text-center text-xs sm:text-sm font-mono tracking-widest uppercase">
+          Motor Multitracks Profissional
         </p>
         <button onClick={initEngine}
-          className="bg-primary hover:bg-emerald-400 text-black px-6 py-3 sm:px-8 sm:py-4 rounded-xl font-bold text-base sm:text-lg transition-all cursor-pointer shadow-[0_0_30px_rgba(16,185,129,0.3)] flex items-center gap-3">
-          {isRestoring ? <Loader2 className="animate-spin" size={22} /> : <Play size={22} fill="currentColor" />}
+          className="hw-btn text-primary hover:text-white px-8 py-4 sm:px-10 sm:py-5 rounded-lg text-sm sm:text-base uppercase tracking-widest flex items-center gap-3 cursor-pointer">
+          {isRestoring ? <Loader2 className="animate-spin" size={20} /> : <Play size={20} fill="currentColor" />}
           Iniciar Motor
         </button>
       </div>
@@ -174,18 +299,18 @@ export default function App() {
 
   // ───────────────── MAIN APP ─────────────────
   return (
-    <div className="min-h-screen bg-background text-text-main flex flex-col font-sans select-none overflow-hidden">
+    <div className="min-h-screen bg-[#0e0e10] text-text-main flex flex-col select-none overflow-hidden">
 
       {/* ═══ HEADER / TRANSPORT ═══ */}
-      <header className="bg-surface border-b border-white/5 shrink-0">
-        {/* Top row: Brand + Timer */}
-        <div className="flex items-center justify-between px-3 sm:px-4 h-12 sm:h-14">
+      <header className="bg-[#18181a] border-b border-border shrink-0">
+        {/* Top row: Brand + Tools + Timer */}
+        <div className="flex items-center justify-between px-3 sm:px-4 h-11 sm:h-12 border-b border-border">
           {/* Left: Menu + Brand */}
-          <div className="flex items-center gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="relative">
               <button onClick={() => setIsSetlistMenuOpen(!isSetlistMenuOpen)}
-                className="text-base sm:text-xl font-bold tracking-tighter hover:text-primary active:scale-95 transition-all duration-200 cursor-pointer flex items-center gap-1.5 focus:outline-none">
-                <ListMusic size={18} className="text-primary" />
+                className="text-sm sm:text-base font-black tracking-[0.1em] uppercase hover:text-primary active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 focus:outline-none text-white/80">
+                <ListMusic size={16} className="text-primary" />
                 <span className="hidden xs:inline">PLAYBACK</span>
               </button>
 
@@ -193,55 +318,55 @@ export default function App() {
               {isSetlistMenuOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setIsSetlistMenuOpen(false)}></div>
-                  <div className="absolute top-full left-0 mt-2 w-72 sm:w-80 bg-[#2c2c2e] rounded-xl shadow-2xl border border-white/10 z-50 overflow-hidden">
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-                      <button onClick={() => setIsSetlistMenuOpen(false)} className="text-[#0A84FF] text-sm font-medium cursor-pointer">Cancelar</button>
-                      <span className="text-white font-semibold text-sm">Repertórios</span>
+                  <div className="absolute top-full left-0 mt-2 w-72 sm:w-80 daw-panel rounded-lg z-50 overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                      <button onClick={() => setIsSetlistMenuOpen(false)} className="text-primary text-xs font-bold uppercase tracking-wider cursor-pointer">Cancelar</button>
+                      <span className="text-white font-bold text-xs uppercase tracking-wider">Repertórios</span>
                       <div className="w-14"></div>
                     </div>
                     <div className="p-2">
                       <button onClick={() => { clearSession(); setIsSetlistMenuOpen(false); }}
-                        className="w-full text-left px-4 py-3 rounded-lg hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors">
-                        <span className="text-white font-medium flex items-center gap-3"><Plus size={18} className="text-[#0A84FF]" />Novo Repertório</span>
-                        <ChevronRight size={16} className="text-text-muted" />
+                        className="w-full text-left px-4 py-2.5 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors">
+                        <span className="text-white text-sm font-medium flex items-center gap-3"><Plus size={16} className="text-primary" />Novo Repertório</span>
+                        <ChevronRight size={14} className="text-text-muted" />
                       </button>
                       <label
-                        className="w-full text-left px-4 py-3 rounded-lg hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors">
-                        <span className="text-white font-medium flex items-center gap-3"><FolderOpen size={18} className="text-[#0A84FF]" />Importar Stems</span>
-                        <ChevronRight size={16} className="text-text-muted" />
+                        className="w-full text-left px-4 py-2.5 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors">
+                        <span className="text-white text-sm font-medium flex items-center gap-3"><FolderOpen size={16} className="text-primary" />Importar Stems</span>
+                        <ChevronRight size={14} className="text-text-muted" />
                         <input type="file" multiple accept="audio/*" className="hidden"
                           onChange={(e) => { if (e.target.files) { loadFiles(e.target.files); setIsSetlistMenuOpen(false) } }} />
                       </label>
-                      <hr className="border-white/5 my-1" />
+                      <hr className="border-border my-1" />
                       {playlist.length > 0 && (
                         <button onClick={handleExport} disabled={isSaving}
-                          className="w-full text-left px-4 py-3 rounded-lg hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors">
-                          <span className="text-white font-medium flex items-center gap-3">
-                            {isSaving ? <Loader2 size={18} className="text-emerald-400 animate-spin" /> : <Download size={18} className="text-emerald-400" />}
-                            {isSaving ? 'Salvando...' : 'Salvar Repertório (.zip)'}
+                          className="w-full text-left px-4 py-2.5 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors">
+                          <span className="text-white text-sm font-medium flex items-center gap-3">
+                            {isSaving ? <Loader2 size={16} className="text-primary animate-spin" /> : <Download size={16} className="text-accent-green" />}
+                            {isSaving ? 'Salvando...' : 'Salvar (.zip)'}
                           </span>
-                          <ChevronRight size={16} className="text-text-muted" />
+                          <ChevronRight size={14} className="text-text-muted" />
                         </button>
                       )}
                       <label
-                        className="w-full text-left px-4 py-3 rounded-lg hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors">
-                        <span className="text-white font-medium flex items-center gap-3"><Upload size={18} className="text-cyan-400" />Carregar Repertório (.zip)</span>
-                        <ChevronRight size={16} className="text-text-muted" />
+                        className="w-full text-left px-4 py-2.5 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors">
+                        <span className="text-white text-sm font-medium flex items-center gap-3"><Upload size={16} className="text-secondary" />Carregar (.zip)</span>
+                        <ChevronRight size={14} className="text-text-muted" />
                         <input type="file" accept=".zip" className="hidden" onChange={handleImport} />
                       </label>
                     </div>
                     {playlist.length > 0 && (
-                      <div className="border-t border-white/10 p-2">
-                        <div className="px-4 py-2 text-[10px] font-bold text-text-muted/50 uppercase tracking-widest">Atual</div>
-                        <div className="px-4 py-3 rounded-lg bg-white/5 flex items-center gap-3">
+                      <div className="border-t border-border p-2">
+                        <div className="px-4 py-1.5 text-[9px] font-bold text-text-muted/50 uppercase tracking-[0.2em]">Atual</div>
+                        <div className="px-4 py-2.5 rounded-md bg-white/5 flex items-center gap-3">
                           {playlist[0]?.coverImage ? (
-                            <img src={playlist[0].coverImage} className="w-10 h-10 rounded-md object-cover" alt="" />
+                            <img src={playlist[0].coverImage} className="w-9 h-9 rounded object-cover" alt="" />
                           ) : (
-                            <div className="w-10 h-10 rounded-md bg-primary/20 flex items-center justify-center"><Music size={16} className="text-primary" /></div>
+                            <div className="w-9 h-9 rounded bg-primary/10 flex items-center justify-center"><Music size={14} className="text-primary" /></div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <div className="text-white font-medium text-sm truncate">Repertório Atual</div>
-                            <div className="text-text-muted text-xs">{playlist.length} Músicas • {formatTime(playlist.reduce((acc, s) => acc + s.duration, 0))}</div>
+                            <div className="text-white font-medium text-xs truncate">Repertório Atual</div>
+                            <div className="text-text-muted text-[10px] font-mono">{playlist.length} Songs • {formatTime(playlist.reduce((acc, s) => acc + s.duration, 0))}</div>
                           </div>
                         </div>
                       </div>
@@ -251,70 +376,64 @@ export default function App() {
               )}
             </div>
 
-            <label
-              className="flex items-center gap-2 bg-white/5 hover:bg-white/10 active:scale-95 px-4 py-2.5 rounded-xl text-sm sm:text-base font-semibold border border-white/5 transition-all duration-200 cursor-pointer min-h-[48px] focus-within:ring-2 focus-within:ring-primary/50">
-              <Music size={18} />
-              <span className="hidden sm:inline">+</span> Stems
+            {/* Toolbar icons */}
+            <div className="h-5 w-px bg-border mx-1"></div>
+            <label className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-white">
+              <Music size={14} /> <span className="hidden sm:inline">FAIXAS</span>
               <input type="file" multiple accept="audio/*" className="hidden"
                 onChange={(e) => { if (e.target.files) loadFiles(e.target.files) }} />
             </label>
             <button onClick={() => setIsLibraryOpen(true)}
-              className="flex items-center gap-2 bg-secondary/10 hover:bg-secondary/20 active:scale-95 text-secondary px-4 py-2.5 rounded-xl text-sm sm:text-base font-semibold border border-secondary/20 transition-all duration-200 cursor-pointer min-h-[48px] focus:outline-none focus:ring-2 focus:ring-secondary/50">
-              <Cloud size={18} />
-              <span className="hidden sm:inline">Biblioteca</span>
+              className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer text-secondary hover:text-white">
+              <Cloud size={14} /> <span className="hidden sm:inline">BIBLIOTECA</span>
             </button>
             <button onClick={() => setIsMetronomeModalOpen(true)}
-              className="flex items-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 active:scale-95 text-emerald-400 px-4 py-2.5 rounded-xl text-sm sm:text-base font-semibold border border-emerald-500/20 transition-all duration-200 cursor-pointer min-h-[48px] focus:outline-none focus:ring-2 focus:ring-emerald-500/50">
-              <Cpu size={18} />
-              <span className="hidden sm:inline">Metrônomo</span>
+              className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer text-accent-green hover:text-white">
+              <Cpu size={14} /> <span className="hidden sm:inline">METRÔNOMO</span>
             </button>
             <button onClick={() => setIsSeparatorOpen(true)}
-              className="flex items-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 active:scale-95 text-purple-400 px-4 py-2.5 rounded-xl text-sm sm:text-base font-semibold border border-purple-500/20 transition-all duration-200 cursor-pointer min-h-[48px] focus:outline-none focus:ring-2 focus:ring-purple-500/50">
-              <Wand2 size={18} />
-              <span className="hidden sm:inline">Separar Faixas</span>
+              className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer text-purple-400 hover:text-white">
+              <Wand2 size={14} /> <span className="hidden sm:inline">IA SEPARAR</span>
             </button>
           </div>
 
-          {/* Right: Actions + Timer */}
-          <div className="flex items-center gap-3 sm:gap-4">
-
-            {/* User Auth Profile */}
+          {/* Right: User + Actions + Timer */}
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="flex items-center gap-2">
-              <span className="text-white text-xs font-medium hidden sm:block bg-white/5 px-2 py-1 rounded-md">{user.email?.split('@')[0]}</span>
-              <button onClick={signOut} className="text-xs text-text-muted hover:text-white transition-colors cursor-pointer hidden sm:block">Sair</button>
-              <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold shadow-inner cursor-pointer" onClick={signOut}>
+              <span className="text-white text-[10px] font-mono font-medium hidden sm:block bg-white/5 px-2 py-0.5 rounded">{user.email?.split('@')[0]}</span>
+              <button onClick={signOut} className="text-[10px] text-text-muted hover:text-white transition-colors cursor-pointer hidden sm:block font-mono">SAIR</button>
+              <div className="w-7 h-7 rounded-md bg-primary/15 flex items-center justify-center text-primary text-xs font-bold cursor-pointer border border-primary/20" onClick={signOut}>
                 {user.email?.charAt(0).toUpperCase()}
               </div>
             </div>
 
-            <div className="h-6 w-px bg-white/10 hidden sm:block mx-1"></div>
+            <div className="h-5 w-px bg-border hidden sm:block"></div>
 
             {playlist.length > 0 && (
-              <button onClick={clearSession} className="p-2 rounded-xl text-red-400 hover:bg-red-500/10 active:scale-90 transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400/50"><Trash2 size={20} /></button>
+              <button onClick={clearSession} className="p-1.5 rounded-md text-accent-red hover:bg-accent-red/10 active:scale-90 transition-all cursor-pointer"><Trash2 size={16} /></button>
             )}
-            <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-xl text-text-muted hover:bg-white/10 hover:text-white active:scale-90 transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20"><Settings size={20} /></button>
+            <button onClick={() => setIsSettingsOpen(true)} className="p-1.5 rounded-md text-text-muted hover:bg-white/5 hover:text-white transition-all cursor-pointer"><Settings size={16} /></button>
             <button onClick={() => setIsEditMode(!isEditMode)}
-              className={`items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-200 active:scale-95 border cursor-pointer hidden sm:flex focus:outline-none focus:ring-2 focus:ring-secondary/50 ${isEditMode ? 'bg-secondary/20 text-secondary border-secondary/30' : 'bg-transparent text-text-muted border-white/5 hover:bg-white/10'}`}>
-              {isEditMode ? <Check size={16} /> : <Edit2 size={16} />}
-              {isEditMode ? 'OK' : 'Editar'}
+              className={`items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95 border cursor-pointer hidden sm:flex ${isEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border hover:bg-white/5'}`}>
+              {isEditMode ? <Check size={12} /> : <Edit2 size={12} />}
+              {isEditMode ? 'OK' : 'EDITAR'}
             </button>
+
             {/* Key Selector */}
-            <div className="relative mr-1 sm:mr-3">
-              <button
-                onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)}
-                className="flex items-center gap-1.5 bg-black/40 rounded-lg border border-white/10 px-2 sm:px-3 py-1 sm:py-1.5 hover:bg-white/10 transition-colors cursor-pointer"
-              >
-                <span className="text-[8px] sm:text-[10px] font-bold text-text-muted uppercase">Tom</span>
-                <span className="text-[10px] sm:text-xs font-bold text-white min-w-[20px] text-center">
-                  {currentKeyName ?? (activePitch !== 0 ? (activePitch > 0 ? '+' : '') + activePitch : '?')}
+            <div className="relative">
+              <button onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)}
+                className="lcd-display flex items-center gap-1.5 rounded-md px-2 py-1 hover:border-border-light transition-colors cursor-pointer">
+                <span className="text-[8px] font-bold text-text-muted uppercase tracking-wider">KEY</span>
+                <span className="text-xs font-bold text-primary min-w-[18px] text-center">
+                  {currentKeyName ?? (activePitch !== 0 ? (activePitch > 0 ? '+' : '') + activePitch : '—')}
                 </span>
               </button>
               {isKeyPickerOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setIsKeyPickerOpen(false)} />
-                  <div className="absolute top-full mt-1 right-0 bg-gray-900 border border-white/20 rounded-xl shadow-xl z-50 p-3 w-48">
-                    <p className="text-[10px] text-text-muted mb-2">
-                      {activeOriginalKey ? 'Selecione o tom:' : 'Tom original não detectado. Selecione manualmente:'}
+                  <div className="absolute top-full mt-1 right-0 daw-panel rounded-lg z-50 p-3 w-48">
+                    <p className="text-[10px] text-text-muted mb-2 font-mono">
+                      {activeOriginalKey ? 'Selecionar tom:' : 'Tom original desconhecido. Defina manualmente:'}
                     </p>
                     <div className="grid grid-cols-4 gap-1">
                       {KEYS.map(key => {
@@ -332,7 +451,7 @@ export default function App() {
                             }
                             setIsKeyPickerOpen(false)
                           }}
-                            className={`py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${isCurrent ? 'bg-secondary text-black' : isOriginal ? 'bg-white/20 text-white border border-white/30' : 'text-white bg-white/10 hover:bg-secondary/30 hover:text-secondary'}`}>
+                            className={`py-1.5 text-[10px] font-bold rounded transition-colors cursor-pointer font-mono ${isCurrent ? 'bg-primary text-black' : isOriginal ? 'bg-white/15 text-white border border-white/20' : 'text-white/70 bg-white/5 hover:bg-primary/20 hover:text-primary'}`}>
                             {key}
                           </button>
                         )
@@ -340,8 +459,8 @@ export default function App() {
                     </div>
                     {activeOriginalKey && (
                       <button onClick={() => { setOriginalKey(null); changePitch(0); setIsKeyPickerOpen(false); }}
-                        className="mt-2 w-full text-[9px] text-text-muted hover:text-red-400 cursor-pointer text-center transition-colors">
-                        Re-detectar tom
+                        className="mt-2 w-full text-[9px] text-text-muted hover:text-accent-red cursor-pointer text-center transition-colors font-mono">
+                        Redefinir detecção de tom
                       </button>
                     )}
                   </div>
@@ -349,69 +468,58 @@ export default function App() {
               )}
             </div>
 
-            {/* Time-Stretch Speed Control */}
-            <div className="flex items-center bg-white/5 rounded-lg border border-white/10">
-              <span className="text-[9px] text-text-muted font-bold px-1.5">SPD</span>
-              <button onClick={() => updateTimeStretch(Math.max(0.5, timeStretch - 0.05))} className="px-1.5 py-1 sm:py-1.5 text-text-muted hover:text-white hover:bg-white/10 transition-colors cursor-pointer text-xs">-</button>
-              <div className="px-1 py-1 sm:py-1.5 text-[10px] sm:text-xs font-bold text-white min-w-[36px] text-center border-l border-r border-white/10">{(timeStretch * 100).toFixed(0)}%</div>
-              <button onClick={() => updateTimeStretch(Math.min(1.5, timeStretch + 0.05))} className="px-1.5 py-1 sm:py-1.5 text-text-muted hover:text-white hover:bg-white/10 transition-colors cursor-pointer text-xs">+</button>
-              {timeStretch !== 1 && <button onClick={() => updateTimeStretch(1)} className="text-[8px] text-red-400 cursor-pointer px-1.5 hover:bg-white/5 py-1">RST</button>}
+            {/* Speed Control */}
+            <div className="lcd-display flex items-center rounded-md overflow-hidden">
+              <span className="text-[8px] text-text-muted font-bold px-1.5 uppercase tracking-wider">SPD</span>
+              <button onClick={() => updateTimeStretch(Math.max(0.5, timeStretch - 0.05))} className="px-1.5 py-1 text-text-muted hover:text-white hover:bg-white/5 transition-colors cursor-pointer text-xs font-mono">−</button>
+              <div className="px-1 py-1 text-xs font-bold text-primary min-w-[36px] text-center border-l border-r border-border font-mono">{(timeStretch * 100).toFixed(0)}%</div>
+              <button onClick={() => updateTimeStretch(Math.min(1.5, timeStretch + 0.05))} className="px-1.5 py-1 text-text-muted hover:text-white hover:bg-white/5 transition-colors cursor-pointer text-xs font-mono">+</button>
+              {timeStretch !== 1 && <button onClick={() => updateTimeStretch(1)} className="text-[8px] text-accent-red cursor-pointer px-1.5 hover:bg-white/5 py-1 font-mono font-bold">RST</button>}
             </div>
 
-
-            <div className="font-mono text-base sm:text-xl tracking-wider text-secondary flex items-baseline gap-1.5 bg-black/40 px-3 sm:px-4 py-1.5 rounded-lg font-light">
+            {/* LCD Timer */}
+            <div className="lcd-display font-mono text-base sm:text-lg tracking-wider text-primary flex items-baseline gap-1 px-3 py-1 rounded-md">
               {formatTime(currentTime)}
-              <span className="text-xs sm:text-sm text-text-muted">/ {formatTime(duration)}</span>
+              <span className="text-[10px] sm:text-xs text-text-muted">/ {formatTime(duration)}</span>
             </div>
           </div>
         </div>
 
         {/* Transport Controls Row */}
-        <div className="flex items-center justify-center gap-2 px-3 pb-2 sm:pb-3">
-          <button onClick={prevSong} className="p-2.5 text-text-muted hover:text-white hover:bg-white/10 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20"><SkipBack size={22} /></button>
+        <div className="flex items-center justify-center gap-1.5 px-3 py-2 sm:py-2.5 bg-[#141416]">
+          <button onClick={prevSong} className="transport-btn p-2 rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipBack size={18} /></button>
           <button onClick={isPlaying ? pause : play}
-            className={`p-3.5 rounded-2xl transition-all duration-300 active:scale-90 shadow-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50 ${isPlaying ? 'bg-primary/20 text-primary hover:bg-primary/30 shadow-primary/20' : 'bg-white/5 text-white hover:bg-white/15'}`}>
-            {isPlaying ? <Pause size={30} fill="currentColor" /> : <Play size={30} fill="currentColor" className="ml-1" />}
+            className={`transport-btn p-3 rounded-lg active:scale-90 cursor-pointer ${isPlaying ? 'active text-primary' : 'text-white'}`}>
+            {isPlaying ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" className="ml-0.5" />}
           </button>
-          <button onClick={nextSong} className="p-2.5 text-text-muted hover:text-white hover:bg-white/10 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/20"><SkipForward size={22} /></button>
+          <button onClick={nextSong} className="transport-btn p-2 rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipForward size={18} /></button>
 
           {/* VAMP Toggle */}
-          <button
-            onClick={toggleVamp}
-            className={`ml-1 px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all duration-300 active:scale-90 cursor-pointer border ${vampActive
-                ? 'bg-amber-500/20 text-amber-400 border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.3)] animate-pulse'
-                : 'bg-white/5 text-text-muted border-white/10 hover:bg-white/10 hover:text-white'
+          <button onClick={toggleVamp}
+            className={`transport-btn ml-1 px-3 py-2 rounded-md text-[10px] font-black uppercase tracking-wider cursor-pointer ${vampActive
+                ? 'active text-amber-400 border-amber-500/40'
+                : 'text-text-muted'
               }`}
-            title={vampActive ? 'Desativar VAMP (Loop Infinito)' : 'Ativar VAMP: loop seção atual'}
-          >
+            title={vampActive ? 'Disable VAMP' : 'Enable VAMP: loop current section'}>
             {vampActive ? '🔁 VAMP' : '🔁'}
           </button>
 
-          {/* Playback Mode Selector */}
-          <div className="hidden sm:flex items-center bg-black/40 rounded-lg overflow-hidden border border-white/10 ml-1">
-            <button
-              onClick={() => setPlaybackMode('continue')}
-              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase transition-all cursor-pointer ${playbackMode === 'continue' ? 'bg-primary/20 text-primary' : 'text-text-muted hover:text-white hover:bg-white/5'
-                }`}
-              title="Continuar para próxima música"
-            >▶ Auto</button>
-            <button
-              onClick={() => setPlaybackMode('stop')}
-              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase border-l border-r border-white/10 transition-all cursor-pointer ${playbackMode === 'stop' ? 'bg-red-500/20 text-red-400' : 'text-text-muted hover:text-white hover:bg-white/5'
-                }`}
-              title="Parar ao final da música"
-            >⏹ Stop</button>
-            <button
-              onClick={() => setPlaybackMode('fade-out')}
-              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase transition-all cursor-pointer ${playbackMode === 'fade-out' ? 'bg-purple-500/20 text-purple-400' : 'text-text-muted hover:text-white hover:bg-white/5'
-                }`}
-              title="Fade out nos últimos 5 segundos"
-            >🔉 Fade</button>
+          {/* Playback Mode */}
+          <div className="hidden sm:flex items-center lcd-display rounded-md overflow-hidden ml-1">
+            <button onClick={() => setPlaybackMode('continue')}
+              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer font-mono ${playbackMode === 'continue' ? 'bg-primary/15 text-primary' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
+              title="Continuar para próxima música">▶ AUTO</button>
+            <button onClick={() => setPlaybackMode('stop')}
+              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider border-l border-r border-border transition-all cursor-pointer font-mono ${playbackMode === 'stop' ? 'bg-accent-red/15 text-accent-red' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
+              title="Parar no final">⏹ PARAR</button>
+            <button onClick={() => setPlaybackMode('fade-out')}
+              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer font-mono ${playbackMode === 'fade-out' ? 'bg-purple-500/15 text-purple-400' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
+              title="Fade nos últimos 5 segundos">🔉 FADE</button>
           </div>
 
           {/* Mobile edit toggle */}
           <button onClick={() => setIsEditMode(!isEditMode)}
-            className={`sm:hidden ml-2 items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors border cursor-pointer flex ${isEditMode ? 'bg-secondary/20 text-secondary border-secondary/30' : 'bg-transparent text-text-muted border-white/5'}`}>
+            className={`sm:hidden ml-2 items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-colors border cursor-pointer flex ${isEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border'}`}>
             {isEditMode ? <Check size={12} /> : <Edit2 size={12} />}
           </button>
         </div>
@@ -423,9 +531,9 @@ export default function App() {
       )}
 
       {/* ═══ SETLIST AREA ═══ */}
-      <section className="h-24 sm:h-32 border-b border-white/5 bg-black/40 flex items-center px-3 sm:px-4 gap-3 overflow-x-auto shrink-0 relative">
-        <div className="absolute left-3 sm:left-4 top-1.5 text-[9px] sm:text-[10px] font-bold text-text-muted/40 uppercase tracking-widest">Repertório</div>
-        <div className="w-full flex items-center gap-2 sm:gap-3 pt-3">
+      <section className="h-20 sm:h-24 border-b border-border bg-[#141416] flex items-center px-3 sm:px-4 gap-2 overflow-x-auto shrink-0 relative scrollbar-hide">
+        <div className="absolute left-3 sm:left-4 top-1 text-[8px] font-bold text-text-muted/30 uppercase tracking-[0.2em] font-mono">REPERTÓRIO</div>
+        <div className="w-full flex items-center gap-1.5 sm:gap-2 pt-3">
           {playlist.map((song, i) => (
             <div key={song.id}
               draggable={isEditMode}
@@ -435,24 +543,24 @@ export default function App() {
               onDragEnd={handleDragEnd}
               onClick={() => !isEditMode && jumpToSong(i)}
               className={`
-                flex-none w-52 sm:w-72 h-16 sm:h-20 rounded-xl flex items-center p-2 gap-2 sm:gap-3 border transition-all overflow-hidden relative
-                ${isEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer hover:border-white/20'}
-                ${isEditMode && dragOverIndex === i ? 'border-secondary border-2 bg-secondary/10' : ''}
+                flex-none w-48 sm:w-64 h-14 sm:h-16 rounded-md flex items-center p-2 gap-2 border transition-all overflow-hidden relative
+                ${isEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer hover:border-border-light'}
+                ${isEditMode && dragOverIndex === i ? 'border-primary border-2 bg-primary/5' : ''}
                 ${isEditMode && dragIndex === i ? 'opacity-40' : ''}
-                ${i === activeSongIndex && !isEditMode ? 'bg-primary/10 border-primary/50 text-white shadow-[0_0_15px_rgba(16,185,129,0.1)]' : 'bg-surface border-white/5 text-text-muted'}
-                ${isEditMode && !(dragOverIndex === i) && !(dragIndex === i) ? 'border-dashed border-white/20' : ''}
+                ${i === activeSongIndex && !isEditMode ? 'bg-surface border-primary/40 text-white shadow-[0_0_12px_rgba(212,168,67,0.08)]' : 'bg-[#18181a] border-border text-text-muted'}
+                ${isEditMode && !(dragOverIndex === i) && !(dragIndex === i) ? 'border-dashed border-text-muted/20' : ''}
               `}>
               {/* Cover */}
-              <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-md bg-black/40 flex-shrink-0 overflow-hidden relative group flex items-center justify-center border border-white/5">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded bg-black/40 flex-shrink-0 overflow-hidden relative group flex items-center justify-center border border-border">
                 {song.coverImage ? (
                   <img src={song.coverImage} className="w-full h-full object-cover" alt="" />
                 ) : (
-                  <Image size={20} className="opacity-20" />
+                  <Image size={16} className="opacity-15" />
                 )}
                 {isEditMode && (
                   <label className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center cursor-pointer opacity-0 hover:opacity-100 transition-opacity">
-                    <Edit2 size={12} className="text-white mb-0.5" />
-                    <span className="text-[8px] font-bold text-white uppercase">Capa</span>
+                    <Edit2 size={10} className="text-white mb-0.5" />
+                    <span className="text-[7px] font-bold text-white uppercase tracking-wider">COVER</span>
                     <input type="file" accept="image/*" className="hidden" onChange={(e) => {
                       const f = e.target.files?.[0];
                       if (f) { const reader = new FileReader(); reader.onload = (ev) => setCoverImage(song.id, ev.target?.result as string); reader.readAsDataURL(f); }
@@ -465,23 +573,23 @@ export default function App() {
                 {isEditMode ? (
                   <>
                     <input type="text"
-                      className="w-full bg-black/40 text-xs sm:text-sm font-semibold text-white px-2 py-1 rounded border border-white/10 outline-none focus:border-secondary mb-0.5 transition-colors"
+                      className="w-full daw-input text-[10px] sm:text-xs font-bold text-white px-2 py-1 rounded mb-0.5"
                       value={song.name}
                       onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} draggable={false}
                       onChange={(e) => renameSong(song.id, e.target.value)}
                     />
-                    <div className="flex items-center gap-1 text-text-muted/50">
-                      <GripVertical size={12} /><span className="text-[9px]">Arraste</span>
+                    <div className="flex items-center gap-1 text-text-muted/40">
+                      <GripVertical size={10} /><span className="text-[8px] font-mono">DRAG</span>
                     </div>
                   </>
                 ) : (
                   <>
-                    <div className={`font-semibold text-xs sm:text-sm truncate mb-0.5 ${i === activeSongIndex ? 'text-white' : 'text-text-main'}`}>
+                    <div className={`font-bold text-[10px] sm:text-xs truncate mb-0.5 ${i === activeSongIndex ? 'text-white' : 'text-text-main/80'}`}>
                       {i + 1}. {song.name}
                     </div>
-                    <div className="text-[10px] sm:text-xs opacity-60 font-mono flex items-center justify-between">
+                    <div className="text-[9px] sm:text-[10px] opacity-50 font-mono flex items-center justify-between">
                       <div className="flex items-center gap-1 text-primary">
-                        {i === activeSongIndex && isPlaying && <Play size={8} fill="currentColor" />}
+                        {i === activeSongIndex && isPlaying && <Play size={7} fill="currentColor" />}
                         {i === activeSongIndex && !isPlaying && <div className="w-1 h-1 rounded-full bg-primary/50"></div>}
                       </div>
                       {formatTime(song.duration)}
@@ -489,13 +597,15 @@ export default function App() {
                   </>
                 )}
               </div>
+              {/* Active indicator bar */}
+              {i === activeSongIndex && !isEditMode && <div className="absolute bottom-0 left-2 right-2 h-0.5 bg-primary rounded-full"></div>}
             </div>
           ))}
 
           {playlist.length === 0 && (
-            <div className="text-xs sm:text-sm text-text-muted/50 flex flex-col items-center justify-center w-full py-2 gap-1">
-              <ListMusic size={20} className="opacity-50" />
-              <span>Clique em "Stems" para adicionar músicas</span>
+            <div className="text-[10px] sm:text-xs text-text-muted/30 flex flex-col items-center justify-center w-full py-2 gap-1 font-mono uppercase tracking-wider">
+              <ListMusic size={18} className="opacity-30" />
+              <span>Importe faixas para começar</span>
             </div>
           )}
         </div>
@@ -505,13 +615,13 @@ export default function App() {
       <main className="flex-1 flex flex-col overflow-hidden">
 
         {/* Timeline */}
-        <section className="border-b border-white/5 px-3 sm:px-4 py-1.5 sm:py-2 flex flex-col relative shrink-0">
+        <section className="border-b border-border px-3 sm:px-4 py-1.5 sm:py-2 flex flex-col relative shrink-0 bg-[#111113]">
           {/* Progress Bar */}
-          <div className="h-6 sm:h-8 bg-surface rounded-md relative overflow-hidden border border-white/5 cursor-pointer group">
+          <div className="h-6 sm:h-7 bg-[#0a0a0c] rounded relative overflow-hidden border border-border cursor-pointer group">
             {/* Fill */}
-            <div className="absolute inset-y-0 left-0 bg-primary/20 transition-none pointer-events-none" style={{ width: duration > 0 ? `${((isDraggingTimeline ? localDragTime : currentTime) / duration) * 100}%` : '0%' }} />
+            <div className="absolute inset-y-0 left-0 bg-primary/10 transition-none pointer-events-none" style={{ width: duration > 0 ? `${((isDraggingTimeline ? localDragTime : currentTime) / duration) * 100}%` : '0%' }} />
             {/* Playhead */}
-            <div className="absolute inset-y-0 w-0.5 bg-primary shadow-[0_0_8px_rgba(16,185,129,0.8)] z-10 pointer-events-none" style={{ left: duration > 0 ? `${((isDraggingTimeline ? localDragTime : currentTime) / duration) * 100}%` : '0%' }} />
+            <div className="absolute inset-y-0 w-px bg-white shadow-[0_0_6px_rgba(255,255,255,0.6)] z-10 pointer-events-none" style={{ left: duration > 0 ? `${((isDraggingTimeline ? localDragTime : currentTime) / duration) * 100}%` : '0%' }} />
 
             {/* Marker lines inside bar */}
             {playlist[activeSongIndex]?.markers?.map((marker) => (
@@ -563,9 +673,9 @@ export default function App() {
                   <button
                     key={marker.id}
                     onClick={() => seekTo(marker.time)}
-                    className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold tracking-wide transition-all duration-200 cursor-pointer active:scale-95 border ${isActive
+                    className={`shrink-0 px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold tracking-wider transition-all cursor-pointer active:scale-95 border font-mono uppercase ${isActive
                       ? 'shadow-lg scale-105'
-                      : 'opacity-60 hover:opacity-100'
+                      : 'opacity-50 hover:opacity-100'
                       }`}
                     style={{
                       color: marker.color || '#fff',
@@ -702,14 +812,14 @@ export default function App() {
         </section>
 
         {/* ─── Mobile View Toggle ─── */}
-        <div className="flex lg:hidden border-b border-white/5 bg-surface/50 shrink-0">
+        <div className="flex lg:hidden border-b border-border bg-[#141416] shrink-0">
           <button onClick={() => setMobileView('mixer')}
-            className={`flex-1 py-2 text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer ${mobileView === 'mixer' ? 'text-primary border-b-2 border-primary' : 'text-text-muted'}`}>
-            🎚️ Mixer
+            className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-[0.15em] transition-colors cursor-pointer font-mono ${mobileView === 'mixer' ? 'text-primary border-b-2 border-primary' : 'text-text-muted'}`}>
+            MIXER
           </button>
           <button onClick={() => setMobileView('pads')}
-            className={`flex-1 py-2 text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer ${mobileView === 'pads' ? 'text-secondary border-b-2 border-secondary' : 'text-text-muted'}`}>
-            🎹 Pads
+            className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-[0.15em] transition-colors cursor-pointer font-mono ${mobileView === 'pads' ? 'text-secondary border-b-2 border-secondary' : 'text-text-muted'}`}>
+            PADS
           </button>
         </div>
 
@@ -718,122 +828,237 @@ export default function App() {
 
           {/* ═══ MIXER ═══ */}
           <div ref={mixerRef}
-            className={`bg-black/20 overflow-x-auto flex flex-nowrap items-end p-3 sm:p-4 gap-2
+            className={`bg-[#111113] overflow-x-auto flex flex-col items-stretch
               ${mobileView === 'mixer' ? 'flex' : 'hidden'} lg:flex flex-1`}
-            style={{ cursor: 'grab', touchAction: 'pan-x' }}
-            onMouseDown={onMixerMouseDown} onMouseMove={onMixerMouseMove} onMouseUp={onMixerMouseUp} onMouseLeave={onMixerMouseUp}>
+            style={{ touchAction: 'pan-x' }}>
 
-            {channels.map((ch) => (
-              <div key={ch.id} className="w-20 sm:w-24 h-full bg-surface rounded-lg border border-white/5 flex flex-col items-center p-1.5 sm:p-2 pt-3 sm:pt-4 flex-shrink-0 relative overflow-hidden">
-                {(isPlaying && ch.volume > 0 && !ch.muted && (!channels.some(c => c.soloed) || ch.soloed)) && (
-                  <div className="absolute inset-0 border border-primary/20 rounded-lg pointer-events-none"></div>
-                )}
-                <div className="font-semibold text-[10px] sm:text-xs tracking-wider text-text-muted truncate w-full text-center mb-2 sm:mb-4 uppercase" title={ch.name}>
-                  {ch.name.length > 7 ? ch.name.substring(0, 7) + '..' : ch.name}
-                </div>
-                <div className="absolute top-1.5 right-1.5 opacity-30">
-                  <div className="text-[7px] sm:text-[8px]">{ch.bus === '1' ? 'L' : ch.bus === '2' ? 'R' : 'C'}</div>
-                </div>
-                <div className="flex gap-1 mb-2 sm:mb-4 w-full px-0.5">
-                  <button onClick={() => toggleMute(ch.id)} className={`flex-1 h-7 sm:h-9 rounded-md text-[10px] sm:text-xs font-bold transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500/50 ${ch.muted ? 'bg-red-500 text-white shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 'bg-red-500/10 text-red-500/50 border border-red-500/20 hover:bg-red-500/30 text-red-400'}`}>M</button>
-                  <button onClick={() => toggleSolo(ch.id)} className={`flex-1 h-7 sm:h-9 rounded-md text-[10px] sm:text-xs font-bold transition-all duration-200 active:scale-90 cursor-pointer focus:outline-none focus:ring-2 focus:ring-yellow-500/50 ${ch.soloed ? 'bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.5)]' : 'bg-yellow-500/10 text-yellow-500/50 border border-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400'}`}>S</button>
-                </div>
-                <div className="flex-1 w-full flex justify-center py-1 sm:py-2 relative">
-                  <input type="range" min="0" max="1.2" step="0.01" value={ch.volume}
-                    onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}
-                    onChange={(e) => updateVolume(ch.id, parseFloat(e.target.value))}
-                    className="absolute h-full w-full bg-transparent appearance-none cursor-pointer z-10 opacity-0"
-                    style={{ writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' } as any} />
-                  <div className="h-full w-2 sm:w-2.5 bg-black/60 rounded-full relative overflow-hidden pointer-events-none border border-white/5 shadow-inner">
-                    <div className="absolute bottom-0 w-full transition-all duration-75" style={{ height: `${(ch.volume / 1.2) * 100}%`, backgroundColor: (channels.some(c => c.soloed) && !ch.soloed) || ch.muted ? '#ef4444' : '#06b6d4' }}></div>
-                  </div>
-                  <div className="absolute w-8 sm:w-10 h-4 sm:h-5 bg-white/10 rounded-sm border border-white/20 shadow-lg pointer-events-none transition-all duration-75 z-20 backdrop-blur-sm" style={{ bottom: `calc(${(ch.volume / 1.2) * 100}% - 8px)` }}>
-                    <div className="w-full h-[2px] bg-white/80 mt-1.5 sm:mt-2 shadow-[0_0_5px_rgba(255,255,255,0.5)]"></div>
-                  </div>
-                </div>
-                <div className="mt-2 sm:mt-4 text-[10px] sm:text-xs font-mono text-white/40">{Math.round(ch.volume * 100)}%</div>
+            {/* Mixer Toolbar */}
+            {channels.length > 0 && (
+              <div className="flex items-center justify-between px-3 sm:px-4 py-1.5 border-b border-border bg-[#141416] shrink-0">
+                <span className="text-[9px] font-mono font-bold text-text-muted/40 uppercase tracking-[0.2em]">MIXER • {channels.length} CANAIS</span>
+                <button onClick={() => setIsChannelEditMode(!isChannelEditMode)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider transition-all active:scale-95 border cursor-pointer ${isChannelEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border hover:bg-white/5'}`}>
+                  {isChannelEditMode ? <Check size={10} /> : <Move size={10} />}
+                  {isChannelEditMode ? 'PRONTO' : 'EDITAR CANAIS'}
+                </button>
               </div>
-            ))}
+            )}
+
+            <div className="flex-1 flex flex-nowrap items-end p-3 sm:p-4 gap-1 overflow-x-auto"
+              style={{ cursor: 'grab' }}
+              onMouseDown={onMixerMouseDown} onMouseMove={onMixerMouseMove} onMouseUp={onMixerMouseUp} onMouseLeave={onMixerMouseUp}>
+
+            {channels.map((ch, idx) => {
+              const grp = getChannelGroup(ch.name)
+              const isMutedByOther = (channels.some(c => c.soloed) && !ch.soloed) || ch.muted
+              return (
+              <div key={ch.id}
+                draggable={isChannelEditMode}
+                onDragStart={() => onChDragStart(idx)}
+                onDragOver={(e) => onChDragOver(e, idx)}
+                onDrop={() => onChDrop(idx)}
+                onDragEnd={onChDragEnd}
+                className={`channel-strip w-24 sm:w-28 h-full rounded-md flex flex-col items-center p-1.5 sm:p-2 pt-1 flex-shrink-0 relative overflow-hidden ${isChannelEditMode ? 'cursor-grab active:cursor-grabbing' : ''} ${isChannelEditMode && chDragOverIdx === idx ? 'border-primary border-2' : ''} ${isChannelEditMode && chDragIdx === idx ? 'opacity-40' : ''}`}>
+                {/* Group color strip */}
+                <div className="channel-group-strip" style={{ backgroundColor: grp.color }}></div>
+
+                {/* Active glow */}
+                {(isPlaying && ch.volume > 0 && !isMutedByOther) && (
+                  <div className="absolute inset-0 rounded-md pointer-events-none" style={{ border: `1px solid ${grp.color}15` }}></div>
+                )}
+
+                {/* Channel Label */}
+                <div className="font-bold text-[8px] sm:text-[9px] tracking-[0.08em] truncate w-full text-center mb-1.5 uppercase font-mono mt-1" style={{ color: grp.color }} title={ch.name}>
+                  {ch.name.length > 8 ? ch.name.substring(0, 8) + '..' : ch.name}
+                </div>
+
+                {/* Pan Knob container */}
+                <div className="logic-pan-knob-container mb-2 w-full">
+                  <div className="logic-pan-knob"
+                    title={`Pan: ${ch.pan === 0 ? 'C' : ch.pan < 0 ? 'L'+Math.round(Math.abs(ch.pan) * 100) : 'R'+Math.round(ch.pan * 100)}`}
+                    onDoubleClick={() => updatePan(ch.id, 0)}
+                    onPointerDown={(e) => handlePanPointerDown(e, ch.id, ch.pan)}
+                    onPointerMove={handlePanPointerMove}
+                    onPointerUp={handlePanPointerUp}
+                    onPointerCancel={handlePanPointerUp}
+                    onWheel={(e) => {
+                      e.stopPropagation()
+                      const newPan = Math.max(-1, Math.min(1, ch.pan + (e.deltaY > 0 ? -0.1 : 0.1)))
+                      updatePan(ch.id, Math.round(newPan * 10) / 10)
+                    }}>
+                    <div className="logic-pan-indicator" style={{ transform: `rotate(${ch.pan * 135}deg)` }}></div>
+                  </div>
+                  {/* Values box like Logic: Pan | Vol */}
+                  <div className="flex justify-center gap-1 mt-1 w-full px-1">
+                    <div className="bg-[#1a1a1c] text-[#ddd] text-[8px] font-mono px-1 py-0.5 rounded-[2px] border border-black/80 w-8 text-center flex-1">
+                      {ch.pan === 0 ? '0.0' : ch.pan > 0 ? `+${Math.round(ch.pan * 50)}` : `${Math.round(ch.pan * 50)}`}
+                    </div>
+                    <div className="bg-[#1a1a1c] text-[#4ade80] text-[8px] font-mono px-1 py-0.5 rounded-[2px] border border-black/80 w-8 text-center flex-1 truncate">
+                      {ch.volume === 0 ? '-∞' : `${(ch.volume * 10 - 10).toFixed(1)}`}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Fader + VU Meter */}
+                <div className="flex-1 w-full flex justify-center py-1 mt-1 mb-2 relative gap-1 lg:gap-2">
+                  {/* Fader Track */}
+                  <div className="relative h-full flex justify-center w-6">
+                    <input type="range" min="0" max="1.2" step="0.01" value={ch.volume}
+                      onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}
+                      onChange={(e) => updateVolume(ch.id, parseFloat(e.target.value))}
+                      className="absolute h-full w-full bg-transparent appearance-none cursor-pointer z-10 opacity-0"
+                      style={{ writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' } as any} />
+                    <div className="logic-fader-track h-full w-3 sm:w-4 relative pointer-events-none">
+                      <div className="logic-fader-fill" style={{ 
+                        height: `${(ch.volume / 1.2) * 100}%`, 
+                        background: isMutedByOther
+                          ? 'linear-gradient(to top, rgba(239,68,68,0.4), rgba(239,68,68,0.1))'
+                          : `linear-gradient(to top, ${grp.color}66, ${grp.color}15)`
+                      }}></div>
+                    </div>
+                    <div className="logic-fader-knob absolute pointer-events-none transition-all duration-75 z-20" style={{ bottom: `calc(${(ch.volume / 1.2) * 100}% - 26px)` }}>
+                    </div>
+                  </div>
+
+                  {/* Spacer / Decals could go here */}
+                  <div className="w-2 hidden sm:block"></div>
+
+                  {/* VU Meter Right */}
+                  {renderVU(ch.id)}
+                </div>
+
+                {/* M/S Buttons */}
+                <div className="flex gap-1 mb-1.5 w-[90%] px-0.5 justify-center mt-auto">
+                  <button onClick={() => toggleMute(ch.id)} className={`flex-1 h-5 sm:h-6 rounded text-[9px] font-black transition-all active:scale-90 cursor-pointer border border-[#222] ${ch.muted ? 'bg-[#ff3b30] text-white shadow-[0_0_8px_rgba(255,59,48,0.6)]' : 'bg-[#444] text-[#999] hover:bg-[#555]'}`}>M</button>
+                  <button onClick={() => toggleSolo(ch.id)} className={`flex-1 h-5 sm:h-6 rounded text-[9px] font-black transition-all active:scale-90 cursor-pointer border border-[#222] ${ch.soloed ? 'bg-[#ffcc00] text-black shadow-[0_0_8px_rgba(255,204,0,0.6)]' : 'bg-[#444] text-[#999] hover:bg-[#555]'}`}>S</button>
+                </div>
+
+                {/* Channel Edit Overlay */}
+                {isChannelEditMode && (
+                  <div className="channel-edit-overlay">
+                    <GripVertical size={16} className="text-text-muted/60 mb-1" />
+                    <span className="text-[7px] font-mono text-text-muted/50 uppercase tracking-wider">Arrastar</span>
+                    <button onClick={(e) => { e.stopPropagation(); removeChannel(ch.id) }}
+                      className="mt-2 w-7 h-7 rounded-full bg-accent-red/20 flex items-center justify-center hover:bg-accent-red/40 transition-colors cursor-pointer">
+                      <Trash2 size={12} className="text-accent-red" />
+                    </button>
+                  </div>
+                )}
+              </div>
+              )
+            })}
 
             {playlist.length === 0 && (
-              <div className="w-full h-full flex items-center justify-center text-text-muted/50 border-2 border-dashed border-white/5 rounded-2xl flex-col gap-3 p-4">
-                <Music size={36} className="opacity-20" />
-                <span className="text-xs sm:text-sm text-center">Importe os stems de uma música</span>
+              <div className="w-full h-full flex items-center justify-center text-text-muted/20 border border-dashed border-border rounded-md flex-col gap-3 p-4">
+                <Music size={32} className="opacity-20" />
+                <span className="text-[10px] font-mono uppercase tracking-wider">Importe faixas para começar</span>
               </div>
             )}
 
             <div className="flex-1"></div>
 
             {/* Master Fader */}
-            <div className="w-24 sm:w-28 h-full bg-surface rounded-xl border border-white/5 flex flex-col items-center p-1.5 sm:p-2 pt-3 sm:pt-4 flex-shrink-0 ml-2 sm:ml-4 shadow-xl relative">
-              <div className="font-bold text-[10px] sm:text-xs tracking-wider text-primary w-full text-center mb-4 sm:mb-6 uppercase">MASTER</div>
-              <div className="flex-1 w-full flex justify-center py-1 sm:py-2 relative">
-                <input type="range" min="0" max="1.2" step="0.01" value={masterVolume}
-                  onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}
-                  onChange={(e) => updateMasterVolume(parseFloat(e.target.value))}
-                  className="absolute h-full w-full bg-transparent appearance-none cursor-pointer z-10 opacity-0"
-                  style={{ writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' } as any} />
-                <div className="h-full w-3 sm:w-4 bg-black/60 rounded-full relative overflow-hidden pointer-events-none border border-white/5 shadow-inner">
-                  <div className="absolute bottom-0 w-full transition-all duration-75 bg-primary" style={{ height: `${(masterVolume / 1.2) * 100}%` }}></div>
+            <div className="channel-strip w-28 sm:w-32 h-full rounded-md flex flex-col items-center p-1.5 sm:p-2 pt-1 flex-shrink-0 ml-2 sm:ml-4 relative border-primary/20 bg-[#38383a]">
+              <div className="channel-group-strip" style={{ backgroundColor: '#d4a843' }}></div>
+              <div className="font-bold text-[8px] sm:text-[9px] tracking-[0.08em] w-full text-center mb-1.5 uppercase font-mono mt-1" style={{ color: '#d4a843' }}>
+                PRINCIPAL
+              </div>
+
+              {/* Master Fake Pan Knob Area */}
+              <div className="logic-pan-knob-container mb-2 w-full">
+                <div className="logic-pan-knob opacity-50 select-none">
+                  <div className="logic-pan-indicator" style={{ transform: 'rotate(0deg)' }}></div>
                 </div>
-                <div className="absolute w-12 sm:w-14 h-6 sm:h-7 bg-[#222] border border-primary/40 shadow-2xl rounded-sm pointer-events-none transition-all duration-75 z-20 overflow-hidden" style={{ bottom: `calc(${(masterVolume / 1.2) * 100}% - 12px)` }}>
-                  <div className="w-full h-1 bg-primary mt-2.5 sm:mt-3 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>
+                {/* Values box like Logic: Pan | Vol */}
+                <div className="flex justify-center gap-1 mt-1 w-full px-2">
+                  <div className="bg-[#1a1a1c] text-[#ddd] text-[8px] font-mono px-1 py-0.5 rounded-[2px] border border-black/80 w-10 text-center flex-1">
+                    0.0
+                  </div>
+                  <div className="bg-[#1a1a1c] text-[#4ade80] text-[8px] font-mono px-1 py-0.5 rounded-[2px] border border-black/80 w-10 text-center flex-1 truncate">
+                    {masterVolume === 0 ? '-∞' : `${(masterVolume * 10 - 10).toFixed(1)}`}
+                  </div>
                 </div>
               </div>
-              <div className="mt-2 sm:mt-4 text-[10px] sm:text-xs font-mono text-primary/80 font-bold mb-1">{Math.round(masterVolume * 100)}%</div>
+
+              {/* Master Fader + VU */}
+              <div className="flex-1 w-full flex justify-center py-1 mt-1 mb-2 relative gap-1.5">
+                <div className="relative h-full flex justify-center w-6">
+                  <input type="range" min="0" max="1.2" step="0.01" value={masterVolume}
+                    onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()}
+                    onChange={(e) => updateMasterVolume(parseFloat(e.target.value))}
+                    className="absolute h-full w-full bg-transparent appearance-none cursor-pointer z-10 opacity-0"
+                    style={{ writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' } as any} />
+                  <div className="logic-fader-track h-full w-4 sm:w-5 relative pointer-events-none">
+                    <div className="logic-fader-fill" style={{ 
+                      height: `${(masterVolume / 1.2) * 100}%`, 
+                      background: 'linear-gradient(to top, rgba(212,168,67,0.5), rgba(212,168,67,0.1))'
+                    }}></div>
+                  </div>
+                  <div className="logic-fader-knob master absolute pointer-events-none transition-all duration-75 z-20" style={{ bottom: `calc(${(masterVolume / 1.2) * 100}% - 30px)` }}>
+                  </div>
+                </div>
+                
+                {/* Space separator */}
+                <div className="w-3 hidden sm:block"></div>
+
+                {renderVU('master', true)}
+              </div>
+            </div>
             </div>
           </div>
 
           {/* ═══ PAD PLAYER ═══ */}
-          <div className={`bg-surface border-l border-white/5 p-3 sm:p-4 flex flex-col z-10 shadow-[-10px_0_30px_rgba(0,0,0,0.5)]
+          <div className={`bg-[#18181a] border-l border-border p-3 sm:p-4 flex flex-col z-10 shadow-[-10px_0_20px_rgba(0,0,0,0.4)]
             ${mobileView === 'pads' ? 'flex w-full' : 'hidden'} lg:flex lg:w-96`}>
-            <div className="font-semibold text-xs tracking-wider text-text-muted mb-2 flex justify-between uppercase items-center">
-              <span>Ambient Pad Player</span>
+            <div className="font-bold text-[10px] tracking-[0.15em] text-text-muted mb-2 flex justify-between uppercase items-center font-mono">
+              <span>REPRODUTOR DE PADS</span>
               <button onClick={() => setIsPadEditMode(!isPadEditMode)}
-                className={`text-[10px] border px-2 py-0.5 rounded-lg font-bold cursor-pointer transition-all duration-200 active:scale-95 focus:outline-none focus:ring-2 focus:ring-secondary/50 ${isPadEditMode ? 'bg-secondary/20 text-secondary border-secondary/30' : 'border-secondary/30 text-secondary bg-secondary/5 hover:bg-secondary/15'}`}>
-                {isPadEditMode ? 'OK' : 'EDITAR'}
+                className={`text-[9px] border px-2 py-0.5 rounded font-bold cursor-pointer transition-all active:scale-95 font-mono tracking-wider ${isPadEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'border-border text-text-muted hover:bg-white/5 hover:text-white'}`}>
+                {isPadEditMode ? 'PRONTO' : 'EDITAR'}
               </button>
             </div>
 
             {/* Pad Source Selector */}
-            <div className="flex bg-black/40 rounded-xl p-1 mb-3 border border-white/5">
-              <button onClick={() => updatePadMode('system')} className={`flex-1 py-1.5 text-[10px] sm:text-[11px] font-bold rounded-lg flex items-center justify-center transition-all duration-200 cursor-pointer active:scale-95 focus:outline-none focus:ring-2 focus:ring-secondary/50 ${padMode === 'system' ? 'bg-secondary/20 text-secondary shadow-[0_0_10px_rgba(6,182,212,0.2)]' : 'text-text-muted hover:text-white hover:bg-white/5'}`}>NUVEM</button>
-              <button onClick={() => updatePadMode('synth')} className={`flex-1 py-1.5 text-[10px] sm:text-[11px] font-bold rounded-lg flex items-center justify-center transition-all duration-200 cursor-pointer active:scale-95 focus:outline-none focus:ring-2 focus:ring-secondary/50 ${padMode === 'synth' ? 'bg-secondary/20 text-secondary shadow-[0_0_10px_rgba(6,182,212,0.2)]' : 'text-text-muted hover:text-white hover:bg-white/5'}`}>SYNTH</button>
-              <button onClick={() => updatePadMode('custom')} className={`flex-1 py-1.5 text-[10px] sm:text-[11px] font-bold rounded-lg flex items-center justify-center transition-all duration-200 cursor-pointer active:scale-95 focus:outline-none focus:ring-2 focus:ring-secondary/50 ${padMode === 'custom' ? 'bg-secondary/20 text-secondary shadow-[0_0_10px_rgba(6,182,212,0.2)]' : 'text-text-muted hover:text-white hover:bg-white/5'}`}>LOCAL</button>
+            <div className="flex lcd-display rounded-md p-0.5 mb-3">
+              <button onClick={() => updatePadMode('system')} className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center transition-all cursor-pointer active:scale-95 font-mono tracking-wider ${padMode === 'system' ? 'bg-secondary/15 text-secondary' : 'text-text-muted hover:text-white hover:bg-white/5'}`}>NUVEM</button>
+              <button onClick={() => updatePadMode('synth')} className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center transition-all cursor-pointer active:scale-95 font-mono tracking-wider ${padMode === 'synth' ? 'bg-secondary/15 text-secondary' : 'text-text-muted hover:text-white hover:bg-white/5'}`}>SINTETIZ.</button>
+              <button onClick={() => updatePadMode('custom')} className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center transition-all cursor-pointer active:scale-95 font-mono tracking-wider ${padMode === 'custom' ? 'bg-secondary/15 text-secondary' : 'text-text-muted hover:text-white hover:bg-white/5'}`}>LOCAL</button>
             </div>
 
             {/* Volume */}
             <div className="flex items-center gap-3 mb-3 px-1">
-              <span className="text-[10px] text-text-muted uppercase tracking-wider font-bold shrink-0">Vol</span>
+              <span className="text-[9px] text-text-muted uppercase tracking-[0.15em] font-bold shrink-0 font-mono">VOL</span>
               <input type="range" min="0" max="1" step="0.01" value={padVolume}
                 onChange={(e) => updatePadVolume(parseFloat(e.target.value))}
-                className="flex-1 h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-secondary [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-lg" />
-              <span className="text-[10px] text-text-muted font-mono w-8 text-right">{Math.round(padVolume * 100)}%</span>
+                className="daw-slider flex-1" />
+              <span className="text-[9px] text-text-muted font-mono w-8 text-right font-bold">{Math.round(padVolume * 100)}%</span>
             </div>
             {/* Grid */}
-            <div className="flex-1 grid grid-cols-4 sm:grid-cols-4 lg:grid-cols-3 gap-2 sm:gap-3">
+            <div className="flex-1 grid grid-cols-4 sm:grid-cols-4 lg:grid-cols-3 gap-1.5 sm:gap-2">
               {['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'].map(note => (
                 <div key={note} className="relative">
                   <button onClick={() => !isPadEditMode && playPad(note)}
                     className={`
-                      w-full h-full rounded-2xl flex flex-col items-center justify-center text-lg sm:text-2xl font-bold transition-all duration-200 cursor-pointer min-h-[50px] sm:min-h-[60px] active:scale-95 focus:outline-none focus:ring-2 focus:ring-secondary/50
+                      mpc-pad w-full h-full rounded-lg flex flex-col items-center justify-center text-base sm:text-lg font-bold cursor-pointer min-h-[48px] sm:min-h-[56px] active:scale-95 font-mono relative
                       ${activeNote === note
-                        ? 'bg-secondary/20 text-secondary border border-secondary/50 shadow-[0_0_20px_rgba(6,182,212,0.4)] ring-1 ring-secondary scale-[1.02]'
-                        : customPads.has(note) ? 'bg-purple-900/30 text-purple-300 border border-purple-500/30 hover:bg-purple-900/50 hover:shadow-[0_0_15px_rgba(168,85,247,0.2)]' : 'bg-white/5 text-text-main hover:bg-white/10 border border-white/5'}
+                        ? 'pressed border-secondary/50 text-secondary shadow-[0_0_15px_rgba(6,182,212,0.3)]'
+                        : customPads.has(note) ? 'border-purple-500/30 text-purple-300 hover:border-purple-400/50' : 'text-text-main/70 hover:text-white hover:border-border-light'}
                     `}>
-                    <span>{note}</span>
-                    {customPads.has(note) && <span className="text-[7px] sm:text-[8px] mt-0.5 opacity-60 truncate max-w-full px-1">{customPadNames.get(note) || 'Custom'}</span>}
-                    {activeNote === note && <span className="text-[8px] sm:text-[9px] tracking-widest font-medium opacity-60 uppercase text-secondary">Playing</span>}
+                    {/* LED indicator */}
+                    <div className={`absolute top-1.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full transition-all ${activeNote === note ? 'bg-secondary shadow-[0_0_6px_rgba(6,182,212,0.8)]' : customPads.has(note) ? 'bg-purple-500/50' : 'bg-white/10'}`}></div>
+                    <span className="mt-1">{note}</span>
+                    {customPads.has(note) && <span className="text-[6px] mt-0.5 opacity-50 truncate max-w-full px-1 uppercase tracking-wider">{customPadNames.get(note) || 'Person.'}</span>}
+                    {activeNote === note && <span className="text-[7px] tracking-[0.2em] font-bold opacity-50 uppercase text-secondary">TOCANDO</span>}
                   </button>
                   {isPadEditMode && (
-                    <div className="absolute inset-0 bg-black/80 rounded-xl flex flex-col items-center justify-center gap-1 z-10 border border-white/10">
-                      <label className="text-[8px] sm:text-[9px] font-bold text-white uppercase cursor-pointer hover:text-secondary transition-colors flex items-center gap-1">
-                        <Upload size={10} />Carregar
+                    <div className="absolute inset-0 bg-black/85 rounded-lg flex flex-col items-center justify-center gap-1 z-10 border border-border">
+                      <label className="text-[7px] font-bold text-white uppercase cursor-pointer hover:text-primary transition-colors flex items-center gap-1 font-mono tracking-wider">
+                        <Upload size={9} />CARREGAR
                         <input type="file" accept="audio/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) loadCustomPad(note, f) }} />
                       </label>
                       {customPads.has(note) && (
-                        <button onClick={() => clearCustomPad(note)} className="text-[8px] sm:text-[9px] font-bold text-red-400 hover:text-red-300 cursor-pointer flex items-center gap-1">
-                          <X size={9} /> Remover
+                        <button onClick={() => clearCustomPad(note)} className="text-[7px] font-bold text-accent-red hover:text-red-300 cursor-pointer flex items-center gap-1 font-mono tracking-wider">
+                          <X size={8} /> REMOVER
                         </button>
                       )}
                     </div>

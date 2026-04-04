@@ -809,6 +809,57 @@ export function useAudioEngine() {
         updatePlaylistAndSave(newPlaylist);
     };
 
+    const updatePan = (id: string, pan: number) => {
+        const newPlaylist = [...playlist];
+        const song = { ...newPlaylist[activeSongIndex] };
+        if (!song) return;
+
+        song.channels = song.channels.map(ch => {
+            if (ch.id === id && audioCtxRef.current) {
+                ch.pannerNode.pan.setTargetAtTime(pan, audioCtxRef.current.currentTime, 0.05);
+                return { ...ch, pan };
+            }
+            return ch;
+        });
+        newPlaylist[activeSongIndex] = song;
+        updatePlaylistAndSave(newPlaylist);
+    };
+
+    const removeChannel = async (channelId: string) => {
+        const newPlaylist = [...playlist];
+        const song = { ...newPlaylist[activeSongIndex] };
+        if (!song) return;
+
+        const ch = song.channels.find(c => c.id === channelId);
+        if (ch) {
+            if (ch.sourceNode) {
+                try { ch.sourceNode.stop(); } catch (_) {}
+                ch.sourceNode.disconnect();
+            }
+            ch.gainNode.disconnect();
+            ch.pannerNode.disconnect();
+        }
+
+        song.channels = song.channels.filter(c => c.id !== channelId);
+        newPlaylist[activeSongIndex] = song;
+        updatePlaylistAndSave(newPlaylist);
+
+        // Remove from files DB
+        const filesDb = await get<Map<string, File>>('mt_files');
+        if (filesDb) {
+            filesDb.delete(channelId);
+            await set('mt_files', filesDb);
+        }
+    };
+
+    const reorderChannels = (newOrder: Channel[]) => {
+        const newPlaylist = [...playlist];
+        const song = { ...newPlaylist[activeSongIndex] };
+        song.channels = newOrder;
+        newPlaylist[activeSongIndex] = song;
+        updatePlaylistAndSave(newPlaylist);
+    };
+
     const updateMasterVolume = (volume: number) => {
         if (masterGainRef.current && audioCtxRef.current) {
             masterGainRef.current.gain.setTargetAtTime(volume, audioCtxRef.current.currentTime, 0.05);
@@ -1101,6 +1152,11 @@ export function useAudioEngine() {
         setPlaybackMode,
         vampActive,
         toggleVamp,
-        addChannelToActiveSong
+        addChannelToActiveSong,
+
+        // Channel management
+        updatePan,
+        removeChannel,
+        reorderChannels
     };
 }
