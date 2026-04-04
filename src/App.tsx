@@ -476,12 +476,6 @@ export default function App() {
               <button onClick={() => updateTimeStretch(Math.min(1.5, timeStretch + 0.05))} className="px-1.5 py-1 text-text-muted hover:text-white hover:bg-white/5 transition-colors cursor-pointer text-xs font-mono">+</button>
               {timeStretch !== 1 && <button onClick={() => updateTimeStretch(1)} className="text-[8px] text-accent-red cursor-pointer px-1.5 hover:bg-white/5 py-1 font-mono font-bold">RST</button>}
             </div>
-
-            {/* LCD Timer */}
-            <div className="lcd-display font-mono text-base sm:text-lg tracking-wider text-primary flex items-baseline gap-1 px-3 py-1 rounded-md">
-              {formatTime(currentTime)}
-              <span className="text-[10px] sm:text-xs text-text-muted">/ {formatTime(duration)}</span>
-            </div>
           </div>
         </div>
 
@@ -622,6 +616,12 @@ export default function App() {
             <div className="absolute inset-y-0 left-0 bg-primary/10 transition-none pointer-events-none" style={{ width: duration > 0 ? `${((isDraggingTimeline ? localDragTime : currentTime) / duration) * 100}%` : '0%' }} />
             {/* Playhead */}
             <div className="absolute inset-y-0 w-px bg-white shadow-[0_0_6px_rgba(255,255,255,0.6)] z-10 pointer-events-none" style={{ left: duration > 0 ? `${((isDraggingTimeline ? localDragTime : currentTime) / duration) * 100}%` : '0%' }} />
+            
+            {/* Timer Output in Progress Bar */}
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none z-[15] font-mono text-[11px] sm:text-[13px] font-bold text-accent-yellow tracking-widest flex items-baseline gap-1" style={{ textShadow: '0 0 8px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.5)' }}>
+              {formatTime(isDraggingTimeline ? localDragTime : currentTime)}
+              <span className="text-[10px] sm:text-[11px] text-text-muted">/ {formatTime(duration)}</span>
+            </div>
 
             {/* Marker lines inside bar */}
             {playlist[activeSongIndex]?.markers?.map((marker) => (
