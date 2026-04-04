@@ -49,6 +49,12 @@ export default function App() {
   const [chDragIdx, setChDragIdx] = useState<number | null>(null)
   const [chDragOverIdx, setChDragOverIdx] = useState<number | null>(null)
   const [vuLevels, setVuLevels] = useState<Record<string, number>>({})
+  const [repertoireNotes, setRepertoireNotes] = useState(() => localStorage.getItem('repertoire_notes') || '')
+
+  useEffect(() => {
+    localStorage.setItem('repertoire_notes', repertoireNotes)
+  }, [repertoireNotes])
+
   const analysersRef = useRef<Record<string, AnalyserNode>>({})
   const vuAnimRef = useRef<number>(0)
 
@@ -524,80 +530,98 @@ export default function App() {
         <div className="h-1 bg-primary/20 overflow-hidden z-50"><div className="h-full bg-primary animate-pulse w-full"></div></div>
       )}
 
-      {/* ═══ SETLIST AREA ═══ */}
-      <section className="h-20 sm:h-24 border-b border-border bg-[#141416] flex items-center px-3 sm:px-4 gap-2 overflow-x-auto shrink-0 relative scrollbar-hide">
-        <div className="absolute left-3 sm:left-4 top-1 text-[8px] font-bold text-text-muted/30 uppercase tracking-[0.2em] font-mono">REPERTÓRIO</div>
-        <div className="w-full flex items-center gap-1.5 sm:gap-2 pt-3">
-          {playlist.map((song, i) => (
-            <div key={song.id}
-              draggable={isEditMode}
-              onDragStart={() => handleDragStart(i)}
-              onDragOver={(e) => handleDragOver(e, i)}
-              onDrop={() => handleDrop(i)}
-              onDragEnd={handleDragEnd}
-              onClick={() => !isEditMode && jumpToSong(i)}
-              className={`
-                flex-none w-48 sm:w-64 h-14 sm:h-16 rounded-md flex items-center p-2 gap-2 border transition-all overflow-hidden relative
-                ${isEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer hover:border-border-light'}
-                ${isEditMode && dragOverIndex === i ? 'border-primary border-2 bg-primary/5' : ''}
-                ${isEditMode && dragIndex === i ? 'opacity-40' : ''}
-                ${i === activeSongIndex && !isEditMode ? 'bg-surface border-primary/40 text-white shadow-[0_0_12px_rgba(212,168,67,0.08)]' : 'bg-[#18181a] border-border text-text-muted'}
-                ${isEditMode && !(dragOverIndex === i) && !(dragIndex === i) ? 'border-dashed border-text-muted/20' : ''}
-              `}>
-              {/* Cover */}
-              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded bg-black/40 flex-shrink-0 overflow-hidden relative group flex items-center justify-center border border-border">
-                {song.coverImage ? (
-                  <img src={song.coverImage} className="w-full h-full object-cover" alt="" />
-                ) : (
-                  <Image size={16} className="opacity-15" />
-                )}
-                {isEditMode && (
-                  <label className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center cursor-pointer opacity-0 hover:opacity-100 transition-opacity">
-                    <Edit2 size={10} className="text-white mb-0.5" />
-                    <span className="text-[7px] font-bold text-white uppercase tracking-wider">COVER</span>
-                    <input type="file" accept="image/*" className="hidden" onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) { const reader = new FileReader(); reader.onload = (ev) => setCoverImage(song.id, ev.target?.result as string); reader.readAsDataURL(f); }
-                    }} />
-                  </label>
-                )}
-              </div>
+      {/* ═══ SETLIST & NOTES AREA ═══ */}
+      <section className="h-64 sm:h-72 border-b border-border bg-[#141416] flex shrink-0 relative overflow-hidden">
+        {/* Left: Notes Panel */}
+        <div className="w-1/3 sm:w-80 border-r border-[#222] p-3 flex flex-col bg-[#0e0e10]">
+          <div className="text-[10px] font-bold text-text-muted/60 uppercase tracking-[0.15em] mb-2 font-mono flex items-center justify-between">
+            Anotações do Repertório
+            <Edit2 size={10} className="text-text-muted/40" />
+          </div>
+          <textarea 
+            className="flex-1 w-full bg-[#141416] border border-[#222] rounded-md p-2.5 text-[11px] sm:text-xs text-text-main resize-none focus:outline-none focus:border-primary/50 font-mono leading-relaxed"
+            placeholder="Ex: 1. Abertura (Tom: C)&#10;2. Medley Rápido (Tom: G)&#10;> Bateria entra forte no refrão..."
+            value={repertoireNotes}
+            onChange={(e) => setRepertoireNotes(e.target.value)}
+          />
+        </div>
 
-              <div className="flex-1 flex flex-col justify-center min-w-0 pr-1">
-                {isEditMode ? (
-                  <>
-                    <input type="text"
-                      className="w-full daw-input text-[10px] sm:text-xs font-bold text-white px-2 py-1 rounded mb-0.5"
-                      value={song.name}
-                      onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} draggable={false}
-                      onChange={(e) => renameSong(song.id, e.target.value)}
-                    />
-                    <div className="flex items-center gap-1 text-text-muted/40">
-                      <GripVertical size={10} /><span className="text-[8px] font-mono">DRAG</span>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className={`font-bold text-[10px] sm:text-xs truncate mb-0.5 ${i === activeSongIndex ? 'text-white' : 'text-text-main/80'}`}>
-                      {i + 1}. {song.name}
-                    </div>
-                    <div className="text-[9px] sm:text-[10px] opacity-50 font-mono flex items-center justify-between">
-                      <div className="flex items-center gap-1 text-primary">
-                        {i === activeSongIndex && isPlaying && <Play size={7} fill="currentColor" />}
-                        {i === activeSongIndex && !isPlaying && <div className="w-1 h-1 rounded-full bg-primary/50"></div>}
+        {/* Right: Repertoire Grid */}
+        <div className="flex-1 p-3 overflow-y-auto bg-[#141416] relative scrollbar-hide">
+          <div className="sticky top-0 text-[10px] font-bold text-text-muted/40 uppercase tracking-[0.2em] font-mono mb-2 bg-[#141416] pb-1 z-10 w-full backdrop-blur-sm bg-opacity-90">FAIXAS NO REPERTÓRIO</div>
+          
+          <div className="flex flex-wrap items-start gap-2">
+            {playlist.map((song, i) => (
+              <div key={song.id}
+                draggable={isEditMode}
+                onDragStart={() => handleDragStart(i)}
+                onDragOver={(e) => handleDragOver(e, i)}
+                onDrop={() => handleDrop(i)}
+                onDragEnd={handleDragEnd}
+                onClick={() => !isEditMode && jumpToSong(i)}
+                className={`
+                  flex-none w-48 sm:w-[220px] h-14 sm:h-16 rounded-md flex items-center p-2 gap-2 border transition-all overflow-hidden relative
+                  ${isEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer hover:border-border-light'}
+                  ${isEditMode && dragOverIndex === i ? 'border-primary border-2 bg-primary/5' : ''}
+                  ${isEditMode && dragIndex === i ? 'opacity-40' : ''}
+                  ${i === activeSongIndex && !isEditMode ? 'bg-surface border-primary/40 text-white shadow-[0_0_12px_rgba(212,168,67,0.08)] z-[2]' : 'bg-[#1a1a1c] border-border text-text-muted'}
+                  ${isEditMode && !(dragOverIndex === i) && !(dragIndex === i) ? 'border-dashed border-text-muted/20' : ''}
+                `}>
+                {/* Cover */}
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded bg-black/40 flex-shrink-0 overflow-hidden relative group flex items-center justify-center border border-border">
+                  {song.coverImage ? (
+                    <img src={song.coverImage} className="w-full h-full object-cover" alt="" />
+                  ) : (
+                    <Music size={16} className="opacity-15" />
+                  )}
+                  {isEditMode && (
+                    <label className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center cursor-pointer opacity-0 hover:opacity-100 transition-opacity">
+                      <Edit2 size={10} className="text-white mb-0.5" />
+                      <span className="text-[7px] font-bold text-white uppercase tracking-wider">COVER</span>
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) { const reader = new FileReader(); reader.onload = (ev) => setCoverImage(song.id, ev.target?.result as string); reader.readAsDataURL(f); }
+                      }} />
+                    </label>
+                  )}
+                </div>
+
+                <div className="flex-1 flex flex-col justify-center min-w-0 pr-1">
+                  {isEditMode ? (
+                    <>
+                      <input type="text"
+                        className="w-full daw-input text-[10px] sm:text-xs font-bold text-white px-2 py-1 rounded mb-0.5"
+                        value={song.name}
+                        onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} draggable={false}
+                        onChange={(e) => renameSong(song.id, e.target.value)}
+                      />
+                      <div className="flex items-center gap-1 text-text-muted/40">
+                        <GripVertical size={10} /><span className="text-[8px] font-mono">DRAG</span>
                       </div>
-                      {formatTime(song.duration)}
-                    </div>
-                  </>
-                )}
+                    </>
+                  ) : (
+                    <>
+                      <div className={`font-bold text-[10px] sm:text-[11px] truncate mb-0.5 ${i === activeSongIndex ? 'text-white' : 'text-text-main/80'}`}>
+                        {i + 1}. {song.name}
+                      </div>
+                      <div className="text-[9px] sm:text-[10px] opacity-60 font-mono flex items-center justify-between">
+                        <div className="flex items-center gap-1 text-primary">
+                          {i === activeSongIndex && isPlaying && <Play size={7} fill="currentColor" />}
+                          {i === activeSongIndex && !isPlaying && <div className="w-1 h-1 rounded-full bg-primary/50"></div>}
+                        </div>
+                        {formatTime(song.duration)}
+                      </div>
+                    </>
+                  )}
+                </div>
+                {/* Active indicator bar */}
+                {i === activeSongIndex && !isEditMode && <div className="absolute bottom-0 left-2 right-2 h-[3px] bg-primary rounded-t-sm shadow-[0_0_8px_rgba(212,168,67,1)]"></div>}
               </div>
-              {/* Active indicator bar */}
-              {i === activeSongIndex && !isEditMode && <div className="absolute bottom-0 left-2 right-2 h-0.5 bg-primary rounded-full"></div>}
-            </div>
-          ))}
+            ))}
+          </div>
 
           {playlist.length === 0 && (
-            <div className="text-[10px] sm:text-xs text-text-muted/30 flex flex-col items-center justify-center w-full py-2 gap-1 font-mono uppercase tracking-wider">
+            <div className="text-[10px] sm:text-xs text-text-muted/30 flex flex-col items-center justify-center w-full h-full py-8 gap-2 font-mono uppercase tracking-wider">
               <ListMusic size={18} className="opacity-30" />
               <span>Importe faixas para começar</span>
             </div>
