@@ -8,7 +8,7 @@ import { uploadToR2 } from '../lib/r2';
 interface LibraryModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onDownload: (files: File[], songName: string, coverUrl: string | null, markers?: any[], originalKey?: string | null) => void;
+    onDownload: (files: File[], songName: string, coverUrl: string | null, markers?: any[], originalKey?: string | null, artist?: string, bpm?: number) => void;
 }
 
 export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps) {
@@ -73,7 +73,7 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
     const handleDownload = async (songId: string, songName: string) => {
         const result = await downloadSong(songId);
         if (result && result.files.length > 0) {
-            onDownload(result.files, songName, result.coverUrl, result.markers || undefined, result.originalKey);
+            onDownload(result.files, songName, result.coverUrl, result.markers || undefined, result.originalKey, result.artist, result.bpm);
             setDownloadedIds(prev => new Set(prev).add(songId));
         }
     };

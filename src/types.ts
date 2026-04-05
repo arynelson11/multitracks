@@ -21,6 +21,7 @@ export interface Song {
     duration: number;
     pitch?: number;
     originalKey?: string | null;
+    bpm?: number;
     markers?: Marker[];
 }
 

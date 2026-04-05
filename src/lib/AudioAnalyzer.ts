@@ -131,7 +131,7 @@ function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
  * Detecta BPM usando Spectral Flux Onset Detection + Autocorrelação.
  * Muito mais preciso que o music-tempo para faixas reais de bateria/baixo.
  */
-function detectBPM(audioBuffer: AudioBuffer): { bpm: number; beats: number[] } {
+export function detectBPM(audioBuffer: AudioBuffer): { bpm: number; beats: number[] } {
   const sampleRate = audioBuffer.sampleRate;
 
   // 1) Mix to mono
@@ -480,5 +480,54 @@ export async function generateManualClickTrack(
   } catch (error) {
     console.error("Erro ao gerar metrônomo manual", error);
     return { bpm, clickTrackUrl: '' };
+  }
+}
+
+export async function generateEndlessClickTrack(
+  bpm: number
+): Promise<{ bpm: number; clickBlob: Blob }> {
+  try {
+    const sampleRate = 44100;
+    // Generate exactly 1 measure of 4/4 sync
+    const secondsPerBeat = 60 / bpm;
+    const durationInSeconds = secondsPerBeat * 4;
+    const length = sampleRate * durationInSeconds;
+    
+    // Create OfflineAudioContext to render just 1 measure
+    const offlineCtx = new OfflineAudioContext(1, length, sampleRate);
+
+    let beatTime = 0;
+    // 4 beats
+    for (let i = 0; i < 4; i++) {
+        const osc = offlineCtx.createOscillator();
+        const gain = offlineCtx.createGain();
+        
+        // Primeiro beat (forte) em 1500Hz, outros (fraco) em 1000Hz
+        const freq = i === 0 ? 1500 : 1000;
+        
+        osc.frequency.setValueAtTime(freq, beatTime);
+        osc.frequency.exponentialRampToValueAtTime(0.001, beatTime + 0.05);
+
+        // Volume mais alto no primeiro beat
+        const vol = i === 0 ? 1 : 0.7;
+        gain.gain.setValueAtTime(vol, beatTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, beatTime + 0.05);
+
+        osc.connect(gain);
+        gain.connect(offlineCtx.destination);
+
+        osc.start(beatTime);
+        osc.stop(beatTime + 0.05);
+
+        beatTime += secondsPerBeat;
+    }
+
+    const renderedBuffer = await offlineCtx.startRendering();
+    const clickBlob = audioBufferToWavBlob(renderedBuffer);
+
+    return { bpm, clickBlob };
+  } catch (error) {
+    console.error("Erro ao gerar metrônomo infinito loop", error);
+    throw error;
   }
 }

@@ -58,8 +58,8 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                             {/* Auto Pan */}
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <h3 className="text-white text-sm font-bold">Auto Pan Stereo</h3>
-                                    <p className="text-text-muted text-[10px] font-mono">Route Click & Guide to L channel, tracks to R</p>
+                                    <h3 className="text-white text-sm font-bold">Pan Estéreo Automático</h3>
+                                    <p className="text-text-muted text-[10px] font-mono">Click e Guia no canal L, faixas no canal R</p>
                                 </div>
                                 <label className="relative inline-flex items-center cursor-pointer ml-4 shrink-0">
                                     <input type="checkbox" className="sr-only peer" checked={settings.autoPan} onChange={(e) => updateSetting('autoPan', e.target.checked)} />
@@ -73,10 +73,10 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                             <div className="flex items-center justify-between">
                                 <div className="flex-1 pr-4">
                                     <h3 className="text-white text-sm font-bold flex items-center gap-2">
-                                        Audio Device
+                                        Dispositivo de Áudio
                                         <button onClick={refreshAudioDevices} className="opacity-40 hover:opacity-100 transition-all active:scale-90 cursor-pointer"><RefreshCcw size={12} /></button>
                                     </h3>
-                                    <p className="text-text-muted text-[10px] font-mono">Select master output device</p>
+                                    <p className="text-text-muted text-[10px] font-mono">Selecionar dispositivo de saída principal</p>
                                 </div>
                                 <div className="shrink-0 flex items-center justify-end">
                                     <div className="relative">
@@ -101,8 +101,8 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
 
                             <div className="flex items-center justify-between opacity-50 pointer-events-none">
                                 <div>
-                                    <h3 className="text-white text-sm font-bold">Waveform Grid</h3>
-                                    <p className="text-text-muted text-[10px] font-mono">Overlay beat grid on waveform (Coming Soon)</p>
+                                    <h3 className="text-white text-sm font-bold">Grade de Compasso</h3>
+                                    <p className="text-text-muted text-[10px] font-mono">Grade de beats na forma de onda (Em breve)</p>
                                 </div>
                                 <label className="relative inline-flex items-center ml-4 shrink-0">
                                     <input type="checkbox" className="sr-only peer" checked readOnly />
@@ -116,14 +116,14 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                             {isAdmin && (
                                 <div className="flex items-center justify-between p-3 bg-secondary/5 rounded-md border border-secondary/15 mt-4">
                                     <div>
-                                        <h3 className="text-secondary text-sm font-bold uppercase tracking-wider">Upload Panel</h3>
-                                        <p className="text-text-muted text-[10px] font-mono">Publish songs to cloud library</p>
+                                        <h3 className="text-secondary text-sm font-bold uppercase tracking-wider">Painel de Upload</h3>
+                                        <p className="text-text-muted text-[10px] font-mono">Publicar músicas na biblioteca da nuvem</p>
                                     </div>
                                     <button
                                         onClick={() => { onClose(); onOpenAdmin(); }}
                                         className="px-3 py-1.5 bg-secondary text-black text-[10px] font-bold rounded-md hover:scale-105 active:scale-95 transition-all cursor-pointer uppercase tracking-wider"
                                     >
-                                        Open Panel
+                                        Abrir Painel
                                     </button>
                                 </div>
                             )}
@@ -138,7 +138,7 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                                 </div>
                             ) : (
                                 <>
-                            <p className="text-text-muted text-[10px] mb-4 font-mono">Define which stereo bus each channel routes to. Bus 1 = L, Bus 2 = R, 1/2 = Stereo.</p>
+                            <p className="text-text-muted text-[10px] mb-4 font-mono">Define para qual bus estéreo cada canal é roteado. Bus 1 = L, Bus 2 = R, 1/2 = Estéreo.</p>
                                     {channels.map(ch => (
                                         <div key={ch.id} className="flex items-center justify-between py-2.5 border-b border-border last:border-b-0">
                                             <span className="text-white font-bold text-xs font-mono uppercase tracking-wider">{ch.name}</span>
@@ -161,8 +161,8 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                     {activeTab === 'Sobre' && (
                         <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-8">
                             <div className="text-3xl font-black tracking-[0.15em] text-primary uppercase font-mono">PLAYBACK</div>
-                            <div className="text-text-muted text-[10px] font-mono tracking-wider">Studio Engine v5.0</div>
-                            <div className="text-text-muted/40 text-[9px] max-w-sm font-mono">Professional multitrack playback system. Built with Web Audio API, React, and IndexedDB.</div>
+                            <div className="text-text-muted text-[10px] font-mono tracking-wider">Motor de Estúdio v5.0</div>
+                            <div className="text-text-muted/40 text-[9px] max-w-sm font-mono">Sistema profissional de playback multitracks. Construído com Web Audio API, React e IndexedDB.</div>
                         </div>
                     )}
                 </div>

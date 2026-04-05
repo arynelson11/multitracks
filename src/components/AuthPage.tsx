@@ -68,25 +68,25 @@ export function AuthPage({ }: AuthPageProps) {
                 {/* Main Branding Content */}
                 <div className="max-w-md relative z-10 my-auto">
                     <h1 className="text-4xl lg:text-5xl font-black text-white mb-6 leading-tight tracking-tight">
-                        Professional<br />Multitrack Engine
+                        Engine Profissional<br />de Playbacks
                     </h1>
                     <p className="text-text-muted text-base mb-12 font-mono">
-                        Live playback system for multitracks, click tracks, and stems.
+                        Seu palco digital definitivo para multitracks, VS, click e stems ao vivo.
                     </p>
 
                     {/* Component Steps */}
                     <div className="flex flex-col gap-3">
                         <div className="flex items-center gap-4 bg-primary/10 text-white p-4 rounded-lg border border-primary/20">
                             <div className="w-8 h-8 rounded-md bg-primary text-black flex items-center justify-center font-bold text-xs font-mono">01</div>
-                            <span className="font-bold text-sm tracking-wider uppercase">Create Account</span>
+                            <span className="font-bold text-sm tracking-wider uppercase">Criar Conta</span>
                         </div>
                         <div className="flex items-center gap-4 bg-white/3 text-text-muted p-4 rounded-lg border border-border">
                             <div className="w-8 h-8 rounded-md bg-surface text-text-muted border border-border flex items-center justify-center font-bold text-xs font-mono">02</div>
-                            <span className="font-medium text-sm tracking-wider uppercase">Import Stems</span>
+                            <span className="font-medium text-sm tracking-wider uppercase">Importar Faixas</span>
                         </div>
                         <div className="flex items-center gap-4 bg-white/3 text-text-muted p-4 rounded-lg border border-border">
                             <div className="w-8 h-8 rounded-md bg-surface text-text-muted border border-border flex items-center justify-center font-bold text-xs font-mono">03</div>
-                            <span className="font-medium text-sm tracking-wider uppercase">Press Play</span>
+                            <span className="font-medium text-sm tracking-wider uppercase">Soltar o Som</span>
                         </div>
                     </div>
                 </div>
@@ -114,10 +114,10 @@ export function AuthPage({ }: AuthPageProps) {
                 <div className="w-full max-w-md">
                     <div className="mb-10 text-center lg:text-left">
                         <h2 className="text-2xl font-black text-white mb-2 tracking-tight uppercase">
-                            {mode === 'login' ? 'Sign In' : mode === 'register' ? 'Create Account' : 'Reset Password'}
+                            {mode === 'login' ? 'Entrar na Plataforma' : mode === 'register' ? 'Criar Conta' : 'Recuperar Senha'}
                         </h2>
                         <p className="text-text-muted text-xs font-mono tracking-wider">
-                            {mode === 'login' ? 'Welcome back. Enter your credentials.' : mode === 'register' ? 'Enter your details to get started.' : 'We will send reset instructions to your email.'}
+                            {mode === 'login' ? 'Bem-vindo de volta. Acesse seu palco.' : mode === 'register' ? 'Insira seus dados para começar a usar.' : 'Enviaremos as instruções para o seu email.'}
                         </p>
                     </div>
 
@@ -135,13 +135,13 @@ export function AuthPage({ }: AuthPageProps) {
                                         <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
                                         <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
                                     </svg>
-                                    Google
+                                    Entrar com Google
                                 </button>
                             </div>
 
                             <div className="flex items-center gap-4 mb-8">
                                 <div className="h-px bg-border flex-1"></div>
-                                <span className="text-text-muted text-[9px] font-bold uppercase tracking-[0.2em] font-mono">OR</span>
+                                <span className="text-text-muted text-[9px] font-bold uppercase tracking-[0.2em] font-mono">OU</span>
                                 <div className="h-px bg-border flex-1"></div>
                             </div>
                         </>
@@ -161,14 +161,14 @@ export function AuthPage({ }: AuthPageProps) {
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     className="w-full daw-input rounded-md pl-11 pr-4 py-3 placeholder:text-text-muted/30 font-mono text-sm"
-                                    placeholder="your@email.com"
+                                    placeholder="seu@email.com"
                                 />
                             </div>
                         </div>
 
                         {mode !== 'forgot' && (
                             <div>
-                                <label className="block text-text-muted text-[10px] font-bold mb-2 uppercase tracking-wider font-mono">Password</label>
+                                <label className="block text-text-muted text-[10px] font-bold mb-2 uppercase tracking-wider font-mono">Senha</label>
                                 <div className="relative">
                                     <Lock size={14} className="absolute left-4 top-3.5 text-text-muted" />
                                     <input
@@ -177,11 +177,11 @@ export function AuthPage({ }: AuthPageProps) {
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         className="w-full daw-input rounded-md pl-11 pr-4 py-3 placeholder:text-text-muted/30 font-mono text-sm"
-                                        placeholder="Enter password"
+                                        placeholder="Digite sua senha"
                                         minLength={6}
                                     />
                                     <div className="absolute right-4 top-3.5 text-text-muted/40 text-[9px] font-mono">
-                                        MIN 6 CHARS
+                                        MÍN 6 CARACT.
                                     </div>
                                 </div>
                             </div>
@@ -194,7 +194,7 @@ export function AuthPage({ }: AuthPageProps) {
                         >
                             {loading ? <Loader2 size={18} className="animate-spin" /> : (
                                 <>
-                                    {mode === 'login' ? 'Sign In' : mode === 'register' ? 'Register' : 'Send Instructions'}
+                                    {mode === 'login' ? 'Entrar Agora' : mode === 'register' ? 'Criar Conta' : 'Enviar Instruções'}
                                     <ArrowRight size={16} />
                                 </>
                             )}
@@ -204,14 +204,14 @@ export function AuthPage({ }: AuthPageProps) {
                     <div className="mt-8 text-center text-sm">
                         {mode === 'login' ? (
                             <div className="flex flex-col gap-3">
-                                <button onClick={() => setMode('forgot')} className="text-text-muted hover:text-white transition-colors cursor-pointer text-xs font-mono">Forgot password?</button>
+                                <button onClick={() => setMode('forgot')} className="text-text-muted hover:text-white transition-colors cursor-pointer text-xs font-mono">Esqueceu sua senha?</button>
                                 <div className="text-text-muted text-xs font-mono">
-                                    No account? <button onClick={() => setMode('register')} className="text-primary font-bold hover:underline cursor-pointer">Register</button>
+                                    Não possui conta? <button onClick={() => setMode('register')} className="text-primary font-bold hover:underline cursor-pointer">Cadastre-se</button>
                                 </div>
                             </div>
                         ) : (
                             <div className="text-text-muted text-xs font-mono">
-                                Have an account? <button onClick={() => setMode('login')} className="text-primary font-bold hover:underline cursor-pointer">Sign In</button>
+                                Já possui uma conta? <button onClick={() => setMode('login')} className="text-primary font-bold hover:underline cursor-pointer">Entrar</button>
                             </div>
                         )}
                     </div>

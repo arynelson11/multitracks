@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import * as Tone from 'tone';
 import type { Channel, Song, Marker } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
-import { detectKey } from '../lib/AudioAnalyzer';
+import { detectKey, generateEndlessClickTrack } from '../lib/AudioAnalyzer';
 
 interface SavedChannel {
     id: string;
@@ -19,6 +19,7 @@ interface SavedChannel {
 interface SavedSong {
     id: string;
     name: string;
+    bpm?: number;
     coverImage?: string;
     channels: SavedChannel[];
     duration: number;
@@ -64,6 +65,15 @@ export function useAudioEngine() {
     const autoNextTimeoutRef = useRef<number | null>(null);
     const currentPitchRef = useRef<number>(0);
 
+    // === Pré-contagem ===
+    const [precountEnabled, setPrecountEnabled] = useState<boolean>(() =>
+        localStorage.getItem('precount_enabled') === 'true');
+    const [precountBeats, setPrecountBeatsState] = useState<number>(() =>
+        parseInt(localStorage.getItem('precount_beats') || '4'));
+    const [isCountingIn, setIsCountingIn] = useState(false);
+    const countInTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const countInOscsRef = useRef<OscillatorNode[]>([]);
+
     const activeSong = playlist[activeSongIndex];
     const channels = activeSong?.channels || [];
 
@@ -84,7 +94,8 @@ export function useAudioEngine() {
                 bus: ch.bus || '1/2'
             })),
             pitch: song.pitch || 0,
-            originalKey: song.originalKey || null
+            originalKey: song.originalKey || null,
+            bpm: song.bpm
         }));
         await set('mt_meta_playlist', metaFormat);
     };
@@ -210,14 +221,15 @@ export function useAudioEngine() {
                     const channels = (await Promise.all(channelPromises)).filter((c): c is Channel => c !== null);
                     if (channels.length === 0) return null;
 
+                    const mainCh = channels.find(ch => {
+                        const n = ch.name.toLowerCase();
+                        return !n.includes('click') && !n.includes('metronomo') && !n.includes('guia') && !n.includes('guide');
+                    });
+
                     let originalKey = metaSong.originalKey || null;
-                    if (!originalKey) {
-                        const mainCh = channels.find(ch => {
-                            const n = ch.name.toLowerCase();
-                            return !n.includes('click') && !n.includes('metronomo') && !n.includes('guia') && !n.includes('guide');
-                        });
-                        if (mainCh) originalKey = detectKey(mainCh.buffer);
-                    }
+                    if (!originalKey && mainCh) originalKey = detectKey(mainCh.buffer);
+
+                    const bpm = metaSong.bpm ?? undefined;
 
                     return {
                         id: metaSong.id,
@@ -226,6 +238,7 @@ export function useAudioEngine() {
                         duration: metaSong.duration,
                         pitch: metaSong.pitch || 0,
                         originalKey,
+                        bpm,
                         channels
                     };
                 };
@@ -274,6 +287,9 @@ export function useAudioEngine() {
             const isClickOrGuide = nameL.includes('click') || nameL.includes('metronomo') || nameL.includes('guia') || nameL.includes('guide');
             if (!isClickOrGuide) {
                 source.detune.value = currentPitchRef.current * 100;
+            }
+            if (nameL.includes('metronomo loop')) {
+                source.loop = true;
             }
             source.connect(ch.pannerNode);
             // Phase 3: Apply time-stretch
@@ -502,7 +518,7 @@ export function useAudioEngine() {
     }, [isPlaying, updateTime]);
 
     // Load files
-    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string, songMarkers?: Marker[], overrideOriginalKey?: string | null) => {
+    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string, songMarkers?: Marker[], overrideOriginalKey?: string | null, overrideBpm?: number) => {
         if (!audioCtxRef.current || !masterGainRef.current) return;
         setIsLoading(true);
 
@@ -601,6 +617,8 @@ export function useAudioEngine() {
             ? overrideOriginalKey
             : (mainChannel ? detectKey(mainChannel.buffer) : null);
 
+        const bpm = overrideBpm !== undefined ? overrideBpm : undefined;
+
         const newSong: Song = {
             id: crypto.randomUUID(),
             name: songName,
@@ -609,6 +627,7 @@ export function useAudioEngine() {
             duration: maxDuration,
             pitch: 0,
             originalKey,
+            bpm,
             markers: songMarkers || undefined
         };
 
@@ -620,6 +639,78 @@ export function useAudioEngine() {
         }
         updatePlaylistAndSave(newPlaylist);
         setIsLoading(false);
+    };
+
+    const createEndlessMetronomeSong = async (bpm: number) => {
+        if (!audioCtxRef.current || !masterGainRef.current) return;
+        setIsLoading(true);
+
+        const filesDb = await get<Map<string, File>>('mt_files') || new Map<string, File>();
+
+        try {
+            const { clickBlob } = await generateEndlessClickTrack(bpm);
+            const file = new File([clickBlob], 'Metronomo Loop.wav', { type: 'audio/wav' });
+
+            const arrayBuffer = await file.arrayBuffer();
+            const audioBuffer = await audioCtxRef.current.decodeAudioData(arrayBuffer);
+
+            const panner = audioCtxRef.current.createStereoPanner();
+            const gain = audioCtxRef.current.createGain();
+
+            // Panner para click tradicionalmente fica em L ou C. autoPan joga click pra L (-1)
+            panner.pan.value = settings.autoPan ? -1 : 0;
+            gain.gain.value = 1;
+
+            panner.connect(gain);
+            if (settings.autoPan && bus1GainRef.current) {
+                gain.connect(bus1GainRef.current);
+            } else {
+                // fallbacks to master if bus isn't strictly necessary, but let's connect to 1 or master
+                gain.connect(masterGainRef.current);
+            }
+
+            const uuid = crypto.randomUUID();
+            filesDb.set(uuid, file);
+            await set('mt_files', filesDb);
+
+            const newChannel: Channel = {
+                id: uuid,
+                name: 'Metronomo Loop',
+                buffer: audioBuffer,
+                file: file,
+                gainNode: gain,
+                pannerNode: panner,
+                sourceNode: null,
+                volume: 1,
+                muted: false,
+                soloed: false,
+                pan: panner.pan.value,
+                bus: settings.autoPan ? '1' : '1/2'
+            };
+
+            const newSong: Song = {
+                id: crypto.randomUUID(),
+                name: `Metrônomo ${bpm} BPM`,
+                coverImage: '',
+                channels: [newChannel],
+                duration: 36000, // 10 horas de duração para simular "infinito"
+                pitch: 0,
+                originalKey: null,
+                bpm: bpm,
+            };
+
+            const newPlaylist = [...playlist, newSong];
+            if (playlist.length === 0) {
+                setDuration(36000);
+                setActiveSongIndex(0);
+                setCurrentTime(0);
+            }
+            updatePlaylistAndSave(newPlaylist);
+        } catch (e) {
+            console.error("Erro ao criar metrônomo infinito", e);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const addChannelToActiveSong = async (file: File) => {
@@ -712,6 +803,100 @@ export function useAudioEngine() {
         const newIndex = newPlaylist.findIndex(s => s.id === currentActiveId);
         if (newIndex !== -1 && newIndex !== activeSongIndex) {
             setActiveSongIndex(newIndex);
+        }
+    };
+
+    // === Pré-contagem functions ===
+    const setPrecountBeats = (val: number) => {
+        const clamped = Math.max(1, Math.min(8, val));
+        setPrecountBeatsState(clamped);
+        localStorage.setItem('precount_beats', String(clamped));
+    };
+
+    const togglePrecountEnabled = (val: boolean) => {
+        setPrecountEnabled(val);
+        localStorage.setItem('precount_enabled', String(val));
+    };
+
+    const cancelCountIn = useCallback(() => {
+        if (countInTimeoutRef.current) {
+            clearTimeout(countInTimeoutRef.current);
+            countInTimeoutRef.current = null;
+        }
+        countInOscsRef.current.forEach(osc => { try { osc.stop(); } catch {} });
+        countInOscsRef.current = [];
+        setIsCountingIn(false);
+    }, []);
+
+    const playWithPrecount = useCallback(() => {
+        const ctx = audioCtxRef.current;
+        if (!ctx) return;
+
+        if (!precountEnabled) {
+            play();
+            return;
+        }
+
+        if (ctx.state === 'suspended') ctx.resume();
+
+        setIsCountingIn(true);
+        countInOscsRef.current = [];
+
+        const bpm = 100;
+        const beatDuration = 60 / bpm;
+
+        for (let i = 0; i < precountBeats; i++) {
+            const startTime = ctx.currentTime + i * beatDuration;
+            const osc = ctx.createOscillator();
+            const gainNode = ctx.createGain();
+            osc.connect(gainNode);
+            gainNode.connect(ctx.destination);
+            osc.type = 'square';
+            osc.frequency.value = i === 0 ? 1200 : 880;
+            gainNode.gain.setValueAtTime(0, startTime);
+            gainNode.gain.linearRampToValueAtTime(0.25, startTime + 0.003);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + 0.08);
+            osc.start(startTime);
+            osc.stop(startTime + 0.1);
+            countInOscsRef.current.push(osc);
+        }
+
+        const totalMs = precountBeats * beatDuration * 1000;
+        countInTimeoutRef.current = setTimeout(() => {
+            countInTimeoutRef.current = null;
+            countInOscsRef.current = [];
+            setIsCountingIn(false);
+            play();
+        }, totalMs);
+    }, [precountEnabled, precountBeats, play]);
+
+    const removeSongFromPlaylist = (songId: string) => {
+        const currentActiveId = playlist[activeSongIndex]?.id;
+        const removedIndex = playlist.findIndex(s => s.id === songId);
+        const newPlaylist = playlist.filter(s => s.id !== songId);
+
+        updatePlaylistAndSave(newPlaylist);
+
+        if (newPlaylist.length === 0) {
+            stopAllNodes();
+            setActiveSongIndex(0);
+            setCurrentTime(0);
+            setDuration(0);
+            return;
+        }
+
+        if (songId === currentActiveId) {
+            stopAllNodes();
+            pausedAtRef.current = 0;
+            setCurrentTime(0);
+            const newIndex = Math.min(removedIndex, newPlaylist.length - 1);
+            setActiveSongIndex(newIndex);
+            setDuration(newPlaylist[newIndex].duration);
+        } else {
+            const newIndex = newPlaylist.findIndex(s => s.id === currentActiveId);
+            if (newIndex !== -1 && newIndex !== activeSongIndex) {
+                setActiveSongIndex(newIndex);
+            }
         }
     };
 
@@ -1109,6 +1294,7 @@ export function useAudioEngine() {
         playlist,
         activeSongIndex,
         setPlaylistOrder,
+        removeSongFromPlaylist,
         jumpToSong,
         renameSong,
         setCoverImage,
@@ -1157,6 +1343,16 @@ export function useAudioEngine() {
         // Channel management
         updatePan,
         removeChannel,
-        reorderChannels
+        reorderChannels,
+        createEndlessMetronomeSong,
+
+        // Pré-contagem
+        precountEnabled,
+        precountBeats,
+        isCountingIn,
+        setPrecountBeats,
+        togglePrecountEnabled,
+        playWithPrecount,
+        cancelCountIn,
     };
 }
