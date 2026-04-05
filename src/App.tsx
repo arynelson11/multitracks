@@ -1,11 +1,12 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
-import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Cpu, Move } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut } from 'lucide-react'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { usePadSynth } from './hooks/usePadSynth'
 import { SettingsModal } from './components/SettingsModal'
 import { MetronomeModal } from './components/MetronomeModal'
 import { LibraryModal } from './components/LibraryModal'
 import { AdminModal } from './components/AdminModal'
+import { PadSetsModal } from './components/PadSetsModal'
 import { AuthPage } from './components/AuthPage'
 import { SeparatorStudio } from './components/SeparatorStudio'
 import { useAuth } from './hooks/useAuth'
@@ -14,18 +15,21 @@ import { supabase, updateSongMarkers as saveMkToCloud, fetchSongs as fetchCloudS
 export default function App() {
   const {
     isReady, initEngine, loadFiles, isLoading, isRestoring,
-    playlist, activeSongIndex, setPlaylistOrder, jumpToSong,
+    playlist, activeSongIndex, setPlaylistOrder, removeSongFromPlaylist, jumpToSong,
     renameSong, setCoverImage, clearSession,
     setChannelBus, exportPlaylist, importPlaylist,
-    channels, play, pause, seekTo, prevSong, nextSong, isPlaying, currentTime, duration,
+    channels, pause, seekTo, prevSong, nextSong, isPlaying, currentTime, duration,
     masterVolume, updateVolume, toggleMute, toggleSolo, updateMasterVolume,
     changePitch, setOriginalKey, currentMarker, setSongMarkers,
-    playbackMode, setPlaybackMode, vampActive, toggleVamp,
-    timeStretch, updateTimeStretch, addChannelToActiveSong,
-    updatePan, removeChannel, reorderChannels
+    playbackMode, setPlaybackMode,
+    addChannelToActiveSong,
+    updatePan, removeChannel, reorderChannels,
+    precountEnabled, precountBeats, isCountingIn,
+    setPrecountBeats, togglePrecountEnabled, playWithPrecount, cancelCountIn,
+    createEndlessMetronomeSong,
   } = useAudioEngine()
 
-  const { playPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume, padMode, updatePadMode } = usePadSynth()
+  const { playPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume, updatePadMode, selectedPadSet, selectPadSet, padMode } = usePadSynth()
   const { user, loading, signOut } = useAuth()
   const mixerRef = useRef<HTMLDivElement>(null)
 
@@ -37,7 +41,9 @@ export default function App() {
   const [isLibraryOpen, setIsLibraryOpen] = useState(false)
   const [isAdminOpen, setIsAdminOpen] = useState(false)
   const [isSetlistMenuOpen, setIsSetlistMenuOpen] = useState(false)
+  const [isTracksMenuOpen, setIsTracksMenuOpen] = useState(false)
   const [isPadEditMode, setIsPadEditMode] = useState(false)
+  const [isPadSetsModalOpen, setIsPadSetsModalOpen] = useState(false)
   const [isTeleprompterMode, setIsTeleprompterMode] = useState(false)
   const [isMarkerEditorOpen, setIsMarkerEditorOpen] = useState(false)
   const [markerLabel, setMarkerLabel] = useState('')
@@ -46,6 +52,7 @@ export default function App() {
   const [mobileView, setMobileView] = useState<'mixer' | 'pads'>('mixer')
   const [isSaving, setIsSaving] = useState(false)
   const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false)
+  const [isPrecountOpen, setIsPrecountOpen] = useState(false)
   const [chDragIdx, setChDragIdx] = useState<number | null>(null)
   const [chDragOverIdx, setChDragOverIdx] = useState<number | null>(null)
   const [vuLevels, setVuLevels] = useState<Record<string, number>>({})
@@ -282,6 +289,11 @@ export default function App() {
     return <AuthPage />
   }
 
+  // ───────────────── SEPARATOR (acessível da tela inicial) ─────────────────
+  if (isSeparatorOpen) {
+    return <SeparatorStudio onClose={() => setIsSeparatorOpen(false)} />
+  }
+
   // ───────────────── SPLASH ─────────────────
   if (!isReady) {
     return (
@@ -294,11 +306,20 @@ export default function App() {
         <p className="text-text-muted mb-10 text-center text-xs sm:text-sm font-mono tracking-widest uppercase">
           Motor Multitracks Profissional
         </p>
-        <button onClick={initEngine}
-          className="hw-btn text-primary hover:text-white px-8 py-4 sm:px-10 sm:py-5 rounded-lg text-sm sm:text-base uppercase tracking-widest flex items-center gap-3 cursor-pointer">
-          {isRestoring ? <Loader2 className="animate-spin" size={20} /> : <Play size={20} fill="currentColor" />}
-          Iniciar Motor
-        </button>
+        <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md">
+          <button onClick={initEngine}
+            className="hw-btn flex-1 text-primary hover:text-white px-6 py-5 rounded-xl text-sm uppercase tracking-widest flex flex-col items-center gap-3 cursor-pointer">
+            {isRestoring ? <Loader2 className="animate-spin" size={28} /> : <Play size={28} fill="currentColor" />}
+            <span className="font-black">Playback Studio</span>
+            <span className="text-[10px] font-mono text-text-muted normal-case tracking-wide">Motor multitracks profissional</span>
+          </button>
+          <button onClick={() => setIsSeparatorOpen(true)}
+            className="hw-btn flex-1 text-purple-400 hover:text-white px-6 py-5 rounded-xl text-sm uppercase tracking-widest flex flex-col items-center gap-3 cursor-pointer border-purple-900/40 hover:border-purple-500/40">
+            <Wand2 size={28} />
+            <span className="font-black">Separação de Faixas</span>
+            <span className="text-[10px] font-mono text-text-muted normal-case tracking-wide">Separar instrumentos com IA</span>
+          </button>
+        </div>
       </div>
     )
   }
@@ -384,55 +405,64 @@ export default function App() {
 
             {/* Toolbar icons */}
             <div className="h-5 w-px bg-border mx-1"></div>
-            <label className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-white">
-              <Music size={14} /> <span className="hidden sm:inline">FAIXAS</span>
-              <input type="file" multiple accept="audio/*" className="hidden"
-                onChange={(e) => { if (e.target.files) loadFiles(e.target.files) }} />
-            </label>
+            
+            <div className="relative">
+              <button onClick={() => setIsTracksMenuOpen(!isTracksMenuOpen)}
+                className={`transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer ${isTracksMenuOpen ? 'text-white bg-white/10' : 'text-text-muted hover:text-white'}`}>
+                <Music size={14} /> <span className="hidden sm:inline">FAIXAS</span>
+              </button>
+
+              {isTracksMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsTracksMenuOpen(false)} />
+                  <div className="absolute top-full left-0 mt-2 w-56 glass border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden flex flex-col py-1">
+                    <label className="w-full text-left px-4 py-2 text-xs font-medium text-text hover:bg-white/10 transition-colors cursor-pointer flex items-center gap-2">
+                        <Upload size={14} /> Importar do dispositivo
+                        <input type="file" multiple accept="audio/*" className="hidden"
+                          onChange={(e) => { 
+                            setIsTracksMenuOpen(false); 
+                            if (e.target.files) loadFiles(e.target.files) 
+                          }} />
+                    </label>
+                    <button onClick={() => {
+                      setIsTracksMenuOpen(false);
+                      const bpmInput = window.prompt("Digite o BPM desejado para a nova faixa de Click (ex: 120):", "120");
+                      if (bpmInput) {
+                        const bpm = parseInt(bpmInput, 10);
+                        if (!isNaN(bpm) && bpm >= 40 && bpm <= 300) {
+                          createEndlessMetronomeSong(bpm);
+                        } else {
+                          alert("BPM inválido. Digite um número entre 40 e 300.");
+                        }
+                      }
+                    }}
+                      className="w-full text-left px-4 py-2 text-xs font-medium text-text hover:bg-white/10 transition-colors flex items-center gap-2">
+                      <Timer size={14} /> Criar Metrônomo (Infinito)
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
             <button onClick={() => setIsLibraryOpen(true)}
-              className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer text-secondary hover:text-white">
+              className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-white">
               <Cloud size={14} /> <span className="hidden sm:inline">BIBLIOTECA</span>
             </button>
             <button onClick={() => setIsMetronomeModalOpen(true)}
-              className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer text-accent-green hover:text-white">
-              <Cpu size={14} /> <span className="hidden sm:inline">METRÔNOMO</span>
-            </button>
-            <button onClick={() => setIsSeparatorOpen(true)}
-              className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer text-purple-400 hover:text-white">
-              <Wand2 size={14} /> <span className="hidden sm:inline">IA SEPARAR</span>
+              className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-white">
+              <Timer size={14} /> <span className="hidden sm:inline">METRÔNOMO</span>
             </button>
           </div>
 
-          {/* Right: User + Actions + Timer */}
+          {/* Right: Controls + User */}
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-white text-[10px] font-mono font-medium hidden sm:block bg-white/5 px-2 py-0.5 rounded">{user.email?.split('@')[0]}</span>
-              <button onClick={signOut} className="text-[10px] text-text-muted hover:text-white transition-colors cursor-pointer hidden sm:block font-mono">SAIR</button>
-              <div className="w-7 h-7 rounded-md bg-primary/15 flex items-center justify-center text-primary text-xs font-bold cursor-pointer border border-primary/20" onClick={signOut}>
-                {user.email?.charAt(0).toUpperCase()}
-              </div>
-            </div>
-
-            <div className="h-5 w-px bg-border hidden sm:block"></div>
-
-            {playlist.length > 0 && (
-              <button onClick={clearSession} className="p-1.5 rounded-md text-accent-red hover:bg-accent-red/10 active:scale-90 transition-all cursor-pointer"><Trash2 size={16} /></button>
-            )}
-            <button onClick={() => setIsSettingsOpen(true)} className="p-1.5 rounded-md text-text-muted hover:bg-white/5 hover:text-white transition-all cursor-pointer"><Settings size={16} /></button>
-            <button onClick={() => setIsEditMode(!isEditMode)}
-              className={`items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95 border cursor-pointer hidden sm:flex ${isEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border hover:bg-white/5'}`}>
-              {isEditMode ? <Check size={12} /> : <Edit2 size={12} />}
-              {isEditMode ? 'OK' : 'EDITAR'}
-            </button>
 
             {/* Key Selector */}
             <div className="relative">
               <button onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)}
-                className="lcd-display flex items-center gap-1.5 rounded-md px-2 py-1 hover:border-border-light transition-colors cursor-pointer">
-                <span className="text-[8px] font-bold text-text-muted uppercase tracking-wider">KEY</span>
-                <span className="text-xs font-bold text-primary min-w-[18px] text-center">
-                  {currentKeyName ?? (activePitch !== 0 ? (activePitch > 0 ? '+' : '') + activePitch : '—')}
-                </span>
+                className={`transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer ${isKeyPickerOpen ? 'text-primary' : 'text-text-muted hover:text-white'}`}>
+                <span>TOM</span>
+                {currentKeyName && <span className="text-primary font-mono">{currentKeyName}</span>}
               </button>
               {isKeyPickerOpen && (
                 <>
@@ -474,38 +504,80 @@ export default function App() {
               )}
             </div>
 
-            {/* Speed Control */}
-            <div className="lcd-display flex items-center rounded-md overflow-hidden">
-              <span className="text-[8px] text-text-muted font-bold px-1.5 uppercase tracking-wider">SPD</span>
-              <button onClick={() => updateTimeStretch(Math.max(0.5, timeStretch - 0.05))} className="px-1.5 py-1 text-text-muted hover:text-white hover:bg-white/5 transition-colors cursor-pointer text-xs font-mono">−</button>
-              <div className="px-1 py-1 text-xs font-bold text-primary min-w-[36px] text-center border-l border-r border-border font-mono">{(timeStretch * 100).toFixed(0)}%</div>
-              <button onClick={() => updateTimeStretch(Math.min(1.5, timeStretch + 0.05))} className="px-1.5 py-1 text-text-muted hover:text-white hover:bg-white/5 transition-colors cursor-pointer text-xs font-mono">+</button>
-              {timeStretch !== 1 && <button onClick={() => updateTimeStretch(1)} className="text-[8px] text-accent-red cursor-pointer px-1.5 hover:bg-white/5 py-1 font-mono font-bold">RST</button>}
+            {/* Pré-contagem */}
+            <div className="relative">
+              <button
+                onClick={() => setIsPrecountOpen(!isPrecountOpen)}
+                className={`transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer ${precountEnabled ? 'text-primary' : 'text-text-muted hover:text-white'}`}
+                title="Pré-contagem"
+              >
+                PRÉ-CONTAGEM
+              </button>
+              {isPrecountOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsPrecountOpen(false)} />
+                  <div className="absolute top-full mt-1 right-0 daw-panel rounded-lg z-50 p-4 w-64">
+                    {/* Toggle row */}
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-white text-sm font-bold">Pré-contagem</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); togglePrecountEnabled(!precountEnabled); }}
+                        className={`relative w-11 h-6 rounded-full cursor-pointer transition-colors ${precountEnabled ? 'bg-primary' : 'bg-white/10'}`}
+                      >
+                        <span
+                          className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow"
+                          style={{ transform: precountEnabled ? 'translateX(20px)' : 'translateX(0)', transition: 'transform 0.2s' }}
+                        />
+                      </button>
+                    </div>
+                    {/* Beat count */}
+                    <p className="text-text-muted text-xs mb-3">Clicks antes da reprodução começar</p>
+                    <div className="flex items-center justify-between bg-[#141415] border border-white/5 rounded-xl p-2">
+                      <button
+                        onClick={() => setPrecountBeats(precountBeats - 1)}
+                        className="w-10 h-10 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg active:scale-95 transition-all text-white/80 cursor-pointer text-lg font-bold"
+                      >−</button>
+                      <span className="text-white font-black text-3xl w-12 text-center">{precountBeats}</span>
+                      <button
+                        onClick={() => setPrecountBeats(precountBeats + 1)}
+                        className="w-10 h-10 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg active:scale-95 transition-all text-white/80 cursor-pointer text-lg font-bold"
+                      >+</button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
+
+            <div className="h-5 w-px bg-border hidden sm:block"></div>
+
+            {/* EDITAR */}
+            <button onClick={() => setIsEditMode(!isEditMode)}
+              className={`items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95 border cursor-pointer hidden sm:flex ${isEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border hover:bg-white/5 hover:text-white'}`}>
+              {isEditMode ? <Check size={12} /> : <Edit2 size={12} />}
+              {isEditMode ? 'OK' : 'EDITAR'}
+            </button>
+
+            {/* Config */}
+            <button onClick={() => setIsSettingsOpen(true)}
+              className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-white">
+              <Settings size={14} /><span className="hidden sm:inline">CONFIG</span>
+            </button>
+
+            <div className="h-5 w-px bg-border hidden sm:block"></div>
+
+            {/* User + SAIR */}
+            <span className="text-white text-[10px] font-mono font-medium hidden sm:block">{user.email?.split('@')[0]}</span>
+            <button onClick={signOut}
+              className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-accent-red border border-border hover:border-accent-red/40 transition-all">
+              <LogOut size={12} /><span className="hidden sm:inline font-mono">SAIR</span>
+            </button>
           </div>
         </div>
 
         {/* Transport Controls Row */}
-        <div className="flex items-center justify-center gap-1.5 px-3 py-2 sm:py-2.5 bg-[#141416]">
-          <button onClick={prevSong} className="transport-btn p-2 rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipBack size={18} /></button>
-          <button onClick={isPlaying ? pause : play}
-            className={`transport-btn p-3 rounded-lg active:scale-90 cursor-pointer ${isPlaying ? 'active text-primary' : 'text-white'}`}>
-            {isPlaying ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" className="ml-0.5" />}
-          </button>
-          <button onClick={nextSong} className="transport-btn p-2 rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipForward size={18} /></button>
-
-          {/* VAMP Toggle */}
-          <button onClick={toggleVamp}
-            className={`transport-btn ml-1 px-3 py-2 rounded-md text-[10px] font-black uppercase tracking-wider cursor-pointer ${vampActive
-                ? 'active text-amber-400 border-amber-500/40'
-                : 'text-text-muted'
-              }`}
-            title={vampActive ? 'Disable VAMP' : 'Enable VAMP: loop current section'}>
-            {vampActive ? '🔁 VAMP' : '🔁'}
-          </button>
-
-          {/* Playback Mode */}
-          <div className="hidden sm:flex items-center lcd-display rounded-md overflow-hidden ml-1">
+        <div className="flex flex-col items-center px-3 py-2 sm:py-2.5 bg-[#141416] gap-1">
+          {/* Playback Mode — acima dos controles */}
+          <div className="hidden sm:flex items-center lcd-display rounded-md overflow-hidden">
             <button onClick={() => setPlaybackMode('continue')}
               className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer font-mono ${playbackMode === 'continue' ? 'bg-primary/15 text-primary' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
               title="Continuar para próxima música">▶ AUTO</button>
@@ -517,11 +589,20 @@ export default function App() {
               title="Fade nos últimos 5 segundos">🔉 FADE</button>
           </div>
 
-          {/* Mobile edit toggle */}
-          <button onClick={() => setIsEditMode(!isEditMode)}
-            className={`sm:hidden ml-2 items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-colors border cursor-pointer flex ${isEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border'}`}>
-            {isEditMode ? <Check size={12} /> : <Edit2 size={12} />}
-          </button>
+          {/* Play controls — centralizados abaixo */}
+          <div className="flex items-center gap-1.5">
+            <button onClick={prevSong} className="transport-btn p-2 rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipBack size={18} /></button>
+            <button onClick={isCountingIn ? cancelCountIn : isPlaying ? pause : playWithPrecount}
+              className={`transport-btn p-3 rounded-lg active:scale-90 cursor-pointer ${isPlaying || isCountingIn ? 'active text-primary' : 'text-white'}`}>
+              {isPlaying ? <Pause size={24} fill="currentColor" /> : isCountingIn ? <Loader2 size={24} className="animate-spin" /> : <Play size={24} fill="currentColor" className="ml-0.5" />}
+            </button>
+            <button onClick={nextSong} className="transport-btn p-2 rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipForward size={18} /></button>
+            {/* Mobile edit toggle */}
+            <button onClick={() => setIsEditMode(!isEditMode)}
+              className={`sm:hidden ml-2 items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-colors border cursor-pointer flex ${isEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border'}`}>
+              {isEditMode ? <Check size={12} /> : <Edit2 size={12} />}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -597,22 +678,50 @@ export default function App() {
                           onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()} draggable={false}
                           onChange={(e) => renameSong(song.id, e.target.value)}
                         />
-                        <div className="flex items-center gap-1 text-text-muted/40">
-                          <GripVertical size={12} /><span className="text-[10px] font-mono">DRAG</span>
+                        <div className="flex items-center justify-between mt-1">
+                          <div className="flex items-center gap-1 text-text-muted/40">
+                            <GripVertical size={12} /><span className="text-[10px] font-mono">ARRASTAR</span>
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); removeSongFromPlaylist(song.id); }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            draggable={false}
+                            className="p-1 rounded text-accent-red/60 hover:text-accent-red hover:bg-accent-red/10 transition-all cursor-pointer"
+                          >
+                            <Trash2 size={12} />
+                          </button>
                         </div>
                       </>
                     ) : (
                       <>
-                        <div className={`font-bold text-xs sm:text-sm truncate leading-snug ${i === activeSongIndex ? 'text-white' : 'text-text-main/80'}`}>
-                          {i + 1}. {song.name}
-                        </div>
-                        <div className="text-[10px] sm:text-xs opacity-60 font-mono flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 text-primary">
-                            {i === activeSongIndex && isPlaying && <Play size={10} fill="currentColor" />}
-                            {i === activeSongIndex && !isPlaying && <div className="w-1.5 h-1.5 rounded-full bg-primary/50"></div>}
-                          </div>
-                          {formatTime(song.duration)}
-                        </div>
+                        {(() => {
+                          const parts = song.name.split(' - ')
+                          const artist = parts.length >= 2 ? parts[0].trim() : ''
+                          const title = parts.length >= 2 ? parts.slice(1).join(' - ').trim() : song.name
+                          return (
+                            <>
+                              <div className={`font-bold text-xs sm:text-sm truncate leading-snug ${i === activeSongIndex ? 'text-white' : 'text-text-main/80'}`}>
+                                {i + 1}. {title}
+                              </div>
+                              {artist && (
+                                <div className="text-[10px] text-text-muted/60 truncate font-mono">{artist}</div>
+                              )}
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {song.originalKey && (
+                                  <span className="text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">{song.originalKey}</span>
+                                )}
+                                {song.bpm && (
+                                  <span className="text-[9px] font-mono text-text-muted/60">{song.bpm} BPM</span>
+                                )}
+                                <span className="text-[9px] font-mono text-text-muted/50 ml-auto flex items-center gap-1">
+                                  {i === activeSongIndex && isPlaying && <Play size={8} fill="currentColor" className="text-primary" />}
+                                  {i === activeSongIndex && !isPlaying && <div className="w-1 h-1 rounded-full bg-primary/50"></div>}
+                                  {formatTime(song.duration)}
+                                </span>
+                              </div>
+                            </>
+                          )
+                        })()}
                       </>
                     )}
                   </div>
@@ -1047,10 +1156,26 @@ export default function App() {
             </div>
 
             {/* Pad Source Selector */}
-            <div className="flex lcd-display rounded-md p-0.5 mb-3">
-              <button onClick={() => updatePadMode('system')} className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center transition-all cursor-pointer active:scale-95 font-mono tracking-wider ${padMode === 'system' ? 'bg-secondary/15 text-secondary' : 'text-text-muted hover:text-white hover:bg-white/5'}`}>NUVEM</button>
-              <button onClick={() => updatePadMode('synth')} className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center transition-all cursor-pointer active:scale-95 font-mono tracking-wider ${padMode === 'synth' ? 'bg-secondary/15 text-secondary' : 'text-text-muted hover:text-white hover:bg-white/5'}`}>SINTETIZ.</button>
-              <button onClick={() => updatePadMode('custom')} className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center transition-all cursor-pointer active:scale-95 font-mono tracking-wider ${padMode === 'custom' ? 'bg-secondary/15 text-secondary' : 'text-text-muted hover:text-white hover:bg-white/5'}`}>LOCAL</button>
+            <div className="flex gap-1 mb-3">
+              <button
+                onClick={() => setIsPadSetsModalOpen(true)}
+                className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center gap-1.5 font-mono tracking-wider border transition-all active:scale-95 cursor-pointer
+                  ${padMode === 'system'
+                    ? 'bg-secondary/15 text-secondary border-secondary/30'
+                    : 'bg-white/3 text-text-muted border-border hover:bg-white/5 hover:text-white'
+                  }`}>
+                <Cloud size={10} />
+                {padMode === 'system' && selectedPadSet ? selectedPadSet.name : 'NUVEM'}
+              </button>
+              <button
+                onClick={() => updatePadMode('synth')}
+                className={`px-2.5 py-1.5 text-[9px] font-bold rounded flex items-center justify-center font-mono tracking-wider border transition-all active:scale-95 cursor-pointer
+                  ${padMode === 'synth'
+                    ? 'bg-primary/15 text-primary border-primary/30'
+                    : 'bg-white/3 text-text-muted border-border hover:bg-white/5 hover:text-white'
+                  }`}>
+                SINT
+              </button>
             </div>
 
             {/* Volume */}
@@ -1111,10 +1236,11 @@ export default function App() {
       <LibraryModal
         isOpen={isLibraryOpen}
         onClose={() => setIsLibraryOpen(false)}
-        onDownload={async (files, songName, coverUrl, markers, originalKey) => {
+        onDownload={async (files, songName, coverUrl, markers, originalKey, artist, bpm) => {
           const dt = new DataTransfer();
           files.forEach(f => dt.items.add(f));
-          await loadFiles(dt.files, songName, coverUrl || undefined, markers, originalKey ?? null);
+          const fullName = artist ? `${artist} - ${songName}` : songName;
+          await loadFiles(dt.files, fullName, coverUrl || undefined, markers, originalKey ?? null, bpm);
         }}
       />
 
@@ -1122,6 +1248,13 @@ export default function App() {
       {user?.email === 'arynelson11@gmail.com' && (
         <AdminModal isOpen={isAdminOpen} onClose={() => setIsAdminOpen(false)} />
       )}
+
+      <PadSetsModal
+        isOpen={isPadSetsModalOpen}
+        onClose={() => setIsPadSetsModalOpen(false)}
+        onSelect={selectPadSet}
+        selectedPadSet={selectedPadSet}
+      />
 
       {/* ═══ TELEPROMPTER OVERLAY ═══ */}
       {isTeleprompterMode && (
@@ -1172,12 +1305,6 @@ export default function App() {
             </div>
           </div>
         </div>
-      )}
-
-      {isSeparatorOpen && (
-        <SeparatorStudio
-          onClose={() => setIsSeparatorOpen(false)}
-        />
       )}
 
       {isMetronomeModalOpen && playlist[activeSongIndex] && (

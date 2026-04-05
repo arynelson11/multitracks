@@ -26,6 +26,8 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
 
     // Pads State
     const [padFiles, setPadFiles] = useState<Map<string, File>>(new Map());
+    const [padSetName, setPadSetName] = useState('');
+    const [padSetDescription, setPadSetDescription] = useState('');
 
     const [isSuccess, setIsSuccess] = useState(false);
 
@@ -44,7 +46,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
             if (success) setIsSuccess(true);
         } else {
             if (padFiles.size !== 12) return;
-            const success = await uploadSystemPads(padFiles);
+            const success = await uploadSystemPads(padFiles, padSetName, padSetDescription);
             if (success) setIsSuccess(true);
         }
     };
@@ -56,6 +58,8 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
         setCoverFile(null);
         setStemFiles([]);
         setPadFiles(new Map());
+        setPadSetName('');
+        setPadSetDescription('');
         resetState();
         onClose();
     };
@@ -63,31 +67,37 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
     const handlePadsSelection = (files: FileList | null) => {
         if (!files) return;
 
-        const sharpToFlat: Record<string, string> = {
-            'C#': 'Db',
-            'D#': 'Eb',
-            'F#': 'Gb',
-            'G#': 'Ab',
-            'A#': 'Bb'
-        };
-
         const newMap = new Map<string, File>();
+
         Array.from(files).forEach(file => {
-            // Remove extension, trim edge spaces, remove inner spaces, and uppercase
-            let nameWithoutExt = file.name.replace(/\.[^/.]+$/, "").toUpperCase();
-            nameWithoutExt = nameWithoutExt.replace(/\s+/g, "");
+            let upperName = file.name.replace(/\.[^/.]+$/, "").toUpperCase();
+            
+            // Normalize sharp to flat
+            upperName = upperName.replace(/C#/g, "DB")
+                                 .replace(/D#/g, "EB")
+                                 .replace(/F#/g, "GB")
+                                 .replace(/G#/g, "AB")
+                                 .replace(/A#/g, "BB");
 
-            // Normalize sharp to flat if needed
-            if (sharpToFlat[nameWithoutExt]) {
-                nameWithoutExt = sharpToFlat[nameWithoutExt].toUpperCase();
-            }
+            // Match isolated notes. Order matters for regex OR (|) so place 2-char notes first
+            const noteRegex = /(^|[^A-Z])(DB|EB|GB|AB|BB|C|D|E|F|G|A|B)([^A-Z]|$)/;
+            const match = upperName.match(noteRegex);
 
-            // Find exact match
-            const matchedNote = REQUIRED_NOTES.find(n => n.toUpperCase() === nameWithoutExt);
-            if (matchedNote) {
-                newMap.set(matchedNote, file);
+            if (match && match[2]) {
+                const matchedNote = REQUIRED_NOTES.find(n => n.toUpperCase() === match[2]);
+                if (matchedNote) {
+                    newMap.set(matchedNote, file);
+                }
+            } else {
+                // Fallback: If stripping all spaces/symbols matches perfectly
+                let rawNormalized = upperName.replace(/[-_]/g, "").replace(/\s+/g, "");
+                const matchedNote = REQUIRED_NOTES.find(n => n.toUpperCase() === rawNormalized);
+                if (matchedNote) {
+                    newMap.set(matchedNote, file);
+                }
             }
         });
+        
         setPadFiles(newMap);
     };
 
@@ -102,8 +112,8 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                             <Upload size={16} className="text-secondary" />
                         </div>
                         <div>
-                            <h2 className="text-white font-black text-sm uppercase tracking-wider">Admin: Cloud Storage</h2>
-                            <p className="text-[9px] text-text-muted font-mono">Manage global online library</p>
+                            <h2 className="text-white font-black text-sm uppercase tracking-wider">Admin: Armazenamento em Nuvem</h2>
+                            <p className="text-[9px] text-text-muted font-mono">Gerenciar biblioteca online global</p>
                         </div>
                     </div>
                     <button onClick={handleClose} disabled={isUploading} className="p-1.5 text-text-muted hover:text-white hover:bg-white/5 rounded-md transition-all active:scale-90 cursor-pointer disabled:opacity-20">
@@ -120,7 +130,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                         </button>
                         <button onClick={() => setActiveTab('pads')}
                             className={`pb-2.5 text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1.5 uppercase tracking-wider font-mono ${activeTab === 'pads' ? 'text-secondary border-b-2 border-secondary' : 'text-text-muted hover:text-white'}`}>
-                            <Layers size={14} /> SYSTEM PADS
+                            <Layers size={14} /> PADS DO SISTEMA
                         </button>
                     </div>
                 )}
@@ -130,10 +140,10 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                         <div className="w-16 h-16 bg-primary/10 rounded-lg border border-primary/20 flex items-center justify-center mb-2">
                             <CheckCircle2 size={36} className="text-primary" />
                         </div>
-                        <h3 className="text-lg font-black text-white uppercase tracking-wider">Upload Complete</h3>
-                        <p className="text-text-muted text-[10px] font-mono max-w-xs">Files stored successfully in cloud storage.</p>
+                        <h3 className="text-lg font-black text-white uppercase tracking-wider">Upload Concluído</h3>
+                        <p className="text-text-muted text-[10px] font-mono max-w-xs">Arquivos armazenados com sucesso na nuvem.</p>
                         <button onClick={handleClose} className="mt-4 px-6 py-2.5 bg-primary text-black font-black rounded-md uppercase tracking-wider text-xs active:scale-95 transition-all cursor-pointer">
-                            Close Panel
+                            Fechar Painel
                         </button>
                     </div>
                 ) : (
@@ -144,7 +154,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                 {/* Music Metadata Grid */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div className="space-y-1">
-                                        <label className="text-[9px] uppercase font-bold text-text-muted tracking-wider ml-1 font-mono">Song Name *</label>
+                                        <label className="text-[9px] uppercase font-bold text-text-muted tracking-wider ml-1 font-mono">Nome da Música *</label>
                                         <div className="relative">
                                             <Music size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
                                             <input
@@ -159,7 +169,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                     </div>
 
                                     <div className="space-y-1">
-                                        <label className="text-[9px] uppercase font-bold text-text-muted tracking-wider ml-1 font-mono">Artist</label>
+                                        <label className="text-[9px] uppercase font-bold text-text-muted tracking-wider ml-1 font-mono">Artista</label>
                                         <input
                                             type="text"
                                             value={metadata.artist}
@@ -170,7 +180,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                     </div>
 
                                     <div className="space-y-1">
-                                        <label className="text-[9px] uppercase font-bold text-text-muted tracking-wider ml-1 font-mono">Musical Key</label>
+                                        <label className="text-[9px] uppercase font-bold text-text-muted tracking-wider ml-1 font-mono">Tom Musical</label>
                                         <div className="relative">
                                             <Hash size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
                                             <input
@@ -208,13 +218,13 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                             <>
                                                 <img src={URL.createObjectURL(coverFile)} className="absolute inset-0 w-full h-full object-cover opacity-20" alt="" />
                                                 <CheckCircle2 size={20} className="text-primary z-10" />
-                                                <span className="text-[10px] text-white font-bold z-10 uppercase tracking-wider">Cover Selected</span>
+                                                <span className="text-[10px] text-white font-bold z-10 uppercase tracking-wider">Capa Selecionada</span>
                                                 <span className="text-[9px] text-text-muted z-10 truncate max-w-[130px] font-mono">{coverFile.name}</span>
                                             </>
                                         ) : (
                                             <>
                                                 <ImageIcon size={20} className="text-text-muted" />
-                                                <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider">Upload Cover</span>
+                                                <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider">Enviar Capa</span>
                                                 <span className="text-[9px] text-text-muted/30 font-mono">JPG / PNG</span>
                                             </>
                                         )}
@@ -228,7 +238,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                         {stemFiles.length > 0 ? (
                                             <>
                                                 <Music size={20} className="text-secondary" />
-                                                <span className="text-[10px] text-white font-bold uppercase tracking-wider">{stemFiles.length} Stems Selected</span>
+                                                <span className="text-[10px] text-white font-bold uppercase tracking-wider">{stemFiles.length} Stems Selecionados</span>
                                                 <div className="flex gap-1 h-1 w-16 bg-white/5 rounded-full overflow-hidden">
                                                     <div className="h-full bg-secondary w-full"></div>
                                                 </div>
@@ -236,8 +246,8 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                         ) : (
                                             <>
                                                 <Music size={20} className="text-text-muted" />
-                                                <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider">Upload Audio *</span>
-                                                <span className="text-[9px] text-text-muted/30 font-mono">Select all stems</span>
+                                                <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider">Enviar Áudio *</span>
+                                                <span className="text-[9px] text-text-muted/30 font-mono">Selecionar todos os stems</span>
                                             </>
                                         )}
                                         <input type="file" ref={stemsInputRef} multiple accept="audio/*" className="hidden" onChange={e => setStemFiles(Array.from(e.target.files || []))} />
@@ -247,7 +257,30 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                         ) : (
                             // Pads Upload View
                             <div className="space-y-3">
-                                <p className="text-[10px] text-text-muted font-mono">Upload 12 audio files, one per note. Filename <strong className="text-white">MUST</strong> be the note name (e.g. <code className="lcd-display px-1 rounded text-primary">C.mp3</code>, <code className="lcd-display px-1 rounded text-primary">Db.wav</code>).</p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] uppercase font-bold text-text-muted tracking-wider ml-1 font-mono">Nome do Banco de Pads *</label>
+                                        <input
+                                            type="text"
+                                            required={activeTab === 'pads'}
+                                            value={padSetName}
+                                            onChange={e => setPadSetName(e.target.value)}
+                                            placeholder="ex: Pads Worship Vol. 1"
+                                            className="w-full daw-input text-white text-xs px-3 py-2.5 rounded-md font-mono"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] uppercase font-bold text-text-muted tracking-wider ml-1 font-mono">Descrição</label>
+                                        <input
+                                            type="text"
+                                            value={padSetDescription}
+                                            onChange={e => setPadSetDescription(e.target.value)}
+                                            placeholder="ex: Pads atmosféricos, 440Hz"
+                                            className="w-full daw-input text-white text-xs px-3 py-2.5 rounded-md font-mono"
+                                        />
+                                    </div>
+                                </div>
+                                <p className="text-[10px] text-text-muted font-mono">Envie 12 arquivos de áudio, um por nota. O nome do arquivo <strong className="text-white">DEVE</strong> ser o nome da nota (ex: <code className="lcd-display px-1 rounded text-primary">C.mp3</code>, <code className="lcd-display px-1 rounded text-primary">Db.wav</code>).</p>
 
                                 <div
                                     onClick={() => padsInputRef.current?.click()}
@@ -255,10 +288,10 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                         }`}>
                                     <Layers size={20} className={padFiles.size === 12 ? 'text-primary' : 'text-text-muted'} />
                                     <span className="text-[10px] text-white font-bold uppercase tracking-wider">
-                                        {padFiles.size === 12 ? '12 PADS READY' : `${padFiles.size}/12 PADS DETECTED`}
+                                        {padFiles.size === 12 ? '12 PADS PRONTOS' : `${padFiles.size}/12 PADS DETECTADOS`}
                                     </span>
                                     {padFiles.size > 0 && padFiles.size !== 12 && (
-                                        <span className="text-[9px] text-yellow-500 font-bold font-mono">Need exactly 12 valid files!</span>
+                                        <span className="text-[9px] text-yellow-500 font-bold font-mono">Necessário exatamente 12 arquivos válidos!</span>
                                     )}
                                     <input type="file" ref={padsInputRef} multiple accept="audio/*" className="hidden" onChange={e => handlePadsSelection(e.target.files)} />
                                 </div>
@@ -313,10 +346,10 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                 : 'bg-secondary text-black shadow-[0_0_15px_rgba(6,182,212,0.15)] cursor-pointer'
                                 }`}>
                             {isUploading ? (
-                                <>PROCESSING...</>
+                                <>PROCESSANDO...</>
                             ) : (
                                 <>
-                                    PUBLISH TO CLOUD
+                                    PUBLICAR NA NUVEM
                                     <ChevronRight size={16} />
                                 </>
                             )}

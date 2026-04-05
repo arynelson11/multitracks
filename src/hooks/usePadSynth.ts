@@ -1,6 +1,5 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { get, set } from 'idb-keyval';
-import { getStorageUrl } from '../lib/supabase';
 
 const noteFreqs: Record<string, number> = {
     'C': 130.81,
@@ -28,6 +27,12 @@ interface PlayingNode {
 
 export type PadMode = 'synth' | 'system' | 'custom';
 
+export interface SelectedPadSet {
+    id: string;
+    name: string;
+    base_path: string;
+}
+
 export function usePadSynth() {
     const audioCtxRef = useRef<AudioContext | null>(null);
     const activeNodeRef = useRef<PlayingNode | null>(null);
@@ -36,11 +41,17 @@ export function usePadSynth() {
     const [padMode, setPadMode] = useState<PadMode>('synth');
     const [customPads, setCustomPads] = useState<Map<string, AudioBuffer>>(new Map());
     const [customPadNames, setCustomPadNames] = useState<Map<string, string>>(new Map());
+    const [selectedPadSet, setSelectedPadSetState] = useState<SelectedPadSet | null>(null);
 
     // Load custom pads and mode from IDB/localStorage on mount
     useEffect(() => {
         const savedMode = localStorage.getItem('mt_pad_mode') as PadMode;
         if (savedMode) setPadMode(savedMode);
+
+        const savedPadSet = localStorage.getItem('mt_selected_pad_set');
+        if (savedPadSet) {
+            try { setSelectedPadSetState(JSON.parse(savedPadSet)); } catch { /* ignore */ }
+        }
 
         (async () => {
             const savedPadFiles = await get<Map<string, File>>('mt_custom_pads');
@@ -106,6 +117,14 @@ export function usePadSynth() {
         stopPad();
     }, [stopPad]);
 
+    const selectPadSet = useCallback((padSet: SelectedPadSet) => {
+        setSelectedPadSetState(padSet);
+        localStorage.setItem('mt_selected_pad_set', JSON.stringify(padSet));
+        setPadMode('system');
+        localStorage.setItem('mt_pad_mode', 'system');
+        stopPad();
+    }, [stopPad]);
+
     // Live volume update
     const updatePadVolume = useCallback((vol: number) => {
         setPadVolume(vol);
@@ -132,8 +151,12 @@ export function usePadSynth() {
         const customBuffer = padMode === 'custom' ? customPads.get(note) : null;
 
         if (padMode === 'system') {
-            // Stream System Pad from Supabase Storage
-            const url = getStorageUrl('system_pads', encodeURIComponent(note));
+            // Stream System Pad from R2 Storage
+            const publicUrlBase = import.meta.env.VITE_R2_PUBLIC_URL;
+            const baseUrl = publicUrlBase ? publicUrlBase.replace(/\/$/, "") : "";
+            const padSetPath = selectedPadSet?.base_path || 'system_pads';
+            const url = `${baseUrl}/${padSetPath}/${encodeURIComponent(note)}`;
+            
             const audio = new Audio(url);
             audio.crossOrigin = 'anonymous';
             audio.loop = true;
@@ -207,7 +230,7 @@ export function usePadSynth() {
         }
 
         setActiveNote(note);
-    }, [activeNote, initPadSynth, stopPad, fadeOutAndCleanup, padMode, customPads, padVolume]);
+    }, [activeNote, initPadSynth, stopPad, fadeOutAndCleanup, padMode, customPads, padVolume, selectedPadSet]);
 
     const loadCustomPad = useCallback(async (note: string, file: File) => {
         initPadSynth();
@@ -268,6 +291,7 @@ export function usePadSynth() {
         loadCustomPad, clearCustomPad,
         customPads, customPadNames,
         padVolume, updatePadVolume,
-        padMode, updatePadMode
+        padMode, updatePadMode,
+        selectedPadSet, selectPadSet
     };
 }

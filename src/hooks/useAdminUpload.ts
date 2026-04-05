@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { insertSong, insertStems, type CloudStem } from '../lib/supabase';
+import { insertSong, insertStems, insertPadSet, type CloudStem } from '../lib/supabase';
 import { uploadToR2 } from '../lib/r2';
 
 export interface UploadMetadata {
@@ -100,25 +100,29 @@ export function useAdminUpload() {
     }, []);
 
     const uploadSystemPads = useCallback(async (
-        padFiles: Map<string, File>
+        padFiles: Map<string, File>,
+        padSetName: string,
+        padSetDescription?: string
     ) => {
         setIsUploading(true);
         setProgress(0);
-        setStatus('Iniciando upload dos Pads do Sistema...');
+        setStatus('Iniciando upload dos Pads...');
         setError(null);
 
         try {
+            // Use a unique folder per pad set based on timestamp + name slug
+            const slug = padSetName.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || `pads_${Date.now()}`;
+            const basePath = `pad_sets/${slug}_${Date.now()}`;
+
             const totalSteps = padFiles.size;
             let i = 0;
 
             for (const [note, file] of padFiles.entries()) {
-                const stepProgress = Math.floor(((i + 1) / totalSteps) * 100);
+                const stepProgress = Math.floor(((i + 1) / totalSteps) * 90);
                 setStatus(`Subindo Pad ${note} (${i + 1} de ${totalSteps})...`);
 
-                // To ensure consistent fetch URLs, we'll store the file without extension using the exact note name, e.g., 'C', 'Db'.
-                // Supabase will serve it according to the uploaded content type. Note encoding avoids slash conflicts.
                 const noteFileName = encodeURIComponent(note);
-                const uploadResult = await uploadToR2('system_pads', noteFileName, file);
+                const uploadResult = await uploadToR2(basePath, noteFileName, file);
 
                 if (uploadResult.error) {
                     throw new Error(`Erro no Pad ${note}: ${uploadResult.error}.`);
@@ -128,8 +132,16 @@ export function useAdminUpload() {
                 i++;
             }
 
+            // Register pad set in Supabase catalog
+            setStatus('Registrando banco de pads na nuvem...');
+            await insertPadSet({
+                name: padSetName.trim() || 'Pads do Sistema',
+                description: padSetDescription?.trim() || null,
+                base_path: basePath
+            });
+
             setProgress(100);
-            setStatus('Sucesso! Banco de Pads Global publicado.');
+            setStatus('Sucesso! Banco de Pads publicado.');
             return true;
         } catch (e: any) {
             console.error('Pad Upload failed:', e);

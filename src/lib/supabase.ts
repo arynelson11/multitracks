@@ -31,6 +31,35 @@ export interface CloudStem {
     order: number;
 }
 
+export interface CloudPadSet {
+    id: string;
+    name: string;
+    description: string | null;
+    base_path: string;
+    created_at: string;
+}
+
+export async function fetchPadSets(): Promise<CloudPadSet[]> {
+    if (!supabase) return [];
+    const { data, error } = await supabase
+        .from('pad_sets')
+        .select('*')
+        .order('created_at', { ascending: false });
+    if (error) { console.error('Error fetching pad sets:', error); return []; }
+    return data || [];
+}
+
+export async function insertPadSet(padSet: Omit<CloudPadSet, 'id' | 'created_at'>): Promise<string | null> {
+    if (!supabase) return null;
+    const { data, error } = await supabase
+        .from('pad_sets')
+        .insert(padSet)
+        .select('id')
+        .single();
+    if (error) { console.error('Error inserting pad set:', error); return null; }
+    return data?.id || null;
+}
+
 // Fetch all songs
 export async function fetchSongs(): Promise<CloudSong[]> {
     if (!supabase) return [];
@@ -94,7 +123,7 @@ export async function downloadFileAsBlobWithProgress(
             return new File([blob], filename, { type: blob.type });
         }
 
-        const chunks = [];
+        const chunks: Uint8Array[] = [];
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
@@ -105,7 +134,16 @@ export async function downloadFileAsBlobWithProgress(
             }
         }
 
-        const blob = new Blob(chunks, { type: response.headers.get('content-type') || 'audio/wav' });
+        // Unify chunks into a single ArrayBuffer to prevent IndexedDB serialization silently failing
+        // on some browsers with Blobs built from numerous Uint8Array memory slices.
+        const unified = new Uint8Array(loaded);
+        let offset = 0;
+        for (const chunk of chunks) {
+            unified.set(chunk, offset);
+            offset += chunk.length;
+        }
+
+        const blob = new Blob([unified.buffer], { type: response.headers.get('content-type') || 'audio/wav' });
         return new File([blob], filename, { type: blob.type });
     } catch (e) {
         console.error('Error downloading file:', e);
