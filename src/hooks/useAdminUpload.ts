@@ -110,9 +110,9 @@ export function useAdminUpload() {
         setError(null);
 
         try {
-            // Use a unique folder per pad set based on timestamp + name slug
-            const slug = padSetName.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || `pads_${Date.now()}`;
-            const basePath = `pad_sets/${slug}_${Date.now()}`;
+            // Always upload to 'system_pads' so the legacy fallback path works immediately.
+            // The Supabase registration is attempted as a bonus (requires the pad_sets table).
+            const basePath = 'system_pads';
 
             const totalSteps = padFiles.size;
             let i = 0;
@@ -132,13 +132,15 @@ export function useAdminUpload() {
                 i++;
             }
 
-            // Register pad set in Supabase catalog
+            // Try to register in Supabase — fails silently if the table doesn't exist yet
             setStatus('Registrando banco de pads na nuvem...');
-            await insertPadSet({
-                name: padSetName.trim() || 'Pads do Sistema',
-                description: padSetDescription?.trim() || null,
-                base_path: basePath
-            });
+            try {
+                await insertPadSet({
+                    name: padSetName.trim() || 'Pads do Sistema',
+                    description: padSetDescription?.trim() || null,
+                    base_path: basePath
+                });
+            } catch { /* table may not exist yet — upload still succeeded */ }
 
             setProgress(100);
             setStatus('Sucesso! Banco de Pads publicado.');

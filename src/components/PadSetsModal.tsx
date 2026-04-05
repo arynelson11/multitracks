@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react';
-import { X, Cloud, Loader2, Layers, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, Cloud, Loader2, Layers, CheckCircle2 } from 'lucide-react';
 import { fetchPadSets, type CloudPadSet } from '../lib/supabase';
 import type { SelectedPadSet } from '../hooks/usePadSynth';
+
+// Fallback always-available entry pointing to the legacy R2 path
+const LEGACY_PAD_SET: CloudPadSet = {
+    id: '__legacy__',
+    name: 'Pads do Sistema',
+    description: 'Banco padrão de pads',
+    base_path: 'system_pads',
+    created_at: '',
+};
 
 interface PadSetsModalProps {
     isOpen: boolean;
@@ -11,21 +20,30 @@ interface PadSetsModalProps {
 }
 
 export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet }: PadSetsModalProps) {
-    const [padSets, setPadSets] = useState<CloudPadSet[]>([]);
+    const [extraSets, setExtraSets] = useState<CloudPadSet[]>([]);
     const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         if (!isOpen) return;
         setLoading(true);
-        setError(null);
         fetchPadSets()
-            .then(data => setPadSets(data))
-            .catch(() => setError('Erro ao carregar pads da nuvem.'))
+            .then(data => {
+                // Filter out any duplicate of the legacy slot
+                setExtraSets(data.filter(s => s.base_path !== 'system_pads'));
+            })
+            .catch(() => setExtraSets([]))
             .finally(() => setLoading(false));
     }, [isOpen]);
 
     if (!isOpen) return null;
+
+    // Legacy always first, then any Supabase-registered sets
+    const allSets = [LEGACY_PAD_SET, ...extraSets];
+
+    const handleSelect = (padSet: CloudPadSet) => {
+        onSelect({ id: padSet.id, name: padSet.name, base_path: padSet.base_path });
+        onClose();
+    };
 
     return (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
@@ -49,35 +67,19 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet }: PadS
                 {/* Content */}
                 <div className="p-3 space-y-2 max-h-80 overflow-y-auto">
                     {loading && (
-                        <div className="flex items-center justify-center py-8 gap-2 text-text-muted">
-                            <Loader2 size={16} className="animate-spin" />
-                            <span className="text-[10px] font-mono uppercase tracking-wider">Carregando...</span>
+                        <div className="flex items-center justify-center py-4 gap-2 text-text-muted">
+                            <Loader2 size={14} className="animate-spin" />
+                            <span className="text-[9px] font-mono uppercase tracking-wider">Carregando...</span>
                         </div>
                     )}
 
-                    {error && (
-                        <div className="flex items-center gap-2 p-2.5 bg-accent-red/5 border border-accent-red/15 rounded-md text-accent-red text-[10px] font-mono">
-                            <AlertCircle size={12} className="shrink-0" />
-                            <span>{error}</span>
-                        </div>
-                    )}
-
-                    {!loading && !error && padSets.length === 0 && (
-                        <div className="flex flex-col items-center justify-center py-8 gap-2 text-text-muted">
-                            <Layers size={24} className="opacity-30" />
-                            <p className="text-[10px] font-mono uppercase tracking-wider text-center">
-                                Nenhum banco de pads disponível.<br />
-                                <span className="opacity-60">Envie pads pelo painel Admin.</span>
-                            </p>
-                        </div>
-                    )}
-
-                    {!loading && padSets.map(padSet => {
-                        const isActive = selectedPadSet?.id === padSet.id;
+                    {allSets.map(padSet => {
+                        const isActive = selectedPadSet?.id === padSet.id ||
+                            (!selectedPadSet && padSet.id === '__legacy__');
                         return (
                             <button
                                 key={padSet.id}
-                                onClick={() => { onSelect({ id: padSet.id, name: padSet.name, base_path: padSet.base_path }); onClose(); }}
+                                onClick={() => handleSelect(padSet)}
                                 className={`w-full flex items-center gap-3 p-3 rounded-md border text-left transition-all active:scale-[0.98] cursor-pointer
                                     ${isActive
                                         ? 'bg-secondary/10 border-secondary/30 text-secondary'
