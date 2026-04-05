@@ -117,6 +117,7 @@ export function useAdminUpload() {
 
             const totalSteps = padFiles.size;
             let i = 0;
+            const noteUrls: Record<string, string> = {};
 
             for (const [note, file] of padFiles.entries()) {
                 const stepProgress = Math.floor(((i + 1) / totalSteps) * 88);
@@ -129,6 +130,7 @@ export function useAdminUpload() {
                     throw new Error(`Erro no Pad ${note}: ${uploadResult.error}.`);
                 }
 
+                noteUrls[note] = uploadResult.url!;
                 setProgress(stepProgress);
                 i++;
             }
@@ -138,7 +140,7 @@ export function useAdminUpload() {
             const catalogRes = await fetch('/api/pad-catalog', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id, name, description: padSetDescription?.trim() || null, base_path: basePath }),
+                body: JSON.stringify({ id, name, description: padSetDescription?.trim() || null, base_path: basePath, note_urls: noteUrls }),
             });
             if (!catalogRes.ok) {
                 console.warn('Catalog update failed:', await catalogRes.text());

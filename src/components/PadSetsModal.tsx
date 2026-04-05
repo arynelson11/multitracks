@@ -8,6 +8,7 @@ interface CatalogEntry {
     description: string | null;
     base_path: string;
     created_at: string;
+    note_urls?: Record<string, string>;
 }
 
 interface PadSetsModalProps {
@@ -36,7 +37,7 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet }: PadS
     const allSets = sets;
 
     const handleSelect = (padSet: CatalogEntry) => {
-        onSelect({ id: padSet.id, name: padSet.name, base_path: padSet.base_path });
+        onSelect({ id: padSet.id, name: padSet.name, base_path: padSet.base_path, note_urls: padSet.note_urls });
         onClose();
     };
 

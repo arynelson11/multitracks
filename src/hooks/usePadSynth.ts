@@ -31,6 +31,7 @@ export interface SelectedPadSet {
     id: string;
     name: string;
     base_path: string;
+    note_urls?: Record<string, string>;
 }
 
 export function usePadSynth() {
@@ -155,7 +156,9 @@ export function usePadSynth() {
             const publicUrlBase = import.meta.env.VITE_R2_PUBLIC_URL;
             const baseUrl = publicUrlBase ? publicUrlBase.replace(/\/$/, "") : "";
             const padSetPath = selectedPadSet?.base_path || 'system_pads';
-            const url = `${baseUrl}/${padSetPath}/${encodeURIComponent(note)}`;
+            // Use exact URL from catalog if available (avoids timestamp mismatch)
+            const url = selectedPadSet?.note_urls?.[note]
+                ?? `${baseUrl}/${padSetPath}/${encodeURIComponent(note)}`;
             
             const audio = new Audio(url);
             audio.crossOrigin = 'anonymous';

@@ -23,6 +23,7 @@ interface PadSetEntry {
     description: string | null;
     base_path: string;
     created_at: string;
+    note_urls?: Record<string, string>;
 }
 
 interface PadCatalog {
