@@ -1,16 +1,14 @@
 import { useEffect, useState } from 'react';
 import { X, Cloud, Loader2, Layers, CheckCircle2 } from 'lucide-react';
-import { fetchPadSets, type CloudPadSet } from '../lib/supabase';
 import type { SelectedPadSet } from '../hooks/usePadSynth';
 
-// Fallback always-available entry pointing to the legacy R2 path
-const LEGACY_PAD_SET: CloudPadSet = {
-    id: '__legacy__',
-    name: 'Pads do Sistema',
-    description: 'Banco padrão de pads',
-    base_path: 'system_pads',
-    created_at: '',
-};
+interface CatalogEntry {
+    id: string;
+    name: string;
+    description: string | null;
+    base_path: string;
+    created_at: string;
+}
 
 interface PadSetsModalProps {
     isOpen: boolean;
@@ -20,27 +18,24 @@ interface PadSetsModalProps {
 }
 
 export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet }: PadSetsModalProps) {
-    const [extraSets, setExtraSets] = useState<CloudPadSet[]>([]);
+    const [sets, setSets] = useState<CatalogEntry[]>([]);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
         if (!isOpen) return;
         setLoading(true);
-        fetchPadSets()
-            .then(data => {
-                // Filter out any duplicate of the legacy slot
-                setExtraSets(data.filter(s => s.base_path !== 'system_pads'));
-            })
-            .catch(() => setExtraSets([]))
+        fetch('/api/pad-catalog')
+            .then(r => r.ok ? r.json() : { sets: [] })
+            .then((data: { sets: CatalogEntry[] }) => setSets(data.sets || []))
+            .catch(() => setSets([]))
             .finally(() => setLoading(false));
     }, [isOpen]);
 
     if (!isOpen) return null;
 
-    // Legacy always first, then any Supabase-registered sets
-    const allSets = [LEGACY_PAD_SET, ...extraSets];
+    const allSets = sets;
 
-    const handleSelect = (padSet: CloudPadSet) => {
+    const handleSelect = (padSet: CatalogEntry) => {
         onSelect({ id: padSet.id, name: padSet.name, base_path: padSet.base_path });
         onClose();
     };
@@ -73,9 +68,18 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet }: PadS
                         </div>
                     )}
 
+                    {!loading && allSets.length === 0 && (
+                        <div className="flex flex-col items-center justify-center py-8 gap-2 text-text-muted">
+                            <Layers size={24} className="opacity-30" />
+                            <p className="text-[10px] font-mono uppercase tracking-wider text-center">
+                                Nenhum banco de pads disponível.<br />
+                                <span className="opacity-60">Envie pads pelo painel Admin.</span>
+                            </p>
+                        </div>
+                    )}
+
                     {allSets.map(padSet => {
-                        const isActive = selectedPadSet?.id === padSet.id ||
-                            (!selectedPadSet && padSet.id === '__legacy__');
+                        const isActive = selectedPadSet?.id === padSet.id;
                         return (
                             <button
                                 key={padSet.id}

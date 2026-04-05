@@ -110,15 +110,16 @@ export function useAdminUpload() {
         setError(null);
 
         try {
-            // Always upload to 'system_pads' so the legacy fallback path works immediately.
-            // The Supabase registration is attempted as a bonus (requires the pad_sets table).
-            const basePath = 'system_pads';
+            const name = padSetName.trim() || 'Pads do Sistema';
+            const slug = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+            const id = `${slug}_${Date.now()}`;
+            const basePath = `pad_sets/${id}`;
 
             const totalSteps = padFiles.size;
             let i = 0;
 
             for (const [note, file] of padFiles.entries()) {
-                const stepProgress = Math.floor(((i + 1) / totalSteps) * 90);
+                const stepProgress = Math.floor(((i + 1) / totalSteps) * 88);
                 setStatus(`Subindo Pad ${note} (${i + 1} de ${totalSteps})...`);
 
                 const noteFileName = encodeURIComponent(note);
@@ -132,15 +133,19 @@ export function useAdminUpload() {
                 i++;
             }
 
-            // Try to register in Supabase — fails silently if the table doesn't exist yet
-            setStatus('Registrando banco de pads na nuvem...');
-            try {
-                await insertPadSet({
-                    name: padSetName.trim() || 'Pads do Sistema',
-                    description: padSetDescription?.trim() || null,
-                    base_path: basePath
-                });
-            } catch { /* table may not exist yet — upload still succeeded */ }
+            // Register in R2-based catalog (no Supabase dependency)
+            setStatus('Registrando banco de pads no catálogo...');
+            const catalogRes = await fetch('/api/pad-catalog', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, name, description: padSetDescription?.trim() || null, base_path: basePath }),
+            });
+            if (!catalogRes.ok) {
+                console.warn('Catalog update failed:', await catalogRes.text());
+            }
+
+            // Also try Supabase as bonus
+            try { await insertPadSet({ name, description: padSetDescription?.trim() || null, base_path: basePath }); } catch { /* ignore */ }
 
             setProgress(100);
             setStatus('Sucesso! Banco de Pads publicado.');
