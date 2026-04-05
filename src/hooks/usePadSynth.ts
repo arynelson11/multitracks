@@ -156,7 +156,7 @@ export function usePadSynth() {
             const publicUrlBase = import.meta.env.VITE_R2_PUBLIC_URL;
             const baseUrl = publicUrlBase ? publicUrlBase.replace(/\/$/, "") : "";
             const padSetPath = selectedPadSet?.base_path || 'system_pads';
-            // Use exact URL from catalog if available (avoids timestamp mismatch)
+            // note_urls: fallback for legacy entries; new uploads use predictable path
             const url = selectedPadSet?.note_urls?.[note]
                 ?? `${baseUrl}/${padSetPath}/${encodeURIComponent(note)}`;
             

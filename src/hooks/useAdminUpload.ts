@@ -117,20 +117,26 @@ export function useAdminUpload() {
 
             const totalSteps = padFiles.size;
             let i = 0;
-            const noteUrls: Record<string, string> = {};
 
             for (const [note, file] of padFiles.entries()) {
                 const stepProgress = Math.floor(((i + 1) / totalSteps) * 88);
                 setStatus(`Subindo Pad ${note} (${i + 1} de ${totalSteps})...`);
 
-                const noteFileName = encodeURIComponent(note);
-                const uploadResult = await uploadToR2(basePath, noteFileName, file);
+                const contentType = file.type || 'audio/mpeg';
+                // Use dedicated pad upload endpoint — no timestamp, predictable path
+                const urlRes = await fetch(
+                    `/api/upload-pad-file?basePath=${encodeURIComponent(basePath)}&note=${encodeURIComponent(note)}&contentType=${encodeURIComponent(contentType)}`
+                );
+                if (!urlRes.ok) throw new Error(`Erro ao obter URL para Pad ${note}`);
+                const { uploadUrl } = await urlRes.json();
 
-                if (uploadResult.error) {
-                    throw new Error(`Erro no Pad ${note}: ${uploadResult.error}.`);
-                }
+                const putRes = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    body: file,
+                    headers: { 'Content-Type': contentType },
+                });
+                if (!putRes.ok) throw new Error(`Erro no upload do Pad ${note}: status ${putRes.status}`);
 
-                noteUrls[note] = uploadResult.url!;
                 setProgress(stepProgress);
                 i++;
             }
@@ -140,7 +146,7 @@ export function useAdminUpload() {
             const catalogRes = await fetch('/api/pad-catalog', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id, name, description: padSetDescription?.trim() || null, base_path: basePath, note_urls: noteUrls }),
+                body: JSON.stringify({ id, name, description: padSetDescription?.trim() || null, base_path: basePath }),
             });
             if (!catalogRes.ok) {
                 console.warn('Catalog update failed:', await catalogRes.text());
