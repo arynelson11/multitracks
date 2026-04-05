@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Cloud, Loader2, Layers, CheckCircle2 } from 'lucide-react';
+import { X, Cloud, Loader2, Layers, CheckCircle2, Pencil, Trash2, Check } from 'lucide-react';
 import type { SelectedPadSet } from '../hooks/usePadSynth';
 
 interface CatalogEntry {
@@ -16,11 +16,16 @@ interface PadSetsModalProps {
     onClose: () => void;
     onSelect: (padSet: SelectedPadSet) => void;
     selectedPadSet: SelectedPadSet | null;
+    isAdmin?: boolean;
 }
 
-export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet }: PadSetsModalProps) {
+export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmin }: PadSetsModalProps) {
     const [sets, setSets] = useState<CatalogEntry[]>([]);
     const [loading, setLoading] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editName, setEditName] = useState('');
+    const [editDesc, setEditDesc] = useState('');
+    const [deletingId, setDeletingId] = useState<string | null>(null);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -34,11 +39,49 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet }: PadS
 
     if (!isOpen) return null;
 
-    const allSets = sets;
-
     const handleSelect = (padSet: CatalogEntry) => {
+        if (editingId) return; // don't select while editing
         onSelect({ id: padSet.id, name: padSet.name, base_path: padSet.base_path, note_urls: padSet.note_urls });
         onClose();
+    };
+
+    const startEdit = (padSet: CatalogEntry, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setEditingId(padSet.id);
+        setEditName(padSet.name);
+        setEditDesc(padSet.description || '');
+    };
+
+    const saveEdit = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!editingId) return;
+        const res = await fetch('/api/pad-catalog', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: editingId, name: editName.trim() || 'Sem nome', description: editDesc.trim() || null }),
+        });
+        if (res.ok) {
+            setSets(prev => prev.map(s => s.id === editingId
+                ? { ...s, name: editName.trim() || 'Sem nome', description: editDesc.trim() || null }
+                : s
+            ));
+        }
+        setEditingId(null);
+    };
+
+    const confirmDelete = (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setDeletingId(id);
+    };
+
+    const executeDelete = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!deletingId) return;
+        const res = await fetch(`/api/pad-catalog?id=${encodeURIComponent(deletingId)}`, { method: 'DELETE' });
+        if (res.ok) {
+            setSets(prev => prev.filter(s => s.id !== deletingId));
+        }
+        setDeletingId(null);
     };
 
     return (
@@ -69,7 +112,7 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet }: PadS
                         </div>
                     )}
 
-                    {!loading && allSets.length === 0 && (
+                    {!loading && sets.length === 0 && (
                         <div className="flex flex-col items-center justify-center py-8 gap-2 text-text-muted">
                             <Layers size={24} className="opacity-30" />
                             <p className="text-[10px] font-mono uppercase tracking-wider text-center">
@@ -79,29 +122,93 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet }: PadS
                         </div>
                     )}
 
-                    {allSets.map(padSet => {
+                    {sets.map(padSet => {
                         const isActive = selectedPadSet?.id === padSet.id;
+                        const isEditing = editingId === padSet.id;
+                        const isDeleting = deletingId === padSet.id;
+
                         return (
-                            <button
+                            <div
                                 key={padSet.id}
-                                onClick={() => handleSelect(padSet)}
-                                className={`w-full flex items-center gap-3 p-3 rounded-md border text-left transition-all active:scale-[0.98] cursor-pointer
+                                onClick={() => !isEditing && !isDeleting && handleSelect(padSet)}
+                                className={`w-full flex items-center gap-3 p-3 rounded-md border text-left transition-all cursor-pointer
                                     ${isActive
                                         ? 'bg-secondary/10 border-secondary/30 text-secondary'
                                         : 'bg-white/3 border-border text-text-main hover:bg-white/5 hover:border-border-light'
                                     }`}
                             >
-                                <div className={`p-1.5 rounded-md border ${isActive ? 'bg-secondary/15 border-secondary/25' : 'bg-white/5 border-border'}`}>
+                                <div className={`p-1.5 rounded-md border shrink-0 ${isActive ? 'bg-secondary/15 border-secondary/25' : 'bg-white/5 border-border'}`}>
                                     <Layers size={14} className={isActive ? 'text-secondary' : 'text-text-muted'} />
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-[11px] font-bold uppercase tracking-wider font-mono truncate">{padSet.name}</p>
-                                    {padSet.description && (
-                                        <p className="text-[9px] text-text-muted font-mono truncate mt-0.5">{padSet.description}</p>
+
+                                {isEditing ? (
+                                    <div className="flex-1 flex flex-col gap-1" onClick={e => e.stopPropagation()}>
+                                        <input
+                                            autoFocus
+                                            value={editName}
+                                            onChange={e => setEditName(e.target.value)}
+                                            placeholder="Nome do banco"
+                                            className="w-full bg-white/10 border border-border rounded px-2 py-0.5 text-[10px] font-mono text-white focus:outline-none focus:border-secondary"
+                                        />
+                                        <input
+                                            value={editDesc}
+                                            onChange={e => setEditDesc(e.target.value)}
+                                            placeholder="Descrição (opcional)"
+                                            className="w-full bg-white/10 border border-border rounded px-2 py-0.5 text-[9px] font-mono text-text-muted focus:outline-none focus:border-secondary"
+                                        />
+                                    </div>
+                                ) : isDeleting ? (
+                                    <div className="flex-1">
+                                        <p className="text-[10px] font-bold text-accent-red font-mono uppercase tracking-wider">Apagar "{padSet.name}"?</p>
+                                        <p className="text-[8px] text-text-muted font-mono">Esta ação não pode ser desfeita.</p>
+                                    </div>
+                                ) : (
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-[11px] font-bold uppercase tracking-wider font-mono truncate">{padSet.name}</p>
+                                        {padSet.description && (
+                                            <p className="text-[9px] text-text-muted font-mono truncate mt-0.5">{padSet.description}</p>
+                                        )}
+                                    </div>
+                                )}
+
+                                <div className="flex items-center gap-1 shrink-0">
+                                    {isEditing && (
+                                        <>
+                                            <button onClick={saveEdit} className="p-1 rounded text-secondary hover:bg-secondary/10 transition-all cursor-pointer">
+                                                <Check size={13} />
+                                            </button>
+                                            <button onClick={e => { e.stopPropagation(); setEditingId(null); }} className="p-1 rounded text-text-muted hover:bg-white/5 transition-all cursor-pointer">
+                                                <X size={13} />
+                                            </button>
+                                        </>
+                                    )}
+                                    {isDeleting && (
+                                        <>
+                                            <button onClick={executeDelete} className="p-1 rounded text-accent-red hover:bg-red-500/10 transition-all cursor-pointer">
+                                                <Trash2 size={13} />
+                                            </button>
+                                            <button onClick={e => { e.stopPropagation(); setDeletingId(null); }} className="p-1 rounded text-text-muted hover:bg-white/5 transition-all cursor-pointer">
+                                                <X size={13} />
+                                            </button>
+                                        </>
+                                    )}
+                                    {!isEditing && !isDeleting && (
+                                        <>
+                                            {isActive && <CheckCircle2 size={14} className="text-secondary" />}
+                                            {isAdmin && (
+                                                <>
+                                                    <button onClick={e => startEdit(padSet, e)} className="p-1 rounded text-text-muted hover:text-white hover:bg-white/5 transition-all cursor-pointer opacity-50 hover:opacity-100">
+                                                        <Pencil size={12} />
+                                                    </button>
+                                                    <button onClick={e => confirmDelete(padSet.id, e)} className="p-1 rounded text-text-muted hover:text-accent-red hover:bg-red-500/5 transition-all cursor-pointer opacity-50 hover:opacity-100">
+                                                        <Trash2 size={12} />
+                                                    </button>
+                                                </>
+                                            )}
+                                        </>
                                     )}
                                 </div>
-                                {isActive && <CheckCircle2 size={14} className="text-secondary shrink-0" />}
-                            </button>
+                            </div>
                         );
                     })}
                 </div>

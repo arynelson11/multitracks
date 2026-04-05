@@ -1254,6 +1254,7 @@ export default function App() {
         onClose={() => setIsPadSetsModalOpen(false)}
         onSelect={selectPadSet}
         selectedPadSet={selectedPadSet}
+        isAdmin={user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com'}
       />
 
       {/* ═══ TELEPROMPTER OVERLAY ═══ */}

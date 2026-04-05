@@ -57,7 +57,7 @@ async function writeCatalog(catalog: PadCatalog): Promise<void> {
 export default async function handler(req: any, res: any) {
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
     if (req.method === 'OPTIONS') return res.status(200).end();
@@ -106,6 +106,42 @@ export default async function handler(req: any, res: any) {
             return res.status(200).json({ success: true, catalog });
         } catch (e) {
             return res.status(500).json({ error: 'Failed to update catalog', details: String(e) });
+        }
+    }
+
+    // PATCH — rename/update a pad set entry
+    if (req.method === 'PATCH') {
+        try {
+            const { id, name, description } = req.body as Partial<PadSetEntry>;
+            if (!id) return res.status(400).json({ error: 'id is required' });
+
+            const catalog = await readCatalog();
+            const idx = catalog.sets.findIndex(s => s.id === id);
+            if (idx < 0) return res.status(404).json({ error: 'Pad set not found' });
+
+            if (name !== undefined) catalog.sets[idx].name = name;
+            if (description !== undefined) catalog.sets[idx].description = description || null;
+
+            await writeCatalog(catalog);
+            return res.status(200).json({ success: true, catalog });
+        } catch (e) {
+            return res.status(500).json({ error: 'Failed to update catalog', details: String(e) });
+        }
+    }
+
+    // DELETE — remove a pad set entry
+    if (req.method === 'DELETE') {
+        try {
+            const id = req.query?.id as string;
+            if (!id) return res.status(400).json({ error: 'id query param is required' });
+
+            const catalog = await readCatalog();
+            catalog.sets = catalog.sets.filter(s => s.id !== id);
+
+            await writeCatalog(catalog);
+            return res.status(200).json({ success: true, catalog });
+        } catch (e) {
+            return res.status(500).json({ error: 'Failed to delete from catalog', details: String(e) });
         }
     }
 
