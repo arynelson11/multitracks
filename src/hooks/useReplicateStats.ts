@@ -7,6 +7,8 @@ export interface ReplicatePredictionRow {
   source: string;
   created_at: string;
   predict_time: number | null;
+  hardware: string;
+  estimated_cost: number;
 }
 
 export interface ReplicateTopModel {
@@ -14,6 +16,12 @@ export interface ReplicateTopModel {
   total: number;
   succeeded: number;
   totalTime: number;
+  totalCost: number;
+}
+
+export interface ReplicateMonthlyCost {
+  month: string; // "YYYY-MM"
+  cost: number;
 }
 
 export interface ReplicateStats {
@@ -22,8 +30,12 @@ export interface ReplicateStats {
   failed: number;
   recentTotal: number;
   recentSucceeded: number;
+  recentFailed: number;
   totalPredictTime: number;
   recentPredictTime: number;
+  totalCostUSD: number;
+  recentCostUSD: number;
+  monthlyCosts: ReplicateMonthlyCost[];
   topModels: ReplicateTopModel[];
   recentList: ReplicatePredictionRow[];
 }
