@@ -1,14 +1,16 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
-import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut, Shield } from 'lucide-react'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { usePadSynth } from './hooks/usePadSynth'
 import { SettingsModal } from './components/SettingsModal'
 import { MetronomeModal } from './components/MetronomeModal'
 import { LibraryModal } from './components/LibraryModal'
 import { AdminModal } from './components/AdminModal'
+import { AdminDashboard } from './components/AdminDashboard'
 import { PadSetsModal } from './components/PadSetsModal'
 import { AuthPage } from './components/AuthPage'
 import { SeparatorStudio } from './components/SeparatorStudio'
+import { LandingPage } from './components/LandingPage'
 import { useAuth } from './hooks/useAuth'
 import { supabase, updateSongMarkers as saveMkToCloud, fetchSongs as fetchCloudSongs } from './lib/supabase'
 
@@ -33,6 +35,7 @@ export default function App() {
   const { user, loading, signOut } = useAuth()
   const mixerRef = useRef<HTMLDivElement>(null)
 
+  const [showAuth, setShowAuth] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
   const [isChannelEditMode, setIsChannelEditMode] = useState(false)
   const [isSeparatorOpen, setIsSeparatorOpen] = useState(false)
@@ -40,6 +43,7 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isLibraryOpen, setIsLibraryOpen] = useState(false)
   const [isAdminOpen, setIsAdminOpen] = useState(false)
+  const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false)
   const [isSetlistMenuOpen, setIsSetlistMenuOpen] = useState(false)
   const [isTracksMenuOpen, setIsTracksMenuOpen] = useState(false)
   const [isPadEditMode, setIsPadEditMode] = useState(false)
@@ -286,7 +290,8 @@ export default function App() {
   }
 
   if (!user) {
-    return <AuthPage />
+    if (showAuth) return <AuthPage />
+    return <LandingPage onEnter={() => setShowAuth(true)} />
   }
 
   // ───────────────── SEPARATOR (acessível da tela inicial) ─────────────────
@@ -556,6 +561,14 @@ export default function App() {
               {isEditMode ? <Check size={12} /> : <Edit2 size={12} />}
               {isEditMode ? 'OK' : 'EDITAR'}
             </button>
+
+            {/* Admin Dashboard - only for admin */}
+            {(user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com') && (
+              <button onClick={() => setIsAdminDashboardOpen(true)}
+                className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-primary/70 hover:text-primary border border-primary/20 hover:border-primary/40 transition-all">
+                <Shield size={14} /><span className="hidden sm:inline">ADMIN</span>
+              </button>
+            )}
 
             {/* Config */}
             <button onClick={() => setIsSettingsOpen(true)}
@@ -1247,6 +1260,11 @@ export default function App() {
       {/* Admin Modal */}
       {user?.email === 'arynelson11@gmail.com' && (
         <AdminModal isOpen={isAdminOpen} onClose={() => setIsAdminOpen(false)} />
+      )}
+
+      {/* Admin Dashboard */}
+      {(user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com') && (
+        <AdminDashboard isOpen={isAdminDashboardOpen} onClose={() => setIsAdminDashboardOpen(false)} />
       )}
 
       <PadSetsModal

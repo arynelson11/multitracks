@@ -849,8 +849,12 @@ export function useAudioEngine() {
             const startTime = ctx.currentTime + i * beatDuration;
             const osc = ctx.createOscillator();
             const gainNode = ctx.createGain();
+            const panner = ctx.createStereoPanner();
+            // Route to the same side as click/guide (left when autoPan is on)
+            panner.pan.value = settings.autoPan ? -1 : 0;
             osc.connect(gainNode);
-            gainNode.connect(ctx.destination);
+            gainNode.connect(panner);
+            panner.connect(ctx.destination);
             osc.type = 'square';
             osc.frequency.value = i === 0 ? 1200 : 880;
             gainNode.gain.setValueAtTime(0, startTime);

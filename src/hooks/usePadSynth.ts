@@ -1,5 +1,6 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { get, set } from 'idb-keyval';
+import { useSettings } from '../contexts/SettingsContext';
 
 const noteFreqs: Record<string, number> = {
     'C': 130.81,
@@ -35,6 +36,7 @@ export interface SelectedPadSet {
 }
 
 export function usePadSynth() {
+    const { settings } = useSettings();
     const audioCtxRef = useRef<AudioContext | null>(null);
     const activeNodeRef = useRef<PlayingNode | null>(null);
     const [activeNote, setActiveNote] = useState<string | null>(null);
@@ -78,11 +80,37 @@ export function usePadSynth() {
         })();
     }, []);
 
+    // Apply Audio Device Output Routing (same as useAudioEngine)
+    useEffect(() => {
+        if (!audioCtxRef.current) return;
+        const applyDevice = async () => {
+            const ctx = audioCtxRef.current as any;
+            if (typeof ctx.setSinkId === 'function') {
+                try {
+                    const deviceId = settings.audioDeviceId === 'default' ? '' : settings.audioDeviceId;
+                    await ctx.setSinkId(deviceId);
+                } catch (e) {
+                    console.error('Pad: Failed to set audio sink.', e);
+                }
+            }
+        };
+        applyDevice();
+    }, [settings.audioDeviceId]);
+
     const initPadSynth = useCallback(() => {
         if (!audioCtxRef.current) {
-            audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            audioCtxRef.current = ctx;
+            // Apply selected audio device immediately on creation
+            const ctxAny = ctx as any;
+            if (typeof ctxAny.setSinkId === 'function') {
+                const deviceId = settings.audioDeviceId === 'default' ? '' : settings.audioDeviceId;
+                ctxAny.setSinkId(deviceId).catch((e: any) =>
+                    console.error('Pad: Failed to set audio sink on init.', e)
+                );
+            }
         }
-    }, []);
+    }, [settings.audioDeviceId]);
 
     const fadeOutAndCleanup = useCallback((node: PlayingNode, ctx: AudioContext) => {
         node.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.5);
