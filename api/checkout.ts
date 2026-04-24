@@ -18,7 +18,7 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { productId, productName, priceCents, userId, email } = req.body;
+  const { productId, userId, email } = req.body;
 
   if (!productId || !userId || !email) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -43,18 +43,13 @@ export default async function handler(req: any, res: any) {
     || req.headers.origin
     || 'http://localhost:5173';
 
-  const urls = {
-    returnUrl: `${baseUrl}/?payment=success`,
-    completionUrl: `${baseUrl}/?payment=completion`,
-  };
+  const items = [{ id: productId, quantity: 1 }];
 
-  // Tenta /subscriptions/create (usa items com ID do produto já cadastrado no AbacatePay)
+  // Try /subscriptions/create first (for products with subscription cycle defined)
   try {
     const payload = {
-      items: [{ id: productId, quantity: 1 }],
-      methods: ['PIX'],
-      ...urls,
-      metadata: { supabaseUserId: userId },
+      items,
+      completionUrl: `${baseUrl}/?payment=success`,
     };
     console.log('Trying /subscriptions/create:', JSON.stringify(payload));
     const response = await api.post('/subscriptions/create', payload);
@@ -63,28 +58,18 @@ export default async function handler(req: any, res: any) {
     const url = response.data?.data?.url;
     if (url) return res.status(200).json({ url });
   } catch (err: any) {
-    const errData = err?.response?.data;
-    console.warn('/subscriptions/create failed:', JSON.stringify(errData || err?.message));
+    console.warn('/subscriptions/create failed:', JSON.stringify(err?.response?.data || err?.message));
   }
 
-  // Fallback: /billing/create com products (campo correto para este endpoint)
+  // Fallback: /checkouts/create (one-time payment link)
   try {
-    const payload: any = {
-      frequency: 'MULTIPLE_PAYMENTS',
-      methods: ['PIX'],
-      products: [{
-        externalId: productId,
-        name: productName || productId,
-        description: `Assinatura ${productName || productId}`,
-        quantity: 1,
-        price: priceCents || 0,
-      }],
-      ...urls,
-      metadata: { supabaseUserId: userId },
+    const payload = {
+      items,
+      completionUrl: `${baseUrl}/?payment=success`,
     };
-    console.log('Trying /billing/create:', JSON.stringify(payload));
-    const response = await api.post('/billing/create', payload);
-    console.log('Billing response:', JSON.stringify(response.data));
+    console.log('Trying /checkouts/create:', JSON.stringify(payload));
+    const response = await api.post('/checkouts/create', payload);
+    console.log('Checkouts response:', JSON.stringify(response.data));
 
     const url = response.data?.data?.url;
     if (url) return res.status(200).json({ url });
@@ -92,7 +77,7 @@ export default async function handler(req: any, res: any) {
     return res.status(500).json({ error: 'No checkout URL returned', raw: response.data });
   } catch (err: any) {
     const errData = err?.response?.data;
-    console.error('/billing/create failed:', JSON.stringify(errData || err?.message));
+    console.error('/checkouts/create failed:', JSON.stringify(errData || err?.message));
     return res.status(500).json({
       error: 'Failed to create checkout',
       details: errData || err?.message,
