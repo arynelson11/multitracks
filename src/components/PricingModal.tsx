@@ -73,17 +73,18 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
                 })
             });
 
-            const data = await response.json();
+            const data = await response.json().catch(() => ({ error: 'Resposta do servidor não é um JSON válido' }));
             
             if (response.ok && data.url) {
                 // Redireciona para o checkout do AbacatePay
                 window.location.href = data.url;
             } else {
-                alert('Erro ao gerar checkout: ' + (data.error || 'Desconhecido'));
+                console.error('Erro no checkout:', data);
+                alert(`Erro ao gerar checkout: ${data.error || response.statusText || 'Erro interno no servidor'}`);
             }
         } catch (error) {
-            console.error('Erro de rede:', error);
-            alert('Não foi possível conectar com o gateway de pagamento.');
+            console.error('Erro de rede ou processamento:', error);
+            alert('Não foi possível conectar com o servidor. Verifique sua conexão ou tente novamente mais tarde.');
         } finally {
             setLoadingPlan(null);
         }
