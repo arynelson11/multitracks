@@ -135,8 +135,8 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             <span className="font-black tracking-[0.15em] uppercase text-[13px]">Playback Studio</span>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={onEnter} className="hidden sm:block text-[13px] text-white/50 hover:text-white px-3 py-1.5 transition-colors cursor-pointer">Entrar</button>
-            <button onClick={onEnter} className="text-[13px] bg-orange-500 hover:bg-orange-400 text-white px-5 py-2 rounded-lg font-bold transition-colors cursor-pointer">Cadastre-se</button>
+            <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="hidden sm:block text-[13px] text-white/50 hover:text-white px-3 py-1.5 transition-colors cursor-pointer">Entrar</button>
+            <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="text-[13px] bg-orange-500 hover:bg-orange-400 text-white px-5 py-2 rounded-lg font-bold transition-colors cursor-pointer">Cadastre-se</button>
           </div>
         </div>
       </nav>
@@ -170,10 +170,10 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button onClick={onEnter} className="flex items-center justify-center gap-2.5 bg-orange-500 hover:bg-orange-400 text-white px-8 py-4 rounded-xl font-bold text-[15px] transition-all hover:scale-[1.03] cursor-pointer">
+            <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="flex items-center justify-center gap-2.5 bg-orange-500 hover:bg-orange-400 text-white px-8 py-4 rounded-xl font-bold text-[15px] transition-all hover:scale-[1.03] cursor-pointer">
               <Play size={17} fill="white" /> Comece a criar
             </button>
-            <button onClick={onEnter} className="flex items-center justify-center gap-2.5 bg-white/[0.05] hover:bg-white/[0.09] border border-white/10 text-white px-8 py-4 rounded-xl font-bold text-[15px] transition-all cursor-pointer">
+            <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="flex items-center justify-center gap-2.5 bg-white/[0.05] hover:bg-white/[0.09] border border-white/10 text-white px-8 py-4 rounded-xl font-bold text-[15px] transition-all cursor-pointer">
               <Wand2 size={17} className="text-purple-400" /> Veja os recursos
             </button>
           </div>
@@ -347,7 +347,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
               ))}
             </div>
           </div>
-          <button onClick={onEnter} className="inline-flex items-center gap-2.5 bg-purple-600 hover:bg-purple-500 text-white px-8 py-4 rounded-xl font-bold text-[15px] transition-all hover:scale-[1.03] cursor-pointer">
+          <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="inline-flex items-center gap-2.5 bg-purple-600 hover:bg-purple-500 text-white px-8 py-4 rounded-xl font-bold text-[15px] transition-all hover:scale-[1.03] cursor-pointer">
             <Wand2 size={17} /> Faça o upload da sua faixa
           </button>
         </div>
@@ -480,7 +480,15 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                       </li>
                     ))}
                   </ul>
-                  <button onClick={onEnter} className={`w-full py-3 rounded-xl text-[13px] font-bold transition-all cursor-pointer ${plan.btnStyle}`}>
+                  <button onClick={() => {
+                        if (price > 0) {
+                            localStorage.setItem('checkoutIntent', `${plan.name.toLowerCase()}_${billing === 'annual' ? 'anual' : 'mensal'}`);
+                        } else {
+                            localStorage.removeItem('checkoutIntent');
+                        }
+                        onEnter();
+                    }} 
+                    className={`w-full py-3 rounded-xl text-[13px] font-bold transition-all cursor-pointer ${plan.btnStyle}`}>
                     {plan.cta}
                   </button>
                 </div>
@@ -570,7 +578,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
               <p className="text-white/38 text-[15px] leading-relaxed mb-8">
                 Comece grátis hoje. Configure seu primeiro repertório em menos de 5 minutos.
               </p>
-              <button onClick={onEnter} className="inline-flex items-center gap-2.5 bg-orange-500 hover:bg-orange-400 text-white px-9 py-4 rounded-xl font-bold text-[15px] transition-all hover:scale-[1.03] cursor-pointer">
+              <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="inline-flex items-center gap-2.5 bg-orange-500 hover:bg-orange-400 text-white px-9 py-4 rounded-xl font-bold text-[15px] transition-all hover:scale-[1.03] cursor-pointer">
                 Começar Grátis Agora <ArrowRight size={18} />
               </button>
               <p className="text-[11px] text-white/18 mt-5">Grátis para sempre no plano básico · Upgrade quando quiser</p>
@@ -589,8 +597,8 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             <span className="font-black tracking-[0.15em] uppercase text-[11px] text-white/38">Playback Studio</span>
           </div>
           <div className="flex items-center gap-6 text-[12px] text-white/28">
-            <button onClick={onEnter} className="hover:text-white/55 transition-colors cursor-pointer">Entrar</button>
-            <button onClick={onEnter} className="hover:text-white/55 transition-colors cursor-pointer">Criar Conta</button>
+            <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="hover:text-white/55 transition-colors cursor-pointer">Entrar</button>
+            <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="hover:text-white/55 transition-colors cursor-pointer">Criar Conta</button>
             <a href="#precos" className="hover:text-white/55 transition-colors">Preços</a>
           </div>
           <p className="text-[11px] text-white/18">© 2025 Playback Studio. Todos os direitos reservados.</p>

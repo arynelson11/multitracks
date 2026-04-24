@@ -12,6 +12,7 @@ import { AuthPage } from './components/AuthPage'
 import { SeparatorStudio } from './components/SeparatorStudio'
 import { LandingPage } from './components/LandingPage'
 import { useAuth } from './hooks/useAuth'
+import { PricingModal } from './components/PricingModal'
 import { supabase, updateSongMarkers as saveMkToCloud, fetchSongs as fetchCloudSongs } from './lib/supabase'
 
 export default function App() {
@@ -32,7 +33,8 @@ export default function App() {
   } = useAudioEngine()
 
   const { playPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume, updatePadMode, selectedPadSet, selectPadSet, padMode } = usePadSynth()
-  const { user, loading, signOut } = useAuth()
+  const { user, loading, signOut, userPlan } = useAuth()
+  const [isPricingOpen, setIsPricingOpen] = useState(false)
   const mixerRef = useRef<HTMLDivElement>(null)
 
   const [showAuth, setShowAuth] = useState(false)
@@ -65,6 +67,26 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('repertoire_notes', repertoireNotes)
   }, [repertoireNotes])
+
+  // ── Checkout Intent Logic ──
+  useEffect(() => {
+    if (user && !loading) {
+      const intent = localStorage.getItem('checkoutIntent')
+      if (intent) {
+        setIsPricingOpen(true)
+        localStorage.removeItem('checkoutIntent')
+      }
+    }
+  }, [user, loading])
+
+  // Helper for Premium Features
+  const handlePremiumFeature = (action: () => void) => {
+    if (userPlan === 'free') {
+      setIsPricingOpen(true)
+      return
+    }
+    action()
+  }
 
   const analysersRef = useRef<Record<string, AnalyserNode>>({})
   const vuAnimRef = useRef<number>(0)
@@ -449,7 +471,7 @@ export default function App() {
               )}
             </div>
 
-            <button onClick={() => setIsLibraryOpen(true)}
+            <button onClick={() => handlePremiumFeature(() => setIsLibraryOpen(true))}
               className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-white">
               <Cloud size={14} /> <span className="hidden sm:inline">BIBLIOTECA</span>
             </button>
@@ -464,7 +486,7 @@ export default function App() {
 
             {/* Key Selector */}
             <div className="relative">
-              <button onClick={() => setIsKeyPickerOpen(!isKeyPickerOpen)}
+              <button onClick={() => handlePremiumFeature(() => setIsKeyPickerOpen(!isKeyPickerOpen))}
                 className={`transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer ${isKeyPickerOpen ? 'text-primary' : 'text-text-muted hover:text-white'}`}>
                 <span>TOM</span>
                 {currentKeyName && <span className="text-primary font-mono">{currentKeyName}</span>}
@@ -967,7 +989,7 @@ export default function App() {
             className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-[0.15em] transition-colors cursor-pointer font-mono ${mobileView === 'mixer' ? 'text-primary border-b-2 border-primary' : 'text-text-muted'}`}>
             MIXER
           </button>
-          <button onClick={() => setMobileView('pads')}
+          <button onClick={() => handlePremiumFeature(() => setMobileView('pads'))}
             className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-[0.15em] transition-colors cursor-pointer font-mono ${mobileView === 'pads' ? 'text-secondary border-b-2 border-secondary' : 'text-text-muted'}`}>
             PADS
           </button>
@@ -1171,7 +1193,7 @@ export default function App() {
             {/* Pad Source Selector */}
             <div className="flex gap-1 mb-3">
               <button
-                onClick={() => setIsPadSetsModalOpen(true)}
+                onClick={() => handlePremiumFeature(() => setIsPadSetsModalOpen(true))}
                 className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center gap-1.5 font-mono tracking-wider border transition-all active:scale-95 cursor-pointer
                   ${padMode === 'system'
                     ? 'bg-secondary/15 text-secondary border-secondary/30'
@@ -1334,6 +1356,8 @@ export default function App() {
           onAddClick={addChannelToActiveSong} 
         />
       )}
+
+      <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
     </div>
   )
 }

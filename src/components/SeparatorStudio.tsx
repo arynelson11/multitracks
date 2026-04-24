@@ -4,6 +4,8 @@ import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, Volume2, Save, Disc3
 import { insertSong, insertStems, type CloudStem } from '../lib/supabase';
 import { analyzeAudioAndGenerateClick } from '../lib/AudioAnalyzer';
 import { uploadToR2 } from '../lib/r2';
+import { useAuth } from '../hooks/useAuth';
+import { PricingModal } from './PricingModal';
 
 interface StemData {
   id: string;
@@ -25,6 +27,8 @@ function getAudioContext() {
 }
 
 export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => {
+  const { userPlan } = useAuth();
+  const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressMsg, setProgressMsg] = useState('');
@@ -94,6 +98,15 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   };
 
   const processAudio = async (audioFile: File) => {
+    // ── Limit check for FREE users ──
+    if (userPlan === 'free') {
+      const count = parseInt(localStorage.getItem('separator_usage') || '0');
+      if (count >= 5) {
+        setIsPricingOpen(true);
+        return;
+      }
+    }
+
     setIsProcessing(true);
     setProgress(0);
     setProgressMsg('Iniciando Inteligência Artificial Replicate...');
@@ -190,6 +203,12 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       setStems(stemsArray);
       setProgress(100);
       setIsProcessing(false);
+
+      // Increment count for free users
+      if (userPlan === 'free') {
+        const count = parseInt(localStorage.getItem('separator_usage') || '0');
+        localStorage.setItem('separator_usage', (count + 1).toString());
+      }
 
     } catch (e: any) {
       console.error(e);
@@ -573,6 +592,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
           </div>
         </div>
       )}
+
+      <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
     </div>
   );
 };
