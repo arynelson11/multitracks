@@ -80,7 +80,8 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
                 window.location.href = data.url;
             } else {
                 console.error('Erro no checkout:', data);
-                alert(`Erro ao gerar checkout: ${data.error || response.statusText || 'Erro interno no servidor'}`);
+                const detailMsg = data.details ? (typeof data.details === 'object' ? JSON.stringify(data.details) : data.details) : '';
+                alert(`Erro ao gerar checkout: ${data.error || response.statusText || 'Erro desconhecido'}${detailMsg ? '\n\nDetalhes: ' + detailMsg : ''}`);
             }
         } catch (error) {
             console.error('Erro de rede ou processamento:', error);

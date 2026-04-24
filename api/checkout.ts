@@ -54,8 +54,11 @@ export default async function handler(req, res) {
 
     // A resposta deve ter a URL para o checkout
     return res.status(200).json({ url: response?.data?.url || response?.url });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating AbacatePay billing:', error);
-    return res.status(500).json({ error: 'Failed to create checkout' });
+    return res.status(500).json({ 
+        error: 'Failed to create checkout', 
+        details: error?.message || error?.response?.data || error
+    });
   }
 }
