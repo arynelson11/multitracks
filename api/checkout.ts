@@ -36,7 +36,7 @@ export default async function handler(req, res) {
     const baseUrl = process.env.VITE_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : req.headers.origin || 'http://localhost:5173');
 
     const billingParams: any = {
-        frequency: productName.toLowerCase().includes('mensal') ? 'MONTHLY' : 'ANNUALLY',
+        frequency: productName.toLowerCase().includes('mensal') ? 'monthly' : 'yearly',
         methods: ['PIX'], // Mantendo apenas PIX por segurança conforme sugestão do erro
         products: [{
             externalId: productId,
