@@ -361,17 +361,17 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     return (
       <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col items-center justify-center p-6">
         <button onClick={onClose} className="absolute top-5 left-5 text-text-muted hover:text-white flex items-center gap-1.5 cursor-pointer text-xs font-mono uppercase tracking-wider">
-          <ChevronLeft size={18}/> BACK
+          <ChevronLeft size={18}/> VOLTAR
         </button>
         <div className="max-w-xl w-full text-center">
            <Disc3 size={60} className="mx-auto text-primary mb-5 animate-[spin_10s_linear_infinite]" />
-           <h1 className="text-2xl font-black text-white mb-3 uppercase tracking-wider">AI Stem Separator</h1>
-           <p className="text-text-muted mb-8 text-xs font-mono leading-relaxed max-w-md mx-auto">Upload your audio. AI will separate and mix all instruments, detect exact BPM, and generate a professional multi-channel rehearsal project.</p>
-           
+           <h1 className="text-2xl font-black text-white mb-3 uppercase tracking-wider">Separador de Faixas IA</h1>
+           <p className="text-text-muted mb-8 text-xs font-mono leading-relaxed max-w-md mx-auto">Envie seu áudio. A IA irá separar e mixar todos os instrumentos, detectar o BPM exato e gerar um projeto de ensaio multi-canal profissional.</p>
+
            <label className="border-2 border-dashed border-primary/30 bg-primary/3 hover:bg-primary/5 rounded-lg p-12 flex flex-col items-center justify-center cursor-pointer transition-colors shadow-[0_0_40px_rgba(16,185,129,0.05)]">
              <UploadCloud size={40} className="text-primary mb-3" />
-             <span className="text-sm font-black text-white uppercase tracking-wider">Load Audio & Start</span>
-             <span className="text-[10px] text-text-muted/50 mt-1.5 font-mono">MP3, WAV, or AAC</span>
+             <span className="text-sm font-black text-white uppercase tracking-wider">Carregar Áudio & Iniciar</span>
+             <span className="text-[10px] text-text-muted/50 mt-1.5 font-mono">MP3, WAV ou AAC</span>
              <input type="file" accept="audio/*" onChange={handleFileUpload} className="hidden" />
            </label>
         </div>
@@ -384,13 +384,13 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col items-center justify-center p-6">
         <Loader2 size={48} className="text-primary animate-spin mb-6" />
         <h2 className="text-xl font-black text-white tracking-widest uppercase mb-3 text-transparent bg-clip-text bg-gradient-to-r from-primary to-[#059669]">
-           Analyzing Frequencies
+           Analisando Frequências
         </h2>
         <div className="text-xs text-text-muted max-w-lg text-center font-mono h-16">{progressMsg}</div>
         <div className="w-full max-w-md bg-surface rounded-full h-1.5 mt-6 overflow-hidden border border-border">
           <div className="bg-primary h-full transition-all duration-300 ease-out" style={{ width: `${progress}%` }}></div>
         </div>
-        <p className="text-text-muted/50 text-[10px] mt-3 font-mono uppercase tracking-widest">{progress}% COMPLETED</p>
+        <p className="text-text-muted/50 text-[10px] mt-3 font-mono uppercase tracking-widest">{progress}% CONCLUÍDO</p>
       </div>
     );
   }
@@ -409,7 +409,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                 <Disc3 size={14} className="text-primary" />
              </div>
              <div>
-                <h1 className="font-black text-white text-xs uppercase tracking-wider leading-tight">Stem Separator (DAW)</h1>
+                <h1 className="font-black text-white text-xs uppercase tracking-wider leading-tight">Separador de Faixas (DAW)</h1>
                 <h2 className="text-[9px] font-mono text-text-muted truncate max-w-xs">{songName}</h2>
              </div>
           </div>
@@ -417,7 +417,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         <button 
           onClick={() => setShowSaveForm(true)}
           className="flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/15 hover:bg-primary/15 px-3 py-1.5 rounded-md text-[10px] font-bold transition-all cursor-pointer uppercase tracking-wider">
-          <Save size={14} /> EXPORT
+          <Save size={14} /> EXPORTAR
         </button>
       </header>
 
@@ -523,36 +523,36 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
           <div className="daw-panel w-full max-w-md p-6 rounded-lg relative">
              {!isSaving && <button onClick={() => setShowSaveForm(false)} className="absolute top-3 right-3 text-text-muted hover:text-white cursor-pointer"><X size={16}/></button>}
              
-             <h2 className="text-lg font-black text-white mb-1.5 uppercase tracking-wider">Publish to Cloud</h2>
-             <p className="text-text-muted text-[10px] mb-5 font-mono">Saving {stems.length}-track multitrack project to your library.</p>
+             <h2 className="text-lg font-black text-white mb-1.5 uppercase tracking-wider">Publicar na Nuvem</h2>
+             <p className="text-text-muted text-[10px] mb-5 font-mono">Salvando projeto multi-faixa de {stems.length} canais na sua biblioteca.</p>
              
              {!isSaving ? (
                <div className="flex flex-col gap-4">
                  <div className="grid grid-cols-2 gap-3">
                    <div>
-                     <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Song *</label>
-                     <input value={songName} onChange={e => setSongName(e.target.value)} 
+                     <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Música *</label>
+                     <input value={songName} onChange={e => setSongName(e.target.value)}
                        className="w-full daw-input rounded-md px-3 py-2 text-white text-xs font-mono"
-                       placeholder="e.g. Beautiful"
+                       placeholder="ex: Águas Purificadoras"
                      />
                    </div>
                    <div>
-                     <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Artist</label>
-                     <input value={artist} onChange={e => setArtist(e.target.value)} 
+                     <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Artista</label>
+                     <input value={artist} onChange={e => setArtist(e.target.value)}
                        className="w-full daw-input rounded-md px-3 py-2 text-white text-xs font-mono"
-                       placeholder="e.g. Hillsong"
+                       placeholder="ex: Hillsong"
                      />
                    </div>
                  </div>
                  <div className="grid grid-cols-2 gap-3">
                    <div>
-                     <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">BPM (AI)</label>
+                     <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">BPM (IA)</label>
                      <input type="number" value={bpm} onChange={e => setBpm(e.target.value)} 
                        className="w-full daw-input rounded-md px-3 py-2 text-white text-xs font-mono"
                      />
                    </div>
                    <div>
-                     <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Key</label>
+                     <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Tom</label>
                      <select value={songKey} onChange={e => setSongKey(e.target.value)}
                        className="w-full daw-input rounded-md px-3 py-2 text-white text-xs font-mono appearance-none">
                        {['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'].map(k => <option key={k} value={k}>{k}</option>)}
@@ -560,11 +560,11 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                    </div>
                  </div>
                   <div className="mt-1">
-                    <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Cover Image (Optional)</label>
+                    <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Imagem de Capa (Opcional)</label>
                     <div className="flex items-center gap-2">
                       <label className="flex flex-1 items-center gap-2 daw-input rounded-md px-3 py-2 cursor-pointer text-text-muted text-xs font-mono overflow-hidden">
                         <UploadCloud size={14} className="text-primary flex-shrink-0" />
-                        <span className="truncate">{coverFile ? coverFile.name : 'Select image...'}</span>
+                        <span className="truncate">{coverFile ? coverFile.name : 'Selecionar imagem...'}</span>
                         <input type="file" accept="image/*" className="hidden" onChange={e => setCoverFile(e.target.files?.[0] || null)} />
                       </label>
                       {coverFile && (
@@ -575,13 +575,13 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                     </div>
                   </div>
                  <button onClick={handleSaveToDatabase} className="w-full bg-primary text-black font-black py-3 rounded-md mt-3 uppercase tracking-wider text-xs active:scale-[0.98] transition-all shadow-[0_0_15px_rgba(16,185,129,0.15)] cursor-pointer">
-                   SAVE & PUBLISH
+                   SALVAR & PUBLICAR
                  </button>
                </div>
              ) : (
                <div className="flex flex-col items-center py-8">
                   <UploadCloud size={36} className="text-primary animate-pulse mb-4" />
-                  <div className="text-white font-black text-sm uppercase tracking-wider mb-1">{saveProgress >= 100 ? 'DONE!' : 'PUBLISHING...'}</div>
+                  <div className="text-white font-black text-sm uppercase tracking-wider mb-1">{saveProgress >= 100 ? 'PRONTO!' : 'PUBLICANDO...'}</div>
                   <div className="text-text-muted text-[10px] text-center mb-6 h-5 font-mono">{saveStatus}</div>
                   
                   <div className="w-full lcd-display rounded-md h-1.5 overflow-hidden">

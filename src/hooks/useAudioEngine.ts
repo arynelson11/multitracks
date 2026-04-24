@@ -27,7 +27,9 @@ interface SavedSong {
     originalKey?: string | null;
 }
 
-export function useAudioEngine() {
+export function useAudioEngine(userId?: string) {
+    const DB_KEY_META = userId ? `mt_meta_playlist_${userId}` : 'mt_meta_playlist';
+    const DB_KEY_FILES = userId ? `mt_files_${userId}` : 'mt_files';
     const { settings } = useSettings();
     const audioCtxRef = useRef<AudioContext | null>(null);
     const masterGainRef = useRef<GainNode | null>(null);
@@ -97,7 +99,7 @@ export function useAudioEngine() {
             originalKey: song.originalKey || null,
             bpm: song.bpm
         }));
-        await set('mt_meta_playlist', metaFormat);
+        await set(DB_KEY_META, metaFormat);
     };
 
     const updatePlaylistAndSave = (newList: Song[]) => {
@@ -171,8 +173,8 @@ export function useAudioEngine() {
             setIsReady(true);
 
             // Try Restore
-            const savedMeta = await get<SavedSong[]>('mt_meta_playlist');
-            const savedFiles = await get<Map<string, File>>('mt_files');
+            const savedMeta = await get<SavedSong[]>(DB_KEY_META);
+            const savedFiles = await get<Map<string, File>>(DB_KEY_FILES);
 
             if (savedMeta && savedMeta.length > 0 && savedFiles) {
                 setIsRestoring(true);
@@ -522,7 +524,7 @@ export function useAudioEngine() {
         if (!audioCtxRef.current || !masterGainRef.current) return;
         setIsLoading(true);
 
-        const filesDb = await get<Map<string, File>>('mt_files') || new Map<string, File>();
+        const filesDb = await get<Map<string, File>>(DB_KEY_FILES) || new Map<string, File>();
 
         const filesArray = Array.from(files);
         const results: (Channel | null)[] = [];
@@ -600,7 +602,7 @@ export function useAudioEngine() {
             if (ch.buffer.duration > maxDuration) maxDuration = ch.buffer.duration;
         });
 
-        await set('mt_files', filesDb);
+        await set(DB_KEY_FILES, filesDb);
 
         // Use override name, folder name, or first file name as Song Name
         let songName = overrideSongName;
@@ -645,7 +647,7 @@ export function useAudioEngine() {
         if (!audioCtxRef.current || !masterGainRef.current) return;
         setIsLoading(true);
 
-        const filesDb = await get<Map<string, File>>('mt_files') || new Map<string, File>();
+        const filesDb = await get<Map<string, File>>(DB_KEY_FILES) || new Map<string, File>();
 
         try {
             const { clickBlob } = await generateEndlessClickTrack(bpm);
@@ -671,7 +673,7 @@ export function useAudioEngine() {
 
             const uuid = crypto.randomUUID();
             filesDb.set(uuid, file);
-            await set('mt_files', filesDb);
+            await set(DB_KEY_FILES, filesDb);
 
             const newChannel: Channel = {
                 id: uuid,
@@ -717,7 +719,7 @@ export function useAudioEngine() {
         if (!audioCtxRef.current || !masterGainRef.current || playlist.length === 0 || activeSongIndex < 0) return;
         setIsLoading(true);
 
-        const filesDb = await get('mt_files') || new Map();
+        const filesDb = await get(DB_KEY_FILES) || new Map();
 
         try {
             const arrayBuffer = await file.arrayBuffer();
@@ -754,7 +756,7 @@ export function useAudioEngine() {
 
             const uuid = crypto.randomUUID();
             filesDb.set(uuid, file);
-            await set('mt_files', filesDb);
+            await set(DB_KEY_FILES, filesDb);
 
             const newChannel: Channel = {
                 id: uuid,
@@ -1034,10 +1036,10 @@ export function useAudioEngine() {
         updatePlaylistAndSave(newPlaylist);
 
         // Remove from files DB
-        const filesDb = await get<Map<string, File>>('mt_files');
+        const filesDb = await get<Map<string, File>>(DB_KEY_FILES);
         if (filesDb) {
             filesDb.delete(channelId);
-            await set('mt_files', filesDb);
+            await set(DB_KEY_FILES, filesDb);
         }
     };
 
@@ -1092,8 +1094,8 @@ export function useAudioEngine() {
 
     // Clear Session
     const clearSession = async () => {
-        await set('mt_meta_playlist', []);
-        await set('mt_files', new Map());
+        await set(DB_KEY_META, []);
+        await set(DB_KEY_FILES, new Map());
         window.location.reload();
     }
 
@@ -1118,7 +1120,7 @@ export function useAudioEngine() {
     // V5: Export playlist as ZIP (with full audio files)
     const exportPlaylist = async (): Promise<void> => {
         const zip = new JSZip();
-        const filesDb = await get<Map<string, File>>('mt_files') || new Map<string, File>();
+        const filesDb = await get<Map<string, File>>(DB_KEY_FILES) || new Map<string, File>();
 
         const manifest = playlist.map(song => ({
             id: song.id,
@@ -1227,8 +1229,8 @@ export function useAudioEngine() {
                 await set('mt_custom_pad_names', padNamesMap);
             }
 
-            await set('mt_meta_playlist', importedMeta);
-            await set('mt_files', filesMap);
+            await set(DB_KEY_META, importedMeta);
+            await set(DB_KEY_FILES, filesMap);
 
             window.location.reload();
         } catch (e) {

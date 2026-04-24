@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
-import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut, Shield } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut, Shield, Home } from 'lucide-react'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { usePadSynth } from './hooks/usePadSynth'
 import { SettingsModal } from './components/SettingsModal'
@@ -16,6 +16,8 @@ import { PricingModal } from './components/PricingModal'
 import { supabase, updateSongMarkers as saveMkToCloud, fetchSongs as fetchCloudSongs } from './lib/supabase'
 
 export default function App() {
+  const { user, loading, signOut, userPlan } = useAuth()
+
   const {
     isReady, initEngine, loadFiles, isLoading, isRestoring,
     playlist, activeSongIndex, setPlaylistOrder, removeSongFromPlaylist, jumpToSong,
@@ -30,10 +32,9 @@ export default function App() {
     precountEnabled, precountBeats, isCountingIn,
     setPrecountBeats, togglePrecountEnabled, playWithPrecount, cancelCountIn,
     createEndlessMetronomeSong,
-  } = useAudioEngine()
+  } = useAudioEngine(user?.id)
 
   const { playPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume, updatePadMode, selectedPadSet, selectPadSet, padMode } = usePadSynth()
-  const { user, loading, signOut, userPlan } = useAuth()
   const [isPricingOpen, setIsPricingOpen] = useState(false)
   const mixerRef = useRef<HTMLDivElement>(null)
 
@@ -41,6 +42,7 @@ export default function App() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [isChannelEditMode, setIsChannelEditMode] = useState(false)
   const [isSeparatorOpen, setIsSeparatorOpen] = useState(false)
+  const [forceShowSplash, setForceShowSplash] = useState(false)
   const [isMetronomeModalOpen, setIsMetronomeModalOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isLibraryOpen, setIsLibraryOpen] = useState(false)
@@ -62,11 +64,15 @@ export default function App() {
   const [chDragIdx, setChDragIdx] = useState<number | null>(null)
   const [chDragOverIdx, setChDragOverIdx] = useState<number | null>(null)
   const [vuLevels, setVuLevels] = useState<Record<string, number>>({})
-  const [repertoireNotes, setRepertoireNotes] = useState(() => localStorage.getItem('repertoire_notes') || '')
+  const [repertoireNotes, setRepertoireNotes] = useState('')
 
   useEffect(() => {
-    localStorage.setItem('repertoire_notes', repertoireNotes)
-  }, [repertoireNotes])
+    if (user?.id) setRepertoireNotes(localStorage.getItem(`repertoire_notes_${user.id}`) || '')
+  }, [user?.id])
+
+  useEffect(() => {
+    if (user?.id) localStorage.setItem(`repertoire_notes_${user.id}`, repertoireNotes)
+  }, [repertoireNotes, user?.id])
 
   // ── Checkout Intent Logic ──
   useEffect(() => {
@@ -322,7 +328,7 @@ export default function App() {
   }
 
   // ───────────────── SPLASH ─────────────────
-  if (!isReady) {
+  if (!isReady || forceShowSplash) {
     return (
       <div className="min-h-screen bg-[#0a0a0c] text-text-main flex flex-col items-center justify-center px-6">
         <div className="w-16 h-16 sm:w-20 sm:h-20 mb-8 rounded-2xl flex items-center justify-center border border-border-light bg-surface relative animate-boot">
@@ -334,7 +340,7 @@ export default function App() {
           Motor Multitracks Profissional
         </p>
         <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md">
-          <button onClick={initEngine}
+          <button onClick={() => { setForceShowSplash(false); if (!isReady) initEngine(); }}
             className="hw-btn flex-1 text-primary hover:text-white px-6 py-5 rounded-xl text-sm uppercase tracking-widest flex flex-col items-center gap-3 cursor-pointer">
             {isRestoring ? <Loader2 className="animate-spin" size={28} /> : <Play size={28} fill="currentColor" />}
             <span className="font-black">Playback Studio</span>
@@ -596,6 +602,12 @@ export default function App() {
             <button onClick={() => setIsSettingsOpen(true)}
               className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-white">
               <Settings size={14} /><span className="hidden sm:inline">CONFIG</span>
+            </button>
+
+            {/* Início */}
+            <button onClick={() => setForceShowSplash(true)}
+              className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-white border border-border hover:border-white/20 transition-all">
+              <Home size={14} /><span className="hidden sm:inline">INÍCIO</span>
             </button>
 
             <div className="h-5 w-px bg-border hidden sm:block"></div>
