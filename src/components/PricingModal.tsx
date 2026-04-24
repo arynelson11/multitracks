@@ -9,7 +9,7 @@ interface PricingModalProps {
 
 const PLANS = [
     {
-        id: 'prod_jpqSjSmGAUGUxpw3UEa3JpQJ',
+        id: 'prod_jpqSjSmGAUgUXpw3UEa3JpQJ',
         name: 'Essencial Mensal',
         price: 19.90,
         priceStr: 'R$ 19,90',

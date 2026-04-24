@@ -43,35 +43,51 @@ export default async function handler(req: any, res: any) {
     || req.headers.origin
     || 'http://localhost:5173';
 
-  // Endpoint correto para assinaturas: /subscriptions/create
-  // O productId já é o ID do produto cadastrado no AbacatePay com ciclo definido
-  const payload: any = {
-    items: [{ id: productId, quantity: 1 }],
-    methods: ['PIX'],
+  const items = [{ id: productId, quantity: 1 }];
+  const urls = {
     returnUrl: `${baseUrl}/?payment=success`,
     completionUrl: `${baseUrl}/?payment=completion`,
-    metadata: { supabaseUserId: userId },
   };
 
-  // Se tiver customerId do AbacatePay, passa para pré-preencher o checkout
-  if (req.body.abacateCustomerId) {
-    payload.customerId = req.body.abacateCustomerId;
-  }
-
-  console.log('Creating subscription:', JSON.stringify(payload));
-
+  // Tenta /subscriptions/create primeiro (endpoint correto para produtos com ciclo recorrente)
   try {
+    const payload = {
+      items,
+      methods: ['PIX'],
+      ...urls,
+      metadata: { supabaseUserId: userId },
+    };
+    console.log('Trying /subscriptions/create:', JSON.stringify(payload));
     const response = await api.post('/subscriptions/create', payload);
-    console.log('Subscription response:', JSON.stringify(response.data));
+    console.log('Subscriptions response:', JSON.stringify(response.data));
 
     const url = response.data?.data?.url;
-    if (!url) {
-      return res.status(500).json({ error: 'No checkout URL returned', raw: response.data });
-    }
-    return res.status(200).json({ url });
+    if (url) return res.status(200).json({ url });
   } catch (err: any) {
     const errData = err?.response?.data;
-    console.error('Subscription creation failed:', JSON.stringify(errData || err?.message));
+    console.warn('/subscriptions/create failed:', JSON.stringify(errData || err?.message));
+  }
+
+  // Fallback: /billing/create com frequency MULTIPLE_PAYMENTS (payment link)
+  try {
+    const payload = {
+      frequency: 'MULTIPLE_PAYMENTS',
+      items,
+      methods: ['PIX'],
+      ...urls,
+      metadata: { supabaseUserId: userId },
+    };
+    console.log('Trying /billing/create:', JSON.stringify(payload));
+    const response = await api.post('/billing/create', payload);
+    console.log('Billing response:', JSON.stringify(response.data));
+
+    const url = response.data?.data?.url;
+    if (url) return res.status(200).json({ url });
+
+    return res.status(500).json({ error: 'No checkout URL returned', raw: response.data });
+  } catch (err: any) {
+    const errData = err?.response?.data;
+    console.error('/billing/create failed:', JSON.stringify(errData || err?.message));
     return res.status(500).json({
       error: 'Failed to create checkout',
       details: errData || err?.message,
