@@ -18,9 +18,9 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { productId, productName, priceCents, userId, email, name } = req.body;
+  const { productId, userId, email } = req.body;
 
-  if (!productId || !userId || !priceCents || !email) {
+  if (!productId || !userId || !email) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
@@ -43,64 +43,35 @@ export default async function handler(req: any, res: any) {
     || req.headers.origin
     || 'http://localhost:5173';
 
-  // Passo 1: criar o customer no AbacatePay
-  let customerId: string | undefined;
-  try {
-    const customerPayload = {
-      name: name || email.split('@')[0],
-      email,
-      cellphone: '',
-      taxId: '',
-    };
-    console.log('Creating AbacatePay customer:', JSON.stringify(customerPayload));
-    const customerRes = await api.post('/customer/create', customerPayload);
-    console.log('Customer response:', JSON.stringify(customerRes.data));
-    customerId = customerRes.data?.data?.id;
-  } catch (err: any) {
-    const errData = err?.response?.data;
-    console.warn('Customer creation failed (proceeding without customerId):', JSON.stringify(errData || err?.message));
-  }
-
-  // Passo 2: criar o billing
-  const billingPayload: any = {
-    frequency: 'ONE_TIME',
+  // Endpoint correto para assinaturas: /subscriptions/create
+  // O productId já é o ID do produto cadastrado no AbacatePay com ciclo definido
+  const payload: any = {
+    items: [{ id: productId, quantity: 1 }],
     methods: ['PIX'],
-    products: [{
-      externalId: productId,
-      name: productName,
-      description: `Assinatura ${productName}`,
-      quantity: 1,
-      price: priceCents,
-    }],
     returnUrl: `${baseUrl}/?payment=success`,
     completionUrl: `${baseUrl}/?payment=completion`,
+    metadata: { supabaseUserId: userId },
   };
 
-  if (customerId) {
-    billingPayload.customerId = customerId;
-  } else {
-    billingPayload.customer = {
-      name: name || email.split('@')[0],
-      email,
-      cellphone: '',
-      taxId: '',
-    };
+  // Se tiver customerId do AbacatePay, passa para pré-preencher o checkout
+  if (req.body.abacateCustomerId) {
+    payload.customerId = req.body.abacateCustomerId;
   }
 
-  console.log('Creating billing:', JSON.stringify(billingPayload));
+  console.log('Creating subscription:', JSON.stringify(payload));
 
   try {
-    const billingRes = await api.post('/billing/create', billingPayload);
-    console.log('Billing response:', JSON.stringify(billingRes.data));
+    const response = await api.post('/subscriptions/create', payload);
+    console.log('Subscription response:', JSON.stringify(response.data));
 
-    const url = billingRes.data?.data?.url || billingRes.data?.url;
+    const url = response.data?.data?.url;
     if (!url) {
-      return res.status(500).json({ error: 'No checkout URL returned', raw: billingRes.data });
+      return res.status(500).json({ error: 'No checkout URL returned', raw: response.data });
     }
     return res.status(200).json({ url });
   } catch (err: any) {
     const errData = err?.response?.data;
-    console.error('Billing creation failed:', JSON.stringify(errData || err?.message));
+    console.error('Subscription creation failed:', JSON.stringify(errData || err?.message));
     return res.status(500).json({
       error: 'Failed to create checkout',
       details: errData || err?.message,
