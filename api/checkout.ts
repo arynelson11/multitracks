@@ -1,4 +1,4 @@
-import { AbacatePay } from 'abacate-pay-sdk';
+import { Abacatepay } from 'abacate-pay-sdk';
 
 export default async function handler(req, res) {
   // CORS
@@ -30,7 +30,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const abacatepay = new AbacatePay(process.env.ABACATEPAY_ACCESS_TOKEN);
+    const abacatepay = new Abacatepay(process.env.ABACATEPAY_ACCESS_TOKEN);
     
     // As URLs de callback dependem do ambiente
     const baseUrl = process.env.VITE_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : req.headers.origin || 'http://localhost:5173');
