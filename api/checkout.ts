@@ -35,9 +35,9 @@ export default async function handler(req, res) {
     // As URLs de callback dependem do ambiente
     const baseUrl = process.env.VITE_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : req.headers.origin || 'http://localhost:5173');
 
-    const response = await abacatepay.billing.create({
+    const billingParams: any = {
         frequency: productName.toLowerCase().includes('mensal') ? 'MONTHLY' : 'ANNUALLY',
-        methods: ['PIX', 'CREDIT_CARD'], // Aceitando ambos se possível, ou apenas PIX
+        methods: ['PIX'], // Mantendo apenas PIX por segurança conforme sugestão do erro
         products: [{
             externalId: productId,
             name: productName,
@@ -47,8 +47,10 @@ export default async function handler(req, res) {
         }],
         returnUrl: `${baseUrl}/?payment=success`,
         completionUrl: `${baseUrl}/?payment=completion`,
-        customerId: userId // Utilizando o próprio ID do usuário para associá-lo, ou email
-    });
+        customerId: userId 
+    };
+
+    const response: any = await abacatepay.billing.create(billingParams);
 
     // A resposta deve ter a URL para o checkout
     return res.status(200).json({ url: response?.data?.url || response?.url });
