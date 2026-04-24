@@ -18,7 +18,7 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { productId, userId, email } = req.body;
+  const { productId, productName, priceCents, userId, email } = req.body;
 
   if (!productId || !userId || !email) {
     return res.status(400).json({ error: 'Missing required fields' });
@@ -43,16 +43,15 @@ export default async function handler(req: any, res: any) {
     || req.headers.origin
     || 'http://localhost:5173';
 
-  const items = [{ id: productId, quantity: 1 }];
   const urls = {
     returnUrl: `${baseUrl}/?payment=success`,
     completionUrl: `${baseUrl}/?payment=completion`,
   };
 
-  // Tenta /subscriptions/create primeiro (endpoint correto para produtos com ciclo recorrente)
+  // Tenta /subscriptions/create (usa items com ID do produto já cadastrado no AbacatePay)
   try {
     const payload = {
-      items,
+      items: [{ id: productId, quantity: 1 }],
       methods: ['PIX'],
       ...urls,
       metadata: { supabaseUserId: userId },
@@ -68,12 +67,18 @@ export default async function handler(req: any, res: any) {
     console.warn('/subscriptions/create failed:', JSON.stringify(errData || err?.message));
   }
 
-  // Fallback: /billing/create com frequency MULTIPLE_PAYMENTS (payment link)
+  // Fallback: /billing/create com products (campo correto para este endpoint)
   try {
-    const payload = {
+    const payload: any = {
       frequency: 'MULTIPLE_PAYMENTS',
-      items,
       methods: ['PIX'],
+      products: [{
+        externalId: productId,
+        name: productName || productId,
+        description: `Assinatura ${productName || productId}`,
+        quantity: 1,
+        price: priceCents || 0,
+      }],
       ...urls,
       metadata: { supabaseUserId: userId },
     };
