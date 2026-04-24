@@ -1,8 +1,10 @@
 import { X, MonitorSpeaker, RefreshCcw } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../hooks/useAuth';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Channel } from '../types';
+import { PricingModal } from './PricingModal';
+import { supabase } from '../lib/supabase';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -12,18 +14,30 @@ interface SettingsModalProps {
     onOpenAdmin: () => void;
 }
 
-type Tab = 'Geral' | 'Buses' | 'Sobre';
+type Tab = 'Geral' | 'Buses' | 'Assinatura' | 'Sobre';
 
 export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin }: SettingsModalProps) {
     const { settings, updateSetting, availableAudioDevices, refreshAudioDevices } = useSettings();
     const { user } = useAuth();
     const [activeTab, setActiveTab] = useState<Tab>('Geral');
+    const [isPricingOpen, setIsPricingOpen] = useState(false);
+    const [userPlan, setUserPlan] = useState<string>('free');
+
+    useEffect(() => {
+        const fetchPlan = async () => {
+            if (user && supabase) {
+                const { data } = await supabase.from('profiles').select('plan').eq('id', user.id).single();
+                if (data) setUserPlan(data.plan || 'free');
+            }
+        };
+        fetchPlan();
+    }, [user]);
 
     const isAdmin = user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com';
 
     if (!isOpen) return null;
 
-    const tabs: Tab[] = ['Geral', 'Buses', 'Sobre'];
+    const tabs: Tab[] = ['Geral', 'Buses', 'Assinatura', 'Sobre'];
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
@@ -158,6 +172,31 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                         </div>
                     )}
 
+                    {activeTab === 'Assinatura' && (
+                        <div className="flex flex-col items-center justify-center p-6 gap-6">
+                            <div className="w-full max-w-md bg-[#1c1c1e] rounded-xl p-6 border border-border flex flex-col items-center text-center shadow-lg">
+                                <h3 className="text-white text-lg font-bold uppercase tracking-wider mb-2">Seu Plano Atual</h3>
+                                
+                                <div className="text-3xl font-black text-primary uppercase mb-4 tracking-widest">
+                                    {userPlan.replace('_', ' ')}
+                                </div>
+                                
+                                <p className="text-text-muted text-xs font-mono mb-6">
+                                    {userPlan === 'free' 
+                                        ? 'Você está no plano gratuito. Faça upgrade para liberar todas as funcionalidades!'
+                                        : 'Obrigado por apoiar a plataforma! Aproveite todos os recursos do seu plano.'}
+                                </p>
+                                
+                                <button
+                                    onClick={() => setIsPricingOpen(true)}
+                                    className="px-6 py-3 bg-primary text-black text-xs font-bold uppercase tracking-wider rounded-lg transition-transform hover:scale-105 active:scale-95 shadow-[0_0_15px_rgba(182,242,50,0.3)] mb-2"
+                                >
+                                    {userPlan === 'free' ? 'Ver Planos & Assinar' : 'Alterar Plano'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     {activeTab === 'Sobre' && (
                         <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-8">
                             <div className="text-3xl font-black tracking-[0.15em] text-primary uppercase font-mono">PLAYBACK</div>
@@ -167,6 +206,7 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                     )}
                 </div>
             </div>
+            <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
         </div >
     );
 }
