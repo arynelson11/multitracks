@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { createClient } from '@supabase/supabase-js';
 
 // Inicializa o cliente do Supabase com Service Role para poder ignorar RLS no webhook
@@ -6,7 +7,7 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SU
 
 const supabase = createClient(supabaseUrl!, supabaseKey!);
 
-export default async function handler(req, res) {
+export default async function handler(req: any, res: any) {
   // Apenas aceita POST de webhooks
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });

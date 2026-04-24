@@ -1,6 +1,7 @@
+/// <reference types="node" />
 import { AbacatepaySDK } from 'abacate-pay-sdk';
 
-export default async function handler(req, res) {
+export default async function handler(req: any, res: any) {
   // CORS
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -18,9 +19,9 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { productId, productName, priceCents, userId, email } = req.body;
+  const { productId, productName, priceCents, userId, email, name, cellphone, taxId } = req.body;
 
-  if (!productId || !userId || !priceCents) {
+  if (!productId || !userId || !priceCents || !email) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
@@ -31,33 +32,41 @@ export default async function handler(req, res) {
 
   try {
     const abacatepay = new AbacatepaySDK(process.env.ABACATEPAY_ACCESS_TOKEN);
-    
-    // As URLs de callback dependem do ambiente
+
     const baseUrl = process.env.VITE_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : req.headers.origin || 'http://localhost:5173');
 
     const billingParams: any = {
-        frequency: 'SUBSCRIPTION',
-        methods: ['PIX'], // Mantendo apenas PIX por segurança conforme sugestão do erro
+        frequency: 'MULTIPLE_PAYMENT',
+        methods: ['PIX'],
         products: [{
             externalId: productId,
             name: productName,
             description: `Assinatura do Plano ${productName}`,
             quantity: 1,
-            price: priceCents 
+            price: priceCents
         }],
         returnUrl: `${baseUrl}/?payment=success`,
         completionUrl: `${baseUrl}/?payment=completion`,
-        customerId: userId 
+        customer: {
+            name: name || email.split('@')[0],
+            email: email,
+            cellphone: cellphone || '',
+            taxId: taxId || '',
+        },
     };
 
     const response: any = await abacatepay.billing.create(billingParams);
 
-    // A resposta deve ter a URL para o checkout
+    if (response?.error) {
+        console.error('AbacatePay API error:', response.error);
+        return res.status(400).json({ error: 'Checkout creation failed', details: response.error });
+    }
+
     return res.status(200).json({ url: response?.data?.url || response?.url });
   } catch (error: any) {
     console.error('Error creating AbacatePay billing:', error);
-    return res.status(500).json({ 
-        error: 'Failed to create checkout', 
+    return res.status(500).json({
+        error: 'Failed to create checkout',
         details: error?.message || error?.response?.data || error
     });
   }
