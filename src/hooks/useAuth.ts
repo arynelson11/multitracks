@@ -16,7 +16,7 @@ export function useAuth() {
 
         const fetchPlan = async (userId: string) => {
             try {
-                const { data } = await supabase
+                const { data } = await supabase!
                     .from('profiles')
                     .select('plan')
                     .eq('id', userId)
@@ -33,7 +33,7 @@ export function useAuth() {
         };
 
         // Get initial session
-        supabase.auth.getSession().then(({ data: { session } }) => {
+        supabase!.auth.getSession().then(({ data: { session } }) => {
             setSession(session);
             setUser(session?.user ?? null);
             if (session?.user) {
@@ -44,7 +44,7 @@ export function useAuth() {
         });
 
         // Listen for changes on auth state (login, logout, etc)
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const { data: { subscription } } = supabase!.auth.onAuthStateChange((_event, session) => {
             setSession(session);
             setUser(session?.user ?? null);
             if (session?.user) {
