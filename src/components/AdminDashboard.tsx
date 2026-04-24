@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useAdminDashboard, type AdminUser } from '../hooks/useAdminDashboard';
 import { useReplicateStats, type ReplicatePredictionRow, type ReplicateMonthlyCost } from '../hooks/useReplicateStats';
+import { useAbacatePayStats } from '../hooks/useAbacatePayStats';
 
 interface AdminDashboardProps {
     isOpen: boolean;
@@ -214,8 +215,21 @@ function ReplicateSection() {
 
 // ─── Financial section ────────────────────────────────────────────────────────
 
+const STATUS_PAY_STYLE: Record<string, string> = {
+    PAID:      'text-accent-green bg-accent-green/10 border-accent-green/20',
+    ACTIVE:    'text-accent-green bg-accent-green/10 border-accent-green/20',
+    PENDING:   'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
+    EXPIRED:   'text-text-muted bg-white/5 border-white/10',
+    CANCELLED: 'text-accent-red bg-accent-red/10 border-accent-red/20',
+};
+
+function fmtBRL(val: number) {
+    return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
 function FinancialSection() {
-    const { stats, loading } = useReplicateStats();
+    const { stats: repl, loading: replLoading } = useReplicateStats();
+    const { stats: pay, loading: payLoading, error: payError, refetch: payRefetch } = useAbacatePayStats();
 
     const formatMonth = (ym: string) => {
         const [y, m] = ym.split('-');
@@ -223,32 +237,62 @@ function FinancialSection() {
         return date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
     };
 
-    const maxCost = stats ? Math.max(...stats.monthlyCosts.map(c => c.cost), 0.001) : 1;
+    const maxCost = repl ? Math.max(...repl.monthlyCosts.map(c => c.cost), 0.001) : 1;
 
     return (
         <div className="space-y-4">
-            <h3 className="text-white font-black text-xs uppercase tracking-wider flex items-center gap-2">
-                <DollarSign size={14} className="text-accent-green" />
-                Financeiro
-            </h3>
+            <div className="flex items-center justify-between">
+                <h3 className="text-white font-black text-xs uppercase tracking-wider flex items-center gap-2">
+                    <DollarSign size={14} className="text-accent-green" />
+                    Financeiro
+                </h3>
+                <button onClick={payRefetch} disabled={payLoading}
+                    className="p-1.5 text-text-muted hover:text-white hover:bg-white/5 rounded-lg transition-all active:scale-90 cursor-pointer disabled:opacity-30">
+                    <RefreshCw size={13} className={payLoading ? 'animate-spin' : ''} />
+                </button>
+            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {/* Revenue */}
-                <div className="daw-panel rounded-xl p-4 flex flex-col gap-2 relative overflow-hidden col-span-1">
+            {/* AbacatePay KPIs */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {/* Receita total */}
+                <div className="daw-panel rounded-xl p-4 flex flex-col gap-2 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 rounded-full blur-[60px] opacity-10" style={{ backgroundColor: '#10b981' }} />
                     <div className="flex items-center justify-between">
-                        <div className="p-2 rounded-lg border border-white/5 bg-white/3">
-                            <TrendingUp size={16} className="text-text-muted/40" />
+                        <div className="p-2 rounded-lg border border-accent-green/20 bg-accent-green/10">
+                            <TrendingUp size={16} className="text-accent-green" />
                         </div>
-                        <span className="text-[9px] font-bold text-text-muted/50 uppercase tracking-widest font-mono">Receita</span>
+                        <span className="text-[9px] font-bold text-text-muted uppercase tracking-widest font-mono">Receita</span>
                     </div>
-                    <span className="text-2xl font-black text-text-muted/30 tracking-tight">—</span>
-                    <div className="flex items-center gap-1.5 mt-1">
-                        <AlertCircle size={10} className="text-yellow-500 shrink-0" />
-                        <span className="text-[9px] text-yellow-500/80 font-mono">Sem integração de pagamentos</span>
-                    </div>
+                    {payLoading ? <div className="h-8 w-24 animate-pulse bg-white/5 rounded" /> : (
+                        <span className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                            {pay ? fmtBRL(pay.totalRevenueBRL) : '—'}
+                        </span>
+                    )}
+                    <span className="text-[9px] text-text-muted font-mono">
+                        {pay ? `${pay.paidCount} pagos de ${pay.totalCheckouts} cobranças` : payError ? '⚠ erro ao carregar' : ''}
+                    </span>
                 </div>
 
-                {/* Gasto este mês */}
+                {/* Assinaturas ativas */}
+                <div className="daw-panel rounded-xl p-4 flex flex-col gap-2 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 rounded-full blur-[60px] opacity-10" style={{ backgroundColor: '#8b5cf6' }} />
+                    <div className="flex items-center justify-between">
+                        <div className="p-2 rounded-lg border border-purple-500/20 bg-purple-500/10">
+                            <Activity size={16} className="text-purple-400" />
+                        </div>
+                        <span className="text-[9px] font-bold text-text-muted uppercase tracking-widest font-mono">Assinaturas</span>
+                    </div>
+                    {payLoading ? <div className="h-8 w-16 animate-pulse bg-white/5 rounded" /> : (
+                        <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                            {pay ? pay.activeSubscriptions : '—'}
+                        </span>
+                    )}
+                    <span className="text-[9px] text-text-muted font-mono">
+                        {pay ? `${pay.totalSubscriptions} total` : ''}
+                    </span>
+                </div>
+
+                {/* Replicate 30d */}
                 <div className="daw-panel rounded-xl p-4 flex flex-col gap-2 relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-24 h-24 rounded-full blur-[60px] opacity-10" style={{ backgroundColor: '#ef4444' }} />
                     <div className="flex items-center justify-between">
@@ -257,19 +301,17 @@ function FinancialSection() {
                         </div>
                         <span className="text-[9px] font-bold text-text-muted uppercase tracking-widest font-mono">Replicate 30d</span>
                     </div>
-                    {loading ? (
-                        <div className="h-8 w-24 animate-pulse bg-white/5 rounded" />
-                    ) : (
+                    {replLoading ? <div className="h-8 w-24 animate-pulse bg-white/5 rounded" /> : (
                         <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                            {stats ? fmtUSD(stats.recentCostUSD) : '—'}
+                            {repl ? fmtUSD(repl.recentCostUSD) : '—'}
                         </span>
                     )}
                     <span className="text-[9px] text-text-muted font-mono">
-                        {stats ? `${stats.recentTotal} runs · ${fmtTime(stats.recentPredictTime)} compute` : ''}
+                        {repl ? `${repl.recentTotal} runs · ${fmtTime(repl.recentPredictTime)} compute` : ''}
                     </span>
                 </div>
 
-                {/* Gasto total */}
+                {/* Replicate total */}
                 <div className="daw-panel rounded-xl p-4 flex flex-col gap-2 relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-24 h-24 rounded-full blur-[60px] opacity-10" style={{ backgroundColor: '#f59e0b' }} />
                     <div className="flex items-center justify-between">
@@ -278,21 +320,45 @@ function FinancialSection() {
                         </div>
                         <span className="text-[9px] font-bold text-text-muted uppercase tracking-widest font-mono">Replicate Total</span>
                     </div>
-                    {loading ? (
-                        <div className="h-8 w-24 animate-pulse bg-white/5 rounded" />
-                    ) : (
+                    {replLoading ? <div className="h-8 w-24 animate-pulse bg-white/5 rounded" /> : (
                         <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                            {stats ? fmtUSD(stats.totalCostUSD) : '—'}
+                            {repl ? fmtUSD(repl.totalCostUSD) : '—'}
                         </span>
                     )}
                     <span className="text-[9px] text-text-muted font-mono">
-                        {stats ? `${stats.total} runs acumulados` : ''}
+                        {repl ? `${repl.total} runs acumulados` : ''}
                     </span>
                 </div>
             </div>
 
-            {/* Monthly cost chart */}
-            {stats && stats.monthlyCosts.length > 0 && (
+            {/* Últimos pagamentos */}
+            {pay && pay.recent.length > 0 && (
+                <div className="daw-panel rounded-lg overflow-hidden">
+                    <div className="flex items-center gap-2 px-4 py-2.5 bg-[#141416] border-b border-border text-[9px] font-bold text-text-muted/50 uppercase tracking-widest font-mono">
+                        <DollarSign size={11} className="text-accent-green" />
+                        <span className="flex-1">Últimos pagamentos (AbacatePay)</span>
+                    </div>
+                    <div className="divide-y divide-border max-h-48 overflow-y-auto">
+                        {pay.recent.map(p => (
+                            <div key={p.id} className="flex items-center gap-3 px-4 py-2 hover:bg-white/3 transition-colors">
+                                <span className="flex-1 text-[10px] text-text-muted font-mono truncate">{p.id}</span>
+                                <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${STATUS_PAY_STYLE[p.status] ?? STATUS_PAY_STYLE.EXPIRED}`}>
+                                    {p.status}
+                                </span>
+                                <span className="text-[10px] text-accent-green font-mono font-bold w-20 text-right">
+                                    {p.amount > 0 ? fmtBRL(p.amount / 100) : '—'}
+                                </span>
+                                <span className="text-[10px] text-text-muted font-mono w-16 text-right hidden sm:block">
+                                    {p.createdAt ? new Date(p.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }) : '—'}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Monthly Replicate cost chart */}
+            {repl && repl.monthlyCosts.length > 0 && (
                 <div className="daw-panel rounded-lg p-4 space-y-3">
                     <div className="flex items-center gap-2">
                         <BarChart3 size={12} className="text-accent-green" />
@@ -300,7 +366,7 @@ function FinancialSection() {
                         <span className="text-[9px] text-text-muted/40 font-mono ml-1">— custo estimado por mês</span>
                     </div>
                     <div className="flex items-end gap-2 h-20">
-                        {stats.monthlyCosts.map((mc: ReplicateMonthlyCost) => {
+                        {repl.monthlyCosts.map((mc: ReplicateMonthlyCost) => {
                             const heightPct = (mc.cost / maxCost) * 100;
                             return (
                                 <div key={mc.month} className="flex-1 flex flex-col items-center gap-1 group">
