@@ -31,7 +31,7 @@ export default async function handler(req: any, res: any) {
   }
 
   const api = axios.create({
-    baseURL: 'https://api.abacatepay.com/v1',
+    baseURL: 'https://api.abacatepay.com/v2',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
