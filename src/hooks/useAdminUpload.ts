@@ -168,6 +168,42 @@ export function useAdminUpload() {
         }
     }, []);
 
+    const uploadSamples = useCallback(async (
+        bucket: string,
+        files: File[],
+        collectionName: string
+    ) => {
+        setIsUploading(true);
+        setProgress(0);
+        setStatus(`Iniciando upload para ${bucket}...`);
+        setError(null);
+
+        try {
+            const { supabase } = await import('../lib/supabase');
+            if (!supabase) throw new Error('Erro de conexão com Supabase');
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const filePath = `${collectionName.trim().toLowerCase().replace(/\s+/g, '_')}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+                setStatus(`Subindo ${i + 1} de ${files.length}: ${file.name}`);
+                const { error: uploadError } = await supabase.storage.from(bucket).upload(filePath, file, { contentType: file.type || 'audio/mpeg' });
+                if (uploadError) throw new Error(`Erro: ${uploadError.message}`);
+                setProgress(Math.floor(((i + 1) / files.length) * 100));
+            }
+
+            setProgress(100);
+            setStatus('Sucesso! Arquivos publicados.');
+            return true;
+        } catch (e: any) {
+            console.error('Sample Upload failed:', e);
+            setError(e.message || 'Erro no upload');
+            setStatus('Erro no processo.');
+            return false;
+        } finally {
+            setIsUploading(false);
+        }
+    }, []);
+
     return {
         isUploading,
         progress,
@@ -175,6 +211,7 @@ export function useAdminUpload() {
         error,
         uploadProject,
         uploadSystemPads,
+        uploadSamples,
         resetState: () => {
             setProgress(0);
             setStatus('');

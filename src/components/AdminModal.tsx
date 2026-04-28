@@ -1,7 +1,6 @@
 import { useState, useRef } from 'react';
 import { X, Upload, Music, Image as ImageIcon, Loader2, AlertCircle, CheckCircle2, ChevronRight, Hash, Activity, Layers, Disc, Repeat } from 'lucide-react';
 import { useAdminUpload, type UploadMetadata } from '../hooks/useAdminUpload';
-import { supabase } from '../lib/supabase';
 
 interface AdminModalProps {
     isOpen: boolean;
@@ -11,7 +10,7 @@ interface AdminModalProps {
 const REQUIRED_NOTES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
 export function AdminModal({ isOpen, onClose }: AdminModalProps) {
-    const { isUploading, progress, status, error, uploadProject, uploadSystemPads, resetState } = useAdminUpload();
+    const { isUploading, progress, status, error, uploadProject, uploadSystemPads, uploadSamples, resetState } = useAdminUpload();
 
     const [activeTab, setActiveTab] = useState<'music' | 'pads' | 'samples' | 'loops'>('music');
 
@@ -57,27 +56,8 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
         } else {
             // Samples or Loops
             if (sampleFiles.length === 0 || !sampleName.trim()) return;
-            const bucket = activeTab; // 'samples' or 'loops'
-            setIsUploading(true);
-            setProgress(0);
-            setStatus(`Iniciando upload para ${bucket}...`);
-            setError(null);
-            try {
-                for (let i = 0; i < sampleFiles.length; i++) {
-                    const file = sampleFiles[i];
-                    const filePath = `${sampleName.trim().toLowerCase().replace(/\s+/g, '_')}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
-                    setStatus(`Subindo ${i + 1} de ${sampleFiles.length}: ${file.name}`);
-                    const { error: uploadError } = await supabase.storage.from(bucket).upload(filePath, file, { contentType: file.type || 'audio/mpeg' });
-                    if (uploadError) throw new Error(`Erro: ${uploadError.message}`);
-                    setProgress(Math.floor(((i + 1) / sampleFiles.length) * 100));
-                }
-                setIsSuccess(true);
-            } catch (e: any) {
-                setError(e.message || 'Erro no upload');
-            } finally {
-                setIsUploading(false);
-            }
-            return;
+            const success = await uploadSamples(activeTab, sampleFiles, sampleName);
+            if (success) setIsSuccess(true);
         }
     };
 
