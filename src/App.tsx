@@ -1,7 +1,8 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
-import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut, Shield, Home } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut, Shield, Home, Disc, Repeat, Square } from 'lucide-react'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { usePadSynth } from './hooks/usePadSynth'
+import { useSamplesLibrary } from './hooks/useSamplesLibrary'
 import { SettingsModal } from './components/SettingsModal'
 import { MetronomeModal } from './components/MetronomeModal'
 import { LibraryModal } from './components/LibraryModal'
@@ -36,6 +37,8 @@ export default function App() {
 
   const { playPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume, selectedPadSet, selectPadSet, padMode } = usePadSynth()
   const [isPricingOpen, setIsPricingOpen] = useState(false)
+  const [padActiveView, setPadActiveView] = useState<'pads' | 'samples' | 'loops'>('pads')
+  const { samples, loops, loading: samplesLoading, playingUrl, playSample, stopPlayback } = useSamplesLibrary()
   const mixerRef = useRef<HTMLDivElement>(null)
 
   const [showAuth, setShowAuth] = useState(false)
@@ -1195,85 +1198,166 @@ export default function App() {
           <div className={`bg-[#18181a] border-l border-border p-3 sm:p-4 flex flex-col z-10 shadow-[-10px_0_20px_rgba(0,0,0,0.4)]
             ${mobileView === 'pads' ? 'flex w-full' : 'hidden'} lg:flex lg:w-96`}>
             <div className="font-bold text-[10px] tracking-[0.15em] text-text-muted mb-2 flex justify-between uppercase items-center font-mono">
-              <span>REPRODUTOR DE PADS</span>
-              <button onClick={() => setIsPadEditMode(!isPadEditMode)}
-                className={`text-[9px] border px-2 py-0.5 rounded font-bold cursor-pointer transition-all active:scale-95 font-mono tracking-wider ${isPadEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'border-border text-text-muted hover:bg-white/5 hover:text-white'}`}>
-                {isPadEditMode ? 'PRONTO' : 'EDITAR'}
-              </button>
+              <span>{padActiveView === 'pads' ? 'REPRODUTOR DE PADS' : padActiveView === 'samples' ? 'SAMPLES' : 'LOOPS'}</span>
+              {padActiveView === 'pads' && (
+                <button onClick={() => setIsPadEditMode(!isPadEditMode)}
+                  className={`text-[9px] border px-2 py-0.5 rounded font-bold cursor-pointer transition-all active:scale-95 font-mono tracking-wider ${isPadEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'border-border text-text-muted hover:bg-white/5 hover:text-white'}`}>
+                  {isPadEditMode ? 'PRONTO' : 'EDITAR'}
+                </button>
+              )}
             </div>
 
-            {/* Pad Source Selector */}
-            {/* Pad Cloud Selector */}
-            <div className="flex gap-1 mb-2">
+            {/* Pad Cloud Selector — only in pads view */}
+            {padActiveView === 'pads' && (
+              <div className="flex gap-1 mb-2">
+                <button
+                  onClick={() => handlePremiumFeature(() => setIsPadSetsModalOpen(true))}
+                  className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center gap-1.5 font-mono tracking-wider border transition-all active:scale-95 cursor-pointer
+                    ${padMode === 'system'
+                      ? 'bg-secondary/15 text-secondary border-secondary/30'
+                      : 'bg-white/3 text-text-muted border-border hover:bg-white/5 hover:text-white'
+                    }`}>
+                  <Cloud size={10} />
+                  {padMode === 'system' && selectedPadSet ? selectedPadSet.name : 'PADS NUVEM'}
+                </button>
+              </div>
+            )}
+
+            {/* ═══ 3-WAY VIEW TOGGLE ═══ */}
+            <div className="flex gap-1 mb-3">
               <button
-                onClick={() => handlePremiumFeature(() => setIsPadSetsModalOpen(true))}
+                onClick={() => { stopPlayback(); setPadActiveView('pads'); }}
                 className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center gap-1.5 font-mono tracking-wider border transition-all active:scale-95 cursor-pointer
-                  ${padMode === 'system'
+                  ${padActiveView === 'pads'
                     ? 'bg-secondary/15 text-secondary border-secondary/30'
                     : 'bg-white/3 text-text-muted border-border hover:bg-white/5 hover:text-white'
                   }`}>
-                <Cloud size={10} />
-                {padMode === 'system' && selectedPadSet ? selectedPadSet.name : 'PADS NUVEM'}
+                <Music size={10} /> PADS
+              </button>
+              <button
+                onClick={() => setPadActiveView('samples')}
+                className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center gap-1.5 font-mono tracking-wider border transition-all active:scale-95 cursor-pointer
+                  ${padActiveView === 'samples'
+                    ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+                    : 'bg-white/3 text-text-muted border-border hover:bg-purple-500/10 hover:text-purple-300 hover:border-purple-500/30'
+                  }`}>
+                <Disc size={10} /> SAMPLES
+              </button>
+              <button
+                onClick={() => setPadActiveView('loops')}
+                className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center gap-1.5 font-mono tracking-wider border transition-all active:scale-95 cursor-pointer
+                  ${padActiveView === 'loops'
+                    ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+                    : 'bg-white/3 text-text-muted border-border hover:bg-cyan-500/10 hover:text-cyan-300 hover:border-cyan-500/30'
+                  }`}>
+                <Repeat size={10} /> LOOPS
               </button>
             </div>
 
-            {/* Samples & Loops Buttons */}
-            <div className="flex gap-1 mb-3">
-              <button
-                onClick={() => handlePremiumFeature(() => {})}
-                className="flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center gap-1.5 font-mono tracking-wider border transition-all active:scale-95 cursor-pointer bg-white/3 text-text-muted border-border hover:bg-purple-500/10 hover:text-purple-300 hover:border-purple-500/30"
-              >
-                🎵 SAMPLES
-              </button>
-              <button
-                onClick={() => handlePremiumFeature(() => {})}
-                className="flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center gap-1.5 font-mono tracking-wider border transition-all active:scale-95 cursor-pointer bg-white/3 text-text-muted border-border hover:bg-cyan-500/10 hover:text-cyan-300 hover:border-cyan-500/30"
-              >
-                🔁 LOOPS
-              </button>
-            </div>
-
-            {/* Volume */}
-            <div className="flex items-center gap-3 mb-3 px-1">
-              <span className="text-[9px] text-text-muted uppercase tracking-[0.15em] font-bold shrink-0 font-mono">VOL</span>
-              <input type="range" min="0" max="1" step="0.01" value={padVolume}
-                onChange={(e) => updatePadVolume(parseFloat(e.target.value))}
-                className="daw-slider flex-1" />
-              <span className="text-[9px] text-text-muted font-mono w-8 text-right font-bold">{Math.round(padVolume * 100)}%</span>
-            </div>
-            {/* Grid */}
-            <div className="flex-1 grid grid-cols-4 sm:grid-cols-4 lg:grid-cols-3 gap-1.5 sm:gap-2">
-              {['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map(note => (
-                <div key={note} className="relative">
-                  <button onClick={() => !isPadEditMode && playPad(note)}
-                    className={`
-                      mpc-pad w-full h-full rounded-lg flex flex-col items-center justify-center text-base sm:text-lg font-bold cursor-pointer min-h-[48px] sm:min-h-[56px] active:scale-95 font-mono relative
-                      ${activeNote === note
-                        ? 'pressed border-secondary/50 text-secondary shadow-[0_0_15px_rgba(6,182,212,0.3)]'
-                        : customPads.has(note) ? 'border-purple-500/30 text-purple-300 hover:border-purple-400/50' : 'text-text-main/70 hover:text-white hover:border-border-light'}
-                    `}>
-                    {/* LED indicator */}
-                    <div className={`absolute top-1.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full transition-all ${activeNote === note ? 'bg-secondary shadow-[0_0_6px_rgba(6,182,212,0.8)]' : customPads.has(note) ? 'bg-purple-500/50' : 'bg-white/10'}`}></div>
-                    <span className="mt-1">{note}</span>
-                    {customPads.has(note) && <span className="text-[6px] mt-0.5 opacity-50 truncate max-w-full px-1 uppercase tracking-wider">{customPadNames.get(note) || 'Person.'}</span>}
-                    {activeNote === note && <span className="text-[7px] tracking-[0.2em] font-bold opacity-50 uppercase text-secondary">TOCANDO</span>}
-                  </button>
-                  {isPadEditMode && (
-                    <div className="absolute inset-0 bg-black/85 rounded-lg flex flex-col items-center justify-center gap-1 z-10 border border-border">
-                      <label className="text-[7px] font-bold text-white uppercase cursor-pointer hover:text-primary transition-colors flex items-center gap-1 font-mono tracking-wider">
-                        <Upload size={9} />CARREGAR
-                        <input type="file" accept="audio/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) loadCustomPad(note, f) }} />
-                      </label>
-                      {customPads.has(note) && (
-                        <button onClick={() => clearCustomPad(note)} className="text-[7px] font-bold text-accent-red hover:text-red-300 cursor-pointer flex items-center gap-1 font-mono tracking-wider">
-                          <X size={8} /> REMOVER
-                        </button>
+            {/* ═══ CONDITIONAL CONTENT AREA ═══ */}
+            {padActiveView === 'pads' ? (
+              <>
+                {/* Volume */}
+                <div className="flex items-center gap-3 mb-3 px-1">
+                  <span className="text-[9px] text-text-muted uppercase tracking-[0.15em] font-bold shrink-0 font-mono">VOL</span>
+                  <input type="range" min="0" max="1" step="0.01" value={padVolume}
+                    onChange={(e) => updatePadVolume(parseFloat(e.target.value))}
+                    className="daw-slider flex-1" />
+                  <span className="text-[9px] text-text-muted font-mono w-8 text-right font-bold">{Math.round(padVolume * 100)}%</span>
+                </div>
+                {/* Grid */}
+                <div className="flex-1 grid grid-cols-4 sm:grid-cols-4 lg:grid-cols-3 gap-1.5 sm:gap-2">
+                  {['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map(note => (
+                    <div key={note} className="relative">
+                      <button onClick={() => !isPadEditMode && playPad(note)}
+                        className={`
+                          mpc-pad w-full h-full rounded-lg flex flex-col items-center justify-center text-base sm:text-lg font-bold cursor-pointer min-h-[48px] sm:min-h-[56px] active:scale-95 font-mono relative
+                          ${activeNote === note
+                            ? 'pressed border-secondary/50 text-secondary shadow-[0_0_15px_rgba(6,182,212,0.3)]'
+                            : customPads.has(note) ? 'border-purple-500/30 text-purple-300 hover:border-purple-400/50' : 'text-text-main/70 hover:text-white hover:border-border-light'}
+                        `}>
+                        {/* LED indicator */}
+                        <div className={`absolute top-1.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full transition-all ${activeNote === note ? 'bg-secondary shadow-[0_0_6px_rgba(6,182,212,0.8)]' : customPads.has(note) ? 'bg-purple-500/50' : 'bg-white/10'}`}></div>
+                        <span className="mt-1">{note}</span>
+                        {customPads.has(note) && <span className="text-[6px] mt-0.5 opacity-50 truncate max-w-full px-1 uppercase tracking-wider">{customPadNames.get(note) || 'Person.'}</span>}
+                        {activeNote === note && <span className="text-[7px] tracking-[0.2em] font-bold opacity-50 uppercase text-secondary">TOCANDO</span>}
+                      </button>
+                      {isPadEditMode && (
+                        <div className="absolute inset-0 bg-black/85 rounded-lg flex flex-col items-center justify-center gap-1 z-10 border border-border">
+                          <label className="text-[7px] font-bold text-white uppercase cursor-pointer hover:text-primary transition-colors flex items-center gap-1 font-mono tracking-wider">
+                            <Upload size={9} />CARREGAR
+                            <input type="file" accept="audio/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) loadCustomPad(note, f) }} />
+                          </label>
+                          {customPads.has(note) && (
+                            <button onClick={() => clearCustomPad(note)} className="text-[7px] font-bold text-accent-red hover:text-red-300 cursor-pointer flex items-center gap-1 font-mono tracking-wider">
+                              <X size={8} /> REMOVER
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
-                  )}
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            ) : (
+              /* ═══ SAMPLES / LOOPS LIST VIEW ═══ */
+              <div className="flex-1 flex flex-col min-h-0">
+                {samplesLoading ? (
+                  <div className="flex-1 flex items-center justify-center">
+                    <Loader2 size={20} className="animate-spin text-text-muted" />
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                    {(padActiveView === 'samples' ? samples : loops).length === 0 ? (
+                      <div className="flex-1 flex flex-col items-center justify-center py-12 text-center">
+                        {padActiveView === 'samples' ? <Disc size={28} className="text-purple-500/30 mb-3" /> : <Repeat size={28} className="text-cyan-500/30 mb-3" />}
+                        <p className="text-[10px] text-text-muted font-mono uppercase tracking-wider mb-1">Nenhum {padActiveView === 'samples' ? 'sample' : 'loop'} encontrado</p>
+                        <p className="text-[9px] text-text-muted/50 font-mono">Use o Admin para enviar ficheiros</p>
+                      </div>
+                    ) : (
+                      (padActiveView === 'samples' ? samples : loops).map((item, i) => (
+                        <button
+                          key={i}
+                          onClick={() => playSample(item.url)}
+                          className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-md border transition-all active:scale-[0.98] cursor-pointer text-left group
+                            ${playingUrl === item.url
+                              ? padActiveView === 'samples'
+                                ? 'bg-purple-500/10 border-purple-500/30 text-purple-300'
+                                : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
+                              : 'bg-white/3 border-border hover:bg-white/5 hover:border-white/10 text-text-main'
+                            }`}
+                        >
+                          {/* Play/Stop icon */}
+                          <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 transition-all
+                            ${playingUrl === item.url
+                              ? padActiveView === 'samples' ? 'bg-purple-500/20' : 'bg-cyan-500/20'
+                              : 'bg-white/5 group-hover:bg-white/10'
+                            }`}>
+                            {playingUrl === item.url
+                              ? <Square size={10} className="fill-current" />
+                              : <Play size={10} className="fill-current ml-0.5" />
+                            }
+                          </div>
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-bold truncate font-mono">{item.name}</p>
+                            {item.folder && <p className="text-[8px] text-text-muted/60 font-mono truncate uppercase tracking-wider">{item.folder}</p>}
+                          </div>
+                          {/* Playing indicator */}
+                          {playingUrl === item.url && (
+                            <div className="flex gap-0.5 items-end h-3">
+                              <div className="w-0.5 bg-current rounded-full bar-anim" style={{ animationDelay: '0s', height: '40%' }} />
+                              <div className="w-0.5 bg-current rounded-full bar-anim" style={{ animationDelay: '0.15s', height: '70%' }} />
+                              <div className="w-0.5 bg-current rounded-full bar-anim" style={{ animationDelay: '0.3s', height: '50%' }} />
+                            </div>
+                          )}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </section>
       </main>
