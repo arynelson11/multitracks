@@ -28,7 +28,7 @@ const FEATURES_PLAYER = [
   { icon: Music,             title: 'Metrônomo com IA',               desc: 'Gere click tracks via IA (detecta BPM automaticamente) ou defina manualmente. Precount configurável.' },
   { icon: Move,              title: 'Drag & Drop Intuitivo',          desc: 'Reordene músicas na setlist e canais no mixer arrastando. Workflow rápido e sem atrito.' },
   { icon: MonitorPlay,       title: 'Playlist / Setlist Completa',    desc: 'Monte repertórios completos, importe e exporte em .zip com áudios e configurações salvas.' },
-  { icon: FileAudio,         title: 'Biblioteca em Nuvem',            desc: 'Acesse músicas, stems, metadados e marcadores de qualquer dispositivo, a qualquer hora.' },
+  { icon: FileAudio,         title: 'Biblioteca em Nuvem',            desc: 'Acesse músicas e stems de qualquer dispositivo, a qualquer hora. Sincronização automática entre aparelhos.' },
 ]
 
 const PLANS = [
@@ -43,7 +43,6 @@ const PLANS = [
       'Player com até 5 músicas',
       'Mixer básico multicanal',
       'Metrônomo manual',
-      'Marcadores de seção',
       'Sem biblioteca em nuvem',
     ],
     cta: 'Começar Grátis',
@@ -62,8 +61,7 @@ const PLANS = [
       'VU Meters em tempo real',
       'Alteração de tom (pitch)',
       'Metrônomo com IA + precount',
-      'Teleprompter com letras',
-      'Pad Synth integrado (9 pads)',
+      'Pad Synth integrado (12 notas musicais)',
       'Import/Export de repertório (ZIP)',
       'Sincronização entre dispositivos',
     ],
@@ -81,7 +79,6 @@ const PLANS = [
       'Biblioteca em nuvem ilimitada',
       'Processamento de IA prioritário',
       'Upload de faixas para biblioteca',
-      'Gerenciamento de banda/equipe',
       'Múltiplos repertórios simultâneos',
       'Suporte prioritário via chat',
     ],
@@ -94,7 +91,7 @@ const FAQS = [
   { q: 'O que são multitracks / stems?', a: 'Multitracks são as faixas individuais de uma música — bateria separada, baixo separado, vocais separados etc. Com o Playback Studio você controla cada instrumento independentemente: silencia, ajusta volume, muda tom de cada canal.' },
   { q: 'Como funciona a separação de faixas com IA?', a: 'Você carrega qualquer música (MP3, WAV, FLAC, M4A) no Separator Studio. Nossa IA analisa e separa em stems: vocais, bateria, baixo, guitarra, piano e outros elementos. Os stems ficam disponíveis direto no seu mixer para uso imediato.' },
   { q: 'Funciona no celular (iPhone/Android)?', a: 'Sim! É um Progressive Web App otimizado para mobile. Funciona no navegador do iPhone e Android sem instalar nada. A interface se adapta completamente à tela do celular.' },
-  { q: 'Posso usar ao vivo no palco?', a: 'Com certeza — foi projetado para isso. Funciona offline após carregar as músicas, com interface de baixa latência, modo teleprompter para letras, precount para entrar no tempo e controle total de cada canal em tempo real.' },
+  { q: 'Posso usar ao vivo no palco?', a: 'Com certeza — foi projetado para isso. Funciona offline após carregar as músicas, com interface de baixa latência, precount para entrar no tempo e controle total de cada canal em tempo real.' },
   { q: 'O app funciona offline, sem internet?', a: 'Após carregar as músicas e stems, o player e o mixer funcionam completamente offline. A separação com IA e a sincronização com a nuvem requerem conexão, mas tudo que você já carregou fica disponível mesmo sem internet.' },
   { q: 'Posso cancelar quando quiser?', a: 'Sim, sem fidelidade e sem multa. Cancele quando quiser direto pelo painel. O acesso continua até o fim do período pago.' },
 ]
@@ -237,22 +234,6 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         </div>
       </section>
 
-      {/* ════════ STATS ════════ */}
-      <section className="py-16 px-5 sm:px-8 border-y border-white/[0.05]">
-        <div className="max-w-3xl mx-auto grid grid-cols-3 gap-4 sm:gap-8 text-center">
-          {[
-            { n: '10.000+', label: 'Músicos ativos' },
-            { n: '500+',    label: 'Ministérios de Louvor' },
-            { n: '5.000+',  label: 'Faixas separadas com IA' },
-          ].map((s, i) => (
-            <div key={i}>
-              <div className="text-[clamp(1.8rem,5vw,3rem)] font-black text-white leading-none">{s.n}</div>
-              <div className="text-[12px] sm:text-[13px] text-white/35 mt-1.5">{s.label}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
       {/* ════════ 2 MÓDULOS ════════ */}
       <section className="py-24 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto">
@@ -267,10 +248,10 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                 <h3 className="text-xl font-black mb-3">Playback Studio</h3>
                 <p className="text-white/40 text-[14px] leading-relaxed mb-5">
                   Motor de multitracks profissional com mixer completo, VU meters, alteração de tom,
-                  metrônomo com IA, teleprompter e biblioteca em nuvem.
+                  metrônomo com IA, Pad Synth e biblioteca em nuvem.
                 </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {['Mixer','Pitch','Metrônomo IA','Teleprompter','Nuvem','Pad Synth'].map(t => (
+                  {['Mixer','Pitch','Metrônomo IA','Nuvem','Pad Synth'].map(t => (
                     <span key={t} className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20">{t}</span>
                   ))}
                 </div>
@@ -410,14 +391,14 @@ export function LandingPage({ onEnter }: LandingPageProps) {
               </div>
               <h3 className="text-2xl font-black mb-3">Pad Synth Integrado</h3>
               <p className="text-white/38 text-[14px] leading-relaxed">
-                9 pads de sintetizador direto na interface. Crie atmosferas e pads suaves
-                durante a ministração. Múltiplos conjuntos personalizáveis com controle de volume e modo de execução.
+                12 pads contínuos, samples e loops organizados por nota musical. Crie atmosferas
+                e texturas sonoras em tempo real durante a ministração, com controle de volume e sustain.
               </p>
             </div>
-            <div className="grid grid-cols-3 gap-2 shrink-0">
-              {Array.from({length:9}).map((_,i) => (
-                <div key={i} className={`w-12 h-12 rounded-xl border flex items-center justify-center text-[12px] font-black transition-all ${i===4?'bg-cyan-500/25 border-cyan-400/50 text-cyan-300':'bg-white/[0.04] border-white/10 text-white/22 hover:bg-white/[0.07]'}`}>
-                  {String.fromCharCode(65+i)}
+            <div className="grid grid-cols-4 gap-2 shrink-0">
+              {['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'].map((note,i) => (
+                <div key={i} className={`w-11 h-11 rounded-xl border flex items-center justify-center text-[11px] font-black transition-all ${note.includes('#')?'bg-white/[0.07] border-white/15 text-white/40':'bg-white/[0.04] border-white/10 text-white/22 hover:bg-white/[0.07]'} ${i===0?'bg-cyan-500/25 border-cyan-400/50 text-cyan-300':''}`}>
+                  {note}
                 </div>
               ))}
             </div>
@@ -508,9 +489,9 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           </h2>
           <div className="grid sm:grid-cols-3 gap-5">
             {[
-              {name:'Lucas Ferreira',  role:'Líder de Louvor',    text:'Finalmente um app que tem tudo junto. Separo as faixas com IA, jogo no mixer, ajusto o tom — sem sair do app. Transformou minha ministração.'},
-              {name:'Ana Paula Costa', role:'Tecladista & Cantora',text:'O metrônomo com IA detecta o BPM e gera o click track perfeito automaticamente. O teleprompter no palco é genial. Não uso mais nada.'},
-              {name:'Rodrigo Melo',    role:'Baterista',           text:'Os marcadores de seção me ajudam a ver toda a estrutura da música em tempo real. E poder silenciar minha faixa na hora H é incrível.'},
+              {name:'Lucas Ferreira',  role:'Líder de Louvor',    text:'Finalmente um app que tem tudo junto. Separo as faixas com IA, jogo no mixer, ajusto o tom — sem sair do app. Transformou completamente minha ministração.'},
+              {name:'Ana Paula Costa', role:'Tecladista & Cantora',text:'O metrônomo com IA detecta o BPM e gera o click track perfeito automaticamente. O Pad Synth integrado com as 12 notas é incrível para criar atmosferas ao vivo.'},
+              {name:'Rodrigo Melo',    role:'Baterista',           text:'Consigo extrair só a bateria de qualquer música e treinar em cima. Poder silenciar minha faixa na hora H durante o culto é algo que não consigo mais viver sem.'},
             ].map((r,i) => (
               <div key={i} className="hover-lift bg-white/[0.02] border border-white/[0.06] rounded-2xl p-6">
                 <div className="flex gap-0.5 mb-4">
