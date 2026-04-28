@@ -5,6 +5,7 @@ import {
   ArrowRight, SlidersHorizontal, FileAudio, MonitorPlay,
   Move, BarChart2, Church, Disc3
 } from 'lucide-react'
+import { DemoMixer } from './DemoMixer'
 
 interface LandingPageProps {
   onEnter: () => void
@@ -139,7 +140,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       </nav>
 
       {/* ════════ HERO ════════ */}
-      <section className="relative min-h-screen flex flex-col items-center justify-center px-5 sm:px-8 pt-14 pb-20 overflow-hidden">
+      <section className="relative min-h-screen flex flex-col items-center justify-center px-5 sm:px-8 pt-24 pb-20 overflow-hidden">
         {/* Atmosphere */}
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-[38%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[500px] rounded-full bg-orange-500/[0.05] blur-[130px]" />
@@ -177,59 +178,9 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <p className="text-[12px] text-white/20 mt-5">Grátis para começar · Sem cartão de crédito</p>
         </div>
 
-        {/* Mixer mockup */}
+        {/* Interactive mixer demo */}
         <div className="relative mt-16 w-full max-w-3xl mx-auto float">
-          <div className="glow-o rounded-2xl overflow-hidden border border-white/[0.09] bg-[#111113]">
-            <div className="flex items-center gap-1.5 px-4 h-9 border-b border-white/[0.06] bg-[#0e0e10]">
-              <div className="w-2.5 h-2.5 rounded-full bg-red-500/50" />
-              <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/50" />
-              <div className="w-2.5 h-2.5 rounded-full bg-green-500/50" />
-              <span className="ml-auto text-[10px] text-white/15 font-mono tracking-wider">PLAYBACK STUDIO — MIXER AO VIVO</span>
-            </div>
-            <div className="p-5">
-              <div className="grid grid-cols-8 gap-2">
-                {[
-                  {n:'Click',   c:'#94a3b8',h:72},{n:'Vocais',  c:'#06b6d4',h:58},
-                  {n:'Bateria', c:'#f59e0b',h:82},{n:'Baixo',   c:'#10b981',h:54},
-                  {n:'Guitarra',c:'#ef4444',h:44},{n:'Piano',   c:'#8b5cf6',h:66},
-                  {n:'Pad',     c:'#ec4899',h:36},{n:'Master',  c:'#f97316',h:88},
-                ].map((ch, i) => (
-                  <div key={i} className="flex flex-col items-center gap-1.5">
-                    <span className="text-[8px] sm:text-[9px] font-bold truncate w-full text-center" style={{color:ch.c}}>{ch.n}</span>
-                    <div className="w-full h-20 bg-black/50 rounded-sm border border-white/[0.04] flex flex-col-reverse overflow-hidden">
-                      <div className="w-full" style={{height:`${ch.h}%`,background:`linear-gradient(to top,${ch.c}90,${ch.c}20)`}} />
-                    </div>
-                    <div className="flex items-end gap-[2px] h-3 w-full px-0.5">
-                      {[1,2,3,4,5,6,7].map(j => (
-                        <div key={j} className="flex-1 rounded-sm bar-anim" style={{background:ch.c+'60',animationDelay:`${j*.07+i*.05}s`,animationDuration:`${.8+(j%3)*.2}s`}} />
-                      ))}
-                    </div>
-                    <div className="flex gap-1 w-full">
-                      <div className="flex-1 h-4 rounded text-[7px] font-bold flex items-center justify-center bg-white/[0.05] text-white/25">M</div>
-                      <div className="flex-1 h-4 rounded text-[7px] font-bold flex items-center justify-center bg-white/[0.05] text-white/25">S</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {/* Timeline */}
-              <div className="mt-4 pt-3 border-t border-white/[0.05]">
-                <div className="h-1 bg-white/[0.07] rounded-full overflow-hidden mb-3">
-                  <div className="h-full bg-orange-500 rounded-full" style={{width:'38%'}} />
-                </div>
-                <div className="flex items-center justify-center gap-4">
-                  <div className="w-8 h-8 rounded-full bg-white/[0.05] flex items-center justify-center text-white/25">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="19,20 9,12 19,4"/><line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" strokeWidth="2.5"/></svg>
-                  </div>
-                  <button onClick={onEnter} className="w-11 h-11 rounded-full bg-orange-500 hover:bg-orange-400 flex items-center justify-center transition-colors cursor-pointer">
-                    <Play size={18} fill="white" className="ml-0.5" />
-                  </button>
-                  <div className="w-8 h-8 rounded-full bg-white/[0.05] flex items-center justify-center text-white/25">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,4 15,12 5,20"/><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2.5"/></svg>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <DemoMixer />
           <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 w-2/3 h-14 bg-orange-500/[0.07] blur-2xl rounded-full" />
         </div>
       </section>
