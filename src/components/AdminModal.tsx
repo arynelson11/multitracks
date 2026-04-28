@@ -411,7 +411,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                     </div>
                                 )}
                             </div>
-                        )}
+                        ) : null}
 
                         {/* Error Message */}
                         {error && (
