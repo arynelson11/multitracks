@@ -1,16 +1,33 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { Play, Square } from 'lucide-react'
 
-const BPM = 88
-const B = 60 / BPM       // beat in seconds
-const BAR = B * 4        // bar in seconds
+// ─── Musical constants ────────────────────────────────────────────────────────
+const BPM  = 108          // upbeat gospel tempo
+const B    = 60 / BPM     // ~0.556 s per beat
+const BAR  = B * 4
 
-// C – G – Am – F progression
+// Gospel: G – C – D – C  (G major — bright and uplifting)
 const PROG = [
-  { bass: 65.41,  chord: [261.63, 329.63, 392.00], mel: [329.63, 293.66, 261.63, 329.63] },
-  { bass: 98.00,  chord: [196.00, 246.94, 293.66], mel: [293.66, 246.94, 196.00, 293.66] },
-  { bass: 110.00, chord: [220.00, 261.63, 329.63], mel: [261.63, 329.63, 261.63, 220.00] },
-  { bass: 87.31,  chord: [174.61, 220.00, 261.63], mel: [261.63, 220.00, 174.61, 261.63] },
+  {
+    bass:  98.00,   fifth: 146.83,                            // G2, D3
+    chord: [196.00, 246.94, 293.66, 392.00],                  // G3 B3 D4 G4
+    mel:   [392.00, 493.88, 440.00, 392.00],                  // G4 B4 A4 G4
+  },
+  {
+    bass: 130.81,   fifth: 196.00,                            // C3, G3
+    chord: [261.63, 329.63, 392.00, 523.25],                  // C4 E4 G4 C5
+    mel:  [392.00,  329.63, 392.00, 493.88],                  // G4 E4 G4 B4
+  },
+  {
+    bass: 146.83,   fifth: 220.00,                            // D3, A3
+    chord: [293.66, 369.99, 440.00, 587.33],                  // D4 F#4 A4 D5
+    mel:  [493.88,  440.00, 493.88, 440.00],                  // B4 A4 B4 A4
+  },
+  {
+    bass: 130.81,   fifth: 196.00,                            // C3, G3
+    chord: [261.63, 329.63, 392.00, 523.25],                  // C4 E4 G4 C5
+    mel:  [392.00,  329.63, 261.63, 293.66],                  // G4 E4 C4 D4
+  },
 ]
 
 const CHANNELS = [
@@ -24,97 +41,226 @@ const CHANNELS = [
   { id: 'master', name: 'Master',   color: '#f97316' },
 ] as const
 
-type ChId = typeof CHANNELS[number]['id']
+type ChId   = typeof CHANNELS[number]['id']
 type GainMap = Partial<Record<ChId, GainNode>>
 type AnalMap = Partial<Record<ChId, AnalyserNode>>
 
-// ─── Audio helpers (access acRef.current inside – stable because refs don't change) ─────
+// ─── Audio helpers ────────────────────────────────────────────────────────────
+// All helpers receive `ac` explicitly to avoid stale-closure issues.
 
-function mkNote(
-  acRef: React.MutableRefObject<AudioContext | null>,
-  dest: AudioNode, freq: number, t: number, dur: number,
-  type: OscillatorType, vol: number, att = 0.005, rel = 0.08
-) {
-  const ac = acRef.current!
+function mkClick(ac: AudioContext, dest: AudioNode, freq: number, t: number, vol: number) {
   const g = ac.createGain()
   g.gain.setValueAtTime(0, t)
-  g.gain.linearRampToValueAtTime(vol, t + att)
-  g.gain.setValueAtTime(vol, t + dur - rel)
-  g.gain.linearRampToValueAtTime(0, t + dur)
+  g.gain.linearRampToValueAtTime(vol, t + 0.002)
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.04)
   g.connect(dest)
   const o = ac.createOscillator()
-  o.type = type
-  o.frequency.value = freq
-  o.connect(g)
-  o.start(t)
-  o.stop(t + dur + 0.01)
+  o.type = 'sine'; o.frequency.value = freq
+  o.connect(g); o.start(t); o.stop(t + 0.05)
 }
 
-function mkKick(acRef: React.MutableRefObject<AudioContext | null>, dest: AudioNode, t: number) {
-  const ac = acRef.current!
+function mkKick(ac: AudioContext, dest: AudioNode, t: number, vol = 1.0) {
+  // Tonal sweep (the "thump")
   const g = ac.createGain()
-  g.gain.setValueAtTime(1, t)
-  g.gain.exponentialRampToValueAtTime(0.001, t + 0.45)
+  g.gain.setValueAtTime(vol * 0.85, t)
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.42)
   g.connect(dest)
   const o = ac.createOscillator()
-  o.frequency.setValueAtTime(160, t)
-  o.frequency.exponentialRampToValueAtTime(28, t + 0.38)
-  o.connect(g)
-  o.start(t)
-  o.stop(t + 0.5)
+  o.type = 'sine'
+  o.frequency.setValueAtTime(170, t)
+  o.frequency.exponentialRampToValueAtTime(36, t + 0.36)
+  o.connect(g); o.start(t); o.stop(t + 0.45)
+
+  // Attack transient (the "click")
+  const clickLen = Math.floor(ac.sampleRate * 0.012)
+  const buf = ac.createBuffer(1, clickLen, ac.sampleRate)
+  const d = buf.getChannelData(0)
+  for (let i = 0; i < clickLen; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / clickLen)
+  const src = ac.createBufferSource(); src.buffer = buf
+  const cg = ac.createGain(); cg.gain.value = vol * 0.4
+  src.connect(cg); cg.connect(dest); src.start(t); src.stop(t + 0.015)
 }
 
-function mkSnare(acRef: React.MutableRefObject<AudioContext | null>, dest: AudioNode, t: number) {
-  const ac = acRef.current!
-  const len = Math.floor(ac.sampleRate * 0.18)
+function mkSnare(ac: AudioContext, dest: AudioNode, t: number) {
+  // Noise body
+  const len = Math.floor(ac.sampleRate * 0.22)
   const buf = ac.createBuffer(1, len, ac.sampleRate)
   const d = buf.getChannelData(0)
   for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1
-  const src = ac.createBufferSource()
-  src.buffer = buf
-  const flt = ac.createBiquadFilter()
-  flt.type = 'bandpass'
-  flt.frequency.value = 2800
-  flt.Q.value = 0.7
-  src.connect(flt)
-  const g = ac.createGain()
-  g.gain.setValueAtTime(0.45, t)
-  g.gain.exponentialRampToValueAtTime(0.001, t + 0.18)
-  flt.connect(g)
-  g.connect(dest)
-  src.start(t)
-  src.stop(t + 0.22)
+  const src = ac.createBufferSource(); src.buffer = buf
+  const bp = ac.createBiquadFilter()
+  bp.type = 'bandpass'; bp.frequency.value = 3200; bp.Q.value = 0.9
+  src.connect(bp)
+  const ng = ac.createGain()
+  ng.gain.setValueAtTime(0.55, t)
+  ng.gain.exponentialRampToValueAtTime(0.001, t + 0.22)
+  bp.connect(ng); ng.connect(dest); src.start(t); src.stop(t + 0.24)
+
+  // Tonal crack (adds body)
+  const to = ac.createOscillator()
+  to.type = 'sine'
+  to.frequency.setValueAtTime(220, t)
+  to.frequency.exponentialRampToValueAtTime(90, t + 0.06)
+  const tg = ac.createGain()
+  tg.gain.setValueAtTime(0.4, t)
+  tg.gain.exponentialRampToValueAtTime(0.001, t + 0.08)
+  to.connect(tg); tg.connect(dest); to.start(t); to.stop(t + 0.1)
 }
 
-function mkHat(acRef: React.MutableRefObject<AudioContext | null>, dest: AudioNode, t: number, open = false) {
-  const ac = acRef.current!
-  const dur = open ? 0.22 : 0.04
+function mkHat(ac: AudioContext, dest: AudioNode, t: number, open = false) {
+  const dur = open ? 0.24 : 0.045
   const len = Math.floor(ac.sampleRate * dur)
   const buf = ac.createBuffer(1, len, ac.sampleRate)
   const d = buf.getChannelData(0)
   for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1
-  const src = ac.createBufferSource()
-  src.buffer = buf
-  const flt = ac.createBiquadFilter()
-  flt.type = 'highpass'
-  flt.frequency.value = 7500
-  src.connect(flt)
+  const src = ac.createBufferSource(); src.buffer = buf
+  const hp = ac.createBiquadFilter()
+  hp.type = 'highpass'; hp.frequency.value = open ? 7000 : 8500
+  src.connect(hp)
   const g = ac.createGain()
-  g.gain.setValueAtTime(0.1, t)
+  g.gain.setValueAtTime(open ? 0.12 : 0.09, t)
   g.gain.exponentialRampToValueAtTime(0.001, t + dur)
-  flt.connect(g)
+  hp.connect(g); g.connect(dest); src.start(t); src.stop(t + dur + 0.01)
+}
+
+function mkBass(ac: AudioContext, dest: AudioNode, freq: number, t: number, dur: number) {
+  const g = ac.createGain()
+  g.gain.setValueAtTime(0, t)
+  g.gain.linearRampToValueAtTime(0.75, t + 0.008)
+  g.gain.setValueAtTime(0.75, t + dur - 0.04)
+  g.gain.linearRampToValueAtTime(0, t + dur)
   g.connect(dest)
-  src.start(t)
-  src.stop(t + dur + 0.01)
+
+  // Triangle fundamental
+  const o = ac.createOscillator()
+  o.type = 'triangle'; o.frequency.value = freq
+  o.connect(g); o.start(t); o.stop(t + dur + 0.01)
+
+  // Sub octave (adds depth)
+  const sub = ac.createOscillator()
+  sub.type = 'sine'; sub.frequency.value = freq / 2
+  const sg = ac.createGain(); sg.gain.value = 0.35
+  sub.connect(sg); sg.connect(g); sub.start(t); sub.stop(t + dur + 0.01)
+
+  // Low-pass to keep it warm
+  const lpf = ac.createBiquadFilter()
+  lpf.type = 'lowpass'; lpf.frequency.value = 400
+  // Note: g already connected, lpf is just for the sub path above
+}
+
+function mkPianoChord(ac: AudioContext, dest: AudioNode, freqs: number[], t: number, stagger = false) {
+  freqs.forEach((freq, idx) => {
+    const offset = stagger ? idx * 0.008 : 0
+    const start = t + offset
+
+    const g = ac.createGain()
+    // Piano envelope: instant attack → fast initial decay → slow sustain
+    g.gain.setValueAtTime(0, start)
+    g.gain.linearRampToValueAtTime(0.28, start + 0.003)
+    g.gain.exponentialRampToValueAtTime(0.18, start + 0.12)
+    g.gain.exponentialRampToValueAtTime(0.001, start + 1.6)
+    g.connect(dest)
+
+    // Fundamental (triangle — warm)
+    const o1 = ac.createOscillator()
+    o1.type = 'triangle'; o1.frequency.value = freq
+    o1.connect(g); o1.start(start); o1.stop(start + 1.7)
+
+    // 2nd harmonic
+    const o2 = ac.createOscillator()
+    o2.type = 'sine'; o2.frequency.value = freq * 2
+    const g2 = ac.createGain(); g2.gain.value = 0.22
+    o2.connect(g2); g2.connect(g); o2.start(start); o2.stop(start + 1.2)
+
+    // Bright attack partial (decays fast — simulates piano hammer)
+    const o3 = ac.createOscillator()
+    o3.type = 'sine'; o3.frequency.value = freq * 4
+    const g3 = ac.createGain()
+    g3.gain.setValueAtTime(0.1, start)
+    g3.gain.exponentialRampToValueAtTime(0.001, start + 0.06)
+    o3.connect(g3); g3.connect(g); o3.start(start); o3.stop(start + 0.08)
+  })
+}
+
+function mkOrgan(ac: AudioContext, dest: AudioNode, freqs: number[], t: number, dur: number) {
+  freqs.forEach(freq => {
+    const masterG = ac.createGain()
+    masterG.gain.setValueAtTime(0, t)
+    masterG.gain.linearRampToValueAtTime(0.07, t + 0.015)  // fast organ attack
+    masterG.gain.setValueAtTime(0.07, t + dur - 0.04)
+    masterG.gain.linearRampToValueAtTime(0, t + dur)
+
+    // Low-pass softens square wave harshness
+    const lpf = ac.createBiquadFilter()
+    lpf.type = 'lowpass'; lpf.frequency.value = 1800; lpf.Q.value = 0.5
+    masterG.connect(lpf); lpf.connect(dest)
+
+    // Drawbars: 8' (fundamental), 4' (octave), 16' (sub)
+    const drawbars: [number, number][] = [[1, 0.6], [2, 0.35], [0.5, 0.25]]
+    drawbars.forEach(([mult, v]) => {
+      const o = ac.createOscillator()
+      const g = ac.createGain()
+      o.type = 'square'; o.frequency.value = freq * mult; g.gain.value = v
+      o.connect(g); g.connect(masterG); o.start(t); o.stop(t + dur + 0.05)
+    })
+  })
+}
+
+function mkVocal(ac: AudioContext, dest: AudioNode, freq: number, t: number, dur: number) {
+  const g = ac.createGain()
+  g.gain.setValueAtTime(0, t)
+  g.gain.linearRampToValueAtTime(0.28, t + 0.06)  // slow attack = sung feel
+  g.gain.setValueAtTime(0.28, t + dur - 0.08)
+  g.gain.linearRampToValueAtTime(0, t + dur)
+  g.connect(dest)
+
+  // Main oscillator
+  const o = ac.createOscillator()
+  o.type = 'sine'; o.frequency.value = freq
+  o.connect(g); o.start(t); o.stop(t + dur + 0.01)
+
+  // Vibrato LFO (fades in naturally)
+  const lfo = ac.createOscillator()
+  const lfoG = ac.createGain()
+  lfo.type = 'sine'; lfo.frequency.value = 5.8
+  lfoG.gain.setValueAtTime(0, t)
+  lfoG.gain.linearRampToValueAtTime(freq * 0.012, t + dur * 0.4)  // vibrato fades in
+  lfo.connect(lfoG); lfoG.connect(o.frequency)
+  lfo.start(t); lfo.stop(t + dur + 0.02)
+
+  // Thin layer of filtered noise for "breath" texture
+  const blen = Math.floor(ac.sampleRate * dur)
+  const bbuf = ac.createBuffer(1, blen, ac.sampleRate)
+  const bd = bbuf.getChannelData(0)
+  for (let i = 0; i < blen; i++) bd[i] = (Math.random() * 2 - 1) * 0.015
+  const bsrc = ac.createBufferSource(); bsrc.buffer = bbuf
+  bsrc.connect(g); bsrc.start(t); bsrc.stop(t + dur + 0.01)
+}
+
+function mkGuitarStab(ac: AudioContext, dest: AudioNode, freqs: number[], t: number) {
+  freqs.forEach((freq, i) => {
+    const g = ac.createGain()
+    g.gain.setValueAtTime(0, t + i * 0.004)
+    g.gain.linearRampToValueAtTime(0.09 - i * 0.015, t + i * 0.004 + 0.004)
+    g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.004 + 0.12)
+
+    const lpf = ac.createBiquadFilter()
+    lpf.type = 'lowpass'; lpf.frequency.value = 3500; lpf.Q.value = 0.5
+    g.connect(lpf); lpf.connect(dest)
+
+    const o = ac.createOscillator()
+    o.type = 'sawtooth'; o.frequency.value = freq
+    o.connect(g); o.start(t + i * 0.004); o.stop(t + i * 0.004 + 0.15)
+  })
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function DemoMixer() {
   const [playing, setPlaying] = useState(false)
-  const [muted, setMuted]   = useState<Partial<Record<ChId, boolean>>>({})
-  const [soloed, setSoloed] = useState<Partial<Record<ChId, boolean>>>({})
-  const [levels, setLevels] = useState<Record<ChId, number>>(
+  const [muted,   setMuted]   = useState<Partial<Record<ChId, boolean>>>({})
+  const [soloed,  setSoloed]  = useState<Partial<Record<ChId, boolean>>>({})
+  const [levels,  setLevels]  = useState<Record<ChId, number>>(
     Object.fromEntries(CHANNELS.map(c => [c.id, 0])) as Record<ChId, number>
   )
 
@@ -126,7 +272,7 @@ export function DemoMixer() {
   const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null)
   const rafRef       = useRef(0)
 
-  // Apply mute/solo
+  // Apply mute / solo
   useEffect(() => {
     const ac = acRef.current
     if (!ac) return
@@ -141,55 +287,87 @@ export function DemoMixer() {
   }, [muted, soloed])
 
   const scheduleBeat = useCallback((beatTime: number, beatIdx: number) => {
+    const ac = acRef.current
+    if (!ac) return
     const beat = beatIdx % 4
     const bar  = Math.floor(beatIdx / 4)
     const p    = PROG[bar % PROG.length]
     const gs   = gainsRef.current
 
-    // Click: accented on beat 0
-    if (gs.click)
-      mkNote(acRef, gs.click, beat === 0 ? 1400 : 1000, beatTime, 0.04, 'sine', beat === 0 ? 0.65 : 0.45)
-
-    // Drums: kick 1+3, snare 2+4, hats every beat + 8th
-    if (gs.drums) {
-      if (beat === 0 || beat === 2) mkKick(acRef, gs.drums, beatTime)
-      if (beat === 1 || beat === 3) mkSnare(acRef, gs.drums, beatTime)
-      mkHat(acRef, gs.drums, beatTime, beat === 3)
-      if (beat < 3) mkHat(acRef, gs.drums, beatTime + B / 2)
+    // ── Click ───────────────────────────────────────────────
+    if (gs.click) {
+      mkClick(ac, gs.click, beat === 0 ? 1600 : 1050, beatTime, beat === 0 ? 0.7 : 0.45)
     }
 
-    // Bass: root held for bar + pickup
+    // ── Drums ────────────────────────────────────────────────
+    if (gs.drums) {
+      // Kick on 1 and 3
+      if (beat === 0) mkKick(ac, gs.drums, beatTime, 1.0)
+      if (beat === 2) mkKick(ac, gs.drums, beatTime, 0.88)
+
+      // Strong gospel backbeat: snare on 2 and 4
+      if (beat === 1 || beat === 3) mkSnare(ac, gs.drums, beatTime)
+
+      // 8th note hi-hats (every beat + half beat)
+      mkHat(ac, gs.drums, beatTime)
+      mkHat(ac, gs.drums, beatTime + B / 2, beat === 3)  // open before the 1
+
+      // Gospel bounce: extra soft kick on the "and" of 2
+      if (beat === 1) mkKick(ac, gs.drums, beatTime + B * 0.75, 0.38)
+
+      // 16th note hat accent on the "a" of 1 and 3 (adds groove)
+      if (beat === 0 || beat === 2) mkHat(ac, gs.drums, beatTime + B * 0.75)
+    }
+
+    // ── Bass ─────────────────────────────────────────────────
     if (gs.bass) {
-      if (beat === 0) {
-        mkNote(acRef, gs.bass, p.bass,     beatTime, BAR * 0.88, 'triangle', 0.55, 0.008, 0.1)
-        mkNote(acRef, gs.bass, p.bass * 2, beatTime, B   * 0.25, 'triangle', 0.18, 0.005, 0.04)
-      }
+      // Root held across beats 1-2
+      if (beat === 0) mkBass(ac, gs.bass, p.bass, beatTime, B * 1.85)
+      // Fifth on beat 3
+      if (beat === 2) mkBass(ac, gs.bass, p.fifth, beatTime, B * 1.2)
+      // Pickup note on beat 4 (approach to next chord root)
       if (beat === 3) {
         const next = PROG[(bar + 1) % PROG.length]
-        mkNote(acRef, gs.bass, next.bass, beatTime + B * 0.75, B * 0.25, 'triangle', 0.28, 0.005, 0.02)
+        mkBass(ac, gs.bass, next.bass, beatTime + B * 0.75, B * 0.28)
       }
     }
 
-    // Guitar: arpeggio on beats 0 and 2
-    if (gs.guitar && (beat === 0 || beat === 2))
-      p.chord.forEach((f, i) =>
-        mkNote(acRef, gs.guitar!, f * 0.5, beatTime + i * 0.025, B * 0.85, 'sawtooth', 0.1 - i * 0.02, 0.01, 0.2)
-      )
+    // ── Piano ─────────────────────────────────────────────────
+    if (gs.piano) {
+      // Full chord hit on beat 1 (staggered for natural feel)
+      if (beat === 0) mkPianoChord(ac, gs.piano, p.chord, beatTime, true)
+      // Lighter chord stab on beat 2 (gospel pump)
+      if (beat === 1) mkPianoChord(ac, gs.piano, p.chord.slice(1), beatTime + B * 0.5, false)
+      // Chord hit on beat 3
+      if (beat === 2) mkPianoChord(ac, gs.piano, p.chord, beatTime, true)
+      // Anticipation chord before beat 1 of next bar
+      if (beat === 3) mkPianoChord(ac, gs.piano, p.chord.slice(1, 3), beatTime + B * 0.75, false)
+    }
 
-    // Piano: chord hits on 0 and 2
-    if (gs.piano && (beat === 0 || beat === 2))
-      p.chord.forEach(f => mkNote(acRef, gs.piano!, f, beatTime, B * 1.3, 'sine', 0.17, 0.005, 0.28))
+    // ── Guitar ────────────────────────────────────────────────
+    if (gs.guitar) {
+      const stabFreqs = p.chord.slice(1, 4)  // upper voicing
+      // Stab on beat 1
+      if (beat === 0) mkGuitarStab(ac, gs.guitar, stabFreqs, beatTime)
+      // Syncopated stab on the "and" of 2
+      if (beat === 1) mkGuitarStab(ac, gs.guitar, stabFreqs, beatTime + B * 0.5)
+      // Stab on beat 3
+      if (beat === 2) mkGuitarStab(ac, gs.guitar, stabFreqs, beatTime)
+      // Anticipation stab before the 1
+      if (beat === 3) mkGuitarStab(ac, gs.guitar, stabFreqs, beatTime + B * 0.75)
+    }
 
-    // Vocals: melody line, one note per beat
-    if (gs.vocals)
-      mkNote(acRef, gs.vocals, p.mel[beat], beatTime, B * 0.78, 'sine', 0.22, 0.04, 0.12)
+    // ── Vocals ────────────────────────────────────────────────
+    if (gs.vocals) {
+      const note = p.mel[beat]
+      if (note > 0) mkVocal(ac, gs.vocals, note, beatTime, B * 0.82)
+    }
 
-    // Pad: slow-attack sustained chord, new on bar start
-    if (gs.pad && beat === 0)
-      p.chord.forEach(f => {
-        mkNote(acRef, gs.pad!, f * 0.5, beatTime, BAR * 1.05, 'sine', 0.13, 0.55, 0.7)
-        mkNote(acRef, gs.pad!, f,       beatTime, BAR * 1.05, 'sine', 0.09, 0.65, 0.8)
-      })
+    // ── Organ/Pad ─────────────────────────────────────────────
+    if (gs.pad && beat === 0) {
+      // Sustained organ chord for the full bar
+      mkOrgan(ac, gs.pad, p.chord.slice(0, 3), beatTime, BAR * 1.05)
+    }
   }, [])
 
   const runScheduler = useCallback(() => {
@@ -219,21 +397,29 @@ export function DemoMixer() {
     const ac = new AudioContext()
     acRef.current = ac
 
+    // ── Master chain: gain → compressor → destination ─────────
+    const compressor = ac.createDynamicsCompressor()
+    compressor.threshold.value = -18
+    compressor.knee.value      = 12
+    compressor.ratio.value     = 6
+    compressor.attack.value    = 0.002
+    compressor.release.value   = 0.12
+    compressor.connect(ac.destination)
+
     const masterGain = ac.createGain()
-    masterGain.gain.value = 0.78
-    masterGain.connect(ac.destination)
+    masterGain.gain.value = 0.82
+    masterGain.connect(compressor)
 
     const masterAnalyser = ac.createAnalyser()
     masterAnalyser.fftSize = 256
     masterGain.connect(masterAnalyser)
     analysersRef.current.master = masterAnalyser
 
+    // ── Per-channel routing ────────────────────────────────────
     CHANNELS.forEach(({ id }) => {
       if (id === 'master') return
-      const g = ac.createGain()
-      g.gain.value = 1
-      const analyser = ac.createAnalyser()
-      analyser.fftSize = 256
+      const g       = ac.createGain(); g.gain.value = 1
+      const analyser = ac.createAnalyser(); analyser.fftSize = 256
       g.connect(analyser)
       analyser.connect(masterGain)
       gainsRef.current[id]     = g
@@ -252,8 +438,8 @@ export function DemoMixer() {
     if (timerRef.current) clearInterval(timerRef.current)
     cancelAnimationFrame(rafRef.current)
     acRef.current?.close()
-    acRef.current    = null
-    gainsRef.current = {}
+    acRef.current        = null
+    gainsRef.current     = {}
     analysersRef.current = {}
     setPlaying(false)
     setMuted({})
@@ -287,11 +473,13 @@ export function DemoMixer() {
             const isSoloed = !!soloed[id]
             const active   = id === 'master' || (hasSolo ? isSoloed : !isMuted)
             const lv       = levels[id] ?? 0
-            const barH     = active && playing ? Math.min(96, lv * 150 + 4) : 0
+            const barH     = active && playing ? Math.min(96, lv * 155 + 4) : 0
 
             return (
               <div key={id} className="flex flex-col items-center gap-1.5">
-                <span className="text-[8px] sm:text-[9px] font-bold truncate w-full text-center" style={{ color }}>{name}</span>
+                <span className="text-[8px] sm:text-[9px] font-bold truncate w-full text-center" style={{ color }}>
+                  {name}
+                </span>
 
                 {/* Level bar */}
                 <div className="w-full h-20 bg-black/50 rounded-sm border border-white/[0.04] flex flex-col-reverse overflow-hidden">
@@ -300,7 +488,7 @@ export function DemoMixer() {
                     style={{
                       height: `${barH}%`,
                       background: `linear-gradient(to top, ${color}90, ${color}20)`,
-                      transition: 'height 80ms linear',
+                      transition: 'height 75ms linear',
                     }}
                   />
                 </div>
@@ -314,13 +502,13 @@ export function DemoMixer() {
                       style={{
                         height: active && playing ? `${Math.max(8, lv * 90 + j * 4)}%` : '15%',
                         background: color + '60',
-                        transition: 'height 80ms linear',
+                        transition: 'height 75ms linear',
                       }}
                     />
                   ))}
                 </div>
 
-                {/* M / S */}
+                {/* M / S buttons */}
                 <div className="flex gap-1 w-full">
                   {id !== 'master' ? (
                     <>
@@ -353,7 +541,9 @@ export function DemoMixer() {
         {/* Transport */}
         <div className="mt-4 pt-3 border-t border-white/[0.05]">
           <div className="h-1 bg-white/[0.07] rounded-full overflow-hidden mb-3">
-            {playing && <div className="h-full bg-orange-500 rounded-full animate-pulse" style={{ width: '42%' }} />}
+            {playing && (
+              <div className="h-full bg-orange-500 rounded-full animate-pulse" style={{ width: '42%' }} />
+            )}
           </div>
           <div className="flex items-center justify-center gap-4">
             <div className="w-8 h-8 rounded-full bg-white/[0.05] flex items-center justify-center text-white/25">
