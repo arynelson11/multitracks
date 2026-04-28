@@ -34,7 +34,7 @@ export default function App() {
     createEndlessMetronomeSong,
   } = useAudioEngine(user?.id)
 
-  const { playPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume, updatePadMode, selectedPadSet, selectPadSet, padMode } = usePadSynth()
+  const { playPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume, selectedPadSet, selectPadSet, padMode } = usePadSynth()
   const [isPricingOpen, setIsPricingOpen] = useState(false)
   const mixerRef = useRef<HTMLDivElement>(null)
 
@@ -1203,7 +1203,8 @@ export default function App() {
             </div>
 
             {/* Pad Source Selector */}
-            <div className="flex gap-1 mb-3">
+            {/* Pad Cloud Selector */}
+            <div className="flex gap-1 mb-2">
               <button
                 onClick={() => handlePremiumFeature(() => setIsPadSetsModalOpen(true))}
                 className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center gap-1.5 font-mono tracking-wider border transition-all active:scale-95 cursor-pointer
@@ -1212,16 +1213,23 @@ export default function App() {
                     : 'bg-white/3 text-text-muted border-border hover:bg-white/5 hover:text-white'
                   }`}>
                 <Cloud size={10} />
-                {padMode === 'system' && selectedPadSet ? selectedPadSet.name : 'NUVEM'}
+                {padMode === 'system' && selectedPadSet ? selectedPadSet.name : 'PADS NUVEM'}
+              </button>
+            </div>
+
+            {/* Samples & Loops Buttons */}
+            <div className="flex gap-1 mb-3">
+              <button
+                onClick={() => handlePremiumFeature(() => {})}
+                className="flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center gap-1.5 font-mono tracking-wider border transition-all active:scale-95 cursor-pointer bg-white/3 text-text-muted border-border hover:bg-purple-500/10 hover:text-purple-300 hover:border-purple-500/30"
+              >
+                🎵 SAMPLES
               </button>
               <button
-                onClick={() => updatePadMode('synth')}
-                className={`px-2.5 py-1.5 text-[9px] font-bold rounded flex items-center justify-center font-mono tracking-wider border transition-all active:scale-95 cursor-pointer
-                  ${padMode === 'synth'
-                    ? 'bg-primary/15 text-primary border-primary/30'
-                    : 'bg-white/3 text-text-muted border-border hover:bg-white/5 hover:text-white'
-                  }`}>
-                SINT
+                onClick={() => handlePremiumFeature(() => {})}
+                className="flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center gap-1.5 font-mono tracking-wider border transition-all active:scale-95 cursor-pointer bg-white/3 text-text-muted border-border hover:bg-cyan-500/10 hover:text-cyan-300 hover:border-cyan-500/30"
+              >
+                🔁 LOOPS
               </button>
             </div>
 
@@ -1235,7 +1243,7 @@ export default function App() {
             </div>
             {/* Grid */}
             <div className="flex-1 grid grid-cols-4 sm:grid-cols-4 lg:grid-cols-3 gap-1.5 sm:gap-2">
-              {['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'].map(note => (
+              {['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map(note => (
                 <div key={note} className="relative">
                   <button onClick={() => !isPadEditMode && playPad(note)}
                     className={`

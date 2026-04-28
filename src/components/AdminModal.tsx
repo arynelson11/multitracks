@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
-import { X, Upload, Music, Image as ImageIcon, Loader2, AlertCircle, CheckCircle2, ChevronRight, Hash, Activity, Layers } from 'lucide-react';
+import { X, Upload, Music, Image as ImageIcon, Loader2, AlertCircle, CheckCircle2, ChevronRight, Hash, Activity, Layers, Disc, Repeat } from 'lucide-react';
 import { useAdminUpload, type UploadMetadata } from '../hooks/useAdminUpload';
+import { supabase } from '../lib/supabase';
 
 interface AdminModalProps {
     isOpen: boolean;
@@ -12,7 +13,7 @@ const REQUIRED_NOTES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'B
 export function AdminModal({ isOpen, onClose }: AdminModalProps) {
     const { isUploading, progress, status, error, uploadProject, uploadSystemPads, resetState } = useAdminUpload();
 
-    const [activeTab, setActiveTab] = useState<'music' | 'pads'>('music');
+    const [activeTab, setActiveTab] = useState<'music' | 'pads' | 'samples' | 'loops'>('music');
 
     const [metadata, setMetadata] = useState<UploadMetadata>({
         name: '',
@@ -35,6 +36,11 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
     const stemsInputRef = useRef<HTMLInputElement>(null);
     const padsInputRef = useRef<HTMLInputElement>(null);
 
+    // Samples/Loops State
+    const [sampleFiles, setSampleFiles] = useState<File[]>([]);
+    const [sampleName, setSampleName] = useState('');
+    const [sampleCategory, setSampleCategory] = useState('');
+
     if (!isOpen) return null;
 
     const handleHandleUpload = async (e: React.FormEvent) => {
@@ -44,10 +50,34 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
             if (!metadata.name || stemFiles.length === 0) return;
             const success = await uploadProject(metadata, coverFile, stemFiles);
             if (success) setIsSuccess(true);
-        } else {
+        } else if (activeTab === 'pads') {
             if (padFiles.size !== 12) return;
             const success = await uploadSystemPads(padFiles, padSetName, padSetDescription);
             if (success) setIsSuccess(true);
+        } else {
+            // Samples or Loops
+            if (sampleFiles.length === 0 || !sampleName.trim()) return;
+            const bucket = activeTab; // 'samples' or 'loops'
+            setIsUploading(true);
+            setProgress(0);
+            setStatus(`Iniciando upload para ${bucket}...`);
+            setError(null);
+            try {
+                for (let i = 0; i < sampleFiles.length; i++) {
+                    const file = sampleFiles[i];
+                    const filePath = `${sampleName.trim().toLowerCase().replace(/\s+/g, '_')}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+                    setStatus(`Subindo ${i + 1} de ${sampleFiles.length}: ${file.name}`);
+                    const { error: uploadError } = await supabase.storage.from(bucket).upload(filePath, file, { contentType: file.type || 'audio/mpeg' });
+                    if (uploadError) throw new Error(`Erro: ${uploadError.message}`);
+                    setProgress(Math.floor(((i + 1) / sampleFiles.length) * 100));
+                }
+                setIsSuccess(true);
+            } catch (e: any) {
+                setError(e.message || 'Erro no upload');
+            } finally {
+                setIsUploading(false);
+            }
+            return;
         }
     };
 
@@ -60,6 +90,9 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
         setPadFiles(new Map());
         setPadSetName('');
         setPadSetDescription('');
+        setSampleFiles([]);
+        setSampleName('');
+        setSampleCategory('');
         resetState();
         onClose();
     };
@@ -131,6 +164,14 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                         <button onClick={() => setActiveTab('pads')}
                             className={`pb-2.5 text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1.5 uppercase tracking-wider font-mono ${activeTab === 'pads' ? 'text-secondary border-b-2 border-secondary' : 'text-text-muted hover:text-white'}`}>
                             <Layers size={14} /> PADS DO SISTEMA
+                        </button>
+                        <button onClick={() => setActiveTab('samples')}
+                            className={`pb-2.5 text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1.5 uppercase tracking-wider font-mono ${activeTab === 'samples' ? 'text-purple-400 border-b-2 border-purple-400' : 'text-text-muted hover:text-white'}`}>
+                            <Disc size={14} /> SAMPLES
+                        </button>
+                        <button onClick={() => setActiveTab('loops')}
+                            className={`pb-2.5 text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1.5 uppercase tracking-wider font-mono ${activeTab === 'loops' ? 'text-cyan-400 border-b-2 border-cyan-400' : 'text-text-muted hover:text-white'}`}>
+                            <Repeat size={14} /> LOOPS
                         </button>
                     </div>
                 )}
@@ -308,6 +349,68 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                     </div>
                                 )}
                             </div>
+                        ) : (activeTab === 'samples' || activeTab === 'loops') ? (
+                            // Samples / Loops Upload View
+                            <div className="space-y-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] uppercase font-bold text-text-muted tracking-wider ml-1 font-mono">Nome da Coleção *</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={sampleName}
+                                            onChange={e => setSampleName(e.target.value)}
+                                            placeholder={activeTab === 'samples' ? 'ex: Worship Hits Vol. 1' : 'ex: Gospel Grooves 80bpm'}
+                                            className="w-full daw-input text-white text-xs px-3 py-2.5 rounded-md font-mono"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] uppercase font-bold text-text-muted tracking-wider ml-1 font-mono">Categoria</label>
+                                        <input
+                                            type="text"
+                                            value={sampleCategory}
+                                            onChange={e => setSampleCategory(e.target.value)}
+                                            placeholder={activeTab === 'samples' ? 'ex: Piano, Strings, FX' : 'ex: Drum, Bass, Ambient'}
+                                            className="w-full daw-input text-white text-xs px-3 py-2.5 rounded-md font-mono"
+                                        />
+                                    </div>
+                                </div>
+                                <p className="text-[10px] text-text-muted font-mono">
+                                    Envie arquivos de áudio <strong className="text-white">WAV ou MP3</strong> para o bucket <code className={`lcd-display px-1 rounded ${activeTab === 'samples' ? 'text-purple-400' : 'text-cyan-400'}`}>{activeTab}</code> do Supabase.
+                                </p>
+
+                                <div
+                                    onClick={() => document.getElementById(`${activeTab}-file-input`)?.click()}
+                                    className={`h-28 rounded-md border-2 border-dashed flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-[0.98] ${
+                                        sampleFiles.length > 0
+                                            ? activeTab === 'samples' ? 'border-purple-500/40 bg-purple-500/5' : 'border-cyan-500/40 bg-cyan-500/5'
+                                            : 'border-border bg-black/20 hover:border-white/15 hover:bg-white/3'
+                                    }`}>
+                                    {activeTab === 'samples' ? <Disc size={20} className={sampleFiles.length > 0 ? 'text-purple-400' : 'text-text-muted'} /> : <Repeat size={20} className={sampleFiles.length > 0 ? 'text-cyan-400' : 'text-text-muted'} />}
+                                    <span className="text-[10px] text-white font-bold uppercase tracking-wider">
+                                        {sampleFiles.length > 0 ? `${sampleFiles.length} ARQUIVO(S) SELECIONADO(S)` : `SELECIONAR ${activeTab.toUpperCase()}`}
+                                    </span>
+                                    {sampleFiles.length > 0 && (
+                                        <span className="text-[9px] text-text-muted font-mono">
+                                            {(sampleFiles.reduce((acc, f) => acc + f.size, 0) / (1024 * 1024)).toFixed(1)} MB total
+                                        </span>
+                                    )}
+                                    <input id={`${activeTab}-file-input`} type="file" multiple accept="audio/*" className="hidden" onChange={e => setSampleFiles(Array.from(e.target.files || []))} />
+                                </div>
+
+                                {sampleFiles.length > 0 && (
+                                    <div className="lcd-display rounded-md p-3 border border-border max-h-32 overflow-y-auto">
+                                        <div className="space-y-1">
+                                            {sampleFiles.map((f, i) => (
+                                                <div key={i} className="flex items-center justify-between text-[9px] font-mono">
+                                                    <span className={activeTab === 'samples' ? 'text-purple-300' : 'text-cyan-300'}>{f.name}</span>
+                                                    <span className="text-text-muted">{(f.size / 1024).toFixed(0)} KB</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         )}
 
                         {/* Error Message */}
@@ -337,13 +440,12 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                             </div>
                         )}
 
-                        {/* Submit Button */}
                         <button
                             type="submit"
-                            disabled={isUploading || (activeTab === 'music' ? (!metadata.name || stemFiles.length === 0) : (padFiles.size !== 12))}
-                            className={`w-full py-3 rounded-md font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] uppercase tracking-wider text-xs ${(isUploading || (activeTab === 'music' ? (!metadata.name || stemFiles.length === 0) : (padFiles.size !== 12)))
+                            disabled={isUploading || (activeTab === 'music' ? (!metadata.name || stemFiles.length === 0) : activeTab === 'pads' ? (padFiles.size !== 12) : (sampleFiles.length === 0 || !sampleName.trim()))}
+                            className={`w-full py-3 rounded-md font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] uppercase tracking-wider text-xs ${(isUploading || (activeTab === 'music' ? (!metadata.name || stemFiles.length === 0) : activeTab === 'pads' ? (padFiles.size !== 12) : (sampleFiles.length === 0 || !sampleName.trim())))
                                 ? 'bg-white/5 text-text-muted cursor-not-allowed'
-                                : 'bg-secondary text-black shadow-[0_0_15px_rgba(6,182,212,0.15)] cursor-pointer'
+                                : activeTab === 'samples' ? 'bg-purple-500 text-white shadow-[0_0_15px_rgba(168,85,247,0.15)] cursor-pointer' : activeTab === 'loops' ? 'bg-cyan-500 text-black shadow-[0_0_15px_rgba(6,182,212,0.15)] cursor-pointer' : 'bg-secondary text-black shadow-[0_0_15px_rgba(6,182,212,0.15)] cursor-pointer'
                                 }`}>
                             {isUploading ? (
                                 <>PROCESSANDO...</>
