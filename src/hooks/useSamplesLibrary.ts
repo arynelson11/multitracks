@@ -57,7 +57,13 @@ export function useSamplesLibrary() {
             }
         }
 
-        return items;
+        const sortedItems = [...items].sort((a, b) => {
+            const folderCompare = a.folder.localeCompare(b.folder, undefined, { numeric: true, sensitivity: 'base' });
+            if (folderCompare !== 0) return folderCompare;
+            return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+        });
+
+        return sortedItems;
     }, []);
 
     const loadLibrary = useCallback(async () => {

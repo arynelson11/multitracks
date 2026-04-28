@@ -37,7 +37,6 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
 
     // Samples/Loops State
     const [sampleFiles, setSampleFiles] = useState<File[]>([]);
-    const [sampleName, setSampleName] = useState('');
     const [sampleCategory, setSampleCategory] = useState('');
 
     if (!isOpen) return null;
@@ -55,8 +54,8 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
             if (success) setIsSuccess(true);
         } else {
             // Samples or Loops
-            if (sampleFiles.length === 0 || !sampleName.trim()) return;
-            const success = await uploadSamples(activeTab, sampleFiles, sampleName);
+            if (sampleFiles.length === 0 || !sampleCategory.trim()) return;
+            const success = await uploadSamples(activeTab, sampleFiles, sampleCategory);
             if (success) setIsSuccess(true);
         }
     };
@@ -71,7 +70,6 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
         setPadSetName('');
         setPadSetDescription('');
         setSampleFiles([]);
-        setSampleName('');
         setSampleCategory('');
         resetState();
         onClose();
@@ -332,28 +330,16 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                         ) : (activeTab === 'samples' || activeTab === 'loops') ? (
                             // Samples / Loops Upload View
                             <div className="space-y-3">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <div className="space-y-1">
-                                        <label className="text-[9px] uppercase font-bold text-text-muted tracking-wider ml-1 font-mono">Nome da Coleção *</label>
-                                        <input
-                                            type="text"
-                                            required
-                                            value={sampleName}
-                                            onChange={e => setSampleName(e.target.value)}
-                                            placeholder={activeTab === 'samples' ? 'ex: Worship Hits Vol. 1' : 'ex: Gospel Grooves 80bpm'}
-                                            className="w-full daw-input text-white text-xs px-3 py-2.5 rounded-md font-mono"
-                                        />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-[9px] uppercase font-bold text-text-muted tracking-wider ml-1 font-mono">Categoria</label>
-                                        <input
-                                            type="text"
-                                            value={sampleCategory}
-                                            onChange={e => setSampleCategory(e.target.value)}
-                                            placeholder={activeTab === 'samples' ? 'ex: Piano, Strings, FX' : 'ex: Drum, Bass, Ambient'}
-                                            className="w-full daw-input text-white text-xs px-3 py-2.5 rounded-md font-mono"
-                                        />
-                                    </div>
+                                <div className="space-y-1">
+                                    <label className="text-[9px] uppercase font-bold text-text-muted tracking-wider ml-1 font-mono">Nome da Pasta / Categoria *</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={sampleCategory}
+                                        onChange={e => setSampleCategory(e.target.value)}
+                                        placeholder={activeTab === 'samples' ? 'ex: Piano, Strings, FX' : 'ex: Drum, Bass, Ambient'}
+                                        className="w-full daw-input text-white text-xs px-3 py-2.5 rounded-md font-mono"
+                                    />
                                 </div>
                                 <p className="text-[10px] text-text-muted font-mono">
                                     Envie arquivos de áudio <strong className="text-white">WAV ou MP3</strong> para o bucket <code className={`lcd-display px-1 rounded ${activeTab === 'samples' ? 'text-purple-400' : 'text-cyan-400'}`}>{activeTab}</code> do Supabase.
@@ -422,8 +408,8 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
 
                         <button
                             type="submit"
-                            disabled={isUploading || (activeTab === 'music' ? (!metadata.name || stemFiles.length === 0) : activeTab === 'pads' ? (padFiles.size !== 12) : (sampleFiles.length === 0 || !sampleName.trim()))}
-                            className={`w-full py-3 rounded-md font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] uppercase tracking-wider text-xs ${(isUploading || (activeTab === 'music' ? (!metadata.name || stemFiles.length === 0) : activeTab === 'pads' ? (padFiles.size !== 12) : (sampleFiles.length === 0 || !sampleName.trim())))
+                            disabled={isUploading || (activeTab === 'music' ? (!metadata.name || stemFiles.length === 0) : activeTab === 'pads' ? (padFiles.size !== 12) : (sampleFiles.length === 0 || !sampleCategory.trim()))}
+                            className={`w-full py-3 rounded-md font-black flex items-center justify-center gap-2 transition-all active:scale-[0.98] uppercase tracking-wider text-xs ${(isUploading || (activeTab === 'music' ? (!metadata.name || stemFiles.length === 0) : activeTab === 'pads' ? (padFiles.size !== 12) : (sampleFiles.length === 0 || !sampleCategory.trim())))
                                 ? 'bg-white/5 text-text-muted cursor-not-allowed'
                                 : activeTab === 'samples' ? 'bg-purple-500 text-white shadow-[0_0_15px_rgba(168,85,247,0.15)] cursor-pointer' : activeTab === 'loops' ? 'bg-cyan-500 text-black shadow-[0_0_15px_rgba(6,182,212,0.15)] cursor-pointer' : 'bg-secondary text-black shadow-[0_0_15px_rgba(6,182,212,0.15)] cursor-pointer'
                                 }`}>

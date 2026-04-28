@@ -38,6 +38,7 @@ export default function App() {
   const { playPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume, selectedPadSet, selectPadSet, padMode } = usePadSynth()
   const [isPricingOpen, setIsPricingOpen] = useState(false)
   const [padActiveView, setPadActiveView] = useState<'pads' | 'samples' | 'loops'>('pads')
+  const [activeFolder, setActiveFolder] = useState<string | null>(null)
   const { samples, loops, loading: samplesLoading, playingUrl, playSample, stopPlayback } = useSamplesLibrary()
   const mixerRef = useRef<HTMLDivElement>(null)
 
@@ -362,7 +363,7 @@ export default function App() {
 
   // ───────────────── MAIN APP ─────────────────
   return (
-    <div className="min-h-screen bg-[#0e0e10] text-text-main flex flex-col select-none overflow-hidden">
+    <div className="h-[100dvh] w-screen fixed inset-0 overflow-hidden bg-[#0e0e10] text-text-main flex flex-col select-none">
 
       {/* ═══ HEADER / TRANSPORT ═══ */}
       <header className="bg-[#18181a] border-b border-border shrink-0">
@@ -1195,7 +1196,7 @@ export default function App() {
           </div>
 
           {/* ═══ PAD PLAYER ═══ */}
-          <div className={`bg-[#18181a] border-l border-border p-3 sm:p-4 flex flex-col z-10 shadow-[-10px_0_20px_rgba(0,0,0,0.4)]
+          <div className={`bg-[#18181a] border-l border-border p-3 sm:p-4 flex flex-col z-10 shadow-[-10px_0_20px_rgba(0,0,0,0.4)] min-h-0 overflow-hidden shrink-0
             ${mobileView === 'pads' ? 'flex w-full' : 'hidden'} lg:flex lg:w-96`}>
             <div className="font-bold text-[10px] tracking-[0.15em] text-text-muted mb-2 flex justify-between uppercase items-center font-mono">
               <span>{padActiveView === 'pads' ? 'REPRODUTOR DE PADS' : padActiveView === 'samples' ? 'SAMPLES' : 'LOOPS'}</span>
@@ -1226,7 +1227,7 @@ export default function App() {
             {/* ═══ 3-WAY VIEW TOGGLE ═══ */}
             <div className="flex gap-1 mb-3">
               <button
-                onClick={() => { stopPlayback(); setPadActiveView('pads'); }}
+                onClick={() => { stopPlayback(); setPadActiveView('pads'); setActiveFolder(null); }}
                 className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center gap-1.5 font-mono tracking-wider border transition-all active:scale-95 cursor-pointer
                   ${padActiveView === 'pads'
                     ? 'bg-secondary/15 text-secondary border-secondary/30'
@@ -1235,7 +1236,7 @@ export default function App() {
                 <Music size={10} /> PADS
               </button>
               <button
-                onClick={() => setPadActiveView('samples')}
+                onClick={() => { setPadActiveView('samples'); setActiveFolder(null); }}
                 className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center gap-1.5 font-mono tracking-wider border transition-all active:scale-95 cursor-pointer
                   ${padActiveView === 'samples'
                     ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
@@ -1244,7 +1245,7 @@ export default function App() {
                 <Disc size={10} /> SAMPLES
               </button>
               <button
-                onClick={() => setPadActiveView('loops')}
+                onClick={() => { setPadActiveView('loops'); setActiveFolder(null); }}
                 className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center gap-1.5 font-mono tracking-wider border transition-all active:scale-95 cursor-pointer
                   ${padActiveView === 'loops'
                     ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
@@ -1307,53 +1308,95 @@ export default function App() {
                     <Loader2 size={20} className="animate-spin text-text-muted" />
                   </div>
                 ) : (
-                  <div className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-                    {(padActiveView === 'samples' ? samples : loops).length === 0 ? (
-                      <div className="flex-1 flex flex-col items-center justify-center py-12 text-center">
-                        {padActiveView === 'samples' ? <Disc size={28} className="text-purple-500/30 mb-3" /> : <Repeat size={28} className="text-cyan-500/30 mb-3" />}
-                        <p className="text-[10px] text-text-muted font-mono uppercase tracking-wider mb-1">Nenhum {padActiveView === 'samples' ? 'sample' : 'loop'} encontrado</p>
-                        <p className="text-[9px] text-text-muted/50 font-mono">Use o Admin para enviar ficheiros</p>
-                      </div>
-                    ) : (
-                      (padActiveView === 'samples' ? samples : loops).map((item, i) => (
-                        <button
-                          key={i}
-                          onClick={() => playSample(item.url)}
-                          className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-md border transition-all active:scale-[0.98] cursor-pointer text-left group
-                            ${playingUrl === item.url
-                              ? padActiveView === 'samples'
-                                ? 'bg-purple-500/10 border-purple-500/30 text-purple-300'
-                                : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
-                              : 'bg-white/3 border-border hover:bg-white/5 hover:border-white/10 text-text-main'
-                            }`}
-                        >
-                          {/* Play/Stop icon */}
-                          <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 transition-all
-                            ${playingUrl === item.url
-                              ? padActiveView === 'samples' ? 'bg-purple-500/20' : 'bg-cyan-500/20'
-                              : 'bg-white/5 group-hover:bg-white/10'
-                            }`}>
-                            {playingUrl === item.url
-                              ? <Square size={10} className="fill-current" />
-                              : <Play size={10} className="fill-current ml-0.5" />
-                            }
-                          </div>
-                          {/* Info */}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[10px] font-bold truncate font-mono">{item.name}</p>
-                            {item.folder && <p className="text-[8px] text-text-muted/60 font-mono truncate uppercase tracking-wider">{item.folder}</p>}
-                          </div>
-                          {/* Playing indicator */}
-                          {playingUrl === item.url && (
-                            <div className="flex gap-0.5 items-end h-3">
-                              <div className="w-0.5 bg-current rounded-full bar-anim" style={{ animationDelay: '0s', height: '40%' }} />
-                              <div className="w-0.5 bg-current rounded-full bar-anim" style={{ animationDelay: '0.15s', height: '70%' }} />
-                              <div className="w-0.5 bg-current rounded-full bar-anim" style={{ animationDelay: '0.3s', height: '50%' }} />
-                            </div>
-                          )}
+                  <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                    {/* Folder Navigation Header */}
+                    {activeFolder && (
+                      <div className="mb-2 flex items-center gap-2">
+                        <button onClick={() => setActiveFolder(null)} className="p-1 rounded bg-white/5 hover:bg-white/10 text-white transition-all active:scale-95 cursor-pointer">
+                          <ChevronRight size={14} className="rotate-180" />
                         </button>
-                      ))
+                        <span className="text-[10px] font-bold text-white uppercase tracking-wider font-mono truncate">{activeFolder}</span>
+                      </div>
                     )}
+
+                    <div className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar min-h-0">
+                      {(() => {
+                        const currentItems = padActiveView === 'samples' ? samples : loops;
+                        if (currentItems.length === 0) {
+                          return (
+                            <div className="flex-1 flex flex-col items-center justify-center py-12 text-center h-full">
+                              {padActiveView === 'samples' ? <Disc size={28} className="text-purple-500/30 mb-3" /> : <Repeat size={28} className="text-cyan-500/30 mb-3" />}
+                              <p className="text-[10px] text-text-muted font-mono uppercase tracking-wider mb-1">Nenhum {padActiveView === 'samples' ? 'sample' : 'loop'} encontrado</p>
+                              <p className="text-[9px] text-text-muted/50 font-mono">Use o Admin para enviar ficheiros</p>
+                            </div>
+                          );
+                        }
+
+                        if (!activeFolder) {
+                          // Render Folders
+                          const folders = Array.from(new Set(currentItems.map(i => i.folder || 'Sem Categoria')));
+                          return folders.map(folder => (
+                            <button
+                              key={folder}
+                              onClick={() => setActiveFolder(folder)}
+                              className="w-full flex items-center gap-2 px-2.5 py-3 rounded-md border transition-all active:scale-[0.98] cursor-pointer text-left group bg-white/3 border-border hover:bg-white/5 hover:border-white/10 text-text-main"
+                            >
+                              <div className="w-8 h-8 rounded-md flex items-center justify-center shrink-0 bg-white/5 group-hover:bg-white/10 transition-all">
+                                <FolderOpen size={14} className={padActiveView === 'samples' ? 'text-purple-400' : 'text-cyan-400'} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[11px] font-bold truncate font-mono">{folder}</p>
+                                <p className="text-[9px] text-text-muted font-mono">
+                                  {currentItems.filter(i => (i.folder || 'Sem Categoria') === folder).length} ficheiro(s)
+                                </p>
+                              </div>
+                              <ChevronRight size={14} className="text-text-muted" />
+                            </button>
+                          ));
+                        }
+
+                        // Render Files inside Active Folder
+                        const folderItems = currentItems.filter(i => (i.folder || 'Sem Categoria') === activeFolder);
+                        return folderItems.map((item, i) => (
+                          <button
+                            key={i}
+                            onClick={() => playSample(item.url)}
+                            className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-md border transition-all active:scale-[0.98] cursor-pointer text-left group
+                              ${playingUrl === item.url
+                                ? padActiveView === 'samples'
+                                  ? 'bg-purple-500/10 border-purple-500/30 text-purple-300'
+                                  : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
+                                : 'bg-white/3 border-border hover:bg-white/5 hover:border-white/10 text-text-main'
+                              }`}
+                          >
+                            {/* Play/Stop icon */}
+                            <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 transition-all
+                              ${playingUrl === item.url
+                                ? padActiveView === 'samples' ? 'bg-purple-500/20' : 'bg-cyan-500/20'
+                                : 'bg-white/5 group-hover:bg-white/10'
+                              }`}>
+                              {playingUrl === item.url
+                                ? <Square size={10} className="fill-current" />
+                                : <Play size={10} className="fill-current ml-0.5" />
+                              }
+                            </div>
+                            {/* Info */}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] font-bold truncate font-mono">{item.name}</p>
+                              <p className="text-[8px] text-text-muted/60 font-mono truncate uppercase tracking-wider">{(item.size / (1024 * 1024)).toFixed(1)} MB</p>
+                            </div>
+                            {/* Playing indicator */}
+                            {playingUrl === item.url && (
+                              <div className="flex gap-0.5 items-end h-3">
+                                <div className="w-0.5 bg-current rounded-full bar-anim" style={{ animationDelay: '0s', height: '40%' }} />
+                                <div className="w-0.5 bg-current rounded-full bar-anim" style={{ animationDelay: '0.15s', height: '70%' }} />
+                                <div className="w-0.5 bg-current rounded-full bar-anim" style={{ animationDelay: '0.3s', height: '50%' }} />
+                              </div>
+                            )}
+                          </button>
+                        ));
+                      })()}
+                    </div>
                   </div>
                 )}
               </div>
