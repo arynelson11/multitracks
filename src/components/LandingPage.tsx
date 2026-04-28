@@ -171,9 +171,9 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="flex items-center justify-center gap-2.5 bg-orange-500 hover:bg-orange-400 text-white px-8 py-4 rounded-xl font-bold text-[15px] transition-all hover:scale-[1.03] cursor-pointer">
               <Play size={17} fill="white" /> Comece a criar
             </button>
-            <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="flex items-center justify-center gap-2.5 bg-white/[0.05] hover:bg-white/[0.09] border border-white/10 text-white px-8 py-4 rounded-xl font-bold text-[15px] transition-all cursor-pointer">
+            <a href="#recursos" className="flex items-center justify-center gap-2.5 bg-white/[0.05] hover:bg-white/[0.09] border border-white/10 text-white px-8 py-4 rounded-xl font-bold text-[15px] transition-all cursor-pointer">
               <Wand2 size={17} className="text-purple-400" /> Veja os recursos
-            </button>
+            </a>
           </div>
           <p className="text-[12px] text-white/20 mt-5">Grátis para começar · Sem cartão de crédito</p>
         </div>
@@ -186,7 +186,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       </section>
 
       {/* ════════ 2 MÓDULOS ════════ */}
-      <section className="py-24 px-5 sm:px-8">
+      <section id="recursos" className="py-24 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto">
           <p className="text-center text-white/25 text-[11px] font-bold uppercase tracking-[0.25em] mb-16">Duas ferramentas. Uma plataforma.</p>
           <div className="grid sm:grid-cols-2 gap-5">

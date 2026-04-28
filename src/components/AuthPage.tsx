@@ -68,7 +68,7 @@ export function AuthPage({ }: AuthPageProps) {
                 {/* Main Branding Content */}
                 <div className="max-w-md relative z-10 my-auto">
                     <h1 className="text-4xl lg:text-5xl font-black text-white mb-6 leading-tight tracking-tight">
-                        Engine Profissional<br />de Playbacks
+                        Plataforma Profissional<br />de Playbacks
                     </h1>
                     <p className="text-text-muted text-base mb-12 font-mono">
                         Seu palco digital definitivo para multitracks, VS, click e stems ao vivo.
