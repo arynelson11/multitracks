@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0d1f2d"/>
+      <stop offset="100%" stop-color="#1a0d2e"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#22d3ee"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="32" height="32" rx="7" fill="url(#bg)"/>
+  <!-- AudioLines bars (6 vertical strokes, proportional to lucide AudioLines 24x24) -->
+  <g stroke="url(#wave)" stroke-width="2" stroke-linecap="round">
+    <line x1="7"  y1="15" x2="7"  y2="18"/>
+    <line x1="11" y1="11" x2="11" y2="21"/>
+    <line x1="15" y1="8"  x2="15" y2="25"/>
+    <line x1="19" y1="13" x2="19" y2="20"/>
+    <line x1="23" y1="10" x2="23" y2="22"/>
+    <line x1="27" y1="15" x2="27" y2="18"/>
+  </g>
+</svg>

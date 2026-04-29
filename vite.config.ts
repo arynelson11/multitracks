@@ -9,7 +9,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['logo.png'],
+      includeAssets: ['logo.svg', 'logo.png'],
       manifest: {
         name: 'Playback Studio',
         short_name: 'Playback',
@@ -22,15 +22,16 @@ export default defineConfig({
         scope: '/',
         icons: [
           {
-            src: '/logo.png',
-            sizes: '192x192',
-            type: 'image/png',
+            src: '/logo.svg',
+            sizes: 'any',
+            type: 'image/svg+xml',
+            purpose: 'any',
           },
           {
             src: '/logo.png',
-            sizes: '512x512',
+            sizes: '192x192',
             type: 'image/png',
-            purpose: 'any maskable',
+            purpose: 'maskable',
           },
         ],
       },
