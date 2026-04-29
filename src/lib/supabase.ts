@@ -21,6 +21,8 @@ export interface CloudSong {
     cover_url: string | null;
     markers: any[] | null;
     created_at: string;
+    user_id?: string;
+    is_global?: boolean;
 }
 
 export interface CloudStem {

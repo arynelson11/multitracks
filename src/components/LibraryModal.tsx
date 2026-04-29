@@ -31,6 +31,7 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
     const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
     const [editingSong, setEditingSong] = useState<Partial<CloudSong> & { file?: File | null }>({});
     const [isSavingEdit, setIsSavingEdit] = useState(false);
+    const [activeTab, setActiveTab] = useState<'platform' | 'personal'>('platform');
 
     const handleEditSave = async (song: CloudSong) => {
         setIsSavingEdit(true);
@@ -98,22 +99,36 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
                     </div>
                 </div>
 
-                {/* Search Bar */}
-                <div className="px-3 py-2 border-b border-border shrink-0">
-                    <div className="relative">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-                        <input
-                            type="text"
-                            placeholder="Pesquisar por nome, artista ou tom..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full daw-input text-white text-xs pl-9 pr-4 py-2 rounded-md placeholder:text-text-muted/30 font-mono"
-                        />
-                        {searchQuery && (
-                            <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-white transition-all active:scale-90 cursor-pointer p-1">
-                                <X size={12} />
-                            </button>
-                        )}
+                {/* Search Bar & Tabs */}
+                <div className="flex flex-col border-b border-border shrink-0 bg-[#0a0a0c]">
+                    <div className="px-3 py-2">
+                        <div className="relative">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+                            <input
+                                type="text"
+                                placeholder="Pesquisar por nome, artista ou tom..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full daw-input text-white text-xs pl-9 pr-4 py-2 rounded-md placeholder:text-text-muted/30 font-mono"
+                            />
+                            {searchQuery && (
+                                <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-white transition-all active:scale-90 cursor-pointer p-1">
+                                    <X size={12} />
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                    <div className="flex px-3 gap-4">
+                        <button 
+                            onClick={() => setActiveTab('platform')}
+                            className={`pb-2 text-[10px] font-black uppercase tracking-wider transition-colors border-b-2 cursor-pointer ${activeTab === 'platform' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-white'}`}>
+                            Plataforma
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('personal')}
+                            className={`pb-2 text-[10px] font-black uppercase tracking-wider transition-colors border-b-2 cursor-pointer ${activeTab === 'personal' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-white'}`}>
+                            Minhas Músicas
+                        </button>
                     </div>
                 </div>
 
@@ -124,20 +139,30 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
                             <Loader2 size={24} className="animate-spin text-secondary" />
                             <span className="text-[10px] font-mono uppercase tracking-wider">Carregando a biblioteca...</span>
                         </div>
-                    ) : songs.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full gap-3 text-text-muted">
-                            <Cloud size={40} className="opacity-15" />
-                            <span className="text-[10px] font-mono">
-                                {searchQuery ? 'Nenhuma música encontrada.' : 'Biblioteca vazia.'}
-                            </span>
-                        </div>
                     ) : (
-                        <div className="grid gap-2">
-                            {songs.map((song: CloudSong) => {
-                                const isDownloading = downloadingSongId === song.id;
-                                const isDownloaded = downloadedIds.has(song.id);
+                        (() => {
+                            const filteredSongs = songs.filter((s: CloudSong) => {
+                                if (activeTab === 'platform') return s.is_global === true;
+                                return s.is_global !== true && s.user_id === user?.id;
+                            });
 
-                                const isEditing = editingSong.id === song.id;
+                            if (filteredSongs.length === 0) {
+                                return (
+                                    <div className="flex flex-col items-center justify-center h-full gap-3 text-text-muted">
+                                        <Cloud size={40} className="opacity-15" />
+                                        <span className="text-[10px] font-mono">
+                                            {searchQuery ? 'Nenhuma música encontrada.' : (activeTab === 'platform' ? 'Plataforma vazia.' : 'Nenhuma música pessoal encontrada.')}
+                                        </span>
+                                    </div>
+                                );
+                            }
+
+                            return (
+                                <div className="grid gap-2">
+                                    {filteredSongs.map((song: CloudSong) => {
+                                        const isDownloading = downloadingSongId === song.id;
+                                        const isDownloaded = downloadedIds.has(song.id);
+                                        const isEditing = editingSong.id === song.id;
 
                                 if (isEditing) {
                                     return (
@@ -219,7 +244,7 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
 
                                         {/* Download and Delete Buttons */}
                                         <div className="flex-shrink-0 flex items-center gap-2">
-                                            {isAdmin && (
+                                            {(isAdmin || song.user_id === user?.id) && (
                                                 <div className="flex items-center gap-1">
                                                     <button
                                                         onClick={() => setEditingSong({ id: song.id })}
@@ -229,7 +254,7 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
                                                     </button>
                                                     <button
                                                     onClick={async () => {
-                                                        if (window.confirm(`Excluir "${song.name}" da Nuvem? Isso removerá permanentemente todas as tracks para todos os usuários.`)) {
+                                                        if (window.confirm(`Excluir "${song.name}" da Nuvem? Isso removerá permanentemente todas as tracks para todos os usuários que usam essa conta/nuvem.`)) {
                                                             await removeSong(song.id);
                                                         }
                                                     }}
@@ -268,15 +293,17 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
                                         </div>
                                     </div>
                                 );
-                            })}
-                        </div>
+                                    })}
+                                </div>
+                            );
+                        })()
                     )}
                 </div>
 
                 {/* Footer */}
                 <div className="px-3 py-2 border-t border-border text-center shrink-0">
                     <span className="text-[9px] text-text-muted/30 font-mono uppercase tracking-wider">
-                        {songs.length} música{songs.length !== 1 ? 's' : ''} na biblioteca
+                        {songs.filter((s: CloudSong) => activeTab === 'platform' ? s.is_global : !s.is_global && s.user_id === user?.id).length} música(s) exibida(s)
                     </span>
                 </div>
             </div>

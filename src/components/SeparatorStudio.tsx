@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import WaveSurfer from 'wavesurfer.js';
-import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, Volume2, Save, Disc3 } from 'lucide-react';
+import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3 } from 'lucide-react';
 import { insertSong, insertStems, type CloudStem } from '../lib/supabase';
 import { analyzeAudioAndGenerateClick } from '../lib/AudioAnalyzer';
 import { uploadToR2 } from '../lib/r2';
@@ -27,7 +27,9 @@ function getAudioContext() {
 }
 
 export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => {
-  const { userPlan } = useAuth();
+  const { user, userPlan } = useAuth();
+  const isAdmin = user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com';
+  const [publishGlobal, setPublishGlobal] = useState(false);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -56,6 +58,53 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const [bpm, setBpm] = useState('120');
   const [songKey, setSongKey] = useState('C');
   const [coverFile, setCoverFile] = useState<File | null>(null);
+
+  // Metronome Sync Nudge
+  const [clickOffsetMs, setClickOffsetMsState] = useState(0);
+  const offsetRef = useRef(0);
+  const setClickOffsetMs = (val: number | ((v: number) => number)) => {
+     setClickOffsetMsState(prev => {
+        const next = typeof val === 'function' ? val(prev) : val;
+        offsetRef.current = next;
+        
+        // Apply immediately
+        const clickWs = wavesurfers.current['click'];
+        const masterWs = wavesurfers.current[stems.find(s => s.id !== 'click')?.id || ''];
+        if (clickWs && masterWs) {
+           const masterTime = masterWs.getCurrentTime();
+           clickWs.setTime(Math.max(0, masterTime - (next / 1000)));
+        }
+        return next;
+     });
+  };
+
+  const loadMockData = () => {
+    setIsProcessing(true);
+    setProgress(100);
+    setSongName('Mock Test Track');
+    setBpm('120');
+    setSongKey('C');
+    
+    const mockAudio = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+    const clickAudio = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3';
+    
+    const stemsArray: StemData[] = [
+      { id: 'drums', name: 'Bateria', url: mockAudio, color: '#f59e0b' },
+      { id: 'bass', name: 'Baixo', url: mockAudio, color: '#8b5cf6' },
+      { id: 'vocals', name: 'Vocais', url: mockAudio, color: '#06b6d4' },
+      { id: 'other', name: 'Outros/Fx', url: mockAudio, color: '#ec4899' },
+      { id: 'click', name: 'Metrônomo IA', url: clickAudio, color: '#e2e8f0' }
+    ];
+
+    const initialStates: any = {};
+    stemsArray.forEach(s => {
+      initialStates[s.id] = { muted: false, soloed: false, volume: 1, pan: 0 };
+    });
+    
+    setStemStates(initialStates);
+    setStems(stemsArray);
+    setIsProcessing(false);
+  };
 
   // Controle de Master e Mute/Solo
   useEffect(() => {
@@ -229,11 +278,12 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
       const ws = WaveSurfer.create({
         container,
-        waveColor: stem.color + '66', // Com transparência
+        waveColor: stem.color + '40', // 25% opacity
         progressColor: stem.color,
         cursorColor: '#ffffff',
         barWidth: 2,
-        barGap: 1,
+        barGap: 2,
+        barRadius: 2,
         height: 70,
         normalize: true,
         url: stem.url,
@@ -270,7 +320,13 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       ws.on('interaction', () => {
         const time = ws.getCurrentTime();
         Object.values(wavesurfers.current).forEach(otherWs => {
-          if (otherWs !== ws) otherWs.setTime(time);
+          if (otherWs !== ws) {
+            let targetTime = time;
+            const offsetSec = offsetRef.current / 1000;
+            if (otherWs.options.container.id === 'waveform-click') targetTime -= offsetSec;
+            else if (ws.options.container.id === 'waveform-click') targetTime += offsetSec;
+            otherWs.setTime(Math.max(0, targetTime));
+          }
         });
       });
 
@@ -313,7 +369,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
       const songId = await insertSong({
         name: songName, artist: artist || 'Desconhecido',
-        key: songKey, bpm: Number(bpm), cover_url: cover_url
+        key: songKey, bpm: Number(bpm), cover_url: cover_url,
+        user_id: user?.id,
+        is_global: isAdmin ? publishGlobal : false
       });
 
       if (!songId) throw new Error("Falha ao criar música");
@@ -374,6 +432,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
              <span className="text-[10px] text-text-muted/50 mt-1.5 font-mono">MP3, WAV ou AAC</span>
              <input type="file" accept="audio/*" onChange={handleFileUpload} className="hidden" />
            </label>
+
+           <button onClick={loadMockData} className="mt-8 text-[10px] font-mono text-text-muted/50 hover:text-text-muted underline cursor-pointer transition-colors">
+              [DEV] Carregar Dados Fictícios
+           </button>
         </div>
       </div>
     );
@@ -424,30 +486,30 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       {/* CORE WORKSPACE */}
       <div className="flex-1 flex overflow-hidden">
          {/* TRACK CONTROLS: LEFT FIXED */}
-         <div className="w-[280px] bg-surface border-r border-border flex flex-col overflow-y-auto overflow-x-hidden pt-7 shrink-0 z-10 custom-scrollbar">
+         <div className="w-[280px] bg-[#0a0a0c]/40 backdrop-blur-xl border-r border-white/5 flex flex-col overflow-y-auto overflow-x-hidden pt-7 shrink-0 z-10 custom-scrollbar shadow-[4px_0_24px_rgba(0,0,0,0.5)]">
             {stems.map((stem) => {
                const state = stemStates[stem.id];
                if(!state) return null;
                
                return (
-                  <div key={`ctrl-${stem.id}`} className="flex flex-col h-[70px] border-b border-border px-3 justify-center bg-surface relative group">
+                  <div key={`ctrl-${stem.id}`} className="flex flex-col h-[70px] border-b border-white/[0.03] px-3 justify-center bg-white/[0.01] hover:bg-white/[0.03] transition-colors relative group">
                      {/* Color indicator border */}
-                     <div className="absolute left-0 top-0 bottom-0 w-0.5" style={{ backgroundColor: stem.color }}></div>
+                     <div className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ backgroundColor: stem.color, boxShadow: `0 0 10px ${stem.color}66` }}></div>
                      
-                     <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[10px] font-black uppercase tracking-wider pl-2 font-mono" style={{ color: stem.color }}>{stem.name}</span>
-                        <div className="flex gap-0.5">
+                     <div className="flex items-center justify-between mb-1.5 pl-3">
+                        <span className="text-[11px] font-bold tracking-[0.15em] uppercase text-white/90 drop-shadow-md">{stem.name}</span>
+                        <div className="flex gap-1">
                            <button 
                               onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], muted: !p[stem.id].muted } }))}
-                              className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-black cursor-pointer transition-colors ${state.muted ? 'bg-accent-red text-white' : 'bg-black/30 text-text-muted hover:bg-white/10'}`}>M</button>
+                              className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-black cursor-pointer transition-all ${state.muted ? 'bg-accent-red/20 text-accent-red border border-accent-red/50 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'bg-black/40 text-text-muted border border-white/5 hover:bg-white/10 hover:text-white'}`}>M</button>
                            <button 
                               onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], soloed: !p[stem.id].soloed } }))}
-                              className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-black cursor-pointer transition-colors ${state.soloed ? 'bg-secondary text-black' : 'bg-black/30 text-text-muted hover:bg-white/10'}`}>S</button>
+                              className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-black cursor-pointer transition-all ${state.soloed ? 'bg-secondary/20 text-secondary border border-secondary/50 shadow-[0_0_10px_rgba(251,191,36,0.3)]' : 'bg-black/40 text-text-muted border border-white/5 hover:bg-white/10 hover:text-white'}`}>S</button>
                         </div>
                      </div>
-                     <div className="flex items-center gap-2 pl-2">
+                     <div className="flex items-center gap-3 pl-3 pr-1">
                         {/* PAN KNOB */}
-                        <div className="w-5 h-5 rounded-full border-2 border-border flex items-center justify-center relative bg-black/50 shrink-0" 
+                        <div className="w-5 h-5 rounded-full border border-white/20 flex items-center justify-center relative bg-black/60 shrink-0 shadow-inner" 
                              style={{ cursor: 'ew-resize' }}
                              title="Pan L/R"
                              onWheel={(e) => {
@@ -457,7 +519,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                              onClick={() => {
                                setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], pan: 0 } }));
                              }}>
-                             <div className="w-0.5 h-2.5 bg-text-muted rounded-full origin-bottom absolute top-0.5" 
+                             <div className="w-[1.5px] h-2.5 bg-white/70 rounded-full origin-bottom absolute top-[3px]" 
                                   style={{ transform: `rotate(${state.pan * 45}deg)` }}></div>
                         </div>
                         {/* VOLUME FADER */}
@@ -465,7 +527,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                            type="range" min="0" max="1" step="0.01"
                            value={state.volume}
                            onChange={(e) => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], volume: parseFloat(e.target.value) } }))}
-                           className="w-full h-0.5 bg-border rounded-lg appearance-none cursor-pointer accent-[#a1a1aa] hover:accent-white transition-all outline-none" 
+                           className="w-full h-1 bg-black/50 border border-white/10 rounded-lg appearance-none cursor-pointer accent-white hover:accent-primary transition-all outline-none shadow-inner" 
                         />
                      </div>
                   </div>
@@ -490,9 +552,43 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       </div>
 
       {/* TRANSPORT BAR */}
-      <footer className="h-16 bg-surface border-t border-border shrink-0 px-6 flex items-center justify-between z-20">
-         <div className="flex-1">
-            <span className="text-[10px] font-mono font-black text-text-muted uppercase tracking-widest">{bpm} BPM <span className="mx-1.5 text-border">|</span> {songKey}</span>
+      <footer className="h-16 bg-[#0a0a0c]/80 backdrop-blur-xl border-t border-white/10 shrink-0 px-6 flex items-center justify-between z-20">
+         <div className="flex-1 flex items-center gap-4">
+            {/* BPM Input */}
+            <div className="flex items-center gap-1.5 bg-black/40 border border-white/10 rounded-md px-2 py-1">
+               <span className="text-[9px] text-text-muted uppercase tracking-widest font-bold">BPM</span>
+               <input 
+                  type="number" 
+                  value={bpm} 
+                  onChange={(e) => setBpm(e.target.value)}
+                  className="w-10 bg-transparent text-white text-xs font-mono font-black outline-none text-center appearance-none"
+               />
+            </div>
+            
+            {/* Key Select */}
+            <div className="flex items-center gap-1.5 bg-black/40 border border-white/10 rounded-md px-2 py-1">
+               <span className="text-[9px] text-text-muted uppercase tracking-widest font-bold">Tom</span>
+               <select 
+                  value={songKey} 
+                  onChange={(e) => setSongKey(e.target.value)}
+                  className="bg-transparent text-white text-xs font-mono font-black outline-none appearance-none cursor-pointer text-center pr-2"
+               >
+                  {['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'].map(k => <option key={k} value={k} className="bg-black text-white">{k}</option>)}
+               </select>
+            </div>
+
+            {/* Sync Offset */}
+            <div className="flex items-center gap-1 bg-black/40 border border-white/10 rounded-md p-1 h-8">
+               <span className="text-[9px] text-text-muted uppercase tracking-widest font-bold px-2">Sync</span>
+               <button onClick={() => setClickOffsetMs(p => p - 10)} className="w-5 h-full flex items-center justify-center text-text-muted hover:text-white hover:bg-white/10 rounded cursor-pointer transition-colors" title="Atrasar Metrônomo">
+                  <ChevronLeft size={12}/>
+               </button>
+               <span className="text-[10px] text-white font-mono font-bold w-10 text-center">{clickOffsetMs > 0 ? '+' : ''}{clickOffsetMs}</span>
+               <button onClick={() => setClickOffsetMs(p => p + 10)} className="w-5 h-full flex items-center justify-center text-text-muted hover:text-white hover:bg-white/10 rounded cursor-pointer transition-colors" title="Adiantar Metrônomo">
+                  <ChevronRight size={12}/>
+               </button>
+               <span className="text-[8px] text-text-muted font-mono ml-1 mr-1">ms</span>
+            </div>
          </div>
          <div className="flex gap-4 items-center flex-1 justify-center">
             <button 
@@ -574,6 +670,20 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                       )}
                     </div>
                   </div>
+                  
+                  {isAdmin && (
+                    <div className="mt-3 bg-primary/5 border border-primary/20 rounded-md p-3 flex items-center justify-between">
+                      <div>
+                        <div className="text-[10px] font-black text-primary uppercase tracking-wider font-mono mb-0.5">Visibilidade Global</div>
+                        <div className="text-[9px] text-text-muted font-mono leading-tight">Publicar na Plataforma para todos os usuários.</div>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" className="sr-only peer" checked={publishGlobal} onChange={(e) => setPublishGlobal(e.target.checked)} />
+                        <div className="w-9 h-5 bg-black/50 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-text-muted peer-checked:after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary border border-white/10"></div>
+                      </label>
+                    </div>
+                  )}
+
                  <button onClick={handleSaveToDatabase} className="w-full bg-primary text-black font-black py-3 rounded-md mt-3 uppercase tracking-wider text-xs active:scale-[0.98] transition-all shadow-[0_0_15px_rgba(16,185,129,0.15)] cursor-pointer">
                    SALVAR & PUBLICAR
                  </button>
