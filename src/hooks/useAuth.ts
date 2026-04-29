@@ -21,29 +21,14 @@ export function useAuth() {
                     .select('plan')
                     .eq('id', userId)
                     .single();
-                
-                if (data && data.plan) {
-                    setUserPlan(data.plan);
-                } else {
-                    setUserPlan('free');
-                }
+                setUserPlan(data?.plan || 'free');
             } catch (err) {
                 console.error("Error fetching user plan:", err);
             }
         };
 
-        // Get initial session
-        supabase!.auth.getSession().then(({ data: { session } }) => {
-            setSession(session);
-            setUser(session?.user ?? null);
-            if (session?.user) {
-                fetchPlan(session.user.id).finally(() => setLoading(false));
-            } else {
-                setLoading(false);
-            }
-        });
-
-        // Listen for changes on auth state (login, logout, etc)
+        // onAuthStateChange fires INITIAL_SESSION on mount with the persisted session.
+        // This is the single source of truth — no getSession() race condition.
         const { data: { subscription } } = supabase!.auth.onAuthStateChange((_event, session) => {
             setSession(session);
             setUser(session?.user ?? null);
@@ -51,6 +36,8 @@ export function useAuth() {
                 fetchPlan(session.user.id).finally(() => setLoading(false));
             } else {
                 setUserPlan('free');
+                // Only stop the initial load gate after the session is determined.
+                // INITIAL_SESSION with null means genuinely not logged in.
                 setLoading(false);
             }
         });

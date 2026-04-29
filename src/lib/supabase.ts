@@ -5,7 +5,13 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // Safe initialization to prevent crashing the whole app if env vars are missing
 export const supabase = (supabaseUrl && supabaseKey)
-    ? createClient(supabaseUrl, supabaseKey)
+    ? createClient(supabaseUrl, supabaseKey, {
+        auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: false,
+        },
+    })
     : null;
 
 if (!supabase) {
