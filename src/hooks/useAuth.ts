@@ -21,30 +21,36 @@ export function useAuth() {
                     .select('plan')
                     .eq('id', userId)
                     .single();
-                setUserPlan(data?.plan || 'free');
+                
+                if (data && data.plan) {
+                    setUserPlan(data.plan);
+                } else {
+                    setUserPlan('free');
+                }
             } catch (err) {
                 console.error("Error fetching user plan:", err);
             }
         };
 
-        // Reactive listener for all subsequent auth changes (sign in, sign out, token refresh).
-        // Never touches `loading` — that's getSession()'s exclusive job.
+        // Get initial session
+        supabase!.auth.getSession().then(({ data: { session } }) => {
+            setSession(session);
+            setUser(session?.user ?? null);
+            if (session?.user) {
+                fetchPlan(session.user.id).finally(() => setLoading(false));
+            } else {
+                setLoading(false);
+            }
+        });
+
+        // Listen for changes on auth state (login, logout, etc)
         const { data: { subscription } } = supabase!.auth.onAuthStateChange((_event, session) => {
             setSession(session);
             setUser(session?.user ?? null);
             if (session?.user) {
-                fetchPlan(session.user.id);
-            } else {
-                setUserPlan('free');
-            }
-        });
-
-        // Single loading gate: `loading` only becomes false after getSession() resolves.
-        // This prevents any redirect from firing before the persisted session is confirmed.
-        supabase!.auth.getSession().then(({ data: { session } }) => {
-            if (session?.user) {
                 fetchPlan(session.user.id).finally(() => setLoading(false));
             } else {
+                setUserPlan('free');
                 setLoading(false);
             }
         });

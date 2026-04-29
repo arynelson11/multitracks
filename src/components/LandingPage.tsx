@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   Music, Wand2, Sliders, Mic2, Drumstick, Guitar, Piano,
   Play, Star, ChevronDown, Check, Zap,
@@ -7,7 +7,6 @@ import {
 } from 'lucide-react'
 import { DemoMixer } from './DemoMixer'
 import { usePWAInstall } from '../hooks/usePWAInstall'
-import { useAuth } from '../hooks/useAuth'
 
 interface LandingPageProps {
   onEnter: () => void
@@ -105,13 +104,6 @@ export function LandingPage({ onEnter }: LandingPageProps) {
   const [billing, setBilling] = useState<'monthly' | 'annual'>('annual')
   const [openFaq, setOpenFaq] = useState<number | null>(null)
   const { isInstallable, isInstalled, promptInstall } = usePWAInstall()
-  const { user, loading: authLoading } = useAuth()
-
-  // Safety-net: if session resolves while this component is mounted (e.g. token
-  // refresh completing), skip straight to the app without showing the auth page.
-  useEffect(() => {
-    if (!authLoading && user) onEnter()
-  }, [user, authLoading])
 
   return (
     <div className="min-h-screen bg-[#070708] text-white overflow-x-hidden">
