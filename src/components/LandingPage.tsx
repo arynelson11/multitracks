@@ -3,9 +3,10 @@ import {
   Music, Wand2, Sliders, Mic2, Drumstick, Guitar, Piano,
   Play, Star, ChevronDown, Check, Zap,
   ArrowRight, SlidersHorizontal, FileAudio, MonitorPlay,
-  Move, BarChart2, Church, Disc3
+  Move, BarChart2, Church, Disc3, Download
 } from 'lucide-react'
 import { DemoMixer } from './DemoMixer'
+import { usePWAInstall } from '../hooks/usePWAInstall'
 
 interface LandingPageProps {
   onEnter: () => void
@@ -102,6 +103,7 @@ const FAQS = [
 export function LandingPage({ onEnter }: LandingPageProps) {
   const [billing, setBilling] = useState<'monthly' | 'annual'>('annual')
   const [openFaq, setOpenFaq] = useState<number | null>(null)
+  const { isInstallable, isInstalled, promptInstall } = usePWAInstall()
 
   return (
     <div className="min-h-screen bg-[#070708] text-white overflow-x-hidden">
@@ -174,6 +176,11 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             <a href="#recursos" className="flex items-center justify-center gap-2.5 bg-white/[0.05] hover:bg-white/[0.09] border border-white/10 text-white px-8 py-4 rounded-xl font-bold text-[15px] transition-all cursor-pointer">
               <Wand2 size={17} className="text-purple-400" /> Veja os recursos
             </a>
+            {isInstallable && !isInstalled && (
+              <button onClick={promptInstall} className="flex items-center justify-center gap-2.5 bg-[#d4a843]/10 hover:bg-[#d4a843]/20 border border-[#d4a843]/40 text-[#d4a843] px-8 py-4 rounded-xl font-bold text-[15px] transition-all hover:scale-[1.03] cursor-pointer">
+                <Download size={17} /> Instalar App
+              </button>
+            )}
           </div>
           <p className="text-[12px] text-white/20 mt-5">Grátis para começar · Sem cartão de crédito</p>
         </div>

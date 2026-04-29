@@ -323,8 +323,12 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
           if (otherWs !== ws) {
             let targetTime = time;
             const offsetSec = offsetRef.current / 1000;
-            if (otherWs.options.container.id === 'waveform-click') targetTime -= offsetSec;
-            else if (ws.options.container.id === 'waveform-click') targetTime += offsetSec;
+            const otherContainer = otherWs.options.container;
+            const wsContainer = ws.options.container;
+            const otherId = typeof otherContainer === 'string' ? otherContainer : otherContainer.id;
+            const wsId = typeof wsContainer === 'string' ? wsContainer : wsContainer.id;
+            if (otherId === 'waveform-click') targetTime -= offsetSec;
+            else if (wsId === 'waveform-click') targetTime += offsetSec;
             otherWs.setTime(Math.max(0, targetTime));
           }
         });
