@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut, Shield, Home, Disc, Repeat, Square } from 'lucide-react'
+import { BrandLogo } from './components/BrandLogo'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { usePadSynth } from './hooks/usePadSynth'
 import { useSamplesLibrary } from './hooks/useSamplesLibrary'
@@ -373,9 +374,8 @@ export default function App() {
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="relative">
               <button onClick={() => setIsSetlistMenuOpen(!isSetlistMenuOpen)}
-                className="text-sm sm:text-base font-black tracking-[0.1em] uppercase hover:text-primary active:scale-95 transition-all cursor-pointer flex items-center gap-1.5 focus:outline-none text-white/80">
-                <ListMusic size={16} className="text-primary" />
-                <span className="hidden xs:inline">PLAYBACK</span>
+                className="active:scale-95 transition-transform cursor-pointer focus:outline-none">
+                <BrandLogo size="sm" />
               </button>
 
               {/* ─── Setlist Dropdown ─── */}

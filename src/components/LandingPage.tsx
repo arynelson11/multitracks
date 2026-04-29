@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { DemoMixer } from './DemoMixer'
 import { usePWAInstall } from '../hooks/usePWAInstall'
+import { BrandLogo } from './BrandLogo'
 
 interface LandingPageProps {
   onEnter: () => void
@@ -128,12 +129,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       {/* ── NAV ── */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-[#070708]/80 backdrop-blur-xl border-b border-white/[0.05]">
         <div className="max-w-6xl mx-auto px-5 sm:px-8 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-orange-500/20 border border-orange-500/40 flex items-center justify-center">
-              <Music size={13} className="text-orange-400" />
-            </div>
-            <span className="font-black tracking-[0.15em] uppercase text-[13px]">Playback Studio</span>
-          </div>
+          <BrandLogo size="md" />
           <div className="flex items-center gap-2">
             <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="hidden sm:block text-[13px] text-white/50 hover:text-white px-3 py-1.5 transition-colors cursor-pointer">Entrar</button>
             <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="text-[13px] bg-orange-500 hover:bg-orange-400 text-white px-5 py-2 rounded-lg font-bold transition-colors cursor-pointer">Cadastre-se</button>
