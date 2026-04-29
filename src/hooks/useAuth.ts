@@ -27,17 +27,24 @@ export function useAuth() {
             }
         };
 
-        // onAuthStateChange fires INITIAL_SESSION on mount with the persisted session.
-        // This is the single source of truth — no getSession() race condition.
+        // Reactive listener for all subsequent auth changes (sign in, sign out, token refresh).
+        // Never touches `loading` — that's getSession()'s exclusive job.
         const { data: { subscription } } = supabase!.auth.onAuthStateChange((_event, session) => {
             setSession(session);
             setUser(session?.user ?? null);
             if (session?.user) {
-                fetchPlan(session.user.id).finally(() => setLoading(false));
+                fetchPlan(session.user.id);
             } else {
                 setUserPlan('free');
-                // Only stop the initial load gate after the session is determined.
-                // INITIAL_SESSION with null means genuinely not logged in.
+            }
+        });
+
+        // Single loading gate: `loading` only becomes false after getSession() resolves.
+        // This prevents any redirect from firing before the persisted session is confirmed.
+        supabase!.auth.getSession().then(({ data: { session } }) => {
+            if (session?.user) {
+                fetchPlan(session.user.id).finally(() => setLoading(false));
+            } else {
                 setLoading(false);
             }
         });
