@@ -47,7 +47,8 @@ export function useAdminUpload() {
                 artist: metadata.artist,
                 key: metadata.key,
                 bpm: metadata.bpm,
-                cover_url
+                cover_url,
+                is_global: true
             });
             if (!songId) throw new Error('Falha ao gravar música (ID não retornado).');
             setProgress(20);
