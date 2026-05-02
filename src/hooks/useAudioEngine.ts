@@ -281,6 +281,7 @@ export function useAudioEngine(userId?: string) {
             autoNextTimeoutRef.current = null;
         }
 
+        const anySoloed = channels.some(c => c.soloed);
         channels.forEach(ch => {
             const source = ctx.createBufferSource();
             source.buffer = ch.buffer;
@@ -293,8 +294,14 @@ export function useAudioEngine(userId?: string) {
             if (nameL.includes('metronomo loop')) {
                 source.loop = true;
             }
+            // Cancel any pending gain automation and apply correct volume immediately
+            if (ch.gainNode) {
+                ch.gainNode.gain.cancelScheduledValues(ctx.currentTime);
+                let vol = ch.volume;
+                if (ch.muted || (anySoloed && !ch.soloed)) vol = 0;
+                ch.gainNode.gain.setValueAtTime(vol, ctx.currentTime);
+            }
             source.connect(ch.pannerNode);
-            // Phase 3: Apply time-stretch
             source.playbackRate.value = timeStretch;
             source.start(0, pausedAtRef.current);
             ch.sourceNode = source;
@@ -960,10 +967,13 @@ export function useAudioEngine(userId?: string) {
         if (!song) return;
 
         song.channels = song.channels.map(ch => {
-            if (ch.id === id && audioCtxRef.current) {
+            if (ch.id === id) {
                 const isMuted = !ch.muted;
                 const effectiveVol = isMuted ? 0 : ch.volume;
-                ch.gainNode.gain.setTargetAtTime(effectiveVol, audioCtxRef.current.currentTime, 0.05);
+                if (ch.gainNode && audioCtxRef.current) {
+                    ch.gainNode.gain.cancelScheduledValues(audioCtxRef.current.currentTime);
+                    ch.gainNode.gain.setValueAtTime(effectiveVol, audioCtxRef.current.currentTime);
+                }
                 return { ...ch, muted: isMuted };
             }
             return ch;
@@ -987,12 +997,12 @@ export function useAudioEngine(userId?: string) {
         const anySoloed = song.channels.some(ch => ch.soloed);
 
         song.channels.forEach(ch => {
-            if (audioCtxRef.current) {
+            if (ch.gainNode && audioCtxRef.current) {
                 let effectiveVol = ch.volume;
                 if (ch.muted) effectiveVol = 0;
                 if (anySoloed && !ch.soloed) effectiveVol = 0;
-
-                ch.gainNode.gain.setTargetAtTime(effectiveVol, audioCtxRef.current.currentTime, 0.05);
+                ch.gainNode.gain.cancelScheduledValues(audioCtxRef.current.currentTime);
+                ch.gainNode.gain.setValueAtTime(effectiveVol, audioCtxRef.current.currentTime);
             }
         });
 

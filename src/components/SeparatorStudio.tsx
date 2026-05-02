@@ -1,8 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3 } from 'lucide-react';
-import { insertSong, insertStems, type CloudStem } from '../lib/supabase';
-import { analyzeAudioAndGenerateClick } from '../lib/AudioAnalyzer';
 import { uploadToR2 } from '../lib/r2';
 import { useAuth } from '../hooks/useAuth';
 import { PricingModal } from './PricingModal';
@@ -203,18 +201,6 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       if (!finalOutput) throw new Error("Sem saída da IA.");
       setProgress(90);
 
-      // 4. Detecção de BPM e Sintetização de Metrônomo via Browser!
-      // Achamos a track da bateria para melhor precisão
-      const drumsUrl = finalOutput.drums || finalOutput.other || finalOutput.base;
-      let metronomeUrl = '';
-      
-      if (drumsUrl) {
-         setProgressMsg('Calculando BPM da música no navegador e criando Click Track...');
-         const { bpm, clickTrackUrl } = await analyzeAudioAndGenerateClick(drumsUrl, setProgressMsg);
-         setBpm(bpm.toString());
-         metronomeUrl = clickTrackUrl;
-      }
-
       // Preparando as faixas finais
       const colors: Record<string, string> = {
         vocals: '#06b6d4', drums: '#f59e0b', bass: '#8b5cf6',
@@ -235,13 +221,6 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         }
       });
       
-      if (metronomeUrl) {
-         stemsArray.push({
-            id: 'click', name: 'Metrônomo IA',
-            url: metronomeUrl, color: '#e2e8f0'
-         });
-      }
-
       // Start initial States
       const initialStates: any = {};
       stemsArray.forEach(s => {
@@ -371,23 +350,31 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
          if (!rRes.error) cover_url = rRes.url;
       }
 
-      const songId = await insertSong({
-        name: songName, artist: artist || 'Desconhecido',
-        key: songKey, bpm: Number(bpm), cover_url: cover_url,
-        user_id: user?.id,
-        is_global: isAdmin ? publishGlobal : false
+      const songRes = await fetch('/api/insert-song', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: songName, artist: artist || 'Desconhecido',
+          key: songKey, bpm: Number(bpm), cover_url,
+          user_id: user?.id,
+          is_global: isAdmin ? publishGlobal : false
+        }),
       });
-
+      if (!songRes.ok) {
+        const b = await songRes.json().catch(() => ({ error: `HTTP ${songRes.status}` }));
+        throw new Error(b.error || 'Falha ao criar música');
+      }
+      const { id: songId } = await songRes.json();
       if (!songId) throw new Error("Falha ao criar música");
       setSaveProgress(10);
-      
-      const stemsData: Omit<CloudStem, 'id'>[] = [];
+
+      const stemsData: { song_id: string; name: string; file_url: string; order: number }[] = [];
       const total = stems.length;
 
       for (let i = 0; i < stems.length; i++) {
         const stem = stems[i];
         setSaveStatus(`Implantando Nuvem ☁️: ${stem.name} (${i+1}/${total})...`);
-        
+
         const response = await fetch(stem.url);
         const blob = await response.blob();
         const stemFile = new File([blob], `${stem.id}.wav`, { type: blob.type || 'audio/wav' });
@@ -395,22 +382,27 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         const uploadResult = await uploadToR2('stems', `${songId}/IA_${Date.now()}_${stem.id}.wav`, stemFile);
         if (uploadResult.error || !uploadResult.url) throw new Error(uploadResult.error!);
 
-        stemsData.push({
-          song_id: songId, name: stem.id, 
-          file_url: uploadResult.url, order: i + 1
-        });
-
+        stemsData.push({ song_id: songId, name: stem.id, file_url: uploadResult.url, order: i + 1 });
         setSaveProgress(10 + Math.floor(((i + 1) / total) * 80));
       }
 
-      setSaveStatus('Sucesso!');
-      await insertStems(stemsData);
-      setSaveProgress(100);
+      setSaveStatus('Finalizando registros...');
+      const stemsRes = await fetch('/api/insert-stems', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stems: stemsData }),
+      });
+      if (!stemsRes.ok) {
+        const b = await stemsRes.json().catch(() => ({ error: `HTTP ${stemsRes.status}` }));
+        throw new Error(b.error || 'Falha ao registrar stems');
+      }
 
+      setSaveProgress(100);
+      setSaveStatus('Sucesso! Música publicada na nuvem.');
       setTimeout(() => {
-         setIsSaving(false);
-         setShowSaveForm(false);
-         onClose(); 
+        setIsSaving(false);
+        setShowSaveForm(false);
+        // Stay on page — user can continue working
       }, 2000);
 
     } catch (e: any) {
