@@ -4,6 +4,7 @@ import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume
 import { uploadToR2 } from '../lib/r2';
 import { useAuth } from '../hooks/useAuth';
 import { PricingModal } from './PricingModal';
+import { generateEndlessClickTrack } from '../lib/AudioAnalyzer';
 
 interface StemData {
   id: string;
@@ -39,6 +40,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const [isPlaying, setIsPlaying] = useState(false);
   const wavesurfers = useRef<Record<string, WaveSurfer>>({});
   const panners = useRef<Record<string, StereoPannerNode>>({});
+  const gainNodes = useRef<Record<string, GainNode>>({});
   const [masterVolume, setMasterVolume] = useState(0.8);
   const [progressPlayback, setProgressPlayback] = useState(0);
   
@@ -104,23 +106,25 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     setIsProcessing(false);
   };
 
-  // Controle de Master e Mute/Solo
+  // Controle de Master e Mute/Solo via GainNode (garante funcionamento no Safari)
   useEffect(() => {
     const hasSolo = Object.values(stemStates).some(s => s.soloed);
-    
+    const ctx = getAudioContext();
+
     stems.forEach(stem => {
       const state = stemStates[stem.id];
-      const ws = wavesurfers.current[stem.id];
+      const gainNode = gainNodes.current[stem.id];
       const panner = panners.current[stem.id];
-      
-      if (ws && state) {
+
+      if (gainNode && state) {
         let finalVol = state.volume * masterVolume;
         if (state.muted) finalVol = 0;
         else if (hasSolo && !state.soloed) finalVol = 0;
-        
-        ws.setVolume(finalVol);
+
+        gainNode.gain.cancelScheduledValues(ctx.currentTime);
+        gainNode.gain.setValueAtTime(finalVol, ctx.currentTime);
       }
-      
+
       if (panner && state) {
         panner.pan.value = state.pan;
       }
@@ -268,19 +272,25 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         url: stem.url,
       });
 
-      // Roteamento Web Audio para Panning
+      // Roteamento Web Audio: source → gain → panner → destination
       ws.on('ready', () => {
          try {
            const media = ws.getMediaElement();
-           // Evitar rotear 2 vezes na mesma tag
            if (!media.dataset.routed) {
              media.dataset.routed = "true";
              const ctx = getAudioContext();
              const source = ctx.createMediaElementSource(media);
+             const gainNode = ctx.createGain();
              const panner = ctx.createStereoPanner();
-             source.connect(panner);
+             source.connect(gainNode);
+             gainNode.connect(panner);
              panner.connect(ctx.destination);
+             gainNodes.current[stem.id] = gainNode;
              panners.current[stem.id] = panner;
+           }
+           // Metrônomo gerado internamente: loop contínuo
+           if (stem.id === 'metronome') {
+             ws.getMediaElement().loop = true;
            }
          } catch (e) { console.warn("Panner error", e) }
       });
@@ -306,8 +316,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
             const wsContainer = ws.options.container;
             const otherId = typeof otherContainer === 'string' ? otherContainer : otherContainer.id;
             const wsId = typeof wsContainer === 'string' ? wsContainer : wsContainer.id;
-            if (otherId === 'waveform-click') targetTime -= offsetSec;
-            else if (wsId === 'waveform-click') targetTime += offsetSec;
+            if (otherId === 'waveform-click' || otherId === 'waveform-metronome') targetTime -= offsetSec;
+            else if (wsId === 'waveform-click' || wsId === 'waveform-metronome') targetTime += offsetSec;
             otherWs.setTime(Math.max(0, targetTime));
           }
         });
@@ -320,6 +330,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       Object.values(wavesurfers.current).forEach(ws => ws.destroy());
       wavesurfers.current = {};
       panners.current = {};
+      gainNodes.current = {};
     };
   }, [stems]);
 
@@ -408,6 +419,24 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     } catch (e: any) {
       alert("Erro ao salvar: " + e.message);
       setIsSaving(false);
+    }
+  };
+
+  const addMetronomeChannel = async () => {
+    const bpmNum = parseInt(bpm) || 120;
+    try {
+      const { clickBlob } = await generateEndlessClickTrack(bpmNum);
+      const blobUrl = URL.createObjectURL(clickBlob);
+      const metroStem: StemData = {
+        id: 'metronome',
+        name: `Metrônomo ${bpmNum} BPM`,
+        url: blobUrl,
+        color: '#e2e8f0'
+      };
+      setStemStates(p => ({ ...p, metronome: { muted: false, soloed: false, volume: 0.8, pan: 0 } }));
+      setStems(prev => [...prev.filter(s => s.id !== 'metronome'), metroStem]);
+    } catch (e) {
+      console.error('Erro ao gerar metrônomo', e);
     }
   };
 
@@ -553,13 +582,23 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
             {/* BPM Input */}
             <div className="flex items-center gap-1.5 bg-black/40 border border-white/10 rounded-md px-2 py-1">
                <span className="text-[9px] text-text-muted uppercase tracking-widest font-bold">BPM</span>
-               <input 
-                  type="number" 
-                  value={bpm} 
+               <input
+                  type="number"
+                  value={bpm}
                   onChange={(e) => setBpm(e.target.value)}
                   className="w-10 bg-transparent text-white text-xs font-mono font-black outline-none text-center appearance-none"
                />
             </div>
+            {/* Add Metronome button */}
+            {stems.length > 0 && (
+              <button
+                onClick={addMetronomeChannel}
+                className="flex items-center gap-1 bg-black/40 border border-white/10 rounded-md px-2 py-1 hover:bg-primary/10 hover:border-primary/30 hover:text-primary text-text-muted transition-all cursor-pointer"
+                title={`Adicionar metrônomo a ${bpm} BPM`}
+              >
+                <span className="text-[9px] uppercase tracking-widest font-bold">+ Click</span>
+              </button>
+            )}
             
             {/* Key Select */}
             <div className="flex items-center gap-1.5 bg-black/40 border border-white/10 rounded-md px-2 py-1">
