@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, X, Download, Cloud, Loader2, Music, RefreshCcw, Trash2, Edit2, Save, UploadCloud } from 'lucide-react';
 import { useCloudLibrary } from '../hooks/useCloudLibrary';
 import { useAuth } from '../hooks/useAuth';
@@ -32,6 +32,10 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
     const [editingSong, setEditingSong] = useState<Partial<CloudSong> & { file?: File | null }>({});
     const [isSavingEdit, setIsSavingEdit] = useState(false);
     const [activeTab, setActiveTab] = useState<'platform' | 'personal'>('platform');
+
+    useEffect(() => {
+        if (isOpen) refreshSongs();
+    }, [isOpen]);
 
     const handleEditSave = async (song: CloudSong) => {
         setIsSavingEdit(true);
