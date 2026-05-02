@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import WaveSurfer from 'wavesurfer.js';
-import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3 } from 'lucide-react';
+import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Minus, Plus } from 'lucide-react';
 import { uploadToR2 } from '../lib/r2';
 import { useAuth } from '../hooks/useAuth';
 import { PricingModal } from './PricingModal';
-import { generateEndlessClickTrack } from '../lib/AudioAnalyzer';
+import { generateManualClickTrack } from '../lib/AudioAnalyzer';
 
 interface StemData {
   id: string;
@@ -58,6 +58,22 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const [bpm, setBpm] = useState('120');
   const [songKey, setSongKey] = useState('C');
   const [coverFile, setCoverFile] = useState<File | null>(null);
+
+  const [showBpmModal, setShowBpmModal] = useState(false);
+  const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false);
+  const [isGeneratingClick, setIsGeneratingClick] = useState(false);
+
+  const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const getTempoName = (b: number) => {
+    if (b < 60) return 'Largo';
+    if (b < 76) return 'Adagio';
+    if (b < 108) return 'Andante';
+    if (b < 112) return 'Moderato';
+    if (b < 120) return 'Allegretto';
+    if (b < 156) return 'Allegro';
+    if (b < 176) return 'Vivace';
+    return 'Presto';
+  };
 
   // Metronome Sync Nudge
   const [clickOffsetMs, setClickOffsetMsState] = useState(0);
@@ -288,10 +304,6 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
              gainNodes.current[stem.id] = gainNode;
              panners.current[stem.id] = panner;
            }
-           // Metrônomo gerado internamente: loop contínuo
-           if (stem.id === 'metronome') {
-             ws.getMediaElement().loop = true;
-           }
          } catch (e) { console.warn("Panner error", e) }
       });
 
@@ -393,7 +405,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         const uploadResult = await uploadToR2('stems', `${songId}/IA_${Date.now()}_${stem.id}.wav`, stemFile);
         if (uploadResult.error || !uploadResult.url) throw new Error(uploadResult.error!);
 
-        stemsData.push({ song_id: songId, name: stem.id, file_url: uploadResult.url, order: i + 1 });
+        stemsData.push({ song_id: songId, name: stem.name || stem.id, file_url: uploadResult.url, order: i + 1 });
         setSaveProgress(10 + Math.floor(((i + 1) / total) * 80));
       }
 
@@ -424,19 +436,28 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
   const addMetronomeChannel = async () => {
     const bpmNum = parseInt(bpm) || 120;
+    setIsGeneratingClick(true);
     try {
-      const { clickBlob } = await generateEndlessClickTrack(bpmNum);
-      const blobUrl = URL.createObjectURL(clickBlob);
+      // Get real song duration from WaveSurfer; fallback to 10 min
+      const firstWs = Object.values(wavesurfers.current)[0];
+      const songDuration = (firstWs?.getDuration() > 0 ? firstWs.getDuration() : 0) || 600;
+
+      const { clickTrackUrl } = await generateManualClickTrack(bpmNum, songDuration, () => {});
+      if (!clickTrackUrl) throw new Error('Falha ao gerar metrônomo');
+
       const metroStem: StemData = {
         id: 'metronome',
-        name: `Metrônomo ${bpmNum} BPM`,
-        url: blobUrl,
+        name: 'Metrônomo',
+        url: clickTrackUrl,
         color: '#e2e8f0'
       };
       setStemStates(p => ({ ...p, metronome: { muted: false, soloed: false, volume: 0.8, pan: 0 } }));
       setStems(prev => [...prev.filter(s => s.id !== 'metronome'), metroStem]);
+      setShowBpmModal(false);
     } catch (e) {
       console.error('Erro ao gerar metrônomo', e);
+    } finally {
+      setIsGeneratingClick(false);
     }
   };
 
@@ -578,39 +599,53 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
       {/* TRANSPORT BAR */}
       <footer className="h-16 bg-[#0a0a0c]/80 backdrop-blur-xl border-t border-white/10 shrink-0 px-6 flex items-center justify-between z-20">
-         <div className="flex-1 flex items-center gap-4">
-            {/* BPM Input */}
-            <div className="flex items-center gap-1.5 bg-black/40 border border-white/10 rounded-md px-2 py-1">
+         <div className="flex-1 flex items-center gap-3">
+            {/* BPM Button → opens modal */}
+            <button
+               onClick={() => setShowBpmModal(true)}
+               className="flex items-center gap-1.5 bg-black/40 border border-white/10 rounded-md px-2.5 py-1.5 hover:bg-white/5 transition-colors cursor-pointer"
+            >
                <span className="text-[9px] text-text-muted uppercase tracking-widest font-bold">BPM</span>
-               <input
-                  type="number"
-                  value={bpm}
-                  onChange={(e) => setBpm(e.target.value)}
-                  className="w-10 bg-transparent text-white text-xs font-mono font-black outline-none text-center appearance-none"
-               />
+               <span className="text-white text-xs font-mono font-black">{bpm}</span>
+            </button>
+
+            {/* Tom Button → opens key picker */}
+            <div className="relative">
+               <button
+                  onClick={() => setIsKeyPickerOpen(p => !p)}
+                  className={`flex items-center gap-1.5 bg-black/40 border border-white/10 rounded-md px-2.5 py-1.5 hover:bg-white/5 transition-colors cursor-pointer ${isKeyPickerOpen ? 'border-primary/40' : ''}`}
+               >
+                  <span className="text-[9px] text-text-muted uppercase tracking-widest font-bold">Tom</span>
+                  <span className="text-primary text-xs font-mono font-black">{songKey}</span>
+               </button>
+               {isKeyPickerOpen && (
+                  <>
+                     <div className="fixed inset-0 z-40" onClick={() => setIsKeyPickerOpen(false)} />
+                     <div className="absolute bottom-full mb-2 left-0 bg-[#1c1c1e] border border-white/10 rounded-xl z-50 p-3 w-44 shadow-2xl">
+                        <p className="text-[9px] text-text-muted mb-2 font-mono uppercase tracking-wider">Selecionar tom:</p>
+                        <div className="grid grid-cols-4 gap-1">
+                           {KEYS.map(k => (
+                              <button key={k} onClick={() => { setSongKey(k); setIsKeyPickerOpen(false); }}
+                                 className={`py-1.5 text-[10px] font-bold rounded transition-colors cursor-pointer font-mono ${songKey === k ? 'bg-primary text-black' : 'text-white/70 bg-white/5 hover:bg-primary/20 hover:text-primary'}`}>
+                                 {k}
+                              </button>
+                           ))}
+                        </div>
+                     </div>
+                  </>
+               )}
             </div>
-            {/* Add Metronome button */}
+
+            {/* + Click button (visible when tracks are loaded) */}
             {stems.length > 0 && (
               <button
-                onClick={addMetronomeChannel}
-                className="flex items-center gap-1 bg-black/40 border border-white/10 rounded-md px-2 py-1 hover:bg-primary/10 hover:border-primary/30 hover:text-primary text-text-muted transition-all cursor-pointer"
+                onClick={() => setShowBpmModal(true)}
+                className="flex items-center gap-1 bg-black/40 border border-white/10 rounded-md px-2.5 py-1.5 hover:bg-primary/10 hover:border-primary/30 hover:text-primary text-text-muted transition-all cursor-pointer"
                 title={`Adicionar metrônomo a ${bpm} BPM`}
               >
                 <span className="text-[9px] uppercase tracking-widest font-bold">+ Click</span>
               </button>
             )}
-            
-            {/* Key Select */}
-            <div className="flex items-center gap-1.5 bg-black/40 border border-white/10 rounded-md px-2 py-1">
-               <span className="text-[9px] text-text-muted uppercase tracking-widest font-bold">Tom</span>
-               <select 
-                  value={songKey} 
-                  onChange={(e) => setSongKey(e.target.value)}
-                  className="bg-transparent text-white text-xs font-mono font-black outline-none appearance-none cursor-pointer text-center pr-2"
-               >
-                  {['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'].map(k => <option key={k} value={k} className="bg-black text-white">{k}</option>)}
-               </select>
-            </div>
 
             {/* Sync Offset */}
             <div className="flex items-center gap-1 bg-black/40 border border-white/10 rounded-md p-1 h-8">
@@ -686,7 +721,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Tom</label>
                      <select value={songKey} onChange={e => setSongKey(e.target.value)}
                        className="w-full daw-input rounded-md px-3 py-2 text-white text-xs font-mono appearance-none">
-                       {['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'].map(k => <option key={k} value={k}>{k}</option>)}
+                       {KEYS.map(k => <option key={k} value={k}>{k}</option>)}
                      </select>
                    </div>
                  </div>
@@ -734,6 +769,47 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                   </div>
                </div>
              )}
+          </div>
+        </div>
+      )}
+
+      {/* BPM MODAL */}
+      {showBpmModal && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => !isGeneratingClick && setShowBpmModal(false)}>
+          <div className="bg-[#1c1c1e] w-full max-w-[340px] rounded-2xl p-5 shadow-2xl border border-white/5 flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-white text-sm font-bold tracking-wide">BPM</span>
+              <button onClick={() => !isGeneratingClick && setShowBpmModal(false)} className="text-white/40 hover:text-white transition-colors cursor-pointer p-1">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="text-white/60 text-sm font-medium mb-4">{getTempoName(parseInt(bpm) || 120)}</div>
+            <div className="flex items-center justify-between bg-[#141415] border border-white/5 rounded-xl p-2 mb-6">
+              <button onClick={() => setBpm(String(Math.max(40, (parseInt(bpm) || 120) - 1)))} disabled={isGeneratingClick}
+                className="w-12 h-12 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg active:scale-95 transition-all text-white/80 cursor-pointer disabled:opacity-50">
+                <Minus size={20} />
+              </button>
+              <input type="number" value={bpm}
+                onChange={e => setBpm(e.target.value)}
+                onBlur={() => { const n = parseInt(bpm); if (isNaN(n)) setBpm('120'); else setBpm(String(Math.max(40, Math.min(300, n)))); }}
+                disabled={isGeneratingClick}
+                className="text-white font-black text-4xl w-24 text-center bg-transparent focus:outline-none"
+              />
+              <button onClick={() => setBpm(String(Math.min(300, (parseInt(bpm) || 120) + 1)))} disabled={isGeneratingClick}
+                className="w-12 h-12 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg active:scale-95 transition-all text-white/80 cursor-pointer disabled:opacity-50">
+                <Plus size={20} />
+              </button>
+            </div>
+            {isGeneratingClick && (
+              <div className="text-center text-[10px] font-bold text-primary animate-pulse uppercase tracking-wider mb-4">
+                Sintetizando metrônomo...
+              </div>
+            )}
+            <button onClick={addMetronomeChannel} disabled={isGeneratingClick || stems.length === 0}
+              className="w-full bg-[#2a2a2d] hover:bg-[#343438] text-white py-3.5 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-xs tracking-wider cursor-pointer border border-white/5 active:scale-95">
+              {isGeneratingClick ? <Loader2 size={16} className="animate-spin" /> : <Play fill="currentColor" size={14} />}
+              GERAR CLICK MANUAL
+            </button>
           </div>
         </div>
       )}

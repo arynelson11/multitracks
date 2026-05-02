@@ -73,7 +73,8 @@ export function detectKey(buffer: AudioBuffer): string {
 // Converte um AudioBuffer em um arquivo Wav (Blob) que pode ser tocado pelo navegador.
 function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   const numOfChan = buffer.numberOfChannels;
-  const length = buffer.length * numOfChan * 2 + 44;
+  const dataBytes = buffer.length * numOfChan * 2;
+  const length = dataBytes + 44;
   const bufferArray = new ArrayBuffer(length);
   const view = new DataView(bufferArray);
   const channels = [];
@@ -104,7 +105,7 @@ function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   setUint16(numOfChan * 2); // block align
   setUint16(16);         // 16-bit
   setUint32(0x61746164); // "data"
-  setUint32(length - pos - 4); // chunk length
+  setUint32(dataBytes);  // chunk length (PCM bytes only)
 
   for (i = 0; i < buffer.numberOfChannels; i++) {
     channels.push(buffer.getChannelData(i));
@@ -121,6 +122,36 @@ function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
   }
 
   return new Blob([bufferArray], { type: "audio/wav" });
+}
+
+// Serializa Float32Array mono diretamente para WAV — sem depender de AudioContext.
+function float32MonoToWavBlob(data: Float32Array, sampleRate: number): Blob {
+  const dataBytes = data.length * 2; // 16-bit
+  const buf = new ArrayBuffer(44 + dataBytes);
+  const view = new DataView(buf);
+
+  view.setUint32(0,  0x46464952, true); // "RIFF"
+  view.setUint32(4,  36 + dataBytes, true);
+  view.setUint32(8,  0x45564157, true); // "WAVE"
+  view.setUint32(12, 0x20746d66, true); // "fmt "
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);          // PCM
+  view.setUint16(22, 1, true);          // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  view.setUint32(36, 0x61746164, true); // "data"
+  view.setUint32(40, dataBytes, true);
+
+  let offset = 44;
+  for (let i = 0; i < data.length; i++) {
+    const s = Math.max(-1, Math.min(1, data[i]));
+    view.setInt16(offset, s < 0 ? s * 32768 : s * 32767, true);
+    offset += 2;
+  }
+
+  return new Blob([buf], { type: 'audio/wav' });
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -442,43 +473,40 @@ export async function generateManualClickTrack(
 ): Promise<{ bpm: number; clickTrackUrl: string }> {
   try {
     const sampleRate = 44100;
-    const length = sampleRate * durationInSeconds;
-    const offlineCtx = new OfflineAudioContext(1, length, sampleRate);
+    const safeDuration = Math.max(1, durationInSeconds);
+    const totalSamples = Math.ceil(sampleRate * safeDuration);
 
     onProgress(`Sintetizando faixa de Metrônomo Manual (${bpm} BPM)...`);
 
     const secondsPerBeat = 60 / bpm;
-    let beatTime = 0;
+    const clickSamples = Math.round(sampleRate * 0.05); // 50ms por click
+    const data = new Float32Array(totalSamples);
 
-    // Gerar os blips até o fim da trilha
-    while (beatTime < durationInSeconds) {
-      const osc = offlineCtx.createOscillator();
-      const gain = offlineCtx.createGain();
-      
-      // Beep de 1000Hz, caindo rápido em 50ms
-      osc.frequency.setValueAtTime(1000, beatTime);
-      osc.frequency.exponentialRampToValueAtTime(0.001, beatTime + 0.05);
+    // Síntese direta: sem OfflineAudioContext nem osciladores — zero risco de limite de nós
+    let beat = 0;
+    while (true) {
+      const beatStart = Math.round(beat * sampleRate * secondsPerBeat);
+      if (beatStart >= totalSamples) break;
 
-      gain.gain.setValueAtTime(1, beatTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, beatTime + 0.05);
+      const isDownbeat = beat % 4 === 0;
+      const freq = isDownbeat ? 1500 : 1000;
+      const vol = isDownbeat ? 1.0 : 0.7;
+      const end = Math.min(beatStart + clickSamples, totalSamples);
 
-      osc.connect(gain);
-      gain.connect(offlineCtx.destination);
-
-      osc.start(beatTime);
-      osc.stop(beatTime + 0.05);
-
-      beatTime += secondsPerBeat;
+      for (let i = beatStart; i < end; i++) {
+        const t = (i - beatStart) / sampleRate;
+        data[i] = Math.sin(2 * Math.PI * freq * t) * Math.exp(-80 * t) * vol;
+      }
+      beat++;
     }
 
-    onProgress("Convertendo áudio sintetizado...");
-    const renderedBuffer = await offlineCtx.startRendering();
-    const clickBlob = audioBufferToWavBlob(renderedBuffer);
+    onProgress('Convertendo áudio sintetizado...');
+    const clickBlob = float32MonoToWavBlob(data, sampleRate);
     const clickTrackUrl = URL.createObjectURL(clickBlob);
 
     return { bpm, clickTrackUrl };
   } catch (error) {
-    console.error("Erro ao gerar metrônomo manual", error);
+    console.error('Erro ao gerar metrônomo manual', error);
     return { bpm, clickTrackUrl: '' };
   }
 }
