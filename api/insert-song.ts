@@ -23,7 +23,7 @@ export default async function handler(req: any, res: any) {
         const supabase = createClient(supabaseUrl, serviceRoleKey);
         const { data, error } = await supabase
             .from('songs')
-            .insert(song)
+            .insert({ ...song, is_global: true })
             .select('id')
             .single();
 
