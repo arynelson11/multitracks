@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { insertSong, insertStems, insertPadSet, type CloudStem } from '../lib/supabase';
+import { insertPadSet, type CloudStem } from '../lib/supabase';
 import { uploadToR2 } from '../lib/r2';
 
 export interface UploadMetadata {
@@ -40,16 +40,25 @@ export function useAdminUpload() {
             }
             setProgress(10);
 
-            // 2. Insert Song Metadata
+            // 2. Insert Song Metadata (via server proxy to avoid Safari CORS)
             setStatus('Gravando metadados da música...');
-            const songId = await insertSong({
-                name: metadata.name,
-                artist: metadata.artist,
-                key: metadata.key,
-                bpm: metadata.bpm,
-                cover_url,
-                is_global: true
+            const songRes = await fetch('/api/insert-song', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: metadata.name,
+                    artist: metadata.artist,
+                    key: metadata.key,
+                    bpm: metadata.bpm,
+                    cover_url,
+                    is_global: true
+                }),
             });
+            if (!songRes.ok) {
+                const body = await songRes.json().catch(() => ({ error: `HTTP ${songRes.status}` }));
+                throw new Error(`Falha ao gravar música: ${body.error}`);
+            }
+            const { id: songId } = await songRes.json();
             if (!songId) throw new Error('Falha ao gravar música (ID não retornado).');
             setProgress(20);
 
@@ -80,11 +89,18 @@ export function useAdminUpload() {
                 setProgress(stepProgress);
             }
 
-            // 4. Insert Stems Records
+            // 4. Insert Stems Records (via server proxy to avoid Safari CORS)
             if (stemsData.length > 0) {
                 setStatus('Finalizando registros...');
-                const success = await insertStems(stemsData);
-                if (!success) throw new Error('Falha ao registrar stems no banco');
+                const stemsRes = await fetch('/api/insert-stems', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ stems: stemsData }),
+                });
+                if (!stemsRes.ok) {
+                    const body = await stemsRes.json().catch(() => ({ error: `HTTP ${stemsRes.status}` }));
+                    throw new Error(`Falha ao registrar stems: ${body.error}`);
+                }
             }
 
             setProgress(100);

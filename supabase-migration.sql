@@ -1,63 +1,36 @@
 -- ============================================
--- Migração: corrigir RLS para stems e songs
+-- Migração: corrigir acesso às tabelas songs e stems
 -- Execute no Supabase > SQL Editor
 -- ============================================
 
 -- Adicionar coluna markers se não existir
 ALTER TABLE songs ADD COLUMN IF NOT EXISTS markers JSONB DEFAULT NULL;
 
--- Garantir que RLS está habilitado (para segurança)
-ALTER TABLE songs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE stems ENABLE ROW LEVEL SECURITY;
+-- Remover TODAS as políticas existentes nas tabelas songs e stems
+-- para limpar qualquer conflito
+DO $$
+DECLARE
+    pol RECORD;
+BEGIN
+    FOR pol IN
+        SELECT policyname FROM pg_policies WHERE tablename = 'songs' AND schemaname = 'public'
+    LOOP
+        EXECUTE format('DROP POLICY IF EXISTS %I ON public.songs', pol.policyname);
+    END LOOP;
 
--- Remover políticas antigas que possam conflitar
-DROP POLICY IF EXISTS "Admin can insert songs" ON public.songs;
-DROP POLICY IF EXISTS "Admin can insert stems" ON public.stems;
-DROP POLICY IF EXISTS "Admin can update songs" ON public.songs;
-DROP POLICY IF EXISTS "Admin can delete songs" ON public.songs;
-DROP POLICY IF EXISTS "Admin can delete stems" ON public.stems;
-DROP POLICY IF EXISTS "Public can read songs" ON public.songs;
-DROP POLICY IF EXISTS "Public can read stems" ON public.stems;
+    FOR pol IN
+        SELECT policyname FROM pg_policies WHERE tablename = 'stems' AND schemaname = 'public'
+    LOOP
+        EXECUTE format('DROP POLICY IF EXISTS %I ON public.stems', pol.policyname);
+    END LOOP;
+END $$;
 
--- Leitura pública (qualquer usuário pode ver músicas e stems)
-CREATE POLICY "Public can read songs"
-ON public.songs FOR SELECT
-USING (true);
+-- Desabilitar RLS nas tabelas de conteúdo público
+-- (songs e stems são dados globais acessíveis a todos)
+ALTER TABLE songs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE stems DISABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Public can read stems"
-ON public.stems FOR SELECT
-USING (true);
-
--- Admin pode inserir músicas
-CREATE POLICY "Admin can insert songs"
-ON public.songs FOR INSERT
-WITH CHECK (
-    auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com')
-);
-
--- Admin pode inserir stems
-CREATE POLICY "Admin can insert stems"
-ON public.stems FOR INSERT
-WITH CHECK (
-    auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com')
-);
-
--- Admin pode atualizar músicas
-CREATE POLICY "Admin can update songs"
-ON public.songs FOR UPDATE
-USING (
-    auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com')
-);
-
--- Admin pode deletar músicas e stems
-CREATE POLICY "Admin can delete songs"
-ON public.songs FOR DELETE
-USING (
-    auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com')
-);
-
-CREATE POLICY "Admin can delete stems"
-ON public.stems FOR DELETE
-USING (
-    auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com')
-);
+-- Verificar resultado
+SELECT tablename, rowsecurity
+FROM pg_tables
+WHERE tablename IN ('songs', 'stems') AND schemaname = 'public';
