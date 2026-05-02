@@ -7,10 +7,11 @@
 CREATE TABLE songs (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
-  "Artista" TEXT DEFAULT '',
-  "Tom" TEXT DEFAULT '',
+  artist TEXT DEFAULT '',
+  key TEXT DEFAULT '',
   bpm INT DEFAULT 0,
   cover_url TEXT DEFAULT NULL,
+  markers JSONB DEFAULT NULL,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -50,7 +51,7 @@ ALTER TABLE stems DISABLE ROW LEVEL SECURITY;
 -- ============================================
 -- 
 -- INSERT INTO songs (name, artist, key, bpm, cover_url) VALUES
--- ('Grande é o Senhor', 'Adhemar de Campos', 'G', 72, 
+-- ('Grande é o Senhor', 'Adhemar de Campos', 'G', 72,
 --  'https://SEU-PROJETO.supabase.co/storage/v1/object/public/covers/grande-e-o-senhor.jpg');
 --
 -- -- Pegue o ID da música inserida e use nos stems:

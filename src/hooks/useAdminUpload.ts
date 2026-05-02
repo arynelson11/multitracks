@@ -49,7 +49,7 @@ export function useAdminUpload() {
                 bpm: metadata.bpm,
                 cover_url
             });
-            if (!songId) throw new Error('Falha ao gravar música no banco de dados. Verifique a tabela "songs".');
+            if (!songId) throw new Error('Falha ao gravar música (ID não retornado).');
             setProgress(20);
 
             // 3. Upload Stems

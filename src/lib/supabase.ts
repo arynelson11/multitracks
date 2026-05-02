@@ -176,7 +176,7 @@ export async function uploadFile(bucket: string, path: string, file: File): Prom
 
 // Admin: Insert song metadata
 export async function insertSong(song: Omit<CloudSong, 'id' | 'created_at' | 'markers'>): Promise<string | null> {
-    if (!supabase) return null;
+    if (!supabase) throw new Error('Supabase não inicializado. Verifique VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.');
     const { data, error } = await supabase
         .from('songs')
         .insert(song)
@@ -185,7 +185,7 @@ export async function insertSong(song: Omit<CloudSong, 'id' | 'created_at' | 'ma
 
     if (error) {
         console.error('Error inserting song:', error);
-        return null;
+        throw new Error(`Supabase (songs): ${error.message}`);
     }
     return data?.id || null;
 }
@@ -207,14 +207,14 @@ export async function updateSong(songId: string, updates: Partial<Omit<CloudSong
 
 // Admin: Insert multiple stems
 export async function insertStems(stems: Omit<CloudStem, 'id'>[]): Promise<boolean> {
-    if (!supabase) return false;
+    if (!supabase) throw new Error('Supabase não inicializado. Verifique VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.');
     const { error } = await supabase
         .from('stems')
         .insert(stems);
 
     if (error) {
         console.error('Error inserting stems:', error);
-        return false;
+        throw new Error(`Supabase (stems): ${error.message}`);
     }
     return true;
 }
