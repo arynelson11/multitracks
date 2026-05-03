@@ -398,14 +398,31 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         const stem = stems[i];
         setSaveStatus(`Implantando Nuvem ☁️: ${stem.name} (${i+1}/${total})...`);
 
-        const response = await fetch(stem.url);
-        const blob = await response.blob();
-        const stemFile = new File([blob], `${stem.id}.wav`, { type: blob.type || 'audio/wav' });
+        let fileUrl: string;
+        const isRemoteUrl = stem.url.startsWith('http://') || stem.url.startsWith('https://');
+        if (isRemoteUrl) {
+          const key = `stems/${songId}/${stem.id}_${Date.now()}.wav`;
+          const copyRes = await fetch('/api/upload-stem-from-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sourceUrl: stem.url, key, contentType: 'audio/wav' }),
+          });
+          if (!copyRes.ok) {
+            const err = await copyRes.json().catch(() => ({}));
+            throw new Error((err as any).error || `Falha no upload server-side: HTTP ${copyRes.status}`);
+          }
+          const data = await copyRes.json();
+          fileUrl = (data as any).url;
+        } else {
+          const response = await fetch(stem.url);
+          const blob = await response.blob();
+          const stemFile = new File([blob], `${stem.id}.wav`, { type: blob.type || 'audio/wav' });
+          const uploadResult = await uploadToR2('stems', `${songId}/IA_${Date.now()}_${stem.id}.wav`, stemFile);
+          if (uploadResult.error || !uploadResult.url) throw new Error(uploadResult.error!);
+          fileUrl = uploadResult.url;
+        }
 
-        const uploadResult = await uploadToR2('stems', `${songId}/IA_${Date.now()}_${stem.id}.wav`, stemFile);
-        if (uploadResult.error || !uploadResult.url) throw new Error(uploadResult.error!);
-
-        stemsData.push({ song_id: songId, name: stem.name || stem.id, file_url: uploadResult.url, order: i + 1 });
+        stemsData.push({ song_id: songId, name: stem.name || stem.id, file_url: fileUrl, order: i + 1 });
         setSaveProgress(10 + Math.floor(((i + 1) / total) * 80));
       }
 
