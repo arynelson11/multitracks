@@ -186,6 +186,30 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                                         ? 'Você está no plano gratuito. Faça upgrade para liberar todas as funcionalidades!'
                                         : 'Obrigado por apoiar a plataforma! Aproveite todos os recursos do seu plano.'}
                                 </p>
+
+                                {(() => {
+                                    const LIMITS = { free: 5, essencial: 50, pro: 150, essencial_anual: 50, pro_anual: 150 };
+                                    const userPlanKey = (userPlan || 'free').toLowerCase();
+                                    const maxLimit = LIMITS[userPlanKey as keyof typeof LIMITS] || 5;
+                                    const currentUsage = parseInt(localStorage.getItem('separator_usage') || '0');
+                                    const usagePercent = Math.min(100, Math.round((currentUsage / maxLimit) * 100));
+                                    
+                                    return (
+                                        <div className="w-full bg-white/5 rounded-lg p-4 mb-6 border border-white/10 text-left">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className="text-white text-xs font-bold uppercase tracking-wider">Separações de Faixas com IA</span>
+                                                <span className="text-text-muted text-[10px] font-mono">{currentUsage} / {maxLimit} usadas</span>
+                                            </div>
+                                            <div className="w-full h-2 bg-black/50 rounded-full overflow-hidden">
+                                                <div 
+                                                    className={`h-full rounded-full transition-all duration-500 ${usagePercent > 90 ? 'bg-red-500' : 'bg-primary'}`} 
+                                                    style={{ width: `${usagePercent}%` }}
+                                                />
+                                            </div>
+                                            <p className="text-white/30 text-[9px] font-mono mt-2">O limite é renovado a cada ciclo de faturamento.</p>
+                                        </div>
+                                    );
+                                })()}
                                 
                                 <button
                                     onClick={() => setIsPricingOpen(true)}

@@ -58,7 +58,7 @@ const PLANS = [
     badge: 'Mais Popular',
     highlight: true,
     features: [
-      'Separações de faixas ilimitadas',
+      'Separações de faixas: 50 / mês',
       'Biblioteca em nuvem (50 músicas)',
       'Mixer profissional completo',
       'VU Meters em tempo real',
@@ -79,6 +79,7 @@ const PLANS = [
     highlight: false,
     features: [
       'Tudo do plano Essencial',
+      'Separações de faixas: 150 / mês',
       'Biblioteca em nuvem ilimitada',
       'Processamento de IA prioritário',
       'Upload de faixas para biblioteca',

@@ -165,13 +165,16 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   };
 
   const processAudio = async (audioFile: File) => {
-    // ── Limit check for FREE users ──
-    if (userPlan === 'free') {
-      const count = parseInt(localStorage.getItem('separator_usage') || '0');
-      if (count >= 5) {
-        setIsPricingOpen(true);
-        return;
-      }
+    // ── Limit check based on Plan ──
+    const LIMITS = { free: 5, essencial: 50, pro: 150, essencial_anual: 50, pro_anual: 150 };
+    const userPlanKey = (userPlan || 'free').toLowerCase();
+    const maxLimit = LIMITS[userPlanKey as keyof typeof LIMITS] || 5;
+    
+    const count = parseInt(localStorage.getItem('separator_usage') || '0');
+    if (count >= maxLimit) {
+      alert(`Você atingiu o limite de ${maxLimit} separações mensais do seu plano. Faça upgrade para continuar!`);
+      setIsPricingOpen(true);
+      return;
     }
 
     setIsProcessing(true);
@@ -252,11 +255,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       setProgress(100);
       setIsProcessing(false);
 
-      // Increment count for free users
-      if (userPlan === 'free') {
-        const count = parseInt(localStorage.getItem('separator_usage') || '0');
-        localStorage.setItem('separator_usage', (count + 1).toString());
-      }
+      // Increment count for all users
+      const currentCount = parseInt(localStorage.getItem('separator_usage') || '0');
+      localStorage.setItem('separator_usage', (currentCount + 1).toString());
 
     } catch (e: any) {
       console.error(e);
