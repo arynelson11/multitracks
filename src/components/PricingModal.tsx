@@ -11,8 +11,8 @@ const PLANS = [
     {
         id: 'prod_jpqSjSmGAUgUXpw3UEa3JpQJ',
         name: 'Essencial Mensal',
-        price: 19.90,
-        priceStr: 'R$ 19,90',
+        price: 49.90,
+        priceStr: 'R$ 49,90',
         period: '/mês',
         description: 'Para músicos e ministros ativos',
         features: ['Acesso a pads online', 'Gerenciamento de setlists', 'Recursos essenciais']
@@ -20,8 +20,8 @@ const PLANS = [
     {
         id: 'prod_GPymBqgXuBsLN2wD10YQ3RYc',
         name: 'Essencial Anual',
-        price: 178.80,
-        priceStr: 'R$ 178,80',
+        price: 478.80,
+        priceStr: 'R$ 478,80',
         period: '/ano',
         description: 'Para músicos e ministros ativos',
         features: ['Acesso a pads online', 'Gerenciamento de setlists', 'Recursos essenciais', 'Desconto especial anual']
@@ -29,8 +29,8 @@ const PLANS = [
     {
         id: 'prod_bM64Ub31zLk0YHEcDjL5yP23',
         name: 'Pro Mensal',
-        price: 34.90,
-        priceStr: 'R$ 34,90',
+        price: 99.90,
+        priceStr: 'R$ 99,90',
         period: '/mês',
         description: 'Para equipes e produtores',
         features: ['Tudo do Essencial', 'Separação de áudio AI (Spleeter)', 'Uploads de multi-faixas', 'Ferramentas de admin'],
@@ -39,8 +39,8 @@ const PLANS = [
     {
         id: 'prod_3eYCE4MpatcwfmBXfpFH4S6D',
         name: 'Pro Anual',
-        price: 334.80,
-        priceStr: 'R$ 334,80',
+        price: 958.80,
+        priceStr: 'R$ 958,80',
         period: '/ano',
         description: 'Para equipes e produtores',
         features: ['Tudo do Essencial', 'Separação de áudio AI (Spleeter)', 'Uploads de multi-faixas', 'Desconto de 2 meses']

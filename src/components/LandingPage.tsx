@@ -53,7 +53,7 @@ const PLANS = [
   },
   {
     name: 'Essencial',
-    monthly: 19.90, annual: 14.90,
+    monthly: 49.90, annual: 39.90,
     desc: 'Para músicos e ministros ativos',
     badge: 'Mais Popular',
     highlight: true,
@@ -73,7 +73,7 @@ const PLANS = [
   },
   {
     name: 'Pro',
-    monthly: 34.90, annual: 27.90,
+    monthly: 99.90, annual: 79.90,
     desc: 'Para equipes e produtores',
     badge: null as string | null,
     highlight: false,
