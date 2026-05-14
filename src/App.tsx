@@ -372,10 +372,19 @@ export default function App() {
         <div className="flex items-center justify-between px-3 sm:px-4 h-11 sm:h-12 border-b border-border">
           {/* Left: Menu + Brand */}
           <div className="flex items-center gap-2 sm:gap-3">
+            <div className="relative flex items-center">
+              <div className="cursor-default focus:outline-none">
+                <BrandLogo size="sm" />
+              </div>
+            </div>
+
+            {/* Toolbar icons */}
+            <div className="h-5 w-px bg-border mx-1"></div>
+            
             <div className="relative">
               <button onClick={() => setIsSetlistMenuOpen(!isSetlistMenuOpen)}
-                className="active:scale-95 transition-transform cursor-pointer focus:outline-none">
-                <BrandLogo size="sm" />
+                className={`transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer ${isSetlistMenuOpen ? 'text-white bg-white/10' : 'text-text-muted hover:text-white'}`}>
+                <ListMusic size={14} /> <span className="hidden sm:inline">REPERTÓRIOS</span>
               </button>
 
               {/* ─── Setlist Dropdown ─── */}
@@ -440,9 +449,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Toolbar icons */}
-            <div className="h-5 w-px bg-border mx-1"></div>
-            
             <div className="relative">
               <button onClick={() => setIsTracksMenuOpen(!isTracksMenuOpen)}
                 className={`transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer ${isTracksMenuOpen ? 'text-white bg-white/10' : 'text-text-muted hover:text-white'}`}>
