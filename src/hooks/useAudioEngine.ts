@@ -264,6 +264,13 @@ export function useAudioEngine(userId?: string) {
                 ch.sourceNode.disconnect();
                 ch.sourceNode = null;
             }
+            if (ch.pitchShiftNode) {
+                try {
+                    if (ch.pitchShiftNode.dispose) ch.pitchShiftNode.dispose();
+                    else ch.pitchShiftNode.disconnect();
+                } catch (e) {}
+                ch.pitchShiftNode = null;
+            }
         });
     }, [channels]);
 
@@ -285,12 +292,10 @@ export function useAudioEngine(userId?: string) {
         channels.forEach(ch => {
             const source = ctx.createBufferSource();
             source.buffer = ch.buffer;
-            // Apply pitch via native detune (cents = semitones * 100) — zero overhead, no WASM
+            
             const nameL = ch.name.toLowerCase();
             const isClickOrGuide = nameL.includes('click') || nameL.includes('metronomo') || nameL.includes('guia') || nameL.includes('guide');
-            if (!isClickOrGuide) {
-                source.detune.value = currentPitchRef.current * 100;
-            }
+            
             if (nameL.includes('metronomo loop')) {
                 source.loop = true;
             }
@@ -301,7 +306,27 @@ export function useAudioEngine(userId?: string) {
                 if (ch.muted || (anySoloed && !ch.soloed)) vol = 0;
                 ch.gainNode.gain.setValueAtTime(vol, ctx.currentTime);
             }
-            source.connect(ch.pannerNode);
+
+            if (currentPitchRef.current !== 0) {
+                if (!isClickOrGuide) {
+                    const pitchShift = new Tone.PitchShift({
+                        pitch: currentPitchRef.current,
+                        windowSize: 0.1
+                    });
+                    Tone.connect(source, pitchShift);
+                    Tone.connect(pitchShift, ch.pannerNode);
+                    ch.pitchShiftNode = pitchShift;
+                } else {
+                    const delayNode = ctx.createDelay(0.2);
+                    delayNode.delayTime.value = 0.05; // 50ms latency compensation for Tone.PitchShift
+                    source.connect(delayNode);
+                    delayNode.connect(ch.pannerNode);
+                    ch.pitchShiftNode = delayNode;
+                }
+            } else {
+                source.connect(ch.pannerNode);
+            }
+
             source.playbackRate.value = timeStretch;
             source.start(0, pausedAtRef.current);
             ch.sourceNode = source;
@@ -309,7 +334,7 @@ export function useAudioEngine(userId?: string) {
 
         startTimeRef.current = ctx.currentTime;
         setIsPlaying(true);
-    }, [channels, stopAllNodes]);
+    }, [channels, stopAllNodes, timeStretch]);
 
     const pause = useCallback(() => {
         const ctx = audioCtxRef.current;
@@ -1082,6 +1107,10 @@ export function useAudioEngine(userId?: string) {
 
         // Clamp to -12 / +12 Semitones
         const clampedPitch = Math.max(-12, Math.min(12, newPitch));
+        if (currentPitchRef.current === clampedPitch) return;
+
+        const wasZero = currentPitchRef.current === 0;
+        const isZero = clampedPitch === 0;
 
         const newPlaylist = [...playlist];
         const song = { ...newPlaylist[activeSongIndex] };
@@ -1089,18 +1118,24 @@ export function useAudioEngine(userId?: string) {
 
         currentPitchRef.current = clampedPitch;
 
-        // Update detune on currently playing source nodes (live, zero-latency)
-        song.channels.forEach(ch => {
-            const nameL = ch.name.toLowerCase();
-            const isClickOrGuide = nameL.includes('click') || nameL.includes('metronomo') || nameL.includes('guia') || nameL.includes('guide');
-            if (!isClickOrGuide && ch.sourceNode) {
-                ch.sourceNode.detune.value = clampedPitch * 100;
+        if (isPlaying) {
+            if (wasZero !== isZero) {
+                pause();
+                setTimeout(() => play(), 10);
+            } else {
+                song.channels.forEach(ch => {
+                    const nameL = ch.name.toLowerCase();
+                    const isClickOrGuide = nameL.includes('click') || nameL.includes('metronomo') || nameL.includes('guia') || nameL.includes('guide');
+                    if (!isClickOrGuide && ch.pitchShiftNode) {
+                        ch.pitchShiftNode.pitch = clampedPitch;
+                    }
+                });
             }
-        });
+        }
 
         newPlaylist[activeSongIndex] = song;
         updatePlaylistAndSave(newPlaylist);
-    }, [playlist, activeSongIndex, activeSong]);
+    }, [playlist, activeSongIndex, activeSong, isPlaying, pause, play]);
 
     // Clear Session
     const clearSession = async () => {

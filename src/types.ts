@@ -6,6 +6,7 @@ export interface Channel {
     gainNode: GainNode;
     pannerNode: StereoPannerNode;
     sourceNode: AudioBufferSourceNode | null;
+    pitchShiftNode?: any;
     volume: number;
     muted: boolean;
     soloed: boolean;
