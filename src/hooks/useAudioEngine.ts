@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { get, set } from 'idb-keyval';
 import JSZip from 'jszip';
 import * as Tone from 'tone';
+import { createRubberBandNode } from 'rubberband-web';
 import type { Channel, Song, Marker } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { detectKey, generateEndlessClickTrack } from '../lib/AudioAnalyzer';
@@ -200,6 +201,8 @@ export function useAudioEngine(userId?: string) {
                             panner.connect(gain);
                             gain.connect(master);
 
+                            const rbNode = await createRubberBandNode(ctx, '/rubberband-processor.js');
+
                             return {
                                 id: metaCh.id,
                                 name: metaCh.name,
@@ -207,6 +210,7 @@ export function useAudioEngine(userId?: string) {
                                 file: file,
                                 gainNode: gain,
                                 pannerNode: panner,
+                                pitchShiftNode: rbNode,
                                 sourceNode: null,
                                 volume: metaCh.volume,
                                 muted: metaCh.muted,
@@ -264,13 +268,7 @@ export function useAudioEngine(userId?: string) {
                 ch.sourceNode.disconnect();
                 ch.sourceNode = null;
             }
-            if (ch.pitchShiftNode) {
-                try {
-                    if (ch.pitchShiftNode.dispose) ch.pitchShiftNode.dispose();
-                    else ch.pitchShiftNode.disconnect();
-                } catch (e) {}
-                ch.pitchShiftNode = null;
-            }
+            // Do NOT disconnect pitchShiftNode here, as RubberBandNode should persist per channel
         });
     }, [channels]);
 
@@ -307,27 +305,26 @@ export function useAudioEngine(userId?: string) {
                 ch.gainNode.gain.setValueAtTime(vol, ctx.currentTime);
             }
 
-            if (currentPitchRef.current !== 0) {
-                if (!isClickOrGuide) {
-                    const pitchShift = new Tone.PitchShift({
-                        pitch: currentPitchRef.current,
-                        windowSize: 0.1
-                    });
-                    Tone.connect(source, pitchShift);
-                    Tone.connect(pitchShift, ch.pannerNode);
-                    ch.pitchShiftNode = pitchShift;
+            if (currentPitchRef.current !== 0 || timeStretch !== 1) {
+                if (ch.pitchShiftNode && typeof ch.pitchShiftNode.setPitch === 'function') {
+                    if (!isClickOrGuide) {
+                        ch.pitchShiftNode.setPitch(currentPitchRef.current);
+                    } else {
+                        ch.pitchShiftNode.setPitch(0);
+                    }
+                    ch.pitchShiftNode.setTempo(timeStretch);
+                    source.playbackRate.value = 1.0;
+                    source.connect(ch.pitchShiftNode);
+                    ch.pitchShiftNode.connect(ch.pannerNode);
                 } else {
-                    const delayNode = ctx.createDelay(0.2);
-                    delayNode.delayTime.value = 0.05; // 50ms latency compensation for Tone.PitchShift
-                    source.connect(delayNode);
-                    delayNode.connect(ch.pannerNode);
-                    ch.pitchShiftNode = delayNode;
+                    source.playbackRate.value = timeStretch;
+                    source.connect(ch.pannerNode);
                 }
             } else {
+                source.playbackRate.value = 1.0;
                 source.connect(ch.pannerNode);
             }
 
-            source.playbackRate.value = timeStretch;
             source.start(0, pausedAtRef.current);
             ch.sourceNode = source;
         });
@@ -586,6 +583,7 @@ export function useAudioEngine(userId?: string) {
                 panner.pan.value = panValue;
                 gain.gain.value = 1;
 
+                const rbNode = await createRubberBandNode(audioCtxRef.current, '/rubberband-processor.js');
 
                 panner.connect(gain);
 
@@ -616,6 +614,7 @@ export function useAudioEngine(userId?: string) {
                     file: file,
                     gainNode: gain,
                     pannerNode: panner,
+                    pitchShiftNode: rbNode,
                     sourceNode: null,
                     volume: 1,
                     muted: false,
@@ -707,6 +706,8 @@ export function useAudioEngine(userId?: string) {
             filesDb.set(uuid, file);
             await set(DB_KEY_FILES, filesDb);
 
+            const rbNode = await createRubberBandNode(audioCtxRef.current, '/rubberband-processor.js');
+
             const newChannel: Channel = {
                 id: uuid,
                 name: 'Metronomo Loop',
@@ -714,6 +715,7 @@ export function useAudioEngine(userId?: string) {
                 file: file,
                 gainNode: gain,
                 pannerNode: panner,
+                pitchShiftNode: rbNode,
                 sourceNode: null,
                 volume: 1,
                 muted: false,
@@ -790,6 +792,8 @@ export function useAudioEngine(userId?: string) {
             filesDb.set(uuid, file);
             await set(DB_KEY_FILES, filesDb);
 
+            const rbNode = await createRubberBandNode(audioCtxRef.current, '/rubberband-processor.js');
+
             const newChannel: Channel = {
                 id: uuid,
                 name: file.name.replace(/\.[^/.]+$/, ''),
@@ -797,6 +801,7 @@ export function useAudioEngine(userId?: string) {
                 file: file,
                 gainNode: gain,
                 pannerNode: panner,
+                pitchShiftNode: rbNode,
                 sourceNode: null,
                 volume: 1,
                 muted: false,
@@ -1126,8 +1131,8 @@ export function useAudioEngine(userId?: string) {
                 song.channels.forEach(ch => {
                     const nameL = ch.name.toLowerCase();
                     const isClickOrGuide = nameL.includes('click') || nameL.includes('metronomo') || nameL.includes('guia') || nameL.includes('guide');
-                    if (!isClickOrGuide && ch.pitchShiftNode) {
-                        ch.pitchShiftNode.pitch = clampedPitch;
+                    if (!isClickOrGuide && ch.pitchShiftNode && typeof ch.pitchShiftNode.setPitch === 'function') {
+                        ch.pitchShiftNode.setPitch(clampedPitch);
                     }
                 });
             }
