@@ -255,7 +255,7 @@ export function useAudioEngine(userId?: string) {
                 setIsRestoring(false);
             }
         }
-    }, []);
+    }, [DB_KEY_META, DB_KEY_FILES]);
 
     const stopAllNodes = useCallback(() => {
         channels.forEach(ch => {
