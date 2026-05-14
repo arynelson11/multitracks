@@ -9,7 +9,7 @@ interface PricingModalProps {
 
 const PLANS = [
     {
-        id: 'prod_jpqSjSmGAUgUXpw3UEa3JpQJ',
+        id: 'prod_juQuBRcaAeyJYYKJEGeRJ3DZ',
         name: 'Essencial Mensal',
         price: 49.90,
         priceStr: 'R$ 49,90',
@@ -18,7 +18,7 @@ const PLANS = [
         features: ['Acesso a pads online', 'Gerenciamento de setlists', 'Recursos essenciais']
     },
     {
-        id: 'prod_GPymBqgXuBsLN2wD10YQ3RYc',
+        id: 'prod_CYyTuP1NcGyqAfxBUHF4Zxkp',
         name: 'Essencial Anual',
         price: 478.80,
         priceStr: 'R$ 478,80',
@@ -27,7 +27,7 @@ const PLANS = [
         features: ['Acesso a pads online', 'Gerenciamento de setlists', 'Recursos essenciais', 'Desconto especial anual']
     },
     {
-        id: 'prod_bM64Ub31zLk0YHEcDjL5yP23',
+        id: 'prod_JdjCauZnpEP6dcYWQqZAPxd5',
         name: 'Pro Mensal',
         price: 99.90,
         priceStr: 'R$ 99,90',
@@ -37,7 +37,7 @@ const PLANS = [
         isPopular: true
     },
     {
-        id: 'prod_3eYCE4MpatcwfmBXfpFH4S6D',
+        id: 'prod_4hmhxB0NCUKaSxGut6jx2eFU',
         name: 'Pro Anual',
         price: 958.80,
         priceStr: 'R$ 958,80',
