@@ -466,37 +466,113 @@ export async function analyzeAudioAndGenerateClick(
   }
 }
 
+export type ClickSoundType = 'logic' | 'blip' | 'classic' | 'cowbell';
+export type TimeSignatureType = '3/4' | '4/4' | '5/4' | '6/8' | '7/8' | '12/8';
+
+function getBeatsPerMeasure(ts: TimeSignatureType): number {
+  switch (ts) {
+    case '3/4': return 3;
+    case '4/4': return 4;
+    case '5/4': return 5;
+    case '6/8': return 6;
+    case '7/8': return 7;
+    case '12/8': return 12;
+    default: return 4;
+  }
+}
+
+/**
+ * Synthesize a single click sample directly into a Float32Array.
+ * Returns the number of samples written.
+ */
+function synthesizeClick(
+  data: Float32Array,
+  startSample: number,
+  sampleRate: number,
+  sound: ClickSoundType,
+  isAccented: boolean
+): void {
+  const vol = isAccented ? 1.0 : 0.65;
+
+  if (sound === 'logic') {
+    // Sine wave, sharp attack. Accented = 1500Hz, normal = 1000Hz
+    const freq = isAccented ? 1500 : 1000;
+    const clickLen = Math.round(sampleRate * 0.045);
+    const end = Math.min(startSample + clickLen, data.length);
+    for (let i = startSample; i < end; i++) {
+      const t = (i - startSample) / sampleRate;
+      data[i] += Math.sin(2 * Math.PI * freq * t) * Math.exp(-90 * t) * vol;
+    }
+  } else if (sound === 'blip') {
+    // Triangle wave with pitch drop
+    const freqStart = isAccented ? 2400 : 1800;
+    const freqEnd = isAccented ? 900 : 700;
+    const clickLen = Math.round(sampleRate * 0.04);
+    const end = Math.min(startSample + clickLen, data.length);
+    for (let i = startSample; i < end; i++) {
+      const t = (i - startSample) / sampleRate;
+      const dur = clickLen / sampleRate;
+      const freq = freqStart + (freqEnd - freqStart) * (t / dur);
+      // Triangle wave approximation via asin(sin(...))
+      const phase = 2 * Math.PI * freq * t;
+      const triangle = (2 / Math.PI) * Math.asin(Math.sin(phase));
+      data[i] += triangle * Math.exp(-100 * t) * vol * 0.85;
+    }
+  } else if (sound === 'classic') {
+    // Square-ish wave (clipped sine), very short and punchy
+    const freq = isAccented ? 1200 : 800;
+    const clickLen = Math.round(sampleRate * 0.025);
+    const end = Math.min(startSample + clickLen, data.length);
+    for (let i = startSample; i < end; i++) {
+      const t = (i - startSample) / sampleRate;
+      const raw = Math.sin(2 * Math.PI * freq * t);
+      const clipped = Math.max(-0.8, Math.min(0.8, raw * 2));
+      data[i] += clipped * Math.exp(-120 * t) * vol * 0.7;
+    }
+  } else if (sound === 'cowbell') {
+    // Two detuned oscillators for metallic timbre
+    const f1 = isAccented ? 587 : 545;
+    const f2 = isAccented ? 870 : 815;
+    const clickLen = Math.round(sampleRate * 0.10);
+    const end = Math.min(startSample + clickLen, data.length);
+    for (let i = startSample; i < end; i++) {
+      const t = (i - startSample) / sampleRate;
+      const s1 = Math.sin(2 * Math.PI * f1 * t);
+      const s2 = Math.sin(2 * Math.PI * f2 * t);
+      // Clipped mix for metallic character
+      const mix = Math.max(-1, Math.min(1, (s1 + s2 * 0.7) * 1.5));
+      data[i] += mix * Math.exp(-35 * t) * vol * 0.55;
+    }
+  }
+}
+
 export async function generateManualClickTrack(
   bpm: number,
   durationInSeconds: number,
-  onProgress: (msg: string) => void
+  onProgress: (msg: string) => void,
+  clickSound: ClickSoundType = 'logic',
+  accentBeat1: boolean = true,
+  timeSignature: TimeSignatureType = '4/4'
 ): Promise<{ bpm: number; clickTrackUrl: string }> {
   try {
     const sampleRate = 44100;
     const safeDuration = Math.max(1, durationInSeconds);
     const totalSamples = Math.ceil(sampleRate * safeDuration);
 
-    onProgress(`Sintetizando faixa de Metrônomo Manual (${bpm} BPM)...`);
+    onProgress(`Sintetizando faixa de Metrônomo Manual (${bpm} BPM, ${timeSignature})...`);
 
     const secondsPerBeat = 60 / bpm;
-    const clickSamples = Math.round(sampleRate * 0.05); // 50ms por click
+    const beatsPerMeasure = getBeatsPerMeasure(timeSignature);
     const data = new Float32Array(totalSamples);
 
-    // Síntese direta: sem OfflineAudioContext nem osciladores — zero risco de limite de nós
+    // Síntese direta: sem OfflineAudioContext — zero risco de limite de nós
     let beat = 0;
     while (true) {
       const beatStart = Math.round(beat * sampleRate * secondsPerBeat);
       if (beatStart >= totalSamples) break;
 
-      const isDownbeat = beat % 4 === 0;
-      const freq = isDownbeat ? 1500 : 1000;
-      const vol = isDownbeat ? 1.0 : 0.7;
-      const end = Math.min(beatStart + clickSamples, totalSamples);
-
-      for (let i = beatStart; i < end; i++) {
-        const t = (i - beatStart) / sampleRate;
-        data[i] = Math.sin(2 * Math.PI * freq * t) * Math.exp(-80 * t) * vol;
-      }
+      const isDownbeat = accentBeat1 && (beat % beatsPerMeasure === 0);
+      synthesizeClick(data, beatStart, sampleRate, clickSound, isDownbeat);
       beat++;
     }
 

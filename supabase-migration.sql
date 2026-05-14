@@ -3,8 +3,10 @@
 -- Execute no Supabase > SQL Editor
 -- ============================================
 
--- Adicionar coluna markers se não existir
+-- Adicionar colunas necessárias se não existirem
 ALTER TABLE songs ADD COLUMN IF NOT EXISTS markers JSONB DEFAULT NULL;
+ALTER TABLE songs ADD COLUMN IF NOT EXISTS is_global BOOLEAN DEFAULT FALSE;
+ALTER TABLE songs ADD COLUMN IF NOT EXISTS user_id UUID DEFAULT NULL;
 
 -- Remover TODAS as políticas existentes nas tabelas songs e stems
 -- para limpar qualquer conflito
