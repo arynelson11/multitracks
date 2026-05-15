@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import WaveSurfer from 'wavesurfer.js';
-import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Minus, Plus, Mic } from 'lucide-react';
+import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Minus, Plus, Mic, Download } from 'lucide-react';
 import { uploadToR2 } from '../lib/r2';
 import { useAuth } from '../hooks/useAuth';
 import { PricingModal } from './PricingModal';
@@ -102,6 +102,21 @@ function formatCueTime(secs: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+function float32ToWav(samples: Float32Array, sampleRate: number): Blob {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  const ws = (off: number, str: string) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
+  ws(0, 'RIFF'); view.setUint32(4, 36 + samples.length * 2, true); ws(8, 'WAVE');
+  ws(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true); view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  ws(36, 'data'); view.setUint32(40, samples.length * 2, true);
+  let peak = 0; for (let i = 0; i < samples.length; i++) peak = Math.max(peak, Math.abs(samples[i]));
+  const scale = peak > 1 ? 1 / peak : 1;
+  for (let i = 0; i < samples.length; i++) view.setInt16(44 + i * 2, Math.max(-32768, Math.min(32767, samples[i] * scale * 32767)), true);
+  return new Blob([buffer], { type: 'audio/wav' });
+}
+
 interface SeparatorStudioProps {
   onClose: () => void;
 }
@@ -152,6 +167,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false);
   const [isGeneratingClick, setIsGeneratingClick] = useState(false);
   const [clickSel, setClickSel] = useState(() => loadClickSelection());
+  const [timeSignature, setTimeSignature] = useState<'3/4' | '4/4' | '5/4' | '6/8' | '7/8' | '12/8'>('4/4');
+  const [accentBeat1, setAccentBeat1] = useState(true);
+  const bpmTapsRef = useRef<number[]>([]);
 
   const updateClickSel = (partial: Partial<typeof clickSel>) => {
     const next = { ...clickSel, ...partial };
@@ -170,6 +188,32 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         setTimeout(() => ctx.close(), 2000);
       } catch { /* ignore */ }
     })();
+  };
+
+  const downloadStem = async (stem: StemData) => {
+    try {
+      const res = await fetch(stem.url);
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${(songName || 'stem').replace(/[^a-zA-Z0-9]/g, '_')}_${stem.name}.wav`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    } catch (e) {
+      console.error('Download error', e);
+    }
+  };
+
+  const handleTapTempo = () => {
+    const now = Date.now();
+    bpmTapsRef.current.push(now);
+    if (bpmTapsRef.current.length > 8) bpmTapsRef.current.shift();
+    if (bpmTapsRef.current.length < 2) return;
+    const gaps = bpmTapsRef.current.slice(1).map((t, i) => t - bpmTapsRef.current[i]);
+    const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+    setBpm(String(Math.round(60000 / avg)));
   };
 
   // Voz Guia
@@ -246,6 +290,66 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const removeVoiceCue = (id: string) => {
     setVoiceCues(prev => prev.filter(c => c.id !== id));
     voiceCuesRef.current = voiceCuesRef.current.filter(c => c.id !== id);
+  };
+
+  const updateCueTime = (id: string, raw: string) => {
+    const parts = raw.split(':');
+    const total = Math.max(0, (parseInt(parts[0]) || 0) * 60 + (parseFloat(parts[1] || '0') || 0));
+    setVoiceCues(prev => prev.map(c => c.id === id ? { ...c, time: total } : c).sort((a, b) => a.time - b.time));
+  };
+
+  const renderVoiceGuideToBlob = async (): Promise<Blob | null> => {
+    if (voiceCues.length === 0) return null;
+    const ctx = getAudioContext();
+    const dur = songDuration || 300;
+    const sr = 44100;
+    const output = new Float32Array(Math.ceil(dur * sr));
+    for (const cue of voiceCues) {
+      const url = guideUrl(cue.file);
+      let buffer = guideBufferCache.current.get(url);
+      if (!buffer) {
+        try {
+          const res = await fetch(url);
+          buffer = await ctx.decodeAudioData(await res.arrayBuffer());
+          guideBufferCache.current.set(url, buffer);
+        } catch { continue; }
+      }
+      const start = Math.floor(cue.time * sr);
+      const mono = new Float32Array(buffer.length);
+      for (let c = 0; c < buffer.numberOfChannels; c++) {
+        const ch = buffer.getChannelData(c);
+        for (let i = 0; i < ch.length; i++) mono[i] += ch[i] / buffer.numberOfChannels;
+      }
+      for (let i = 0; i < mono.length && start + i < output.length; i++) output[start + i] += mono[i];
+    }
+    return float32ToWav(output, sr);
+  };
+
+  const applyVoiceGuideTemplate = () => {
+    const dur = songDuration || 240;
+    const beat = 60 / (parseInt(bpm) || 120);
+    const sections = [
+      { frac: 0.07, label: 'Intro',        file: 'Song Sections/Portugese - Intro.wav' },
+      { frac: 0.17, label: 'Verso 1',      file: 'Song Sections/Portugese - Verse 1.wav' },
+      { frac: 0.25, label: 'Pré-Refrão',   file: 'Song Sections/Portugese - Pre Chorus.wav' },
+      { frac: 0.33, label: 'Refrão 1',     file: 'Song Sections/Portugese - Chorus 1.wav' },
+      { frac: 0.43, label: 'Interlúdio',   file: 'Song Sections/Portugese - Interlude.wav' },
+      { frac: 0.51, label: 'Verso 2',      file: 'Song Sections/Portugese - Verse 2.wav' },
+      { frac: 0.59, label: 'Pré-Refrão 2', file: 'Song Sections/Portugese - Pre Chorus 2.wav' },
+      { frac: 0.67, label: 'Refrão 2',     file: 'Song Sections/Portugese - Chorus 2.wav' },
+      { frac: 0.75, label: 'Ponte',        file: 'Song Sections/Portugese - Bridge.wav' },
+      { frac: 0.83, label: 'Solo',         file: 'Song Sections/Portugese - Solo.wav' },
+      { frac: 0.89, label: 'Refrão 3',     file: 'Song Sections/Portugese - Chorus 3.wav' },
+      { frac: 0.96, label: 'Final',        file: 'Song Sections/Portugese - Ending.wav' },
+    ];
+    const newCues: VoiceCue[] = [];
+    const introTime = sections[0].frac * dur;
+    for (let n = 1; n <= 4; n++) {
+      const t = introTime - (5 - n) * beat;
+      if (t >= 0) newCues.push({ id: `tmpl-c${n}-${Date.now()}`, time: t, label: String(n), file: `Song Sections/Portugese - ${n}.wav` });
+    }
+    sections.forEach((s, i) => newCues.push({ id: `tmpl-${i}-${Date.now()}`, time: s.frac * dur, label: s.label, file: s.file }));
+    setVoiceCues(newCues.sort((a, b) => a.time - b.time));
   };
 
   const autoDetectVoiceGuide = async () => {
@@ -365,6 +469,20 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         return { id: `auto-${Date.now()}-${idx}`, time: b.time, label, file: filePath };
       });
 
+      // Add count-in 1,2,3,4 before Intro when there's space
+      const bpmNum = parseInt(bpm) || 120;
+      const beat = 60 / bpmNum;
+      const intro = detectedCues.find(c => c.label === 'Intro');
+      if (intro) {
+        const countIns: VoiceCue[] = [];
+        for (let n = 1; n <= 4; n++) {
+          const t = intro.time - (5 - n) * beat;
+          if (t >= 0) countIns.push({ id: `auto-ci${n}-${Date.now()}`, time: t, label: String(n), file: `Song Sections/Portugese - ${n}.wav` });
+        }
+        detectedCues.unshift(...countIns);
+        detectedCues.sort((a, b) => a.time - b.time);
+      }
+
       setVoiceCues(detectedCues);
     } catch (e: any) {
       console.error('Auto-detect erro:', e);
@@ -458,6 +576,21 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     cueRafRef.current = requestAnimationFrame(runScheduler);
     return () => { if (cueRafRef.current !== null) { cancelAnimationFrame(cueRafRef.current); cueRafRef.current = null; } };
   }, [isPlaying, playGuideBuffer]);
+
+  // Spacebar play/stop
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== 'Space') return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      e.preventDefault();
+      if (getAudioContext().state === 'suspended') getAudioContext().resume();
+      const action = isPlayingRef.current ? 'pause' : 'play';
+      Object.values(wavesurfers.current).forEach(ws => ws[action]());
+      setIsPlaying(p => !p);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   // Handle Drag & Drop e Upload
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement> | React.DragEvent) => {
@@ -742,6 +875,21 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         setSaveProgress(10 + Math.floor(((i + 1) / total) * 80));
       }
 
+      // Render & upload Voz Guia stem if cues exist
+      if (voiceCues.length > 0) {
+        setSaveStatus('Renderizando Voz Guia...');
+        try {
+          const guideBlob = await renderVoiceGuideToBlob();
+          if (guideBlob) {
+            const guideFile = new File([guideBlob], 'voz_guia.wav', { type: 'audio/wav' });
+            const uploadResult = await uploadToR2('stems', `${songId}/voz_guia_${Date.now()}.wav`, guideFile);
+            if (!uploadResult.error && uploadResult.url) {
+              stemsData.push({ song_id: songId, name: 'Voz Guia', file_url: uploadResult.url, order: total + 1 });
+            }
+          }
+        } catch (e) { console.error('Voz Guia render error', e); }
+      }
+
       setSaveStatus('Finalizando registros...');
       const stemsRes = await fetch('/api/insert-stems', {
         method: 'POST',
@@ -775,7 +923,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       const duration = (firstWs?.getDuration() > 0 ? firstWs.getDuration() : 0) || 600;
 
       const { clickTrackUrl } = await generateManualClickTrackFromSample(
-        clickSel.type, clickSel.subdivision, bpmNum, duration, true, '4/4'
+        clickSel.type, clickSel.subdivision, bpmNum, duration, accentBeat1, timeSignature
       );
       if (!clickTrackUrl) throw new Error('Falha ao gerar metrônomo');
 
@@ -879,12 +1027,18 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                      <div className="flex items-center justify-between mb-1.5 pl-3">
                         <span className="text-[11px] font-bold tracking-[0.15em] uppercase text-white/90 drop-shadow-md">{stem.name}</span>
                         <div className="flex gap-1">
-                           <button 
+                           <button
                               onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], muted: !p[stem.id].muted } }))}
                               className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-black cursor-pointer transition-all ${state.muted ? 'bg-accent-red/20 text-accent-red border border-accent-red/50 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'bg-black/40 text-text-muted border border-white/5 hover:bg-white/10 hover:text-white'}`}>M</button>
-                           <button 
+                           <button
                               onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], soloed: !p[stem.id].soloed } }))}
                               className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-black cursor-pointer transition-all ${state.soloed ? 'bg-secondary/20 text-secondary border border-secondary/50 shadow-[0_0_10px_rgba(251,191,36,0.3)]' : 'bg-black/40 text-text-muted border border-white/5 hover:bg-white/10 hover:text-white'}`}>S</button>
+                           <button
+                              onClick={() => downloadStem(stem)}
+                              title={`Baixar ${stem.name}`}
+                              className="w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-all bg-black/40 text-text-muted border border-white/5 hover:bg-white/10 hover:text-primary">
+                              <Download size={10} />
+                           </button>
                         </div>
                      </div>
                      <div className="flex items-center gap-3 pl-3 pr-1">
@@ -923,15 +1077,20 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                  <div className="absolute -top-1.5 left-[-4px] w-0 h-0 border-l-[4px] border-r-[4px] border-t-[6px] border-transparent border-t-white"></div>
             </div>
 
-            {/* Voice Cue Markers */}
+            {/* Voice Cue Markers — click to seek */}
             {songDuration > 0 && voiceCues.map(cue => (
               <div
                 key={`marker-${cue.id}`}
-                className="absolute top-0 bottom-0 z-20 pointer-events-none"
+                className="absolute top-0 bottom-0 z-20 cursor-pointer group/cue"
                 style={{ left: `${(cue.time / songDuration) * 100}%` }}
+                onClick={() => {
+                  Object.values(wavesurfers.current).forEach(ws => ws.setTime(cue.time));
+                  voiceCuesRef.current.forEach(c => { c.fired = c.time < cue.time - 0.1; });
+                }}
+                title={`${cue.label} — ${formatCueTime(cue.time)}`}
               >
-                <div className="w-px h-full bg-yellow-400/50" />
-                <div className="absolute top-0 left-1 bg-yellow-400 text-black text-[7px] font-black px-1 py-0.5 rounded-sm whitespace-nowrap leading-tight">
+                <div className="w-px h-full bg-yellow-400/50 group-hover/cue:bg-yellow-400" />
+                <div className="absolute top-0 left-1 bg-yellow-400 text-black text-[7px] font-black px-1 py-0.5 rounded-sm whitespace-nowrap leading-tight group-hover/cue:bg-yellow-300">
                   {cue.label}
                 </div>
               </div>
@@ -1136,15 +1295,18 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       {/* BPM MODAL */}
       {showBpmModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => !isGeneratingClick && setShowBpmModal(false)}>
-          <div className="bg-[#1c1c1e] w-full max-w-[340px] rounded-2xl p-5 shadow-2xl border border-white/5 flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-white text-sm font-bold tracking-wide">BPM</span>
-              <button onClick={() => !isGeneratingClick && setShowBpmModal(false)} className="text-white/40 hover:text-white transition-colors cursor-pointer p-1">
-                <X size={18} />
-              </button>
+          <div className="bg-[#1c1c1e] w-full max-w-[360px] rounded-2xl p-5 shadow-2xl border border-white/5 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-white text-sm font-bold tracking-wide">BPM</span>
+                <span className="text-white/40 text-xs font-medium ml-2">{getTempoName(parseInt(bpm) || 120)}</span>
+              </div>
+              <button onClick={() => !isGeneratingClick && setShowBpmModal(false)} className="text-white/40 hover:text-white transition-colors cursor-pointer p-1"><X size={18} /></button>
             </div>
-            <div className="text-white/60 text-sm font-medium mb-4">{getTempoName(parseInt(bpm) || 120)}</div>
-            <div className="flex items-center justify-between bg-[#141415] border border-white/5 rounded-xl p-2 mb-6">
+
+            {/* BPM stepper */}
+            <div className="flex items-center justify-between bg-[#141415] border border-white/5 rounded-xl p-2">
               <button onClick={() => setBpm(String(Math.max(40, (parseInt(bpm) || 120) - 1)))} disabled={isGeneratingClick}
                 className="w-12 h-12 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg active:scale-95 transition-all text-white/80 cursor-pointer disabled:opacity-50">
                 <Minus size={20} />
@@ -1160,13 +1322,60 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                 <Plus size={20} />
               </button>
             </div>
+
+            {/* Tap + 2x row */}
+            <div className="flex gap-2">
+              <button
+                onClick={handleTapTempo}
+                disabled={isGeneratingClick}
+                className="flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40">
+                TAP TEMPO
+              </button>
+              <button
+                onClick={() => setBpm(String(Math.min(300, (parseInt(bpm) || 120) * 2)))}
+                disabled={isGeneratingClick}
+                className="px-4 py-3 rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40">
+                2×
+              </button>
+              <button
+                onClick={() => setBpm(String(Math.max(40, Math.round((parseInt(bpm) || 120) / 2))))}
+                disabled={isGeneratingClick}
+                className="px-4 py-3 rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40">
+                ½×
+              </button>
+            </div>
+
+            {/* Time signature */}
+            <div>
+              <p className="text-white/40 text-[9px] uppercase tracking-widest font-bold mb-2">Compasso</p>
+              <div className="grid grid-cols-6 gap-1">
+                {(['3/4', '4/4', '5/4', '6/8', '7/8', '12/8'] as const).map(ts => (
+                  <button key={ts} onClick={() => setTimeSignature(ts)} disabled={isGeneratingClick}
+                    className={`py-2 rounded-lg text-[10px] font-black transition-all cursor-pointer active:scale-95 border ${timeSignature === ts ? 'bg-primary/15 border-primary text-primary' : 'bg-[#2a2a2d] border-white/5 text-white/60 hover:bg-[#343438]'}`}>
+                    {ts}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Accent beat 1 toggle */}
+            <div className="flex items-center justify-between bg-[#141415] border border-white/5 rounded-xl px-4 py-3">
+              <span className="text-white/60 text-xs font-bold uppercase tracking-wider">Acentuar Tempo 1</span>
+              <button
+                onClick={() => setAccentBeat1(p => !p)}
+                disabled={isGeneratingClick}
+                className={`relative w-10 h-5 rounded-full transition-colors cursor-pointer border ${accentBeat1 ? 'bg-primary border-primary' : 'bg-[#2a2a2d] border-white/10'}`}>
+                <div className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${accentBeat1 ? 'left-5 bg-black' : 'left-0.5 bg-white/40'}`} />
+              </button>
+            </div>
+
             {/* Click Sound selector */}
             {!isGeneratingClick && (
-              <div className="mb-4">
+              <div>
                 <p className="text-white/40 text-[9px] uppercase tracking-widest font-bold mb-2">Som do Click</p>
                 <div className="grid grid-cols-4 gap-1 mb-2">
                   {CLICK_TYPES.map(t => (
-                    <button key={t.id} onClick={() => updateClickSel({ type: t.id })} disabled={isGeneratingClick}
+                    <button key={t.id} onClick={() => updateClickSel({ type: t.id })}
                       className={`py-1.5 rounded-lg text-[9px] font-bold transition-all cursor-pointer active:scale-95 border ${clickSel.type === t.id ? 'bg-primary/15 border-primary text-primary' : 'bg-[#2a2a2d] border-white/5 text-white/60 hover:bg-[#343438]'}`}>
                       {t.label}
                     </button>
@@ -1174,7 +1383,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                 </div>
                 <div className="grid grid-cols-4 gap-1">
                   {CLICK_SUBDIVISIONS.map(s => (
-                    <button key={s.id} onClick={() => updateClickSel({ subdivision: s.id })} disabled={isGeneratingClick}
+                    <button key={s.id} onClick={() => updateClickSel({ subdivision: s.id })}
                       className={`py-1.5 rounded-lg text-[9px] font-bold transition-all cursor-pointer active:scale-95 border ${clickSel.subdivision === s.id ? 'bg-primary/15 border-primary text-primary' : 'bg-[#2a2a2d] border-white/5 text-white/60 hover:bg-[#343438]'}`}>
                       {s.label}
                     </button>
@@ -1184,14 +1393,15 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
             )}
 
             {isGeneratingClick && (
-              <div className="text-center text-[10px] font-bold text-primary animate-pulse uppercase tracking-wider mb-4">
+              <div className="text-center text-[10px] font-bold text-primary animate-pulse uppercase tracking-wider">
                 Gerando click {clickSel.type}...
               </div>
             )}
+
             <button onClick={addMetronomeChannel} disabled={isGeneratingClick || stems.length === 0}
               className="w-full bg-[#2a2a2d] hover:bg-[#343438] text-white py-3.5 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-xs tracking-wider cursor-pointer border border-white/5 active:scale-95">
               {isGeneratingClick ? <Loader2 size={16} className="animate-spin" /> : <Play fill="currentColor" size={14} />}
-              GERAR CLICK — {clickSel.type} {clickSel.subdivision}
+              GERAR CLICK — {clickSel.type} {timeSignature} {clickSel.subdivision}
             </button>
           </div>
         </div>
@@ -1208,6 +1418,15 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                 <span className="text-white font-black text-sm uppercase tracking-wider">Voz Guia</span>
               </div>
               <div className="flex items-center gap-2">
+                {/* Template button */}
+                <button
+                  onClick={applyVoiceGuideTemplate}
+                  disabled={isAutoDetecting || songDuration === 0}
+                  title="Aplica estrutura padrão de música de louvor"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-white/10 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white active:scale-95"
+                >
+                  Template
+                </button>
                 {/* Auto-Detect button */}
                 <button
                   onClick={autoDetectVoiceGuide}
@@ -1280,7 +1499,13 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                 <div className="flex flex-col gap-1 max-h-32 overflow-y-auto custom-scrollbar">
                   {voiceCues.map(cue => (
                     <div key={cue.id} className="flex items-center justify-between bg-white/3 border border-white/5 rounded-md px-2.5 py-1.5">
-                      <span className="text-yellow-400 font-mono text-[10px] font-bold w-10 shrink-0">{formatCueTime(cue.time)}</span>
+                      <input
+                        defaultValue={formatCueTime(cue.time)}
+                        key={`${cue.id}-${Math.floor(cue.time)}`}
+                        onBlur={e => updateCueTime(cue.id, e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                        className="text-yellow-400 font-mono text-[10px] font-bold w-12 bg-transparent border-b border-yellow-400/30 focus:border-yellow-400 focus:outline-none text-center shrink-0"
+                      />
                       <span className="text-white/80 text-[10px] font-bold flex-1 px-2 truncate">{cue.label}</span>
                       <button
                         onClick={() => removeVoiceCue(cue.id)}
