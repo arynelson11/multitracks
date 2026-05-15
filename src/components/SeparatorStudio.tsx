@@ -325,33 +325,6 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     return float32ToWav(output, sr);
   };
 
-  const applyVoiceGuideTemplate = () => {
-    const dur = songDuration || 240;
-    const beat = 60 / (parseInt(bpm) || 120);
-    const sections = [
-      { frac: 0.07, label: 'Intro',        file: 'Song Sections/Portugese - Intro.wav' },
-      { frac: 0.17, label: 'Verso 1',      file: 'Song Sections/Portugese - Verse 1.wav' },
-      { frac: 0.25, label: 'Pré-Refrão',   file: 'Song Sections/Portugese - Pre Chorus.wav' },
-      { frac: 0.33, label: 'Refrão 1',     file: 'Song Sections/Portugese - Chorus 1.wav' },
-      { frac: 0.43, label: 'Interlúdio',   file: 'Song Sections/Portugese - Interlude.wav' },
-      { frac: 0.51, label: 'Verso 2',      file: 'Song Sections/Portugese - Verse 2.wav' },
-      { frac: 0.59, label: 'Pré-Refrão 2', file: 'Song Sections/Portugese - Pre Chorus 2.wav' },
-      { frac: 0.67, label: 'Refrão 2',     file: 'Song Sections/Portugese - Chorus 2.wav' },
-      { frac: 0.75, label: 'Ponte',        file: 'Song Sections/Portugese - Bridge.wav' },
-      { frac: 0.83, label: 'Solo',         file: 'Song Sections/Portugese - Solo.wav' },
-      { frac: 0.89, label: 'Refrão 3',     file: 'Song Sections/Portugese - Chorus 3.wav' },
-      { frac: 0.96, label: 'Final',        file: 'Song Sections/Portugese - Ending.wav' },
-    ];
-    const newCues: VoiceCue[] = [];
-    const introTime = sections[0].frac * dur;
-    for (let n = 1; n <= 4; n++) {
-      const t = introTime - (5 - n) * beat;
-      if (t >= 0) newCues.push({ id: `tmpl-c${n}-${Date.now()}`, time: t, label: String(n), file: `Song Sections/Portugese - ${n}.wav` });
-    }
-    sections.forEach((s, i) => newCues.push({ id: `tmpl-${i}-${Date.now()}`, time: s.frac * dur, label: s.label, file: s.file }));
-    setVoiceCues(newCues.sort((a, b) => a.time - b.time));
-  };
-
   const autoDetectVoiceGuide = async () => {
     setIsAutoDetecting(true);
     try {
@@ -368,9 +341,11 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         buffer = await ctx.decodeAudioData(await res.arrayBuffer());
       }
 
-      const CHUNK_SECS = 4;
+      // 2-second chunks for finer resolution (pre-choruses can be as short as 8s)
+      const CHUNK_SECS = 2;
       const chunkSamples = CHUNK_SECS * buffer.sampleRate;
       const numChunks = Math.floor(buffer.duration / CHUNK_SECS);
+      const totalDur = buffer.duration;
 
       // Mix to mono
       const mono = new Float32Array(buffer.length);
@@ -379,7 +354,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         for (let i = 0; i < ch.length; i++) mono[i] += ch[i] / buffer.numberOfChannels;
       }
 
-      // RMS per chunk
+      // RMS per 2s chunk
       const rms: number[] = [];
       for (let i = 0; i < numChunks; i++) {
         const start = i * chunkSamples;
@@ -392,94 +367,136 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       const maxRms = Math.max(...rms, 0.001);
       const norm = rms.map(v => v / maxRms);
 
-      // Smooth (±3 chunks = ±12s window)
-      const SMOOTH = 3;
+      // Smooth with ±5 chunk window (±10s) for stability
+      const SMOOTH = 5;
       const smoothed = norm.map((_, i) => {
         const sl = norm.slice(Math.max(0, i - SMOOTH), Math.min(norm.length, i + SMOOTH + 1));
         return sl.reduce((a, b) => a + b, 0) / sl.length;
       });
 
-      // Detect boundaries: significant energy change between consecutive windows
-      const MIN_GAP = Math.max(4, Math.floor(20 / CHUNK_SECS)); // min 20s between sections
-      const THRESHOLD = 0.1;
-
-      const chunkEnergy = (chunk: number) => {
-        const sl = smoothed.slice(chunk, Math.min(numChunks, chunk + MIN_GAP));
-        return sl.reduce((a, b) => a + b, 0) / sl.length;
+      // Section energy = average of all chunks in that section (from boundary to next)
+      const sectionEnergy = (startChunk: number, endChunk: number) => {
+        const sl = smoothed.slice(startChunk, Math.min(numChunks, endChunk));
+        return sl.length > 0 ? sl.reduce((a, b) => a + b, 0) / sl.length : 0;
       };
 
-      const boundaries: { time: number; energy: number }[] = [{ time: 0, energy: chunkEnergy(0) }];
+      // Detect boundaries: look for sustained energy change over ±8 chunks (±16s)
+      const MIN_GAP_CHUNKS = Math.max(7, Math.floor(14 / CHUNK_SECS)); // min 14s between sections
+      const THRESHOLD = 0.08;
 
-      for (let i = MIN_GAP; i < numChunks - 2; i++) {
-        const lastChunk = Math.floor(boundaries[boundaries.length - 1].time / CHUNK_SECS);
-        if (i - lastChunk < MIN_GAP) continue;
-        const before = smoothed.slice(Math.max(0, i - MIN_GAP), i).reduce((a, b) => a + b, 0) / MIN_GAP;
-        const after = smoothed.slice(i, Math.min(numChunks, i + MIN_GAP)).reduce((a, b) => a + b, 0) / MIN_GAP;
+      const boundaries: { time: number; startChunk: number }[] = [{ time: 0, startChunk: 0 }];
+
+      for (let i = MIN_GAP_CHUNKS; i < numChunks - 2; i++) {
+        const lastChunk = boundaries[boundaries.length - 1].startChunk;
+        if (i - lastChunk < MIN_GAP_CHUNKS) continue;
+        const half = Math.floor(MIN_GAP_CHUNKS / 2);
+        const before = sectionEnergy(Math.max(0, i - half), i);
+        const after = sectionEnergy(i, Math.min(numChunks, i + half));
         if (Math.abs(after - before) > THRESHOLD) {
-          boundaries.push({ time: i * CHUNK_SECS, energy: chunkEnergy(i) });
+          boundaries.push({ time: i * CHUNK_SECS, startChunk: i });
         }
       }
 
-      // Cap at 10 sections — remove smallest transitions
-      while (boundaries.length > 10) {
-        let minIdx = 1;
-        let minDiff = Infinity;
-        for (let i = 1; i < boundaries.length - 1; i++) {
-          const diff = Math.abs(boundaries[i].energy - boundaries[i - 1].energy)
-                     + Math.abs(boundaries[i].energy - boundaries[i + 1].energy);
-          if (diff < minDiff) { minDiff = diff; minIdx = i; }
-        }
-        boundaries.splice(minIdx, 1);
-      }
-
-      const allE = boundaries.map(b => b.energy);
-      const minE = Math.min(...allE);
-      const range = Math.max(...allE) - minE || 1;
-
-      // Label by energy tier
-      let verseCount = 0, chorusCount = 0, bridgeCount = 0;
-
-      const detectedCues: VoiceCue[] = boundaries.map((b, idx) => {
-        const normE = (b.energy - minE) / range;
-        let label: string;
-        let filePath: string;
-
-        if (idx === 0) {
-          label = 'Intro';
-          filePath = 'Song Sections/Portugese - Intro.wav';
-        } else if (idx === boundaries.length - 1) {
-          label = 'Final';
-          filePath = 'Song Sections/Portugese - Ending.wav';
-        } else if (normE >= 0.65) {
-          chorusCount++;
-          const n = Math.min(chorusCount, 4);
-          label = `Refrão ${chorusCount}`;
-          filePath = `Song Sections/Portugese - Chorus ${n}.wav`;
-        } else if (normE <= 0.25) {
-          bridgeCount++;
-          label = bridgeCount === 1 ? 'Ponte' : 'Breakdown';
-          filePath = bridgeCount === 1 ? 'Song Sections/Portugese - Bridge.wav' : 'Song Sections/Portugese - Breakdown.wav';
-        } else {
-          verseCount++;
-          const n = Math.min(verseCount, 6);
-          label = `Verso ${verseCount}`;
-          filePath = `Song Sections/Portugese - Verse ${n}.wav`;
-        }
-
-        return { id: `auto-${Date.now()}-${idx}`, time: b.time, label, file: filePath };
+      // Compute energy for each section (from this boundary start to the next boundary start)
+      const withEnergy = boundaries.map((b, idx) => {
+        const nextChunk = idx < boundaries.length - 1 ? boundaries[idx + 1].startChunk : numChunks;
+        return { time: b.time, startChunk: b.startChunk, energy: sectionEnergy(b.startChunk, nextChunk) };
       });
 
-      // Add count-in 1,2,3,4 before Intro when there's space
+      // Cap at 12 sections — always remove the section with smallest energy delta to neighbors
+      while (withEnergy.length > 12) {
+        let minIdx = 1;
+        let minScore = Infinity;
+        for (let i = 1; i < withEnergy.length - 1; i++) {
+          const score = Math.abs(withEnergy[i].energy - withEnergy[i - 1].energy)
+                      + Math.abs(withEnergy[i].energy - withEnergy[i + 1].energy);
+          if (score < minScore) { minScore = score; minIdx = i; }
+        }
+        withEnergy.splice(minIdx, 1);
+      }
+
+      const allE = withEnergy.map(b => b.energy);
+      const minE = Math.min(...allE);
+      const maxE = Math.max(...allE);
+      const eRange = maxE - minE || 1;
+      const ne = (e: number) => (e - minE) / eRange; // normalize 0–1
+
+      // ─── Worship-structure-aware labeling ───────────────────────────────────
+      // Typical flow: Intro → V → PreC → C → [V → PreC →] C → Ponte → C → Final
+      // Rules (applied in order for each section i, skipping first and last):
+      //   1. Chorus  — ne(energy) ≥ 0.62  (high energy peak)
+      //   2. Pré-Refrão — section JUST BEFORE a Chorus, ne ≥ 0.32 (building energy)
+      //   3. Ponte   — ne ≤ 0.30, position ≥ 55% of song, not yet used
+      //   4. Interlúdio — ne ≤ 0.22, position < 55%, appears after at least one chorus
+      //   5. Verso   — everything else (medium energy sections)
+      const CHORUS_THR = 0.62;
+      const PRE_THR    = 0.32;
+      const BRIDGE_THR = 0.30;
+      const INTER_THR  = 0.22;
+
+      // First pass: mark chorus positions so we can identify pre-choruses
+      const isChorus = withEnergy.map(b => ne(b.energy) >= CHORUS_THR);
+
+      let chorusCount = 0, verseCount = 0, preChorusCount = 0;
+      let bridgeUsed = false, interludeUsed = false;
+      let chorusSeenCount = 0;
+
+      const detectedCues: VoiceCue[] = withEnergy.map((b, idx) => {
+        const ts = Date.now();
+
+        if (idx === 0) {
+          return { id: `ad-${ts}-${idx}`, time: b.time, label: 'Intro', file: 'Song Sections/Portugese - Intro.wav' };
+        }
+        if (idx === withEnergy.length - 1) {
+          return { id: `ad-${ts}-${idx}`, time: b.time, label: 'Final', file: 'Song Sections/Portugese - Ending.wav' };
+        }
+
+        const e = ne(b.energy);
+        const pos = b.time / totalDur;
+        const nextIsChorus = idx < withEnergy.length - 1 && isChorus[idx + 1];
+
+        // 1. Chorus
+        if (isChorus[idx]) {
+          chorusCount++;
+          chorusSeenCount++;
+          const n = Math.min(chorusCount, 4);
+          return { id: `ad-${ts}-${idx}`, time: b.time, label: `Refrão ${chorusCount}`, file: `Song Sections/Portugese - Chorus ${n}.wav` };
+        }
+
+        // 2. Pré-Refrão — building section right before a chorus
+        if (nextIsChorus && e >= PRE_THR) {
+          preChorusCount++;
+          const sfx = preChorusCount > 1 ? ` ${preChorusCount}` : '';
+          return { id: `ad-${ts}-${idx}`, time: b.time, label: `Pré-Refrão${sfx}`, file: `Song Sections/Portugese - Pre Chorus${sfx}.wav` };
+        }
+
+        // 3. Ponte (Bridge) — low/medium energy in second half of song
+        if (pos >= 0.55 && e <= BRIDGE_THR && !bridgeUsed) {
+          bridgeUsed = true;
+          return { id: `ad-${ts}-${idx}`, time: b.time, label: 'Ponte', file: 'Song Sections/Portugese - Bridge.wav' };
+        }
+
+        // 4. Interlúdio — quiet moment in first half after at least one chorus
+        if (pos < 0.55 && e <= INTER_THR && !interludeUsed && chorusSeenCount > 0) {
+          interludeUsed = true;
+          return { id: `ad-${ts}-${idx}`, time: b.time, label: 'Interlúdio', file: 'Song Sections/Portugese - Interlude.wav' };
+        }
+
+        // 5. Verso (default for medium sections)
+        verseCount++;
+        const vn = Math.min(verseCount, 6);
+        return { id: `ad-${ts}-${idx}`, time: b.time, label: `Verso ${verseCount}`, file: `Song Sections/Portugese - Verse ${vn}.wav` };
+      });
+
+      // Add 1,2,3,4 count-in before Intro when song has space before it
       const bpmNum = parseInt(bpm) || 120;
       const beat = 60 / bpmNum;
       const intro = detectedCues.find(c => c.label === 'Intro');
-      if (intro) {
-        const countIns: VoiceCue[] = [];
+      if (intro && intro.time > beat) {
         for (let n = 1; n <= 4; n++) {
           const t = intro.time - (5 - n) * beat;
-          if (t >= 0) countIns.push({ id: `auto-ci${n}-${Date.now()}`, time: t, label: String(n), file: `Song Sections/Portugese - ${n}.wav` });
+          if (t >= 0) detectedCues.push({ id: `ad-ci${n}-${Date.now()}`, time: t, label: String(n), file: `Song Sections/Portugese - ${n}.wav` });
         }
-        detectedCues.unshift(...countIns);
         detectedCues.sort((a, b) => a.time - b.time);
       }
 
@@ -1418,15 +1435,6 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                 <span className="text-white font-black text-sm uppercase tracking-wider">Voz Guia</span>
               </div>
               <div className="flex items-center gap-2">
-                {/* Template button */}
-                <button
-                  onClick={applyVoiceGuideTemplate}
-                  disabled={isAutoDetecting || songDuration === 0}
-                  title="Aplica estrutura padrão de música de louvor"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-white/10 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white active:scale-95"
-                >
-                  Template
-                </button>
                 {/* Auto-Detect button */}
                 <button
                   onClick={autoDetectVoiceGuide}
