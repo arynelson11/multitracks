@@ -746,7 +746,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         barWidth: 2,
         barGap: 2,
         barRadius: 2,
-        height: 70,
+        height: 88,
         normalize: true,
         url: stem.url,
       });
@@ -963,24 +963,27 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   if (!file && stems.length === 0) {
     return (
       <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col items-center justify-center p-6">
-        <button onClick={onClose} className="absolute top-5 left-5 text-text-muted hover:text-white flex items-center gap-1.5 cursor-pointer text-xs font-mono uppercase tracking-wider">
-          <ChevronLeft size={18}/> VOLTAR
+        <button onClick={onClose} className="transport-btn absolute top-4 left-4 flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold text-text-muted cursor-pointer uppercase tracking-wider">
+          <ChevronLeft size={13}/> Voltar
         </button>
-        <div className="max-w-xl w-full text-center">
-           <Disc3 size={60} className="mx-auto text-primary mb-5 animate-[spin_10s_linear_infinite]" />
-           <h1 className="text-2xl font-black text-white mb-3 uppercase tracking-wider">Separador de Faixas IA</h1>
-           <p className="text-text-muted mb-8 text-xs font-mono leading-relaxed max-w-md mx-auto">Envie seu áudio. A IA irá separar e mixar todos os instrumentos, detectar o BPM exato e gerar um projeto de ensaio multi-canal profissional.</p>
-
-           <label className="border-2 border-dashed border-primary/30 bg-primary/3 hover:bg-primary/5 rounded-lg p-12 flex flex-col items-center justify-center cursor-pointer transition-colors shadow-[0_0_40px_rgba(16,185,129,0.05)]">
-             <UploadCloud size={40} className="text-primary mb-3" />
-             <span className="text-sm font-black text-white uppercase tracking-wider">Carregar Áudio & Iniciar</span>
-             <span className="text-[10px] text-text-muted/50 mt-1.5 font-mono">MP3, WAV ou AAC</span>
-             <input type="file" accept="audio/*" onChange={handleFileUpload} className="hidden" />
-           </label>
-
-           <button onClick={loadMockData} className="mt-8 text-[10px] font-mono text-text-muted/50 hover:text-text-muted underline cursor-pointer transition-colors">
-              [DEV] Carregar Dados Fictícios
-           </button>
+        <div className="max-w-md w-full flex flex-col items-center text-center">
+          <div className="w-20 h-20 mb-8 rounded-2xl flex items-center justify-center border border-border bg-surface relative shadow-[0_0_40px_rgba(212,168,67,0.08)]">
+            <Disc3 size={36} className="text-primary animate-[spin_10s_linear_infinite]" />
+            <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+          </div>
+          <h1 className="text-3xl font-black tracking-[0.15em] uppercase mb-2 text-white">SEPARADOR IA</h1>
+          <p className="text-text-muted mb-10 text-[10px] font-mono tracking-widest uppercase">Motor de Separação Multi-faixa Profissional</p>
+          <label className="w-full hw-btn flex flex-col items-center gap-4 px-8 py-10 rounded-xl cursor-pointer group">
+            <UploadCloud size={36} className="text-primary group-hover:scale-110 transition-transform" />
+            <div>
+              <div className="font-black text-white uppercase tracking-wider text-sm mb-1">Carregar Áudio & Iniciar</div>
+              <div className="text-[10px] text-text-muted/50 font-mono">MP3, WAV ou AAC</div>
+            </div>
+            <input type="file" accept="audio/*" onChange={handleFileUpload} className="hidden" />
+          </label>
+          <button onClick={loadMockData} className="mt-6 text-[9px] font-mono text-text-muted/30 hover:text-text-muted/60 underline cursor-pointer transition-colors uppercase tracking-wider">
+            [dev] dados fictícios
+          </button>
         </div>
       </div>
     );
@@ -989,234 +992,259 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   if (isProcessing) {
     return (
       <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col items-center justify-center p-6">
-        <Loader2 size={48} className="text-primary animate-spin mb-6" />
-        <h2 className="text-xl font-black text-white tracking-widest uppercase mb-3 text-transparent bg-clip-text bg-gradient-to-r from-primary to-[#059669]">
-           Analisando Frequências
-        </h2>
-        <div className="text-xs text-text-muted max-w-lg text-center font-mono h-16">{progressMsg}</div>
-        <div className="w-full max-w-md bg-surface rounded-full h-1.5 mt-6 overflow-hidden border border-border">
-          <div className="bg-primary h-full transition-all duration-300 ease-out" style={{ width: `${progress}%` }}></div>
+        <div className="w-16 h-16 mb-8 rounded-2xl flex items-center justify-center border border-border bg-surface relative">
+          <Loader2 size={28} className="text-primary animate-spin" />
         </div>
-        <p className="text-text-muted/50 text-[10px] mt-3 font-mono uppercase tracking-widest">{progress}% CONCLUÍDO</p>
+        <h2 className="text-2xl font-black text-white tracking-[0.15em] uppercase mb-2">Analisando Frequências</h2>
+        <p className="text-text-muted text-[10px] font-mono tracking-widest uppercase mb-8">Motor de IA GPU • Replicate</p>
+        <div className="w-full max-w-sm mb-3">
+          <div className="lcd-display rounded-md h-1.5 overflow-hidden">
+            <div className="bg-primary h-full transition-all duration-300 ease-out" style={{ width: `${progress}%` }}></div>
+          </div>
+        </div>
+        <div className="text-[9px] text-text-muted font-mono h-8 text-center max-w-md">{progressMsg}</div>
+        <p className="text-primary/60 text-[9px] mt-2 font-mono font-black tracking-[0.2em]">{progress}% CONCLUÍDO</p>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col font-sans select-none overflow-hidden text-gray-200">
-      
-      {/* HEADER DAW */}
-      <header className="h-14 bg-surface border-b border-border flex items-center justify-between px-4 shrink-0 z-10">
-        <div className="flex items-center gap-3">
-          <button onClick={onClose} className="p-1.5 hover:bg-white/5 rounded-md transition-colors cursor-pointer text-text-muted">
-            <ChevronLeft size={20} />
+    <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col font-sans select-none overflow-hidden">
+
+      {/* ═══ HEADER ═══ */}
+      <header className="h-12 bg-[#18181a] border-b border-[#222] flex items-center justify-between px-3 shrink-0 z-10 shadow-[0_2px_8px_rgba(0,0,0,0.6)]">
+        <div className="flex items-center gap-2">
+          <button onClick={onClose} className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[10px] font-bold text-text-muted hover:text-white cursor-pointer uppercase tracking-wider">
+            <ChevronLeft size={13}/> Voltar
           </button>
-          <div className="flex items-center gap-2">
-             <div className="w-7 h-7 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center">
-                <Disc3 size={14} className="text-primary" />
-             </div>
-             <div>
-                <h1 className="font-black text-white text-xs uppercase tracking-wider leading-tight">Separador de Faixas (DAW)</h1>
-                <h2 className="text-[9px] font-mono text-text-muted truncate max-w-xs">{songName}</h2>
-             </div>
+          <div className="h-5 w-px bg-border mx-1 hidden sm:block" />
+          <div className="hidden sm:flex items-center gap-2">
+            <div className="w-6 h-6 rounded bg-primary/10 border border-primary/20 flex items-center justify-center">
+              <Disc3 size={12} className="text-primary" />
+            </div>
+            <div>
+              <div className="font-black text-white text-[10px] uppercase tracking-[0.15em] leading-tight">Separador IA</div>
+              <div className="text-[8px] font-mono text-text-muted truncate max-w-[180px]">{songName || 'Sem título'}</div>
+            </div>
           </div>
         </div>
-        <button 
-          onClick={() => setShowSaveForm(true)}
-          className="flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/15 hover:bg-primary/15 px-3 py-1.5 rounded-md text-[10px] font-bold transition-all cursor-pointer uppercase tracking-wider">
-          <Save size={14} /> EXPORTAR
+
+        {/* Center info chips */}
+        <div className="hidden md:flex items-center gap-2">
+          <div className="lcd-display px-2.5 py-1 rounded text-[9px] font-mono font-black text-primary">{bpm} BPM</div>
+          <div className="lcd-display px-2.5 py-1 rounded text-[9px] font-mono font-black text-text-muted">{songKey}</div>
+          <div className="lcd-display px-2.5 py-1 rounded text-[9px] font-mono text-text-muted/50">{stems.length} CH</div>
+        </div>
+
+        <button onClick={() => setShowSaveForm(true)}
+          className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-wider text-primary cursor-pointer border-primary/20">
+          <Save size={12} /> EXPORTAR
         </button>
       </header>
 
-      {/* CORE WORKSPACE */}
+      {/* ═══ WORKSPACE ═══ */}
       <div className="flex-1 flex overflow-hidden">
-         {/* TRACK CONTROLS: LEFT FIXED */}
-         <div className="w-[280px] bg-[#0a0a0c]/40 backdrop-blur-xl border-r border-white/5 flex flex-col overflow-y-auto overflow-x-hidden pt-7 shrink-0 z-10 custom-scrollbar shadow-[4px_0_24px_rgba(0,0,0,0.5)]">
-            {stems.map((stem) => {
-               const state = stemStates[stem.id];
-               if(!state) return null;
-               
-               return (
-                  <div key={`ctrl-${stem.id}`} className="flex flex-col h-[70px] border-b border-white/[0.03] px-3 justify-center bg-white/[0.01] hover:bg-white/[0.03] transition-colors relative group">
-                     {/* Color indicator border */}
-                     <div className="absolute left-0 top-0 bottom-0 w-[3px]" style={{ backgroundColor: stem.color, boxShadow: `0 0 10px ${stem.color}66` }}></div>
-                     
-                     <div className="flex items-center justify-between mb-1.5 pl-3">
-                        <span className="text-[11px] font-bold tracking-[0.15em] uppercase text-white/90 drop-shadow-md">{stem.name}</span>
-                        <div className="flex gap-1">
-                           <button
-                              onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], muted: !p[stem.id].muted } }))}
-                              className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-black cursor-pointer transition-all ${state.muted ? 'bg-accent-red/20 text-accent-red border border-accent-red/50 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'bg-black/40 text-text-muted border border-white/5 hover:bg-white/10 hover:text-white'}`}>M</button>
-                           <button
-                              onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], soloed: !p[stem.id].soloed } }))}
-                              className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-black cursor-pointer transition-all ${state.soloed ? 'bg-secondary/20 text-secondary border border-secondary/50 shadow-[0_0_10px_rgba(251,191,36,0.3)]' : 'bg-black/40 text-text-muted border border-white/5 hover:bg-white/10 hover:text-white'}`}>S</button>
-                           <button
-                              onClick={() => downloadStem(stem)}
-                              title={`Baixar ${stem.name}`}
-                              className="w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-all bg-black/40 text-text-muted border border-white/5 hover:bg-white/10 hover:text-primary">
-                              <Download size={10} />
-                           </button>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-3 pl-3 pr-1">
-                        {/* PAN KNOB */}
-                        <div className="w-5 h-5 rounded-full border border-white/20 flex items-center justify-center relative bg-black/60 shrink-0 shadow-inner" 
-                             style={{ cursor: 'ew-resize' }}
-                             title="Pan L/R"
-                             onWheel={(e) => {
-                                const newPan = Math.max(-1, Math.min(1, state.pan + (e.deltaY > 0 ? -0.1 : 0.1)));
-                                setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], pan: newPan } }));
-                             }}
-                             onClick={() => {
-                               setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], pan: 0 } }));
-                             }}>
-                             <div className="w-[1.5px] h-2.5 bg-white/70 rounded-full origin-bottom absolute top-[3px]" 
-                                  style={{ transform: `rotate(${state.pan * 45}deg)` }}></div>
-                        </div>
-                        {/* VOLUME FADER */}
-                        <input 
-                           type="range" min="0" max="1" step="0.01"
-                           value={state.volume}
-                           onChange={(e) => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], volume: parseFloat(e.target.value) } }))}
-                           className="w-full h-1 bg-black/50 border border-white/10 rounded-lg appearance-none cursor-pointer accent-white hover:accent-primary transition-all outline-none shadow-inner" 
-                        />
-                     </div>
+
+        {/* LEFT: Channel Strip Controls */}
+        <div className="w-[220px] bg-[#111113] border-r border-[#222] flex flex-col overflow-y-auto overflow-x-hidden shrink-0 z-10 shadow-[2px_0_12px_rgba(0,0,0,0.5)]">
+          {/* Ruler spacer */}
+          <div className="h-7 bg-[#0e0e10] border-b border-[#1e1e20] flex items-center px-3 shrink-0">
+            <span className="text-[7px] font-mono text-text-muted/30 uppercase tracking-[0.25em]">MIXER · {stems.length} CH</span>
+          </div>
+
+          {stems.map((stem, trackIdx) => {
+            const state = stemStates[stem.id];
+            if (!state) return null;
+            const isMutedByOther = (Object.values(stemStates).some(s => s.soloed) && !state.soloed) || state.muted;
+            return (
+              <div key={`ctrl-${stem.id}`} className="h-[88px] flex flex-col border-b border-[#1a1a1c] relative hover:bg-white/[0.01] transition-colors shrink-0">
+                {/* Color strip */}
+                <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ backgroundColor: stem.color, boxShadow: `0 0 8px ${stem.color}50` }} />
+                <div className="flex flex-col pt-3 px-2.5 pb-2 h-full">
+                  {/* Row 1: number + name + M/S/DL */}
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-1 min-w-0">
+                      <span className="text-[7px] font-mono font-bold text-text-muted/25 shrink-0">{String(trackIdx + 1).padStart(2, '0')}</span>
+                      <span className="text-[8px] font-bold tracking-[0.1em] uppercase truncate font-mono" style={{ color: isMutedByOther ? '#444' : stem.color }}>
+                        {stem.name}
+                      </span>
+                    </div>
+                    <div className="flex gap-0.5 shrink-0">
+                      <button onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], muted: !p[stem.id].muted } }))}
+                        className={`w-6 h-5 rounded text-[8px] font-black transition-all active:scale-90 cursor-pointer border border-[#222] ${state.muted ? 'bg-[#ff3b30] text-white shadow-[0_0_8px_rgba(255,59,48,0.5)]' : 'bg-[#333] text-[#666] hover:bg-[#444]'}`}>M</button>
+                      <button onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], soloed: !p[stem.id].soloed } }))}
+                        className={`w-6 h-5 rounded text-[8px] font-black transition-all active:scale-90 cursor-pointer border border-[#222] ${state.soloed ? 'bg-[#ffcc00] text-black shadow-[0_0_8px_rgba(255,204,0,0.5)]' : 'bg-[#333] text-[#666] hover:bg-[#444]'}`}>S</button>
+                      <button onClick={() => downloadStem(stem)} title={`Baixar ${stem.name}`}
+                        className="w-6 h-5 rounded cursor-pointer border border-[#222] bg-[#333] text-[#666] hover:bg-[#444] hover:text-primary flex items-center justify-center transition-all active:scale-90">
+                        <Download size={9} />
+                      </button>
+                    </div>
                   </div>
-               );
-            })}
-         </div>
-
-         {/* WAVEFORMS: RIGHT */}
-         <div className="flex-1 bg-[#0a0a0c] relative overflow-y-auto overflow-x-hidden pt-7">
-            {/* Playhead Sync Line */}
-            <div className="absolute top-7 bottom-0 w-px bg-white/60 z-10 pointer-events-none drop-shadow-[0_0_3px_rgba(255,255,255,0.6)]"
-                 style={{ left: `${progressPlayback}%` }}>
-                 <div className="absolute -top-1.5 left-[-4px] w-0 h-0 border-l-[4px] border-r-[4px] border-t-[6px] border-transparent border-t-white"></div>
-            </div>
-
-            {/* Voice Cue Markers — click to seek */}
-            {songDuration > 0 && voiceCues.map(cue => (
-              <div
-                key={`marker-${cue.id}`}
-                className="absolute top-0 bottom-0 z-20 cursor-pointer group/cue"
-                style={{ left: `${(cue.time / songDuration) * 100}%` }}
-                onClick={() => {
-                  Object.values(wavesurfers.current).forEach(ws => ws.setTime(cue.time));
-                  voiceCuesRef.current.forEach(c => { c.fired = c.time < cue.time - 0.1; });
-                }}
-                title={`${cue.label} — ${formatCueTime(cue.time)}`}
-              >
-                <div className="w-px h-full bg-yellow-400/50 group-hover/cue:bg-yellow-400" />
-                <div className="absolute top-0 left-1 bg-yellow-400 text-black text-[7px] font-black px-1 py-0.5 rounded-sm whitespace-nowrap leading-tight group-hover/cue:bg-yellow-300">
-                  {cue.label}
+                  {/* Row 2: Pan knob + Volume fader */}
+                  <div className="flex items-center gap-2 flex-1">
+                    <div className="flex flex-col items-center gap-0.5 shrink-0">
+                      <div className="logic-pan-knob" style={{ width: 22, height: 22, cursor: 'ew-resize' }}
+                        title="Pan (scroll=ajuste, clique=centro)"
+                        onWheel={(e) => { e.preventDefault(); const np = Math.round(Math.max(-1, Math.min(1, state.pan + (e.deltaY > 0 ? -0.1 : 0.1))) * 10) / 10; setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], pan: np } })); }}
+                        onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], pan: 0 } }))}>
+                        <div className="logic-pan-indicator" style={{ transform: `rotate(${state.pan * 135}deg)` }} />
+                      </div>
+                      <span className="text-[6px] font-mono text-text-muted/30">
+                        {state.pan === 0 ? 'C' : state.pan > 0 ? `R${Math.round(Math.abs(state.pan) * 50)}` : `L${Math.round(Math.abs(state.pan) * 50)}`}
+                      </span>
+                    </div>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <input type="range" min="0" max="1" step="0.01" value={state.volume}
+                        onChange={(e) => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], volume: parseFloat(e.target.value) } }))}
+                        className="daw-slider w-full" />
+                      <div className="flex items-center justify-between">
+                        <span className="text-[6px] font-mono text-text-muted/30 uppercase">VOL</span>
+                        <div className="lcd-display px-1.5 py-0.5 rounded-[2px] text-[7px] font-mono text-accent-green">
+                          {state.volume === 0 ? '-∞' : (state.volume * 10 - 10).toFixed(1)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
-            ))}
+            );
+          })}
+        </div>
 
-            {stems.map((stem) => (
-               <div key={`wavewrap-${stem.id}`} className="h-[70px] border-b border-border relative hover:bg-white/3 transition-colors">
-                  <div id={`waveform-${stem.id}`} className="absolute w-full top-0 h-full" />
-               </div>
+        {/* RIGHT: Waveform area */}
+        <div className="flex-1 bg-[#0a0a0c] relative overflow-y-auto overflow-x-hidden flex flex-col">
+
+          {/* Time ruler */}
+          <div className="h-7 bg-[#0e0e10] border-b border-[#1e1e20] sticky top-0 z-30 relative overflow-hidden shrink-0">
+            {[10, 20, 30, 40, 50, 60, 70, 80, 90].map(pct => (
+              <div key={pct} className="absolute bottom-0 flex flex-col items-center pointer-events-none" style={{ left: `${pct}%` }}>
+                <span className="text-[6px] font-mono text-text-muted/30 mb-0.5 -translate-x-1/2">
+                  {songDuration > 0 ? formatCueTime(songDuration * pct / 100) : ''}
+                </span>
+                <div className="w-px h-2 bg-white/8" />
+              </div>
             ))}
-         </div>
+            {/* Playhead on ruler */}
+            <div className="absolute top-0 bottom-0 w-px bg-primary/50 pointer-events-none z-10" style={{ left: `${progressPlayback}%` }} />
+          </div>
+
+          {/* Playhead over waveforms */}
+          <div className="absolute top-7 bottom-0 w-px bg-white/80 z-20 pointer-events-none shadow-[0_0_6px_rgba(255,255,255,0.6)]"
+            style={{ left: `${progressPlayback}%` }}>
+            <div className="absolute -top-1.5 -translate-x-1/2 w-0 h-0 border-l-[4px] border-r-[4px] border-t-[6px] border-transparent border-t-white" />
+          </div>
+
+          {/* Voice Cue Markers */}
+          {songDuration > 0 && voiceCues.map(cue => (
+            <div key={`marker-${cue.id}`}
+              className="absolute top-7 bottom-0 z-20 cursor-pointer group/cue"
+              style={{ left: `${(cue.time / songDuration) * 100}%` }}
+              onClick={() => { Object.values(wavesurfers.current).forEach(ws => ws.setTime(cue.time)); voiceCuesRef.current.forEach(c => { c.fired = c.time < cue.time - 0.1; }); }}
+              title={`${cue.label} — ${formatCueTime(cue.time)}`}
+            >
+              <div className="w-px h-full bg-yellow-400/40 group-hover/cue:bg-yellow-400 transition-colors" />
+              <div className="absolute top-0 left-0.5 bg-yellow-400 text-black text-[6px] font-black px-1 py-0.5 rounded-[3px] whitespace-nowrap leading-tight shadow-sm group-hover/cue:bg-yellow-300 transition-colors">
+                {cue.label}
+              </div>
+            </div>
+          ))}
+
+          {stems.map((stem) => (
+            <div key={`wavewrap-${stem.id}`} className="h-[88px] border-b border-[#1a1a1c] relative shrink-0"
+              style={{ background: `linear-gradient(180deg, ${stem.color}05 0%, transparent 100%)` }}>
+              <div id={`waveform-${stem.id}`} className="absolute w-full top-0 h-full" />
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* TRANSPORT BAR */}
-      <footer className="h-16 bg-[#0a0a0c]/80 backdrop-blur-xl border-t border-white/10 shrink-0 px-6 flex items-center justify-between z-20">
-         <div className="flex-1 flex items-center gap-3">
-            {/* BPM Button → opens modal */}
-            <button
-               onClick={() => setShowBpmModal(true)}
-               className="flex items-center gap-1.5 bg-black/40 border border-white/10 rounded-md px-2.5 py-1.5 hover:bg-white/5 transition-colors cursor-pointer"
-            >
-               <span className="text-[9px] text-text-muted uppercase tracking-widest font-bold">BPM</span>
-               <span className="text-white text-xs font-mono font-black">{bpm}</span>
+      {/* ═══ TRANSPORT FOOTER ═══ */}
+      <footer className="h-14 bg-[#18181a] border-t border-[#222] shrink-0 px-3 flex items-center justify-between z-20 shadow-[0_-2px_12px_rgba(0,0,0,0.6)]">
+
+        {/* Left: Tool buttons */}
+        <div className="flex-1 flex items-center gap-1.5">
+          <button onClick={() => setShowBpmModal(true)}
+            className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md cursor-pointer">
+            <span className="text-[7px] text-text-muted uppercase tracking-widest font-bold font-mono">BPM</span>
+            <span className="text-primary text-[11px] font-mono font-black">{bpm}</span>
+          </button>
+
+          <div className="relative">
+            <button onClick={() => setIsKeyPickerOpen(p => !p)}
+              className={`transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md cursor-pointer ${isKeyPickerOpen ? 'border-primary/40' : ''}`}>
+              <span className="text-[7px] text-text-muted uppercase tracking-widest font-bold font-mono">TOM</span>
+              <span className="text-primary text-[11px] font-mono font-black">{songKey}</span>
             </button>
-
-            {/* Tom Button → opens key picker */}
-            <div className="relative">
-               <button
-                  onClick={() => setIsKeyPickerOpen(p => !p)}
-                  className={`flex items-center gap-1.5 bg-black/40 border border-white/10 rounded-md px-2.5 py-1.5 hover:bg-white/5 transition-colors cursor-pointer ${isKeyPickerOpen ? 'border-primary/40' : ''}`}
-               >
-                  <span className="text-[9px] text-text-muted uppercase tracking-widest font-bold">Tom</span>
-                  <span className="text-primary text-xs font-mono font-black">{songKey}</span>
-               </button>
-               {isKeyPickerOpen && (
-                  <>
-                     <div className="fixed inset-0 z-40" onClick={() => setIsKeyPickerOpen(false)} />
-                     <div className="absolute bottom-full mb-2 left-0 bg-[#1c1c1e] border border-white/10 rounded-xl z-50 p-3 w-44 shadow-2xl">
-                        <p className="text-[9px] text-text-muted mb-2 font-mono uppercase tracking-wider">Selecionar tom:</p>
-                        <div className="grid grid-cols-4 gap-1">
-                           {KEYS.map(k => (
-                              <button key={k} onClick={() => { setSongKey(k); setIsKeyPickerOpen(false); }}
-                                 className={`py-1.5 text-[10px] font-bold rounded transition-colors cursor-pointer font-mono ${songKey === k ? 'bg-primary text-black' : 'text-white/70 bg-white/5 hover:bg-primary/20 hover:text-primary'}`}>
-                                 {k}
-                              </button>
-                           ))}
-                        </div>
-                     </div>
-                  </>
-               )}
-            </div>
-
-            {/* + Click button (visible when tracks are loaded) */}
-            {stems.length > 0 && (
-              <button
-                onClick={() => setShowBpmModal(true)}
-                className="flex items-center gap-1 bg-black/40 border border-white/10 rounded-md px-2.5 py-1.5 hover:bg-primary/10 hover:border-primary/30 hover:text-primary text-text-muted transition-all cursor-pointer"
-                title={`Adicionar metrônomo a ${bpm} BPM`}
-              >
-                <span className="text-[9px] uppercase tracking-widest font-bold">+ Click</span>
-              </button>
+            {isKeyPickerOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsKeyPickerOpen(false)} />
+                <div className="absolute bottom-full mb-2 left-0 bg-[#1c1c1e] border border-[#333] rounded-xl z-50 p-3 w-44 shadow-2xl">
+                  <p className="text-[8px] text-text-muted mb-2 font-mono uppercase tracking-wider">Selecionar tom:</p>
+                  <div className="grid grid-cols-4 gap-1">
+                    {KEYS.map(k => (
+                      <button key={k} onClick={() => { setSongKey(k); setIsKeyPickerOpen(false); }}
+                        className={`py-1.5 text-[9px] font-bold rounded transition-colors cursor-pointer font-mono ${songKey === k ? 'bg-primary text-black' : 'text-white/70 bg-white/5 hover:bg-primary/20 hover:text-primary'}`}>
+                        {k}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
             )}
+          </div>
 
-            {/* Voz Guia button */}
-            {stems.length > 0 && (
-              <button
-                onClick={() => setShowVoiceGuide(true)}
-                className={`flex items-center gap-1.5 bg-black/40 border rounded-md px-2.5 py-1.5 transition-all cursor-pointer text-[9px] uppercase tracking-widest font-bold ${voiceCues.length > 0 ? 'border-yellow-400/40 text-yellow-400 bg-yellow-400/5' : 'border-white/10 text-text-muted hover:bg-yellow-400/10 hover:border-yellow-400/30 hover:text-yellow-400'}`}
-                title="Configurar Voz Guia"
-              >
-                <Mic size={11} />
-                Voz Guia {voiceCues.length > 0 && `(${voiceCues.length})`}
-              </button>
-            )}
-
-            {/* Sync Offset */}
-            <div className="flex items-center gap-1 bg-black/40 border border-white/10 rounded-md p-1 h-8">
-               <span className="text-[9px] text-text-muted uppercase tracking-widest font-bold px-2">Sync</span>
-               <button onClick={() => setClickOffsetMs(p => p - 10)} className="w-5 h-full flex items-center justify-center text-text-muted hover:text-white hover:bg-white/10 rounded cursor-pointer transition-colors" title="Atrasar Metrônomo">
-                  <ChevronLeft size={12}/>
-               </button>
-               <span className="text-[10px] text-white font-mono font-bold w-10 text-center">{clickOffsetMs > 0 ? '+' : ''}{clickOffsetMs}</span>
-               <button onClick={() => setClickOffsetMs(p => p + 10)} className="w-5 h-full flex items-center justify-center text-text-muted hover:text-white hover:bg-white/10 rounded cursor-pointer transition-colors" title="Adiantar Metrônomo">
-                  <ChevronRight size={12}/>
-               </button>
-               <span className="text-[8px] text-text-muted font-mono ml-1 mr-1">ms</span>
-            </div>
-         </div>
-         <div className="flex gap-4 items-center flex-1 justify-center">
-            <button
-               onClick={() => { Object.values(wavesurfers.current).forEach(ws => ws.setTime(0)); voiceCuesRef.current.forEach(c => { c.fired = false; }); }}
-               className="text-text-muted hover:text-white transition-colors cursor-pointer"><ChevronLeft size={20}/></button>
-            <button 
-               onClick={togglePlay}
-               className="w-12 h-12 bg-primary text-black rounded-md flex items-center justify-center transition-transform hover:scale-105 active:scale-95 shadow-[0_0_15px_rgba(16,185,129,0.2)] cursor-pointer">
-               {isPlaying ? <Pause size={20} fill="currentColor"/> : <Play size={20} fill="currentColor" className="ml-0.5"/>}
+          {stems.length > 0 && (
+            <button onClick={() => setShowBpmModal(true)}
+              className="transport-btn flex items-center gap-1 px-2.5 py-1.5 rounded-md cursor-pointer text-text-muted hover:text-primary transition-colors">
+              <span className="text-[7px] uppercase tracking-widest font-bold font-mono">+ CLICK</span>
             </button>
-            <button className="text-text-muted/30 transition-colors pointer-events-none"><ChevronLeft size={20} className="rotate-180"/></button>
-         </div>
-         <div className="flex-1 flex items-center justify-end gap-2 px-3">
-            <span className="text-text-muted"><Volume2 size={14}/></span>
-            <input 
-               type="range" min="0" max="1" step="0.01"
-               value={masterVolume}
-               onChange={(e) => setMasterVolume(parseFloat(e.target.value))}
-               className="w-28 h-0.5 bg-border rounded-lg appearance-none cursor-pointer accent-primary" 
-               title="Master Volume"
-            />
-         </div>
+          )}
+
+          {stems.length > 0 && (
+            <button onClick={() => setShowVoiceGuide(true)}
+              className={`transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md cursor-pointer transition-all ${voiceCues.length > 0 ? 'text-yellow-400 border-yellow-500/30' : 'text-text-muted hover:text-yellow-400'}`}>
+              <Mic size={10} />
+              <span className="text-[7px] uppercase tracking-widest font-bold font-mono hidden sm:inline">
+                VOZ {voiceCues.length > 0 && `(${voiceCues.length})`}
+              </span>
+            </button>
+          )}
+
+          <div className="transport-btn flex items-center gap-0.5 rounded-md px-1 h-8">
+            <span className="text-[7px] text-text-muted uppercase tracking-widest font-bold px-1.5 font-mono hidden sm:inline">SYNC</span>
+            <button onClick={() => setClickOffsetMs(p => p - 10)} className="w-5 h-full flex items-center justify-center text-text-muted hover:text-white rounded cursor-pointer"><ChevronLeft size={11}/></button>
+            <span className="text-[9px] text-primary font-mono font-black w-9 text-center">{clickOffsetMs > 0 ? '+' : ''}{clickOffsetMs}</span>
+            <button onClick={() => setClickOffsetMs(p => p + 10)} className="w-5 h-full flex items-center justify-center text-text-muted hover:text-white rounded cursor-pointer"><ChevronRight size={11}/></button>
+            <span className="text-[6px] text-text-muted/40 font-mono mr-1">ms</span>
+          </div>
+        </div>
+
+        {/* Center: Transport controls */}
+        <div className="flex gap-2 items-center flex-1 justify-center">
+          <button onClick={() => { Object.values(wavesurfers.current).forEach(ws => ws.setTime(0)); voiceCuesRef.current.forEach(c => { c.fired = false; }); }}
+            className="transport-btn p-2 rounded-md text-text-muted hover:text-white cursor-pointer active:scale-90">
+            <ChevronLeft size={18}/>
+          </button>
+          <button onClick={togglePlay}
+            className={`transport-btn w-12 h-12 rounded-lg flex items-center justify-center cursor-pointer active:scale-95 transition-all ${isPlaying ? 'text-primary border-primary/40 shadow-[0_0_16px_rgba(212,168,67,0.2)]' : 'text-white hover:text-primary'}`}>
+            {isPlaying ? <Pause size={22} fill="currentColor"/> : <Play size={22} fill="currentColor" className="ml-0.5"/>}
+          </button>
+          <button className="transport-btn p-2 rounded-md text-text-muted/20 cursor-not-allowed">
+            <ChevronLeft size={18} className="rotate-180"/>
+          </button>
+        </div>
+
+        {/* Right: Master volume */}
+        <div className="flex-1 flex items-center justify-end gap-2">
+          <span className="text-[7px] text-text-muted uppercase tracking-widest font-bold font-mono hidden sm:inline">MASTER</span>
+          <Volume2 size={12} className="text-text-muted"/>
+          <input type="range" min="0" max="1" step="0.01" value={masterVolume}
+            onChange={(e) => setMasterVolume(parseFloat(e.target.value))}
+            className="daw-slider w-24" title="Master Volume" />
+          <div className="lcd-display px-2 py-1 rounded-[3px] text-[8px] font-mono text-accent-green w-11 text-center shrink-0">
+            {masterVolume === 0 ? '-∞' : (masterVolume * 10 - 10).toFixed(1)}
+          </div>
+        </div>
       </footer>
 
       {/* SAVE MODAL */}
