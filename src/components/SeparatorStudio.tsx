@@ -6,7 +6,6 @@ import { useAuth } from '../hooks/useAuth';
 import { PricingModal } from './PricingModal';
 import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
-import type { ClickTrackType, ClickSubdivision } from '../lib/clickLibrary';
 
 interface StemData {
   id: string;
