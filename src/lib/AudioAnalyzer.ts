@@ -587,6 +587,81 @@ export async function generateManualClickTrack(
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// CLICK TRACK FROM SAMPLE LIBRARY
+// ═══════════════════════════════════════════════════════════════════════
+import type { ClickTrackType, ClickSubdivision } from './clickLibrary';
+import { getClickSampleUrl, CLICK_SUBDIVISIONS } from './clickLibrary';
+
+export async function generateManualClickTrackFromSample(
+  type: ClickTrackType,
+  subdivision: ClickSubdivision,
+  bpm: number,
+  durationInSeconds: number,
+  accentBeat1: boolean,
+  timeSignature: TimeSignatureType
+): Promise<{ clickTrackUrl: string }> {
+  const sampleRate = 44100;
+  const sampleUrl = getClickSampleUrl(type, subdivision);
+
+  // Decode sample at target rate
+  const tmpCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate });
+  const res = await fetch(sampleUrl);
+  if (!res.ok) throw new Error(`Click sample not found: ${sampleUrl}`);
+  const sampleBuffer = await tmpCtx.decodeAudioData(await res.arrayBuffer());
+  await tmpCtx.close().catch(() => {});
+
+  // Mix to mono
+  const sampleLen = sampleBuffer.length;
+  const sampleData = new Float32Array(sampleLen);
+  for (let c = 0; c < sampleBuffer.numberOfChannels; c++) {
+    const ch = sampleBuffer.getChannelData(c);
+    for (let i = 0; i < sampleLen; i++) sampleData[i] += ch[i] / sampleBuffer.numberOfChannels;
+  }
+
+  const subBeats = CLICK_SUBDIVISIONS.find(s => s.id === subdivision)?.subBeats ?? 1;
+  const secondsPerBeat = 60 / bpm;
+  const secondsPerTick = secondsPerBeat / subBeats;
+  const beatsPerMeasure = getBeatsPerMeasure(timeSignature);
+  const totalSamples = Math.ceil(sampleRate * Math.max(1, durationInSeconds));
+  const output = new Float32Array(totalSamples);
+
+  let tick = 0;
+  while (true) {
+    const tickStart = Math.round(tick * secondsPerTick * sampleRate);
+    if (tickStart >= totalSamples) break;
+
+    const beatIndex = Math.floor(tick / subBeats);
+    const subIndex = tick % subBeats;
+    const isDownbeat = accentBeat1 && (beatIndex % beatsPerMeasure === 0) && subIndex === 0;
+    const vol = isDownbeat ? 1.0 : subIndex === 0 ? 0.65 : 0.45;
+
+    const copyLen = Math.min(sampleLen, totalSamples - tickStart);
+    for (let i = 0; i < copyLen; i++) {
+      output[tickStart + i] = Math.max(-1, Math.min(1, output[tickStart + i] + sampleData[i] * vol));
+    }
+    tick++;
+  }
+
+  return { clickTrackUrl: URL.createObjectURL(float32MonoToWavBlob(output, sampleRate)) };
+}
+
+export async function generateEndlessClickTrackFromSample(
+  type: ClickTrackType,
+  subdivision: ClickSubdivision,
+  bpm: number
+): Promise<{ clickBlob: Blob }> {
+  const secondsPerBeat = 60 / bpm;
+  const measureDuration = secondsPerBeat * 4;
+  const { clickTrackUrl } = await generateManualClickTrackFromSample(
+    type, subdivision, bpm, measureDuration, true, '4/4'
+  );
+  const res = await fetch(clickTrackUrl);
+  const blob = await res.blob();
+  URL.revokeObjectURL(clickTrackUrl);
+  return { clickBlob: blob };
+}
+
 export async function generateEndlessClickTrack(
   bpm: number
 ): Promise<{ bpm: number; clickBlob: Blob }> {

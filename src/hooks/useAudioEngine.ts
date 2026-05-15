@@ -5,7 +5,8 @@ import * as Tone from 'tone';
 import { createRubberBandNode } from 'rubberband-web';
 import type { Channel, Song, Marker } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
-import { detectKey, generateEndlessClickTrack } from '../lib/AudioAnalyzer';
+import { detectKey, generateEndlessClickTrackFromSample } from '../lib/AudioAnalyzer';
+import { loadClickSelection } from '../lib/clickLibrary';
 
 interface SavedChannel {
     id: string;
@@ -681,7 +682,8 @@ export function useAudioEngine(userId?: string) {
         const filesDb = await get<Map<string, File>>(DB_KEY_FILES) || new Map<string, File>();
 
         try {
-            const { clickBlob } = await generateEndlessClickTrack(bpm);
+            const { type, subdivision } = loadClickSelection();
+            const { clickBlob } = await generateEndlessClickTrackFromSample(type, subdivision, bpm);
             const file = new File([clickBlob], 'Metronomo Loop.wav', { type: 'audio/wav' });
 
             const arrayBuffer = await file.arrayBuffer();

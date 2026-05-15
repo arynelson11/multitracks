@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Loader2, X, CheckCircle, Minus, Plus, Wand2 } from 'lucide-react';
-import { analyzeBufferAndGenerateClick, generateManualClickTrack } from '../lib/AudioAnalyzer';
+import { analyzeBufferAndGenerateClick, generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
+import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
+import type { ClickTrackType, ClickSubdivision } from '../lib/clickLibrary';
 import type { Channel } from '../types';
 
-export type ClickSound = 'logic' | 'blip' | 'classic' | 'cowbell';
 export type TimeSignature = '3/4' | '4/4' | '5/4' | '6/8' | '7/8' | '12/8';
 
 interface MetronomeModalProps {
@@ -13,70 +14,22 @@ interface MetronomeModalProps {
   onAddClick: (file: File) => void;
 }
 
-// ─── Click sound preview via Web Audio ───
-const previewClickSound = (sound: ClickSound) => {
-  const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-  const ctx = new AudioCtx();
-  const now = ctx.currentTime;
-
-  if (sound === 'logic') {
-    // Sine 1500Hz, sharp envelope
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(1500, now);
-    gain.gain.setValueAtTime(0.9, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.05);
-  } else if (sound === 'blip') {
-    // Triangle wave, pitch drop
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(2200, now);
-    osc.frequency.exponentialRampToValueAtTime(800, now + 0.03);
-    gain.gain.setValueAtTime(0.8, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.06);
-  } else if (sound === 'classic') {
-    // Square wave click
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(1000, now);
-    gain.gain.setValueAtTime(0.5, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.04);
-  } else if (sound === 'cowbell') {
-    // Two detuned square oscillators for metallic character
-    const osc1 = ctx.createOscillator();
-    const osc2 = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc1.type = 'square';
-    osc2.type = 'square';
-    osc1.frequency.setValueAtTime(545, now);
-    osc2.frequency.setValueAtTime(815, now);
-    gain.gain.setValueAtTime(0.6, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-    osc1.connect(gain);
-    osc2.connect(gain);
-    gain.connect(ctx.destination);
-    osc1.start(now);
-    osc2.start(now);
-    osc1.stop(now + 0.13);
-    osc2.stop(now + 0.13);
-  }
-
-  setTimeout(() => ctx.close(), 500);
+// ─── Click sound preview: plays the actual sample file ───
+const previewClickSound = async (type: ClickTrackType, subdivision: ClickSubdivision) => {
+  try {
+    const url = getClickSampleUrl(type, subdivision);
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    const ctx = new AudioCtx();
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const ab = await res.arrayBuffer();
+    const buffer = await ctx.decodeAudioData(ab);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start();
+    setTimeout(() => ctx.close(), 2000);
+  } catch { /* ignore preview errors */ }
 };
 
 export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClick }: MetronomeModalProps) {
@@ -87,10 +40,17 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
   const [statusMsg, setStatusMsg] = useState('');
   const [detectedBpm, setDetectedBpm] = useState<number | null>(null);
 
-  // New features
-  const [clickSound, setClickSound] = useState<ClickSound>('logic');
+  // Click library selection (persisted in localStorage)
+  const [clickSel, setClickSel] = useState(() => loadClickSelection());
   const [accentBeat1, setAccentBeat1] = useState(true);
   const [timeSignature, setTimeSignature] = useState<TimeSignature>('4/4');
+
+  const updateClickSel = (partial: Partial<typeof clickSel>) => {
+    const next = { ...clickSel, ...partial };
+    setClickSel(next);
+    saveClickSelection(next);
+    previewClickSound(next.type, next.subdivision);
+  };
   
   // Tap tempo state
   const tapTimesRef = useRef<number[]>([]);
@@ -160,20 +120,21 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
   const handleManualGenerate = async () => {
     if (!playlistCurrentSong) return;
     setIsSynthesizing(true);
+    setStatusMsg(`Gerando click ${clickSel.type} ${clickSel.subdivision} a ${bpm} BPM...`);
     try {
-      const { clickTrackUrl } = await generateManualClickTrack(
-        bpm, songDuration, setStatusMsg, clickSound, accentBeat1, timeSignature
+      const { clickTrackUrl } = await generateManualClickTrackFromSample(
+        clickSel.type, clickSel.subdivision, bpm, songDuration, accentBeat1, timeSignature
       );
       if (clickTrackUrl) {
         const res = await fetch(clickTrackUrl);
         const blob = await res.blob();
-        const file = new File([blob], `Click_${bpm}bpm.wav`, { type: 'audio/wav' });
+        const file = new File([blob], `Click_${clickSel.type}_${bpm}bpm.wav`, { type: 'audio/wav' });
         onAddClick(file);
         URL.revokeObjectURL(clickTrackUrl);
       }
     } catch (e) {
       console.error(e);
-      alert('Erro ao gerar metrônomo manual.');
+      alert('Erro ao gerar metrônomo.');
     } finally {
       setIsSynthesizing(false);
       setStatusMsg('');
@@ -254,13 +215,6 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
     return 'Presto';
   };
 
-  const clickSounds: { id: ClickSound; label: string }[] = [
-    { id: 'logic', label: 'Logic' },
-    { id: 'blip', label: 'Blip' },
-    { id: 'classic', label: 'Classic' },
-    { id: 'cowbell', label: 'Cowbell' },
-  ];
-
   const timeSignatures: TimeSignature[] = ['3/4', '4/4', '5/4', '6/8', '7/8', '12/8'];
 
   return (
@@ -332,18 +286,39 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
           </button>
         </div>
 
-        {/* ─── Click Sound ─── */}
-        <div className="mb-4">
+        {/* ─── Click Sound Library ─── */}
+        <div className="mb-3">
           <div className="text-white/40 text-[10px] font-bold uppercase tracking-widest mb-2">Som do Click</div>
           <div className="grid grid-cols-4 gap-1.5">
-            {clickSounds.map(s => (
+            {CLICK_TYPES.map(t => (
+              <button
+                key={t.id}
+                onClick={() => updateClickSel({ type: t.id })}
+                disabled={isSynthesizing}
+                className={`py-2 rounded-lg text-[10px] font-bold tracking-wide transition-all cursor-pointer active:scale-95 border disabled:opacity-50 ${
+                  clickSel.type === t.id
+                    ? 'bg-primary/15 border-primary text-primary'
+                    : 'bg-[#2a2a2d] border-white/5 text-white/60 hover:bg-[#343438] hover:text-white/80'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ─── Subdivision ─── */}
+        <div className="mb-4">
+          <div className="text-white/40 text-[10px] font-bold uppercase tracking-widest mb-2">Subdivisão</div>
+          <div className="grid grid-cols-4 gap-1.5">
+            {CLICK_SUBDIVISIONS.map(s => (
               <button
                 key={s.id}
-                onClick={() => { setClickSound(s.id); previewClickSound(s.id); }}
+                onClick={() => updateClickSel({ subdivision: s.id })}
                 disabled={isSynthesizing}
                 className={`py-2.5 rounded-lg text-[11px] font-bold tracking-wide transition-all cursor-pointer active:scale-95 border disabled:opacity-50 ${
-                  clickSound === s.id
-                    ? 'bg-primary/15 border-primary text-primary shadow-[0_0_12px_rgba(212,168,67,0.15)]'
+                  clickSel.subdivision === s.id
+                    ? 'bg-primary/15 border-primary text-primary'
                     : 'bg-[#2a2a2d] border-white/5 text-white/60 hover:bg-[#343438] hover:text-white/80'
                 }`}
               >

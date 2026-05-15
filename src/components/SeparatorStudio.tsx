@@ -1,16 +1,106 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import WaveSurfer from 'wavesurfer.js';
-import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Minus, Plus } from 'lucide-react';
+import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Minus, Plus, Mic } from 'lucide-react';
 import { uploadToR2 } from '../lib/r2';
 import { useAuth } from '../hooks/useAuth';
 import { PricingModal } from './PricingModal';
-import { generateManualClickTrack } from '../lib/AudioAnalyzer';
+import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
+import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
+import type { ClickTrackType, ClickSubdivision } from '../lib/clickLibrary';
 
 interface StemData {
   id: string;
   name: string;
   url: string;
   color: string;
+}
+
+interface VoiceCue {
+  id: string;
+  time: number;
+  label: string;
+  file: string;
+}
+
+const GUIDE_SECTIONS: { label: string; file: string }[] = [
+  { label: 'Intro', file: 'Song Sections/Portugese - Intro.wav' },
+  { label: 'Verso', file: 'Song Sections/Portugese - Verse.wav' },
+  { label: 'Verso 1', file: 'Song Sections/Portugese - Verse 1.wav' },
+  { label: 'Verso 2', file: 'Song Sections/Portugese - Verse 2.wav' },
+  { label: 'Verso 3', file: 'Song Sections/Portugese - Verse 3.wav' },
+  { label: 'Verso 4', file: 'Song Sections/Portugese - Verse 4.wav' },
+  { label: 'Verso 5', file: 'Song Sections/Portugese - Verse 5.wav' },
+  { label: 'Verso 6', file: 'Song Sections/Portugese - Verse 6.wav' },
+  { label: 'Pré-Refrão', file: 'Song Sections/Portugese - Pre Chorus.wav' },
+  { label: 'Pré-Refrão 1', file: 'Song Sections/Portugese - Pre Chorus 1.wav' },
+  { label: 'Pré-Refrão 2', file: 'Song Sections/Portugese - Pre Chorus 2.wav' },
+  { label: 'Pré-Refrão 3', file: 'Song Sections/Portugese - Pre Chorus 3.wav' },
+  { label: 'Pré-Refrão 4', file: 'Song Sections/Portugese - Pre Chorus 4.wav' },
+  { label: 'Refrão', file: 'Song Sections/Portugese - Chorus.wav' },
+  { label: 'Refrão 1', file: 'Song Sections/Portugese - Chorus 1.wav' },
+  { label: 'Refrão 2', file: 'Song Sections/Portugese - Chorus 2.wav' },
+  { label: 'Refrão 3', file: 'Song Sections/Portugese - Chorus 3.wav' },
+  { label: 'Refrão 4', file: 'Song Sections/Portugese - Chorus 4.wav' },
+  { label: 'Ponte', file: 'Song Sections/Portugese - Bridge.wav' },
+  { label: 'Ponte 1', file: 'Song Sections/Portugese - Bridge 1.wav' },
+  { label: 'Ponte 2', file: 'Song Sections/Portugese - Bridge 2.wav' },
+  { label: 'Ponte 3', file: 'Song Sections/Portugese - Bridge 3.wav' },
+  { label: 'Ponte 4', file: 'Song Sections/Portugese - Bridge 4.wav' },
+  { label: 'Pós-Refrão', file: 'Song Sections/Portugese - Post Chorus.wav' },
+  { label: 'Breakdown', file: 'Song Sections/Portugese - Breakdown.wav' },
+  { label: 'Interlúdio', file: 'Song Sections/Portugese - Interlude.wav' },
+  { label: 'Outro', file: 'Song Sections/Portugese - Outro.wav' },
+  { label: 'Final', file: 'Song Sections/Portugese - Ending.wav' },
+  { label: 'Acapella', file: 'Song Sections/Portugese - Acapella.wav' },
+  { label: 'Solo', file: 'Song Sections/Portugese - Solo.wav' },
+  { label: 'Refrain', file: 'Song Sections/Portugese - Refrain.wav' },
+  { label: 'Rap', file: 'Song Sections/Portugese - Rap.wav' },
+  { label: 'Tag', file: 'Song Sections/Portugese - Tag.wav' },
+  { label: 'Virada', file: 'Song Sections/Portugese - Turnaround.wav' },
+  { label: 'Vamp', file: 'Song Sections/Portugese - Vamp.wav' },
+  { label: 'Exortação', file: 'Song Sections/Portugese - Exhortation.wav' },
+  { label: 'Instrumental', file: 'Song Sections/Portugese - Instrumental.wav' },
+  { label: '1', file: 'Song Sections/Portugese - 1.wav' },
+  { label: '2', file: 'Song Sections/Portugese - 2.wav' },
+  { label: '3', file: 'Song Sections/Portugese - 3.wav' },
+  { label: '4', file: 'Song Sections/Portugese - 4.wav' },
+  { label: '5', file: 'Song Sections/Portugese - 5.wav' },
+  { label: '6', file: 'Song Sections/Portugese - 6.wav' },
+];
+
+const GUIDE_DYNAMICS: { label: string; file: string }[] = [
+  { label: 'All In', file: 'Dynamic Cues/Portugese - All In.wav' },
+  { label: 'Baixo', file: 'Dynamic Cues/Portugese - Bass.wav' },
+  { label: 'Grande Final', file: 'Dynamic Cues/Portugese - Big Ending.wav' },
+  { label: 'Break', file: 'Dynamic Cues/Portugese - Break.wav' },
+  { label: 'Breakdown', file: 'Dynamic Cues/Portugese - Breakdown.wav' },
+  { label: 'Build', file: 'Dynamic Cues/Portugese - Build.wav' },
+  { label: 'Canal', file: 'Dynamic Cues/Portugese - Channel.wav' },
+  { label: 'Click', file: 'Dynamic Cues/Portugese - Click.wav' },
+  { label: 'Bateria Entra', file: 'Dynamic Cues/Portugese - Drums In.wav' },
+  { label: 'Bateria', file: 'Dynamic Cues/Portugese - Drums.wav' },
+  { label: 'Exortação', file: 'Dynamic Cues/Portugese - Exhortation.wav' },
+  { label: 'Guitarra', file: 'Dynamic Cues/Portugese - Guitar.wav' },
+  { label: 'Hits', file: 'Dynamic Cues/Portugese - Hits.wav' },
+  { label: 'Hold', file: 'Dynamic Cues/Portugese - Hold.wav' },
+  { label: 'Tom Abaixa', file: 'Dynamic Cues/Portugese - Key Change Down.wav' },
+  { label: 'Tom Sobe', file: 'Dynamic Cues/Portugese - Key Change Up.wav' },
+  { label: 'Teclado', file: 'Dynamic Cues/Portugese - Keys.wav' },
+  { label: 'Última Vez', file: 'Dynamic Cues/Portugese - Last Time.wav' },
+  { label: 'Pad', file: 'Dynamic Cues/Portugese - Pad.wav' },
+  { label: 'Crescendo', file: 'Dynamic Cues/Portugese - Slowly Build.wav' },
+  { label: 'Suave', file: 'Dynamic Cues/Portugese - Softly.wav' },
+  { label: 'Swell', file: 'Dynamic Cues/Portugese - Swell.wav' },
+];
+
+function guideUrl(file: string): string {
+  return `/Portugese Guides/${file}`.split('/').map(s => encodeURIComponent(s)).join('/');
+}
+
+function formatCueTime(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 interface SeparatorStudioProps {
@@ -62,6 +152,37 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const [showBpmModal, setShowBpmModal] = useState(false);
   const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false);
   const [isGeneratingClick, setIsGeneratingClick] = useState(false);
+  const [clickSel, setClickSel] = useState(() => loadClickSelection());
+
+  const updateClickSel = (partial: Partial<typeof clickSel>) => {
+    const next = { ...clickSel, ...partial };
+    setClickSel(next);
+    saveClickSelection(next);
+    // preview
+    (async () => {
+      try {
+        const url = getClickSampleUrl(next.type, next.subdivision);
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        const ctx = new AudioCtx();
+        const ab = await (await fetch(url)).arrayBuffer();
+        const buf = await ctx.decodeAudioData(ab);
+        const src = ctx.createBufferSource();
+        src.buffer = buf; src.connect(ctx.destination); src.start();
+        setTimeout(() => ctx.close(), 2000);
+      } catch { /* ignore */ }
+    })();
+  };
+
+  // Voz Guia
+  const [voiceCues, setVoiceCues] = useState<VoiceCue[]>([]);
+  const [showVoiceGuide, setShowVoiceGuide] = useState(false);
+  const [voiceGuideTab, setVoiceGuideTab] = useState<'sections' | 'dynamic'>('sections');
+  const [songDuration, setSongDuration] = useState(0);
+  const [isAutoDetecting, setIsAutoDetecting] = useState(false);
+  const voiceCuesRef = useRef<(VoiceCue & { fired: boolean })[]>([]);
+  const guideBufferCache = useRef<Map<string, AudioBuffer>>(new Map());
+  const cueRafRef = useRef<number | null>(null);
+  const isPlayingRef = useRef(false);
 
   const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const getTempoName = (b: number) => {
@@ -92,6 +213,166 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         }
         return next;
      });
+  };
+
+  const playGuideBuffer = useCallback(async (file: string) => {
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') await ctx.resume();
+    const url = guideUrl(file);
+    let buffer = guideBufferCache.current.get(url);
+    if (!buffer) {
+      try {
+        const res = await fetch(url);
+        const ab = await res.arrayBuffer();
+        buffer = await ctx.decodeAudioData(ab);
+        guideBufferCache.current.set(url, buffer);
+      } catch (e) {
+        console.error('Voz Guia: erro ao carregar áudio:', url, e);
+        return;
+      }
+    }
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start();
+  }, []);
+
+  const addVoiceCue = (label: string, file: string) => {
+    const firstWs = Object.values(wavesurfers.current)[0];
+    const time = firstWs ? firstWs.getCurrentTime() : 0;
+    const newCue: VoiceCue = { id: `${Date.now()}`, time, label, file };
+    setVoiceCues(prev => [...prev, newCue].sort((a, b) => a.time - b.time));
+  };
+
+  const removeVoiceCue = (id: string) => {
+    setVoiceCues(prev => prev.filter(c => c.id !== id));
+    voiceCuesRef.current = voiceCuesRef.current.filter(c => c.id !== id);
+  };
+
+  const autoDetectVoiceGuide = async () => {
+    setIsAutoDetecting(true);
+    try {
+      const ctx = getAudioContext();
+      let buffer: AudioBuffer;
+
+      if (file) {
+        const ab = await file.arrayBuffer();
+        buffer = await ctx.decodeAudioData(ab);
+      } else {
+        const mainStem = stems.find(s => s.id !== 'click' && s.id !== 'metronome');
+        if (!mainStem) throw new Error('Sem faixas para analisar');
+        const res = await fetch(mainStem.url);
+        buffer = await ctx.decodeAudioData(await res.arrayBuffer());
+      }
+
+      const CHUNK_SECS = 4;
+      const chunkSamples = CHUNK_SECS * buffer.sampleRate;
+      const numChunks = Math.floor(buffer.duration / CHUNK_SECS);
+
+      // Mix to mono
+      const mono = new Float32Array(buffer.length);
+      for (let c = 0; c < buffer.numberOfChannels; c++) {
+        const ch = buffer.getChannelData(c);
+        for (let i = 0; i < ch.length; i++) mono[i] += ch[i] / buffer.numberOfChannels;
+      }
+
+      // RMS per chunk
+      const rms: number[] = [];
+      for (let i = 0; i < numChunks; i++) {
+        const start = i * chunkSamples;
+        const end = Math.min(start + chunkSamples, mono.length);
+        let sum = 0;
+        for (let s = start; s < end; s++) sum += mono[s] * mono[s];
+        rms.push(Math.sqrt(sum / (end - start)));
+      }
+
+      const maxRms = Math.max(...rms, 0.001);
+      const norm = rms.map(v => v / maxRms);
+
+      // Smooth (±3 chunks = ±12s window)
+      const SMOOTH = 3;
+      const smoothed = norm.map((_, i) => {
+        const sl = norm.slice(Math.max(0, i - SMOOTH), Math.min(norm.length, i + SMOOTH + 1));
+        return sl.reduce((a, b) => a + b, 0) / sl.length;
+      });
+
+      // Detect boundaries: significant energy change between consecutive windows
+      const MIN_GAP = Math.max(4, Math.floor(20 / CHUNK_SECS)); // min 20s between sections
+      const THRESHOLD = 0.1;
+
+      const chunkEnergy = (chunk: number) => {
+        const sl = smoothed.slice(chunk, Math.min(numChunks, chunk + MIN_GAP));
+        return sl.reduce((a, b) => a + b, 0) / sl.length;
+      };
+
+      const boundaries: { time: number; energy: number }[] = [{ time: 0, energy: chunkEnergy(0) }];
+
+      for (let i = MIN_GAP; i < numChunks - 2; i++) {
+        const lastChunk = Math.floor(boundaries[boundaries.length - 1].time / CHUNK_SECS);
+        if (i - lastChunk < MIN_GAP) continue;
+        const before = smoothed.slice(Math.max(0, i - MIN_GAP), i).reduce((a, b) => a + b, 0) / MIN_GAP;
+        const after = smoothed.slice(i, Math.min(numChunks, i + MIN_GAP)).reduce((a, b) => a + b, 0) / MIN_GAP;
+        if (Math.abs(after - before) > THRESHOLD) {
+          boundaries.push({ time: i * CHUNK_SECS, energy: chunkEnergy(i) });
+        }
+      }
+
+      // Cap at 10 sections — remove smallest transitions
+      while (boundaries.length > 10) {
+        let minIdx = 1;
+        let minDiff = Infinity;
+        for (let i = 1; i < boundaries.length - 1; i++) {
+          const diff = Math.abs(boundaries[i].energy - boundaries[i - 1].energy)
+                     + Math.abs(boundaries[i].energy - boundaries[i + 1].energy);
+          if (diff < minDiff) { minDiff = diff; minIdx = i; }
+        }
+        boundaries.splice(minIdx, 1);
+      }
+
+      const allE = boundaries.map(b => b.energy);
+      const minE = Math.min(...allE);
+      const range = Math.max(...allE) - minE || 1;
+
+      // Label by energy tier
+      let verseCount = 0, chorusCount = 0, bridgeCount = 0;
+
+      const detectedCues: VoiceCue[] = boundaries.map((b, idx) => {
+        const normE = (b.energy - minE) / range;
+        let label: string;
+        let filePath: string;
+
+        if (idx === 0) {
+          label = 'Intro';
+          filePath = 'Song Sections/Portugese - Intro.wav';
+        } else if (idx === boundaries.length - 1) {
+          label = 'Final';
+          filePath = 'Song Sections/Portugese - Ending.wav';
+        } else if (normE >= 0.65) {
+          chorusCount++;
+          const n = Math.min(chorusCount, 4);
+          label = `Refrão ${chorusCount}`;
+          filePath = `Song Sections/Portugese - Chorus ${n}.wav`;
+        } else if (normE <= 0.25) {
+          bridgeCount++;
+          label = bridgeCount === 1 ? 'Ponte' : 'Breakdown';
+          filePath = bridgeCount === 1 ? 'Song Sections/Portugese - Bridge.wav' : 'Song Sections/Portugese - Breakdown.wav';
+        } else {
+          verseCount++;
+          const n = Math.min(verseCount, 6);
+          label = `Verso ${verseCount}`;
+          filePath = `Song Sections/Portugese - Verse ${n}.wav`;
+        }
+
+        return { id: `auto-${Date.now()}-${idx}`, time: b.time, label, file: filePath };
+      });
+
+      setVoiceCues(detectedCues);
+    } catch (e: any) {
+      console.error('Auto-detect erro:', e);
+      alert('Não foi possível analisar a estrutura: ' + e.message);
+    } finally {
+      setIsAutoDetecting(false);
+    }
   };
 
   const loadMockData = () => {
@@ -146,6 +427,38 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       }
     });
   }, [stemStates, masterVolume, stems]);
+
+  // Sincroniza voiceCuesRef com state preservando fired
+  useEffect(() => {
+    const currentMap = new Map(voiceCuesRef.current.map(c => [c.id, c.fired]));
+    voiceCuesRef.current = voiceCues.map(c => ({ ...c, fired: currentMap.get(c.id) ?? false }));
+  }, [voiceCues]);
+
+  // Atualiza isPlayingRef
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+
+  // Scheduler de cues — RAF loop
+  useEffect(() => {
+    if (!isPlaying) {
+      if (cueRafRef.current !== null) { cancelAnimationFrame(cueRafRef.current); cueRafRef.current = null; }
+      return;
+    }
+    const runScheduler = () => {
+      const firstWs = Object.values(wavesurfers.current)[0];
+      if (firstWs && isPlayingRef.current) {
+        const t = firstWs.getCurrentTime();
+        voiceCuesRef.current.forEach(cue => {
+          if (!cue.fired && t >= cue.time) {
+            cue.fired = true;
+            playGuideBuffer(cue.file);
+          }
+        });
+      }
+      cueRafRef.current = requestAnimationFrame(runScheduler);
+    };
+    cueRafRef.current = requestAnimationFrame(runScheduler);
+    return () => { if (cueRafRef.current !== null) { cancelAnimationFrame(cueRafRef.current); cueRafRef.current = null; } };
+  }, [isPlaying, playGuideBuffer]);
 
   // Handle Drag & Drop e Upload
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement> | React.DragEvent) => {
@@ -306,6 +619,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
              panners.current[stem.id] = panner;
            }
          } catch (e) { console.warn("Panner error", e) }
+         if (stem.id === stems[0].id) setSongDuration(ws.getDuration());
       });
 
       if (stem.id === stems[0].id) {
@@ -321,6 +635,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       // Sync seeks
       ws.on('interaction', () => {
         const time = ws.getCurrentTime();
+        // Reset fired state para cues que estão após o novo ponto
+        voiceCuesRef.current.forEach(cue => { cue.fired = time > cue.time + 0.3; });
         Object.values(wavesurfers.current).forEach(otherWs => {
           if (otherWs !== ws) {
             let targetTime = time;
@@ -456,11 +772,12 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     const bpmNum = parseInt(bpm) || 120;
     setIsGeneratingClick(true);
     try {
-      // Get real song duration from WaveSurfer; fallback to 10 min
       const firstWs = Object.values(wavesurfers.current)[0];
-      const songDuration = (firstWs?.getDuration() > 0 ? firstWs.getDuration() : 0) || 600;
+      const duration = (firstWs?.getDuration() > 0 ? firstWs.getDuration() : 0) || 600;
 
-      const { clickTrackUrl } = await generateManualClickTrack(bpmNum, songDuration, () => {});
+      const { clickTrackUrl } = await generateManualClickTrackFromSample(
+        clickSel.type, clickSel.subdivision, bpmNum, duration, true, '4/4'
+      );
       if (!clickTrackUrl) throw new Error('Falha ao gerar metrônomo');
 
       const metroStem: StemData = {
@@ -602,10 +919,24 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
          {/* WAVEFORMS: RIGHT */}
          <div className="flex-1 bg-[#0a0a0c] relative overflow-y-auto overflow-x-hidden pt-7">
             {/* Playhead Sync Line */}
-            <div className="absolute top-7 bottom-0 w-px bg-white/60 z-10 pointer-events-none drop-shadow-[0_0_3px_rgba(255,255,255,0.6)]" 
+            <div className="absolute top-7 bottom-0 w-px bg-white/60 z-10 pointer-events-none drop-shadow-[0_0_3px_rgba(255,255,255,0.6)]"
                  style={{ left: `${progressPlayback}%` }}>
                  <div className="absolute -top-1.5 left-[-4px] w-0 h-0 border-l-[4px] border-r-[4px] border-t-[6px] border-transparent border-t-white"></div>
             </div>
+
+            {/* Voice Cue Markers */}
+            {songDuration > 0 && voiceCues.map(cue => (
+              <div
+                key={`marker-${cue.id}`}
+                className="absolute top-0 bottom-0 z-20 pointer-events-none"
+                style={{ left: `${(cue.time / songDuration) * 100}%` }}
+              >
+                <div className="w-px h-full bg-yellow-400/50" />
+                <div className="absolute top-0 left-1 bg-yellow-400 text-black text-[7px] font-black px-1 py-0.5 rounded-sm whitespace-nowrap leading-tight">
+                  {cue.label}
+                </div>
+              </div>
+            ))}
 
             {stems.map((stem) => (
                <div key={`wavewrap-${stem.id}`} className="h-[70px] border-b border-border relative hover:bg-white/3 transition-colors">
@@ -665,6 +996,18 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
               </button>
             )}
 
+            {/* Voz Guia button */}
+            {stems.length > 0 && (
+              <button
+                onClick={() => setShowVoiceGuide(true)}
+                className={`flex items-center gap-1.5 bg-black/40 border rounded-md px-2.5 py-1.5 transition-all cursor-pointer text-[9px] uppercase tracking-widest font-bold ${voiceCues.length > 0 ? 'border-yellow-400/40 text-yellow-400 bg-yellow-400/5' : 'border-white/10 text-text-muted hover:bg-yellow-400/10 hover:border-yellow-400/30 hover:text-yellow-400'}`}
+                title="Configurar Voz Guia"
+              >
+                <Mic size={11} />
+                Voz Guia {voiceCues.length > 0 && `(${voiceCues.length})`}
+              </button>
+            )}
+
             {/* Sync Offset */}
             <div className="flex items-center gap-1 bg-black/40 border border-white/10 rounded-md p-1 h-8">
                <span className="text-[9px] text-text-muted uppercase tracking-widest font-bold px-2">Sync</span>
@@ -679,8 +1022,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
             </div>
          </div>
          <div className="flex gap-4 items-center flex-1 justify-center">
-            <button 
-               onClick={() => { Object.values(wavesurfers.current).forEach(ws => ws.setTime(0)) }}
+            <button
+               onClick={() => { Object.values(wavesurfers.current).forEach(ws => ws.setTime(0)); voiceCuesRef.current.forEach(c => { c.fired = false; }); }}
                className="text-text-muted hover:text-white transition-colors cursor-pointer"><ChevronLeft size={20}/></button>
             <button 
                onClick={togglePlay}
@@ -818,16 +1161,143 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                 <Plus size={20} />
               </button>
             </div>
+            {/* Click Sound selector */}
+            {!isGeneratingClick && (
+              <div className="mb-4">
+                <p className="text-white/40 text-[9px] uppercase tracking-widest font-bold mb-2">Som do Click</p>
+                <div className="grid grid-cols-4 gap-1 mb-2">
+                  {CLICK_TYPES.map(t => (
+                    <button key={t.id} onClick={() => updateClickSel({ type: t.id })} disabled={isGeneratingClick}
+                      className={`py-1.5 rounded-lg text-[9px] font-bold transition-all cursor-pointer active:scale-95 border ${clickSel.type === t.id ? 'bg-primary/15 border-primary text-primary' : 'bg-[#2a2a2d] border-white/5 text-white/60 hover:bg-[#343438]'}`}>
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="grid grid-cols-4 gap-1">
+                  {CLICK_SUBDIVISIONS.map(s => (
+                    <button key={s.id} onClick={() => updateClickSel({ subdivision: s.id })} disabled={isGeneratingClick}
+                      className={`py-1.5 rounded-lg text-[9px] font-bold transition-all cursor-pointer active:scale-95 border ${clickSel.subdivision === s.id ? 'bg-primary/15 border-primary text-primary' : 'bg-[#2a2a2d] border-white/5 text-white/60 hover:bg-[#343438]'}`}>
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {isGeneratingClick && (
               <div className="text-center text-[10px] font-bold text-primary animate-pulse uppercase tracking-wider mb-4">
-                Sintetizando metrônomo...
+                Gerando click {clickSel.type}...
               </div>
             )}
             <button onClick={addMetronomeChannel} disabled={isGeneratingClick || stems.length === 0}
               className="w-full bg-[#2a2a2d] hover:bg-[#343438] text-white py-3.5 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-xs tracking-wider cursor-pointer border border-white/5 active:scale-95">
               {isGeneratingClick ? <Loader2 size={16} className="animate-spin" /> : <Play fill="currentColor" size={14} />}
-              GERAR CLICK MANUAL
+              GERAR CLICK — {clickSel.type} {clickSel.subdivision}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* VOICE GUIDE MODAL */}
+      {showVoiceGuide && (
+        <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowVoiceGuide(false)}>
+          <div className="bg-[#1c1c1e] w-full max-w-lg rounded-2xl shadow-2xl border border-white/8 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-white/5 shrink-0">
+              <div className="flex items-center gap-2">
+                <Mic size={16} className="text-yellow-400" />
+                <span className="text-white font-black text-sm uppercase tracking-wider">Voz Guia</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* Auto-Detect button */}
+                <button
+                  onClick={autoDetectVoiceGuide}
+                  disabled={isAutoDetecting}
+                  title="IA analisa o áudio e detecta seções automaticamente"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-yellow-400/30 bg-yellow-400/10 text-yellow-400 hover:bg-yellow-400/20 active:scale-95"
+                >
+                  {isAutoDetecting ? <Loader2 size={11} className="animate-spin" /> : <Mic size={11} />}
+                  {isAutoDetecting ? 'Analisando...' : 'Auto-Detectar'}
+                </button>
+                <button onClick={() => setShowVoiceGuide(false)} className="text-white/40 hover:text-white transition-colors cursor-pointer p-1">
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Auto-detect loading state */}
+            {isAutoDetecting && (
+              <div className="px-5 py-4 flex items-center gap-3 bg-yellow-400/5 border-b border-yellow-400/10 shrink-0">
+                <Loader2 size={16} className="text-yellow-400 animate-spin shrink-0" />
+                <div>
+                  <p className="text-yellow-400 text-[10px] font-black uppercase tracking-wider">Analisando estrutura do áudio...</p>
+                  <p className="text-text-muted text-[9px] font-mono mt-0.5">Detectando mudanças de energia e seções</p>
+                </div>
+              </div>
+            )}
+
+            {/* Instruction */}
+            {!isAutoDetecting && (
+              <p className="text-[10px] text-text-muted font-mono px-5 pt-3 pb-2 shrink-0">
+                {isPlaying ? '▶ Clique em uma seção para marcar o tempo atual' : 'Reproduza a música e clique para carimbar o tempo — ou use Auto-Detectar'}
+              </p>
+            )}
+
+            {/* Tabs */}
+            {!isAutoDetecting && (
+              <div className="flex gap-1 px-5 pb-3 shrink-0">
+                <button
+                  onClick={() => setVoiceGuideTab('sections')}
+                  className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${voiceGuideTab === 'sections' ? 'bg-yellow-400 text-black' : 'bg-white/5 text-text-muted hover:bg-white/10 hover:text-white'}`}
+                >Seções</button>
+                <button
+                  onClick={() => setVoiceGuideTab('dynamic')}
+                  className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${voiceGuideTab === 'dynamic' ? 'bg-yellow-400 text-black' : 'bg-white/5 text-text-muted hover:bg-white/10 hover:text-white'}`}
+                >Dinâmicas</button>
+              </div>
+            )}
+
+            {/* Cue Grid */}
+            {!isAutoDetecting && (
+              <div className="overflow-y-auto px-5 pb-3 flex-1 custom-scrollbar">
+                <div className="grid grid-cols-4 gap-1.5">
+                  {(voiceGuideTab === 'sections' ? GUIDE_SECTIONS : GUIDE_DYNAMICS).map(item => (
+                    <button
+                      key={item.file}
+                      onClick={() => addVoiceCue(item.label, item.file)}
+                      className="py-2 px-1 rounded-lg text-[10px] font-bold text-center transition-all cursor-pointer border border-white/5 bg-white/4 hover:bg-yellow-400/15 hover:border-yellow-400/40 hover:text-yellow-400 text-white/70 active:scale-95 leading-tight"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Added Cues List */}
+            {voiceCues.length > 0 && (
+              <div className="border-t border-white/5 px-5 pt-3 pb-4 shrink-0">
+                <p className="text-[9px] text-text-muted uppercase tracking-widest font-bold mb-2">Cues adicionados ({voiceCues.length})</p>
+                <div className="flex flex-col gap-1 max-h-32 overflow-y-auto custom-scrollbar">
+                  {voiceCues.map(cue => (
+                    <div key={cue.id} className="flex items-center justify-between bg-white/3 border border-white/5 rounded-md px-2.5 py-1.5">
+                      <span className="text-yellow-400 font-mono text-[10px] font-bold w-10 shrink-0">{formatCueTime(cue.time)}</span>
+                      <span className="text-white/80 text-[10px] font-bold flex-1 px-2 truncate">{cue.label}</span>
+                      <button
+                        onClick={() => removeVoiceCue(cue.id)}
+                        className="text-text-muted hover:text-accent-red transition-colors cursor-pointer p-0.5"
+                      ><X size={11} /></button>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={() => { setVoiceCues([]); voiceCuesRef.current = []; }}
+                  className="mt-2 text-[9px] font-mono text-text-muted/50 hover:text-accent-red transition-colors cursor-pointer underline"
+                >
+                  Limpar todos
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
