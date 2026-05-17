@@ -28,9 +28,22 @@ CREATE TABLE stems (
 CREATE INDEX idx_stems_song_id ON stems(song_id);
 CREATE INDEX idx_songs_name ON songs(name);
 
--- Desabilitar RLS (Row Level Security) para acesso livre simplificado (DEV)
-ALTER TABLE songs DISABLE ROW LEVEL SECURITY;
-ALTER TABLE stems DISABLE ROW LEVEL SECURITY;
+-- 🔒 RLS habilitada com policies seguras — ver supabase-migration.sql
+-- para os detalhes (SELECT público; mutações apenas admin/service_role).
+ALTER TABLE songs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stems ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY songs_public_read ON songs FOR SELECT
+    TO anon, authenticated USING (true);
+CREATE POLICY stems_public_read ON stems FOR SELECT
+    TO anon, authenticated USING (true);
+
+CREATE POLICY songs_admin_write ON songs FOR ALL TO authenticated
+    USING      (auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com'))
+    WITH CHECK (auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com'));
+CREATE POLICY stems_admin_write ON stems FOR ALL TO authenticated
+    USING      (auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com'))
+    WITH CHECK (auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com'));
 
 -- ============================================
 -- Storage Buckets (criar pelo Dashboard > Storage)
@@ -63,22 +76,24 @@ ALTER TABLE stems DISABLE ROW LEVEL SECURITY;
 -- Políticas de STORAGE (Importante para o Upload Funcionar)
 -- ============================================
 
--- Remover políticas antigas se existirem para evitar conflitos
-DROP POLICY IF EXISTS "Public Upload" ON storage.objects;
-DROP POLICY IF EXISTS "Public View" ON storage.objects;
+-- 🔒 SECURITY HARDENED (C6): SELECT público; INSERT/UPDATE/DELETE só admin.
+-- service_role bypassa RLS por design — endpoints /api/* não são afetados.
+-- Pads usam Cloudflare R2 (fora do escopo dessas policies).
+DROP POLICY IF EXISTS "Public Upload"     ON storage.objects;
+DROP POLICY IF EXISTS "Public View"       ON storage.objects;
+DROP POLICY IF EXISTS "Public Update"     ON storage.objects;
+DROP POLICY IF EXISTS storage_public_read ON storage.objects;
+DROP POLICY IF EXISTS storage_admin_write ON storage.objects;
 
--- Permitir que qualquer pessoa veja arquivos (Leitura Pública)
-CREATE POLICY "Public View"
-ON storage.objects FOR SELECT
-USING ( bucket_id IN ('covers', 'stems') );
+CREATE POLICY storage_public_read
+    ON storage.objects FOR SELECT
+    TO anon, authenticated
+    USING (bucket_id IN ('covers', 'stems', 'samples', 'loops'));
 
--- Permitir que qualquer pessoa faça Upload (Escrita Pública)
--- Em um app profissional, você usaria autenticação aqui.
-CREATE POLICY "Public Upload"
-ON storage.objects FOR INSERT
-WITH CHECK ( bucket_id IN ('covers', 'stems') );
-
--- Permitir que qualquer pessoa atualize arquivos
-CREATE POLICY "Public Update"
-ON storage.objects FOR UPDATE
-USING ( bucket_id IN ('covers', 'stems') );
+CREATE POLICY storage_admin_write
+    ON storage.objects FOR ALL
+    TO authenticated
+    USING      (bucket_id IN ('covers', 'stems', 'samples', 'loops')
+                AND auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com'))
+    WITH CHECK (bucket_id IN ('covers', 'stems', 'samples', 'loops')
+                AND auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com'));

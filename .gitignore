@@ -27,3 +27,6 @@ dist-ssr
 .vercel
 
 .env*.local
+.env.vercel*
+scratch.js
+create_products.js

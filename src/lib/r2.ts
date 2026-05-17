@@ -1,7 +1,12 @@
+import { getAuthHeaders } from './supabase';
+
 export const uploadToR2 = async (bucketFolder: string, fileName: string, file: File) => {
     try {
         const type = file.type || 'application/octet-stream';
-        const res = await fetch(`/api/get-upload-url?filename=${encodeURIComponent(fileName)}&contentType=${encodeURIComponent(type)}&bucketFolder=${encodeURIComponent(bucketFolder)}`);
+        const res = await fetch(
+            `/api/get-upload-url?filename=${encodeURIComponent(fileName)}&contentType=${encodeURIComponent(type)}&bucketFolder=${encodeURIComponent(bucketFolder)}`,
+            { headers: await getAuthHeaders() }
+        );
         if (!res.ok) {
             const data = await res.json().catch(() => ({}));
             throw new Error(`[API Error ${res.status}] ${data.error || 'Falha ao conectar com Vercel API'}`);

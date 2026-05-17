@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X, Cloud, Loader2, Layers, CheckCircle2, Pencil, Trash2, Check } from 'lucide-react';
 import type { SelectedPadSet } from '../hooks/usePadSynth';
+import { getAuthHeaders } from '../lib/supabase';
 
 interface CatalogEntry {
     id: string;
@@ -57,7 +58,7 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
         if (!editingId) return;
         const res = await fetch('/api/pad-catalog', {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: await getAuthHeaders(),
             body: JSON.stringify({ id: editingId, name: editName.trim() || 'Sem nome', description: editDesc.trim() || null }),
         });
         if (res.ok) {
@@ -77,7 +78,10 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
     const executeDelete = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (!deletingId) return;
-        const res = await fetch(`/api/pad-catalog?id=${encodeURIComponent(deletingId)}`, { method: 'DELETE' });
+        const res = await fetch(`/api/pad-catalog?id=${encodeURIComponent(deletingId)}`, {
+            method: 'DELETE',
+            headers: await getAuthHeaders(),
+        });
         if (res.ok) {
             setSets(prev => prev.filter(s => s.id !== deletingId));
         }

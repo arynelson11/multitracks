@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { insertPadSet, type CloudStem } from '../lib/supabase';
+import { insertPadSet, getAuthHeaders, type CloudStem } from '../lib/supabase';
 import { uploadToR2 } from '../lib/r2';
 
 export interface UploadMetadata {
@@ -44,7 +44,7 @@ export function useAdminUpload() {
             setStatus('Gravando metadados da música...');
             const songRes = await fetch('/api/insert-song', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: await getAuthHeaders(),
                 body: JSON.stringify({
                     name: metadata.name,
                     artist: metadata.artist,
@@ -94,7 +94,7 @@ export function useAdminUpload() {
                 setStatus('Finalizando registros...');
                 const stemsRes = await fetch('/api/insert-stems', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: await getAuthHeaders(),
                     body: JSON.stringify({ stems: stemsData }),
                 });
                 if (!stemsRes.ok) {
@@ -142,7 +142,8 @@ export function useAdminUpload() {
                 const contentType = file.type || 'audio/mpeg';
                 // Use dedicated pad upload endpoint — no timestamp, predictable path
                 const urlRes = await fetch(
-                    `/api/upload-pad-file?basePath=${encodeURIComponent(basePath)}&note=${encodeURIComponent(note)}&contentType=${encodeURIComponent(contentType)}`
+                    `/api/upload-pad-file?basePath=${encodeURIComponent(basePath)}&note=${encodeURIComponent(note)}&contentType=${encodeURIComponent(contentType)}`,
+                    { headers: await getAuthHeaders() }
                 );
                 if (!urlRes.ok) throw new Error(`Erro ao obter URL para Pad ${note}`);
                 const { uploadUrl } = await urlRes.json();
@@ -162,7 +163,7 @@ export function useAdminUpload() {
             setStatus('Registrando banco de pads no catálogo...');
             const catalogRes = await fetch('/api/pad-catalog', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: await getAuthHeaders(),
                 body: JSON.stringify({ id, name, description: padSetDescription?.trim() || null, base_path: basePath }),
             });
             if (!catalogRes.ok) {

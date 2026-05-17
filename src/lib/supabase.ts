@@ -12,6 +12,16 @@ if (!supabase) {
     console.warn('Supabase credentials missing. Cloud Library and Admin Upload features will be disabled. Please check your .env file or Vercel environment variables.');
 }
 
+export async function getAuthHeaders(): Promise<Record<string, string>> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (!supabase) return headers;
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.access_token) {
+        headers.Authorization = `Bearer ${data.session.access_token}`;
+    }
+    return headers;
+}
+
 export interface CloudSong {
     id: string;
     name: string;

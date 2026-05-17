@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Minus, Plus, Mic, Download } from 'lucide-react';
 import { uploadToR2 } from '../lib/r2';
+import { getAuthHeaders } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { PricingModal } from './PricingModal';
 import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
@@ -655,11 +656,16 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       setProgressMsg('Processando modelo de Separação de Stems em GPU...');
       const res = await fetch('/api/separate-audio', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ audioUrl: publicUrl })
       });
 
-      if (!res.ok) throw new Error('Falha ao iniciar IA.');
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        if (res.status === 402) throw new Error(`Cota esgotada: ${errBody.error}. Faça upgrade do plano para continuar.`);
+        if (res.status === 401) throw new Error('Sessão expirada. Faça login novamente.');
+        throw new Error(errBody.error || 'Falha ao iniciar IA.');
+      }
       const { prediction } = await res.json();
       setProgress(30);
       
@@ -674,7 +680,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         setProgress(p => Math.min(85, p + 2)); 
         checkCount++;
         
-        const checkRes = await fetch(`/api/check-separation?predictionId=${prediction.id}`);
+        const checkRes = await fetch(`/api/check-separation?predictionId=${prediction.id}`, {
+          headers: await getAuthHeaders(),
+        });
         const checkData = await checkRes.json();
         if (checkData.error) throw new Error(checkData.error);
         status = checkData.prediction.status;
@@ -841,11 +849,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
       const songRes = await fetch('/api/insert-song', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({
           name: songName, artist: artist || 'Desconhecido',
           key: songKey, bpm: Number(bpm), cover_url,
-          user_id: user?.id,
           is_global: isAdmin ? publishGlobal : false
         }),
       });
@@ -867,10 +874,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         let fileUrl: string;
         const isRemoteUrl = stem.url.startsWith('http://') || stem.url.startsWith('https://');
         if (isRemoteUrl) {
-          const key = `stems/${songId}/${stem.id}_${Date.now()}.wav`;
+          const key = `stems/${user?.id}/${songId}/${stem.id}_${Date.now()}.wav`;
           const copyRes = await fetch('/api/upload-stem-from-url', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: await getAuthHeaders(),
             body: JSON.stringify({ sourceUrl: stem.url, key, contentType: 'audio/wav' }),
           });
           if (!copyRes.ok) {
@@ -910,7 +917,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       setSaveStatus('Finalizando registros...');
       const stemsRes = await fetch('/api/insert-stems', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ stems: stemsData }),
       });
       if (!stemsRes.ok) {
