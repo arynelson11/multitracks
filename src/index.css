@@ -1,6 +1,40 @@
 @import "tailwindcss";
 
+/* ════════════════════════════════════════════════════════════════════
+   LEVADA DESIGN SYSTEM
+   ─────────────────────────────────────────────────────────────────
+   Dual aesthetic architecture:
+   • BRAND tokens  → marketing, landing, onboarding, pricing, about
+                    (terracota / musgo / bone / tinta — Aesop × Bethel × Linear)
+   • PRODUCT tokens → editor, mixer, separator studio
+                    (dark DAW dourado — Logic Pro × MPC inspired)
+   • SEMANTIC tokens → shared (success, warning, error, info)
+   ════════════════════════════════════════════════════════════════════ */
+
 @theme {
+  /* ─── BRAND TOKENS (Levada) ─────────────────────────────────────── */
+  /* Cor primária — terracota: ações, CTAs, ênfase de marca */
+  --color-terracota: #B85C38;
+  --color-terracota-light: #D8956C;
+  --color-terracota-dark: #8A3F22;
+  --color-terracota-wash: #F4E3D7;
+
+  /* Cor secundária — musgo: backgrounds escuros, success, headings em contraste */
+  --color-musgo: #5B6B47;
+  --color-musgo-light: #8B9B6E;
+  --color-musgo-dark: #3D4A2F;
+  --color-musgo-wash: #E6E8DC;
+
+  /* Neutros warm — base da marca */
+  --color-bone: #F7F3ED;       /* background warm off-white (NUNCA #fff puro) */
+  --color-tinta: #1F1B16;      /* texto principal warm black (NUNCA #000 puro) */
+  --color-warm-100: #E6E0D4;
+  --color-warm-200: #C9C2B5;
+  --color-warm-400: #9C9385;
+  --color-warm-600: #6B6055;
+
+  /* ─── PRODUCT TOKENS (DAW interno) ──────────────────────────────── */
+  /* Mantidos do design DAW dark — usados no editor/mixer/separator */
   --color-background: #121214;
   --color-surface: #1a1a1e;
   --color-surface-raised: #222226;
@@ -15,14 +49,37 @@
   --color-border: #2a2a2e;
   --color-border-light: #333338;
 
+  /* ─── SEMANTIC TOKENS (compartilhados) ──────────────────────────── */
+  --color-success: #5B6B47;    /* musgo — natural pra success */
+  --color-warning: #C9912A;    /* âmbar quente harmoniza com terracota */
+  --color-error: #A4452B;      /* terracota escuro — atenção sem ruptura */
+  --color-info: #5C6E7E;       /* slate frio pra contraste */
+
+  /* ─── TYPOGRAPHY ────────────────────────────────────────────────── */
+  /* Display — Sage gravitas + Aesop craft (marca/marketing) */
+  --font-display: 'Fraunces', 'Times New Roman', Georgia, serif;
+  /* Sans — Linear precision (UI/body, marca e produto) */
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  /* Mono — código, file names, technical labels */
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', monospace;
+  /* Handwriting — Visual Hammer "Domingo" (placeholder até ilustrador custom) */
+  --font-handwriting: 'Caveat', 'Brush Script MT', cursive;
 }
 
 @layer base {
   body {
     @apply bg-background text-text-main antialiased;
     font-family: var(--font-sans);
+  }
+
+  /* Marketing/brand contexts override body styling via `.brand-context` */
+  .brand-context {
+    background-color: var(--color-bone);
+    color: var(--color-tinta);
+  }
+  .brand-context h1, .brand-context h2, .brand-context h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
   }
 }
 

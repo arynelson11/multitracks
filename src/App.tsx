@@ -374,7 +374,7 @@ export default function App() {
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="relative flex items-center">
               <div className="cursor-default focus:outline-none">
-                <BrandLogo size="sm" />
+                <BrandLogo size="sm" tone="light" />
               </div>
             </div>
 

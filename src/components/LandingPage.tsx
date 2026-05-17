@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import {
-  Music, Wand2, Sliders, Mic2, Drumstick, Guitar, Piano,
-  Play, Star, ChevronDown, Check, Zap,
-  ArrowRight, SlidersHorizontal, FileAudio, MonitorPlay,
-  Move, BarChart2, Church, Disc3, Download
+  Mic2, Drumstick, Guitar, Piano,
+  Star, ChevronDown, Check,
+  ArrowRight, Church, Download, Calendar,
 } from 'lucide-react'
 import { DemoMixer } from './DemoMixer'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { BrandLogo } from './BrandLogo'
+import { DomingoMark } from './brand/DomingoMark'
+import { LevadaWordmark } from './brand/LevadaWordmark'
 
 interface LandingPageProps {
   onEnter: () => void
@@ -15,89 +16,118 @@ interface LandingPageProps {
 
 /* ─── Dados ─────────────────────────────── */
 
+/**
+ * Audience focado em worship (Lei do Sacrifício — Al Ries).
+ * Cortamos: produtores, músicos seculares, bateristas/guitarristas genéricos.
+ * Mantemos: papéis dentro da equipe de worship.
+ */
 const AUDIENCE = [
-  { icon: Church,    title: 'Ministérios de Louvor', desc: 'Do ensaio ao culto, controle cada instrumento com precisão profissional no palco.' },
-  { icon: Drumstick, title: 'Bateristas',            desc: 'Extraia a bateria de qualquer música, treine em cima e crie backing tracks perfeitos.' },
-  { icon: Mic2,      title: 'Vocalistas',            desc: 'Isole a voz, ajuste o tom para seu alcance e pratique com a música do seu jeito.' },
-  { icon: Guitar,    title: 'Guitarristas',          desc: 'Separe as guitarras, desacelere solos e domine cada nota no seu ritmo.' },
-  { icon: Piano,     title: 'Tecladistas',           desc: 'Isole teclados e pads, ajuste a tonalidade e adicione seus próprios arranjos.' },
-  { icon: Disc3,     title: 'Produtores',            desc: 'Separe stems, remixe e construa produções em cima de qualquer referência.' },
-]
-
-const FEATURES_PLAYER = [
-  { icon: Sliders,           title: 'Mixer Profissional Multicanal',  desc: 'Console completo com volume, mute, solo e pan individuais por instrumento — como um estúdio real.' },
-  { icon: BarChart2,         title: 'VU Meters em Tempo Real',        desc: 'Meça os níveis de cada canal com medidores profissionais. Visualize a mix enquanto toca.' },
-  { icon: SlidersHorizontal, title: 'Alteração de Tom (Pitch)',       desc: 'Mude o pitch em semitons sem alterar o andamento. Ideal para adaptar à voz do seu cantor.' },
-  { icon: Music,             title: 'Metrônomo com IA',               desc: 'Gere click tracks via IA (detecta BPM automaticamente) ou defina manualmente. Precount configurável.' },
-  { icon: Move,              title: 'Drag & Drop Intuitivo',          desc: 'Reordene músicas na setlist e canais no mixer arrastando. Workflow rápido e sem atrito.' },
-  { icon: MonitorPlay,       title: 'Playlist / Setlist Completa',    desc: 'Monte repertórios completos, importe e exporte em .zip com áudios e configurações salvas.' },
-  { icon: FileAudio,         title: 'Biblioteca em Nuvem',            desc: 'Acesse músicas e stems de qualquer dispositivo, a qualquer hora. Sincronização automática entre aparelhos.' },
+  { icon: Church,    title: 'Equipes de adoração',  desc: 'Do ensaio ao culto, qualquer música pronta com a levada na mão.' },
+  { icon: Mic2,      title: 'Ministros e vocalistas', desc: 'Voice guide discreto, tonalidade no seu alcance, referência sem inundar o in-ear.' },
+  { icon: Guitar,    title: 'Instrumentistas',      desc: 'Stems de qualquer música — guitarra, baixo, bateria, teclado — pra ensaiar como sua equipe toca.' },
+  { icon: Drumstick, title: 'Bateristas',           desc: 'Click track com levada brasileira, não o metrônomo gringo plano.' },
+  { icon: Piano,     title: 'Tecladistas',          desc: 'Isole pads e teclados. Construa em cima do que a equipe precisa pro domingo.' },
+  { icon: Calendar,  title: 'Líderes de louvor',    desc: 'Setlist na sexta, separação no sábado, domingo sem corre.' },
 ]
 
 const PLANS = [
   {
-    name: 'Gratuito',
+    id: 'gratuito',
+    name: 'Levada Livre',
     monthly: 0, annual: 0,
-    desc: 'Experimente sem compromisso',
+    desc: 'Pra você experimentar e ver se funciona',
     badge: null as string | null,
     highlight: false,
     features: [
-      '5 separações de faixas / mês',
-      'Player com até 5 músicas',
+      '5 separações por mês',
+      'Stems padrão',
+      'Acesso à biblioteca de clicks BR',
       'Mixer básico multicanal',
-      'Metrônomo manual',
-      'Sem biblioteca em nuvem',
     ],
-    cta: 'Começar Grátis',
-    btnStyle: 'border border-white/20 text-white hover:bg-white/5',
+    cta: 'Começar grátis',
   },
   {
-    name: 'Essencial',
+    id: 'essencial',
+    name: 'Levada Toca',
     monthly: 49.90, annual: 39.90,
-    desc: 'Para músicos e ministros ativos',
-    badge: 'Mais Popular',
+    desc: 'Pra equipe que toca todo domingo',
+    badge: 'Mais escolhido',
     highlight: true,
     features: [
-      'Separações de faixas: 50 / mês',
-      'Biblioteca em nuvem (50 músicas)',
-      'Mixer profissional completo',
-      'VU Meters em tempo real',
-      'Alteração de tom (pitch)',
-      'Metrônomo com IA + precount',
-      'Pad Synth integrado (12 notas musicais)',
-      'Import/Export de repertório (ZIP)',
-      'Sincronização entre dispositivos',
+      '50 separações por mês',
+      'Stems de qualidade estendida',
+      'Pads ambiente completos',
+      'Voice guide auto-detector',
+      'Click com levada brasileira',
+      'Auto-detecção de seções de culto',
+      'Biblioteca em nuvem',
+      'Suporte por email',
     ],
-    cta: 'Assinar Essencial',
-    btnStyle: 'bg-orange-500 hover:bg-orange-400 text-white',
+    cta: 'Assinar Toca',
   },
   {
-    name: 'Pro',
+    id: 'pro',
+    name: 'Levada Tudo',
     monthly: 99.90, annual: 79.90,
-    desc: 'Para equipes e produtores',
+    desc: 'Pra quem leva isso à sério',
     badge: null as string | null,
     highlight: false,
     features: [
-      'Tudo do plano Essencial',
-      'Separações de faixas: 150 / mês',
-      'Biblioteca em nuvem ilimitada',
-      'Processamento de IA prioritário',
-      'Upload de faixas para biblioteca',
+      'Separações ilimitadas',
+      'Qualidade máxima',
+      'Tudo da Levada Toca +',
+      'Prioridade no processamento',
       'Múltiplos repertórios simultâneos',
-      'Suporte prioritário via chat',
+      'Acesso antecipado a features',
+      'Suporte prioritário',
     ],
-    cta: 'Assinar Pro',
-    btnStyle: 'border border-purple-500/50 text-purple-300 hover:bg-purple-500/10',
+    cta: 'Assinar Tudo',
   },
 ]
 
 const FAQS = [
-  { q: 'O que são multitracks / stems?', a: 'Multitracks são as faixas individuais de uma música — bateria separada, baixo separado, vocais separados etc. Com o Playback Studio você controla cada instrumento independentemente: silencia, ajusta volume, muda tom de cada canal.' },
-  { q: 'Como funciona a separação de faixas com IA?', a: 'Você carrega qualquer música (MP3, WAV, FLAC, M4A) no Separator Studio. Nossa IA analisa e separa em stems: vocais, bateria, baixo, guitarra, piano e outros elementos. Os stems ficam disponíveis direto no seu mixer para uso imediato.' },
-  { q: 'Funciona no celular (iPhone/Android)?', a: 'Sim! É um Progressive Web App otimizado para mobile. Funciona no navegador do iPhone e Android sem instalar nada. A interface se adapta completamente à tela do celular.' },
-  { q: 'Posso usar ao vivo no palco?', a: 'Com certeza — foi projetado para isso. Funciona offline após carregar as músicas, com interface de baixa latência, precount para entrar no tempo e controle total de cada canal em tempo real.' },
-  { q: 'O app funciona offline, sem internet?', a: 'Após carregar as músicas e stems, o player e o mixer funcionam completamente offline. A separação com IA e a sincronização com a nuvem requerem conexão, mas tudo que você já carregou fica disponível mesmo sem internet.' },
-  { q: 'Posso cancelar quando quiser?', a: 'Sim, sem fidelidade e sem multa. Cancele quando quiser direto pelo painel. O acesso continua até o fim do período pago.' },
+  {
+    q: 'O que são stems?',
+    a: 'Stems são as faixas individuais de uma música — voz separada, bateria separada, baixo separado, etc. Com a Levada você sobe qualquer música e recebe tudo separado pra sua equipe ensaiar e tocar como precisa.'
+  },
+  {
+    q: 'Como funciona a separação?',
+    a: 'Você sobe a música (MP3, WAV ou link). A IA da Levada separa em voz, guitarra, baixo, bateria, piano e pads em alguns minutos. Os stems ficam disponíveis pra download, no mixer e pra compartilhar com sua equipe.'
+  },
+  {
+    q: 'A Levada serve pra qualquer música?',
+    a: 'Sim. Diferente de catálogos licenciados, a Levada não depende de uma biblioteca pré-aprovada. Qualquer música que sua igreja queira cantar — antiga, recente, brasileira, traduzida, original da banda — funciona.'
+  },
+  {
+    q: 'Funciona no celular?',
+    a: 'Sim. É um Progressive Web App otimizado pra mobile. Funciona no navegador do iPhone e Android, sem instalar nada. A interface se adapta à tela do celular.'
+  },
+  {
+    q: 'Posso usar ao vivo no palco?',
+    a: 'Pode. Foi construído pra isso. Após carregar as músicas, o player e mixer funcionam offline com baixa latência e controle total dos canais em tempo real.'
+  },
+  {
+    q: 'Posso cancelar quando quiser?',
+    a: 'Sim, sem fidelidade. Cancele direto pelo painel a qualquer momento. O acesso continua até o fim do período pago.'
+  },
+]
+
+const TESTIMONIALS = [
+  {
+    name: 'Lucas Ferreira',
+    role: 'Líder de louvor',
+    text: 'Domingo flui agora. A equipe chega afinada porque ensaiou com stems de verdade, não com áudio original cheio de voz.',
+  },
+  {
+    name: 'Ana Paula Costa',
+    role: 'Vocalista',
+    text: 'A levada do click brasileiro fez diferença real no ensaio. Antes a equipe tava sempre se ajustando ao metrônomo gringo. Agora é natural.',
+  },
+  {
+    name: 'Rodrigo Melo',
+    role: 'Tecladista',
+    text: 'Sábado o pastor muda uma música? Em alguns minutos tá separada. Domingo a gente não precisa improvisar.',
+  },
 ]
 
 /* ─── Componente ────────────────────────── */
@@ -107,389 +137,371 @@ export function LandingPage({ onEnter }: LandingPageProps) {
   const [openFaq, setOpenFaq] = useState<number | null>(null)
   const { isInstallable, isInstalled, promptInstall } = usePWAInstall()
 
-  return (
-    <div className="min-h-screen bg-[#070708] text-white overflow-x-hidden">
-      <style>{`
-        @keyframes bar { 0%,100%{height:20%} 50%{height:100%} }
-        .bar-anim { animation: bar 1.1s ease-in-out infinite; }
-        .bar-anim:nth-child(2){animation-delay:.14s}
-        .bar-anim:nth-child(3){animation-delay:.28s}
-        .bar-anim:nth-child(4){animation-delay:.07s}
-        .bar-anim:nth-child(5){animation-delay:.21s}
-        .bar-anim:nth-child(6){animation-delay:.35s}
-        .bar-anim:nth-child(7){animation-delay:.04s}
-        @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
-        .float { animation: float 5s ease-in-out infinite; }
-        .hover-lift { transition: transform .2s, border-color .2s; }
-        .hover-lift:hover { transform: translateY(-4px); }
-        .tg-orange { background: linear-gradient(135deg,#fb923c,#f97316,#ea580c); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
-        .tg-purple { background: linear-gradient(135deg,#c084fc,#a855f7); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
-        .glow-o { box-shadow: 0 0 80px 15px rgba(249,115,22,.1); }
-      `}</style>
+  const goToCheckout = (planId: string, price: number) => {
+    if (price > 0) {
+      localStorage.setItem('checkoutIntent', `${planId}_${billing === 'annual' ? 'anual' : 'mensal'}`)
+    } else {
+      localStorage.removeItem('checkoutIntent')
+    }
+    onEnter()
+  }
 
+  const goToApp = () => {
+    localStorage.removeItem('checkoutIntent')
+    onEnter()
+  }
+
+  return (
+    <div className="brand-context min-h-screen overflow-x-hidden">
       {/* ── NAV ── */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-[#070708]/80 backdrop-blur-xl border-b border-white/[0.05]">
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-bone/90 backdrop-blur-xl border-b border-warm-200">
         <div className="max-w-6xl mx-auto px-5 sm:px-8 h-14 flex items-center justify-between">
-          <BrandLogo size="md" />
+          <BrandLogo size="md" tone="dark" />
           <div className="flex items-center gap-2">
-            <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="hidden sm:block text-[13px] text-white/50 hover:text-white px-3 py-1.5 transition-colors cursor-pointer">Entrar</button>
-            <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="text-[13px] bg-orange-500 hover:bg-orange-400 text-white px-5 py-2 rounded-lg font-bold transition-colors cursor-pointer">Cadastre-se</button>
+            <button
+              onClick={goToApp}
+              className="hidden sm:block text-[13px] text-warm-600 hover:text-tinta px-3 py-1.5 transition-colors cursor-pointer font-medium"
+            >
+              Entrar
+            </button>
+            <button
+              onClick={goToApp}
+              className="text-[13px] bg-terracota hover:bg-terracota-dark text-bone px-5 py-2 rounded-lg font-semibold transition-colors cursor-pointer"
+            >
+              Começa de graça
+            </button>
           </div>
         </div>
       </nav>
 
       {/* ════════ HERO ════════ */}
-      <section className="relative min-h-screen flex flex-col items-center justify-center px-5 sm:px-8 pt-24 pb-20 overflow-hidden">
-        {/* Atmosphere */}
+      <section className="relative min-h-screen flex flex-col items-center justify-center px-5 sm:px-8 pt-28 pb-20 overflow-hidden">
+        {/* Atmosphere (subtle, warm) */}
         <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-[38%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[500px] rounded-full bg-orange-500/[0.05] blur-[130px]" />
-          <div className="absolute bottom-0 right-1/4 w-[350px] h-[300px] rounded-full bg-purple-600/[0.05] blur-[100px]" />
-          <div className="absolute inset-0 opacity-[0.025]" style={{backgroundImage:'linear-gradient(rgba(255,255,255,1) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,1) 1px,transparent 1px)',backgroundSize:'64px 64px'}} />
+          <div className="absolute top-[35%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[500px] rounded-full bg-terracota/[0.06] blur-[140px]" />
+          <div className="absolute bottom-0 right-1/4 w-[400px] h-[300px] rounded-full bg-musgo/[0.06] blur-[120px]" />
         </div>
 
         <div className="relative text-center max-w-4xl mx-auto">
-          <div className="inline-flex items-center gap-2 bg-orange-500/[0.07] border border-orange-500/20 rounded-full px-4 py-1.5 text-[12px] text-orange-400 font-semibold mb-8 tracking-wide">
-            <Zap size={11} className="fill-orange-400" />
-            IA + Mixer Profissional — tudo integrado
+          {/* Visual Hammer floating above headline */}
+          <div className="mb-6 inline-flex items-baseline gap-3 select-none">
+            <span className="text-warm-400 text-[14px] font-medium tracking-wide">pronto pro</span>
+            <DomingoMark size="md" tone="terracota" />
           </div>
 
-          <h1 className="text-[clamp(2.6rem,8vw,5.8rem)] font-black leading-[1.02] tracking-tight mb-6">
-            Tudo o que seu ministério
+          <h1 className="font-display font-semibold text-[clamp(2.4rem,7vw,5rem)] leading-[1.05] tracking-[-0.02em] text-tinta mb-6">
+            Stems pra qualquer música.
             <br />
-            <span className="tg-orange">precisa para ministrar</span>
+            Pra sua equipe chegar
             <br />
-            com excelência.
+            pronta no <span className="italic text-terracota">domingo</span>.
           </h1>
 
-          <p className="text-[clamp(.95rem,2vw,1.2rem)] text-white/45 max-w-2xl mx-auto mb-10 leading-relaxed">
-            Do ensaio ao culto ao vivo — separe faixas com IA, controle cada instrumento
-            com um mixer profissional e eleve sua experiência de adoração.
+          <p className="text-[clamp(.95rem,2vw,1.2rem)] text-warm-600 max-w-2xl mx-auto mb-10 leading-relaxed">
+            A gente sabe: domingo chega e três músicas do setlist não tão em catálogo nenhum.
+            A Levada resolve isso. Feita por quem toca, pra quem toca.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="flex items-center justify-center gap-2.5 bg-orange-500 hover:bg-orange-400 text-white px-8 py-4 rounded-xl font-bold text-[15px] transition-all hover:scale-[1.03] cursor-pointer">
-              <Play size={17} fill="white" /> Comece a criar
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <button
+              onClick={goToApp}
+              className="inline-flex items-center justify-center gap-2.5 bg-terracota hover:bg-terracota-dark text-bone px-8 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-terracota/20"
+            >
+              Começa de graça
             </button>
-            <a href="#recursos" className="flex items-center justify-center gap-2.5 bg-white/[0.05] hover:bg-white/[0.09] border border-white/10 text-white px-8 py-4 rounded-xl font-bold text-[15px] transition-all cursor-pointer">
-              <Wand2 size={17} className="text-purple-400" /> Veja os recursos
+            <a
+              href="#como-funciona"
+              className="inline-flex items-center justify-center gap-2.5 bg-bone hover:bg-warm-100 border border-warm-200 text-tinta px-8 py-4 rounded-xl font-semibold text-[15px] transition-all cursor-pointer"
+            >
+              Ver como funciona
             </a>
             {isInstallable && !isInstalled && (
-              <button onClick={promptInstall} className="flex items-center justify-center gap-2.5 bg-[#d4a843]/10 hover:bg-[#d4a843]/20 border border-[#d4a843]/40 text-[#d4a843] px-8 py-4 rounded-xl font-bold text-[15px] transition-all hover:scale-[1.03] cursor-pointer">
-                <Download size={17} /> Instalar App
+              <button
+                onClick={promptInstall}
+                className="inline-flex items-center justify-center gap-2.5 bg-musgo-wash hover:bg-musgo-light/30 border border-musgo/30 text-musgo-dark px-8 py-4 rounded-xl font-semibold text-[15px] transition-all cursor-pointer"
+              >
+                <Download size={17} /> Instalar app
               </button>
             )}
           </div>
-          <p className="text-[12px] text-white/20 mt-5">Grátis para começar · Sem cartão de crédito</p>
+
+          <p className="text-[12px] text-warm-400 mt-5">Sem cartão de crédito · Cancele quando quiser</p>
         </div>
 
-        {/* Interactive mixer demo */}
-        <div className="relative mt-16 w-full max-w-3xl mx-auto float">
-          <DemoMixer />
-          <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 w-2/3 h-14 bg-orange-500/[0.07] blur-2xl rounded-full" />
-        </div>
-      </section>
-
-      {/* ════════ 2 MÓDULOS ════════ */}
-      <section id="recursos" className="py-24 px-5 sm:px-8">
-        <div className="max-w-5xl mx-auto">
-          <p className="text-center text-white/25 text-[11px] font-bold uppercase tracking-[0.25em] mb-16">Duas ferramentas. Uma plataforma.</p>
-          <div className="grid sm:grid-cols-2 gap-5">
-            <div className="hover-lift relative bg-gradient-to-br from-orange-500/[0.09] via-orange-500/[0.03] to-transparent border border-orange-500/20 rounded-2xl p-8 overflow-hidden">
-              <div className="absolute -top-8 -right-8 w-36 h-36 rounded-full bg-orange-500/[0.08] blur-3xl" />
-              <div className="relative">
-                <div className="w-11 h-11 rounded-xl bg-orange-500/20 border border-orange-500/30 flex items-center justify-center mb-5">
-                  <Sliders size={20} className="text-orange-400" />
-                </div>
-                <h3 className="text-xl font-black mb-3">Playback Studio</h3>
-                <p className="text-white/40 text-[14px] leading-relaxed mb-5">
-                  Motor de multitracks profissional com mixer completo, VU meters, alteração de tom,
-                  metrônomo com IA, Pad Synth e biblioteca em nuvem.
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {['Mixer','Pitch','Metrônomo IA','Nuvem','Pad Synth'].map(t => (
-                    <span key={t} className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20">{t}</span>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="hover-lift relative bg-gradient-to-br from-purple-500/[0.09] via-purple-500/[0.03] to-transparent border border-purple-500/20 rounded-2xl p-8 overflow-hidden">
-              <div className="absolute -top-8 -right-8 w-36 h-36 rounded-full bg-purple-500/[0.08] blur-3xl" />
-              <div className="relative">
-                <div className="w-11 h-11 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center mb-5">
-                  <Wand2 size={20} className="text-purple-400" />
-                </div>
-                <h3 className="text-xl font-black mb-3">Separação com IA</h3>
-                <p className="text-white/40 text-[14px] leading-relaxed mb-5">
-                  Upload de qualquer música. Nossa IA separa vocais, bateria, baixo, guitarra
-                  e piano em segundos. Salve na nuvem e use direto no mixer.
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {['Vocais','Bateria','Baixo','Guitarra','Piano','Outros'].map(t => (
-                    <span key={t} className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">{t}</span>
-                  ))}
-                </div>
-              </div>
-            </div>
+        {/* Product preview — DAW aesthetic embedded inside warm brand context */}
+        <div className="relative mt-16 w-full max-w-3xl mx-auto">
+          <div className="rounded-2xl overflow-hidden border border-warm-200 shadow-2xl shadow-tinta/5">
+            <DemoMixer />
           </div>
+          <p className="text-center text-[11px] text-warm-400 mt-3 font-mono">o estúdio dentro da Levada</p>
         </div>
       </section>
 
-      {/* ════════ DEMO — Som profissional ════════ */}
-      <section className="py-20 px-5 sm:px-8 bg-gradient-to-b from-transparent via-purple-500/[0.02] to-transparent">
-        <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-[clamp(2rem,5vw,3.5rem)] font-black leading-tight mb-4">
-            Som profissional.<br /><span className="tg-purple">Estúdio opcional.</span>
+      {/* ════════ STAKES — problema + empatia ════════ */}
+      <section className="py-24 px-5 sm:px-8 bg-musgo-wash/40">
+        <div className="max-w-3xl mx-auto">
+          <p className="text-warm-600 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o sábado que a gente conhece</p>
+          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-tinta mb-8 text-center">
+            Domingo não tem que ser correria.
           </h2>
-          <p className="text-white/40 text-base sm:text-lg max-w-xl mx-auto mb-12 leading-relaxed">
-            Remova vocais, isole stems e transforme qualquer música em um playback customizado.
-            Tudo em um só lugar.
-          </p>
-          {/* Visual demo */}
-          <div className="bg-[#0f0f11] border border-white/[0.07] rounded-2xl p-6 sm:p-8 mb-8 text-left">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-[11px] text-white/25 font-mono">adoracao_original.mp3</span>
-              <span className="flex items-center gap-1.5 text-[11px] text-purple-400 font-medium">
-                <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse inline-block" />
-                IA processando faixas...
-              </span>
-            </div>
-            {/* Waveform */}
-            <div className="flex items-center gap-[2px] h-14 mb-6">
-              {Array.from({length:90}).map((_,i) => {
-                const h = 12 + Math.sin(i*.42)*28 + Math.sin(i*.13)*18 + (i%5===0?16:0)
-                return <div key={i} className="flex-1 rounded-sm bg-purple-500/25" style={{height:`${Math.max(6,h)}%`}} />
-              })}
-            </div>
-            {/* Stems grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {[
-                {name:'Vocais',  color:'#06b6d4', pct:88},
-                {name:'Bateria', color:'#f59e0b', pct:94},
-                {name:'Baixo',   color:'#10b981', pct:79},
-                {name:'Guitarra',color:'#ef4444', pct:72},
-                {name:'Piano',   color:'#8b5cf6', pct:67},
-                {name:'Outros',  color:'#ec4899', pct:61},
-              ].map((s,i) => (
-                <div key={i} className="flex items-center gap-3 bg-white/[0.03] border border-white/[0.05] rounded-xl p-3">
-                  <div className="w-2 h-7 rounded-full shrink-0" style={{background:s.color+'70'}} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[11px] font-bold mb-1" style={{color:s.color}}>{s.name}</div>
-                    <div className="h-1 bg-white/[0.08] rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{width:`${s.pct}%`,background:s.color}} />
-                    </div>
-                  </div>
-                  <Check size={12} style={{color:s.color}} className="shrink-0" />
-                </div>
-              ))}
-            </div>
-          </div>
-          <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="inline-flex items-center gap-2.5 bg-purple-600 hover:bg-purple-500 text-white px-8 py-4 rounded-xl font-bold text-[15px] transition-all hover:scale-[1.03] cursor-pointer">
-            <Wand2 size={17} /> Faça o upload da sua faixa
-          </button>
-        </div>
-      </section>
-
-      {/* ════════ FEITO PARA ════════ */}
-      <section className="py-24 px-5 sm:px-8">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-16">
-            <p className="text-white/25 text-[11px] font-bold uppercase tracking-[0.25em] mb-4">Feito para</p>
-            <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black">Cada músico. Cada contexto.</h2>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {AUDIENCE.map((a, i) => (
-              <div key={i} className="hover-lift group bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.06] hover:border-orange-500/20 rounded-2xl p-6 transition-colors">
-                <div className="w-10 h-10 rounded-xl bg-white/[0.04] group-hover:bg-orange-500/12 flex items-center justify-center mb-4 transition-colors">
-                  <a.icon size={20} className="text-white/35 group-hover:text-orange-400 transition-colors" />
-                </div>
-                <h4 className="font-black text-[15px] mb-2">{a.title}</h4>
-                <p className="text-[13px] text-white/38 leading-relaxed">{a.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ════════ FEATURES ════════ */}
-      <section className="py-24 px-5 sm:px-8 bg-gradient-to-b from-transparent via-white/[0.012] to-transparent">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 text-orange-400 text-[11px] font-bold uppercase tracking-[0.2em] mb-4">
-              <Sliders size={12} /> Playback Studio
-            </div>
-            <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black mb-4">O mixer que o seu palco merece</h2>
-            <p className="text-white/35 max-w-lg mx-auto text-[15px] leading-relaxed">
-              Controle total sobre cada instrumento. Do ensaio ao show, com qualidade de estúdio profissional.
+          <div className="bg-bone border border-warm-200 rounded-2xl p-7 sm:p-9 mb-8 leading-relaxed text-[15px] text-warm-600">
+            <p className="mb-4">
+              Sábado 23h o pastor manda mudando o setlist. Você passa a madrugada procurando multitracks
+              em fórum. Domingo de manhã o som tá descosturado porque a equipe não teve tempo de ensaiar como precisa.
+              Segunda você acorda exausto. Tudo de novo na próxima semana.
+            </p>
+            <p className="text-tinta font-medium">
+              A gente sabe — porque a gente também tocava assim.
             </p>
           </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {FEATURES_PLAYER.map((f, i) => (
-              <div key={i} className="hover-lift group bg-white/[0.02] hover:bg-orange-500/[0.03] border border-white/[0.06] hover:border-orange-500/20 rounded-xl p-5 transition-colors">
-                <div className="w-9 h-9 rounded-lg bg-orange-500/10 group-hover:bg-orange-500/18 flex items-center justify-center mb-3 transition-colors">
-                  <f.icon size={17} className="text-orange-400" />
+        </div>
+      </section>
+
+      {/* ════════ GUIDE — 3 benefícios ════════ */}
+      <section id="como-funciona" className="py-24 px-5 sm:px-8">
+        <div className="max-w-5xl mx-auto">
+          <p className="text-warm-600 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o que a Levada entrega</p>
+          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-tinta mb-16 text-center">
+            Construída por músicos de worship.
+            <br />
+            Pra músicos de worship.
+          </h2>
+          <div className="grid sm:grid-cols-3 gap-6">
+            {[
+              { title: 'Qualquer música, separada', desc: 'Sobe MP3, WAV ou link. A Levada separa em voz, instrumentos e pads em alguns minutos.' },
+              { title: 'Worship brasileiro, de verdade', desc: 'Estrutura de culto BR reconhecida. Click com levada nacional. Em português.' },
+              { title: 'Sem catálogo travando', desc: 'Sua igreja escolhe a música. Você prepara. Sem esperar release, sem licença gringa.' },
+            ].map((item, i) => (
+              <div key={i} className="bg-bone border border-warm-200 rounded-2xl p-7 hover:border-terracota/40 transition-colors">
+                <div className="w-9 h-9 rounded-lg bg-terracota/10 border border-terracota/20 flex items-center justify-center mb-5">
+                  <span className="text-terracota font-display font-semibold text-[15px]">{i + 1}</span>
                 </div>
-                <h4 className="font-bold text-[14px] mb-1.5">{f.title}</h4>
-                <p className="text-[12px] text-white/38 leading-relaxed">{f.desc}</p>
+                <h3 className="font-display font-semibold text-[20px] text-tinta mb-3 leading-tight">{item.title}</h3>
+                <p className="text-[14px] text-warm-600 leading-relaxed">{item.desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ════════ PAD SYNTH ════════ */}
-      <section className="py-14 px-5 sm:px-8">
+      {/* ════════ PLAN — 3 passos ════════ */}
+      <section className="py-24 px-5 sm:px-8 bg-terracota-wash/30">
         <div className="max-w-4xl mx-auto">
-          <div className="hover-lift bg-gradient-to-r from-cyan-500/[0.05] to-transparent border border-cyan-500/15 rounded-2xl p-8 sm:p-10 flex flex-col sm:flex-row items-center gap-8">
-            <div className="flex-1 text-center sm:text-left">
-              <div className="inline-flex items-center gap-2 text-cyan-400 text-[11px] font-bold uppercase tracking-[0.2em] mb-3">
-                <SlidersHorizontal size={12} /> Recurso exclusivo
-              </div>
-              <h3 className="text-2xl font-black mb-3">Pad Synth Integrado</h3>
-              <p className="text-white/38 text-[14px] leading-relaxed">
-                12 pads contínuos, samples e loops organizados por nota musical. Crie atmosferas
-                e texturas sonoras em tempo real durante a ministração, com controle de volume e sustain.
-              </p>
-            </div>
-            <div className="grid grid-cols-4 gap-2 shrink-0">
-              {['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'].map((note,i) => (
-                <div key={i} className={`w-11 h-11 rounded-xl border flex items-center justify-center text-[11px] font-black transition-all ${note.includes('#')?'bg-white/[0.07] border-white/15 text-white/40':'bg-white/[0.04] border-white/10 text-white/22 hover:bg-white/[0.07]'} ${i===0?'bg-cyan-500/25 border-cyan-400/50 text-cyan-300':''}`}>
-                  {note}
+          <p className="text-warm-600 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o domingo em 3 passos</p>
+          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-tinta mb-16 text-center">
+            Como você chega pronto.
+          </h2>
+
+          <div className="space-y-5">
+            {[
+              { n: '1', title: 'Sobe a música', desc: 'Qualquer formato — MP3, WAV, ou link do YouTube.' },
+              { n: '2', title: 'A Levada separa tudo', desc: 'Voz, guitarra, baixo, bateria, piano, pads — em alguns minutos.' },
+              { n: '3', title: 'Sua equipe chega pronta no domingo', desc: 'Stems, click, voice guide, seções marcadas (intro, verso, refrão, ponte, altar call) — na mão.' },
+            ].map(step => (
+              <div key={step.n} className="bg-bone border border-warm-200 rounded-2xl p-6 sm:p-8 flex items-start gap-6">
+                <div className="w-14 h-14 rounded-full bg-terracota text-bone flex items-center justify-center font-display font-semibold text-[24px] shrink-0">
+                  {step.n}
                 </div>
-              ))}
-            </div>
+                <div className="flex-1 pt-1">
+                  <h3 className="font-display font-semibold text-[22px] text-tinta mb-2 leading-tight">{step.title}</h3>
+                  <p className="text-[15px] text-warm-600 leading-relaxed">{step.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="text-center mt-12">
+            <button
+              onClick={goToApp}
+              className="inline-flex items-center justify-center gap-2.5 bg-terracota hover:bg-terracota-dark text-bone px-8 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-terracota/20"
+            >
+              Sobe sua primeira música <ArrowRight size={17} />
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* ════════ AUDIENCE — pra quem é ════════ */}
+      <section className="py-24 px-5 sm:px-8">
+        <div className="max-w-5xl mx-auto">
+          <p className="text-warm-600 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">feito pra</p>
+          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-tinta mb-16 text-center">
+            Quem toca todo domingo.
+          </h2>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {AUDIENCE.map((a, i) => (
+              <div key={i} className="group bg-bone border border-warm-200 hover:border-musgo/40 rounded-2xl p-6 transition-colors">
+                <div className="w-10 h-10 rounded-xl bg-musgo/10 group-hover:bg-musgo/20 flex items-center justify-center mb-4 transition-colors">
+                  <a.icon size={20} className="text-musgo" />
+                </div>
+                <h4 className="font-display font-semibold text-[16px] text-tinta mb-2">{a.title}</h4>
+                <p className="text-[13px] text-warm-600 leading-relaxed">{a.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ════════ SUCCESS — transformação ════════ */}
+      <section className="py-24 px-5 sm:px-8 bg-musgo-wash/40">
+        <div className="max-w-3xl mx-auto">
+          <p className="text-warm-600 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">seu próximo domingo, diferente</p>
+          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-tinta mb-12 text-center">
+            Sexta separa. Sábado ensaia.
+            <br />
+            <span className="italic text-musgo-dark">Domingo flui.</span>
+          </h2>
+          <div className="bg-bone border border-warm-200 rounded-2xl p-7 sm:p-9 space-y-4 text-[15px] leading-relaxed">
+            {[
+              { day: 'Sexta', text: 'Pastor manda setlist. Você sobe na Levada.' },
+              { day: 'Sábado', text: 'Tudo separado. Equipe baixou. Ensaio fluiu.' },
+              { day: 'Domingo', text: 'Equipe travada mas leve. Ministração fluindo.' },
+              { day: 'Segunda', text: '"Vamo pra próxima."' },
+            ].map((row, i) => (
+              <div key={i} className="flex items-baseline gap-5 pb-4 last:pb-0 border-b border-warm-100 last:border-0">
+                <span className="font-display font-semibold text-tinta text-[18px] w-24 shrink-0">{row.day}</span>
+                <span className="text-warm-600">{row.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ════════ TESTIMONIALS ════════ */}
+      <section className="py-24 px-5 sm:px-8">
+        <div className="max-w-5xl mx-auto">
+          <p className="text-warm-600 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">equipes que já chegam prontas</p>
+          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-tinta mb-16 text-center">
+            Histórias de domingo.
+          </h2>
+          <div className="grid sm:grid-cols-3 gap-5">
+            {TESTIMONIALS.map((r, i) => (
+              <div key={i} className="bg-bone border border-warm-200 rounded-2xl p-7">
+                <div className="flex gap-0.5 mb-4">
+                  {[1, 2, 3, 4, 5].map(j => <Star key={j} size={12} className="text-terracota fill-terracota" />)}
+                </div>
+                <p className="text-[14px] text-warm-600 leading-relaxed mb-5">"{r.text}"</p>
+                <div>
+                  <div className="font-display font-semibold text-[15px] text-tinta">{r.name}</div>
+                  <div className="text-[12px] text-warm-400">{r.role}</div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
       {/* ════════ PRICING ════════ */}
-      <section className="py-24 px-5 sm:px-8" id="precos">
+      <section className="py-24 px-5 sm:px-8 bg-terracota-wash/30" id="precos">
         <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-14">
-            <h2 className="text-[clamp(2rem,5vw,3.2rem)] font-black mb-3">Planos e Preços</h2>
-            <p className="text-white/35 text-[15px] mb-8">Recursos profissionais. Preço justo.</p>
-            <div className="inline-flex items-center gap-1 bg-white/[0.04] border border-white/[0.08] rounded-xl p-1">
-              <button onClick={() => setBilling('monthly')} className={`px-5 py-2 rounded-lg text-[13px] font-bold transition-all cursor-pointer ${billing==='monthly'?'bg-white/10 text-white':'text-white/40 hover:text-white/60'}`}>Mensal</button>
-              <button onClick={() => setBilling('annual')} className={`px-5 py-2 rounded-lg text-[13px] font-bold transition-all cursor-pointer flex items-center gap-2 ${billing==='annual'?'bg-white/10 text-white':'text-white/40 hover:text-white/60'}`}>
-                Anual <span className="text-[10px] font-black text-green-400 bg-green-400/10 px-1.5 py-0.5 rounded">−25%</span>
+          <p className="text-warm-600 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">planos</p>
+          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-tinta mb-3 text-center">
+            Planos pra sua equipe chegar pronta no domingo.
+          </h2>
+          <p className="text-warm-600 text-[15px] mb-10 text-center">
+            Sem fidelidade, sem pegadinha. Começa de graça e cresce quando precisar.
+          </p>
+
+          <div className="flex justify-center mb-12">
+            <div className="inline-flex items-center gap-1 bg-bone border border-warm-200 rounded-xl p-1">
+              <button
+                onClick={() => setBilling('monthly')}
+                className={`px-5 py-2 rounded-lg text-[13px] font-semibold transition-all cursor-pointer ${billing === 'monthly' ? 'bg-tinta text-bone' : 'text-warm-600 hover:text-tinta'}`}
+              >
+                Mensal
+              </button>
+              <button
+                onClick={() => setBilling('annual')}
+                className={`px-5 py-2 rounded-lg text-[13px] font-semibold transition-all cursor-pointer flex items-center gap-2 ${billing === 'annual' ? 'bg-tinta text-bone' : 'text-warm-600 hover:text-tinta'}`}
+              >
+                Anual
+                <span className="text-[10px] font-bold text-musgo-dark bg-musgo-wash px-1.5 py-0.5 rounded">−25%</span>
               </button>
             </div>
           </div>
 
           <div className="grid sm:grid-cols-3 gap-5">
-            {PLANS.map((plan, i) => {
+            {PLANS.map((plan) => {
               const price = billing === 'annual' ? plan.annual : plan.monthly
               return (
-                <div key={i} className={`relative rounded-2xl p-7 flex flex-col border-2 ${plan.highlight ? 'border-orange-500/40 bg-gradient-to-b from-orange-500/[0.07] to-orange-500/[0.02]' : 'border-white/[0.08] bg-white/[0.02]'}`}>
+                <div
+                  key={plan.id}
+                  className={`relative rounded-2xl p-7 flex flex-col border-2 ${plan.highlight
+                      ? 'border-terracota bg-bone'
+                      : 'border-warm-200 bg-bone'
+                    }`}
+                >
                   {plan.badge && (
-                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-orange-500 text-white text-[10px] font-black px-4 py-1 rounded-full uppercase tracking-widest whitespace-nowrap">
+                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-terracota text-bone text-[10px] font-bold px-4 py-1 rounded-full uppercase tracking-widest whitespace-nowrap">
                       {plan.badge}
                     </div>
                   )}
                   <div className="mb-5">
-                    <h3 className="font-black text-lg mb-1">{plan.name}</h3>
-                    <p className="text-white/35 text-[12px]">{plan.desc}</p>
+                    <h3 className="font-display font-semibold text-[22px] text-tinta mb-1">{plan.name}</h3>
+                    <p className="text-warm-600 text-[13px]">{plan.desc}</p>
                   </div>
                   <div className="mb-7">
                     {price === 0 ? (
-                      <div className="text-4xl font-black">Grátis</div>
+                      <div className="font-display font-semibold text-[40px] text-tinta">Grátis</div>
                     ) : (
                       <>
                         <div className="flex items-baseline gap-1">
-                          <span className="text-sm text-white/35">R$</span>
-                          <span className="text-4xl font-black">{price.toFixed(2).replace('.',',')}</span>
-                          <span className="text-white/35 text-sm">/mês</span>
+                          <span className="text-[14px] text-warm-600">R$</span>
+                          <span className="font-display font-semibold text-[40px] text-tinta leading-none">{price.toFixed(2).replace('.', ',')}</span>
+                          <span className="text-warm-600 text-[14px]">/mês</span>
                         </div>
                         {billing === 'annual' && (
-                          <p className="text-[11px] text-green-400 mt-1">R$ {(price*12).toFixed(2).replace('.',',')} cobrado anualmente</p>
+                          <p className="text-[11px] text-musgo-dark mt-2">R$ {(price * 12).toFixed(2).replace('.', ',')} cobrado anualmente</p>
                         )}
                         {billing === 'monthly' && (
-                          <p className="text-[11px] text-white/25 mt-1">ou R$ {plan.annual.toFixed(2).replace('.',',')}/mês no anual</p>
+                          <p className="text-[11px] text-warm-400 mt-2">ou R$ {plan.annual.toFixed(2).replace('.', ',')}/mês no anual</p>
                         )}
                       </>
                     )}
                   </div>
                   <ul className="space-y-2.5 mb-8 flex-1">
                     {plan.features.map((feat, j) => (
-                      <li key={j} className="flex items-start gap-2.5 text-[12px] text-white/52">
-                        <Check size={13} className={`mt-0.5 shrink-0 ${plan.highlight ? 'text-orange-400' : 'text-white/22'}`} />
+                      <li key={j} className="flex items-start gap-2.5 text-[13px] text-warm-600">
+                        <Check size={13} className={`mt-0.5 shrink-0 ${plan.highlight ? 'text-terracota' : 'text-musgo'}`} />
                         {feat}
                       </li>
                     ))}
                   </ul>
-                  <button onClick={() => {
-                        if (price > 0) {
-                            localStorage.setItem('checkoutIntent', `${plan.name.toLowerCase()}_${billing === 'annual' ? 'anual' : 'mensal'}`);
-                        } else {
-                            localStorage.removeItem('checkoutIntent');
-                        }
-                        onEnter();
-                    }} 
-                    className={`w-full py-3 rounded-xl text-[13px] font-bold transition-all cursor-pointer ${plan.btnStyle}`}>
+                  <button
+                    onClick={() => goToCheckout(plan.id, price)}
+                    className={`w-full py-3 rounded-xl text-[13px] font-semibold transition-all cursor-pointer ${plan.highlight
+                        ? 'bg-terracota hover:bg-terracota-dark text-bone shadow-lg shadow-terracota/20'
+                        : 'bg-bone hover:bg-warm-100 border border-warm-200 text-tinta'
+                      }`}
+                  >
                     {plan.cta}
                   </button>
                 </div>
               )
             })}
           </div>
-          <p className="text-center text-[11px] text-white/18 mt-8">Preços em Reais (BRL) · Cancele quando quiser · Sem fidelidade</p>
-        </div>
-      </section>
-
-      {/* ════════ DEPOIMENTOS ════════ */}
-      <section className="py-20 px-5 sm:px-8 bg-gradient-to-b from-transparent via-white/[0.012] to-transparent">
-        <div className="max-w-5xl mx-auto">
-          <p className="text-center text-white/25 text-[11px] font-bold uppercase tracking-[0.25em] mb-4">Aprovado por quem usa</p>
-          <h2 className="text-2xl sm:text-3xl font-black text-center mb-12">
-            Músicos que transformaram<br />sua prática com o Playback Studio.
-          </h2>
-          <div className="grid sm:grid-cols-3 gap-5">
-            {[
-              {name:'Lucas Ferreira',  role:'Líder de Louvor',    text:'Finalmente um app que tem tudo junto. Separo as faixas com IA, jogo no mixer, ajusto o tom — sem sair do app. Transformou completamente minha ministração.'},
-              {name:'Ana Paula Costa', role:'Tecladista & Cantora',text:'O metrônomo com IA detecta o BPM e gera o click track perfeito automaticamente. O Pad Synth integrado com as 12 notas é incrível para criar atmosferas ao vivo.'},
-              {name:'Rodrigo Melo',    role:'Baterista',           text:'Consigo extrair só a bateria de qualquer música e treinar em cima. Poder silenciar minha faixa na hora H durante o culto é algo que não consigo mais viver sem.'},
-            ].map((r,i) => (
-              <div key={i} className="hover-lift bg-white/[0.02] border border-white/[0.06] rounded-2xl p-6">
-                <div className="flex gap-0.5 mb-4">
-                  {[1,2,3,4,5].map(j=><Star key={j} size={12} className="text-orange-400 fill-orange-400"/>)}
-                </div>
-                <p className="text-[13px] text-white/48 leading-relaxed mb-5">"{r.text}"</p>
-                <div>
-                  <div className="font-bold text-[13px]">{r.name}</div>
-                  <div className="text-[11px] text-white/28">{r.role}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ════════ MISSÃO ════════ */}
-      <section className="py-16 px-5 sm:px-8">
-        <div className="max-w-3xl mx-auto text-center">
-          <div className="bg-white/[0.02] border border-white/[0.06] rounded-2xl p-10 sm:p-12">
-            <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-white/25 mb-5">Nossa missão</p>
-            <p className="text-[clamp(1.1rem,2.5vw,1.5rem)] font-medium text-white/60 leading-relaxed italic">
-              "Atender ministros e músicos do Brasil inteiro, criando recursos que maximizem
-              seu tempo para o que realmente importa — a adoração."
-            </p>
-          </div>
+          <p className="text-center text-[12px] text-warm-400 mt-8">Preços em Reais · Cancele quando quiser · Sem fidelidade</p>
         </div>
       </section>
 
       {/* ════════ FAQ ════════ */}
-      <section className="py-20 px-5 sm:px-8">
+      <section className="py-24 px-5 sm:px-8">
         <div className="max-w-2xl mx-auto">
-          <h2 className="text-2xl sm:text-3xl font-black text-center mb-12">Perguntas Frequentes</h2>
+          <h2 className="font-display font-semibold text-[clamp(1.6rem,4vw,2.4rem)] text-tinta text-center mb-12">
+            Perguntas frequentes
+          </h2>
           <div className="space-y-2.5">
             {FAQS.map((faq, i) => (
-              <div key={i} className="border border-white/[0.06] rounded-xl overflow-hidden bg-white/[0.02]">
-                <button onClick={() => setOpenFaq(openFaq===i?null:i)}
-                  className="w-full flex items-center justify-between px-5 py-4 text-left cursor-pointer hover:bg-white/[0.03] transition-colors">
-                  <span className="font-semibold text-[14px] pr-4">{faq.q}</span>
-                  <ChevronDown size={15} className={`text-white/28 shrink-0 transition-transform ${openFaq===i?'rotate-180':''}`} />
+              <div key={i} className="border border-warm-200 rounded-xl overflow-hidden bg-bone">
+                <button
+                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                  className="w-full flex items-center justify-between px-5 py-4 text-left cursor-pointer hover:bg-warm-100 transition-colors"
+                >
+                  <span className="font-semibold text-[14px] text-tinta pr-4">{faq.q}</span>
+                  <ChevronDown size={15} className={`text-warm-400 shrink-0 transition-transform ${openFaq === i ? 'rotate-180' : ''}`} />
                 </button>
-                {openFaq===i && (
-                  <div className="px-5 pb-5 pt-4 text-[13px] text-white/42 leading-relaxed border-t border-white/[0.05]">
+                {openFaq === i && (
+                  <div className="px-5 pb-5 pt-4 text-[13px] text-warm-600 leading-relaxed border-t border-warm-100">
                     {faq.a}
                   </div>
                 )}
@@ -502,42 +514,47 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       {/* ════════ CTA FINAL ════════ */}
       <section className="py-24 px-5 sm:px-8">
         <div className="max-w-2xl mx-auto text-center">
-          <div className="relative bg-gradient-to-br from-orange-500/[0.07] via-orange-500/[0.03] to-purple-500/[0.05] border border-orange-500/20 rounded-3xl p-12 sm:p-16 overflow-hidden">
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-72 h-36 bg-orange-500/[0.07] blur-3xl rounded-full pointer-events-none" />
+          <div className="relative bg-terracota-wash border-2 border-terracota/30 rounded-3xl p-12 sm:p-16 overflow-hidden">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-72 h-36 bg-terracota/10 blur-3xl rounded-full pointer-events-none" />
             <div className="relative">
-              <div className="w-14 h-14 rounded-2xl bg-orange-500/20 border border-orange-500/30 flex items-center justify-center mx-auto mb-6">
-                <Music size={26} className="text-orange-400" />
+              <div className="inline-flex items-baseline gap-3 mb-6">
+                <span className="text-warm-600 text-[14px] font-medium tracking-wide">pronto pro</span>
+                <DomingoMark size="lg" tone="terracota" />
+                <span className="text-warm-600 text-[14px] font-medium tracking-wide">?</span>
               </div>
-              <h2 className="text-[clamp(1.8rem,5vw,3rem)] font-black mb-4">
-                Pronto para ministrar com excelência?
+              <h2 className="font-display font-semibold text-[clamp(1.8rem,5vw,2.8rem)] text-tinta mb-4 leading-tight">
+                Sua próxima semana,
+                <br />
+                já fica diferente.
               </h2>
-              <p className="text-white/38 text-[15px] leading-relaxed mb-8">
-                Comece grátis hoje. Configure seu primeiro repertório em menos de 5 minutos.
+              <p className="text-warm-600 text-[15px] leading-relaxed mb-8">
+                Começa de graça. Sobe sua primeira música em menos de 2 minutos.
               </p>
-              <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="inline-flex items-center gap-2.5 bg-orange-500 hover:bg-orange-400 text-white px-9 py-4 rounded-xl font-bold text-[15px] transition-all hover:scale-[1.03] cursor-pointer">
-                Começar Grátis Agora <ArrowRight size={18} />
+              <button
+                onClick={goToApp}
+                className="inline-flex items-center gap-2.5 bg-terracota hover:bg-terracota-dark text-bone px-9 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-terracota/20"
+              >
+                Começa de graça <ArrowRight size={18} />
               </button>
-              <p className="text-[11px] text-white/18 mt-5">Grátis para sempre no plano básico · Upgrade quando quiser</p>
+              <p className="text-[11px] text-warm-400 mt-5">Sem cartão de crédito · Cancele quando quiser</p>
             </div>
           </div>
         </div>
       </section>
 
       {/* ════════ FOOTER ════════ */}
-      <footer className="border-t border-white/[0.05] py-10 px-5 sm:px-8">
+      <footer className="border-t border-warm-200 py-10 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-5">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md bg-orange-500/20 border border-orange-500/30 flex items-center justify-center">
-              <Music size={12} className="text-orange-400" />
-            </div>
-            <span className="font-black tracking-[0.15em] uppercase text-[11px] text-white/38">Playback Studio</span>
+          <div className="flex items-center gap-3">
+            <LevadaWordmark size="sm" tone="dark" />
+            <span className="text-warm-400 text-[11px]">a plataforma do domingo</span>
           </div>
-          <div className="flex items-center gap-6 text-[12px] text-white/28">
-            <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="hover:text-white/55 transition-colors cursor-pointer">Entrar</button>
-            <button onClick={() => { localStorage.removeItem('checkoutIntent'); onEnter(); }} className="hover:text-white/55 transition-colors cursor-pointer">Criar Conta</button>
-            <a href="#precos" className="hover:text-white/55 transition-colors">Preços</a>
+          <div className="flex items-center gap-6 text-[12px] text-warm-600">
+            <button onClick={goToApp} className="hover:text-tinta transition-colors cursor-pointer">Entrar</button>
+            <button onClick={goToApp} className="hover:text-tinta transition-colors cursor-pointer">Criar conta</button>
+            <a href="#precos" className="hover:text-tinta transition-colors">Planos</a>
           </div>
-          <p className="text-[11px] text-white/18">© 2025 Playback Studio. Todos os direitos reservados.</p>
+          <p className="text-[11px] text-warm-400">© {new Date().getFullYear()} Levada · Feito por quem toca.</p>
         </div>
       </footer>
     </div>
