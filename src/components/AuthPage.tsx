@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Mail, Lock, Loader2, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { LevadaWordmark } from './brand/LevadaWordmark';
+import { DomingoMark } from './brand/DomingoMark';
 
 interface AuthPageProps {
 }
@@ -26,14 +28,14 @@ export function AuthPage({ }: AuthPageProps) {
             } else if (mode === 'register') {
                 const { error } = await supabase!.auth.signUp({ email, password });
                 if (error) throw error;
-                setMessage('Cadastro realizado! Verifique seu email para confirmar.');
+                setMessage('Cadastro feito. Verifica seu email pra confirmar.');
             } else if (mode === 'forgot') {
                 const { error } = await supabase!.auth.resetPasswordForEmail(email);
                 if (error) throw error;
-                setMessage('Instruções de recuperação enviadas para o seu email.');
+                setMessage('Instruções de recuperação enviadas pro seu email.');
             }
         } catch (err: any) {
-            setError(err.message || 'Ocorreu um erro.');
+            setError(err.message || 'Algo deu errado.');
         } finally {
             setLoading(false);
         }
@@ -54,70 +56,69 @@ export function AuthPage({ }: AuthPageProps) {
     };
 
     return (
-        <div className="min-h-screen bg-[#0a0a0c] text-white flex">
+        <div className="min-h-screen bg-tinta text-bone flex">
             {/* Left Column (Branding) */}
-            <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-b from-[#2a2218] via-[#141210] to-[#0a0a0c] p-12 flex-col justify-between relative overflow-hidden">
-                {/* Minimalist Header Logo */}
-                <div className="flex items-center gap-3 relative z-10">
-                    <div className="w-10 h-10 rounded-lg border-2 border-primary/60 flex items-center justify-center">
-                        <div className="w-3 h-3 bg-primary rounded-full animate-led"></div>
-                    </div>
-                    <span className="text-lg font-black tracking-[0.12em] uppercase">Playback</span>
+            <div className="hidden lg:flex lg:w-1/2 p-12 flex-col justify-between relative overflow-hidden"
+                style={{ background: 'linear-gradient(180deg, #2A2520 0%, #1F1B16 60%, #14110D 100%)' }}>
+                {/* Atmosphere — warm terracota glow */}
+                <div className="absolute top-1/4 -right-32 w-96 h-96 bg-terracota rounded-full mix-blend-screen filter blur-[140px] opacity-[0.12]"></div>
+                <div className="absolute -bottom-32 -left-20 w-80 h-80 bg-musgo rounded-full mix-blend-screen filter blur-[140px] opacity-[0.1]"></div>
+
+                {/* Header logo */}
+                <div className="flex items-center relative z-10">
+                    <LevadaWordmark size="md" tone="light" />
                 </div>
 
-                {/* Main Branding Content */}
+                {/* Main branding content */}
                 <div className="max-w-md relative z-10 my-auto">
-                    <h1 className="text-4xl lg:text-5xl font-black text-white mb-6 leading-tight tracking-tight">
-                        Plataforma Profissional<br />de Playbacks
+                    <div className="inline-flex items-baseline gap-3 mb-6 select-none">
+                        <span className="text-warm-400 text-[13px] font-medium tracking-wide">pronto pro</span>
+                        <DomingoMark size="md" tone="terracota" />
+                    </div>
+                    <h1 className="font-display font-semibold text-bone text-4xl lg:text-5xl mb-6 leading-[1.05] tracking-[-0.02em]">
+                        Toda música, todo<br />domingo, na sua mão.
                     </h1>
-                    <p className="text-text-muted text-base mb-12 font-mono">
-                        Seu palco digital definitivo para multitracks, VS, click e stems ao vivo.
+                    <p className="text-warm-200 text-[15px] mb-12 leading-relaxed">
+                        Separe qualquer música em stems prontos. Pra sua equipe chegar pronta no próximo culto.
                     </p>
 
-                    {/* Component Steps */}
+                    {/* Steps */}
                     <div className="flex flex-col gap-3">
-                        <div className="flex items-center gap-4 bg-primary/10 text-white p-4 rounded-lg border border-primary/20">
-                            <div className="w-8 h-8 rounded-md bg-primary text-black flex items-center justify-center font-bold text-xs font-mono">01</div>
-                            <span className="font-bold text-sm tracking-wider uppercase">Criar Conta</span>
+                        <div className="flex items-center gap-4 p-4 rounded-xl bg-terracota/[0.08] border border-terracota/25 text-bone">
+                            <div className="w-8 h-8 rounded-md bg-terracota text-bone flex items-center justify-center font-display font-semibold text-[14px]">1</div>
+                            <span className="font-medium text-[13px]">Criar conta</span>
                         </div>
-                        <div className="flex items-center gap-4 bg-white/3 text-text-muted p-4 rounded-lg border border-border">
-                            <div className="w-8 h-8 rounded-md bg-surface text-text-muted border border-border flex items-center justify-center font-bold text-xs font-mono">02</div>
-                            <span className="font-medium text-sm tracking-wider uppercase">Importar Faixas</span>
+                        <div className="flex items-center gap-4 p-4 rounded-xl bg-bone/[0.03] border border-tinta-border text-warm-200">
+                            <div className="w-8 h-8 rounded-md bg-tinta-border text-warm-200 flex items-center justify-center font-display font-semibold text-[14px]">2</div>
+                            <span className="font-medium text-[13px]">Subir sua primeira música</span>
                         </div>
-                        <div className="flex items-center gap-4 bg-white/3 text-text-muted p-4 rounded-lg border border-border">
-                            <div className="w-8 h-8 rounded-md bg-surface text-text-muted border border-border flex items-center justify-center font-bold text-xs font-mono">03</div>
-                            <span className="font-medium text-sm tracking-wider uppercase">Soltar o Som</span>
+                        <div className="flex items-center gap-4 p-4 rounded-xl bg-bone/[0.03] border border-tinta-border text-warm-200">
+                            <div className="w-8 h-8 rounded-md bg-tinta-border text-warm-200 flex items-center justify-center font-display font-semibold text-[14px]">3</div>
+                            <span className="font-medium text-[13px]">Ensaiar pronto pro domingo</span>
                         </div>
                     </div>
                 </div>
 
-                {/* Footer Brand */}
-                <div className="relative z-10 text-[10px] text-white/20 tracking-[0.3em] uppercase font-bold text-center font-mono">
-                    Playback Studio v5.0
+                {/* Footer */}
+                <div className="relative z-10 text-[11px] text-warm-400 tracking-wide text-center">
+                    Feito por quem toca.
                 </div>
-
-                {/* Decorative glowing orb */}
-                <div className="absolute top-1/4 -right-32 w-96 h-96 bg-primary rounded-full mix-blend-screen filter blur-[120px] opacity-15"></div>
             </div>
 
             {/* Right Column (Form) */}
-            <div className="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-12 relative">
-
-                {/* Mobile Header Logo */}
+            <div className="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-12 relative bg-tinta">
+                {/* Mobile header */}
                 <div className="absolute top-8 left-8 flex items-center gap-2 lg:hidden">
-                    <div className="w-7 h-7 rounded-md border-2 border-primary/60 flex items-center justify-center">
-                        <div className="w-2 h-2 bg-primary rounded-full animate-led"></div>
-                    </div>
-                    <span className="text-sm font-black tracking-[0.1em] uppercase text-white">PLAYBACK</span>
+                    <LevadaWordmark size="sm" tone="light" />
                 </div>
 
                 <div className="w-full max-w-md">
                     <div className="mb-10 text-center lg:text-left">
-                        <h2 className="text-2xl font-black text-white mb-2 tracking-tight uppercase">
-                            {mode === 'login' ? 'Entrar na Plataforma' : mode === 'register' ? 'Criar Conta' : 'Recuperar Senha'}
+                        <h2 className="font-display font-semibold text-bone text-3xl mb-2 tracking-[-0.01em]">
+                            {mode === 'login' ? 'Entrar' : mode === 'register' ? 'Criar conta' : 'Recuperar senha'}
                         </h2>
-                        <p className="text-text-muted text-xs font-mono tracking-wider">
-                            {mode === 'login' ? 'Bem-vindo de volta. Acesse seu palco.' : mode === 'register' ? 'Insira seus dados para começar a usar.' : 'Enviaremos as instruções para o seu email.'}
+                        <p className="text-warm-400 text-[13px]">
+                            {mode === 'login' ? 'Bem-vindo de volta.' : mode === 'register' ? 'Vamos te mostrar como deixar seu próximo domingo mais leve.' : 'A gente envia instruções pro seu email.'}
                         </p>
                     </div>
 
@@ -127,7 +128,7 @@ export function AuthPage({ }: AuthPageProps) {
                             <div className="flex flex-col gap-4 mb-8">
                                 <button
                                     onClick={handleGoogleLogin}
-                                    className="hw-btn flex items-center justify-center gap-2 h-12 w-full rounded-md text-white font-bold tracking-wider uppercase text-xs cursor-pointer active:scale-95"
+                                    className="flex items-center justify-center gap-2.5 h-12 w-full rounded-xl border border-tinta-border bg-tinta-raised text-bone font-medium text-[13px] hover:bg-tinta-border transition-all cursor-pointer active:scale-[0.98]"
                                 >
                                     <svg className="w-5 h-5" viewBox="0 0 24 24">
                                         <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -135,32 +136,32 @@ export function AuthPage({ }: AuthPageProps) {
                                         <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
                                         <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
                                     </svg>
-                                    Entrar com Google
+                                    Continuar com Google
                                 </button>
                             </div>
 
                             <div className="flex items-center gap-4 mb-8">
-                                <div className="h-px bg-border flex-1"></div>
-                                <span className="text-text-muted text-[9px] font-bold uppercase tracking-[0.2em] font-mono">OU</span>
-                                <div className="h-px bg-border flex-1"></div>
+                                <div className="h-px bg-tinta-border flex-1"></div>
+                                <span className="text-warm-400 text-[10px] font-medium uppercase tracking-[0.2em]">ou</span>
+                                <div className="h-px bg-tinta-border flex-1"></div>
                             </div>
                         </>
                     )}
 
-                    {error && <div className="p-3 mb-6 rounded-md bg-accent-red/10 border border-accent-red/20 text-accent-red text-xs font-mono">{error}</div>}
-                    {message && <div className="p-3 mb-6 rounded-md bg-accent-green/10 border border-accent-green/20 text-accent-green text-xs font-mono">{message}</div>}
+                    {error && <div className="p-3 mb-6 rounded-lg bg-error/10 border border-error/25 text-error text-[13px]">{error}</div>}
+                    {message && <div className="p-3 mb-6 rounded-lg bg-success/10 border border-success/25 text-success text-[13px]">{message}</div>}
 
                     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                         <div>
-                            <label className="block text-text-muted text-[10px] font-bold mb-2 uppercase tracking-wider font-mono">Email</label>
+                            <label className="block text-warm-400 text-[11px] font-medium mb-2 uppercase tracking-wider">Email</label>
                             <div className="relative">
-                                <Mail size={14} className="absolute left-4 top-3.5 text-text-muted" />
+                                <Mail size={15} className="absolute left-4 top-3.5 text-warm-400" />
                                 <input
                                     type="email"
                                     required
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    className="w-full daw-input rounded-md pl-11 pr-4 py-3 placeholder:text-text-muted/30 font-mono text-sm"
+                                    className="w-full bg-tinta-raised border border-tinta-border rounded-xl pl-11 pr-4 py-3 text-bone placeholder:text-warm-400/50 text-[14px] focus:border-terracota focus:outline-none focus:ring-2 focus:ring-terracota/15 transition-colors"
                                     placeholder="seu@email.com"
                                 />
                             </div>
@@ -168,20 +169,20 @@ export function AuthPage({ }: AuthPageProps) {
 
                         {mode !== 'forgot' && (
                             <div>
-                                <label className="block text-text-muted text-[10px] font-bold mb-2 uppercase tracking-wider font-mono">Senha</label>
+                                <label className="block text-warm-400 text-[11px] font-medium mb-2 uppercase tracking-wider">Senha</label>
                                 <div className="relative">
-                                    <Lock size={14} className="absolute left-4 top-3.5 text-text-muted" />
+                                    <Lock size={15} className="absolute left-4 top-3.5 text-warm-400" />
                                     <input
                                         type="password"
                                         required
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        className="w-full daw-input rounded-md pl-11 pr-4 py-3 placeholder:text-text-muted/30 font-mono text-sm"
-                                        placeholder="Digite sua senha"
+                                        className="w-full bg-tinta-raised border border-tinta-border rounded-xl pl-11 pr-4 py-3 text-bone placeholder:text-warm-400/50 text-[14px] focus:border-terracota focus:outline-none focus:ring-2 focus:ring-terracota/15 transition-colors"
+                                        placeholder="Sua senha"
                                         minLength={6}
                                     />
-                                    <div className="absolute right-4 top-3.5 text-text-muted/40 text-[9px] font-mono">
-                                        MÍN 6 CARACT.
+                                    <div className="absolute right-4 top-3.5 text-warm-400/60 text-[10px]">
+                                        mín 6
                                     </div>
                                 </div>
                             </div>
@@ -190,11 +191,11 @@ export function AuthPage({ }: AuthPageProps) {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="w-full mt-4 h-12 bg-primary text-black font-black rounded-md flex items-center justify-center gap-2 hover:bg-primary-dim disabled:opacity-50 transition-all active:scale-[0.98] cursor-pointer uppercase tracking-wider text-sm shadow-[0_0_20px_rgba(212,168,67,0.15)]"
+                            className="w-full mt-4 h-12 bg-terracota hover:bg-terracota-dark text-bone font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 transition-all active:scale-[0.98] cursor-pointer text-[14px] shadow-lg shadow-terracota/20"
                         >
                             {loading ? <Loader2 size={18} className="animate-spin" /> : (
                                 <>
-                                    {mode === 'login' ? 'Entrar Agora' : mode === 'register' ? 'Criar Conta' : 'Enviar Instruções'}
+                                    {mode === 'login' ? 'Entrar' : mode === 'register' ? 'Criar conta' : 'Enviar instruções'}
                                     <ArrowRight size={16} />
                                 </>
                             )}
@@ -204,14 +205,14 @@ export function AuthPage({ }: AuthPageProps) {
                     <div className="mt-8 text-center text-sm">
                         {mode === 'login' ? (
                             <div className="flex flex-col gap-3">
-                                <button onClick={() => setMode('forgot')} className="text-text-muted hover:text-white transition-colors cursor-pointer text-xs font-mono">Esqueceu sua senha?</button>
-                                <div className="text-text-muted text-xs font-mono">
-                                    Não possui conta? <button onClick={() => setMode('register')} className="text-primary font-bold hover:underline cursor-pointer">Cadastre-se</button>
+                                <button onClick={() => setMode('forgot')} className="text-warm-400 hover:text-bone transition-colors cursor-pointer text-[13px]">Esqueceu sua senha?</button>
+                                <div className="text-warm-400 text-[13px]">
+                                    Não tem conta? <button onClick={() => setMode('register')} className="text-terracota hover:underline cursor-pointer font-medium">Criar conta</button>
                                 </div>
                             </div>
                         ) : (
-                            <div className="text-text-muted text-xs font-mono">
-                                Já possui uma conta? <button onClick={() => setMode('login')} className="text-primary font-bold hover:underline cursor-pointer">Entrar</button>
+                            <div className="text-warm-400 text-[13px]">
+                                Já tem conta? <button onClick={() => setMode('login')} className="text-terracota hover:underline cursor-pointer font-medium">Entrar</button>
                             </div>
                         )}
                     </div>

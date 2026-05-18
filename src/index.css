@@ -26,8 +26,11 @@
   --color-musgo-wash: #E6E8DC;
 
   /* Neutros warm — base da marca */
-  --color-bone: #F7F3ED;       /* background warm off-white (NUNCA #fff puro) */
-  --color-tinta: #1F1B16;      /* texto principal warm black (NUNCA #000 puro) */
+  --color-bone: #F7F3ED;          /* background warm off-white (NUNCA #fff puro) */
+  --color-tinta: #1F1B16;         /* texto principal warm black (NUNCA #000 puro) */
+  --color-tinta-raised: #2A2520;  /* surface raised pra dark mode (cards/panels) */
+  --color-tinta-soft: #14110D;    /* surface mais profundo (modal/overlay) */
+  --color-tinta-border: #3A332A;  /* border sutil em dark mode */
   --color-warm-100: #E6E0D4;
   --color-warm-200: #C9C2B5;
   --color-warm-400: #9C9385;
@@ -72,12 +75,19 @@
     font-family: var(--font-sans);
   }
 
-  /* Marketing/brand contexts override body styling via `.brand-context` */
-  .brand-context {
+  /* Marketing/brand contexts override body styling
+     `.brand-context-dark` → warm dark (tinta + bone text + terracota accents)
+     `.brand-context-light` → bone bg + tinta text (light marketing) */
+  .brand-context-dark {
+    background-color: var(--color-tinta);
+    color: var(--color-bone);
+  }
+  .brand-context-light {
     background-color: var(--color-bone);
     color: var(--color-tinta);
   }
-  .brand-context h1, .brand-context h2, .brand-context h3 {
+  .brand-context-dark h1, .brand-context-dark h2, .brand-context-dark h3,
+  .brand-context-light h1, .brand-context-light h2, .brand-context-light h3 {
     font-family: var(--font-display);
     letter-spacing: -0.01em;
   }

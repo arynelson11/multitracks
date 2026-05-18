@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import {
-  Mic2, Drumstick, Guitar, Piano,
+  Mic2, Drumstick, Guitar, Music, Disc3,
   Star, ChevronDown, Check,
-  ArrowRight, Church, Download, Calendar,
+  ArrowRight, Church, Download,
 } from 'lucide-react'
 import { DemoMixer } from './DemoMixer'
 import { usePWAInstall } from '../hooks/usePWAInstall'
@@ -17,40 +17,40 @@ interface LandingPageProps {
 /* ─── Dados ─────────────────────────────── */
 
 /**
- * Audience focado em worship (Lei do Sacrifício — Al Ries).
- * Cortamos: produtores, músicos seculares, bateristas/guitarristas genéricos.
- * Mantemos: papéis dentro da equipe de worship.
+ * Audience multi-perfil: worship em destaque + outros contextos.
+ * 'Feito por quem toca' é a âncora — qualquer banda/músico que toca todo
+ * fim de semana se reconhece aqui.
  */
 const AUDIENCE = [
   { icon: Church,    title: 'Equipes de adoração',  desc: 'Do ensaio ao culto, qualquer música pronta com a levada na mão.' },
-  { icon: Mic2,      title: 'Ministros e vocalistas', desc: 'Voice guide discreto, tonalidade no seu alcance, referência sem inundar o in-ear.' },
-  { icon: Guitar,    title: 'Instrumentistas',      desc: 'Stems de qualquer música — guitarra, baixo, bateria, teclado — pra ensaiar como sua equipe toca.' },
-  { icon: Drumstick, title: 'Bateristas',           desc: 'Click track com levada brasileira, não o metrônomo gringo plano.' },
-  { icon: Piano,     title: 'Tecladistas',          desc: 'Isole pads e teclados. Construa em cima do que a equipe precisa pro domingo.' },
-  { icon: Calendar,  title: 'Líderes de louvor',    desc: 'Setlist na sexta, separação no sábado, domingo sem corre.' },
+  { icon: Music,     title: 'Bandas em geral',      desc: 'Gospel, sertanejo, MPB, rock, indie — qualquer ritmo. Stems prontos pro próximo show.' },
+  { icon: Mic2,      title: 'Vocalistas e ministros', desc: 'Voice guide discreto, tonalidade no seu alcance, referência sem inundar o in-ear.' },
+  { icon: Guitar,    title: 'Instrumentistas',      desc: 'Stems de qualquer música — guitarra, baixo, teclado, piano — pra ensaiar como sua banda toca.' },
+  { icon: Drumstick, title: 'Bateristas',           desc: 'Click track no seu jeito, separação que respeita a levada original.' },
+  { icon: Disc3,     title: 'Solo e produtores',    desc: 'Construa em cima de qualquer faixa — separe, remixe, refaça arranjos.' },
 ]
 
 const PLANS = [
   {
     id: 'gratuito',
-    name: 'Levada Livre',
+    name: 'Free',
     monthly: 0, annual: 0,
-    desc: 'Pra você experimentar e ver se funciona',
+    desc: 'Pra experimentar e ver se funciona',
     badge: null as string | null,
     highlight: false,
     features: [
       '5 separações por mês',
       'Stems padrão',
-      'Acesso à biblioteca de clicks BR',
+      'Acesso à biblioteca de clicks',
       'Mixer básico multicanal',
     ],
     cta: 'Começar grátis',
   },
   {
     id: 'essencial',
-    name: 'Levada Toca',
+    name: 'Essencial',
     monthly: 49.90, annual: 39.90,
-    desc: 'Pra equipe que toca todo domingo',
+    desc: 'Pra equipe que toca toda semana',
     badge: 'Mais escolhido',
     highlight: true,
     features: [
@@ -59,15 +59,15 @@ const PLANS = [
       'Pads ambiente completos',
       'Voice guide auto-detector',
       'Click com levada brasileira',
-      'Auto-detecção de seções de culto',
+      'Auto-detecção de seções (worship)',
       'Biblioteca em nuvem',
       'Suporte por email',
     ],
-    cta: 'Assinar Toca',
+    cta: 'Assinar Essencial',
   },
   {
     id: 'pro',
-    name: 'Levada Tudo',
+    name: 'Pro',
     monthly: 99.90, annual: 79.90,
     desc: 'Pra quem leva isso à sério',
     badge: null as string | null,
@@ -75,28 +75,28 @@ const PLANS = [
     features: [
       'Separações ilimitadas',
       'Qualidade máxima',
-      'Tudo da Levada Toca +',
+      'Tudo do Essencial +',
       'Prioridade no processamento',
       'Múltiplos repertórios simultâneos',
       'Acesso antecipado a features',
       'Suporte prioritário',
     ],
-    cta: 'Assinar Tudo',
+    cta: 'Assinar Pro',
   },
 ]
 
 const FAQS = [
   {
     q: 'O que são stems?',
-    a: 'Stems são as faixas individuais de uma música — voz separada, bateria separada, baixo separado, etc. Com a Levada você sobe qualquer música e recebe tudo separado pra sua equipe ensaiar e tocar como precisa.'
+    a: 'Stems são as faixas individuais de uma música — voz separada, bateria separada, baixo separado, etc. Com a Levada você sobe qualquer música e recebe tudo separado pra sua banda ensaiar e tocar como precisa.'
   },
   {
     q: 'Como funciona a separação?',
-    a: 'Você sobe a música (MP3, WAV ou link). A IA da Levada separa em voz, guitarra, baixo, bateria, piano e pads em alguns minutos. Os stems ficam disponíveis pra download, no mixer e pra compartilhar com sua equipe.'
+    a: 'Você sobe a música (MP3, WAV ou link). A IA da Levada separa em voz, guitarra, baixo, bateria, piano e pads em alguns minutos. Os stems ficam disponíveis pra download, no mixer e pra compartilhar com a equipe.'
   },
   {
     q: 'A Levada serve pra qualquer música?',
-    a: 'Sim. Diferente de catálogos licenciados, a Levada não depende de uma biblioteca pré-aprovada. Qualquer música que sua igreja queira cantar — antiga, recente, brasileira, traduzida, original da banda — funciona.'
+    a: 'Sim. Diferente de catálogos licenciados, a Levada não depende de uma biblioteca pré-aprovada. Qualquer música — worship, gospel, sertanejo, MPB, rock, indie, original da banda — funciona.'
   },
   {
     q: 'Funciona no celular?',
@@ -115,18 +115,18 @@ const FAQS = [
 const TESTIMONIALS = [
   {
     name: 'Lucas Ferreira',
-    role: 'Líder de louvor',
+    role: 'Ministro de louvor',
     text: 'Domingo flui agora. A equipe chega afinada porque ensaiou com stems de verdade, não com áudio original cheio de voz.',
   },
   {
     name: 'Ana Paula Costa',
-    role: 'Vocalista',
-    text: 'A levada do click brasileiro fez diferença real no ensaio. Antes a equipe tava sempre se ajustando ao metrônomo gringo. Agora é natural.',
+    role: 'Vocalista — banda gospel',
+    text: 'A levada do click brasileiro fez diferença real no ensaio. Antes a banda tava sempre se ajustando ao metrônomo gringo. Agora é natural.',
   },
   {
     name: 'Rodrigo Melo',
-    role: 'Tecladista',
-    text: 'Sábado o pastor muda uma música? Em alguns minutos tá separada. Domingo a gente não precisa improvisar.',
+    role: 'Tecladista e produtor',
+    text: 'Sábado o ministro de louvor muda uma música? Em alguns minutos tá separada. Domingo a gente não precisa improvisar.',
   },
 ]
 
@@ -152,15 +152,15 @@ export function LandingPage({ onEnter }: LandingPageProps) {
   }
 
   return (
-    <div className="brand-context min-h-screen overflow-x-hidden">
+    <div className="brand-context-dark min-h-screen overflow-x-hidden">
       {/* ── NAV ── */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-bone/90 backdrop-blur-xl border-b border-warm-200">
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-tinta/85 backdrop-blur-xl border-b border-tinta-border">
         <div className="max-w-6xl mx-auto px-5 sm:px-8 h-14 flex items-center justify-between">
-          <BrandLogo size="md" tone="dark" />
+          <BrandLogo size="md" tone="light" />
           <div className="flex items-center gap-2">
             <button
               onClick={goToApp}
-              className="hidden sm:block text-[13px] text-warm-600 hover:text-tinta px-3 py-1.5 transition-colors cursor-pointer font-medium"
+              className="hidden sm:block text-[13px] text-warm-400 hover:text-bone px-3 py-1.5 transition-colors cursor-pointer font-medium"
             >
               Entrar
             </button>
@@ -176,49 +176,51 @@ export function LandingPage({ onEnter }: LandingPageProps) {
 
       {/* ════════ HERO ════════ */}
       <section className="relative min-h-screen flex flex-col items-center justify-center px-5 sm:px-8 pt-28 pb-20 overflow-hidden">
-        {/* Atmosphere (subtle, warm) */}
+        {/* Atmosphere (warm dark) */}
         <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-[35%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[500px] rounded-full bg-terracota/[0.06] blur-[140px]" />
-          <div className="absolute bottom-0 right-1/4 w-[400px] h-[300px] rounded-full bg-musgo/[0.06] blur-[120px]" />
+          <div className="absolute top-[35%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[500px] rounded-full bg-terracota/[0.10] blur-[140px]" />
+          <div className="absolute bottom-0 right-1/4 w-[400px] h-[300px] rounded-full bg-musgo/[0.10] blur-[120px]" />
+          <div className="absolute inset-0 opacity-[0.025]" style={{ backgroundImage: 'linear-gradient(rgba(247,243,237,1) 1px,transparent 1px),linear-gradient(90deg,rgba(247,243,237,1) 1px,transparent 1px)', backgroundSize: '64px 64px' }} />
         </div>
 
         <div className="relative text-center max-w-4xl mx-auto">
-          {/* Visual Hammer floating above headline */}
+          {/* Visual Hammer */}
           <div className="mb-6 inline-flex items-baseline gap-3 select-none">
             <span className="text-warm-400 text-[14px] font-medium tracking-wide">pronto pro</span>
             <DomingoMark size="md" tone="terracota" />
           </div>
 
-          <h1 className="font-display font-semibold text-[clamp(2.4rem,7vw,5rem)] leading-[1.05] tracking-[-0.02em] text-tinta mb-6">
+          <h1 className="font-display font-semibold text-[clamp(2.4rem,7vw,5rem)] leading-[1.05] tracking-[-0.02em] text-bone mb-6">
             Stems pra qualquer música.
             <br />
-            Pra sua equipe chegar
+            Pra sua banda chegar
             <br />
             pronta no <span className="italic text-terracota">domingo</span>.
           </h1>
 
-          <p className="text-[clamp(.95rem,2vw,1.2rem)] text-warm-600 max-w-2xl mx-auto mb-10 leading-relaxed">
-            A gente sabe: domingo chega e três músicas do setlist não tão em catálogo nenhum.
-            A Levada resolve isso. Feita por quem toca, pra quem toca.
+          <p className="text-[clamp(.95rem,2vw,1.2rem)] text-warm-200 max-w-2xl mx-auto mb-10 leading-relaxed">
+            Sábado 23h alguém manda mudando o setlist. A Levada separa qualquer
+            música — worship, gospel, sertanejo, MPB, o que sua banda toca —
+            em stems prontos.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button
               onClick={goToApp}
-              className="inline-flex items-center justify-center gap-2.5 bg-terracota hover:bg-terracota-dark text-bone px-8 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-terracota/20"
+              className="inline-flex items-center justify-center gap-2.5 bg-terracota hover:bg-terracota-dark text-bone px-8 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-terracota/25"
             >
               Começa de graça
             </button>
             <a
               href="#como-funciona"
-              className="inline-flex items-center justify-center gap-2.5 bg-bone hover:bg-warm-100 border border-warm-200 text-tinta px-8 py-4 rounded-xl font-semibold text-[15px] transition-all cursor-pointer"
+              className="inline-flex items-center justify-center gap-2.5 bg-tinta-raised hover:bg-tinta-border border border-tinta-border text-bone px-8 py-4 rounded-xl font-semibold text-[15px] transition-all cursor-pointer"
             >
               Ver como funciona
             </a>
             {isInstallable && !isInstalled && (
               <button
                 onClick={promptInstall}
-                className="inline-flex items-center justify-center gap-2.5 bg-musgo-wash hover:bg-musgo-light/30 border border-musgo/30 text-musgo-dark px-8 py-4 rounded-xl font-semibold text-[15px] transition-all cursor-pointer"
+                className="inline-flex items-center justify-center gap-2.5 bg-musgo/15 hover:bg-musgo/25 border border-musgo/30 text-musgo-light px-8 py-4 rounded-xl font-semibold text-[15px] transition-all cursor-pointer"
               >
                 <Download size={17} /> Instalar app
               </button>
@@ -228,9 +230,9 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <p className="text-[12px] text-warm-400 mt-5">Sem cartão de crédito · Cancele quando quiser</p>
         </div>
 
-        {/* Product preview — DAW aesthetic embedded inside warm brand context */}
+        {/* Product preview — DAW preserved (dual aesthetic) */}
         <div className="relative mt-16 w-full max-w-3xl mx-auto">
-          <div className="rounded-2xl overflow-hidden border border-warm-200 shadow-2xl shadow-tinta/5">
+          <div className="rounded-2xl overflow-hidden border border-tinta-border shadow-2xl shadow-black/40">
             <DemoMixer />
           </div>
           <p className="text-center text-[11px] text-warm-400 mt-3 font-mono">o estúdio dentro da Levada</p>
@@ -238,19 +240,19 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       </section>
 
       {/* ════════ STAKES — problema + empatia ════════ */}
-      <section className="py-24 px-5 sm:px-8 bg-musgo-wash/40">
+      <section className="py-24 px-5 sm:px-8 bg-tinta-soft">
         <div className="max-w-3xl mx-auto">
-          <p className="text-warm-600 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o sábado que a gente conhece</p>
-          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-tinta mb-8 text-center">
+          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o sábado que a gente conhece</p>
+          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-8 text-center">
             Domingo não tem que ser correria.
           </h2>
-          <div className="bg-bone border border-warm-200 rounded-2xl p-7 sm:p-9 mb-8 leading-relaxed text-[15px] text-warm-600">
+          <div className="bg-tinta-raised border border-tinta-border rounded-2xl p-7 sm:p-9 mb-8 leading-relaxed text-[15px] text-warm-200">
             <p className="mb-4">
-              Sábado 23h o pastor manda mudando o setlist. Você passa a madrugada procurando multitracks
+              Sábado 23h o ministro de louvor manda mudando o setlist. Você passa a madrugada procurando multitracks
               em fórum. Domingo de manhã o som tá descosturado porque a equipe não teve tempo de ensaiar como precisa.
               Segunda você acorda exausto. Tudo de novo na próxima semana.
             </p>
-            <p className="text-tinta font-medium">
+            <p className="text-bone font-medium">
               A gente sabe — porque a gente também tocava assim.
             </p>
           </div>
@@ -260,24 +262,24 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       {/* ════════ GUIDE — 3 benefícios ════════ */}
       <section id="como-funciona" className="py-24 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto">
-          <p className="text-warm-600 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o que a Levada entrega</p>
-          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-tinta mb-16 text-center">
-            Construída por músicos de worship.
+          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o que a Levada entrega</p>
+          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-16 text-center">
+            Construída por quem toca.
             <br />
-            Pra músicos de worship.
+            Pra quem toca.
           </h2>
           <div className="grid sm:grid-cols-3 gap-6">
             {[
               { title: 'Qualquer música, separada', desc: 'Sobe MP3, WAV ou link. A Levada separa em voz, instrumentos e pads em alguns minutos.' },
-              { title: 'Worship brasileiro, de verdade', desc: 'Estrutura de culto BR reconhecida. Click com levada nacional. Em português.' },
-              { title: 'Sem catálogo travando', desc: 'Sua igreja escolhe a música. Você prepara. Sem esperar release, sem licença gringa.' },
+              { title: 'Qualquer ritmo, qualquer banda', desc: 'Worship, gospel, sertanejo, MPB, rock, indie — funciona com o que sua banda toca.' },
+              { title: 'Sem catálogo travando', desc: 'Você escolhe a música. A Levada prepara. Sem esperar release, sem licença gringa.' },
             ].map((item, i) => (
-              <div key={i} className="bg-bone border border-warm-200 rounded-2xl p-7 hover:border-terracota/40 transition-colors">
-                <div className="w-9 h-9 rounded-lg bg-terracota/10 border border-terracota/20 flex items-center justify-center mb-5">
+              <div key={i} className="bg-tinta-raised border border-tinta-border rounded-2xl p-7 hover:border-terracota/40 transition-colors">
+                <div className="w-9 h-9 rounded-lg bg-terracota/15 border border-terracota/25 flex items-center justify-center mb-5">
                   <span className="text-terracota font-display font-semibold text-[15px]">{i + 1}</span>
                 </div>
-                <h3 className="font-display font-semibold text-[20px] text-tinta mb-3 leading-tight">{item.title}</h3>
-                <p className="text-[14px] text-warm-600 leading-relaxed">{item.desc}</p>
+                <h3 className="font-display font-semibold text-[20px] text-bone mb-3 leading-tight">{item.title}</h3>
+                <p className="text-[14px] text-warm-200 leading-relaxed">{item.desc}</p>
               </div>
             ))}
           </div>
@@ -285,10 +287,10 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       </section>
 
       {/* ════════ PLAN — 3 passos ════════ */}
-      <section className="py-24 px-5 sm:px-8 bg-terracota-wash/30">
+      <section className="py-24 px-5 sm:px-8 bg-tinta-soft">
         <div className="max-w-4xl mx-auto">
-          <p className="text-warm-600 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o domingo em 3 passos</p>
-          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-tinta mb-16 text-center">
+          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o domingo em 3 passos</p>
+          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-16 text-center">
             Como você chega pronto.
           </h2>
 
@@ -296,15 +298,15 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             {[
               { n: '1', title: 'Sobe a música', desc: 'Qualquer formato — MP3, WAV, ou link do YouTube.' },
               { n: '2', title: 'A Levada separa tudo', desc: 'Voz, guitarra, baixo, bateria, piano, pads — em alguns minutos.' },
-              { n: '3', title: 'Sua equipe chega pronta no domingo', desc: 'Stems, click, voice guide, seções marcadas (intro, verso, refrão, ponte, altar call) — na mão.' },
+              { n: '3', title: 'Sua banda chega pronta no domingo', desc: 'Stems, click, voice guide, seções marcadas (intro, verso, refrão, ponte) — na mão.' },
             ].map(step => (
-              <div key={step.n} className="bg-bone border border-warm-200 rounded-2xl p-6 sm:p-8 flex items-start gap-6">
+              <div key={step.n} className="bg-tinta-raised border border-tinta-border rounded-2xl p-6 sm:p-8 flex items-start gap-6">
                 <div className="w-14 h-14 rounded-full bg-terracota text-bone flex items-center justify-center font-display font-semibold text-[24px] shrink-0">
                   {step.n}
                 </div>
                 <div className="flex-1 pt-1">
-                  <h3 className="font-display font-semibold text-[22px] text-tinta mb-2 leading-tight">{step.title}</h3>
-                  <p className="text-[15px] text-warm-600 leading-relaxed">{step.desc}</p>
+                  <h3 className="font-display font-semibold text-[22px] text-bone mb-2 leading-tight">{step.title}</h3>
+                  <p className="text-[15px] text-warm-200 leading-relaxed">{step.desc}</p>
                 </div>
               </div>
             ))}
@@ -313,7 +315,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <div className="text-center mt-12">
             <button
               onClick={goToApp}
-              className="inline-flex items-center justify-center gap-2.5 bg-terracota hover:bg-terracota-dark text-bone px-8 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-terracota/20"
+              className="inline-flex items-center justify-center gap-2.5 bg-terracota hover:bg-terracota-dark text-bone px-8 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-terracota/25"
             >
               Sobe sua primeira música <ArrowRight size={17} />
             </button>
@@ -324,18 +326,18 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       {/* ════════ AUDIENCE — pra quem é ════════ */}
       <section className="py-24 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto">
-          <p className="text-warm-600 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">feito pra</p>
-          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-tinta mb-16 text-center">
-            Quem toca todo domingo.
+          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">feito pra</p>
+          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-16 text-center">
+            Quem toca todo fim de semana.
           </h2>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {AUDIENCE.map((a, i) => (
-              <div key={i} className="group bg-bone border border-warm-200 hover:border-musgo/40 rounded-2xl p-6 transition-colors">
-                <div className="w-10 h-10 rounded-xl bg-musgo/10 group-hover:bg-musgo/20 flex items-center justify-center mb-4 transition-colors">
-                  <a.icon size={20} className="text-musgo" />
+              <div key={i} className="group bg-tinta-raised border border-tinta-border hover:border-musgo/50 rounded-2xl p-6 transition-colors">
+                <div className="w-10 h-10 rounded-xl bg-musgo/15 group-hover:bg-musgo/25 flex items-center justify-center mb-4 transition-colors">
+                  <a.icon size={20} className="text-musgo-light" />
                 </div>
-                <h4 className="font-display font-semibold text-[16px] text-tinta mb-2">{a.title}</h4>
-                <p className="text-[13px] text-warm-600 leading-relaxed">{a.desc}</p>
+                <h4 className="font-display font-semibold text-[16px] text-bone mb-2">{a.title}</h4>
+                <p className="text-[13px] text-warm-200 leading-relaxed">{a.desc}</p>
               </div>
             ))}
           </div>
@@ -343,24 +345,24 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       </section>
 
       {/* ════════ SUCCESS — transformação ════════ */}
-      <section className="py-24 px-5 sm:px-8 bg-musgo-wash/40">
+      <section className="py-24 px-5 sm:px-8 bg-tinta-soft">
         <div className="max-w-3xl mx-auto">
-          <p className="text-warm-600 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">seu próximo domingo, diferente</p>
-          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-tinta mb-12 text-center">
+          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">seu próximo domingo, diferente</p>
+          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-12 text-center">
             Sexta separa. Sábado ensaia.
             <br />
-            <span className="italic text-musgo-dark">Domingo flui.</span>
+            <span className="italic text-musgo-light">Domingo flui.</span>
           </h2>
-          <div className="bg-bone border border-warm-200 rounded-2xl p-7 sm:p-9 space-y-4 text-[15px] leading-relaxed">
+          <div className="bg-tinta-raised border border-tinta-border rounded-2xl p-7 sm:p-9 space-y-4 text-[15px] leading-relaxed">
             {[
-              { day: 'Sexta', text: 'Pastor manda setlist. Você sobe na Levada.' },
+              { day: 'Sexta', text: 'Ministro de louvor manda o setlist. Você sobe na Levada.' },
               { day: 'Sábado', text: 'Tudo separado. Equipe baixou. Ensaio fluiu.' },
-              { day: 'Domingo', text: 'Equipe travada mas leve. Ministração fluindo.' },
+              { day: 'Domingo', text: 'Banda travada mas leve. Ministração fluindo.' },
               { day: 'Segunda', text: '"Vamo pra próxima."' },
             ].map((row, i) => (
-              <div key={i} className="flex items-baseline gap-5 pb-4 last:pb-0 border-b border-warm-100 last:border-0">
-                <span className="font-display font-semibold text-tinta text-[18px] w-24 shrink-0">{row.day}</span>
-                <span className="text-warm-600">{row.text}</span>
+              <div key={i} className="flex items-baseline gap-5 pb-4 last:pb-0 border-b border-tinta-border last:border-0">
+                <span className="font-display font-semibold text-bone text-[18px] w-24 shrink-0">{row.day}</span>
+                <span className="text-warm-200">{row.text}</span>
               </div>
             ))}
           </div>
@@ -370,19 +372,19 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       {/* ════════ TESTIMONIALS ════════ */}
       <section className="py-24 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto">
-          <p className="text-warm-600 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">equipes que já chegam prontas</p>
-          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-tinta mb-16 text-center">
+          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">bandas que já chegam prontas</p>
+          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-16 text-center">
             Histórias de domingo.
           </h2>
           <div className="grid sm:grid-cols-3 gap-5">
             {TESTIMONIALS.map((r, i) => (
-              <div key={i} className="bg-bone border border-warm-200 rounded-2xl p-7">
+              <div key={i} className="bg-tinta-raised border border-tinta-border rounded-2xl p-7">
                 <div className="flex gap-0.5 mb-4">
                   {[1, 2, 3, 4, 5].map(j => <Star key={j} size={12} className="text-terracota fill-terracota" />)}
                 </div>
-                <p className="text-[14px] text-warm-600 leading-relaxed mb-5">"{r.text}"</p>
+                <p className="text-[14px] text-warm-200 leading-relaxed mb-5">"{r.text}"</p>
                 <div>
-                  <div className="font-display font-semibold text-[15px] text-tinta">{r.name}</div>
+                  <div className="font-display font-semibold text-[15px] text-bone">{r.name}</div>
                   <div className="text-[12px] text-warm-400">{r.role}</div>
                 </div>
               </div>
@@ -392,30 +394,30 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       </section>
 
       {/* ════════ PRICING ════════ */}
-      <section className="py-24 px-5 sm:px-8 bg-terracota-wash/30" id="precos">
+      <section className="py-24 px-5 sm:px-8 bg-tinta-soft" id="precos">
         <div className="max-w-5xl mx-auto">
-          <p className="text-warm-600 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">planos</p>
-          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-tinta mb-3 text-center">
-            Planos pra sua equipe chegar pronta no domingo.
+          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">planos</p>
+          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-3 text-center">
+            Planos pra sua banda chegar pronta no domingo.
           </h2>
-          <p className="text-warm-600 text-[15px] mb-10 text-center">
+          <p className="text-warm-200 text-[15px] mb-10 text-center">
             Sem fidelidade, sem pegadinha. Começa de graça e cresce quando precisar.
           </p>
 
           <div className="flex justify-center mb-12">
-            <div className="inline-flex items-center gap-1 bg-bone border border-warm-200 rounded-xl p-1">
+            <div className="inline-flex items-center gap-1 bg-tinta-raised border border-tinta-border rounded-xl p-1">
               <button
                 onClick={() => setBilling('monthly')}
-                className={`px-5 py-2 rounded-lg text-[13px] font-semibold transition-all cursor-pointer ${billing === 'monthly' ? 'bg-tinta text-bone' : 'text-warm-600 hover:text-tinta'}`}
+                className={`px-5 py-2 rounded-lg text-[13px] font-semibold transition-all cursor-pointer ${billing === 'monthly' ? 'bg-bone text-tinta' : 'text-warm-200 hover:text-bone'}`}
               >
                 Mensal
               </button>
               <button
                 onClick={() => setBilling('annual')}
-                className={`px-5 py-2 rounded-lg text-[13px] font-semibold transition-all cursor-pointer flex items-center gap-2 ${billing === 'annual' ? 'bg-tinta text-bone' : 'text-warm-600 hover:text-tinta'}`}
+                className={`px-5 py-2 rounded-lg text-[13px] font-semibold transition-all cursor-pointer flex items-center gap-2 ${billing === 'annual' ? 'bg-bone text-tinta' : 'text-warm-200 hover:text-bone'}`}
               >
                 Anual
-                <span className="text-[10px] font-bold text-musgo-dark bg-musgo-wash px-1.5 py-0.5 rounded">−25%</span>
+                <span className="text-[10px] font-bold text-musgo-light bg-musgo/20 px-1.5 py-0.5 rounded">−25%</span>
               </button>
             </div>
           </div>
@@ -427,8 +429,8 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                 <div
                   key={plan.id}
                   className={`relative rounded-2xl p-7 flex flex-col border-2 ${plan.highlight
-                      ? 'border-terracota bg-bone'
-                      : 'border-warm-200 bg-bone'
+                      ? 'border-terracota bg-tinta-raised'
+                      : 'border-tinta-border bg-tinta-raised'
                     }`}
                 >
                   {plan.badge && (
@@ -437,21 +439,21 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                     </div>
                   )}
                   <div className="mb-5">
-                    <h3 className="font-display font-semibold text-[22px] text-tinta mb-1">{plan.name}</h3>
-                    <p className="text-warm-600 text-[13px]">{plan.desc}</p>
+                    <h3 className="font-display font-semibold text-[22px] text-bone mb-1">{plan.name}</h3>
+                    <p className="text-warm-400 text-[13px]">{plan.desc}</p>
                   </div>
                   <div className="mb-7">
                     {price === 0 ? (
-                      <div className="font-display font-semibold text-[40px] text-tinta">Grátis</div>
+                      <div className="font-display font-semibold text-[40px] text-bone">Grátis</div>
                     ) : (
                       <>
                         <div className="flex items-baseline gap-1">
-                          <span className="text-[14px] text-warm-600">R$</span>
-                          <span className="font-display font-semibold text-[40px] text-tinta leading-none">{price.toFixed(2).replace('.', ',')}</span>
-                          <span className="text-warm-600 text-[14px]">/mês</span>
+                          <span className="text-[14px] text-warm-400">R$</span>
+                          <span className="font-display font-semibold text-[40px] text-bone leading-none">{price.toFixed(2).replace('.', ',')}</span>
+                          <span className="text-warm-400 text-[14px]">/mês</span>
                         </div>
                         {billing === 'annual' && (
-                          <p className="text-[11px] text-musgo-dark mt-2">R$ {(price * 12).toFixed(2).replace('.', ',')} cobrado anualmente</p>
+                          <p className="text-[11px] text-musgo-light mt-2">R$ {(price * 12).toFixed(2).replace('.', ',')} cobrado anualmente</p>
                         )}
                         {billing === 'monthly' && (
                           <p className="text-[11px] text-warm-400 mt-2">ou R$ {plan.annual.toFixed(2).replace('.', ',')}/mês no anual</p>
@@ -461,8 +463,8 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                   </div>
                   <ul className="space-y-2.5 mb-8 flex-1">
                     {plan.features.map((feat, j) => (
-                      <li key={j} className="flex items-start gap-2.5 text-[13px] text-warm-600">
-                        <Check size={13} className={`mt-0.5 shrink-0 ${plan.highlight ? 'text-terracota' : 'text-musgo'}`} />
+                      <li key={j} className="flex items-start gap-2.5 text-[13px] text-warm-200">
+                        <Check size={13} className={`mt-0.5 shrink-0 ${plan.highlight ? 'text-terracota' : 'text-musgo-light'}`} />
                         {feat}
                       </li>
                     ))}
@@ -470,8 +472,8 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                   <button
                     onClick={() => goToCheckout(plan.id, price)}
                     className={`w-full py-3 rounded-xl text-[13px] font-semibold transition-all cursor-pointer ${plan.highlight
-                        ? 'bg-terracota hover:bg-terracota-dark text-bone shadow-lg shadow-terracota/20'
-                        : 'bg-bone hover:bg-warm-100 border border-warm-200 text-tinta'
+                        ? 'bg-terracota hover:bg-terracota-dark text-bone shadow-lg shadow-terracota/25'
+                        : 'bg-tinta hover:bg-tinta-border border border-tinta-border text-bone'
                       }`}
                   >
                     {plan.cta}
@@ -487,21 +489,21 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       {/* ════════ FAQ ════════ */}
       <section className="py-24 px-5 sm:px-8">
         <div className="max-w-2xl mx-auto">
-          <h2 className="font-display font-semibold text-[clamp(1.6rem,4vw,2.4rem)] text-tinta text-center mb-12">
+          <h2 className="font-display font-semibold text-[clamp(1.6rem,4vw,2.4rem)] text-bone text-center mb-12">
             Perguntas frequentes
           </h2>
           <div className="space-y-2.5">
             {FAQS.map((faq, i) => (
-              <div key={i} className="border border-warm-200 rounded-xl overflow-hidden bg-bone">
+              <div key={i} className="border border-tinta-border rounded-xl overflow-hidden bg-tinta-raised">
                 <button
                   onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                  className="w-full flex items-center justify-between px-5 py-4 text-left cursor-pointer hover:bg-warm-100 transition-colors"
+                  className="w-full flex items-center justify-between px-5 py-4 text-left cursor-pointer hover:bg-tinta-border/40 transition-colors"
                 >
-                  <span className="font-semibold text-[14px] text-tinta pr-4">{faq.q}</span>
+                  <span className="font-semibold text-[14px] text-bone pr-4">{faq.q}</span>
                   <ChevronDown size={15} className={`text-warm-400 shrink-0 transition-transform ${openFaq === i ? 'rotate-180' : ''}`} />
                 </button>
                 {openFaq === i && (
-                  <div className="px-5 pb-5 pt-4 text-[13px] text-warm-600 leading-relaxed border-t border-warm-100">
+                  <div className="px-5 pb-5 pt-4 text-[13px] text-warm-200 leading-relaxed border-t border-tinta-border">
                     {faq.a}
                   </div>
                 )}
@@ -514,25 +516,25 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       {/* ════════ CTA FINAL ════════ */}
       <section className="py-24 px-5 sm:px-8">
         <div className="max-w-2xl mx-auto text-center">
-          <div className="relative bg-terracota-wash border-2 border-terracota/30 rounded-3xl p-12 sm:p-16 overflow-hidden">
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-72 h-36 bg-terracota/10 blur-3xl rounded-full pointer-events-none" />
+          <div className="relative bg-tinta-raised border-2 border-terracota/40 rounded-3xl p-12 sm:p-16 overflow-hidden">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-72 h-36 bg-terracota/15 blur-3xl rounded-full pointer-events-none" />
             <div className="relative">
               <div className="inline-flex items-baseline gap-3 mb-6">
-                <span className="text-warm-600 text-[14px] font-medium tracking-wide">pronto pro</span>
+                <span className="text-warm-400 text-[14px] font-medium tracking-wide">pronto pro</span>
                 <DomingoMark size="lg" tone="terracota" />
-                <span className="text-warm-600 text-[14px] font-medium tracking-wide">?</span>
+                <span className="text-warm-400 text-[14px] font-medium tracking-wide">?</span>
               </div>
-              <h2 className="font-display font-semibold text-[clamp(1.8rem,5vw,2.8rem)] text-tinta mb-4 leading-tight">
+              <h2 className="font-display font-semibold text-[clamp(1.8rem,5vw,2.8rem)] text-bone mb-4 leading-tight">
                 Sua próxima semana,
                 <br />
                 já fica diferente.
               </h2>
-              <p className="text-warm-600 text-[15px] leading-relaxed mb-8">
+              <p className="text-warm-200 text-[15px] leading-relaxed mb-8">
                 Começa de graça. Sobe sua primeira música em menos de 2 minutos.
               </p>
               <button
                 onClick={goToApp}
-                className="inline-flex items-center gap-2.5 bg-terracota hover:bg-terracota-dark text-bone px-9 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-terracota/20"
+                className="inline-flex items-center gap-2.5 bg-terracota hover:bg-terracota-dark text-bone px-9 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-terracota/25"
               >
                 Começa de graça <ArrowRight size={18} />
               </button>
@@ -543,16 +545,16 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       </section>
 
       {/* ════════ FOOTER ════════ */}
-      <footer className="border-t border-warm-200 py-10 px-5 sm:px-8">
+      <footer className="border-t border-tinta-border py-10 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-5">
           <div className="flex items-center gap-3">
-            <LevadaWordmark size="sm" tone="dark" />
+            <LevadaWordmark size="sm" tone="light" />
             <span className="text-warm-400 text-[11px]">a plataforma do domingo</span>
           </div>
-          <div className="flex items-center gap-6 text-[12px] text-warm-600">
-            <button onClick={goToApp} className="hover:text-tinta transition-colors cursor-pointer">Entrar</button>
-            <button onClick={goToApp} className="hover:text-tinta transition-colors cursor-pointer">Criar conta</button>
-            <a href="#precos" className="hover:text-tinta transition-colors">Planos</a>
+          <div className="flex items-center gap-6 text-[12px] text-warm-200">
+            <button onClick={goToApp} className="hover:text-bone transition-colors cursor-pointer">Entrar</button>
+            <button onClick={goToApp} className="hover:text-bone transition-colors cursor-pointer">Criar conta</button>
+            <a href="#precos" className="hover:text-bone transition-colors">Planos</a>
           </div>
           <p className="text-[11px] text-warm-400">© {new Date().getFullYear()} Levada · Feito por quem toca.</p>
         </div>

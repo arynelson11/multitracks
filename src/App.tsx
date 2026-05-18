@@ -340,16 +340,16 @@ export default function App() {
           <Music size={32} className="text-primary relative z-10" />
           <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-primary animate-led"></div>
         </div>
-        <h1 className="text-2xl sm:text-4xl font-black tracking-[0.15em] uppercase mb-1 text-center text-white">PLAYBACK STUDIO</h1>
+        <h1 className="font-display font-semibold text-3xl sm:text-5xl tracking-tight mb-1 text-center text-white" style={{ letterSpacing: '-0.02em' }}>Levada</h1>
         <p className="text-text-muted mb-10 text-center text-xs sm:text-sm font-mono tracking-widest uppercase">
-          Motor Multitracks Profissional
+          A plataforma do domingo
         </p>
         <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md">
           <button onClick={() => { setForceShowSplash(false); if (!isReady) initEngine(); }}
             className="hw-btn flex-1 text-primary hover:text-white px-6 py-5 rounded-xl text-sm uppercase tracking-widest flex flex-col items-center gap-3 cursor-pointer">
             {isRestoring ? <Loader2 className="animate-spin" size={28} /> : <Play size={28} fill="currentColor" />}
-            <span className="font-black">Playback Studio</span>
-            <span className="text-[10px] font-mono text-text-muted normal-case tracking-wide">Motor multitracks profissional</span>
+            <span className="font-black">Multitracks</span>
+            <span className="text-[10px] font-mono text-text-muted normal-case tracking-wide">Motor de playback profissional</span>
           </button>
           <button onClick={() => setIsSeparatorOpen(true)}
             className="hw-btn flex-1 text-purple-400 hover:text-white px-6 py-5 rounded-xl text-sm uppercase tracking-widest flex flex-col items-center gap-3 cursor-pointer border-purple-900/40 hover:border-purple-500/40">
