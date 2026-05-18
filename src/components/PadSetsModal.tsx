@@ -23,6 +23,7 @@ interface PadSetsModalProps {
 export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmin }: PadSetsModalProps) {
     const [sets, setSets] = useState<CatalogEntry[]>([]);
     const [loading, setLoading] = useState(false);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editName, setEditName] = useState('');
     const [editDesc, setEditDesc] = useState('');
@@ -31,10 +32,18 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
     useEffect(() => {
         if (!isOpen) return;
         setLoading(true);
+        setLoadError(null);
         fetch('/api/pad-catalog')
-            .then(r => r.ok ? r.json() : { sets: [] })
-            .then((data: { sets: CatalogEntry[] }) => setSets(data.sets || []))
-            .catch(() => setSets([]))
+            .then(async r => {
+                if (r.ok) return r.json() as Promise<{ sets: CatalogEntry[] }>;
+                const body = await r.json().catch(() => ({})) as { error?: string; code?: string };
+                throw new Error(`${r.status} ${body.code || body.error || 'erro desconhecido'}`);
+            })
+            .then(data => setSets(data.sets || []))
+            .catch(err => {
+                setSets([]);
+                setLoadError(err instanceof Error ? err.message : 'erro de rede');
+            })
             .finally(() => setLoading(false));
     }, [isOpen]);
 
@@ -116,7 +125,17 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
                         </div>
                     )}
 
-                    {!loading && sets.length === 0 && (
+                    {!loading && loadError && (
+                        <div className="flex flex-col items-center justify-center py-6 gap-2 text-accent-red">
+                            <Layers size={24} className="opacity-50" />
+                            <p className="text-[10px] font-mono uppercase tracking-wider text-center">
+                                Falha ao carregar catálogo.<br />
+                                <span className="opacity-70 normal-case">{loadError}</span>
+                            </p>
+                        </div>
+                    )}
+
+                    {!loading && !loadError && sets.length === 0 && (
                         <div className="flex flex-col items-center justify-center py-8 gap-2 text-text-muted">
                             <Layers size={24} className="opacity-30" />
                             <p className="text-[10px] font-mono uppercase tracking-wider text-center">

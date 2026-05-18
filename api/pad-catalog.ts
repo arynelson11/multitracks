@@ -46,9 +46,23 @@ async function readCatalog(): Promise<PadCatalog> {
         const cmd = new GetObjectCommand({ Bucket: R2_BUCKET_NAME, Key: CATALOG_KEY });
         const r = await S3.send(cmd);
         const body = await r.Body?.transformToString();
-        if (body) return JSON.parse(body);
-    } catch { /* arquivo ainda não existe */ }
-    return { sets: [] };
+        if (!body) return { sets: [] };
+        try {
+            return JSON.parse(body);
+        } catch (parseErr: any) {
+            console.error('[pad-catalog] catalog JSON parse failed:', parseErr?.message);
+            throw new Error('CATALOG_CORRUPT');
+        }
+    } catch (err: any) {
+        // NoSuchKey = catálogo ainda não criado → comportamento legítimo (vazio).
+        const code = err?.name || err?.Code || err?.$metadata?.httpStatusCode;
+        if (err?.name === 'NoSuchKey' || err?.Code === 'NoSuchKey' || code === 404) {
+            return { sets: [] };
+        }
+        // Qualquer outra falha (credenciais, bucket errado, rede) → rethrow para virar 502 no handler.
+        console.error('[pad-catalog] R2 read failed:', { code, message: err?.message });
+        throw err;
+    }
 }
 
 async function writeCatalog(catalog: PadCatalog): Promise<void> {
@@ -74,8 +88,14 @@ export default async function handler(req: any, res: any) {
         try {
             return res.status(200).json(await readCatalog());
         } catch (e: any) {
-            console.error('[pad-catalog] read failed:', e?.message);
-            return res.status(500).json({ error: 'Failed to read catalog' });
+            const code = e?.name || e?.Code || 'UnknownError';
+            console.error('[pad-catalog] read failed:', code, e?.message);
+            // 502 = upstream (R2) falhou — distingue de "vazio" no front.
+            return res.status(502).json({
+                error: 'Failed to read catalog',
+                code,
+                bucket: R2_BUCKET_NAME,
+            });
         }
     }
 

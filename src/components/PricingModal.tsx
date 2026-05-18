@@ -73,19 +73,24 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
                 })
             });
 
-            const data = await response.json().catch(() => ({ error: 'Resposta do servidor não é um JSON válido' }));
-            
-            if (response.ok && data.url) {
-                // Redireciona para o checkout do AbacatePay
+            const rawText = await response.text();
+            let data: any = null;
+            try { data = rawText ? JSON.parse(rawText) : null; } catch { /* não-JSON */ }
+
+            if (response.ok && data?.url) {
                 window.location.href = data.url;
-            } else {
-                console.error('Erro no checkout:', data);
-                const detailMsg = data.details ? (typeof data.details === 'object' ? JSON.stringify(data.details) : data.details) : '';
-                alert(`Erro ao gerar checkout: ${data.error || response.statusText || 'Erro desconhecido'}${detailMsg ? '\n\nDetalhes: ' + detailMsg : ''}`);
+                return;
             }
+
+            console.error('[checkout] HTTP', response.status, response.statusText, '\nbody:', rawText);
+            const baseMsg = data?.error || response.statusText || `HTTP ${response.status}`;
+            const detail = data?.details
+                ? (typeof data.details === 'object' ? JSON.stringify(data.details, null, 2) : String(data.details))
+                : (!data && rawText ? rawText.slice(0, 500) : '');
+            alert(`Erro ao gerar checkout (HTTP ${response.status}): ${baseMsg}${detail ? '\n\nDetalhes:\n' + detail : ''}`);
         } catch (error) {
             console.error('Erro de rede ou processamento:', error);
-            alert('Não foi possível conectar com o servidor. Verifique sua conexão ou tente novamente mais tarde.');
+            alert(`Não foi possível conectar com o servidor.\n${error instanceof Error ? error.message : ''}`);
         } finally {
             setLoadingPlan(null);
         }
