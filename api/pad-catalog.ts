@@ -1,6 +1,6 @@
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { verifyAdmin } from './_lib/auth';
-import { applyCors } from './_lib/cors';
+import { verifyAdmin } from './_lib/auth.js';
+import { applyCors } from './_lib/cors.js';
 
 const R2_ACCOUNT_ID        = process.env.VITE_R2_ACCOUNT_ID || process.env.R2_ACCOUNT_ID;
 const R2_ACCESS_KEY_ID     = process.env.R2_ACCESS_KEY_ID;

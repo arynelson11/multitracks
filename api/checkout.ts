@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import axios from 'axios';
-import { applyCors } from './_lib/cors';
+import { applyCors } from './_lib/cors.js';
 
 function parseBody(req: any): Record<string, any> {
   // Em runtimes recentes da Vercel, req.body pode chegar como string, Buffer ou undefined.

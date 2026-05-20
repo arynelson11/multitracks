@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import Replicate from 'replicate';
-import { verifyUser } from './_lib/auth';
-import { applyCors } from './_lib/cors';
+import { verifyUser } from './_lib/auth.js';
+import { applyCors } from './_lib/cors.js';
 
 const PREDICTION_ID_RE = /^[a-z0-9]{20,}$/i;
 

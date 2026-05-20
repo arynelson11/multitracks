@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import axios from 'axios';
-import { applyCors } from './_lib/cors';
+import { applyCors } from './_lib/cors.js';
 
 export default async function handler(req: any, res: any) {
   applyCors(req, res, 'GET,OPTIONS');

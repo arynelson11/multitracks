@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
-import { verifyUser } from './_lib/auth';
-import { applyCors } from './_lib/cors';
+import { verifyUser } from './_lib/auth.js';
+import { applyCors } from './_lib/cors.js';
 
 const supabaseUrl     = process.env.VITE_SUPABASE_URL;
 const serviceRoleKey  = process.env.SUPABASE_SERVICE_ROLE_KEY;

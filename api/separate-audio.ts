@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import Replicate from 'replicate';
 import { createClient } from '@supabase/supabase-js';
-import { verifyUser } from './_lib/auth';
-import { applyCors } from './_lib/cors';
+import { verifyUser } from './_lib/auth.js';
+import { applyCors } from './_lib/cors.js';
 
 const DEMUCS_VERSION = '25a173108cff36ef9f80f854c162d01df9e6528be175794b81158fa03836d953';
 
