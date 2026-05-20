@@ -1,9 +1,10 @@
-# LEVADA — Brand Book
+# PLAYBACK STUDIO — Brand Book
 
-> **Versão:** 1.0
-> **Data:** 2026-05-17
-> **Status:** Fase 2 do rebrand concluída. Pronto para implementação visual.
-> **Autoria estratégica:** Brand Squad — Neumeier, Naming Strategist, Domain Scout, Archetype Consultant, Al Ries, Donald Miller.
+> **Versão:** 2.0
+> **Data:** 2026-05-20
+> **Status:** Marca consolidada sob "Playback Studio" (nome travado pelo domínio `.com.br`). Paleta laranja vibrant + dark cool. Pronto para handoff de design.
+> **Autoria estratégica:** Brand Squad — Neumeier, Domain Scout, Archetype Consultant, Al Ries, Donald Miller.
+> **Mudanças vs v1.0:** Nome ancorado em "Playback Studio" (Levada descartada). Paleta migrada de terracota/musgo/bone-light para laranja/dark cool. Plans renomeados Livre/Pro/Studio.
 
 ---
 
@@ -25,10 +26,10 @@
 
 ## 1. Resumo Executivo
 
-**Levada** é a plataforma do domingo — uma ferramenta brasileira que separa qualquer música em stems prontos para que equipes de worship cheguem preparadas no domingo, sem catálogo travando.
+**Playback Studio** é a plataforma do domingo — uma ferramenta brasileira que separa qualquer música em stems prontos para que equipes de worship cheguem preparadas no domingo, sem catálogo travando.
 
 **Em três linhas:**
-> Levada é a primeira plataforma feita para fazer o domingo funcionar — pra equipes brasileiras de worship que tocam de verdade. Construída por quem toca. Para quem toca.
+> Playback Studio é a primeira plataforma feita para fazer o domingo funcionar — pra equipes brasileiras de worship que tocam de verdade. Construída por quem toca. Para quem toca.
 
 **O que a marca representa:**
 - **Posição:** "Feito por quem toca."
@@ -60,28 +61,28 @@
 
 (EN: "Built by the people who play.")
 
-Esta é a frase central. Reforça que Levada é construída POR músicos de worship PARA músicos de worship — não por engenheiros que nunca pisaram numa igreja num domingo.
+Esta é a frase central. Reforça que Playback Studio é construída POR músicos de worship PARA músicos de worship — não por engenheiros que nunca pisaram numa igreja num domingo.
 
 ### 2.3 Categoria a Possuir (Al Ries)
 
-> **Levada é "a plataforma do domingo."**
+> **Playback Studio é "a plataforma do domingo."**
 
 Não é "worship tech" (genérico — território disputado por MultiTracks, Moises, ProPresenter, Loop Community).
 Não é "AI music separator" (=Moises).
 Não é "multitracks catalog" (=MultiTracks).
 
-**É a plataforma do domingo brasileiro.** Uma categoria nova, criada pra Levada ser a primeira.
+**É a plataforma do domingo brasileiro.** Uma categoria nova, criada pro Playback Studio ser a primeira.
 
 **Positioning statement formal:**
-> "Levada é a primeira plataforma feita para fazer o domingo funcionar — pra equipes brasileiras de worship que tocam de verdade."
+> "Playback Studio é a primeira plataforma feita para fazer o domingo funcionar — pra equipes brasileiras de worship que tocam de verdade."
 
-**Estratégia de guerra (Clausewitz/Ries):** Flanqueamento. Levada não ataca Moises em IA, não ataca MultiTracks em catálogo. Flanqueia pelo eixo não-contestado: **o DIA**.
+**Estratégia de guerra (Clausewitz/Ries):** Flanqueamento. Playback Studio não ataca Moises em IA, não ataca MultiTracks em catálogo. Flanqueia pelo eixo não-contestado: **o DIA**.
 
 ### 2.4 Verbal Nail — A Palavra a Possuir
 
 > # DOMINGO
 
-Toda copy deve martelar essa palavra. Repetição com foco é o que constrói posição na mente. Volvo repetiu "safety" por 40 anos. FedEx repetiu "overnight" por décadas. Levada repete **domingo**.
+Toda copy deve martelar essa palavra. Repetição com foco é o que constrói posição na mente. Volvo repetiu "safety" por 40 anos. FedEx repetiu "overnight" por décadas. Playback Studio repete **domingo**.
 
 ### 2.5 Arquétipo (Archetype Consultant)
 
@@ -135,22 +136,31 @@ A marca existe pra fazer essa transição.
 
 ## 3. Identidade Verbal
 
-### 3.1 Nome — LEVADA
+### 3.1 Nome — PLAYBACK STUDIO
 
-**Pronúncia:** le-VÁ-da (3 sílabas, acento na 2ª)
+**Pronúncia:** PLAY-bek STÚ-dio (4 sílabas, anglicismo já incorporado no PT-BR musical)
 
-**Origem:** Palavra-código de músicos brasileiros. Significa "a forma/groove como uma música é tocada". Slang interno da tribo musical brasileira.
+**Origem:** Descritivo direto da função — "estúdio de playback". Termo já familiar a músicos brasileiros (qualquer músico de igreja entende "playback" como track de fundo). "Studio" indica craft profissional.
 
-**Por que é estrategicamente o nome certo:**
-- Quem TOCA reconhece a palavra. Quem NÃO toca, não. O nome filtra a tribo.
-- Carrega cultura musical brasileira (Choro, Samba, Forró todos têm "levada").
-- Foneticamente sólido: consoantes firmes (L-V-D), vogal aberta /Á/ no centro.
-- Não usa termos técnicos de áudio (não soa Adobe/Studio).
-- Não tem referência religiosa explícita (Bethel-mature aesthetic).
+**Por que esse nome se sustenta:**
+- **Descritivo na primeira leitura.** Outsider entende em 2 segundos o que a ferramenta faz. Reduz fricção de venda B2C.
+- **Domínio `.com.br` registrado.** Ativo distributivo travado — SEO acumulado, defensibilidade local, sem squatter pra negociar.
+- **Composto de duas palavras-tribo.** "Playback" = familiaridade do músico de worship com track de apoio. "Studio" = ambição de craft/qualidade profissional.
+- **Bilingue por construção.** Funciona em PT-BR e EN sem tradução. Path de internacionalização aberto (Fase 3+).
+- **Carrega expectativa de competência.** "Studio" eleva o brand acima de "ferramenta" — sinaliza domínio técnico.
+
+**Trade-off conhecido (e por que foi aceito):**
+Nome descritivo é mais difícil de registrar como marca exclusiva (palavras genéricas têm proteção menor). Compensa-se com:
+- Visual Hammer "Domingo." (verbal nail registrável independente)
+- Pareamento visual exclusivo (wordmark + paleta laranja/dark = composição registrável)
+- Categoria possuída ("plataforma do domingo") como diferencial defensável
+
+**Tratamento visual do nome:** "Playback" em peso semibold + "Studio" em italic peso medium na cor laranja (#FF6B35). A diferenciação tipográfica do "Studio" cria mark distintiva mesmo sob palavras descritivas.
 
 **Status legal:**
-- ⏳ **PENDÊNCIA CRÍTICA:** Busca INPI nas classes 9, 41, 42 ainda NÃO foi executada. É o único blocker que pode forçar rename.
-- ✅ Domínios registrados: `levada.app` (primário) + `uselevada.com.br` (fallback)
+- ✅ Domínio primário registrado: `playbackstudio.com.br`
+- ⏳ **PENDÊNCIA:** Busca INPI nas classes 9 (apps), 41 (educação/cultura), 42 (tecnologia) ainda NÃO executada. Risco menor que Levada (descritivos têm escrutínio diferente), mas necessário antes de gastar com design system completo.
+- ⏳ **PENDÊNCIA:** Verificar disponibilidade de `playbackstudio.com` e `playbackstudio.app` (defensivos).
 
 ### 3.2 Tagline Architecture — Sistema de 3 Camadas
 
@@ -170,7 +180,7 @@ A marca existe pra fazer essa transição.
 ### 3.3 One-liner — Brand Promise
 
 **Versão completa (22 palavras):**
-> A Levada separa qualquer música em stems prontos — pra sua equipe de worship chegar no domingo com tudo na mão.
+> O Playback Studio separa qualquer música em stems prontos — pra sua equipe de worship chegar no domingo com tudo na mão.
 
 **Versão curta (12 palavras):**
 > Stems pra qualquer música, pra sua equipe chegar pronta no domingo.
@@ -214,7 +224,7 @@ Desire: chegar no domingo com a equipe pronta.
 
 **Villain personificado:** O CATÁLOGO (ver 2.6).
 
-#### Guide — Levada
+#### Guide — Playback Studio
 
 **Empathy ("a gente sabe como é"):**
 > "Domingo chegando, setlist na mão, três das músicas não tão em catálogo nenhum. A gente também tava no seu lugar — por isso construímos isso."
@@ -230,7 +240,7 @@ Desire: chegar no domingo com a equipe pronta.
 1. Sobe a música
    (qualquer formato: MP3, WAV, link)
 
-2. A Levada separa tudo
+2. O Playback Studio separa tudo
    (voz, guitarra, baixo, bateria, piano, pads — em minutos)
 
 3. Sua equipe chega pronta no domingo
@@ -269,7 +279,7 @@ SEGUNDA     — equipe sente que "domingo passou de novo".
 #### Success (transformação)
 
 ```
-SEXTA       — pastor manda setlist. Você sobe na Levada.
+SEXTA       — pastor manda setlist. Você sobe no Playback Studio.
 SÁBADO      — todas separadas. Equipe baixou. Ensaio fluiu.
 DOMINGO 07h — chega calmo. Sound check rápido.
 DOMINGO 09h — culto: equipe travada mas leve. Ministração fluindo.
@@ -284,7 +294,7 @@ SEGUNDA     — não tem hangover. Tem "vamo pra próxima."
 
 ### 3.5 Antes / Depois — A Jornada do Herói
 
-| Eixo | ANTES (sem Levada) | DEPOIS (com Levada) |
+| Eixo | ANTES (sem Playback Studio) | DEPOIS (com Playback Studio) |
 |------|--------------------|--------------------|
 | **Identity** | "Eu sou o cara que arruma os problemas técnicos" | "Eu sou músico de worship. Eu lidero." |
 | **Capability** | Improvisa com áudio original + voz junto. Click ruim. | Sobe qualquer música, recebe tudo separado, manda pra equipe |
@@ -302,7 +312,7 @@ Use esses 5 pares em landing, social, content.
 
 **Decisão travada pelo founder:**
 
-> **A palavra "Domingo" escrita à mão, em terracota sobre fundo musgo.**
+> **A palavra "Domingo" escrita à mão, em laranja vibrant (#FF6B35) sobre fundo dark cool (#121214).**
 
 **Direções específicas pro time de design:**
 
@@ -329,62 +339,76 @@ Use esses 5 pares em landing, social, content.
 
 ### 4.2 Paleta de Cores
 
-**Inspiração:** Aesop × Splice × Bethel × Linear. Premium-craft + software-clean + sacred-warmth.
+**Inspiração:** Spotify × SoundCloud × Linear × MPC vintage. Software-clean + musical-energy + dark professional.
+
+**Modo dominante:** **DARK por padrão.** Tanto marketing quanto produto operam sob fundo dark cool — light mode é exceção, não regra.
 
 #### Cores primárias
 
 | Nome | HEX | RGB | Uso |
 |------|-----|-----|-----|
-| **Terracota** | `#B85C38` | 184, 92, 56 | Cor primária. CTAs, ações principais, destaques de marca, Visual Hammer |
-| **Musgo** | `#5B6B47` | 91, 107, 71 | Cor secundária. Backgrounds escuros, links, headings em contraste, success states |
-| **Bone** | `#F7F3ED` | 247, 243, 237 | Background principal claro. Warm off-white, nunca branco puro. |
-| **Tinta** | `#1F1B16` | 31, 27, 22 | Texto principal. Preto morno (nunca #000), preserva calor da marca. |
+| **Laranja** | `#FF6B35` | 255, 107, 53 | Cor primária. CTAs, ações principais, destaques de marca, Visual Hammer, italic "Studio" no wordmark |
+| **Tinta** | `#121214` | 18, 18, 20 | Background principal (dark cool). Nunca usar #000 puro. |
+| **Bone** | `#E8E8EC` | 232, 232, 236 | Texto principal sobre dark. Nunca usar #FFF puro. |
+| **Musgo** | `#5B6B47` | 91, 107, 71 | Cor secundária. Success states, accents naturais, contraste sutil. |
 
 #### Cores secundárias (variações)
 
 | Nome | HEX | Uso |
 |------|-----|-----|
-| Terracota claro | `#D8956C` | Hover de CTAs, ilustrações leves |
-| Terracota escuro | `#8A3F22` | Pressed states, ênfase profunda |
-| Terracota wash | `#F4E3D7` | Backgrounds quentes alternativos, banners suaves |
-| Musgo claro | `#8B9B6E` | Backgrounds verdes alternativos, links em hover |
-| Musgo escuro | `#3D4A2F` | Modo escuro, footers, áreas de descanso visual |
-| Musgo wash | `#E6E8DC` | Banners frios alternativos |
+| Laranja claro | `#FF9268` | Hover de CTAs, ilustrações leves, micro-accents |
+| Laranja escuro | `#CC4A1F` | Pressed states, ênfase profunda, error semantics |
+| Laranja wash | `#FFE5DC` | Backgrounds light raros (se modo claro for usado) |
+| Musgo claro | `#8B9B6E` | Success em hover, links accent secundário |
+| Musgo escuro | `#3D4A2F` | Borders de success cards, áreas de descanso visual |
+| Musgo wash | `#E6E8DC` | Banner success light (raro) |
 
-#### Neutros
+#### Surfaces (sistema dark)
 
 | Nome | HEX | Uso |
 |------|-----|-----|
-| Gray warm 600 | `#6B6055` | Texto secundário, captions |
-| Gray warm 400 | `#9C9385` | Texto desabilitado, hints |
-| Gray warm 200 | `#C9C2B5` | Bordas, separadores |
-| Gray warm 100 | `#E6E0D4` | Backgrounds neutros, cards |
+| Tinta | `#121214` | BG principal (página, app shell) |
+| Tinta raised | `#1A1A1E` | Surface raised — cards, panels, dropdowns |
+| Tinta soft | `#0E0E10` | Surface mais profundo — modal backdrop, overlay |
+| Tinta border | `#2A2A2E` | Borders sutis entre surfaces |
+
+#### Neutros (texto e UI)
+
+| Nome | HEX | Uso |
+|------|-----|-----|
+| Bone | `#E8E8EC` | Texto principal sobre dark |
+| Warm 100 | `#D4D4D8` | Texto secundário forte |
+| Warm 200 | `#A1A1AA` | Texto body secundário |
+| Warm 400 | `#71717A` | Texto tertiary, captions, hints |
+| Warm 600 | `#52525B` | Texto desabilitado, divider labels |
 
 #### Cores funcionais (operacionais)
 
 | Estado | HEX | Notas |
 |--------|-----|-------|
 | **Success** | `#5B6B47` (musgo) | Reusa a paleta — natural |
-| **Warning** | `#C9912A` | Âmbar quente, harmoniza com terracota |
-| **Error** | `#A4452B` | Terracota escuro — sentimento de "atenção", não de "ruptura" |
+| **Warning** | `#F5A524` | Âmbar — atenção sem competir com laranja primário |
+| **Error** | `#EF4444` | Vermelho clássico — erro inequívoco (distinto de laranja primário) |
 | **Info** | `#5C6E7E` | Slate frio para contrastar |
 
 #### Regras de uso
 
-- **NUNCA usar preto puro** (`#000000`). Sempre Tinta (`#1F1B16`).
-- **NUNCA usar branco puro** (`#FFFFFF`). Sempre Bone (`#F7F3ED`).
-- Terracota é cor de AÇÃO. Não usar em corpo de texto.
-- Musgo é cor de DESCANSO/NATUREZA. Não usar em alertas.
-- Razão Bone:Tinta:Terracota:Musgo numa página típica: 70% : 20% : 5% : 5%.
-- Toda combinação deve passar contraste WCAG AA mínimo (4.5:1) pra acessibilidade.
+- **NUNCA usar preto puro** (`#000000`). Sempre Tinta (`#121214`).
+- **NUNCA usar branco puro** (`#FFFFFF`). Sempre Bone (`#E8E8EC`).
+- **Laranja é cor de AÇÃO.** Não usar em corpo de texto. Reservar para CTAs, Visual Hammer, italic "Studio" no wordmark, accents intencionais.
+- **Musgo é cor de NATUREZA/SUCCESS.** Não usar em alertas urgentes.
+- **Proporção típica numa landing:** Tinta (BG) 60% / Tinta-raised (cards) 25% / Bone (texto) 10% / Laranja (accents) 3% / Musgo (success/secondary) 2%.
+- **Contraste WCAG AA mínimo** (4.5:1) em toda combinação de texto.
 
-#### Modo escuro
+#### Modo claro (uso raro)
+
+Light mode existe apenas em contextos específicos (PDFs imprimíveis, alguns emails, light theme opcional do usuário). Quando usado:
 
 | Função | Cor |
 |--------|-----|
-| Background | Musgo escuro `#3D4A2F` ou Tinta `#1F1B16` |
-| Texto | Bone `#F7F3ED` |
-| Accent | Terracota claro `#D8956C` (para legibilidade em fundo escuro) |
+| Background | Laranja wash `#FFE5DC` ou Bone `#F7F3ED` |
+| Texto | Tinta `#121214` |
+| Accent | Laranja `#FF6B35` (mesmo hex que dark mode) |
 
 ### 4.3 Tipografia
 
@@ -446,52 +470,87 @@ Se o desenho custom não estiver pronto pro primeiro lançamento, use temporaria
 
 ### 4.4 Sistema de Logo
 
-**Decisão de direção:** **Wordmark-led**, com possíveis lockups secundários.
+**Decisão de direção:** **Mark + Wordmark.** Símbolo (PlayMark) funciona sozinho em espaços pequenos. Wordmark dual-weight carrega o nome em contextos amplos. Lockup horizontal une os dois pra header padrão.
+
+#### Mark (símbolo da marca) — PlayMark
+
+**Conceito travado:** Triângulo de play com 3 cortes horizontais sugerindo separação de stems (4 bandas: voz/baixo/bateria/outros). Cor laranja `#FF6B35` sobre fundo dark.
+
+**Por que esse símbolo:**
+- O triângulo de play é universal — qualquer pessoa lê "ação" / "início" instantaneamente
+- Os cortes horizontais codificam o produto: "a gente separa qualquer música em stems"
+- Funciona em 16px (favicon) com 2 cortes simplificados, em 64px+ com 3 cortes detalhados
+- Single-color sobre transparente — funciona em qualquer background
+- Não usa wordmark — o símbolo é defensável como mark independente
+
+**Especificações:**
+- viewBox 64×64
+- Triângulo: pontos em (14, 12) → (52, 32) → (14, 52). Inclinação dinâmica, não isóceles.
+- Cortes: 3 lines horizontais (y=22, y=32, y=42), stroke-width 4, em mask transparente
+- Favicon (≤16px): 2 cortes (y=27, y=37), stroke-width 5 pra legibilidade
+- Cor: `currentColor` (default laranja via class `text-laranja`)
+- `stroke-linejoin="round"` no triângulo (warmth sutil nos cantos)
+
+**Variações em código:** `src/components/brand/PlayMark.tsx` (5 sizes: favicon, sm, md, lg, xl).
+**Variações em SVG raw:** `public/logo.svg` (padrão), `public/favicon.svg` (favicon-optimized).
+
+#### Wordmark principal
 
 #### Wordmark principal
 
 ```
-LEVADA
+Playback Studio
 ```
 
-- Tipografia base: derivação custom de Fraunces (não usar fonte pura — refinar curvas)
-- Cor primária: Tinta sobre Bone
-- Cor alternativa: Bone sobre Musgo escuro (modo escuro)
-- Versão accent: Terracota sobre Bone (uso especial, evitar overload)
+**Tratamento tipográfico exato:**
+- **"Playback"**: Fraunces, peso 600 (semibold), letter-spacing −0.02em, na cor Bone (#E8E8EC) em dark mode
+- **"Studio"**: Fraunces, peso 500 (medium), **italic**, na cor Laranja (#FF6B35) — sempre
+- Gap entre palavras: 6-8px (proporcional ao tamanho)
+- Baseline alinhado (não shift vertical)
+
+**Por que a italic em laranja?** Cria mark distinct mesmo sob duas palavras descritivas. "Studio" é onde a marca planta bandeira — é a única palavra registrável como signatura visual exclusiva. O italic + cor sinaliza craft profissional (música em italic = expressão, fluidez) e separa visualmente do "Playback" funcional.
+
+**Versões:**
+- **Default (dark mode):** Playback em Bone + Studio em Laranja sobre Tinta
+- **Light mode:** Playback em Tinta + Studio em Laranja sobre Bone
+- **Monocromática:** Playback + Studio mesma cor (Bone ou Tinta) — uso restrito a contextos B&W obrigatórios. Manter o italic do Studio.
 
 #### Lockup com Visual Hammer (peça assinada)
 
 ```
-        ╭─────────╮
-        │ levada  │   ← wordmark
-        │ Domingo │   ← Visual Hammer handwritten
-        ╰─────────╯
+┌─────────────────────────────┐
+│                             │
+│   Playback Studio           │  ← wordmark
+│         domingo.            │  ← Visual Hammer handwritten em Laranja
+│                             │
+└─────────────────────────────┘
 ```
 
-Lockup vertical com a palavra "Domingo" à mão abaixo do wordmark. Para uso em:
+Lockup vertical com a palavra "domingo." à mão abaixo/ao lado do wordmark, sempre em laranja. Para uso em:
 - Hero da landing
-- Open Graph (1200x630)
+- Open Graph (1200×630)
 - Brindes físicos
 - Camiseta de evento
+- Loading screen do app (sutil, animada uma vez)
 
 #### Variações necessárias
 
 | Variação | Quando usar | Especificação |
 |----------|-------------|---------------|
-| **Full wordmark** | Padrão (header, footer, materiais oficiais) | LEVADA |
-| **Compact** | App icon, favicon, espaços ≤ 32px | L (ou um símbolo derivado) |
-| **Lockup com Domingo** | Marketing, identidade primária | Wordmark + Visual Hammer |
-| **Reversed** | Sobre fundo escuro | Bone sobre Musgo escuro |
-| **Monocromática** | Documentos B&W, print | Tinta sobre Bone (ou inversa) |
+| **Full wordmark** | Padrão (header, footer, materiais oficiais) | Playback + Studio italic laranja |
+| **Compact** | App icon, favicon, espaços ≤ 32px | "**PS**" monograma (P em Fraunces + S italic laranja) |
+| **Lockup com Domingo** | Marketing, identidade primária | Wordmark + Visual Hammer "domingo." |
+| **Inverted** | Sobre fundo claro raro | Tinta + Studio laranja sobre Bone |
+| **Monocromática** | Documentos B&W, print | Tudo Tinta ou tudo Bone, italic preservado |
 
 #### Especificações técnicas
 
-- **Clear space:** mínimo 1× altura da letra "E" ao redor do logo
+- **Clear space:** mínimo 1× altura da letra "P" ao redor do logo
 - **Tamanho mínimo:**
-  - Digital: 80px de largura para wordmark
-  - Print: 25mm de largura
-  - Favicon: 32×32 / 16×16 (versão "L" compacta)
-- **Formatos a entregar:** SVG (master), PNG (1x/2x/3x), AI source, PDF (print)
+  - Digital: 120px de largura para wordmark (acomoda 2 palavras legíveis)
+  - Print: 35mm de largura
+  - Favicon: 32×32 / 16×16 (versão monograma "PS")
+- **Formatos a entregar pro design:** SVG (master), PNG (1x/2x/3x), AI source, PDF (print), versão "PS" monograma para app icon/favicon
 
 #### Não fazer
 
@@ -513,7 +572,7 @@ Lockup vertical com a palavra "Domingo" à mão abaixo do wordmark. Para uso em:
 
 **Subjects (o que fotografar):**
 - ✅ Mãos no traste do violão / na corda do baixo / nas teclas / no kit de bateria
-- ✅ Tela de laptop com a Levada aberta, sobre amplificador ou caixa de som
+- ✅ Tela de laptop com o Playback Studio aberta, sobre amplificador ou caixa de som
 - ✅ Cabos sendo conectados, in-ear sendo colocado
 - ✅ Marcações em uma partitura impressa
 - ✅ Reflexos sutis de luz natural em superfícies de madeira (instrumento, mesa, banco de igreja)
@@ -523,28 +582,29 @@ Lockup vertical com a palavra "Domingo" à mão abaixo do wordmark. Para uso em:
 - ❌ Stocks de gente sorrindo com fones de ouvido (genérico tech-bro)
 
 **Cor das fotos:**
-- Tonalidade quente, ligeiramente dessaturada
-- Sombras puxadas pro musgo
-- Highlights em terracota natural (madeira clara, pele com luz quente)
-- Edit em LR/PS: 'kodak portra 400' ou similar — film-look orgânico
+- Tonalidade contrastada, sombras profundas (combina com dark UI)
+- Highlights quentes — luz natural âmbar/laranja em superfícies de madeira, metal de instrumento, pele
+- Sombras puxadas pro azul-escuro/musgo (não preto puro)
+- Edit em LR/PS: 'cinema noir' ou 'film noir warm' — moody mas legível
+- Imagem deve "sentar" sobre fundo dark sem brilho excessivo (evitar high-key)
 
 **Origem:**
 - **Fase 1 (lançamento):** banco curado de stock photos brasileiras (Unsplash BR, fotógrafos cristãos brasileiros) + 1-2 ensaios fotográficos próprios.
-- **Fase 2 (3-6 meses):** fotografia comissionada com equipes reais de igrejas BR usando Levada.
+- **Fase 2 (3-6 meses):** fotografia comissionada com equipes reais de igrejas BR usando Playback Studio.
 
 ### 4.6 Iconografia
 
 **Estilo:** Linhas, peso médio, leve handcraft.
 
-- **Biblioteca recomendada base:** [Lucide](https://lucide.dev/) (open source, customizável) — pode ser refinada pra tom Levada
+- **Biblioteca recomendada base:** [Lucide](https://lucide.dev/) (open source, customizável) — pode ser refinada pra tom Playback Studio
 - **Peso de linha:** 1.5px standard, 2px em tamanhos pequenos
 - **Cantos:** levemente arredondados (não geométricos puros)
-- **Cor:** Tinta sobre Bone (padrão), Bone sobre Musgo escuro (modo escuro)
+- **Cor:** Bone (#E8E8EC) sobre Tinta (#121214) por default. Laranja apenas em ícones de ação primária (mesma regra dos CTAs).
 - **Tamanhos:** 16px / 20px / 24px / 32px
 
 **Não fazer:**
 - ❌ Ícones geométricos corporate (Material Design puro)
-- ❌ Ícones com fill colorido cheio (terracota + musgo dentro de ícones)
+- ❌ Ícones com fill colorido (cores chapadas dentro de ícones — manter line-art)
 - ❌ Emojis em UI
 - ❌ Ilustrações "cool startup" (estilo Notion blob people)
 
@@ -555,7 +615,7 @@ Lockup vertical com a palavra "Domingo" à mão abaixo do wordmark. Para uso em:
 - **Easing padrão:** `cubic-bezier(0.4, 0, 0.2, 1)` (ease-out suave)
 - **Duração padrão:** 200-300ms para micro-interações, 400-600ms para transições de página
 - **Spring physics:** apenas em momentos especiais (success states, primeira separação concluída) — nunca em hover
-- **Loading states:** sutis. Pulse lento em cor musgo. Sem spinners agressivos.
+- **Loading states:** sutis. Pulse lento em laranja com baixa opacidade (10-15%) ou barra fina laranja sobre tinta-raised. Sem spinners agressivos.
 - **Não fazer:**
   - ❌ Bounces exuberantes
   - ❌ Parallax dramático
@@ -613,7 +673,7 @@ Anote essa lista. É o filtro decisional pra qualquer texto que sair da marca:
 Use estas em diferentes contextos. Repetição com foco constrói posição na mente:
 
 1. "Pra sua equipe chegar pronta no **domingo**."
-2. "**Domingo** chega calmo quando a semana foi resolvida pela Levada."
+2. "**Domingo** chega calmo quando a semana foi resolvida pelo Playback Studio."
 3. "Pronto pro **domingo**." (slogan curto, footer, botões)
 4. "Seu **domingo** começa diferente esta semana."
 5. "Sexta separa. Sábado ensaia. **Domingo** flui."
@@ -633,7 +693,7 @@ Use estas em diferentes contextos. Repetição com foco constrói posição na m
 - Sem foto do founder em página "Sobre"
 - Sem rosto em posts de Instagram
 - Sem story de fundador em destaque na home
-- Comunicação assinada como "Levada" (não como pessoa) na maioria dos contextos
+- Comunicação assinada como "Playback Studio" (não como pessoa) na maioria dos contextos
 - Exceção: email de boas-vindas pode ser assinado pelo founder pelo primeiro nome (mais íntimo, sem rosto)
 - Página "Sobre" usa narrativa coletiva: "construído por músicos brasileiros que tocam todo domingo, igual você"
 
@@ -641,21 +701,21 @@ Use estas em diferentes contextos. Repetição com foco constrói posição na m
 
 ## 6. Copy Operacional dos Touchpoints
 
-### 6.1 Landing Page — `levada.app`
+### 6.1 Landing Page — `playbackstudio.com.br`
 
 #### Header (sempre visível)
 
 ```
-[logo Levada]                                       [Entrar] [Começa de graça]
+[logo Playback Studio]                                       [Entrar] [Começa de graça]
 ```
 
 #### Hero Section
 
 **H1:**
-> Stems pra qualquer música. Pra sua equipe chegar pronta no domingo.
+> Stems pra qualquer música. Pra sua banda chegar pronta no domingo.
 
 **Subheadline:**
-> A gente sabe: domingo chega e três músicas do setlist não tão em catálogo nenhum. A Levada resolve isso. Feita por quem toca, pra quem toca.
+> A gente sabe: domingo chega e três músicas do setlist não tão em catálogo nenhum. O Playback Studio resolve isso. Feita por quem toca, pra quem toca.
 
 **CTAs:**
 - Primário: **[Começa de graça]**
@@ -677,7 +737,7 @@ Use estas em diferentes contextos. Repetição com foco constrói posição na m
 
 ```
 🎵  Qualquer música, separada
-    Sobe MP3, WAV ou link. A Levada separa em
+    Sobe MP3, WAV ou link. O Playback Studio separa em
     voz, instrumentos e pads em alguns minutos.
 
 🇧🇷  Worship brasileiro, de verdade
@@ -715,7 +775,7 @@ ensaiou com stems de verdade."
 1. Sobe a música
    Qualquer formato — MP3, WAV, ou link.
 
-2. A Levada separa tudo
+2. O Playback Studio separa tudo
    Voz, guitarra, baixo, bateria, piano, pads —
    em alguns minutos.
 
@@ -734,7 +794,7 @@ ensaiou com stems de verdade."
 **Visual narrativa em timeline:**
 
 ```
-SEXTA  →  Pastor manda setlist. Você sobe na Levada.
+SEXTA  →  Pastor manda setlist. Você sobe no Playback Studio.
 SÁBADO →  Tudo separado. Equipe baixou. Ensaio fluiu.
 DOMINGO → Equipe travada mas leve. Ministração fluindo.
 SEGUNDA → "Vamo pra próxima."
@@ -755,15 +815,15 @@ ou
 #### Footer
 
 - Links: Como funciona | Planos | Pack do Domingo | Sobre | Suporte
-- Social: Instagram, YouTube, TikTok (todos @levadaapp)
-- Tagline: "A plataforma do domingo. Feita por quem toca."
+- Social: Instagram, YouTube, TikTok (handles a confirmar — sugeridos: @playbackstudio.br, @playbackstudio, @usaplaybackstudio)
+- Tagline: "A plataforma do domingo. Feito por quem toca."
 - Legal: termos, privacidade, CNPJ
 
 ### 6.2 Email de Boas-Vindas
 
 ```
-ASSUNTO: Bem-vindo à Levada — sua próxima semana já fica diferente
-DE: [Founder] <ary@levada.app>
+ASSUNTO: Bem-vindo ao Playback Studio — sua próxima semana já fica diferente
+DE: [Founder] <ary@playbackstudio.com.br>
 PRÉVIA: A gente também tá no domingo. 3 coisas pra fazer hoje.
 
 ────────────────────────────────────────────
@@ -772,7 +832,7 @@ Oi [nome],
 
 Bem-vindo, mano.
 
-A gente construiu a Levada porque a gente também toca.
+A gente construiu o Playback Studio porque a gente também toca.
 Equipe de worship, todo domingo, mesma rotina sua:
 setlist na sexta, pastor mudando música no sábado,
 segunda começa tudo de novo.
@@ -781,7 +841,7 @@ Aqui dentro, três coisas que valem mais que qualquer
 tour de onboarding:
 
   1. Sobe uma música hoje — qualquer uma.
-     A Levada separa em alguns minutos.
+     O Playback Studio separa em alguns minutos.
 
   2. Manda pra sua equipe — link direto, do jeito
      que vocês já ensaiam.
@@ -795,7 +855,7 @@ Se travar em algo, responde esse email.
 Quem responde é gente que também tá no palco no domingo.
 
 — [Founder]
-   Levada
+   Playback Studio
 
 P.S. Tem um Pack do Domingo: pads e clicks
      que toda equipe BR usa. Grátis.
@@ -804,38 +864,33 @@ P.S. Tem um Pack do Domingo: pads e clicks
 ────────────────────────────────────────────
 ```
 
-### 6.3 Email de Transição — Playback Studio → Levada
+### 6.3 Email de Anúncio — Refinamento Visual (opcional)
+
+> **Nota:** Se houver base de usuários ativos do visual antigo do Playback Studio, comunicar a evolução visual sem alardear ruptura — não é rebrand de nome, é refinamento de identidade (paleta laranja/dark + wordmark refinado).
 
 ```
-ASSUNTO: A gente mudou de nome. Aqui é o porquê.
-DE: <oi@levada.app>
-PRÉVIA: Playback Studio virou Levada. O que muda pra você.
+ASSUNTO: O Playback Studio ficou mais a cara do que você toca.
+DE: <oi@playbackstudio.com.br>
+PRÉVIA: Mesma plataforma, visual novo. Domingo continua o motivo.
 
 ────────────────────────────────────────────
 
 Oi [nome],
 
-A Playback Studio virou Levada.
+A gente refinou o visual do Playback Studio.
 
-Não é só nome novo. É marca nova, posição clara,
-e a mesma equipe construindo: ferramenta feita por
-músico de worship, pra músico de worship.
+Nada mudou no que importa:
+- Mesma conta, mesma equipe construindo
+- Suas separações, suas músicas, seu plano
+- Mesma promessa: domingo na sua mão
 
-O que muda pra você:
-- Tudo que você já tem fica.
-- Mesmo plano, mesma conta, mesmas músicas.
-- Acesso agora em levada.app
+Só ficou com mais cara do que a gente faz:
+músico fazendo ferramenta pra músico.
 
-O que muda pra gente:
-- Foco total em sua equipe brasileira.
-- Tudo, todo domingo, na sua mão.
+Entra e dá uma olhada quando quiser:
+playbackstudio.com.br
 
-Sua próxima semana já fica diferente.
-
-— Levada
-
-P.S. Se quiser entender mais sobre a mudança,
-     [link pro post no blog].
+— Playback Studio
 
 ────────────────────────────────────────────
 ```
@@ -856,7 +911,7 @@ CTA:  [Bora]
 ```
 H1:   Sobe a música que sua equipe vai tocar domingo.
 
-Sub:  MP3, WAV ou link do YouTube. A Levada separa
+Sub:  MP3, WAV ou link do YouTube. O Playback Studio separa
       tudo — voz, guitarra, baixo, bateria, piano,
       pads — em alguns minutos.
 
@@ -881,7 +936,7 @@ CTA:  [Ver minha primeira separação]
 **Empty state — "Você ainda não subiu nenhuma música"**
 ```
 Sem música por aqui ainda.
-Quando você subir, a Levada separa tudo.
+Quando você subir, o Playback Studio separa tudo.
 
 [Subir primeira música]
 ```
@@ -915,7 +970,7 @@ Se persistir, fala com a gente que resolvemos junto.
 
 **Error — Música inválida / formato não suportado**
 ```
-A Levada não conseguiu ler essa música.
+O Playback Studio não conseguiu ler essa música.
 Verifica se o arquivo é MP3, WAV ou link válido.
 
 [Tentar outro arquivo]
@@ -923,7 +978,7 @@ Verifica se o arquivo é MP3, WAV ou link válido.
 
 **Error — Limite do plano atingido**
 ```
-Você já usou suas separações deste mês no plano Levada Livre.
+Você já usou suas separações deste mês no plano Livre.
 
 Pra continuar separando sem limite, dá uma olhada
 nos outros planos.
@@ -940,7 +995,7 @@ nos outros planos.
  e você acaba ensaiando com áudio original cheio de
  vocal e tudo junto?
 
- A Levada separa qualquer música — voz, instrumentos,
+ O Playback Studio separa qualquer música — voz, instrumentos,
  pads — em stems prontos. Foi construída por músicos
  de worship brasileiros pra equipes brasileiras.
 
@@ -952,19 +1007,19 @@ nos outros planos.
 
 ### 6.7 Social Media — Tom e padrão
 
-**Instagram (@levadaapp):**
+**Instagram (handle a confirmar — sugestões: @playbackstudio.br, @playbackstudioapp, @usaplaybackstudio):**
 - Posts: foto/visual com legenda curta (até 200 chars)
 - Tom: 60% educacional (dicas pra equipe BR), 20% comunidade (histórias), 20% produto
 - Hashtags principais: #louvor #adoração #worshipbr #equipedelouvor #ministériodelouvor
 - Stories: dicas técnicas rápidas, sneak peeks, behind-the-scenes da construção do produto
 
-**YouTube (@levadaapp):**
-- Tutoriais por músicos reais de worship usando Levada
+**YouTube (handle a confirmar):**
+- Tutoriais por músicos reais de worship usando Playback Studio
 - Sessões de ensaio gravadas
-- "Como tocar [música popular]" — usando a Levada como ferramenta de apoio
+- "Como tocar [música popular]" — usando o Playback Studio como ferramenta de apoio
 - Format: 5-10 minutos, casual mas competente
 
-**TikTok (@levadaapp):**
+**TikTok (handle a confirmar):**
 - Reels rápidos de "antes/depois" de uma música separada
 - Dicas técnicas em 60 segundos
 - Reações a clipes de adoração com análise técnica
@@ -977,67 +1032,78 @@ nos outros planos.
 
 ### 7.1 Estrutura de Planos
 
-**Decisão travada pelo founder:** caracterizar planos com vocabulário da tribo.
+**Decisão travada pelo founder:** nomes simples, "Studio" no top-tier ecoa o nome da marca, "Livre" mantém personalidade BR.
 
-| Plano | Nome | Posicionamento | Público |
-|-------|------|---------------|---------|
-| **Free** | Levada Livre | Pra você experimentar e ver se funciona | Músicos individuais, equipes pequenas testando |
-| **Essencial mensal** | Levada Toca | Pra equipe que toca todo domingo | Equipes ativas, ministérios regulares |
-| **Essencial anual** | Levada Toca (anual) | Compromisso anual com desconto | Mesma audiência, compromisso firmado |
-| **Pro mensal** | Levada Tudo | Pra equipe que precisa de tudo, sem limite | Igrejas grandes, equipes profissionais, múltiplos cultos |
-| **Pro anual** | Levada Tudo (anual) | Tudo + 2 meses grátis | Mesma audiência, compromisso firmado |
+| Plano | Nome | Preço (mensal/anual) | Posicionamento | Público |
+|-------|------|----------------------|----------------|---------|
+| **Free** | **Livre** | R$ 0 | Pra você experimentar e ver se funciona | Músicos individuais, bandas pequenas testando |
+| **Essencial** | **Pro** | R$ 49,90 / R$ 39,90 | Pra banda que toca todo fim de semana | Equipes ativas, ministérios regulares |
+| **Premium** | **Studio** | R$ 99,90 / R$ 79,90 | Pra quem leva isso a sério | Igrejas grandes, equipes profissionais, múltiplos cultos/semana |
+
+**Hierarquia conceitual:**
+- **Livre** = ponto de entrada, descomprometido. Não é "Free" em inglês — é convite cordial em PT-BR.
+- **Pro** = compromisso semanal. Marca onde a maioria das equipes deve aterrissar.
+- **Studio** = nome eco do produto. Aspiracional. Diz: "você joga no mesmo nível do estúdio profissional".
 
 ### 7.2 Copy da Pricing Page
 
-**H1:** Planos pra sua equipe chegar pronta no domingo.
+**H1:** Planos pra sua banda chegar pronta no domingo.
 
 **Sub:** Sem fidelidade, sem pegadinha. Começa de graça e cresce quando precisar.
+
+**Toggle Mensal | Anual** (default = Anual com badge "−25%")
 
 **Cards (esquerda → direita):**
 
 ```
-LEVADA LIVRE
+LIVRE
 Grátis pra sempre
 ─────────────────
 • 5 separações por mês
 • Stems padrão
-• Acesso à biblioteca
-  de clicks BR
+• Acesso à biblioteca de clicks
+• Mixer básico multicanal
 
-Pra experimentar.
+Pra experimentar e ver se funciona.
 
 [Começar grátis]
 ```
 
 ```
-LEVADA TOCA  ⭐ Mais popular
-R$ XX/mês ou R$ XXX/ano
+PRO  ⭐ Mais escolhido
+R$ 39,90/mês (anual)
+ou R$ 49,90/mês
 ─────────────────
 • 50 separações por mês
 • Stems de qualidade estendida
 • Pads ambiente completos
 • Voice guide auto-detector
+• Click com levada brasileira
+• Auto-detecção de seções (worship)
+• Biblioteca em nuvem
 • Suporte por email
 
-Pra equipe que toca todo domingo.
+Pra equipe que toca toda semana.
 
-[Assinar Toca]
+[Assinar Pro]
 ```
 
 ```
-LEVADA TUDO
-R$ XX/mês ou R$ XXX/ano
+STUDIO
+R$ 79,90/mês (anual)
+ou R$ 99,90/mês
 ─────────────────
 • Separações ilimitadas
 • Qualidade máxima
-• Tudo da Levada Toca +
+• Tudo do Pro +
 • Prioridade no processamento
-• Suporte prioritário
+• Múltiplos repertórios simultâneos
 • Acesso antecipado a features
+• Suporte prioritário
 
-Pra quem leva isso à sério.
+Pra quem leva isso a sério.
 
-[Assinar Tudo]
+[Assinar Studio]
 ```
 
 ⚠️ **Não usar urgência fake** (countdown, "últimas vagas"). Caregiver não manipula.
@@ -1047,7 +1113,7 @@ Pra quem leva isso à sério.
 
 ## 8. Regras da Marca — O Que Proteger
 
-### 8.1 Lei do Sacrifício — O Que a Levada NÃO Pode Ter
+### 8.1 Lei do Sacrifício — O Que o Playback Studio NÃO Pode Ter
 
 Aplicação: filtro de produto, marketing, hiring.
 
@@ -1065,15 +1131,17 @@ Aplicação: filtro de produto, marketing, hiring.
 A pressão pra estender vai chegar. Anota:
 
 ```
-❌ Levada Studio       (editor de áudio — Adobe territory)
-❌ Levada Live         (performance ao vivo)
-❌ Levada Pro [secular] (perde a tribo)
-❌ Levada Lights       (iluminação)
-❌ Levada Stream       (transmissão)
-❌ Levada Catalog      (vira o inimigo)
-❌ Levada Education    (Creator territory)
-❌ Levada Internacional (perde foco BR fase 1)
+❌ Playback Studio DAW          (editor de áudio completo — Adobe/Logic territory)
+❌ Playback Studio Live         (performance ao vivo — confunde preparation com performance)
+❌ Playback Studio [secular]    (qualquer SKU pra músico não-worship — perde a tribo)
+❌ Playback Studio Lights       (iluminação — fora do escopo musical)
+❌ Playback Studio Stream       (transmissão — vira concorrente de StreamYard)
+❌ Playback Studio Catalog      (vira o inimigo — A POSIÇÃO É A RECUSA)
+❌ Playback Studio Academy      (Creator territory — slip-risk arquetípico)
+❌ Playback Studio Global       (perde foco BR fase 1)
 ```
+
+**Regra:** O nome "Playback Studio" é descritivo o suficiente — qualquer sufixo dilui. Se for criar produto adjacente no futuro, considerar marca-irmã independente (não extension), preservando o foco worship-BR do core.
 
 ### 8.3 Slip-risks Arquetípicos — 5 Desvios Mapeados
 
@@ -1101,24 +1169,26 @@ Toda decisão de feature, copy, parceria, hiring passa por:
 
 Designer começa por:
 
-1. **Visual Hammer** — desenhar "Domingo" à mão (3-5 variações pro founder escolher)
-2. **Wordmark** "LEVADA" custom (derivado de Fraunces)
-3. **Paleta operacional** — definir tokens CSS/Figma com hex exatos
-4. **Hero da landing page** — implementar primeiro screen do `levada.app`
-5. **Logo files** completos em SVG/PNG/AI/PDF
-6. **Favicon + app icon**
+1. **Visual Hammer** — desenhar "domingo." à mão em laranja #FF6B35 (3-5 variações pro founder escolher)
+2. **Wordmark** "Playback Studio" custom (Playback em Fraunces semibold + Studio em italic medium laranja — refinar curvas a partir da fonte base)
+3. **Monograma "PS"** — versão compacta pro favicon/app icon (mantém o duplo-tratamento P bold + S italic laranja)
+4. **Paleta operacional** — implementar tokens CSS/Figma com hex exatos da seção 4.2 deste book
+5. **Hero da landing page** — implementar primeiro screen do `playbackstudio.com.br` em dark mode com laranja accents
+6. **Logo files** completos em SVG/PNG/AI/PDF
+7. **Favicon + app icon** (monograma PS sobre quadrado laranja ou tinta)
 
 Founder em paralelo executa:
-- ⏳ Busca INPI nas classes 9, 41, 42 (BLOCKER)
-- ⏳ Implementar copy do Miller no site atual
-- ⏳ Email de transição pros usuários Playback Studio
+- ⏳ Busca INPI nas classes 9, 41, 42 (recomendado antes do design system final)
+- ⏳ Verificar disponibilidade de `playbackstudio.com` e `playbackstudio.app` (defensivos)
+- ⏳ Confirmar handles social (@playbackstudio.br, @playbackstudioapp, etc.)
+- ⏳ Decidir destino dos domínios `levada.app` e `uselevada.com.br` (revender/redirecionar/abandonar)
 
 ### 9.2 Fase B — Próximo 1 mês
 
 7. Sistema completo de tipografia (Fraunces + Inter + JetBrains Mono carregados)
 8. Onboarding visual com copy do Miller
 9. Email templates (boas-vindas, nurture, transição, sales)
-10. Pricing page com nomes "Levada Livre / Toca / Tudo"
+10. Pricing page com nomes "Livre / Pro / Studio"
 11. Pack do Domingo (lead magnet) — design da capa do PDF + landing dedicada
 12. Social media kit (templates Instagram, YouTube channel art, TikTok)
 
@@ -1146,11 +1216,11 @@ Pontos que o time de design vai precisar refinar ou decidir junto:
 
 ### 10.1 A definir
 
-- **Sonic branding:** Levada vai ter sound logo? Notificação personalizada? (Sugestão: Fase 2)
+- **Sonic branding:** Playback Studio vai ter sound logo? Notificação personalizada? (Sugestão: Fase 2)
 - **Mascote/illustration style:** Não usar mascote (slip-risk). Mas ilustrações editoriais nos blogs/redes — qual estilo? Hand-drawn? Linha simples? Sem ilustração?
 - **Fotografia do founder:** Decidido: sem rosto. Mas será que há momentos de exceção? (Ex: entrevista em podcast — usa foto?)
 - **Espaço de "comunidade":** Quando ativar Discord/Slack/Telegram de usuários? Fase 2 ou Fase 3?
-- **Email da equipe técnica vs. founder:** No suporte, quem assina? Levada (impessoal mas profissional) ou nome próprio?
+- **Email da equipe técnica vs. founder:** No suporte, quem assina? Playback Studio (impessoal mas profissional) ou nome próprio?
 
 ### 10.2 A testar
 
@@ -1180,34 +1250,37 @@ Pontos que o time de design vai precisar refinar ou decidir junto:
 | Specialist | Contribuição |
 |-----------|--------------|
 | Marty Neumeier | Onlyness Statement + zag "Feito por quem toca" + diagnóstico de Brand Gap |
-| Naming Strategist | Geração e seleção de "LEVADA" |
-| Domain Scout | Estratégia de domínio (.app primário, .com.br fallback) |
+| Domain Scout | Validação `.com.br` como ancoragem do nome |
 | Archetype Consultant | Sage × Caregiver definitivo (refinou "Companion" do Marty) |
 | Al Ries | Categoria "plataforma do domingo" + Verbal Nail DOMINGO |
-| Donald Miller | StoryBrand operacional + copy dos 4 touchpoints |
+| Donald Miller | StoryBrand operacional + copy dos touchpoints |
+| Brand Chief (2026-05-20) | Consolidação sob "Playback Studio" + nova paleta laranja/dark + plans Livre/Pro/Studio |
 
 ### 11.2 Pendências críticas em ABERTO
 
-- [ ] **Busca INPI** nas classes 9, 41, 42 — único blocker que pode forçar rename da Levada
-- [ ] **Investigação do squatter** do `levada.com.br` (não-bloqueante)
-- [ ] **Registros defensivos opcionais:** `levada.tech`, `levada.fm`, `levada.io`, `uselevada.com`
-- [ ] **Visual Hammer** — desenhar custom "Domingo" à mão
-- [ ] **Implementar copy** do Miller no site/app existente
-- [ ] **Recuperar 6 tasks truncadas** da fase 2 (não vimos lista completa)
+- [ ] **Busca INPI** nas classes 9 (apps), 41 (educação/cultura), 42 (tecnologia) para "Playback Studio" — recomendado antes do design system completo
+- [ ] **Verificar disponibilidade** de `playbackstudio.com` e `playbackstudio.app` (defensivos)
+- [ ] **Confirmar handles social** nas redes (sugestões: @playbackstudio.br, @playbackstudioapp, @usaplaybackstudio)
+- [ ] **Visual Hammer custom** — substituir Caveat font por SVG hand-drawn de ilustrador
+- [ ] **Logo SVG/PNG/favicon** — substituir os legacy em `public/logo.png` e `public/logo.svg`
+- [ ] **Decisão sobre domínios Levada** comprados anteriormente (`levada.app`, `uselevada.com.br`) — redirecionar, revender ou abandonar
 
 ### 11.3 Domínios e Identificadores
 
 | Item | Status | Notas |
 |------|--------|-------|
-| levada.app | ✅ Registrado | Domínio primário, registrar Hostinger |
-| uselevada.com.br | ✅ Registrado | Fallback BR |
-| levada.com.br | ❌ Não registrado | Investigar squatter, teto R$ 3k |
-| levada.com | ❌ Não registrado | Provável Madeira tourism, inviável |
-| @levadaapp (Instagram) | ⏳ Confirmar | Provavelmente livre |
-| @levadaapp (TikTok) | ⏳ Confirmar | Provavelmente livre |
-| @levadaapp (YouTube) | ⏳ Confirmar | Provavelmente livre |
-| @levadaapp (X/Twitter) | ⏳ Confirmar | Provavelmente livre |
-| @levadaapp (LinkedIn) | ⏳ Confirmar | Provavelmente livre |
+| **playbackstudio.com.br** | ✅ **Registrado** | **Domínio primário — ancoragem do nome** |
+| playbackstudio.com | ⏳ Verificar | Confirmar disponibilidade global (defensivo) |
+| playbackstudio.app | ⏳ Verificar | Confirmar disponibilidade (defensivo, perfil tech) |
+| playbackstudio.fm | ⏳ Verificar | Defensivo musical |
+| @playbackstudio.br (Instagram) | ⏳ Confirmar | Verificar disponibilidade |
+| @playbackstudioapp (Instagram alt) | ⏳ Confirmar | Alternativa caso .br não esteja disponível |
+| @playbackstudio (TikTok) | ⏳ Confirmar | Verificar disponibilidade |
+| @playbackstudio (YouTube) | ⏳ Confirmar | Verificar disponibilidade |
+| @playbackstudio (X/Twitter) | ⏳ Confirmar | Verificar disponibilidade |
+| @playbackstudio (LinkedIn) | ⏳ Confirmar | Página empresa |
+| levada.app | ⚠️ Comprado | **Pendência:** redirecionar pro principal, revender ou abandonar |
+| uselevada.com.br | ⚠️ Comprado | **Pendência:** redirecionar pro principal, revender ou abandonar |
 
 ### 11.4 Stack inferida do projeto técnico
 
@@ -1222,23 +1295,28 @@ Pontos que o time de design vai precisar refinar ou decidir junto:
 
 ### 11.5 Recursos e Inspirações Visuais
 
-- **Aesop** — aesop.com (premium-craft type, generous whitespace, warm tones)
-- **Splice** — splice.com (musical confidence, modern software UI)
-- **Bethel Music** — bethelmusic.com (sacred gravitas without religious cliché)
+- **Spotify** — spotify.com (dark UI confident, brand-color accent vibrant em dark)
+- **SoundCloud** — soundcloud.com (orange-on-dark musical, energético sem perder craft)
 - **Linear** — linear.app (software precision, refined typography, intentional motion)
+- **Splice** — splice.com (musical confidence, modern software UI, dark mode default)
+- **MPC vintage (Akai)** — referência sensorial pra acentos quentes sobre interface dark profissional
 - **Stripe** — stripe.com (system-led design, illustration discipline)
 
 ### 11.6 Vocabulário Sintetizado — Quick Reference
 
-**O nome:** Levada
+**O nome:** Playback Studio (Playback em peso semibold + Studio em italic laranja)
+**O símbolo:** PlayMark — triângulo play com 3 cortes horizontais (stems separados) em laranja
 **A palavra:** Domingo
 **A frase:** Feito por quem toca.
 **A promessa:** Toda música, todo domingo, na sua mão.
 **A categoria:** A plataforma do domingo.
 **O vilão:** O Catálogo.
 **O guia:** Sage × Caregiver.
-**Os planos:** Levada Livre / Levada Toca / Levada Tudo.
+**Os planos:** Livre / Pro / Studio.
+**A paleta:** Laranja `#FF6B35` + Tinta `#121214` + Bone `#E8E8EC` + Musgo `#5B6B47`.
+**O modo:** Dark por default.
+**O domínio:** playbackstudio.com.br
 
 ---
 
-*Documento gerado em 2026-05-17 pela Brand Squad em sessão única de orquestração estratégica. Para atualizações, retomar conversa com Brand Chief usando contexto da memória persistente do projeto.*
+*Documento v2.0 gerado em 2026-05-20 pela Brand Squad. Consolidação sob "Playback Studio" + paleta laranja/dark + plans Livre/Pro/Studio. Para atualizações, retomar conversa com Brand Chief usando contexto da memória persistente do projeto.*

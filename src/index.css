@@ -1,40 +1,40 @@
 @import "tailwindcss";
 
 /* ════════════════════════════════════════════════════════════════════
-   LEVADA DESIGN SYSTEM
+   PLAYBACK STUDIO DESIGN SYSTEM
    ─────────────────────────────────────────────────────────────────
    Dual aesthetic architecture:
    • BRAND tokens  → marketing, landing, onboarding, pricing, about
-                    (terracota / musgo / bone / tinta — Aesop × Bethel × Linear)
+                    (laranja / musgo / bone / tinta — dark cool energetic)
    • PRODUCT tokens → editor, mixer, separator studio
                     (dark DAW dourado — Logic Pro × MPC inspired)
    • SEMANTIC tokens → shared (success, warning, error, info)
    ════════════════════════════════════════════════════════════════════ */
 
 @theme {
-  /* ─── BRAND TOKENS (Levada) ─────────────────────────────────────── */
-  /* Cor primária — terracota: ações, CTAs, ênfase de marca */
-  --color-terracota: #B85C38;
-  --color-terracota-light: #D8956C;
-  --color-terracota-dark: #8A3F22;
-  --color-terracota-wash: #F4E3D7;
+  /* ─── BRAND TOKENS (Playback Studio) ────────────────────────────── */
+  /* Cor primária — laranja vibrant: ações, CTAs, ênfase de marca */
+  --color-laranja: #FF6B35;
+  --color-laranja-light: #FF9268;
+  --color-laranja-dark: #CC4A1F;
+  --color-laranja-wash: #FFE5DC;
 
-  /* Cor secundária — musgo: backgrounds escuros, success, headings em contraste */
+  /* Cor secundária — musgo: success, accents naturais, contraste sutil */
   --color-musgo: #5B6B47;
   --color-musgo-light: #8B9B6E;
   --color-musgo-dark: #3D4A2F;
   --color-musgo-wash: #E6E8DC;
 
-  /* Neutros warm — base da marca */
-  --color-bone: #F7F3ED;          /* background warm off-white (NUNCA #fff puro) */
-  --color-tinta: #1F1B16;         /* texto principal warm black (NUNCA #000 puro) */
-  --color-tinta-raised: #2A2520;  /* surface raised pra dark mode (cards/panels) */
-  --color-tinta-soft: #14110D;    /* surface mais profundo (modal/overlay) */
-  --color-tinta-border: #3A332A;  /* border sutil em dark mode */
-  --color-warm-100: #E6E0D4;
-  --color-warm-200: #C9C2B5;
-  --color-warm-400: #9C9385;
-  --color-warm-600: #6B6055;
+  /* Neutros — base dark da marca */
+  --color-bone: #E8E8EC;          /* texto-claro sobre dark (substitui white puro) */
+  --color-tinta: #121214;         /* BG principal dark cool */
+  --color-tinta-raised: #1A1A1E;  /* surface raised (cards/panels) */
+  --color-tinta-soft: #0E0E10;    /* surface mais profundo (modal/overlay) */
+  --color-tinta-border: #2A2A2E;  /* border sutil */
+  --color-warm-100: #D4D4D8;
+  --color-warm-200: #A1A1AA;
+  --color-warm-400: #71717A;
+  --color-warm-600: #52525B;
 
   /* ─── PRODUCT TOKENS (DAW interno) ──────────────────────────────── */
   /* Mantidos do design DAW dark — usados no editor/mixer/separator */
@@ -54,8 +54,8 @@
 
   /* ─── SEMANTIC TOKENS (compartilhados) ──────────────────────────── */
   --color-success: #5B6B47;    /* musgo — natural pra success */
-  --color-warning: #C9912A;    /* âmbar quente harmoniza com terracota */
-  --color-error: #A4452B;      /* terracota escuro — atenção sem ruptura */
+  --color-warning: #F5A524;    /* âmbar — atenção sem competir com laranja */
+  --color-error: #EF4444;      /* vermelho clássico — erro inequívoco */
   --color-info: #5C6E7E;       /* slate frio pra contraste */
 
   /* ─── TYPOGRAPHY ────────────────────────────────────────────────── */
@@ -75,9 +75,9 @@
     font-family: var(--font-sans);
   }
 
-  /* Marketing/brand contexts override body styling
-     `.brand-context-dark` → warm dark (tinta + bone text + terracota accents)
-     `.brand-context-light` → bone bg + tinta text (light marketing) */
+  /* Marketing/brand contexts override body styling.
+     `.brand-context-dark` → DEFAULT for marketing: dark cool BG + bone text + laranja accents.
+     `.brand-context-light` → RARE: only for PDF exports, light-mode email templates, accessibility opt-in. */
   .brand-context-dark {
     background-color: var(--color-tinta);
     color: var(--color-bone);

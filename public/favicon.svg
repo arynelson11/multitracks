@@ -1,0 +1,10 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <mask id="stem-cuts-favicon">
+      <rect width="64" height="64" fill="white"/>
+      <line x1="0" y1="27" x2="64" y2="27" stroke="black" stroke-width="5"/>
+      <line x1="0" y1="37" x2="64" y2="37" stroke="black" stroke-width="5"/>
+    </mask>
+  </defs>
+  <path d="M 14 12 L 52 32 L 14 52 Z" fill="#FF6B35" mask="url(#stem-cuts-favicon)" stroke-linejoin="round"/>
+</svg>

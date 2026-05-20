@@ -13,8 +13,8 @@ export default defineConfig({
       manifest: {
         name: 'Playback Studio',
         short_name: 'Playback',
-        description: 'Motor de multitracks profissional para ensaio e ministério ao vivo.',
-        theme_color: '#d4a843',
+        description: 'Stems pra qualquer música. Pra sua banda chegar pronta no domingo. Feito por quem toca.',
+        theme_color: '#FF6B35',
         background_color: '#121214',
         display: 'standalone',
         orientation: 'portrait',

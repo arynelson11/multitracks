@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut, Shield, Home, Disc, Repeat, Square } from 'lucide-react'
 import { BrandLogo } from './components/BrandLogo'
+import { PlayMark } from './components/brand/PlayMark'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { usePadSynth } from './hooks/usePadSynth'
 import { useSamplesLibrary } from './hooks/useSamplesLibrary'
@@ -336,11 +337,11 @@ export default function App() {
   if (!isReady || forceShowSplash) {
     return (
       <div className="min-h-screen bg-[#0a0a0c] text-text-main flex flex-col items-center justify-center px-6">
-        <div className="w-16 h-16 sm:w-20 sm:h-20 mb-8 rounded-2xl flex items-center justify-center border border-border-light bg-surface relative animate-boot">
-          <Music size={32} className="text-primary relative z-10" />
-          <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-primary animate-led"></div>
+        <div className="w-16 h-16 sm:w-20 sm:h-20 mb-8 rounded-2xl flex items-center justify-center border border-tinta-border bg-tinta-raised relative animate-boot">
+          <PlayMark size="lg" className="relative z-10" />
+          <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-laranja animate-led"></div>
         </div>
-        <h1 className="font-display font-semibold text-3xl sm:text-5xl tracking-tight mb-1 text-center text-white" style={{ letterSpacing: '-0.02em' }}>Levada</h1>
+        <h1 className="font-display font-semibold text-3xl sm:text-5xl tracking-tight mb-1 text-center text-white" style={{ letterSpacing: '-0.02em' }}>Playback <span className="text-laranja italic font-medium">Studio</span></h1>
         <p className="text-text-muted mb-10 text-center text-xs sm:text-sm font-mono tracking-widest uppercase">
           A plataforma do domingo
         </p>
@@ -374,7 +375,7 @@ export default function App() {
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="relative flex items-center">
               <div className="cursor-default focus:outline-none">
-                <BrandLogo size="sm" tone="light" />
+                <BrandLogo size="sm" tone="light" variant="horizontal" />
               </div>
             </div>
 

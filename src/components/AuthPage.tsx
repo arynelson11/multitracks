@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Mail, Lock, Loader2, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { LevadaWordmark } from './brand/LevadaWordmark';
+import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark';
+
 import { DomingoMark } from './brand/DomingoMark';
 
 interface AuthPageProps {
@@ -59,21 +60,21 @@ export function AuthPage({ }: AuthPageProps) {
         <div className="min-h-screen bg-tinta text-bone flex">
             {/* Left Column (Branding) */}
             <div className="hidden lg:flex lg:w-1/2 p-12 flex-col justify-between relative overflow-hidden"
-                style={{ background: 'linear-gradient(180deg, #2A2520 0%, #1F1B16 60%, #14110D 100%)' }}>
-                {/* Atmosphere — warm terracota glow */}
-                <div className="absolute top-1/4 -right-32 w-96 h-96 bg-terracota rounded-full mix-blend-screen filter blur-[140px] opacity-[0.12]"></div>
+                style={{ background: 'linear-gradient(180deg, #1A1A1E 0%, #121214 60%, #0E0E10 100%)' }}>
+                {/* Atmosphere — laranja glow on dark cool */}
+                <div className="absolute top-1/4 -right-32 w-96 h-96 bg-laranja rounded-full mix-blend-screen filter blur-[140px] opacity-[0.18]"></div>
                 <div className="absolute -bottom-32 -left-20 w-80 h-80 bg-musgo rounded-full mix-blend-screen filter blur-[140px] opacity-[0.1]"></div>
 
                 {/* Header logo */}
                 <div className="flex items-center relative z-10">
-                    <LevadaWordmark size="md" tone="light" />
+                    <PlaybackStudioWordmark size="md" tone="light" />
                 </div>
 
                 {/* Main branding content */}
                 <div className="max-w-md relative z-10 my-auto">
                     <div className="inline-flex items-baseline gap-3 mb-6 select-none">
                         <span className="text-warm-400 text-[13px] font-medium tracking-wide">pronto pro</span>
-                        <DomingoMark size="md" tone="terracota" />
+                        <DomingoMark size="md" tone="laranja" />
                     </div>
                     <h1 className="font-display font-semibold text-bone text-4xl lg:text-5xl mb-6 leading-[1.05] tracking-[-0.02em]">
                         Toda música, todo<br />domingo, na sua mão.
@@ -84,8 +85,8 @@ export function AuthPage({ }: AuthPageProps) {
 
                     {/* Steps */}
                     <div className="flex flex-col gap-3">
-                        <div className="flex items-center gap-4 p-4 rounded-xl bg-terracota/[0.08] border border-terracota/25 text-bone">
-                            <div className="w-8 h-8 rounded-md bg-terracota text-bone flex items-center justify-center font-display font-semibold text-[14px]">1</div>
+                        <div className="flex items-center gap-4 p-4 rounded-xl bg-laranja/[0.08] border border-laranja/25 text-bone">
+                            <div className="w-8 h-8 rounded-md bg-laranja text-bone flex items-center justify-center font-display font-semibold text-[14px]">1</div>
                             <span className="font-medium text-[13px]">Criar conta</span>
                         </div>
                         <div className="flex items-center gap-4 p-4 rounded-xl bg-bone/[0.03] border border-tinta-border text-warm-200">
@@ -109,7 +110,7 @@ export function AuthPage({ }: AuthPageProps) {
             <div className="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-12 relative bg-tinta">
                 {/* Mobile header */}
                 <div className="absolute top-8 left-8 flex items-center gap-2 lg:hidden">
-                    <LevadaWordmark size="sm" tone="light" />
+                    <PlaybackStudioWordmark size="sm" tone="light" />
                 </div>
 
                 <div className="w-full max-w-md">
@@ -161,7 +162,7 @@ export function AuthPage({ }: AuthPageProps) {
                                     required
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    className="w-full bg-tinta-raised border border-tinta-border rounded-xl pl-11 pr-4 py-3 text-bone placeholder:text-warm-400/50 text-[14px] focus:border-terracota focus:outline-none focus:ring-2 focus:ring-terracota/15 transition-colors"
+                                    className="w-full bg-tinta-raised border border-tinta-border rounded-xl pl-11 pr-4 py-3 text-bone placeholder:text-warm-400/50 text-[14px] focus:border-laranja focus:outline-none focus:ring-2 focus:ring-laranja/15 transition-colors"
                                     placeholder="seu@email.com"
                                 />
                             </div>
@@ -177,7 +178,7 @@ export function AuthPage({ }: AuthPageProps) {
                                         required
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        className="w-full bg-tinta-raised border border-tinta-border rounded-xl pl-11 pr-4 py-3 text-bone placeholder:text-warm-400/50 text-[14px] focus:border-terracota focus:outline-none focus:ring-2 focus:ring-terracota/15 transition-colors"
+                                        className="w-full bg-tinta-raised border border-tinta-border rounded-xl pl-11 pr-4 py-3 text-bone placeholder:text-warm-400/50 text-[14px] focus:border-laranja focus:outline-none focus:ring-2 focus:ring-laranja/15 transition-colors"
                                         placeholder="Sua senha"
                                         minLength={6}
                                     />
@@ -191,7 +192,7 @@ export function AuthPage({ }: AuthPageProps) {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="w-full mt-4 h-12 bg-terracota hover:bg-terracota-dark text-bone font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 transition-all active:scale-[0.98] cursor-pointer text-[14px] shadow-lg shadow-terracota/20"
+                            className="w-full mt-4 h-12 bg-laranja hover:bg-laranja-dark text-bone font-semibold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 transition-all active:scale-[0.98] cursor-pointer text-[14px] shadow-lg shadow-laranja/20"
                         >
                             {loading ? <Loader2 size={18} className="animate-spin" /> : (
                                 <>
@@ -207,12 +208,12 @@ export function AuthPage({ }: AuthPageProps) {
                             <div className="flex flex-col gap-3">
                                 <button onClick={() => setMode('forgot')} className="text-warm-400 hover:text-bone transition-colors cursor-pointer text-[13px]">Esqueceu sua senha?</button>
                                 <div className="text-warm-400 text-[13px]">
-                                    Não tem conta? <button onClick={() => setMode('register')} className="text-terracota hover:underline cursor-pointer font-medium">Criar conta</button>
+                                    Não tem conta? <button onClick={() => setMode('register')} className="text-laranja hover:underline cursor-pointer font-medium">Criar conta</button>
                                 </div>
                             </div>
                         ) : (
                             <div className="text-warm-400 text-[13px]">
-                                Já tem conta? <button onClick={() => setMode('login')} className="text-terracota hover:underline cursor-pointer font-medium">Entrar</button>
+                                Já tem conta? <button onClick={() => setMode('login')} className="text-laranja hover:underline cursor-pointer font-medium">Entrar</button>
                             </div>
                         )}
                     </div>

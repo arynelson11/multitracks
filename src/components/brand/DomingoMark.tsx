@@ -9,12 +9,12 @@
  * commissioned from an illustrator, to ensure trademarkability
  * and full ownability (Brand Book §4.1, §4.3).
  *
- * Default rendering: terracota over bone background, with
+ * Default rendering: laranja over dark background, with
  * a slight rotation to evoke a quick handwritten note.
  */
 
 type Size = 'sm' | 'md' | 'lg' | 'xl'
-type Tone = 'terracota' | 'tinta' | 'bone'
+type Tone = 'laranja' | 'tinta' | 'bone'
 
 interface DomingoMarkProps {
   size?: Size
@@ -32,14 +32,14 @@ const SIZE: Record<Size, string> = {
 }
 
 const TONE: Record<Tone, string> = {
-  terracota: 'text-terracota',
+  laranja: 'text-laranja',
   tinta: 'text-tinta',
   bone: 'text-bone',
 }
 
 export function DomingoMark({
   size = 'md',
-  tone = 'terracota',
+  tone = 'laranja',
   rotate = true,
   withPeriod = true,
   className = '',

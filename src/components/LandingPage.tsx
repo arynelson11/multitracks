@@ -8,7 +8,7 @@ import { DemoMixer } from './DemoMixer'
 import { usePWAInstall } from '../hooks/usePWAInstall'
 import { BrandLogo } from './BrandLogo'
 import { DomingoMark } from './brand/DomingoMark'
-import { LevadaWordmark } from './brand/LevadaWordmark'
+import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark'
 
 interface LandingPageProps {
   onEnter: () => void
@@ -33,7 +33,7 @@ const AUDIENCE = [
 const PLANS = [
   {
     id: 'gratuito',
-    name: 'Free',
+    name: 'Livre',
     monthly: 0, annual: 0,
     desc: 'Pra experimentar e ver se funciona',
     badge: null as string | null,
@@ -48,7 +48,7 @@ const PLANS = [
   },
   {
     id: 'essencial',
-    name: 'Essencial',
+    name: 'Pro',
     monthly: 49.90, annual: 39.90,
     desc: 'Pra equipe que toca toda semana',
     badge: 'Mais escolhido',
@@ -63,40 +63,40 @@ const PLANS = [
       'Biblioteca em nuvem',
       'Suporte por email',
     ],
-    cta: 'Assinar Essencial',
+    cta: 'Assinar Pro',
   },
   {
     id: 'pro',
-    name: 'Pro',
+    name: 'Studio',
     monthly: 99.90, annual: 79.90,
-    desc: 'Pra quem leva isso à sério',
+    desc: 'Pra quem leva isso a sério',
     badge: null as string | null,
     highlight: false,
     features: [
       'Separações ilimitadas',
       'Qualidade máxima',
-      'Tudo do Essencial +',
+      'Tudo do Pro +',
       'Prioridade no processamento',
       'Múltiplos repertórios simultâneos',
       'Acesso antecipado a features',
       'Suporte prioritário',
     ],
-    cta: 'Assinar Pro',
+    cta: 'Assinar Studio',
   },
 ]
 
 const FAQS = [
   {
     q: 'O que são stems?',
-    a: 'Stems são as faixas individuais de uma música — voz separada, bateria separada, baixo separado, etc. Com a Levada você sobe qualquer música e recebe tudo separado pra sua banda ensaiar e tocar como precisa.'
+    a: 'Stems são as faixas individuais de uma música — voz separada, bateria separada, baixo separado, etc. Com o Playback Studio você sobe qualquer música e recebe tudo separado pra sua banda ensaiar e tocar como precisa.'
   },
   {
     q: 'Como funciona a separação?',
-    a: 'Você sobe a música (MP3, WAV ou link). A IA da Levada separa em voz, guitarra, baixo, bateria, piano e pads em alguns minutos. Os stems ficam disponíveis pra download, no mixer e pra compartilhar com a equipe.'
+    a: 'Você sobe a música (MP3, WAV ou link). A IA do Playback Studio separa em voz, guitarra, baixo, bateria, piano e pads em alguns minutos. Os stems ficam disponíveis pra download, no mixer e pra compartilhar com a equipe.'
   },
   {
-    q: 'A Levada serve pra qualquer música?',
-    a: 'Sim. Diferente de catálogos licenciados, a Levada não depende de uma biblioteca pré-aprovada. Qualquer música — worship, gospel, sertanejo, MPB, rock, indie, original da banda — funciona.'
+    q: 'O Playback Studio serve pra qualquer música?',
+    a: 'Sim. Diferente de catálogos licenciados, o Playback Studio não depende de uma biblioteca pré-aprovada. Qualquer música — worship, gospel, sertanejo, MPB, rock, indie, original da banda — funciona.'
   },
   {
     q: 'Funciona no celular?',
@@ -156,7 +156,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       {/* ── NAV ── */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-tinta/85 backdrop-blur-xl border-b border-tinta-border">
         <div className="max-w-6xl mx-auto px-5 sm:px-8 h-14 flex items-center justify-between">
-          <BrandLogo size="md" tone="light" />
+          <BrandLogo size="md" tone="light" variant="horizontal" />
           <div className="flex items-center gap-2">
             <button
               onClick={goToApp}
@@ -166,7 +166,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             </button>
             <button
               onClick={goToApp}
-              className="text-[13px] bg-terracota hover:bg-terracota-dark text-bone px-5 py-2 rounded-lg font-semibold transition-colors cursor-pointer"
+              className="text-[13px] bg-laranja hover:bg-laranja-dark text-bone px-5 py-2 rounded-lg font-semibold transition-colors cursor-pointer"
             >
               Começa de graça
             </button>
@@ -178,7 +178,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       <section className="relative min-h-screen flex flex-col items-center justify-center px-5 sm:px-8 pt-28 pb-20 overflow-hidden">
         {/* Atmosphere (warm dark) */}
         <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-[35%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[500px] rounded-full bg-terracota/[0.10] blur-[140px]" />
+          <div className="absolute top-[35%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[500px] rounded-full bg-laranja/[0.10] blur-[140px]" />
           <div className="absolute bottom-0 right-1/4 w-[400px] h-[300px] rounded-full bg-musgo/[0.10] blur-[120px]" />
           <div className="absolute inset-0 opacity-[0.025]" style={{ backgroundImage: 'linear-gradient(rgba(247,243,237,1) 1px,transparent 1px),linear-gradient(90deg,rgba(247,243,237,1) 1px,transparent 1px)', backgroundSize: '64px 64px' }} />
         </div>
@@ -187,7 +187,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           {/* Visual Hammer */}
           <div className="mb-6 inline-flex items-baseline gap-3 select-none">
             <span className="text-warm-400 text-[14px] font-medium tracking-wide">pronto pro</span>
-            <DomingoMark size="md" tone="terracota" />
+            <DomingoMark size="md" tone="laranja" />
           </div>
 
           <h1 className="font-display font-semibold text-[clamp(2.4rem,7vw,5rem)] leading-[1.05] tracking-[-0.02em] text-bone mb-6">
@@ -195,11 +195,11 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             <br />
             Pra sua banda chegar
             <br />
-            pronta no <span className="italic text-terracota">domingo</span>.
+            pronta no <span className="italic text-laranja">domingo</span>.
           </h1>
 
           <p className="text-[clamp(.95rem,2vw,1.2rem)] text-warm-200 max-w-2xl mx-auto mb-10 leading-relaxed">
-            Sábado 23h alguém manda mudando o setlist. A Levada separa qualquer
+            Sábado 23h alguém manda mudando o setlist. O Playback Studio separa qualquer
             música — worship, gospel, sertanejo, MPB, o que sua banda toca —
             em stems prontos.
           </p>
@@ -207,7 +207,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button
               onClick={goToApp}
-              className="inline-flex items-center justify-center gap-2.5 bg-terracota hover:bg-terracota-dark text-bone px-8 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-terracota/25"
+              className="inline-flex items-center justify-center gap-2.5 bg-laranja hover:bg-laranja-dark text-bone px-8 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-laranja/25"
             >
               Começa de graça
             </button>
@@ -235,7 +235,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <div className="rounded-2xl overflow-hidden border border-tinta-border shadow-2xl shadow-black/40">
             <DemoMixer />
           </div>
-          <p className="text-center text-[11px] text-warm-400 mt-3 font-mono">o estúdio dentro da Levada</p>
+          <p className="text-center text-[11px] text-warm-400 mt-3 font-mono">o estúdio dentro do Playback Studio</p>
         </div>
       </section>
 
@@ -262,7 +262,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       {/* ════════ GUIDE — 3 benefícios ════════ */}
       <section id="como-funciona" className="py-24 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto">
-          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o que a Levada entrega</p>
+          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o que o Playback Studio entrega</p>
           <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-16 text-center">
             Construída por quem toca.
             <br />
@@ -270,13 +270,13 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           </h2>
           <div className="grid sm:grid-cols-3 gap-6">
             {[
-              { title: 'Qualquer música, separada', desc: 'Sobe MP3, WAV ou link. A Levada separa em voz, instrumentos e pads em alguns minutos.' },
+              { title: 'Qualquer música, separada', desc: 'Sobe MP3, WAV ou link. O Playback Studio separa em voz, instrumentos e pads em alguns minutos.' },
               { title: 'Qualquer ritmo, qualquer banda', desc: 'Worship, gospel, sertanejo, MPB, rock, indie — funciona com o que sua banda toca.' },
-              { title: 'Sem catálogo travando', desc: 'Você escolhe a música. A Levada prepara. Sem esperar release, sem licença gringa.' },
+              { title: 'Sem catálogo travando', desc: 'Você escolhe a música. O Playback Studio prepara. Sem esperar release, sem licença gringa.' },
             ].map((item, i) => (
-              <div key={i} className="bg-tinta-raised border border-tinta-border rounded-2xl p-7 hover:border-terracota/40 transition-colors">
-                <div className="w-9 h-9 rounded-lg bg-terracota/15 border border-terracota/25 flex items-center justify-center mb-5">
-                  <span className="text-terracota font-display font-semibold text-[15px]">{i + 1}</span>
+              <div key={i} className="bg-tinta-raised border border-tinta-border rounded-2xl p-7 hover:border-laranja/40 transition-colors">
+                <div className="w-9 h-9 rounded-lg bg-laranja/15 border border-laranja/25 flex items-center justify-center mb-5">
+                  <span className="text-laranja font-display font-semibold text-[15px]">{i + 1}</span>
                 </div>
                 <h3 className="font-display font-semibold text-[20px] text-bone mb-3 leading-tight">{item.title}</h3>
                 <p className="text-[14px] text-warm-200 leading-relaxed">{item.desc}</p>
@@ -297,11 +297,11 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <div className="space-y-5">
             {[
               { n: '1', title: 'Sobe a música', desc: 'Qualquer formato — MP3, WAV, ou link do YouTube.' },
-              { n: '2', title: 'A Levada separa tudo', desc: 'Voz, guitarra, baixo, bateria, piano, pads — em alguns minutos.' },
+              { n: '2', title: 'O Playback Studio separa tudo', desc: 'Voz, guitarra, baixo, bateria, piano, pads — em alguns minutos.' },
               { n: '3', title: 'Sua banda chega pronta no domingo', desc: 'Stems, click, voice guide, seções marcadas (intro, verso, refrão, ponte) — na mão.' },
             ].map(step => (
               <div key={step.n} className="bg-tinta-raised border border-tinta-border rounded-2xl p-6 sm:p-8 flex items-start gap-6">
-                <div className="w-14 h-14 rounded-full bg-terracota text-bone flex items-center justify-center font-display font-semibold text-[24px] shrink-0">
+                <div className="w-14 h-14 rounded-full bg-laranja text-bone flex items-center justify-center font-display font-semibold text-[24px] shrink-0">
                   {step.n}
                 </div>
                 <div className="flex-1 pt-1">
@@ -315,7 +315,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <div className="text-center mt-12">
             <button
               onClick={goToApp}
-              className="inline-flex items-center justify-center gap-2.5 bg-terracota hover:bg-terracota-dark text-bone px-8 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-terracota/25"
+              className="inline-flex items-center justify-center gap-2.5 bg-laranja hover:bg-laranja-dark text-bone px-8 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-laranja/25"
             >
               Sobe sua primeira música <ArrowRight size={17} />
             </button>
@@ -355,7 +355,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           </h2>
           <div className="bg-tinta-raised border border-tinta-border rounded-2xl p-7 sm:p-9 space-y-4 text-[15px] leading-relaxed">
             {[
-              { day: 'Sexta', text: 'Ministro de louvor manda o setlist. Você sobe na Levada.' },
+              { day: 'Sexta', text: 'Ministro de louvor manda o setlist. Você sobe no Playback Studio.' },
               { day: 'Sábado', text: 'Tudo separado. Equipe baixou. Ensaio fluiu.' },
               { day: 'Domingo', text: 'Banda travada mas leve. Ministração fluindo.' },
               { day: 'Segunda', text: '"Vamo pra próxima."' },
@@ -380,7 +380,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             {TESTIMONIALS.map((r, i) => (
               <div key={i} className="bg-tinta-raised border border-tinta-border rounded-2xl p-7">
                 <div className="flex gap-0.5 mb-4">
-                  {[1, 2, 3, 4, 5].map(j => <Star key={j} size={12} className="text-terracota fill-terracota" />)}
+                  {[1, 2, 3, 4, 5].map(j => <Star key={j} size={12} className="text-laranja fill-laranja" />)}
                 </div>
                 <p className="text-[14px] text-warm-200 leading-relaxed mb-5">"{r.text}"</p>
                 <div>
@@ -429,12 +429,12 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                 <div
                   key={plan.id}
                   className={`relative rounded-2xl p-7 flex flex-col border-2 ${plan.highlight
-                      ? 'border-terracota bg-tinta-raised'
+                      ? 'border-laranja bg-tinta-raised'
                       : 'border-tinta-border bg-tinta-raised'
                     }`}
                 >
                   {plan.badge && (
-                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-terracota text-bone text-[10px] font-bold px-4 py-1 rounded-full uppercase tracking-widest whitespace-nowrap">
+                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-laranja text-bone text-[10px] font-bold px-4 py-1 rounded-full uppercase tracking-widest whitespace-nowrap">
                       {plan.badge}
                     </div>
                   )}
@@ -464,7 +464,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                   <ul className="space-y-2.5 mb-8 flex-1">
                     {plan.features.map((feat, j) => (
                       <li key={j} className="flex items-start gap-2.5 text-[13px] text-warm-200">
-                        <Check size={13} className={`mt-0.5 shrink-0 ${plan.highlight ? 'text-terracota' : 'text-musgo-light'}`} />
+                        <Check size={13} className={`mt-0.5 shrink-0 ${plan.highlight ? 'text-laranja' : 'text-musgo-light'}`} />
                         {feat}
                       </li>
                     ))}
@@ -472,7 +472,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                   <button
                     onClick={() => goToCheckout(plan.id, price)}
                     className={`w-full py-3 rounded-xl text-[13px] font-semibold transition-all cursor-pointer ${plan.highlight
-                        ? 'bg-terracota hover:bg-terracota-dark text-bone shadow-lg shadow-terracota/25'
+                        ? 'bg-laranja hover:bg-laranja-dark text-bone shadow-lg shadow-laranja/25'
                         : 'bg-tinta hover:bg-tinta-border border border-tinta-border text-bone'
                       }`}
                   >
@@ -516,12 +516,12 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       {/* ════════ CTA FINAL ════════ */}
       <section className="py-24 px-5 sm:px-8">
         <div className="max-w-2xl mx-auto text-center">
-          <div className="relative bg-tinta-raised border-2 border-terracota/40 rounded-3xl p-12 sm:p-16 overflow-hidden">
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-72 h-36 bg-terracota/15 blur-3xl rounded-full pointer-events-none" />
+          <div className="relative bg-tinta-raised border-2 border-laranja/40 rounded-3xl p-12 sm:p-16 overflow-hidden">
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-72 h-36 bg-laranja/15 blur-3xl rounded-full pointer-events-none" />
             <div className="relative">
               <div className="inline-flex items-baseline gap-3 mb-6">
                 <span className="text-warm-400 text-[14px] font-medium tracking-wide">pronto pro</span>
-                <DomingoMark size="lg" tone="terracota" />
+                <DomingoMark size="lg" tone="laranja" />
                 <span className="text-warm-400 text-[14px] font-medium tracking-wide">?</span>
               </div>
               <h2 className="font-display font-semibold text-[clamp(1.8rem,5vw,2.8rem)] text-bone mb-4 leading-tight">
@@ -534,7 +534,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
               </p>
               <button
                 onClick={goToApp}
-                className="inline-flex items-center gap-2.5 bg-terracota hover:bg-terracota-dark text-bone px-9 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-terracota/25"
+                className="inline-flex items-center gap-2.5 bg-laranja hover:bg-laranja-dark text-bone px-9 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-laranja/25"
               >
                 Começa de graça <ArrowRight size={18} />
               </button>
@@ -548,7 +548,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       <footer className="border-t border-tinta-border py-10 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-5">
           <div className="flex items-center gap-3">
-            <LevadaWordmark size="sm" tone="light" />
+            <PlaybackStudioWordmark size="sm" tone="light" />
             <span className="text-warm-400 text-[11px]">a plataforma do domingo</span>
           </div>
           <div className="flex items-center gap-6 text-[12px] text-warm-200">
@@ -556,7 +556,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             <button onClick={goToApp} className="hover:text-bone transition-colors cursor-pointer">Criar conta</button>
             <a href="#precos" className="hover:text-bone transition-colors">Planos</a>
           </div>
-          <p className="text-[11px] text-warm-400">© {new Date().getFullYear()} Levada · Feito por quem toca.</p>
+          <p className="text-[11px] text-warm-400">© {new Date().getFullYear()} Playback Studio · Feito por quem toca.</p>
         </div>
       </footer>
     </div>
