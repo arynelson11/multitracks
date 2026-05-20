@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import WaveSurfer from 'wavesurfer.js';
-import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Minus, Plus, Mic, Download } from 'lucide-react';
+import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Minus, Plus, Mic, Download, Trash2, FolderOpen, Clock, CheckCircle2 } from 'lucide-react';
 import { uploadToR2 } from '../lib/r2';
 import { getAuthHeaders } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { PricingModal } from './PricingModal';
 import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
+import { useSeparationLibrary, type SavedSeparation } from '../hooks/useSeparationLibrary';
 
 interface StemData {
   id: string;
@@ -133,6 +134,9 @@ function getAudioContext() {
 export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => {
   const { user, userPlan } = useAuth();
   const isAdmin = user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com';
+  const { separations, saveSeparation, deleteSeparation, isLoading: isLibLoading } = useSeparationLibrary();
+  const [activeSepId, setActiveSepId] = useState<string | null>(null);
+  const [libSaveToast, setLibSaveToast] = useState(false);
   const [publishGlobal, setPublishGlobal] = useState(false);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -510,34 +514,6 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     }
   };
 
-  const loadMockData = () => {
-    setIsProcessing(true);
-    setProgress(100);
-    setSongName('Mock Test Track');
-    setBpm('120');
-    setSongKey('C');
-    
-    const mockAudio = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
-    const clickAudio = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3';
-    
-    const stemsArray: StemData[] = [
-      { id: 'drums', name: 'Bateria', url: mockAudio, color: '#f59e0b' },
-      { id: 'bass', name: 'Baixo', url: mockAudio, color: '#8b5cf6' },
-      { id: 'vocals', name: 'Vocais', url: mockAudio, color: '#06b6d4' },
-      { id: 'other', name: 'Outros/Fx', url: mockAudio, color: '#ec4899' },
-      { id: 'click', name: 'Metrônomo IA', url: clickAudio, color: '#e2e8f0' }
-    ];
-
-    const initialStates: any = {};
-    stemsArray.forEach(s => {
-      initialStates[s.id] = { muted: false, soloed: false, volume: 1, pan: 0 };
-    });
-    
-    setStemStates(initialStates);
-    setStems(stemsArray);
-    setIsProcessing(false);
-  };
-
   // Controle de Master e Mute/Solo via GainNode (garante funcionamento no Safari)
   useEffect(() => {
     const hasSolo = Object.values(stemStates).some(s => s.soloed);
@@ -728,6 +704,25 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       // Increment count for all users
       const currentCount = parseInt(localStorage.getItem('separator_usage') || '0');
       localStorage.setItem('separator_usage', (currentCount + 1).toString());
+
+      // ── Auto-save to local library ──
+      try {
+        const sepId = await saveSeparation({
+          songName: audioFile.name.replace(/\.[^/.]+$/, ''),
+          artist: '',
+          bpm: bpm,
+          songKey: songKey,
+          stems: stemsArray.map(s => ({ id: s.id, name: s.name, url: s.url, color: s.color })),
+          voiceCues: [],
+        });
+        if (sepId) {
+          setActiveSepId(sepId);
+          setLibSaveToast(true);
+          setTimeout(() => setLibSaveToast(false), 2500);
+        }
+      } catch (e) {
+        console.warn('[SepLib] Auto-save failed:', e);
+      }
 
     } catch (e: any) {
       console.error(e);
@@ -925,6 +920,19 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         throw new Error(b.error || 'Falha ao registrar stems');
       }
 
+      // Update local library if this session is saved
+      if (activeSepId) {
+        await saveSeparation({
+          id: activeSepId,
+          songName,
+          artist,
+          bpm,
+          songKey,
+          stems: stems.map(s => ({ id: s.id, name: s.name, url: s.url, color: s.color })),
+          voiceCues,
+        });
+      }
+
       setSaveProgress(100);
       setSaveStatus('Sucesso! Música publicada na nuvem.');
       setTimeout(() => {
@@ -967,30 +975,130 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     }
   };
 
+  // ── Load a saved separation ──
+  const handleOpenSavedSeparation = (sep: SavedSeparation) => {
+    const stemsArray: StemData[] = sep.stems.map(s => ({ id: s.id, name: s.name, url: s.url, color: s.color }));
+    const initialStates: Record<string, { muted: boolean; soloed: boolean; volume: number; pan: number }> = {};
+    stemsArray.forEach(s => {
+      initialStates[s.id] = { muted: false, soloed: false, volume: 1, pan: 0 };
+    });
+    setStemStates(initialStates);
+    setStems(stemsArray);
+    setSongName(sep.songName);
+    setArtist(sep.artist || '');
+    setBpm(sep.bpm || '120');
+    setSongKey(sep.songKey || 'C');
+    setVoiceCues(sep.voiceCues || []);
+    setActiveSepId(sep.id);
+    setFile(null); // signal we're in "loaded" mode, stems drive the UI
+  };
+
   if (!file && stems.length === 0) {
     return (
-      <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col items-center justify-center p-6">
-        <button onClick={onClose} className="transport-btn absolute top-4 left-4 flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold text-text-muted cursor-pointer uppercase tracking-wider">
+      <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col overflow-hidden">
+        <button onClick={onClose} className="transport-btn absolute top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold text-text-muted cursor-pointer uppercase tracking-wider">
           <ChevronLeft size={13}/> Voltar
         </button>
-        <div className="max-w-md w-full flex flex-col items-center text-center">
-          <div className="w-20 h-20 mb-8 rounded-2xl flex items-center justify-center border border-border bg-surface relative shadow-[0_0_40px_rgba(212,168,67,0.08)]">
-            <Disc3 size={36} className="text-primary animate-[spin_10s_linear_infinite]" />
-            <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-primary animate-pulse"></div>
-          </div>
-          <h1 className="text-3xl font-black tracking-[0.15em] uppercase mb-2 text-white">SEPARADOR IA</h1>
-          <p className="text-text-muted mb-10 text-[10px] font-mono tracking-widest uppercase">Motor de Separação Multi-faixa Profissional</p>
-          <label className="w-full hw-btn flex flex-col items-center gap-4 px-8 py-10 rounded-xl cursor-pointer group">
-            <UploadCloud size={36} className="text-primary group-hover:scale-110 transition-transform" />
-            <div>
-              <div className="font-black text-white uppercase tracking-wider text-sm mb-1">Carregar Áudio & Iniciar</div>
-              <div className="text-[10px] text-text-muted/50 font-mono">MP3, WAV ou AAC</div>
+
+        <div className="flex-1 overflow-y-auto">
+          {/* ── Hero / Upload ── */}
+          <div className="flex flex-col items-center text-center pt-16 pb-8 px-6">
+            <div className="w-20 h-20 mb-8 rounded-2xl flex items-center justify-center border border-border bg-surface relative shadow-[0_0_40px_rgba(212,168,67,0.08)]">
+              <Disc3 size={36} className="text-primary animate-[spin_10s_linear_infinite]" />
+              <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-primary animate-pulse"></div>
             </div>
-            <input type="file" accept="audio/*" onChange={handleFileUpload} className="hidden" />
-          </label>
-          <button onClick={loadMockData} className="mt-6 text-[9px] font-mono text-text-muted/30 hover:text-text-muted/60 underline cursor-pointer transition-colors uppercase tracking-wider">
-            [dev] dados fictícios
-          </button>
+            <h1 className="text-3xl font-black tracking-[0.15em] uppercase mb-2 text-white">SEPARADOR IA</h1>
+            <p className="text-text-muted mb-8 text-[10px] font-mono tracking-widest uppercase">Motor de Separação Multi-faixa Profissional</p>
+            <label className="w-full max-w-md hw-btn flex flex-col items-center gap-4 px-8 py-10 rounded-xl cursor-pointer group">
+              <UploadCloud size={36} className="text-primary group-hover:scale-110 transition-transform" />
+              <div>
+                <div className="font-black text-white uppercase tracking-wider text-sm mb-1">Carregar Áudio & Iniciar</div>
+                <div className="text-[10px] text-text-muted/50 font-mono">MP3, WAV ou AAC</div>
+              </div>
+              <input type="file" accept="audio/*" onChange={handleFileUpload} className="hidden" />
+            </label>
+          </div>
+
+          {/* ── Separation Library ── */}
+          <div className="max-w-3xl mx-auto px-4 pb-12">
+            <div className="flex items-center gap-2 mb-4">
+              <FolderOpen size={14} className="text-primary" />
+              <h2 className="text-white font-black text-xs uppercase tracking-[0.15em]">Minhas Separações</h2>
+              <span className="text-[9px] font-mono text-text-muted/40 ml-auto">{separations.length} salva(s)</span>
+            </div>
+
+            {isLibLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 size={20} className="animate-spin text-primary" />
+              </div>
+            ) : separations.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Disc3 size={32} className="text-text-muted/15 mb-3" />
+                <p className="text-text-muted/40 text-[10px] font-mono">Nenhuma separação salva ainda.</p>
+                <p className="text-text-muted/25 text-[9px] font-mono mt-1">Faça sua primeira separação e ela aparecerá aqui automaticamente.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {separations.map(sep => (
+                  <div key={sep.id}
+                    className="group bg-[#141416] border border-[#222] hover:border-primary/30 rounded-lg p-3.5 transition-all hover:bg-[#1a1a1c] cursor-pointer relative"
+                    onClick={() => handleOpenSavedSeparation(sep)}
+                  >
+                    {/* Delete button */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteSeparation(sep.id); }}
+                      className="absolute top-2 right-2 p-1.5 rounded-md text-text-muted/30 hover:text-red-400 hover:bg-red-400/10 transition-all opacity-0 group-hover:opacity-100 cursor-pointer z-10"
+                      title="Excluir separação"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+
+                    {/* Song name */}
+                    <div className="font-black text-white text-[11px] uppercase tracking-wider truncate pr-8 mb-1.5">
+                      {sep.songName || 'Sem título'}
+                    </div>
+
+                    {/* Artist */}
+                    {sep.artist && (
+                      <div className="text-text-muted/50 text-[9px] font-mono truncate mb-2.5">{sep.artist}</div>
+                    )}
+
+                    {/* Metadata chips */}
+                    <div className="flex items-center gap-1.5 mb-3">
+                      {sep.songKey && sep.songKey !== 'C' && (
+                        <span className="text-[8px] font-bold bg-secondary/10 text-secondary/80 px-1.5 py-0.5 rounded font-mono">{sep.songKey}</span>
+                      )}
+                      {sep.bpm && sep.bpm !== '120' && (
+                        <span className="text-[8px] font-bold bg-primary/10 text-primary/80 px-1.5 py-0.5 rounded font-mono">{sep.bpm} BPM</span>
+                      )}
+                      <span className="text-[8px] font-bold bg-white/5 text-text-muted/50 px-1.5 py-0.5 rounded font-mono">{sep.stems.length} faixas</span>
+                    </div>
+
+                    {/* Stem color dots */}
+                    <div className="flex items-center gap-1 mb-2.5">
+                      {sep.stems.slice(0, 6).map((s, i) => (
+                        <div key={i} className="w-2.5 h-2.5 rounded-full border border-black/30" style={{ backgroundColor: s.color }} title={s.name} />
+                      ))}
+                      {sep.stems.length > 6 && (
+                        <span className="text-[7px] text-text-muted/30 font-mono">+{sep.stems.length - 6}</span>
+                      )}
+                    </div>
+
+                    {/* Footer: date + open */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1 text-[8px] text-text-muted/30 font-mono">
+                        <Clock size={8} />
+                        {new Date(sep.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                      </div>
+                      <div className="flex items-center gap-1 text-[9px] text-primary/60 group-hover:text-primary font-bold uppercase tracking-wider transition-colors">
+                        <Play size={9} fill="currentColor" /> Abrir
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -1048,6 +1156,15 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
           <Save size={12} /> EXPORTAR
         </button>
       </header>
+
+      {/* ── Auto-save Toast ── */}
+      <div className={`absolute top-16 left-1/2 -translate-x-1/2 z-[100] transition-all duration-500 pointer-events-none flex flex-col items-center
+        ${libSaveToast ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
+        <div className="bg-[#111] border border-[#333] shadow-2xl rounded-full px-4 py-2 flex items-center gap-2">
+          <CheckCircle2 size={14} className="text-primary" />
+          <span className="text-[10px] font-bold text-white uppercase tracking-wider font-mono">Salvo na Biblioteca</span>
+        </div>
+      </div>
 
       {/* ═══ WORKSPACE ═══ */}
       <div className="flex-1 flex overflow-hidden">
