@@ -1011,7 +1011,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       
       setFile(pendingFile);
       setSongName(pendingFile.name.replace(/\.[^/.]+$/, ""));
-      setSeparationStep('processing');
+      setSeparationStep('upload'); // Reseta o step, pois o `file` que controla a tela de processamento.
       processAudio(pendingFile, stemsCount);
     };
 
