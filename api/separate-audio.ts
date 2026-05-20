@@ -39,10 +39,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!auth.ok) { res.status(auth.status).json({ error: auth.error }); return; }
 
     const audioUrl: unknown = req.body?.audioUrl;
+    const stemCount: unknown = req.body?.stemCount || 4;
     if (typeof audioUrl !== 'string' || !audioUrl.startsWith(allowedPrefix)) {
         res.status(400).json({ error: 'audioUrl must be hosted on our storage' });
         return;
     }
+    const requestedStems = typeof stemCount === 'number' ? stemCount : 4;
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
@@ -77,12 +79,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
+        let model_name = 'htdemucs';
+        if (requestedStems >= 6) {
+            model_name = 'htdemucs_6s';
+        }
+
+        const inputOptions: any = { audio: audioUrl, model_name };
+        if (requestedStems === 2) {
+            inputOptions.two_stems = 'vocals';
+        }
+
         const replicate = new Replicate({ auth: replicateToken });
         const prediction = await replicate.predictions.create({
             version: DEMUCS_VERSION,
-            input: { audio: audioUrl, model_name: 'htdemucs_6s' },
+            input: inputOptions,
         });
-        res.status(200).json({ success: true, prediction });
+        res.status(200).json({ success: true, prediction, model_name });
     } catch (error: any) {
         console.error('[separate-audio] replicate error:', error?.message);
         if (!auth.isAdmin) {

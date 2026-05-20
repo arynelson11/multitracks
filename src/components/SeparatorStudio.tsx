@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import WaveSurfer from 'wavesurfer.js';
-import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Minus, Plus, Mic, Download, Trash2, FolderOpen, Clock, CheckCircle2 } from 'lucide-react';
+import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Minus, Plus, Mic, Download, Trash2, FolderOpen, Clock, CheckCircle2, Lock } from 'lucide-react';
 import { uploadToR2 } from '../lib/r2';
 import { getAuthHeaders } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -139,6 +139,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const [libSaveToast, setLibSaveToast] = useState(false);
   const [publishGlobal, setPublishGlobal] = useState(false);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
+  const [separationStep, setSeparationStep] = useState<'upload' | 'options'>('upload');
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressMsg, setProgressMsg] = useState('');
@@ -597,13 +599,12 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     }
     
     if (selected) {
-      setFile(selected);
-      setSongName(selected.name.replace(/\.[^/.]+$/, ""));
-      await processAudio(selected);
+      setPendingFile(selected);
+      setSeparationStep('options');
     }
   };
 
-  const processAudio = async (audioFile: File) => {
+  const processAudio = async (audioFile: File, stemCount: number) => {
     // ── Limit check based on Plan ──
     const LIMITS = { free: 5, essencial: 50, pro: 150, essencial_anual: 50, pro_anual: 150 };
     const userPlanKey = (userPlan || 'free').toLowerCase();
@@ -633,7 +634,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       const res = await fetch('/api/separate-audio', {
         method: 'POST',
         headers: await getAuthHeaders(),
-        body: JSON.stringify({ audioUrl: publicUrl })
+        body: JSON.stringify({ audioUrl: publicUrl, stemCount })
       });
 
       if (!res.ok) {
@@ -673,11 +674,11 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       // Preparando as faixas finais
       const colors: Record<string, string> = {
         vocals: '#06b6d4', drums: '#f59e0b', bass: '#8b5cf6',
-        guitar: '#ef4444', piano: '#10b981', other: '#ec4899', click: '#ffffff'
+        guitar: '#ef4444', piano: '#10b981', other: '#ec4899', no_vocals: '#10b981', click: '#ffffff'
       };
       const translateNames: Record<string, string> = {
         vocals: 'Vocais', drums: 'Bateria', bass: 'Baixo',
-        guitar: 'Guitarra', piano: 'Piano/TeCL', other: 'Outros/Fx'
+        guitar: 'Guitarra', piano: 'Piano/TeCL', other: 'Outros/Fx', no_vocals: 'Instrumental'
       };
 
       let stemsArray: StemData[] = [];
@@ -993,7 +994,110 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     setFile(null); // signal we're in "loaded" mode, stems drive the UI
   };
 
-  if (!file && stems.length === 0) {
+  if (separationStep === 'options' && pendingFile) {
+    const userPlanKey = (userPlan || 'free').toLowerCase();
+    const canUsePro = userPlanKey.includes('pro') || userPlanKey.includes('studio') || isAdmin;
+    const canUseStudio = userPlanKey.includes('studio') || isAdmin;
+
+    const handleSelectOption = (stemsCount: number, requirePro: boolean, requireStudio: boolean) => {
+      if (requireStudio && !canUseStudio) {
+        setIsPricingOpen(true);
+        return;
+      }
+      if (requirePro && !canUsePro) {
+        setIsPricingOpen(true);
+        return;
+      }
+      
+      setFile(pendingFile);
+      setSongName(pendingFile.name.replace(/\.[^/.]+$/, ""));
+      setSeparationStep('processing');
+      processAudio(pendingFile, stemsCount);
+    };
+
+    return (
+      <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col overflow-hidden">
+        <button onClick={() => { setSeparationStep('upload'); setPendingFile(null); }} className="transport-btn absolute top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold text-text-muted cursor-pointer uppercase tracking-wider">
+          <ChevronLeft size={13}/> Voltar
+        </button>
+
+        <div className="flex-1 overflow-y-auto px-6 py-12">
+          <div className="max-w-4xl mx-auto mt-8">
+            <h1 className="text-3xl font-black text-white mb-2">Separar faixas</h1>
+            <p className="text-text-muted text-sm mb-12">Selecione o nível de isolamento de instrumentos desejado</p>
+
+            <div className="space-y-12">
+              {/* Separação Básica */}
+              <div>
+                <h2 className="text-white font-bold text-sm mb-4">Separação Básica (Grátis)</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div 
+                    onClick={() => handleSelectOption(2, false, false)}
+                    className="hw-btn flex flex-col p-6 rounded-xl cursor-pointer hover:bg-white/5 transition-colors border border-border/50 hover:border-primary/50 group"
+                  >
+                    <div className="text-white font-bold text-base mb-2 group-hover:text-primary transition-colors">Vocais, Instrumental</div>
+                    <div className="text-text-muted text-xs">2 faixas</div>
+                  </div>
+                  <div 
+                    onClick={() => handleSelectOption(4, false, false)}
+                    className="hw-btn flex flex-col p-6 rounded-xl cursor-pointer hover:bg-white/5 transition-colors border border-border/50 hover:border-primary/50 group"
+                  >
+                    <div className="text-white font-bold text-base mb-2 group-hover:text-primary transition-colors">Vocais, Bateria, Baixo, Outros</div>
+                    <div className="text-text-muted text-xs">4 faixas</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Separação Pro */}
+              <div>
+                <h2 className="text-white font-bold text-sm mb-4 flex items-center gap-2">
+                  Separação Avançada
+                  {!canUsePro && <span className="bg-yellow-500/20 text-yellow-500 text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider ml-2">PRO</span>}
+                </h2>
+                <div className="grid grid-cols-1 gap-4">
+                  <div 
+                    onClick={() => handleSelectOption(6, true, false)}
+                    className={`hw-btn flex items-center p-6 rounded-xl border transition-colors group ${canUsePro ? 'cursor-pointer hover:bg-white/5 border-border/50 hover:border-primary/50' : 'cursor-not-allowed opacity-50 border-border/20 bg-black/20'}`}
+                  >
+                    <div className="flex-1">
+                      <div className="text-white font-bold text-base mb-2">Vocais, Bateria, Baixo, Guitarra, Piano, Outros</div>
+                      <div className="text-text-muted text-xs">6 faixas</div>
+                    </div>
+                    {!canUsePro && <Lock size={20} className="text-text-muted/50" />}
+                  </div>
+                </div>
+              </div>
+
+              {/* Separação Studio */}
+              <div>
+                <h2 className="text-white font-bold text-sm mb-4 flex items-center gap-2">
+                  Personalização
+                  {!canUseStudio && <span className="bg-purple-500/20 text-purple-400 text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider ml-2">STUDIO</span>}
+                </h2>
+                <div className="grid grid-cols-1 gap-4">
+                  <div 
+                    onClick={() => handleSelectOption(6, true, true)}
+                    className={`hw-btn flex items-center p-6 rounded-xl border transition-colors group ${canUseStudio ? 'cursor-pointer hover:bg-white/5 border-border/50 hover:border-primary/50' : 'cursor-not-allowed opacity-50 border-border/20 bg-black/20'}`}
+                  >
+                    <div className="flex-1 flex flex-col justify-center">
+                      <div className="text-white font-bold text-base mb-2">Separação Personalizada</div>
+                      <div className="text-text-muted text-xs">Ajuste fino de pistas avançado e roteamento inteligente (Em breve)</div>
+                    </div>
+                    {!canUseStudio && <Lock size={20} className="text-text-muted/50" />}
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        {isPricingOpen && <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />}
+      </div>
+    );
+  }
+
+  if (separationStep === 'upload' && !file && stems.length === 0) {
     return (
       <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col overflow-hidden">
         <button onClick={onClose} className="transport-btn absolute top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold text-text-muted cursor-pointer uppercase tracking-wider">

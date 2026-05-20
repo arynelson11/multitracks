@@ -40,8 +40,9 @@ const PLANS = [
     highlight: false,
     features: [
       '5 separações por mês',
-      'Stems padrão',
-      'Acesso à biblioteca de clicks',
+      'Separação em 2 ou 4 faixas',
+      'Biblioteca local salva no navegador',
+      'Não gasta tokens ao recarregar músicas',
       'Mixer básico multicanal',
     ],
     cta: 'Começar grátis',
@@ -55,12 +56,11 @@ const PLANS = [
     highlight: true,
     features: [
       '50 separações por mês',
-      'Stems de qualidade estendida',
+      'Separação Avançada (6 faixas)',
       'Pads ambiente completos',
       'Voice guide auto-detector',
       'Click com levada brasileira',
       'Auto-detecção de seções (worship)',
-      'Biblioteca em nuvem',
       'Suporte por email',
     ],
     cta: 'Assinar Pro',
@@ -73,8 +73,8 @@ const PLANS = [
     badge: null as string | null,
     highlight: false,
     features: [
-      'Separações ilimitadas',
-      'Qualidade máxima',
+      '150 separações por mês',
+      'Separação Personalizada (Extração avançada)',
       'Tudo do Pro +',
       'Prioridade no processamento',
       'Múltiplos repertórios simultâneos',
@@ -270,8 +270,8 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           </h2>
           <div className="grid sm:grid-cols-3 gap-6">
             {[
-              { title: 'Qualquer música, separada', desc: 'Sobe MP3, WAV ou link. O Playback Studio separa em voz, instrumentos e pads em alguns minutos.' },
-              { title: 'Qualquer ritmo, qualquer banda', desc: 'Worship, gospel, sertanejo, MPB, rock, indie. Funciona com o que sua banda toca.' },
+              { title: 'Qualquer música, separada', desc: 'Sobe MP3, WAV ou link. O Playback Studio separa em voz, bateria, baixo, guitarras e mais.' },
+              { title: 'Biblioteca de Separações Local', desc: 'Suas separações ficam salvas no seu navegador. Feche e abra depois sem gastar tokens novamente.' },
               { title: 'Sem catálogo travando', desc: 'Você escolhe a música. O Playback Studio prepara. Sem esperar release, sem licença gringa.' },
             ].map((item, i) => (
               <div key={i} className="bg-tinta-raised border border-tinta-border rounded-2xl p-7 hover:border-laranja/40 transition-colors">
