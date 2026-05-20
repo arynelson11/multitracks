@@ -5,6 +5,8 @@ import { useState, useEffect } from 'react';
 import type { Channel } from '../types';
 import { PricingModal } from './PricingModal';
 import { supabase } from '../lib/supabase';
+import { planDisplayName, isPaidPlan } from '../lib/plans';
+import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -177,14 +179,14 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                             <div className="w-full max-w-md bg-[#1c1c1e] rounded-xl p-6 border border-border flex flex-col items-center text-center shadow-lg">
                                 <h3 className="text-white text-lg font-bold uppercase tracking-wider mb-2">Seu Plano Atual</h3>
                                 
-                                <div className="text-3xl font-black text-primary uppercase mb-4 tracking-widest">
-                                    {userPlan.replace('_', ' ')}
+                                <div className="text-3xl font-black text-laranja uppercase mb-4 tracking-widest">
+                                    {planDisplayName(userPlan)}
                                 </div>
-                                
+
                                 <p className="text-text-muted text-xs font-mono mb-6">
-                                    {userPlan === 'free' 
-                                        ? 'Você está no plano gratuito. Faça upgrade para liberar todas as funcionalidades!'
-                                        : 'Obrigado por apoiar a plataforma! Aproveite todos os recursos do seu plano.'}
+                                    {!isPaidPlan(userPlan)
+                                        ? 'Você está no plano Livre. Faça upgrade para liberar todas as funcionalidades.'
+                                        : 'Obrigado por apoiar o Playback Studio. Aproveite tudo do seu plano.'}
                                 </p>
 
                                 {(() => {
@@ -213,9 +215,9 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                                 
                                 <button
                                     onClick={() => setIsPricingOpen(true)}
-                                    className="px-6 py-3 bg-primary text-black text-xs font-bold uppercase tracking-wider rounded-lg transition-transform hover:scale-105 active:scale-95 shadow-[0_0_15px_rgba(182,242,50,0.3)] mb-2"
+                                    className="px-6 py-3 bg-laranja text-bone text-xs font-bold uppercase tracking-wider rounded-lg transition-transform hover:scale-105 active:scale-95 shadow-lg shadow-laranja/25 mb-2"
                                 >
-                                    {userPlan === 'free' ? 'Ver Planos & Assinar' : 'Alterar Plano'}
+                                    {!isPaidPlan(userPlan) ? 'Ver Planos & Assinar' : 'Alterar Plano'}
                                 </button>
                             </div>
                         </div>
@@ -223,9 +225,9 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
 
                     {activeTab === 'Sobre' && (
                         <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-8">
-                            <div className="text-3xl font-black tracking-[0.15em] text-primary uppercase font-mono">PLAYBACK</div>
-                            <div className="text-text-muted text-[10px] font-mono tracking-wider">Motor de Estúdio v5.0</div>
-                            <div className="text-text-muted/40 text-[9px] max-w-sm font-mono">Sistema profissional de playback multitracks. Construído com Web Audio API, React e IndexedDB.</div>
+                            <PlaybackStudioWordmark size="lg" tone="light" />
+                            <div className="text-text-muted text-[10px] font-mono tracking-wider mt-2">A plataforma do domingo · v5.0</div>
+                            <div className="text-text-muted/40 text-[9px] max-w-sm font-mono">Stems pra qualquer música. Pra sua banda chegar pronta no domingo. Feito por quem toca.</div>
                         </div>
                     )}
                 </div>

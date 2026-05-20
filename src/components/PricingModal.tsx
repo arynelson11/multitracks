@@ -10,40 +10,40 @@ interface PricingModalProps {
 const PLANS = [
     {
         id: 'prod_juQuBRcaAeyJYYKJEGeRJ3DZ',
-        name: 'Essencial Mensal',
+        name: 'Pro Mensal',
         price: 49.90,
         priceStr: 'R$ 49,90',
         period: '/mês',
-        description: 'Para músicos e ministros ativos',
-        features: ['Acesso a pads online', 'Gerenciamento de setlists', 'Recursos essenciais']
+        description: 'Pra banda que toca todo fim de semana',
+        features: ['Acesso a pads online', 'Gerenciamento de setlists', 'Recursos essenciais'],
+        isPopular: true
     },
     {
         id: 'prod_CYyTuP1NcGyqAfxBUHF4Zxkp',
-        name: 'Essencial Anual',
+        name: 'Pro Anual',
         price: 478.80,
         priceStr: 'R$ 478,80',
         period: '/ano',
-        description: 'Para músicos e ministros ativos',
+        description: 'Pra banda que toca todo fim de semana',
         features: ['Acesso a pads online', 'Gerenciamento de setlists', 'Recursos essenciais', 'Desconto especial anual']
     },
     {
         id: 'prod_JdjCauZnpEP6dcYWQqZAPxd5',
-        name: 'Pro Mensal',
+        name: 'Studio Mensal',
         price: 99.90,
         priceStr: 'R$ 99,90',
         period: '/mês',
-        description: 'Para equipes e produtores',
-        features: ['Tudo do Essencial', 'Separação de áudio AI (Spleeter)', 'Uploads de multi-faixas', 'Ferramentas de admin'],
-        isPopular: true
+        description: 'Pra quem leva isso a sério',
+        features: ['Tudo do Pro', 'Separação de áudio AI (Spleeter)', 'Uploads de multi-faixas', 'Ferramentas de admin']
     },
     {
         id: 'prod_4hmhxB0NCUKaSxGut6jx2eFU',
-        name: 'Pro Anual',
+        name: 'Studio Anual',
         price: 958.80,
         priceStr: 'R$ 958,80',
         period: '/ano',
-        description: 'Para equipes e produtores',
-        features: ['Tudo do Essencial', 'Separação de áudio AI (Spleeter)', 'Uploads de multi-faixas', 'Desconto de 2 meses']
+        description: 'Pra quem leva isso a sério',
+        features: ['Tudo do Pro', 'Separação de áudio AI (Spleeter)', 'Uploads de multi-faixas', 'Desconto de 2 meses']
     }
 ];
 
