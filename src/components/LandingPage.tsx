@@ -74,7 +74,7 @@ const PLANS = [
     highlight: false,
     features: [
       '150 separações por mês',
-      'Separação Personalizada (Extração avançada)',
+      'Qualidade máxima (Processamento Avançado)',
       'Tudo do Pro +',
       'Prioridade no processamento',
       'Múltiplos repertórios simultâneos',

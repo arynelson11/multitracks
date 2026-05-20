@@ -1029,7 +1029,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
             <div className="space-y-12">
               {/* Separação Básica */}
               <div>
-                <h2 className="text-white font-bold text-sm mb-4">Separação Básica (Grátis)</h2>
+                <h2 className="text-white font-bold text-sm mb-4">Separação Básica</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div 
                     onClick={() => handleSelectOption(2, false, false)}
@@ -1064,26 +1064,6 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                       <div className="text-text-muted text-xs">6 faixas</div>
                     </div>
                     {!canUsePro && <Lock size={20} className="text-text-muted/50" />}
-                  </div>
-                </div>
-              </div>
-
-              {/* Separação Studio */}
-              <div>
-                <h2 className="text-white font-bold text-sm mb-4 flex items-center gap-2">
-                  Personalização
-                  {!canUseStudio && <span className="bg-purple-500/20 text-purple-400 text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider ml-2">STUDIO</span>}
-                </h2>
-                <div className="grid grid-cols-1 gap-4">
-                  <div 
-                    onClick={() => handleSelectOption(6, true, true)}
-                    className={`hw-btn flex items-center p-6 rounded-xl border transition-colors group ${canUseStudio ? 'cursor-pointer hover:bg-white/5 border-border/50 hover:border-primary/50' : 'cursor-not-allowed opacity-50 border-border/20 bg-black/20'}`}
-                  >
-                    <div className="flex-1 flex flex-col justify-center">
-                      <div className="text-white font-bold text-base mb-2">Separação Personalizada</div>
-                      <div className="text-text-muted text-xs">Ajuste fino de pistas avançado e roteamento inteligente (Em breve)</div>
-                    </div>
-                    {!canUseStudio && <Lock size={20} className="text-text-muted/50" />}
                   </div>
                 </div>
               </div>
