@@ -64,7 +64,7 @@ export default async function handler(req: any, res: any) {
 
     // Tentativa 1: /v2/subscriptions/create com productId direto (produtos com cycle pré-criados).
     try {
-      const payload = { productId, customer: { email }, returnUrl, completionUrl, metadata: { userId } };
+      const payload = { items: [{ productId, quantity: 1 }], customer: { email }, returnUrl, completionUrl, metadata: { userId } };
       const response = await api.post('/subscriptions/create', payload);
       const url = response.data?.data?.url || response.data?.url;
       if (url) return res.status(200).json({ url });
@@ -73,10 +73,10 @@ export default async function handler(req: any, res: any) {
       attempts.push({ endpoint: '/subscriptions/create', payload: 'see code', error: err?.response?.data || err?.message });
     }
 
-    // Tentativa 2: /v2/checkouts/create com products[].
+    // Tentativa 2: /v2/checkouts/create com items[].
     try {
       const payload = {
-        products: [{ productId, quantity: 1 }],
+        items: [{ productId, quantity: 1 }],
         customer: { email },
         returnUrl,
         completionUrl,
@@ -95,7 +95,7 @@ export default async function handler(req: any, res: any) {
       const payload = {
         frequency: 'ONE_TIME',
         methods: ['PIX'],
-        products: [{ externalId: productId, name: productId, description: productId, quantity: 1, price: 0 }],
+        items: [{ externalId: productId, name: productId, description: productId, quantity: 1, price: 0 }],
         customer: { email },
         returnUrl,
         completionUrl,
