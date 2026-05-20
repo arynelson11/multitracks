@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
-import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut, Shield, Home, Disc, Repeat, Square } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut, Shield, Home, Disc, Repeat, Square, Menu } from 'lucide-react'
 import { BrandLogo } from './components/BrandLogo'
 import { PlayMark } from './components/brand/PlayMark'
 import { useAudioEngine } from './hooks/useAudioEngine'
@@ -67,6 +67,8 @@ export default function App() {
   const [isSaving, setIsSaving] = useState(false)
   const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false)
   const [isPrecountOpen, setIsPrecountOpen] = useState(false)
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false)
+  const [mobileDrawerView, setMobileDrawerView] = useState<'main' | 'tom' | 'faixas'>('main')
   const [chDragIdx, setChDragIdx] = useState<number | null>(null)
   const [chDragOverIdx, setChDragOverIdx] = useState<number | null>(null)
   const [vuLevels, setVuLevels] = useState<Record<string, number>>({})
@@ -370,7 +372,7 @@ export default function App() {
       {/* ═══ HEADER / TRANSPORT ═══ */}
       <header className="bg-[#18181a] border-b border-border shrink-0">
         {/* Top row: Brand + Tools + Timer */}
-        <div className="flex items-center justify-between px-3 sm:px-4 h-11 sm:h-12 border-b border-border">
+        <div className="flex max-sm:portrait:hidden items-center justify-between px-3 sm:px-4 h-11 sm:h-12 border-b border-border">
           {/* Left: Menu + Brand */}
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="relative flex items-center">
@@ -633,6 +635,139 @@ export default function App() {
           </div>
         </div>
 
+        {/* ═══ MOBILE PORTRAIT HEADER ═══ */}
+        <div className="hidden max-sm:portrait:flex items-center px-3 h-12 border-b border-border relative">
+          <button
+            onClick={() => { setIsMobileDrawerOpen(true); setMobileDrawerView('main'); }}
+            className="text-text-muted hover:text-white p-1.5 -ml-1.5 rounded-md cursor-pointer active:scale-90 transition-transform"
+            aria-label="Abrir menu"
+          >
+            <Menu size={20} />
+          </button>
+          <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none">
+            <BrandLogo size="sm" tone="light" variant="horizontal" />
+          </div>
+          <div className="ml-auto w-7" />
+        </div>
+
+        {/* Mobile portrait: action buttons grid */}
+        <div className="hidden max-sm:portrait:grid grid-cols-5 gap-1.5 px-3 py-2.5 border-b border-border bg-[#141416]">
+          {/* REPERTÓRIO */}
+          <div className="relative">
+            <button
+              onClick={() => setIsSetlistMenuOpen(!isSetlistMenuOpen)}
+              className={`w-full flex flex-col items-center justify-center gap-1 py-2 rounded-md text-[9px] font-bold cursor-pointer transition-all active:scale-95 border ${isSetlistMenuOpen ? 'bg-white/10 text-white border-white/10' : 'bg-transparent text-text-muted border-border hover:text-white'}`}
+            >
+              <ListMusic size={16} />
+              <span className="tracking-wider font-mono">REPERT.</span>
+            </button>
+            {isSetlistMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsSetlistMenuOpen(false)} />
+                <div className="absolute top-full left-0 mt-2 w-72 daw-panel rounded-lg z-50 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                    <button onClick={() => setIsSetlistMenuOpen(false)} className="text-primary text-xs font-bold uppercase tracking-wider cursor-pointer">Cancelar</button>
+                    <span className="text-white font-bold text-xs uppercase tracking-wider">Repertórios</span>
+                    <div className="w-14" />
+                  </div>
+                  <div className="p-2">
+                    <button onClick={() => { clearSession(); setIsSetlistMenuOpen(false); }}
+                      className="w-full text-left px-4 py-2.5 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer">
+                      <span className="text-white text-sm font-medium flex items-center gap-3"><Plus size={16} className="text-primary" />Novo Repertório</span>
+                      <ChevronRight size={14} className="text-text-muted" />
+                    </button>
+                    <label className="w-full text-left px-4 py-2.5 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer">
+                      <span className="text-white text-sm font-medium flex items-center gap-3"><FolderOpen size={16} className="text-primary" />Importar Stems</span>
+                      <ChevronRight size={14} className="text-text-muted" />
+                      <input type="file" multiple accept="audio/*" className="hidden"
+                        onChange={(e) => { if (e.target.files) { loadFiles(e.target.files); setIsSetlistMenuOpen(false) } }} />
+                    </label>
+                    <hr className="border-border my-1" />
+                    {playlist.length > 0 && (
+                      <button onClick={handleExport} disabled={isSaving}
+                        className="w-full text-left px-4 py-2.5 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer">
+                        <span className="text-white text-sm font-medium flex items-center gap-3">
+                          {isSaving ? <Loader2 size={16} className="text-primary animate-spin" /> : <Download size={16} className="text-accent-green" />}
+                          {isSaving ? 'Salvando...' : 'Salvar (.zip)'}
+                        </span>
+                        <ChevronRight size={14} className="text-text-muted" />
+                      </button>
+                    )}
+                    <label className="w-full text-left px-4 py-2.5 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer">
+                      <span className="text-white text-sm font-medium flex items-center gap-3"><Upload size={16} className="text-secondary" />Carregar (.zip)</span>
+                      <ChevronRight size={14} className="text-text-muted" />
+                      <input type="file" accept=".zip" className="hidden" onChange={handleImport} />
+                    </label>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* METRÔNOMO */}
+          <button
+            onClick={() => setIsMetronomeModalOpen(true)}
+            className="w-full flex flex-col items-center justify-center gap-1 py-2 rounded-md text-[9px] font-bold cursor-pointer transition-all active:scale-95 border bg-transparent text-text-muted border-border hover:text-white"
+          >
+            <Timer size={16} />
+            <span className="tracking-wider font-mono">METRO</span>
+          </button>
+
+          {/* PRÉ-CONTAGEM */}
+          <div className="relative">
+            <button
+              onClick={() => setIsPrecountOpen(!isPrecountOpen)}
+              className={`w-full flex flex-col items-center justify-center gap-1 py-2 rounded-md text-[9px] font-bold cursor-pointer transition-all active:scale-95 border ${precountEnabled ? 'border-primary/30 text-primary bg-primary/5' : 'bg-transparent text-text-muted border-border hover:text-white'}`}
+            >
+              <span className="text-[11px] font-mono font-bold tracking-tight">1·2·3</span>
+              <span className="tracking-wider font-mono">PRÉ</span>
+            </button>
+            {isPrecountOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsPrecountOpen(false)} />
+                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 daw-panel rounded-lg z-50 p-4 w-64">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-white text-sm font-bold">Pré-contagem</span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); togglePrecountEnabled(!precountEnabled); }}
+                      className={`relative w-11 h-6 rounded-full cursor-pointer transition-colors ${precountEnabled ? 'bg-primary' : 'bg-white/10'}`}
+                    >
+                      <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow"
+                        style={{ transform: precountEnabled ? 'translateX(20px)' : 'translateX(0)', transition: 'transform 0.2s' }} />
+                    </button>
+                  </div>
+                  <p className="text-text-muted text-xs mb-3">Clicks antes da reprodução começar</p>
+                  <div className="flex items-center justify-between bg-[#141415] border border-white/5 rounded-xl p-2">
+                    <button onClick={() => setPrecountBeats(precountBeats - 1)}
+                      className="w-10 h-10 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg active:scale-95 transition-all text-white/80 cursor-pointer text-lg font-bold">−</button>
+                    <span className="text-white font-black text-3xl w-12 text-center">{precountBeats}</span>
+                    <button onClick={() => setPrecountBeats(precountBeats + 1)}
+                      className="w-10 h-10 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg active:scale-95 transition-all text-white/80 cursor-pointer text-lg font-bold">+</button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* EDITAR */}
+          <button
+            onClick={() => setIsEditMode(!isEditMode)}
+            className={`w-full flex flex-col items-center justify-center gap-1 py-2 rounded-md text-[9px] font-bold cursor-pointer transition-all active:scale-95 border ${isEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border hover:text-white'}`}
+          >
+            {isEditMode ? <Check size={16} /> : <Edit2 size={16} />}
+            <span className="tracking-wider font-mono">{isEditMode ? 'OK' : 'EDIT'}</span>
+          </button>
+
+          {/* INÍCIO */}
+          <button
+            onClick={() => setForceShowSplash(true)}
+            className="w-full flex flex-col items-center justify-center gap-1 py-2 rounded-md text-[9px] font-bold cursor-pointer transition-all active:scale-95 border bg-transparent text-text-muted border-border hover:text-white"
+          >
+            <Home size={16} />
+            <span className="tracking-wider font-mono">INÍCIO</span>
+          </button>
+        </div>
+
         {/* Transport Controls Row */}
         <div className="flex flex-col items-center px-3 py-2 sm:py-2.5 bg-[#141416] gap-1">
           {/* Playback Mode — acima dos controles */}
@@ -656,9 +791,9 @@ export default function App() {
               {isPlaying ? <Pause size={24} fill="currentColor" /> : isCountingIn ? <Loader2 size={24} className="animate-spin" /> : <Play size={24} fill="currentColor" className="ml-0.5" />}
             </button>
             <button onClick={nextSong} className="transport-btn p-2 rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipForward size={18} /></button>
-            {/* Mobile edit toggle */}
+            {/* Mobile edit toggle (landscape only — portrait has it in the buttons grid) */}
             <button onClick={() => setIsEditMode(!isEditMode)}
-              className={`sm:hidden ml-2 items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-colors border cursor-pointer flex ${isEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border'}`}>
+              className={`sm:hidden max-sm:portrait:hidden ml-2 items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-colors border cursor-pointer flex ${isEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border'}`}>
               {isEditMode ? <Check size={12} /> : <Edit2 size={12} />}
             </button>
           </div>
@@ -896,9 +1031,9 @@ export default function App() {
             </div>
           )}
 
-          {/* No markers yet + admin can add */}
+          {/* No markers yet + admin can add (hidden on mobile portrait) */}
           {(!playlist[activeSongIndex]?.markers || playlist[activeSongIndex].markers!.length === 0) && user?.email === 'arynelson11@gmail.com' && (
-            <div className="flex items-center gap-1.5 mt-1.5">
+            <div className="flex max-sm:portrait:hidden items-center gap-1.5 mt-1.5">
               <button
                 onClick={() => setIsMarkerEditorOpen(!isMarkerEditorOpen)}
                 className="shrink-0 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold tracking-wide cursor-pointer active:scale-95 border text-text-muted border-white/10 hover:bg-white/5"
@@ -1513,6 +1648,183 @@ export default function App() {
       )}
 
       <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
+
+      {/* ═══ MOBILE PORTRAIT DRAWER ═══ */}
+      {isMobileDrawerOpen && (
+        <div className="hidden max-sm:portrait:block fixed inset-0 z-[60]">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setIsMobileDrawerOpen(false)} />
+          <div className="absolute top-0 left-0 bottom-0 w-72 bg-[#141416] border-r border-border flex flex-col shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 h-12 border-b border-border bg-[#18181a] shrink-0">
+              {mobileDrawerView !== 'main' ? (
+                <button onClick={() => setMobileDrawerView('main')}
+                  className="text-text-muted hover:text-white text-xs font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1">
+                  <ChevronRight size={14} className="rotate-180" />
+                  Voltar
+                </button>
+              ) : (
+                <span className="text-text-muted text-[10px] font-bold uppercase tracking-[0.2em] font-mono">Menu</span>
+              )}
+              <button onClick={() => setIsMobileDrawerOpen(false)}
+                className="text-text-muted hover:text-white p-1 -mr-1 rounded-md cursor-pointer">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-2">
+              {mobileDrawerView === 'main' && (
+                <div className="flex flex-col gap-1">
+                  {/* User chip */}
+                  <div className="px-3 py-2 mb-2 bg-white/3 border border-border rounded-md">
+                    <div className="text-[9px] text-text-muted/60 font-mono uppercase tracking-wider">Usuário</div>
+                    <div className="text-white text-xs font-mono truncate">{user.email}</div>
+                  </div>
+
+                  {/* TOM */}
+                  <button onClick={() => setMobileDrawerView('tom')}
+                    className="w-full text-left px-3 py-3 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors border border-transparent hover:border-border">
+                    <span className="text-white text-sm font-bold flex items-center gap-3">
+                      <span className="text-primary font-mono w-5 text-center">♪</span>
+                      Tom
+                    </span>
+                    <span className="flex items-center gap-2">
+                      {currentKeyName && <span className="text-primary text-xs font-mono">{currentKeyName}</span>}
+                      <ChevronRight size={14} className="text-text-muted" />
+                    </span>
+                  </button>
+
+                  {/* BIBLIOTECA */}
+                  <button onClick={() => { handlePremiumFeature(() => setIsLibraryOpen(true)); setIsMobileDrawerOpen(false); }}
+                    className="w-full text-left px-3 py-3 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors border border-transparent hover:border-border">
+                    <span className="text-white text-sm font-bold flex items-center gap-3">
+                      <Cloud size={16} className="text-primary" />
+                      Biblioteca
+                    </span>
+                    <ChevronRight size={14} className="text-text-muted" />
+                  </button>
+
+                  {/* FAIXAS */}
+                  <button onClick={() => setMobileDrawerView('faixas')}
+                    className="w-full text-left px-3 py-3 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors border border-transparent hover:border-border">
+                    <span className="text-white text-sm font-bold flex items-center gap-3">
+                      <Music size={16} className="text-primary" />
+                      Faixas
+                    </span>
+                    <ChevronRight size={14} className="text-text-muted" />
+                  </button>
+
+                  <hr className="border-border my-2" />
+
+                  {/* ADMIN */}
+                  {(user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com') && (
+                    <button onClick={() => { setIsAdminDashboardOpen(true); setIsMobileDrawerOpen(false); }}
+                      className="w-full text-left px-3 py-3 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors border border-transparent hover:border-border">
+                      <span className="text-white text-sm font-bold flex items-center gap-3">
+                        <Shield size={16} className="text-primary" />
+                        Admin
+                      </span>
+                      <ChevronRight size={14} className="text-text-muted" />
+                    </button>
+                  )}
+
+                  {/* CONFIG */}
+                  <button onClick={() => { setIsSettingsOpen(true); setIsMobileDrawerOpen(false); }}
+                    className="w-full text-left px-3 py-3 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors border border-transparent hover:border-border">
+                    <span className="text-white text-sm font-bold flex items-center gap-3">
+                      <Settings size={16} className="text-text-muted" />
+                      Configuração
+                    </span>
+                    <ChevronRight size={14} className="text-text-muted" />
+                  </button>
+
+                  {/* SAIR */}
+                  <button onClick={() => { signOut(); setIsMobileDrawerOpen(false); }}
+                    className="w-full text-left px-3 py-3 rounded-md hover:bg-accent-red/10 flex items-center justify-between cursor-pointer transition-colors border border-transparent hover:border-accent-red/30">
+                    <span className="text-accent-red text-sm font-bold flex items-center gap-3">
+                      <LogOut size={16} />
+                      Sair
+                    </span>
+                  </button>
+                </div>
+              )}
+
+              {mobileDrawerView === 'tom' && (
+                <div className="p-2">
+                  <p className="text-[10px] text-text-muted mb-3 font-mono">
+                    {activeOriginalKey ? 'Selecionar tom:' : 'Tom original desconhecido. Defina manualmente:'}
+                  </p>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {KEYS.map(key => {
+                      const isCurrent = key === currentKeyName
+                      const isOriginal = key === activeOriginalKey && !isCurrent
+                      return (
+                        <button key={key} onClick={() => {
+                          if (activeOriginalKey) {
+                            const diff = KEY_TO_SEMITONE[key] - KEY_TO_SEMITONE[activeOriginalKey]
+                            const semitones = diff > 6 ? diff - 12 : diff < -6 ? diff + 12 : diff
+                            changePitch(semitones)
+                          } else {
+                            setOriginalKey(key)
+                            changePitch(0)
+                          }
+                        }}
+                          className={`py-2 text-[11px] font-bold rounded transition-colors cursor-pointer font-mono ${isCurrent ? 'bg-primary text-black' : isOriginal ? 'bg-white/15 text-white border border-white/20' : 'text-white/70 bg-white/5 hover:bg-primary/20 hover:text-primary'}`}>
+                          {key}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {activeOriginalKey && (
+                    <button onClick={() => { setOriginalKey(null); changePitch(0); }}
+                      className="mt-3 w-full text-[10px] text-text-muted hover:text-accent-red cursor-pointer text-center transition-colors font-mono py-2">
+                      Redefinir detecção de tom
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {mobileDrawerView === 'faixas' && (
+                <div className="p-2 flex flex-col gap-1">
+                  <label className="w-full text-left px-3 py-3 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors border border-transparent hover:border-border">
+                    <span className="text-white text-sm font-bold flex items-center gap-3">
+                      <Upload size={16} className="text-primary" />
+                      Importar do dispositivo
+                    </span>
+                    <ChevronRight size={14} className="text-text-muted" />
+                    <input type="file" multiple accept="audio/*" className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files) {
+                          loadFiles(e.target.files)
+                          setIsMobileDrawerOpen(false)
+                        }
+                      }} />
+                  </label>
+                  <button onClick={() => {
+                    const bpmInput = window.prompt("Digite o BPM desejado para a nova faixa de Click (ex: 120):", "120");
+                    if (bpmInput) {
+                      const bpm = parseInt(bpmInput, 10);
+                      if (!isNaN(bpm) && bpm >= 40 && bpm <= 300) {
+                        createEndlessMetronomeSong(bpm);
+                        setIsMobileDrawerOpen(false);
+                      } else {
+                        alert("BPM inválido. Digite um número entre 40 e 300.");
+                      }
+                    }
+                  }}
+                    className="w-full text-left px-3 py-3 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors border border-transparent hover:border-border">
+                    <span className="text-white text-sm font-bold flex items-center gap-3">
+                      <Timer size={16} className="text-primary" />
+                      Criar Metrônomo (Infinito)
+                    </span>
+                    <ChevronRight size={14} className="text-text-muted" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
