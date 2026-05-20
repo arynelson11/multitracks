@@ -9,7 +9,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['logo.svg', 'logo.png'],
+      includeAssets: ['logo.svg', 'logo.png', 'app-icon.svg', 'app-icon.png', 'favicon.svg'],
       manifest: {
         name: 'Playback Studio',
         short_name: 'Playback',
@@ -21,17 +21,19 @@ export default defineConfig({
         start_url: '/',
         scope: '/',
         icons: [
+          // Backgrounded SVG — primary install icon for browsers that support SVG manifests
           {
-            src: '/logo.svg',
+            src: '/app-icon.svg',
             sizes: 'any',
             type: 'image/svg+xml',
             purpose: 'any',
           },
+          // Backgrounded PNG 512x512 — for Android (Chrome install) + iOS-style maskable adaptive icons
           {
-            src: '/logo.png',
-            sizes: '192x192',
+            src: '/app-icon.png',
+            sizes: '512x512',
             type: 'image/png',
-            purpose: 'maskable',
+            purpose: 'any maskable',
           },
         ],
       },

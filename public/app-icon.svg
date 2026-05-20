@@ -1,0 +1,11 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- Tinta background rounded square (app-icon style) -->
+  <rect width="64" height="64" rx="11" fill="#121214"/>
+  <!-- Play triangle in laranja -->
+  <path d="M 20 16 L 48 32 L 20 48 Z" fill="#FF6B35" stroke-linejoin="round"/>
+  <!-- Stem cuts: tinta-colored lines that "cut through" the triangle.
+       Outside the triangle the lines are tinta-on-tinta = invisible. -->
+  <line x1="0" y1="24" x2="64" y2="24" stroke="#121214" stroke-width="3"/>
+  <line x1="0" y1="32" x2="64" y2="32" stroke="#121214" stroke-width="3"/>
+  <line x1="0" y1="40" x2="64" y2="40" stroke="#121214" stroke-width="3"/>
+</svg>

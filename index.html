@@ -2,8 +2,10 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
+    <!-- Browser tab favicon: transparent SVG (sits on browser chrome bg) -->
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
-    <link rel="apple-touch-icon" href="/logo.png" />
+    <!-- iOS home screen / Apple touch icon: backgrounded so iOS doesn't paint white behind -->
+    <link rel="apple-touch-icon" href="/app-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#FF6B35" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -18,7 +20,13 @@
     <meta property="og:description" content="Stems pra qualquer música. Pra sua banda chegar pronta no domingo. Feito por quem toca." />
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="pt_BR" />
-    <meta name="twitter:card" content="summary_large_image" />
+    <!-- Social preview: backgrounded icon (avoids white bg on WhatsApp/Twitter/Facebook cards) -->
+    <meta property="og:image" content="/app-icon.png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta property="og:image:type" content="image/png" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:image" content="/app-icon.png" />
   </head>
   <body>
     <div id="root"></div>
