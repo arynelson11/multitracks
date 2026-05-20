@@ -552,10 +552,11 @@ export default function App() {
             <div className="relative">
               <button
                 onClick={() => setIsPrecountOpen(!isPrecountOpen)}
-                className={`transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer ${precountEnabled ? 'text-primary' : 'text-text-muted hover:text-white'}`}
+                className={`transport-btn flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer ${precountEnabled ? 'text-primary' : 'text-text-muted hover:text-white'}`}
                 title="Pré-contagem"
               >
-                PRÉ-CONTAGEM
+                <span className="sm:hidden text-[10px] font-mono tracking-wider">1·2·3</span>
+                <span className="hidden sm:inline">PRÉ-CONTAGEM</span>
               </button>
               {isPrecountOpen && (
                 <>
@@ -670,9 +671,9 @@ export default function App() {
       )}
 
       {/* ═══ SETLIST & NOTES AREA ═══ */}
-      <section className="h-40 sm:h-48 border-b border-border bg-[#141416] flex shrink-0 relative overflow-hidden">
+      <section className="h-56 sm:h-48 border-b border-border bg-[#141416] flex flex-col sm:flex-row shrink-0 relative overflow-hidden">
         {/* Left: Notes Panel */}
-        <div className="w-1/3 sm:w-80 border-r border-[#222] p-3 flex flex-col bg-[#0e0e10] shrink-0">
+        <div className="h-20 sm:h-auto w-full sm:w-80 border-b sm:border-b-0 sm:border-r border-[#222] p-3 flex flex-col bg-[#0e0e10] shrink-0">
           <div className="text-[10px] font-bold text-text-muted/60 uppercase tracking-[0.15em] mb-2 font-mono flex items-center justify-between">
             Anotações
             <Edit2 size={10} className="text-text-muted/40" />
@@ -699,7 +700,7 @@ export default function App() {
                 onDragEnd={handleDragEnd}
                 onClick={() => !isEditMode && jumpToSong(i)}
                 className={`
-                  flex-none w-56 sm:w-72 h-full rounded-md flex flex-col p-3 gap-2 border transition-all overflow-hidden relative justify-center
+                  flex-none w-48 sm:w-72 h-full rounded-md flex flex-col p-3 gap-2 border transition-all overflow-hidden relative justify-center
                   ${isEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer hover:border-border-light'}
                   ${isEditMode && dragOverIndex === i ? 'border-primary border-2 bg-primary/5' : ''}
                   ${isEditMode && dragIndex === i ? 'opacity-40' : ''}
@@ -1007,7 +1008,7 @@ export default function App() {
         </section>
 
         {/* ─── Mobile View Toggle ─── */}
-        <div className="flex lg:hidden border-b border-border bg-[#141416] shrink-0">
+        <div className="flex md:hidden border-b border-border bg-[#141416] shrink-0">
           <button onClick={() => setMobileView('mixer')}
             className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-[0.15em] transition-colors cursor-pointer font-mono ${mobileView === 'mixer' ? 'text-primary border-b-2 border-primary' : 'text-text-muted'}`}>
             MIXER
@@ -1024,7 +1025,7 @@ export default function App() {
           {/* ═══ MIXER ═══ */}
           <div ref={mixerRef}
             className={`bg-[#111113] overflow-x-auto flex flex-col items-stretch
-              ${mobileView === 'mixer' ? 'flex' : 'hidden'} lg:flex flex-1`}
+              ${mobileView === 'mixer' ? 'flex' : 'hidden'} md:flex flex-1`}
             style={{ touchAction: 'pan-x' }}>
 
             {/* Mixer Toolbar */}
@@ -1204,7 +1205,7 @@ export default function App() {
 
           {/* ═══ PAD PLAYER ═══ */}
           <div className={`bg-[#18181a] border-l border-border p-3 sm:p-4 flex flex-col z-10 shadow-[-10px_0_20px_rgba(0,0,0,0.4)] min-h-0 overflow-hidden shrink-0
-            ${mobileView === 'pads' ? 'flex w-full' : 'hidden'} lg:flex lg:w-96`}>
+            ${mobileView === 'pads' ? 'flex w-full' : 'hidden'} md:flex md:w-72 lg:w-96`}>
             <div className="font-bold text-[10px] tracking-[0.15em] text-text-muted mb-2 flex justify-between uppercase items-center font-mono">
               <span>{padActiveView === 'pads' ? 'REPRODUTOR DE PADS' : padActiveView === 'samples' ? 'SAMPLES' : 'LOOPS'}</span>
               {padActiveView === 'pads' && (
@@ -1274,7 +1275,7 @@ export default function App() {
                   <span className="text-[9px] text-text-muted font-mono w-8 text-right font-bold">{Math.round(padVolume * 100)}%</span>
                 </div>
                 {/* Grid */}
-                <div className="flex-1 grid grid-cols-4 sm:grid-cols-4 lg:grid-cols-3 gap-1.5 sm:gap-2">
+                <div className="flex-1 grid grid-cols-4 md:grid-cols-3 gap-1.5 sm:gap-2">
                   {['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map(note => (
                     <div key={note} className="relative">
                       <button onClick={() => !isPadEditMode && playPad(note)}
