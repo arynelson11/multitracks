@@ -372,7 +372,7 @@ export default function App() {
       {/* ═══ HEADER / TRANSPORT ═══ */}
       <header className="bg-[#18181a] border-b border-border shrink-0">
         {/* Top row: Brand + Tools + Timer */}
-        <div className="flex max-sm:portrait:hidden items-center justify-between px-3 sm:px-4 h-11 sm:h-12 border-b border-border">
+        <div className="flex pointer-coarse:hidden items-center justify-between px-3 sm:px-4 h-11 sm:h-12 border-b border-border">
           {/* Left: Menu + Brand */}
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="relative flex items-center">
@@ -636,7 +636,7 @@ export default function App() {
         </div>
 
         {/* ═══ MOBILE PORTRAIT HEADER ═══ */}
-        <div className="hidden max-sm:portrait:flex items-center px-3 h-12 border-b border-border relative">
+        <div className="hidden pointer-coarse:flex items-center px-3 h-12 border-b border-border relative">
           <button
             onClick={() => { setIsMobileDrawerOpen(true); setMobileDrawerView('main'); }}
             className="text-text-muted hover:text-white p-1.5 -ml-1.5 rounded-md cursor-pointer active:scale-90 transition-transform"
@@ -651,7 +651,7 @@ export default function App() {
         </div>
 
         {/* Mobile portrait: action buttons grid */}
-        <div className="hidden max-sm:portrait:grid grid-cols-5 gap-1.5 px-3 py-2.5 border-b border-border bg-[#141416]">
+        <div className="hidden pointer-coarse:grid grid-cols-5 gap-1.5 px-3 py-2.5 border-b border-border bg-[#141416]">
           {/* REPERTÓRIO */}
           <div className="relative">
             <button
@@ -793,7 +793,7 @@ export default function App() {
             <button onClick={nextSong} className="transport-btn p-2 rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipForward size={18} /></button>
             {/* Mobile edit toggle (landscape only — portrait has it in the buttons grid) */}
             <button onClick={() => setIsEditMode(!isEditMode)}
-              className={`sm:hidden max-sm:portrait:hidden ml-2 items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-colors border cursor-pointer flex ${isEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border'}`}>
+              className={`sm:hidden pointer-coarse:hidden ml-2 items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-colors border cursor-pointer flex ${isEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border'}`}>
               {isEditMode ? <Check size={12} /> : <Edit2 size={12} />}
             </button>
           </div>
@@ -1033,7 +1033,7 @@ export default function App() {
 
           {/* No markers yet + admin can add (hidden on mobile portrait) */}
           {(!playlist[activeSongIndex]?.markers || playlist[activeSongIndex].markers!.length === 0) && user?.email === 'arynelson11@gmail.com' && (
-            <div className="flex max-sm:portrait:hidden items-center gap-1.5 mt-1.5">
+            <div className="flex pointer-coarse:hidden items-center gap-1.5 mt-1.5">
               <button
                 onClick={() => setIsMarkerEditorOpen(!isMarkerEditorOpen)}
                 className="shrink-0 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold tracking-wide cursor-pointer active:scale-95 border text-text-muted border-white/10 hover:bg-white/5"
@@ -1651,7 +1651,7 @@ export default function App() {
 
       {/* ═══ MOBILE PORTRAIT DRAWER ═══ */}
       {isMobileDrawerOpen && (
-        <div className="hidden max-sm:portrait:block fixed inset-0 z-[60]">
+        <div className="hidden pointer-coarse:block fixed inset-0 z-[60]">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setIsMobileDrawerOpen(false)} />
           <div className="absolute top-0 left-0 bottom-0 w-72 bg-[#141416] border-r border-border flex flex-col shadow-2xl">
             {/* Header */}
