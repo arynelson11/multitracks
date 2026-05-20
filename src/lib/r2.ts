@@ -8,8 +8,11 @@ export const uploadToR2 = async (bucketFolder: string, fileName: string, file: F
             { headers: await getAuthHeaders() }
         );
         if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            throw new Error(`[API Error ${res.status}] ${data.error || 'Falha ao conectar com Vercel API'}`);
+            const rawText = await res.text().catch(() => '');
+            let data: any = {};
+            try { data = rawText ? JSON.parse(rawText) : {}; } catch { /* html/text */ }
+            const msg = data.error || (rawText.slice(0, 200)) || `HTTP ${res.status}`;
+            throw new Error(`[Vercel API ${res.status}] ${msg}`);
         }
         const { uploadUrl, key } = await res.json();
 

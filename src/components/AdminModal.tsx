@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react';
-import { X, Upload, Music, Image as ImageIcon, Loader2, AlertCircle, CheckCircle2, ChevronRight, Hash, Activity, Layers, Disc, Repeat } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { X, Upload, Music, Image as ImageIcon, Loader2, AlertCircle, CheckCircle2, ChevronRight, Hash, Activity, Layers, Disc, Repeat, ShieldAlert } from 'lucide-react';
 import { useAdminUpload, type UploadMetadata } from '../hooks/useAdminUpload';
 
 interface AdminModalProps {
@@ -38,6 +38,16 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
     // Samples/Loops State
     const [sampleFiles, setSampleFiles] = useState<File[]>([]);
     const [sampleCategory, setSampleCategory] = useState('');
+
+    const [envStatus, setEnvStatus] = useState<{ present: string[]; missing: string[]; loaded: boolean }>({ present: [], missing: [], loaded: false });
+
+    useEffect(() => {
+        if (!isOpen || envStatus.loaded) return;
+        fetch('/api/debug-env')
+            .then(r => r.json())
+            .then(d => setEnvStatus({ present: d.present || [], missing: d.missing || [], loaded: true }))
+            .catch(() => setEnvStatus({ present: [], missing: [], loaded: true }));
+    }, [isOpen]);
 
     if (!isOpen) return null;
 
@@ -378,6 +388,22 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                 )}
                             </div>
                         ) : null}
+
+                        {/* Env Diagnostics (só quando há variáveis faltando) */}
+                        {envStatus.loaded && envStatus.missing.length > 0 && (
+                            <div className="p-2.5 bg-yellow-500/5 border border-yellow-500/20 rounded-md text-[9px] font-mono">
+                                <div className="flex items-center gap-1.5 text-yellow-400 font-bold mb-1.5 uppercase tracking-wider">
+                                    <ShieldAlert size={12} />
+                                    Variáveis de Ambiente Faltando no Vercel
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                    {envStatus.missing.map(k => (
+                                        <span key={k} className="px-1.5 py-0.5 bg-red-500/15 border border-red-500/20 text-red-400 rounded">{k}</span>
+                                    ))}
+                                </div>
+                                <p className="text-text-muted/60 mt-1.5">Acesse Vercel → Settings → Environment Variables → Production e adicione as chaves acima.</p>
+                            </div>
+                        )}
 
                         {/* Error Message */}
                         {error && (
