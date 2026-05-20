@@ -367,7 +367,7 @@ export default function App() {
 
   // ───────────────── MAIN APP ─────────────────
   return (
-    <div className="h-[100dvh] w-screen fixed inset-0 overflow-hidden bg-[#0e0e10] text-text-main flex flex-col select-none">
+    <div className="h-[100dvh] w-screen fixed inset-0 overflow-hidden pointer-coarse:h-auto pointer-coarse:min-h-[100dvh] pointer-coarse:static pointer-coarse:inset-auto pointer-coarse:overflow-y-auto pointer-coarse:overflow-x-hidden bg-[#0e0e10] text-text-main flex flex-col select-none">
 
       {/* ═══ HEADER / TRANSPORT ═══ */}
       <header className="bg-[#18181a] border-b border-border shrink-0">
@@ -937,7 +937,7 @@ export default function App() {
       </section>
 
       {/* ═══ MAIN CONTENT ═══ */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden pointer-coarse:overflow-visible pointer-coarse:flex-none">
 
         {/* Timeline */}
         <section className="border-b border-border px-3 sm:px-4 py-1.5 sm:py-2 flex flex-col relative shrink-0 bg-[#111113]">
@@ -1155,7 +1155,7 @@ export default function App() {
         </div>
 
         {/* ─── Lower Split ─── */}
-        <section className="flex-1 flex overflow-hidden">
+        <section className="flex-1 flex overflow-hidden pointer-coarse:min-h-[70vh]">
 
           {/* ═══ MIXER ═══ */}
           <div ref={mixerRef}
