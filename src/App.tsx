@@ -1481,7 +1481,7 @@ export default function App() {
                       className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-black tracking-tight leading-tight text-white/95"
                       style={{ whiteSpace: 'pre-wrap', textShadow: '0 4px 20px rgba(0,0,0,0.5)' }}
                     >
-                      {currentMarker.lyrics || '—'}
+                      {currentMarker.lyrics || '…'}
                     </h1>
                   </>
                 ) : (

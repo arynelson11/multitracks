@@ -1147,7 +1147,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
               className="absolute top-7 bottom-0 z-20 cursor-pointer group/cue"
               style={{ left: `${(cue.time / songDuration) * 100}%` }}
               onClick={() => { Object.values(wavesurfers.current).forEach(ws => ws.setTime(cue.time)); voiceCuesRef.current.forEach(c => { c.fired = c.time < cue.time - 0.1; }); }}
-              title={`${cue.label} — ${formatCueTime(cue.time)}`}
+              title={`${cue.label} · ${formatCueTime(cue.time)}`}
             >
               <div className="w-px h-full bg-yellow-400/40 group-hover/cue:bg-yellow-400 transition-colors" />
               <div className="absolute top-0 left-0.5 bg-yellow-400 text-black text-[6px] font-black px-1 py-0.5 rounded-[3px] whitespace-nowrap leading-tight shadow-sm group-hover/cue:bg-yellow-300 transition-colors">
@@ -1453,7 +1453,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
             <button onClick={addMetronomeChannel} disabled={isGeneratingClick || stems.length === 0}
               className="w-full bg-[#2a2a2d] hover:bg-[#343438] text-white py-3.5 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-xs tracking-wider cursor-pointer border border-white/5 active:scale-95">
               {isGeneratingClick ? <Loader2 size={16} className="animate-spin" /> : <Play fill="currentColor" size={14} />}
-              GERAR CLICK — {clickSel.type} {timeSignature} {clickSel.subdivision}
+              GERAR CLICK · {clickSel.type} {timeSignature} {clickSel.subdivision}
             </button>
           </div>
         </div>
@@ -1500,7 +1500,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
             {/* Instruction */}
             {!isAutoDetecting && (
               <p className="text-[10px] text-text-muted font-mono px-5 pt-3 pb-2 shrink-0">
-                {isPlaying ? '▶ Clique em uma seção para marcar o tempo atual' : 'Reproduza a música e clique para carimbar o tempo — ou use Auto-Detectar'}
+                {isPlaying ? '▶ Clique em uma seção para marcar o tempo atual' : 'Reproduza a música e clique para carimbar o tempo. Ou use Auto-Detectar.'}
               </p>
             )}
 

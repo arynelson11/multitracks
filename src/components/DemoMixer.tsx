@@ -461,7 +461,7 @@ export function DemoMixer() {
         <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/50" />
         <div className="w-2.5 h-2.5 rounded-full bg-green-500/50" />
         <span className="ml-auto text-[10px] text-white/15 font-mono tracking-wider hidden sm:block">
-          PLAYBACK STUDIO — MIXER AO VIVO
+          PLAYBACK STUDIO · MIXER AO VIVO
         </span>
       </div>
 
@@ -572,7 +572,7 @@ export function DemoMixer() {
           </div>
           {!playing && (
             <p className="text-center text-[10px] text-white/20 mt-3">
-              Pressione ▶ para tocar · <span className="text-white/30">M</span> = Mute · <span className="text-white/30">S</span> = Solo — experimente antes de criar conta
+              Pressione ▶ para tocar · <span className="text-white/30">M</span> = Mute · <span className="text-white/30">S</span> = Solo · experimente antes de criar conta
             </p>
           )}
         </div>

@@ -23,11 +23,11 @@ interface LandingPageProps {
  */
 const AUDIENCE = [
   { icon: Church,    title: 'Equipes de adoração',  desc: 'Do ensaio ao culto, qualquer música pronta com a levada na mão.' },
-  { icon: Music,     title: 'Bandas em geral',      desc: 'Gospel, sertanejo, MPB, rock, indie — qualquer ritmo. Stems prontos pro próximo show.' },
+  { icon: Music,     title: 'Bandas em geral',      desc: 'Gospel, sertanejo, MPB, rock, indie. Qualquer ritmo, stems prontos pro próximo show.' },
   { icon: Mic2,      title: 'Vocalistas e ministros', desc: 'Voice guide discreto, tonalidade no seu alcance, referência sem inundar o in-ear.' },
-  { icon: Guitar,    title: 'Instrumentistas',      desc: 'Stems de qualquer música — guitarra, baixo, teclado, piano — pra ensaiar como sua banda toca.' },
+  { icon: Guitar,    title: 'Instrumentistas',      desc: 'Stems de qualquer música. Guitarra, baixo, teclado, piano pra ensaiar como sua banda toca.' },
   { icon: Drumstick, title: 'Bateristas',           desc: 'Click track no seu jeito, separação que respeita a levada original.' },
-  { icon: Disc3,     title: 'Solo e produtores',    desc: 'Construa em cima de qualquer faixa — separe, remixe, refaça arranjos.' },
+  { icon: Disc3,     title: 'Solo e produtores',    desc: 'Construa em cima de qualquer faixa. Separe, remixe, refaça arranjos.' },
 ]
 
 const PLANS = [
@@ -88,7 +88,7 @@ const PLANS = [
 const FAQS = [
   {
     q: 'O que são stems?',
-    a: 'Stems são as faixas individuais de uma música — voz separada, bateria separada, baixo separado, etc. Com o Playback Studio você sobe qualquer música e recebe tudo separado pra sua banda ensaiar e tocar como precisa.'
+    a: 'Stems são as faixas individuais de uma música. Voz separada, bateria separada, baixo separado, etc. Com o Playback Studio você sobe qualquer música e recebe tudo separado pra sua banda ensaiar e tocar como precisa.'
   },
   {
     q: 'Como funciona a separação?',
@@ -96,7 +96,7 @@ const FAQS = [
   },
   {
     q: 'O Playback Studio serve pra qualquer música?',
-    a: 'Sim. Diferente de catálogos licenciados, o Playback Studio não depende de uma biblioteca pré-aprovada. Qualquer música — worship, gospel, sertanejo, MPB, rock, indie, original da banda — funciona.'
+    a: 'Sim. Diferente de catálogos licenciados, o Playback Studio não depende de uma biblioteca pré-aprovada. Qualquer música funciona: worship, gospel, sertanejo, MPB, rock, indie, original da banda.'
   },
   {
     q: 'Funciona no celular?',
@@ -120,7 +120,7 @@ const TESTIMONIALS = [
   },
   {
     name: 'Ana Paula Costa',
-    role: 'Vocalista — banda gospel',
+    role: 'Vocalista, banda gospel',
     text: 'A levada do click brasileiro fez diferença real no ensaio. Antes a banda tava sempre se ajustando ao metrônomo gringo. Agora é natural.',
   },
   {
@@ -200,7 +200,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
 
           <p className="text-[clamp(.95rem,2vw,1.2rem)] text-warm-200 max-w-2xl mx-auto mb-10 leading-relaxed">
             Sábado 23h alguém manda mudando o setlist. O Playback Studio separa qualquer
-            música — worship, gospel, sertanejo, MPB, o que sua banda toca —
+            música, do worship ao sertanejo, do rock ao MPB,
             em stems prontos.
           </p>
 
@@ -253,7 +253,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
               Segunda você acorda exausto. Tudo de novo na próxima semana.
             </p>
             <p className="text-bone font-medium">
-              A gente sabe — porque a gente também tocava assim.
+              A gente sabe. A gente também tocava assim.
             </p>
           </div>
         </div>
@@ -271,7 +271,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <div className="grid sm:grid-cols-3 gap-6">
             {[
               { title: 'Qualquer música, separada', desc: 'Sobe MP3, WAV ou link. O Playback Studio separa em voz, instrumentos e pads em alguns minutos.' },
-              { title: 'Qualquer ritmo, qualquer banda', desc: 'Worship, gospel, sertanejo, MPB, rock, indie — funciona com o que sua banda toca.' },
+              { title: 'Qualquer ritmo, qualquer banda', desc: 'Worship, gospel, sertanejo, MPB, rock, indie. Funciona com o que sua banda toca.' },
               { title: 'Sem catálogo travando', desc: 'Você escolhe a música. O Playback Studio prepara. Sem esperar release, sem licença gringa.' },
             ].map((item, i) => (
               <div key={i} className="bg-tinta-raised border border-tinta-border rounded-2xl p-7 hover:border-laranja/40 transition-colors">
@@ -296,9 +296,9 @@ export function LandingPage({ onEnter }: LandingPageProps) {
 
           <div className="space-y-5">
             {[
-              { n: '1', title: 'Sobe a música', desc: 'Qualquer formato — MP3, WAV, ou link do YouTube.' },
-              { n: '2', title: 'O Playback Studio separa tudo', desc: 'Voz, guitarra, baixo, bateria, piano, pads — em alguns minutos.' },
-              { n: '3', title: 'Sua banda chega pronta no domingo', desc: 'Stems, click, voice guide, seções marcadas (intro, verso, refrão, ponte) — na mão.' },
+              { n: '1', title: 'Sobe a música', desc: 'Qualquer formato: MP3, WAV, ou link do YouTube.' },
+              { n: '2', title: 'O Playback Studio separa tudo', desc: 'Voz, guitarra, baixo, bateria, piano, pads. Em alguns minutos.' },
+              { n: '3', title: 'Sua banda chega pronta no domingo', desc: 'Stems, click, voice guide, seções marcadas (intro, verso, refrão, ponte). Tudo na mão.' },
             ].map(step => (
               <div key={step.n} className="bg-tinta-raised border border-tinta-border rounded-2xl p-6 sm:p-8 flex items-start gap-6">
                 <div className="w-14 h-14 rounded-full bg-laranja text-bone flex items-center justify-center font-display font-semibold text-[24px] shrink-0">
