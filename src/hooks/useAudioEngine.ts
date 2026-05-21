@@ -273,11 +273,22 @@ export function useAudioEngine(userId?: string) {
         });
     }, [channels]);
 
-    const play = useCallback(() => {
+    const play = useCallback(async () => {
         const ctx = audioCtxRef.current;
         if (!ctx || channels.length === 0) return;
 
-        if (ctx.state === 'suspended') ctx.resume();
+        // iOS / Safari: must await resume before scheduling sources.
+        // Otherwise sources are scheduled while ctx.currentTime is frozen,
+        // and after resume they play "in the past" — silently.
+        if (ctx.state === 'suspended') {
+            try { await ctx.resume(); } catch (e) { console.error('Failed to resume AudioContext', e); }
+        }
+
+        // Reset master gain in case a previous fade-out left it near zero.
+        if (masterGainRef.current) {
+            masterGainRef.current.gain.cancelScheduledValues(ctx.currentTime);
+            masterGainRef.current.gain.setValueAtTime(masterVolume, ctx.currentTime);
+        }
 
         stopAllNodes();
 
@@ -332,7 +343,7 @@ export function useAudioEngine(userId?: string) {
 
         startTimeRef.current = ctx.currentTime;
         setIsPlaying(true);
-    }, [channels, stopAllNodes, timeStretch]);
+    }, [channels, stopAllNodes, timeStretch, masterVolume]);
 
     const pause = useCallback(() => {
         const ctx = audioCtxRef.current;
@@ -558,15 +569,27 @@ export function useAudioEngine(userId?: string) {
 
         const filesArray = Array.from(files);
         const results: (Channel | null)[] = [];
-        const BATCH_SIZE = 4;
+        // Use small batches on touch devices to keep peak memory low.
+        // Each concurrent decode holds an ArrayBuffer + the resulting AudioBuffer
+        // simultaneously — on phones with 4-6 stems this can OOM the tab.
+        const isTouch = typeof window !== 'undefined'
+            && window.matchMedia
+            && window.matchMedia('(pointer: coarse)').matches;
+        const BATCH_SIZE = isTouch ? 1 : 4;
 
         for (let i = 0; i < filesArray.length; i += BATCH_SIZE) {
             const batch = filesArray.slice(i, i + BATCH_SIZE);
             const batchPromises = batch.map(async (file) => {
                 if (!audioCtxRef.current || !masterGainRef.current) return null;
 
-                const arrayBuffer = await file.arrayBuffer();
-                const audioBuffer = await audioCtxRef.current.decodeAudioData(arrayBuffer);
+                let audioBuffer: AudioBuffer;
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    audioBuffer = await audioCtxRef.current.decodeAudioData(arrayBuffer);
+                } catch (e) {
+                    console.error(`Failed to decode ${file.name}`, e);
+                    return null;
+                }
 
                 const panner = audioCtxRef.current.createStereoPanner();
                 const gain = audioCtxRef.current.createGain();
@@ -869,16 +892,18 @@ export function useAudioEngine(userId?: string) {
         setIsCountingIn(false);
     }, []);
 
-    const playWithPrecount = useCallback(() => {
+    const playWithPrecount = useCallback(async () => {
         const ctx = audioCtxRef.current;
         if (!ctx) return;
 
         if (!precountEnabled) {
-            play();
+            await play();
             return;
         }
 
-        if (ctx.state === 'suspended') ctx.resume();
+        if (ctx.state === 'suspended') {
+            try { await ctx.resume(); } catch (e) { console.error('Failed to resume AudioContext', e); }
+        }
 
         setIsCountingIn(true);
         countInOscsRef.current = [];

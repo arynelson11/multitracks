@@ -214,7 +214,7 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
 
                                 return (
                                     <div key={song.id}
-                                        className={`flex items-center gap-3 p-2.5 rounded-md border transition-all ${isDownloaded
+                                        className={`flex flex-wrap items-center gap-2 sm:gap-3 p-2.5 rounded-md border transition-all ${isDownloaded
                                             ? 'bg-primary/5 border-primary/15'
                                             : 'bg-surface border-border hover:border-white/15 hover:bg-white/3'
                                             }`}>
@@ -229,10 +229,10 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
                                         </div>
 
                                         {/* Info */}
-                                        <div className="flex-1 min-w-0">
+                                        <div className="flex-1 min-w-0 basis-0">
                                             <div className="font-bold text-xs text-white truncate uppercase tracking-wider">{song.name}</div>
                                             <div className="text-[10px] text-text-muted truncate font-mono">{song.artist || 'Artista Desconhecido'}</div>
-                                            <div className="flex items-center gap-2 mt-1">
+                                            <div className="flex items-center gap-2 mt-1 flex-wrap">
                                                 {song.key && (
                                                     <span className="text-[9px] font-bold bg-secondary/10 text-secondary px-1.5 py-0.5 rounded font-mono">
                                                         TOM: {song.key}
@@ -246,8 +246,8 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
                                             </div>
                                         </div>
 
-                                        {/* Download and Delete Buttons */}
-                                        <div className="flex-shrink-0 flex items-center gap-2">
+                                        {/* Download and Delete Buttons — quebra para próxima linha em mobile estreito */}
+                                        <div className="flex items-center gap-2 ml-auto basis-full sm:basis-auto sm:ml-0 justify-end sm:justify-start pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5 -mx-0.5 sm:mx-0 px-0.5 sm:px-0">
                                             {(isAdmin || song.user_id === user?.id) && (
                                                 <div className="flex items-center gap-1">
                                                     <button
