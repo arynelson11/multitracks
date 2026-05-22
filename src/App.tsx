@@ -37,7 +37,6 @@ export const routes: RouteRecord[] = [
         path: 'app/*',
         Component: MusicAppRoute,
         entry: 'src/pages/MusicAppRoute.tsx',
-        getStaticPaths: () => ['app'],
       },
     ],
   },
