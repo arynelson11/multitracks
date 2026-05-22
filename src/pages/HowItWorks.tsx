@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+
 import { Head } from 'vite-react-ssg'
 import { MarketingNav } from '../components/sections/MarketingNav'
 import { GuideSection } from '../components/sections/GuideSection'
@@ -8,8 +8,7 @@ import { CTASection } from '../components/sections/CTASection'
 import { MarketingFooter } from '../components/sections/MarketingFooter'
 
 export default function HowItWorks() {
-  const navigate = useNavigate()
-  const onEnter = () => navigate('/app')
+  const onEnter = () => { window.location.href = '/app' }
 
   return (
     <>

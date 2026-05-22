@@ -1,4 +1,4 @@
-import { useNavigate, useParams, Link } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { Head } from 'vite-react-ssg'
 import { ArrowLeft } from 'lucide-react'
 import { MarketingNav } from '../components/sections/MarketingNav'
@@ -13,10 +13,9 @@ export function getStaticPaths(): string[] {
 export const Component = BlogPost
 
 export default function BlogPost() {
-  const navigate = useNavigate()
   const { slug } = useParams<{ slug: string }>()
   const post = slug ? getPostBySlug(slug) : undefined
-  const onEnter = () => navigate('/app')
+  const onEnter = () => { window.location.href = '/app' }
 
   if (!post) {
     return (

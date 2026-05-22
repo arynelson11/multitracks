@@ -1,4 +1,4 @@
-import { useNavigate, Link } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { Head } from 'vite-react-ssg'
 import { ArrowRight, Mic2, Wand2, Music, Headphones } from 'lucide-react'
 import { MarketingNav } from '../components/sections/MarketingNav'
@@ -23,8 +23,7 @@ const jsonLd = {
 }
 
 export default function SeparacaoDeFaixas() {
-  const navigate = useNavigate()
-  const onEnter = () => navigate('/app')
+  const onEnter = () => { window.location.href = '/app' }
 
   return (
     <>

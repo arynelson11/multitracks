@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+
 import { Head } from 'vite-react-ssg'
 import { MarketingNav } from '../components/sections/MarketingNav'
 import { FAQSection } from '../components/sections/FAQSection'
@@ -6,8 +6,7 @@ import { CTASection } from '../components/sections/CTASection'
 import { MarketingFooter } from '../components/sections/MarketingFooter'
 
 export default function FAQ() {
-  const navigate = useNavigate()
-  const onEnter = () => navigate('/app')
+  const onEnter = () => { window.location.href = '/app' }
 
   return (
     <>

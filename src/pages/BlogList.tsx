@@ -1,4 +1,4 @@
-import { useNavigate, Link } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { Head } from 'vite-react-ssg'
 import { ArrowRight } from 'lucide-react'
 import { MarketingNav } from '../components/sections/MarketingNav'
@@ -7,8 +7,7 @@ import { CTASection } from '../components/sections/CTASection'
 import { getAllPosts } from '../lib/blog'
 
 export default function BlogList() {
-  const navigate = useNavigate()
-  const onEnter = () => navigate('/app')
+  const onEnter = () => { window.location.href = '/app' }
   const posts = getAllPosts()
 
   return (

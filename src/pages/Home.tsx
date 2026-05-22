@@ -1,9 +1,8 @@
-import { useNavigate } from 'react-router-dom'
+
 import { Head } from 'vite-react-ssg'
 import { LandingPage } from '../components/LandingPage'
 
 export default function Home() {
-  const navigate = useNavigate()
   return (
     <>
       <Head>
@@ -13,7 +12,7 @@ export default function Home() {
         <meta property="og:url" content="https://playbackstudio.com.br/" />
         <meta property="og:title" content="Playback Studio · A plataforma do domingo" />
       </Head>
-      <LandingPage onEnter={() => navigate('/app')} />
+      <LandingPage onEnter={() => { window.location.href = '/app' }} />
     </>
   )
 }

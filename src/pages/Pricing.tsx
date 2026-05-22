@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+
 import { Head } from 'vite-react-ssg'
 import { MarketingNav } from '../components/sections/MarketingNav'
 import { PricingSection } from '../components/sections/PricingSection'
@@ -7,8 +7,7 @@ import { CTASection } from '../components/sections/CTASection'
 import { MarketingFooter } from '../components/sections/MarketingFooter'
 
 export default function Pricing() {
-  const navigate = useNavigate()
-  const onEnter = () => navigate('/app')
+  const onEnter = () => { window.location.href = '/app' }
 
   const goToCheckout = (planId: string, price: number, billing: 'monthly' | 'annual') => {
     if (price > 0) {
