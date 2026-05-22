@@ -16,6 +16,8 @@ export function AuthPage({ }: AuthPageProps) {
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
 
+    const appUrl = typeof window !== 'undefined' ? `${window.location.origin}/app` : '/app';
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
@@ -27,11 +29,17 @@ export function AuthPage({ }: AuthPageProps) {
                 const { error } = await supabase!.auth.signInWithPassword({ email, password });
                 if (error) throw error;
             } else if (mode === 'register') {
-                const { error } = await supabase!.auth.signUp({ email, password });
+                const { error } = await supabase!.auth.signUp({
+                    email,
+                    password,
+                    options: { emailRedirectTo: appUrl },
+                });
                 if (error) throw error;
                 setMessage('Cadastro feito. Verifica seu email pra confirmar.');
             } else if (mode === 'forgot') {
-                const { error } = await supabase!.auth.resetPasswordForEmail(email);
+                const { error } = await supabase!.auth.resetPasswordForEmail(email, {
+                    redirectTo: appUrl,
+                });
                 if (error) throw error;
                 setMessage('Instruções de recuperação enviadas pro seu email.');
             }
@@ -47,8 +55,8 @@ export function AuthPage({ }: AuthPageProps) {
             const { error } = await supabase!.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
-                    redirectTo: window.location.origin
-                }
+                    redirectTo: appUrl,
+                },
             });
             if (error) throw error;
         } catch (err: any) {
