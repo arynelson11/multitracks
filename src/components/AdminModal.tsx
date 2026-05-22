@@ -257,7 +257,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                         {stemFiles.length > 0 ? (
                                             <>
                                                 <Music size={20} className="text-secondary" />
-                                                <span className="text-[10px] text-white font-bold uppercase tracking-wider">{stemFiles.length} Stems Selecionados</span>
+                                                <span className="text-[10px] text-white font-bold uppercase tracking-wider">{stemFiles.length} Multitracks Selecionados</span>
                                                 <div className="flex gap-1 h-1 w-16 bg-white/5 rounded-full overflow-hidden">
                                                     <div className="h-full bg-secondary w-full"></div>
                                                 </div>
@@ -266,7 +266,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                             <>
                                                 <Music size={20} className="text-text-muted" />
                                                 <span className="text-[10px] text-text-muted font-bold uppercase tracking-wider">Enviar Áudio *</span>
-                                                <span className="text-[9px] text-text-muted/30 font-mono">Selecionar todos os stems</span>
+                                                <span className="text-[9px] text-text-muted/30 font-mono">Selecionar todas as faixas</span>
                                             </>
                                         )}
                                         <input type="file" ref={stemsInputRef} multiple accept="audio/*" className="hidden" onChange={e => setStemFiles(Array.from(e.target.files || []))} />

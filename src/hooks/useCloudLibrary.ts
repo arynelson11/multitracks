@@ -35,7 +35,7 @@ export function useCloudLibrary() {
     // Download a song's stems and return as File[]
     const downloadSong = useCallback(async (songId: string): Promise<{ files: File[], coverUrl: string | null, markers: any[] | null, originalKey: string | null, artist?: string, bpm?: number } | null> => {
         setDownloadingSongId(songId);
-        setDownloadProgress('Buscando stems...');
+        setDownloadProgress('Buscando faixas...');
 
         try {
             const stems: CloudStem[] = await fetchStems(songId);

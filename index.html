@@ -2,31 +2,155 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <!-- Browser tab favicon: transparent SVG (sits on browser chrome bg) -->
+    <!-- Browser tab favicon: transparent SVG -->
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
-    <!-- iOS home screen / Apple touch icon: backgrounded so iOS doesn't paint white behind -->
+    <!-- iOS home screen / Apple touch icon -->
     <link rel="apple-touch-icon" href="/app-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#FF6B35" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Playback Studio" />
+
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&family=Caveat:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <title>Playback Studio · A plataforma do domingo</title>
-    <meta name="description" content="O Playback Studio separa qualquer música em stems prontos. Pra sua banda chegar no domingo com tudo na mão. Feito por quem toca." />
-    <meta property="og:title" content="Playback Studio · A plataforma do domingo" />
-    <meta property="og:description" content="Stems pra qualquer música. Pra sua banda chegar pronta no domingo. Feito por quem toca." />
+
+    <!-- Static og defaults (per-route Helmet overrides title/description/canonical/og:url/og:title) -->
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="pt_BR" />
-    <!-- Social preview: backgrounded icon (avoids white bg on WhatsApp/Twitter/Facebook cards) -->
-    <meta property="og:image" content="/app-icon.png" />
-    <meta property="og:image:width" content="512" />
-    <meta property="og:image:height" content="512" />
+    <meta property="og:site_name" content="Playback Studio" />
+    <meta property="og:image" content="https://playbackstudio.com.br/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta property="og:image:type" content="image/png" />
-    <meta name="twitter:card" content="summary" />
-    <meta name="twitter:image" content="/app-icon.png" />
+    <meta property="og:image:alt" content="Playback Studio. Multitracks de qualquer música, pronto pro domingo" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://playbackstudio.com.br/og-image.png" />
+
+    <!-- JSON-LD: Organization -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "Playback Studio",
+      "url": "https://playbackstudio.com.br/",
+      "logo": "https://playbackstudio.com.br/logo.png",
+      "description": "Plataforma brasileira de separação de faixas com IA. Gera multitracks de qualquer música para equipes de worship, bandas e músicos. Feito por quem toca.",
+      "slogan": "A plataforma do domingo",
+      "areaServed": "BR"
+    }
+    </script>
+
+    <!-- JSON-LD: SoftwareApplication + Offers -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Playback Studio",
+      "applicationCategory": "MultimediaApplication",
+      "operatingSystem": "Web, iOS, Android",
+      "description": "Separe qualquer música em multitracks (voz, bateria, baixo, guitarra, piano, pads) com IA. Click track brasileiro, voice guide e mixer pra ensaiar e tocar no domingo.",
+      "url": "https://playbackstudio.com.br/",
+      "inLanguage": "pt-BR",
+      "offers": [
+        {
+          "@type": "Offer",
+          "name": "Livre",
+          "price": "0",
+          "priceCurrency": "BRL",
+          "description": "5 separações por mês. Separação em 2 ou 4 faixas. Biblioteca local."
+        },
+        {
+          "@type": "Offer",
+          "name": "Pro",
+          "price": "39.90",
+          "priceCurrency": "BRL",
+          "description": "50 separações por mês. Separação avançada (6 faixas). Pads ambiente. Voice guide.",
+          "priceSpecification": {
+            "@type": "UnitPriceSpecification",
+            "price": "39.90",
+            "priceCurrency": "BRL",
+            "billingDuration": "P1M",
+            "billingIncrement": 12
+          }
+        },
+        {
+          "@type": "Offer",
+          "name": "Studio",
+          "price": "79.90",
+          "priceCurrency": "BRL",
+          "description": "150 separações por mês. Qualidade máxima. Prioridade no processamento. Suporte prioritário.",
+          "priceSpecification": {
+            "@type": "UnitPriceSpecification",
+            "price": "79.90",
+            "priceCurrency": "BRL",
+            "billingDuration": "P1M",
+            "billingIncrement": 12
+          }
+        }
+      ]
+    }
+    </script>
+
+    <!-- JSON-LD: FAQPage -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "O que são multitracks (ou stems)?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Multitracks (também chamados de stems) são as faixas individuais de uma música. Voz separada, bateria separada, baixo separado, etc. Com o Playback Studio você sobe qualquer música e recebe tudo separado pra sua banda ensaiar e tocar como precisa."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Como funciona a separação de faixas?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Você sobe a música (MP3, WAV ou link). A IA do Playback Studio separa em voz, guitarra, baixo, bateria, piano e pads em alguns minutos. Os multitracks ficam disponíveis pra download, no mixer e pra compartilhar com a equipe."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "O Playback Studio serve pra qualquer música?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sim. Diferente de catálogos licenciados, o Playback Studio não depende de uma biblioteca pré-aprovada. Qualquer música funciona: worship, gospel, sertanejo, MPB, rock, indie, original da banda."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Funciona no celular?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sim. É um Progressive Web App otimizado pra mobile. Funciona no navegador do iPhone e Android, sem instalar nada. A interface se adapta à tela do celular."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Posso usar ao vivo no palco?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Pode. Foi construído pra isso. Após carregar as músicas, o player e mixer funcionam offline com baixa latência e controle total dos canais em tempo real."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Posso cancelar quando quiser?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sim, sem fidelidade. Cancele direto pelo painel a qualquer momento. O acesso continua até o fim do período pago."
+          }
+        }
+      ]
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>

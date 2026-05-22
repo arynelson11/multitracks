@@ -630,7 +630,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       setProgress(10);
 
       // 2. Chamar IA
-      setProgressMsg('Processando modelo de Separação de Stems em GPU...');
+      setProgressMsg('Processando modelo de Separação de Faixas em GPU...');
       const res = await fetch('/api/separate-audio', {
         method: 'POST',
         headers: await getAuthHeaders(),

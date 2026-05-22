@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite-react-ssg build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -16,16 +16,21 @@
     "@tailwindcss/vite": "^4.2.0",
     "abacate-pay-sdk": "^1.1.1",
     "axios": "^1.16.1",
+    "gray-matter": "^4.0.3",
     "idb-keyval": "^6.2.2",
     "jszip": "^3.10.1",
     "lucide-react": "^0.575.0",
+    "marked": "^18.0.4",
     "music-tempo": "^1.0.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-helmet-async": "^3.0.0",
+    "react-router-dom": "^6.30.3",
     "replicate": "^1.4.0",
     "rubberband-web": "^0.2.1",
     "tailwindcss": "^4.2.0",
     "tone": "^15.1.22",
+    "vite-react-ssg": "^0.9.1-beta.1",
     "wavesurfer.js": "^7.12.5"
   },
   "devDependencies": {

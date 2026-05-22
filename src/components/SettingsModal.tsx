@@ -227,7 +227,7 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                         <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-8">
                             <PlaybackStudioWordmark size="lg" tone="light" />
                             <div className="text-text-muted text-[10px] font-mono tracking-wider mt-2">A plataforma do domingo · v5.0</div>
-                            <div className="text-text-muted/40 text-[9px] max-w-sm font-mono">Stems pra qualquer música. Pra sua banda chegar pronta no domingo. Feito por quem toca.</div>
+                            <div className="text-text-muted/40 text-[9px] max-w-sm font-mono">Multitracks de qualquer música. Pra sua banda chegar pronta no domingo. Feito por quem toca.</div>
                         </div>
                     )}
                 </div>
