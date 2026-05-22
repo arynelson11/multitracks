@@ -38,8 +38,26 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // Só hashed assets vão no precache. HTML fica fora pra sempre vir fresco.
+        globPatterns: ['**/*.{js,css,ico,png,svg,woff2}'],
+        // Novo SW assume controle imediato quando carrega (sem esperar fechar todas as abas)
+        skipWaiting: true,
+        clientsClaim: true,
+        // Limpa precache de deploys antigos
+        cleanupOutdatedCaches: true,
+        // Navegação (request HTML) sempre vai rede primeiro
+        navigateFallback: null,
         runtimeCaching: [
+          {
+            // HTML: sempre rede, com fallback de cache se offline
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'pages-cache',
+              networkTimeoutSeconds: 3,
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 },
+            },
+          },
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: 'CacheFirst',
