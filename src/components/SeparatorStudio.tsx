@@ -8,6 +8,10 @@ import { PricingModal } from './PricingModal';
 import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
 import { useSeparationLibrary, type SavedSeparation } from '../hooks/useSeparationLibrary';
+import { audioBlobToMp3Blob } from '../lib/audioExport';
+
+type DownloadFormat = 'wav' | 'mp3';
+const DOWNLOAD_FORMAT_KEY = 'playback-studio:download-format';
 
 interface StemData {
   id: string;
@@ -136,6 +140,15 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const isAdmin = user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com';
   const { separations, saveSeparation, deleteSeparation, isLoading: isLibLoading } = useSeparationLibrary();
   const [activeSepId, setActiveSepId] = useState<string | null>(null);
+  const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>(() => {
+    if (typeof window === 'undefined') return 'wav';
+    const stored = window.localStorage.getItem(DOWNLOAD_FORMAT_KEY);
+    return stored === 'mp3' ? 'mp3' : 'wav';
+  });
+  const [encodingStemId, setEncodingStemId] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof window !== 'undefined') window.localStorage.setItem(DOWNLOAD_FORMAT_KEY, downloadFormat);
+  }, [downloadFormat]);
   const [libSaveToast, setLibSaveToast] = useState(false);
   const [publishGlobal, setPublishGlobal] = useState(false);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
@@ -199,17 +212,24 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
   const downloadStem = async (stem: StemData) => {
     try {
+      setEncodingStemId(stem.id);
       const res = await fetch(stem.url);
-      const blob = await res.blob();
+      const wavBlob = await res.blob();
+      const useMp3 = downloadFormat === 'mp3';
+      const outBlob = useMp3 ? await audioBlobToMp3Blob(wavBlob, 320) : wavBlob;
+      const ext = useMp3 ? 'mp3' : 'wav';
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${(songName || 'stem').replace(/[^a-zA-Z0-9]/g, '_')}_${stem.name}.wav`;
+      a.href = URL.createObjectURL(outBlob);
+      a.download = `${(songName || 'stem').replace(/[^a-zA-Z0-9]/g, '_')}_${stem.name}.${ext}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(a.href), 10000);
     } catch (e) {
       console.error('Download error', e);
+      alert('Erro ao baixar a faixa. Tenta de novo.');
+    } finally {
+      setEncodingStemId(null);
     }
   };
 
@@ -1235,10 +1255,28 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
           <div className="lcd-display px-2.5 py-1 rounded text-[9px] font-mono text-text-muted/50">{stems.length} CH</div>
         </div>
 
-        <button onClick={() => setShowSaveForm(true)}
-          className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-wider text-primary cursor-pointer border-primary/20">
-          <Save size={12} /> EXPORTAR
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-[#0e0e10] border border-[#222] rounded-md p-0.5" title="Formato de download dos stems">
+            <span className="text-[7px] font-mono font-bold text-text-muted/60 uppercase tracking-widest px-1.5 hidden sm:inline">DL</span>
+            {(['wav', 'mp3'] as DownloadFormat[]).map((fmt) => (
+              <button
+                key={fmt}
+                onClick={() => setDownloadFormat(fmt)}
+                className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider font-mono transition-all cursor-pointer ${
+                  downloadFormat === fmt
+                    ? 'bg-primary/20 text-primary shadow-[0_0_8px_rgba(255,107,53,0.3)]'
+                    : 'text-text-muted/60 hover:text-white'
+                }`}
+              >
+                {fmt}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setShowSaveForm(true)}
+            className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-wider text-primary cursor-pointer border-primary/20">
+            <Save size={12} /> EXPORTAR
+          </button>
+        </div>
       </header>
 
       {/* ── Auto-save Toast ── */}
@@ -1282,9 +1320,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                         className={`w-6 h-5 rounded text-[8px] font-black transition-all active:scale-90 cursor-pointer border border-[#222] ${state.muted ? 'bg-[#ff3b30] text-white shadow-[0_0_8px_rgba(255,59,48,0.5)]' : 'bg-[#333] text-[#666] hover:bg-[#444]'}`}>M</button>
                       <button onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], soloed: !p[stem.id].soloed } }))}
                         className={`w-6 h-5 rounded text-[8px] font-black transition-all active:scale-90 cursor-pointer border border-[#222] ${state.soloed ? 'bg-[#ffcc00] text-black shadow-[0_0_8px_rgba(255,204,0,0.5)]' : 'bg-[#333] text-[#666] hover:bg-[#444]'}`}>S</button>
-                      <button onClick={() => downloadStem(stem)} title={`Baixar ${stem.name}`}
-                        className="w-6 h-5 rounded cursor-pointer border border-[#222] bg-[#333] text-[#666] hover:bg-[#444] hover:text-primary flex items-center justify-center transition-all active:scale-90">
-                        <Download size={9} />
+                      <button onClick={() => downloadStem(stem)} disabled={encodingStemId === stem.id}
+                        title={`Baixar ${stem.name} (${downloadFormat.toUpperCase()})`}
+                        className="w-6 h-5 rounded cursor-pointer border border-[#222] bg-[#333] text-[#666] hover:bg-[#444] hover:text-primary flex items-center justify-center transition-all active:scale-90 disabled:opacity-60 disabled:cursor-wait">
+                        {encodingStemId === stem.id ? <Loader2 size={9} className="animate-spin" /> : <Download size={9} />}
                       </button>
                     </div>
                   </div>
