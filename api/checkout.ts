@@ -62,9 +62,9 @@ export default async function handler(req: any, res: any) {
     // para que possamos ver no front exatamente o que a API rejeitou.
     const attempts: Array<{ endpoint: string; payload: any; error: any }> = [];
 
-    // Tentativa 1: /v2/subscriptions/create com productId direto (produtos com cycle pré-criados).
+    // Tentativa 1: /v2/subscriptions/create com id direto (produtos com cycle pré-criados).
     try {
-      const payload = { items: [{ productId, quantity: 1 }], customer: { email }, returnUrl, completionUrl, metadata: { userId } };
+      const payload = { items: [{ id: productId, quantity: 1 }], customer: { email }, returnUrl, completionUrl, metadata: { userId } };
       const response = await api.post('/subscriptions/create', payload);
       const url = response.data?.data?.url || response.data?.url;
       if (url) return res.status(200).json({ url });
@@ -76,7 +76,7 @@ export default async function handler(req: any, res: any) {
     // Tentativa 2: /v2/checkouts/create com items[].
     try {
       const payload = {
-        items: [{ productId, quantity: 1 }],
+        items: [{ id: productId, quantity: 1 }],
         customer: { email },
         returnUrl,
         completionUrl,
