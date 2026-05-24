@@ -51,7 +51,7 @@ async function getVersionHardware(token: string, model: string, version: string)
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) return 'cpu';
-    const data: ReplicateVersionDetail = await res.json();
+    const data = await res.json() as ReplicateVersionDetail;
     const hw = data.openapi_schema?.info?.['x-replicate-hardware'] ?? 'cpu';
     // Cache it for this process lifetime
     VERSION_HARDWARE[version] = hw;
@@ -89,7 +89,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const err = await response.text();
         throw new Error(`Replicate API error: ${response.status} ${err}`);
       }
-      const data: ReplicateListResponse = await response.json();
+      const data = await response.json() as ReplicateListResponse;
       allPredictions.push(...data.results);
       nextUrl = data.next ?? null;
       pages++;
