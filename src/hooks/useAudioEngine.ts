@@ -85,6 +85,16 @@ export function useAudioEngine(userId?: string) {
     // Formula universal (Moises, DAWs, MultiTracks etc): ratio = 2^(semitones/12).
     const semitonesToPitchRatio = (semitones: number): number => Math.pow(2, semitones / 12);
 
+    // Cria a rubberband, pré-conecta no panner e inicializa neutra.
+    // Sempre roteamos pelo nó (mesmo com pitch=0/tempo=1) pra evitar trocas de cadeia mid-playback.
+    const setupPitchShiftNode = async (ctx: AudioContext, panner: StereoPannerNode) => {
+        const rbNode = await createRubberBandNode(ctx, '/rubberband-processor.js');
+        rbNode.setPitch(1);
+        rbNode.setTempo(1);
+        rbNode.connect(panner);
+        return rbNode;
+    };
+
     // Core persistence
     const saveStateToDB = async (list: Song[]) => {
         const metaFormat: SavedSong[] = list.map(song => ({
@@ -206,7 +216,7 @@ export function useAudioEngine(userId?: string) {
                             panner.connect(gain);
                             gain.connect(master);
 
-                            const rbNode = await createRubberBandNode(ctx, '/rubberband-processor.js');
+                            const rbNode = await setupPitchShiftNode(ctx, panner);
 
                             return {
                                 id: metaCh.id,
@@ -321,20 +331,17 @@ export function useAudioEngine(userId?: string) {
                 ch.gainNode.gain.setValueAtTime(vol, ctx.currentTime);
             }
 
-            if (currentPitchRef.current !== 0 || timeStretch !== 1) {
-                if (ch.pitchShiftNode && typeof ch.pitchShiftNode.setPitch === 'function') {
-                    const ratio = isClickOrGuide ? 1 : semitonesToPitchRatio(currentPitchRef.current);
-                    ch.pitchShiftNode.setPitch(ratio);
-                    ch.pitchShiftNode.setTempo(timeStretch);
-                    source.playbackRate.value = 1.0;
-                    source.connect(ch.pitchShiftNode);
-                    ch.pitchShiftNode.connect(ch.pannerNode);
-                } else {
-                    source.playbackRate.value = timeStretch;
-                    source.connect(ch.pannerNode);
-                }
-            } else {
+            // Rotear SEMPRE pela rubberband (já pré-conectada ao panner em setupPitchShiftNode).
+            // Quando neutro (pitch=0, tempo=1), o ratio fica 1.0 e o áudio passa sem alteração.
+            if (ch.pitchShiftNode && typeof ch.pitchShiftNode.setPitch === 'function') {
+                const ratio = isClickOrGuide ? 1 : semitonesToPitchRatio(currentPitchRef.current);
+                ch.pitchShiftNode.setPitch(ratio);
+                ch.pitchShiftNode.setTempo(timeStretch);
                 source.playbackRate.value = 1.0;
+                source.connect(ch.pitchShiftNode);
+            } else {
+                // Fallback (canais legacy sem rubberband node): usa playbackRate (altera tempo+pitch juntos)
+                source.playbackRate.value = timeStretch;
                 source.connect(ch.pannerNode);
             }
 
@@ -608,9 +615,9 @@ export function useAudioEngine(userId?: string) {
                 panner.pan.value = panValue;
                 gain.gain.value = 1;
 
-                const rbNode = await createRubberBandNode(audioCtxRef.current, '/rubberband-processor.js');
-
                 panner.connect(gain);
+
+                const rbNode = await setupPitchShiftNode(audioCtxRef.current, panner);
 
                 const uuid = crypto.randomUUID();
                 filesDb.set(uuid, file);
@@ -732,7 +739,7 @@ export function useAudioEngine(userId?: string) {
             filesDb.set(uuid, file);
             await set(DB_KEY_FILES, filesDb);
 
-            const rbNode = await createRubberBandNode(audioCtxRef.current, '/rubberband-processor.js');
+            const rbNode = await setupPitchShiftNode(audioCtxRef.current, panner);
 
             const newChannel: Channel = {
                 id: uuid,
@@ -818,7 +825,7 @@ export function useAudioEngine(userId?: string) {
             filesDb.set(uuid, file);
             await set(DB_KEY_FILES, filesDb);
 
-            const rbNode = await createRubberBandNode(audioCtxRef.current, '/rubberband-processor.js');
+            const rbNode = await setupPitchShiftNode(audioCtxRef.current, panner);
 
             const newChannel: Channel = {
                 id: uuid,
@@ -1142,35 +1149,24 @@ export function useAudioEngine(userId?: string) {
         const clampedPitch = Math.max(-12, Math.min(12, newPitch));
         if (currentPitchRef.current === clampedPitch) return;
 
-        const wasZero = currentPitchRef.current === 0;
-        const isZero = clampedPitch === 0;
-
         const newPlaylist = [...playlist];
         const song = { ...newPlaylist[activeSongIndex] };
         song.pitch = clampedPitch;
-
         currentPitchRef.current = clampedPitch;
 
-        if (isPlaying) {
-            if (wasZero !== isZero) {
-                // Routing muda (bypass → rubberband ou vice-versa) — precisa reiniciar pra reconectar a cadeia.
-                pause();
-                setTimeout(() => play(), 10);
-            } else {
-                const ratio = semitonesToPitchRatio(clampedPitch);
-                song.channels.forEach(ch => {
-                    const nameL = ch.name.toLowerCase();
-                    const isClickOrGuide = nameL.includes('click') || nameL.includes('metronomo') || nameL.includes('guia') || nameL.includes('guide');
-                    if (!isClickOrGuide && ch.pitchShiftNode && typeof ch.pitchShiftNode.setPitch === 'function') {
-                        ch.pitchShiftNode.setPitch(ratio);
-                    }
-                });
-            }
-        }
+        // Rubberband sempre na cadeia (setup em setupPitchShiftNode) — basta atualizar a ratio.
+        // Voz guia / click ficam em ratio=1 (não transpõem).
+        const ratio = semitonesToPitchRatio(clampedPitch);
+        song.channels.forEach(ch => {
+            if (!ch.pitchShiftNode || typeof ch.pitchShiftNode.setPitch !== 'function') return;
+            const nameL = ch.name.toLowerCase();
+            const isClickOrGuide = nameL.includes('click') || nameL.includes('metronomo') || nameL.includes('guia') || nameL.includes('guide');
+            ch.pitchShiftNode.setPitch(isClickOrGuide ? 1 : ratio);
+        });
 
         newPlaylist[activeSongIndex] = song;
         updatePlaylistAndSave(newPlaylist);
-    }, [playlist, activeSongIndex, activeSong, isPlaying, pause, play]);
+    }, [playlist, activeSongIndex, activeSong]);
 
     // Clear Session
     const clearSession = async () => {
