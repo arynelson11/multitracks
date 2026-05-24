@@ -81,6 +81,10 @@ export function useAudioEngine(userId?: string) {
     const activeSong = playlist[activeSongIndex];
     const channels = activeSong?.channels || [];
 
+    // rubberband-web setPitch expects a pitch SCALE RATIO, not semitones.
+    // Formula universal (Moises, DAWs, MultiTracks etc): ratio = 2^(semitones/12).
+    const semitonesToPitchRatio = (semitones: number): number => Math.pow(2, semitones / 12);
+
     // Core persistence
     const saveStateToDB = async (list: Song[]) => {
         const metaFormat: SavedSong[] = list.map(song => ({
@@ -319,11 +323,8 @@ export function useAudioEngine(userId?: string) {
 
             if (currentPitchRef.current !== 0 || timeStretch !== 1) {
                 if (ch.pitchShiftNode && typeof ch.pitchShiftNode.setPitch === 'function') {
-                    if (!isClickOrGuide) {
-                        ch.pitchShiftNode.setPitch(currentPitchRef.current);
-                    } else {
-                        ch.pitchShiftNode.setPitch(0);
-                    }
+                    const ratio = isClickOrGuide ? 1 : semitonesToPitchRatio(currentPitchRef.current);
+                    ch.pitchShiftNode.setPitch(ratio);
                     ch.pitchShiftNode.setTempo(timeStretch);
                     source.playbackRate.value = 1.0;
                     source.connect(ch.pitchShiftNode);
@@ -1152,14 +1153,16 @@ export function useAudioEngine(userId?: string) {
 
         if (isPlaying) {
             if (wasZero !== isZero) {
+                // Routing muda (bypass → rubberband ou vice-versa) — precisa reiniciar pra reconectar a cadeia.
                 pause();
                 setTimeout(() => play(), 10);
             } else {
+                const ratio = semitonesToPitchRatio(clampedPitch);
                 song.channels.forEach(ch => {
                     const nameL = ch.name.toLowerCase();
                     const isClickOrGuide = nameL.includes('click') || nameL.includes('metronomo') || nameL.includes('guia') || nameL.includes('guide');
                     if (!isClickOrGuide && ch.pitchShiftNode && typeof ch.pitchShiftNode.setPitch === 'function') {
-                        ch.pitchShiftNode.setPitch(clampedPitch);
+                        ch.pitchShiftNode.setPitch(ratio);
                     }
                 });
             }
