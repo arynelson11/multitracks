@@ -17,6 +17,16 @@ const noteFreqs: Record<string, number> = {
     'B': 246.94
 };
 
+const sharpToFlat: Record<string, string> = {
+    'C#': 'Db',
+    'D#': 'Eb',
+    'F#': 'Gb',
+    'G#': 'Ab',
+    'A#': 'Bb',
+};
+
+const normalizeNote = (note: string) => sharpToFlat[note] ?? note;
+
 interface PlayingNode {
     source?: AudioBufferSourceNode | MediaElementAudioSourceNode;
     audioElement?: HTMLAudioElement;
@@ -184,9 +194,12 @@ export function usePadSynth() {
             const publicUrlBase = import.meta.env.VITE_R2_PUBLIC_URL;
             const baseUrl = publicUrlBase ? publicUrlBase.replace(/\/$/, "") : "";
             const padSetPath = selectedPadSet?.base_path || 'system_pads';
+            // Files on storage use flat notation (Db, Eb, Gb, Ab, Bb)
+            const storedNote = normalizeNote(note);
             // note_urls: fallback for legacy entries; new uploads use predictable path
-            const url = selectedPadSet?.note_urls?.[note]
-                ?? `${baseUrl}/${padSetPath}/${encodeURIComponent(note)}`;
+            const url = selectedPadSet?.note_urls?.[storedNote]
+                ?? selectedPadSet?.note_urls?.[note]
+                ?? `${baseUrl}/${padSetPath}/${encodeURIComponent(storedNote)}`;
             
             const audio = new Audio(url);
             audio.crossOrigin = 'anonymous';
@@ -221,7 +234,7 @@ export function usePadSynth() {
             activeNodeRef.current = { source, gain };
         } else {
             // Synthesize Worship Pad
-            const freq = noteFreqs[note] || noteFreqs['C'];
+            const freq = noteFreqs[normalizeNote(note)] || noteFreqs['C'];
 
             // 3 Oscillators for a rich, detuned sound
             const osc1 = ctx.createOscillator();
