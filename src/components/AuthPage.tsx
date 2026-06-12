@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Mail, Lock, Loader2, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark';
+import { isElectron, onDeepLinkAuth } from '../lib/desktop';
 
 import { DomingoMark } from './brand/DomingoMark';
 
@@ -15,6 +16,31 @@ export function AuthPage({ }: AuthPageProps) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
+
+    // ── Electron: escuta o deep link de volta do navegador ──
+    useEffect(() => {
+        if (!isElectron || !supabase) return;
+
+        const cleanup = onDeepLinkAuth(async (fragment) => {
+            // fragment = "access_token=xxx&refresh_token=yyy&..."
+            const params = new URLSearchParams(fragment);
+            const accessToken = params.get('access_token');
+            const refreshToken = params.get('refresh_token');
+
+            if (accessToken && refreshToken) {
+                const { error } = await supabase!.auth.setSession({
+                    access_token: accessToken,
+                    refresh_token: refreshToken,
+                });
+                if (error) {
+                    setError('Erro ao restaurar sessão do Google: ' + error.message);
+                }
+                // Se deu certo, o onAuthStateChange do useAuth vai pegar a sessão.
+            }
+        });
+
+        return cleanup;
+    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -44,13 +70,31 @@ export function AuthPage({ }: AuthPageProps) {
 
     const handleGoogleLogin = async () => {
         try {
-            const { error } = await supabase!.auth.signInWithOAuth({
-                provider: 'google',
-                options: {
-                    redirectTo: window.location.origin
+            if (isElectron) {
+                // No Electron: monta a URL do OAuth manualmente e abre no navegador do sistema.
+                // O redirect vai pra playbackstudio://auth/callback pra o app capturar o token.
+                const { data, error } = await supabase!.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: {
+                        redirectTo: 'playbackstudio://auth/callback',
+                        skipBrowserRedirect: true, // Não deixa o Supabase redirecionar a janela atual
+                    }
+                });
+                if (error) throw error;
+                // Abre a URL de auth no navegador do sistema
+                if (data?.url) {
+                    window.playbackDesktop?.openExternalUrl(data.url);
                 }
-            });
-            if (error) throw error;
+            } else {
+                // No navegador: fluxo normal, redireciona na mesma janela
+                const { error } = await supabase!.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: {
+                        redirectTo: window.location.origin
+                    }
+                });
+                if (error) throw error;
+            }
         } catch (err: any) {
             setError(err.message || 'Erro ao conectar com Google.');
         }

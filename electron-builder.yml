@@ -1,0 +1,27 @@
+appId: com.playbackstudio.app
+productName: Playback Studio
+directories:
+  output: release
+  buildResources: build
+# Empacota só o que o app precisa: o renderer (dist) e o main/preload (dist-electron).
+files:
+  - dist/**/*
+  - dist-electron/**/*
+# Deep link protocol: playbackstudio://
+# Permite que o app receba callbacks de OAuth e outros links profundos.
+protocols:
+  - name: Playback Studio
+    schemes:
+      - playbackstudio
+mac:
+  category: public.app-category.music
+  target:
+    - dmg
+  # Fase 0: sem assinatura de código. Assinar antes de liberar pros usuários.
+  identity: null
+win:
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
