@@ -1,3 +1,4 @@
+import { apiUrl } from '../lib/api';
 import { useState, useEffect, useCallback } from 'react';
 
 export interface ReplicatePredictionRow {
@@ -49,7 +50,7 @@ export function useReplicateStats() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/replicate-stats');
+      const res = await fetch(apiUrl('/api/replicate-stats'));
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `HTTP ${res.status}`);

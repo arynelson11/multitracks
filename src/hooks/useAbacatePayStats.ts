@@ -1,3 +1,4 @@
+import { apiUrl } from '../lib/api';
 import { useState, useEffect, useCallback } from 'react';
 
 export interface AbacatePayStats {
@@ -24,7 +25,7 @@ export function useAbacatePayStats() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch('/api/abacatepay-stats');
+      const res = await fetch(apiUrl('/api/abacatepay-stats'));
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao buscar dados');
       setStats(data);

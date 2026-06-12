@@ -1,3 +1,4 @@
+import { apiUrl } from '../lib/api';
 import { useEffect, useState } from 'react';
 import { X, Cloud, Loader2, Layers, CheckCircle2, Pencil, Trash2, Check } from 'lucide-react';
 import type { SelectedPadSet } from '../hooks/usePadSynth';
@@ -33,7 +34,7 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
         if (!isOpen) return;
         setLoading(true);
         setLoadError(null);
-        fetch('/api/pad-catalog')
+        fetch(apiUrl('/api/pad-catalog'))
             .then(async r => {
                 if (r.ok) return r.json() as Promise<{ sets: CatalogEntry[] }>;
                 const body = await r.json().catch(() => ({})) as { error?: string; code?: string };
@@ -65,7 +66,7 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
     const saveEdit = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (!editingId) return;
-        const res = await fetch('/api/pad-catalog', {
+        const res = await fetch(apiUrl('/api/pad-catalog'), {
             method: 'PATCH',
             headers: await getAuthHeaders(),
             body: JSON.stringify({ id: editingId, name: editName.trim() || 'Sem nome', description: editDesc.trim() || null }),
@@ -87,7 +88,7 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
     const executeDelete = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (!deletingId) return;
-        const res = await fetch(`/api/pad-catalog?id=${encodeURIComponent(deletingId)}`, {
+        const res = await fetch(apiUrl(`/api/pad-catalog?id=${encodeURIComponent(deletingId)}`), {
             method: 'DELETE',
             headers: await getAuthHeaders(),
         });

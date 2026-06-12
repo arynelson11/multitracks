@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, session } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
@@ -225,6 +225,25 @@ ipcMain.on('ws-broadcast', (event, data) => {
 })
 
 app.whenReady().then(() => {
+  // As funções serverless (/api) rodam no domínio de produção e só liberam CORS
+  // para origens na allowlist — que não inclui o app desktop. Aqui injetamos os
+  // headers Access-Control-* nas respostas dessas chamadas (cobre preflight e
+  // resposta real), permitindo que o renderer as consuma.
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    if (details.url.includes('playbackstudio.com.br/api/')) {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'access-control-allow-origin': ['*'],
+          'access-control-allow-methods': ['GET,POST,PATCH,DELETE,OPTIONS'],
+          'access-control-allow-headers': ['Content-Type, Authorization'],
+        },
+      })
+    } else {
+      callback({ responseHeaders: details.responseHeaders })
+    }
+  })
+
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

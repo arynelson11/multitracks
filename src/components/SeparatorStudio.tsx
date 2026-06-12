@@ -1,3 +1,4 @@
+import { apiUrl } from '../lib/api';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Minus, Plus, Mic, Download, Trash2, FolderOpen, Clock, CheckCircle2, Lock } from 'lucide-react';
@@ -651,7 +652,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
       // 2. Chamar IA
       setProgressMsg('Processando modelo de Separação de Stems em GPU...');
-      const res = await fetch('/api/separate-audio', {
+      const res = await fetch(apiUrl('/api/separate-audio'), {
         method: 'POST',
         headers: await getAuthHeaders(),
         body: JSON.stringify({ audioUrl: publicUrl, stemCount })
@@ -677,7 +678,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         setProgress(p => Math.min(85, p + 2)); 
         checkCount++;
         
-        const checkRes = await fetch(`/api/check-separation?predictionId=${prediction.id}`, {
+        const checkRes = await fetch(apiUrl(`/api/check-separation?predictionId=${prediction.id}`), {
           headers: await getAuthHeaders(),
         });
         const checkData = await checkRes.json();
@@ -863,7 +864,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
          if (!rRes.error) cover_url = rRes.url;
       }
 
-      const songRes = await fetch('/api/insert-song', {
+      const songRes = await fetch(apiUrl('/api/insert-song'), {
         method: 'POST',
         headers: await getAuthHeaders(),
         body: JSON.stringify({
@@ -891,7 +892,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         const isRemoteUrl = stem.url.startsWith('http://') || stem.url.startsWith('https://');
         if (isRemoteUrl) {
           const key = `stems/${user?.id}/${songId}/${stem.id}_${Date.now()}.wav`;
-          const copyRes = await fetch('/api/upload-stem-from-url', {
+          const copyRes = await fetch(apiUrl('/api/upload-stem-from-url'), {
             method: 'POST',
             headers: await getAuthHeaders(),
             body: JSON.stringify({ sourceUrl: stem.url, key, contentType: 'audio/wav' }),
@@ -931,7 +932,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       }
 
       setSaveStatus('Finalizando registros...');
-      const stemsRes = await fetch('/api/insert-stems', {
+      const stemsRes = await fetch(apiUrl('/api/insert-stems'), {
         method: 'POST',
         headers: await getAuthHeaders(),
         body: JSON.stringify({ stems: stemsData }),

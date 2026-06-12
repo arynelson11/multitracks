@@ -1,3 +1,4 @@
+import { apiUrl } from '../lib/api';
 import { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { X, Check } from 'lucide-react';
@@ -61,7 +62,7 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
 
         try {
             setLoadingPlan(plan.id);
-            const response = await fetch('/api/checkout', {
+            const response = await fetch(apiUrl('/api/checkout'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

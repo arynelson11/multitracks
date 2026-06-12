@@ -1,3 +1,4 @@
+import { apiUrl } from '../lib/api';
 import { useState, useCallback } from 'react';
 import { insertPadSet, getAuthHeaders, type CloudStem } from '../lib/supabase';
 import { uploadToR2 } from '../lib/r2';
@@ -42,7 +43,7 @@ export function useAdminUpload() {
 
             // 2. Insert Song Metadata (via server proxy to avoid Safari CORS)
             setStatus('Gravando metadados da música...');
-            const songRes = await fetch('/api/insert-song', {
+            const songRes = await fetch(apiUrl('/api/insert-song'), {
                 method: 'POST',
                 headers: await getAuthHeaders(),
                 body: JSON.stringify({
@@ -92,7 +93,7 @@ export function useAdminUpload() {
             // 4. Insert Stems Records (via server proxy to avoid Safari CORS)
             if (stemsData.length > 0) {
                 setStatus('Finalizando registros...');
-                const stemsRes = await fetch('/api/insert-stems', {
+                const stemsRes = await fetch(apiUrl('/api/insert-stems'), {
                     method: 'POST',
                     headers: await getAuthHeaders(),
                     body: JSON.stringify({ stems: stemsData }),
@@ -161,7 +162,7 @@ export function useAdminUpload() {
 
             // Register in R2-based catalog (no Supabase dependency)
             setStatus('Registrando banco de pads no catálogo...');
-            const catalogRes = await fetch('/api/pad-catalog', {
+            const catalogRes = await fetch(apiUrl('/api/pad-catalog'), {
                 method: 'POST',
                 headers: await getAuthHeaders(),
                 body: JSON.stringify({ id, name, description: padSetDescription?.trim() || null, base_path: basePath }),
