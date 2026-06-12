@@ -102,6 +102,9 @@ export async function getCachedSong(songId: string): Promise<{
     originalKey: string | null;
     artist?: string;
     bpm?: number;
+    lyrics?: string | null;
+    lyricsSynced?: string | null;
+    chords?: string | null;
 } | null> {
     try {
         const data = await get<CachedSongData>(`${SONG_CACHE_PREFIX}${songId}`);
@@ -126,7 +129,10 @@ export async function getCachedSong(songId: string): Promise<{
             markers: data.song.markers || null,
             originalKey: data.song.key || null,
             artist: data.song.artist || undefined,
-            bpm: data.song.bpm || undefined
+            bpm: data.song.bpm || undefined,
+            lyrics: data.song.lyrics ?? null,
+            lyricsSynced: data.song.lyrics_synced ?? null,
+            chords: data.song.chords ?? null
         };
     } catch (e) {
         console.error(`Failed to get cached song ${songId}:`, e);

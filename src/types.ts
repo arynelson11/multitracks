@@ -24,6 +24,10 @@ export interface Song {
     originalKey?: string | null;
     bpm?: number;
     markers?: Marker[];
+    artist?: string;
+    lyrics?: string | null;
+    lyricsSynced?: string | null; // LRC format ([mm:ss.xx] linha)
+    chords?: string | null;
 }
 
 export interface Marker {
@@ -57,9 +61,13 @@ export type WsMessage =
         isPlaying: boolean; 
         currentTime: number; 
         songName: string | null;
-        nextSongName: string | null;
         currentMarker: Marker | null;
+        nextMarkerLabel: string | null;
+        nextSong: { name: string; originalKey: string | null; pitch: number; bpm: number | null } | null;
+        lyrics: string | null;
+        lyricsSynced: string | null;
+        chords: string | null;
         pitch: number;
         originalKey: string | null;
-      } 
+      }
     }

@@ -30,9 +30,99 @@ export interface CloudSong {
     bpm: number;
     cover_url: string | null;
     markers: any[] | null;
+    lyrics?: string | null;
+    lyrics_synced?: string | null;
+    chords?: string | null;
     created_at: string;
     user_id?: string;
     is_global?: boolean;
+}
+
+export interface LyricsResult {
+    plain: string | null;
+    synced: string | null; // LRC format ([mm:ss.xx] linha)
+    source: string;
+}
+
+// Limpa o título da música pra melhorar a busca: remove extensão de arquivo,
+// trechos entre parênteses/colchetes e termos comuns que poluem o match.
+function cleanTrackTitle(raw: string): string {
+    return raw
+        .replace(/\.[a-z0-9]{2,4}$/i, '')                 // extensão (.mp3, .wav...)
+        .replace(/^\s*\d{1,2}\s*[-.)]\s*/, '')             // número de faixa no início (01 - , 3. ...)
+        .replace(/\([^)]*\)/g, ' ')                        // (Ao Vivo), (Cover)...
+        .replace(/\[[^\]]*\]/g, ' ')                       // [Lyric Video]...
+        .replace(/\b(playback|ao vivo|acústico|acustico|cover|lyric video|lyric|letra|clipe|oficial|official|audio|áudio|hd|4k|remix|versão|version|feat\.?|ft\.?)\b/gi, ' ')
+        .replace(/[_]+/g, ' ')
+        .replace(/\s*[-–|]\s*$/, '')                       // separador solto no fim
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+}
+
+function pickBest(arr: any[], artist: string): any | null {
+    const withLyrics = arr.filter((x) => x.plainLyrics || x.syncedLyrics);
+    if (withLyrics.length === 0) return null;
+    const an = artist.trim().toLowerCase();
+    if (an) {
+        const byArtist = withLyrics.filter((x) => (x.artistName || '').toLowerCase().includes(an));
+        if (byArtist.length) return byArtist.find((x) => x.syncedLyrics) || byArtist[0];
+    }
+    return withLyrics.find((x) => x.syncedLyrics) || withLyrics[0];
+}
+
+// Busca letra por nome (+ artista, se houver) em APIs abertas (sem chave).
+// LRCLIB é a fonte principal (cobertura boa, inclui gospel BR e letra sincronizada);
+// lyrics.ovh é fallback (só letra pura). Tolerante a título sem artista.
+export async function searchLyrics(artist: string, title: string, durationSec?: number): Promise<LyricsResult | null> {
+    const a = artist.trim();
+    const t = cleanTrackTitle(title);
+    if (!t) return null;
+
+    // 1) LRCLIB /get — match exato por assinatura (só quando há artista + duração)
+    if (a && durationSec && durationSec > 0) {
+        try {
+            const params = new URLSearchParams({ artist_name: a, track_name: t, duration: String(Math.round(durationSec)) });
+            const res = await fetch(`https://lrclib.net/api/get?${params.toString()}`);
+            if (res.ok) {
+                const d = await res.json();
+                if (d && (d.plainLyrics || d.syncedLyrics)) {
+                    return { plain: d.plainLyrics || null, synced: d.syncedLyrics || null, source: 'LRCLIB' };
+                }
+            }
+        } catch (e) {
+            console.warn('LRCLIB (get) falhou:', e);
+        }
+    }
+
+    // 2) LRCLIB /search?q= — busca livre, tolerante (funciona mesmo sem artista)
+    try {
+        const q = [a, t].filter(Boolean).join(' ');
+        const res = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(q)}`);
+        if (res.ok) {
+            const arr = await res.json();
+            if (Array.isArray(arr)) {
+                const best = pickBest(arr, a);
+                if (best) return { plain: best.plainLyrics || null, synced: best.syncedLyrics || null, source: 'LRCLIB' };
+            }
+        }
+    } catch (e) {
+        console.warn('LRCLIB (search) falhou:', e);
+    }
+
+    // 3) Fallback lyrics.ovh — só letra pura (exige artista)
+    if (a) {
+        try {
+            const res = await fetch(`https://api.lyrics.ovh/v1/${encodeURIComponent(a)}/${encodeURIComponent(t)}`);
+            if (res.ok) {
+                const d = await res.json();
+                if (d?.lyrics) return { plain: String(d.lyrics).trim(), synced: null, source: 'lyrics.ovh' };
+            }
+        } catch (e) {
+            console.warn('lyrics.ovh falhou:', e);
+        }
+    }
+
+    return null;
 }
 
 export interface CloudStem {

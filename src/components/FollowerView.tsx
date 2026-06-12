@@ -1,4 +1,5 @@
-import { Wifi, WifiOff, Music, FastForward, Clock, Activity } from 'lucide-react';
+import { useState } from 'react';
+import { Wifi, WifiOff, FastForward, Music, FileText, Music2 } from 'lucide-react';
 import type { FollowerState } from '../hooks/useLiveSync';
 
 interface FollowerViewProps {
@@ -12,96 +13,164 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-function formatPitch(pitch: number): string {
-  if (pitch === 0) return 'Original';
+const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const KEY_SEMITONE: Record<string, number> = { C: 0, 'C#': 1, D: 2, 'D#': 3, E: 4, F: 5, 'F#': 6, G: 7, 'G#': 8, A: 9, 'A#': 10, B: 11 };
+
+// Tom real = nota original transposta por `pitch` semitons (ex: E +2 -> F#).
+// Se o tom original for desconhecido, cai no deslocamento em semitons.
+function displayKey(originalKey: string | null, pitch: number): string {
+  if (originalKey && KEY_SEMITONE[originalKey] !== undefined) {
+    return KEYS[((KEY_SEMITONE[originalKey] + pitch) % 12 + 12) % 12];
+  }
+  if (pitch === 0) return '—';
+  return pitch > 0 ? `+${pitch}` : `${pitch}`;
+}
+
+function pitchDelta(pitch: number): string | null {
+  if (pitch === 0) return null;
   return pitch > 0 ? `+${pitch}` : `${pitch}`;
 }
 
 export function FollowerView({ state, isConnected }: FollowerViewProps) {
-  return (
-    <div className="min-h-screen bg-zinc-950 text-white flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
-      {/* Background gradients */}
-      <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/20 via-zinc-950 to-emerald-900/10 pointer-events-none" />
-      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500 to-transparent opacity-50" />
-      
-      {/* Status Badge */}
-      <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 backdrop-blur-md border border-white/10 shadow-lg transition-all duration-500 z-10">
-        {isConnected ? (
-          <>
-            <Wifi className="w-4 h-4 text-emerald-400" />
-            <span className="text-emerald-400 text-sm font-medium tracking-wide">Sincronizado</span>
-          </>
-        ) : (
-          <>
-            <WifiOff className="w-4 h-4 text-red-400" />
-            <span className="text-red-400 text-sm font-medium tracking-wide">Desconectado</span>
-          </>
-        )}
-      </div>
+  const sectionColor = state.currentMarker?.color || '#6366f1';
 
-      <div className="w-full max-w-4xl space-y-8 z-10">
-        
-        {/* Main Content Area */}
-        <div className="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 p-8 sm:p-12 shadow-2xl flex flex-col items-center text-center space-y-6">
-          
-          <div className="space-y-2">
-            <h3 className="text-indigo-400 font-semibold tracking-widest uppercase text-sm flex items-center justify-center gap-2">
-              <Music className="w-4 h-4" /> Tocando Agora
-            </h3>
-            <h1 className="text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight text-white/90 drop-shadow-md">
-              {state.songName || 'Aguardando líder...'}
-            </h1>
+  const hasLyrics = !!state.lyrics?.trim();
+  const hasChords = !!state.chords?.trim();
+  const [view, setView] = useState<'lyrics' | 'chords'>('lyrics');
+  // Se a aba escolhida não tiver conteúdo, mostra a que tiver.
+  const effective = view === 'chords' ? (hasChords ? 'chords' : 'lyrics') : (hasLyrics ? 'lyrics' : 'chords');
+  const content = effective === 'chords' ? state.chords : state.lyrics;
+  const hasAny = hasLyrics || hasChords;
+
+  return (
+    <div className="min-h-screen bg-zinc-950 text-white flex flex-col font-sans relative overflow-hidden">
+      {/* Glow sutil com a cor da seção atual */}
+      <div
+        className="absolute inset-0 pointer-events-none opacity-30 transition-colors duration-700"
+        style={{ background: `radial-gradient(60% 50% at 50% 0%, ${sectionColor}33 0%, transparent 70%)` }}
+      />
+
+      {/* ───── Topo compacto: status · música · seção · tom ───── */}
+      <header className="shrink-0 z-10 px-5 sm:px-8 pt-5 pb-4 border-b border-white/10 backdrop-blur-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 shrink-0">
+            {isConnected ? (
+              <>
+                <Wifi className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-emerald-400 text-xs font-medium tracking-wide hidden sm:inline">Sincronizado</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-3.5 h-3.5 text-red-400 animate-pulse" />
+                <span className="text-red-400 text-xs font-medium tracking-wide hidden sm:inline">Reconectando</span>
+              </>
+            )}
           </div>
 
-          {state.currentMarker && (
-            <div className="px-6 py-2 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-200 text-xl font-medium shadow-inner">
-              {state.currentMarker.label}
-            </div>
-          )}
+          <div className="flex items-center gap-2 min-w-0 text-zinc-400 text-sm">
+            <Music className="w-4 h-4 shrink-0 text-indigo-400" />
+            <span className="truncate font-medium text-zinc-200">{state.songName || 'Aguardando líder...'}</span>
+          </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full pt-8">
-            {/* Time */}
-            <div className="bg-black/30 rounded-2xl p-4 border border-white/5 flex flex-col items-center justify-center gap-1">
-              <Clock className="w-5 h-5 text-zinc-400 mb-1" />
-              <span className="text-3xl font-light font-mono text-zinc-200">{formatTime(state.currentTime)}</span>
-              <span className="text-xs text-zinc-500 uppercase tracking-widest font-semibold">Tempo</span>
-            </div>
-
-            {/* Pitch */}
-            <div className="bg-black/30 rounded-2xl p-4 border border-white/5 flex flex-col items-center justify-center gap-1">
-              <Activity className="w-5 h-5 text-emerald-400 mb-1" />
-              <span className="text-3xl font-bold text-emerald-300">
-                {formatPitch(state.pitch)}
-              </span>
-              <span className="text-xs text-emerald-500/70 uppercase tracking-widest font-semibold">Tom</span>
-            </div>
-
-            {/* Status (Playing/Paused) */}
-            <div className="bg-black/30 rounded-2xl p-4 border border-white/5 flex flex-col items-center justify-center gap-1 col-span-2 md:col-span-2">
-               <span className={`text-2xl font-medium ${state.isPlaying ? 'text-emerald-400' : 'text-amber-400'}`}>
-                 {state.isPlaying ? '▶ EM REPRODUÇÃO' : '⏸ PAUSADO'}
-               </span>
-               <span className="text-xs text-zinc-500 uppercase tracking-widest font-semibold mt-2">Status</span>
-            </div>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 shrink-0">
+            <span className="text-[10px] uppercase tracking-widest font-semibold text-emerald-500/70">Tom</span>
+            <span className="text-emerald-300 font-bold text-xl leading-none">{displayKey(state.originalKey, state.pitch)}</span>
+            {pitchDelta(state.pitch) && (
+              <span className="text-emerald-500/70 text-[11px] font-mono">{pitchDelta(state.pitch)}</span>
+            )}
           </div>
         </div>
 
-        {/* Next Song Bar */}
-        {state.nextSongName && (
-          <div className="bg-indigo-950/40 backdrop-blur-md rounded-2xl border border-indigo-500/20 p-6 flex items-center justify-between shadow-lg">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-indigo-500/20 flex items-center justify-center">
-                <FastForward className="w-6 h-6 text-indigo-400" />
-              </div>
-              <div className="text-left">
-                <h4 className="text-indigo-400 text-sm font-semibold uppercase tracking-wider mb-1">Próxima Música</h4>
-                <p className="text-2xl font-medium text-white/80">{state.nextSongName}</p>
-              </div>
+        {/* Seção atual + próxima seção */}
+        <div className="flex items-center justify-between gap-3 mt-3">
+          {state.currentMarker ? (
+            <span
+              className="px-4 py-1.5 rounded-lg text-lg sm:text-2xl font-bold tracking-tight shadow-inner"
+              style={{ backgroundColor: `${sectionColor}26`, color: sectionColor, border: `1px solid ${sectionColor}55` }}
+            >
+              {state.currentMarker.label}
+            </span>
+          ) : (
+            <span className="text-zinc-600 text-sm italic">Sem seção marcada</span>
+          )}
+
+          {state.nextMarkerLabel && (
+            <div className="flex items-center gap-2 text-zinc-500 text-sm shrink-0">
+              <span className="uppercase tracking-widest text-[10px] font-semibold hidden sm:inline">Próxima</span>
+              <FastForward className="w-4 h-4" />
+              <span className="font-medium text-zinc-300 truncate max-w-[40vw]">{state.nextMarkerLabel}</span>
+            </div>
+          )}
+        </div>
+      </header>
+
+      {/* ───── Toggle Cifra / Letra (só quando há os dois) ───── */}
+      {hasLyrics && hasChords && (
+        <div className="shrink-0 z-10 flex items-center justify-center gap-2 py-2 border-b border-white/5">
+          <button
+            onClick={() => setView('lyrics')}
+            className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer ${effective === 'lyrics' ? 'bg-primary/20 text-primary border border-primary/40' : 'text-zinc-400 border border-white/10'}`}
+          >
+            <FileText className="w-3.5 h-3.5" /> Letra
+          </button>
+          <button
+            onClick={() => setView('chords')}
+            className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer ${effective === 'chords' ? 'bg-secondary/20 text-secondary border border-secondary/40' : 'text-zinc-400 border border-white/10'}`}
+          >
+            <Music2 className="w-3.5 h-3.5" /> Cifra
+          </button>
+        </div>
+      )}
+
+      {/* ───── Corpo: documento corrido (letra ou cifra), rolável ───── */}
+      <main className="flex-1 z-10 overflow-auto px-5 sm:px-12 py-8">
+        {hasAny && content ? (
+          effective === 'chords' ? (
+            <pre className="w-fit min-w-full mx-auto whitespace-pre font-mono text-lg sm:text-2xl md:text-3xl leading-relaxed text-white/95">
+              {content}
+            </pre>
+          ) : (
+            <pre className="w-full max-w-4xl mx-auto whitespace-pre-wrap break-words font-sans text-2xl sm:text-4xl md:text-5xl font-bold leading-snug text-center text-white/95 drop-shadow-md">
+              {content}
+            </pre>
+          )
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center text-center text-zinc-600">
+            <Music className="w-16 h-16 mb-4 opacity-40" />
+            <p className="text-2xl sm:text-3xl font-medium">
+              {state.songName ? 'Sem letra/cifra cadastrada' : 'Aguardando o líder iniciar...'}
+            </p>
+          </div>
+        )}
+      </main>
+
+      {/* ───── Rodapé: status de reprodução · tempo · próxima música ───── */}
+      <footer className="shrink-0 z-10 px-5 sm:px-8 py-4 border-t border-white/10 backdrop-blur-sm flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <span className={`text-base sm:text-lg font-semibold ${state.isPlaying ? 'text-emerald-400' : 'text-amber-400'}`}>
+            {state.isPlaying ? '▶ Tocando' : '⏸ Pausado'}
+          </span>
+          <span className="font-mono text-zinc-400 text-lg tabular-nums">{formatTime(state.currentTime)}</span>
+        </div>
+
+        {state.nextSong && (
+          <div className="flex items-center gap-3 text-zinc-500 min-w-0">
+            <FastForward className="w-4 h-4 shrink-0 text-indigo-400" />
+            <div className="flex flex-col items-end leading-tight min-w-0">
+              <span className="uppercase tracking-widest text-[9px] font-semibold text-indigo-400/80">Próxima música</span>
+              <span className="font-medium text-zinc-200 truncate max-w-[50vw]">{state.nextSong.name}</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 pl-3 border-l border-white/10">
+              <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-bold text-sm">
+                {displayKey(state.nextSong.originalKey, state.nextSong.pitch)}
+              </span>
+              {state.nextSong.bpm != null && (
+                <span className="text-zinc-400 text-xs font-mono whitespace-nowrap">{Math.round(state.nextSong.bpm)} BPM</span>
+              )}
             </div>
           </div>
         )}
-
-      </div>
+      </footer>
     </div>
   );
 }

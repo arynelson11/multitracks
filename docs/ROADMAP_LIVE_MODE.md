@@ -20,20 +20,20 @@ Este documento registra as fases de implementação do modo ao vivo (hook/sessã
 - **Status:** Concluído.
 - **Descrição:** Gerenciador de download dos multitracks (R2 para disco), validação de plano com validade offline, degradação graciosa das funções online, selo de status e checagem "pronto pro offline" antes do show.
 
-### 🟡 Fase 2: Host local
-- **Status:** A Fazer (Próximo Passo)
+### ✅ Fase 2: Host local
+- **Status:** Concluído.
 - **Descrição:** O servidor (HTTP + WebSocket) embutido no app do líder, operando dentro da rede local do roteador. 
 - **Entregável:** O app exibe o IP local e um QR code para que a banda se conecte pelo navegador.
 
-### ⏳ Fase 3: Modo seguir + sincronização
-- **Status:** Na fila
+### ✅ Fase 3: Modo seguir + sincronização
+- **Status:** Concluído.
 - **Descrição:** A banda vê a música atual e a próxima, a parte/seção em destaque, o tom e a cifra/letra, com um botão para sugerir alterações. 
 - **Entregável:** Sincronização offline, via rede local, de música, parte, tom e play/pause/posição.
 
-### ⏳ Fase 4: Estrutura de seções (Paralelo)
-- **Status:** Na fila
-- **Descrição:** Marcadores de seção por música (verso, refrão, ponte, loop) e a cifra/letra organizada por seção. 
-- **Entregável:** Dados estruturados para servir de base e sincronizar a "parte atual" corretamente no modo follower. Pode ser desenvolvida em paralelo às outras fases por focar em estrutura de dados.
+### ✅ Fase 4: Estrutura de seções
+- **Status:** Concluído.
+- **Descrição:** Marcadores de seção por música (verso, refrão, ponte, loop) e a cifra/letra organizada por seção. A `FollowerView` foi redesenhada no formato teleprompter — a cifra/letra da seção atual domina a tela, com topo compacto (música, tom, seção atual + próxima seção). A estrutura de dados (`Marker` com `label`/`lyrics`/`color`/`time`) já existia; esta fase a coloca em uso no modo follower e sincroniza a próxima seção pelo playhead.
+- **Entregável:** Cifra/letra por seção exibida no modo follower, com a "parte atual" e a "próxima parte" sincronizadas via rede local.
 
 ### ⏳ Fase 5: Nuvem opcional (híbrido)
 - **Status:** Na fila

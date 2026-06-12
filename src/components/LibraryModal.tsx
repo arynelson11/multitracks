@@ -9,7 +9,7 @@ import { type Marker } from '../types';
 interface LibraryModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onDownload: (files: File[], songName: string, coverUrl: string | null, markers?: Marker[], originalKey?: string | null, artist?: string, bpm?: number) => void;
+    onDownload: (files: File[], songName: string, coverUrl: string | null, markers?: Marker[], originalKey?: string | null, artist?: string, bpm?: number, extra?: { lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null }) => void;
 }
 
 export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps) {
@@ -82,7 +82,7 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
     const handleDownload = async (songId: string, songName: string) => {
         const result = await downloadSong(songId);
         if (result && result.files.length > 0) {
-            onDownload(result.files, songName, result.coverUrl, result.markers || undefined, result.originalKey, result.artist, result.bpm);
+            onDownload(result.files, songName, result.coverUrl, result.markers || undefined, result.originalKey, result.artist, result.bpm, { lyrics: result.lyrics, lyricsSynced: result.lyricsSynced, chords: result.chords });
             setDownloadedIds(prev => new Set(prev).add(songId));
         }
     };

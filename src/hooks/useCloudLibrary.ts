@@ -84,7 +84,7 @@ export function useCloudLibrary() {
     }, [searchQuery, isOnline]);
 
     // Download a song (or load from local cache if offline/cached)
-    const downloadSong = useCallback(async (songId: string): Promise<{ files: File[], coverUrl: string | null, markers: Marker[] | null, originalKey: string | null, artist?: string, bpm?: number } | null> => {
+    const downloadSong = useCallback(async (songId: string): Promise<{ files: File[], coverUrl: string | null, markers: Marker[] | null, originalKey: string | null, artist?: string, bpm?: number, lyrics?: string | null, lyricsSynced?: string | null, chords?: string | null } | null> => {
         setDownloadingSongId(songId);
 
         // Check cache first
@@ -209,7 +209,10 @@ export function useCloudLibrary() {
             const originalKey = song?.key || null;
             const artist = song?.artist || undefined;
             const bpm = song?.bpm || undefined;
-            return { files, coverUrl, markers, originalKey, artist, bpm };
+            const lyrics = song?.lyrics ?? null;
+            const lyricsSynced = song?.lyrics_synced ?? null;
+            const chords = song?.chords ?? null;
+            return { files, coverUrl, markers, originalKey, artist, bpm, lyrics, lyricsSynced, chords };
         } catch (e) {
             const err = e as Error;
             console.error('Error downloading song:', err);

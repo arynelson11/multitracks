@@ -19,7 +19,8 @@ import { SeparatorStudio } from './components/SeparatorStudio'
 import { LandingPage } from './components/LandingPage'
 import { useAuth } from './hooks/useAuth'
 import { PricingModal } from './components/PricingModal'
-import { supabase, updateSongMarkers as saveMkToCloud, fetchSongs as fetchCloudSongs } from './lib/supabase'
+import { supabase, updateSongMarkers as saveMkToCloud, fetchSongs as fetchCloudSongs, updateSong } from './lib/supabase'
+import { LyricsEditor } from './components/LyricsEditor'
 import { useNetworkStatus } from './hooks/useNetworkStatus'
 import { useLiveSync } from './hooks/useLiveSync'
 
@@ -34,7 +35,7 @@ export default function App() {
     setChannelBus, exportPlaylist, importPlaylist,
     channels, pause, seekTo, prevSong, nextSong, isPlaying, currentTime, duration,
     masterVolume, updateVolume, toggleMute, toggleSolo, updateMasterVolume,
-    changePitch, setOriginalKey, currentMarker, setSongMarkers,
+    changePitch, setOriginalKey, currentMarker, setSongMarkers, setSongLyrics,
     playbackMode, setPlaybackMode,
     addChannelToActiveSong,
     updatePan, removeChannel, reorderChannels,
@@ -66,6 +67,7 @@ export default function App() {
   const [isPadSetsModalOpen, setIsPadSetsModalOpen] = useState(false)
   const [isTeleprompterMode, setIsTeleprompterMode] = useState(false)
   const [isMarkerEditorOpen, setIsMarkerEditorOpen] = useState(false)
+  const [isLyricsEditorOpen, setIsLyricsEditorOpen] = useState(false)
   const [markerLabel, setMarkerLabel] = useState('')
   const [markerLyrics, setMarkerLyrics] = useState('')
   const [markerColor, setMarkerColor] = useState('#10b981')
@@ -86,12 +88,28 @@ export default function App() {
   const [liveServerError, setLiveServerError] = useState<string | null>(null)
 
   // ── Sincronização Live (Líder / Follower) ──
+  // Fase 4: próxima seção (marcador) com base no playhead atual
+  const _activeMarkers = playlist[activeSongIndex]?.markers
+  const nextMarkerLabel = _activeMarkers && _activeMarkers.length > 0
+    ? ([..._activeMarkers].sort((a, b) => a.time - b.time).find((m) => m.time > currentTime)?.label ?? null)
+    : null
+
+  // Próxima música com tom e BPM (não só o nome) — o follower calcula a nota a partir de originalKey + pitch
+  const _next = playlist[activeSongIndex + 1]
+  const nextSongInfo = _next
+    ? { name: _next.name, originalKey: _next.originalKey ?? null, pitch: _next.pitch ?? 0, bpm: _next.bpm ?? null }
+    : null
+
   const { isFollowerMode, isConnected, followerState } = useLiveSync({
     isPlaying,
     currentTime,
     songName: playlist[activeSongIndex]?.name || null,
-    nextSongName: playlist[activeSongIndex + 1]?.name || null,
     currentMarker: currentMarker || null,
+    nextMarkerLabel,
+    nextSong: nextSongInfo,
+    lyrics: playlist[activeSongIndex]?.lyrics ?? null,
+    lyricsSynced: playlist[activeSongIndex]?.lyricsSynced ?? null,
+    chords: playlist[activeSongIndex]?.chords ?? null,
     pitch: playlist[activeSongIndex]?.pitch || 0,
     originalKey: playlist[activeSongIndex]?.originalKey || null,
   })
@@ -1093,12 +1111,20 @@ export default function App() {
               })}
               {/* Marker Editor Toggle (Admin only) */}
               {user?.email === 'arynelson11@gmail.com' && (
-                <button
-                  onClick={() => setIsMarkerEditorOpen(!isMarkerEditorOpen)}
-                  className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold tracking-wide cursor-pointer active:scale-95 border transition-all ${isMarkerEditorOpen ? 'bg-primary/20 text-primary border-primary/40' : 'text-text-muted border-white/10 hover:bg-white/5'}`}
-                >
-                  ✏️ Editar
-                </button>
+                <>
+                  <button
+                    onClick={() => setIsMarkerEditorOpen(!isMarkerEditorOpen)}
+                    className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold tracking-wide cursor-pointer active:scale-95 border transition-all ${isMarkerEditorOpen ? 'bg-primary/20 text-primary border-primary/40' : 'text-text-muted border-white/10 hover:bg-white/5'}`}
+                  >
+                    ✏️ Editar
+                  </button>
+                  <button
+                    onClick={() => setIsLyricsEditorOpen(true)}
+                    className="shrink-0 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold tracking-wide cursor-pointer active:scale-95 border transition-all text-text-muted border-white/10 hover:bg-white/5"
+                  >
+                    📝 Letra/Cifra
+                  </button>
+                </>
               )}
             </div>
           )}
@@ -1111,6 +1137,12 @@ export default function App() {
                 className="shrink-0 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold tracking-wide cursor-pointer active:scale-95 border text-text-muted border-white/10 hover:bg-white/5"
               >
                 + Adicionar Marcadores
+              </button>
+              <button
+                onClick={() => setIsLyricsEditorOpen(true)}
+                className="shrink-0 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold tracking-wide cursor-pointer active:scale-95 border text-text-muted border-white/10 hover:bg-white/5"
+              >
+                📝 Letra/Cifra
               </button>
             </div>
           )}
@@ -1633,11 +1665,16 @@ export default function App() {
       <LibraryModal
         isOpen={isLibraryOpen}
         onClose={() => setIsLibraryOpen(false)}
-        onDownload={async (files, songName, coverUrl, markers, originalKey, artist, bpm) => {
+        onDownload={async (files, songName, coverUrl, markers, originalKey, artist, bpm, extra) => {
           const dt = new DataTransfer();
           files.forEach(f => dt.items.add(f));
           const fullName = artist ? `${artist} - ${songName}` : songName;
-          await loadFiles(dt.files, fullName, coverUrl || undefined, markers, originalKey ?? null, bpm);
+          await loadFiles(dt.files, fullName, coverUrl || undefined, markers, originalKey ?? null, bpm, {
+            artist,
+            lyrics: extra?.lyrics ?? null,
+            lyricsSynced: extra?.lyricsSynced ?? null,
+            chords: extra?.chords ?? null,
+          });
         }}
       />
 
@@ -1657,6 +1694,31 @@ export default function App() {
         serverError={liveServerError}
         onStopServer={handleStopLiveMode}
       />
+
+      {/* Editor de Letra & Cifra (Admin) */}
+      {isLyricsEditorOpen && playlist[activeSongIndex] && (
+        <LyricsEditor
+          song={playlist[activeSongIndex]}
+          onClose={() => setIsLyricsEditorOpen(false)}
+          onSave={async ({ lyrics, lyricsSynced, chords }) => {
+            const activeSong = playlist[activeSongIndex]
+            if (!activeSong) return false
+            // Estado local (reflete no follower e persiste no IndexedDB)
+            setSongLyrics(activeSong.id, { lyrics, lyricsSynced, chords })
+            // Nuvem: casa pela nomenclatura (mesmo padrão dos marcadores)
+            try {
+              const cloudSongs = await fetchCloudSongs()
+              const match = cloudSongs.find((cs: any) => activeSong.name.includes(cs.name) || cs.name.includes(activeSong.name))
+              if (match) {
+                return await updateSong(match.id, { lyrics, lyrics_synced: lyricsSynced, chords })
+              }
+            } catch (e) {
+              console.error('Falha ao salvar letra/cifra na nuvem:', e)
+            }
+            return false
+          }}
+        />
+      )}
 
       {/* Admin Dashboard */}
       {(user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com') && (

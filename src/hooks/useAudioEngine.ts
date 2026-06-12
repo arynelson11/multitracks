@@ -562,7 +562,7 @@ export function useAudioEngine(userId?: string) {
     }, [isPlaying, updateTime]);
 
     // Load files
-    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string, songMarkers?: Marker[], overrideOriginalKey?: string | null, overrideBpm?: number) => {
+    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string, songMarkers?: Marker[], overrideOriginalKey?: string | null, overrideBpm?: number, meta?: { artist?: string; lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null }) => {
         if (!audioCtxRef.current || !masterGainRef.current) return;
         setIsLoading(true);
 
@@ -686,7 +686,11 @@ export function useAudioEngine(userId?: string) {
             pitch: 0,
             originalKey,
             bpm,
-            markers: songMarkers || undefined
+            markers: songMarkers || undefined,
+            artist: meta?.artist,
+            lyrics: meta?.lyrics ?? null,
+            lyricsSynced: meta?.lyricsSynced ?? null,
+            chords: meta?.chords ?? null
         };
 
         const newPlaylist = [...playlist, newSong];
@@ -857,6 +861,13 @@ export function useAudioEngine(userId?: string) {
     // Update markers on a song
     const setSongMarkers = (songId: string, markers: Marker[]) => {
         const newPlaylist = playlist.map(s => s.id === songId ? { ...s, markers } : s);
+        updatePlaylistAndSave(newPlaylist);
+    };
+
+    // Fase 4: letra/cifra por música (documento corrido). Atualiza o estado local
+    // e persiste no IndexedDB; a sincronização na nuvem é feita no App via updateSong.
+    const setSongLyrics = (songId: string, data: { lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null }) => {
+        const newPlaylist = playlist.map(s => s.id === songId ? { ...s, ...data } : s);
         updatePlaylistAndSave(newPlaylist);
     };
 
@@ -1410,6 +1421,7 @@ export function useAudioEngine(userId?: string) {
         setOriginalKey,
         currentMarker,
         setSongMarkers,
+        setSongLyrics,
 
         // Phase 3
         bus1Volume,

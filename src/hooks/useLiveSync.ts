@@ -5,8 +5,12 @@ export interface FollowerState {
   isPlaying: boolean;
   currentTime: number;
   songName: string | null;
-  nextSongName: string | null;
   currentMarker: Marker | null;
+  nextMarkerLabel: string | null;
+  nextSong: { name: string; originalKey: string | null; pitch: number; bpm: number | null } | null;
+  lyrics: string | null;
+  lyricsSynced: string | null;
+  chords: string | null;
   pitch: number;
   originalKey: string | null;
 }
@@ -17,8 +21,12 @@ export function useLiveSync(leaderState: FollowerState) {
     isPlaying: false,
     currentTime: 0,
     songName: null,
-    nextSongName: null,
     currentMarker: null,
+    nextMarkerLabel: null,
+    nextSong: null,
+    lyrics: null,
+    lyricsSynced: null,
+    chords: null,
     pitch: 0,
     originalKey: null,
   });
@@ -44,8 +52,12 @@ export function useLiveSync(leaderState: FollowerState) {
           isPlaying: state.isPlaying,
           currentTime: state.currentTime,
           songName: state.songName,
-          nextSongName: state.nextSongName,
           currentMarker: state.currentMarker,
+          nextMarkerLabel: state.nextMarkerLabel,
+          nextSong: state.nextSong,
+          lyrics: state.lyrics,
+          lyricsSynced: state.lyricsSynced,
+          chords: state.chords,
           pitch: state.pitch,
           originalKey: state.originalKey
         }
