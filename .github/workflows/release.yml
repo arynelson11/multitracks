@@ -15,7 +15,7 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            artifact: release/Playback-Studio-mac.dmg
+            artifact: 'release/Playback-Studio-mac-*.dmg'
           - os: windows-latest
             artifact: release/Playback-Studio-win.exe
     runs-on: ${{ matrix.os }}

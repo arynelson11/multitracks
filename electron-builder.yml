@@ -15,13 +15,19 @@ protocols:
       - playbackstudio
 mac:
   category: public.app-category.music
+  icon: build/icon.icns
   target:
-    - dmg
-  # Nome fixo pra o link do GitHub Releases ser estável (independe da versão).
-  artifactName: Playback-Studio-mac.${ext}
+    # Dois instaladores: Intel (x64) e Apple Silicon (arm64).
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  # Nome fixo por arquitetura pra os links do GitHub Releases serem estáveis.
+  artifactName: Playback-Studio-mac-${arch}.${ext}
   # Fase 0: sem assinatura de código. Assinar antes de liberar pros usuários.
   identity: null
 win:
+  icon: build/icon.png
   target:
     - nsis
   artifactName: Playback-Studio-win.${ext}

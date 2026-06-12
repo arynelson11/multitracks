@@ -6,7 +6,8 @@ import {
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark'
 
 const GH = 'https://github.com/arynelson11/multitracks/releases/latest/download'
-const MAC_URL = `${GH}/Playback-Studio-mac.dmg`
+const MAC_ARM_URL = `${GH}/Playback-Studio-mac-arm64.dmg`
+const MAC_INTEL_URL = `${GH}/Playback-Studio-mac-x64.dmg`
 const WIN_URL = `${GH}/Playback-Studio-win.exe`
 
 const FEATURES = [
@@ -55,18 +56,31 @@ export function DownloadPage() {
         </div>
 
         {/* Botões de download */}
-        <div className="grid sm:grid-cols-2 gap-4 max-w-2xl mx-auto mb-4">
+        <div className="grid sm:grid-cols-3 gap-4 max-w-3xl mx-auto mb-3">
           <DownloadButton
-            href={MAC_URL} icon={<Apple className="w-7 h-7" />}
-            platform="macOS" sub=".dmg para Mac" highlighted={isMac}
+            href={MAC_ARM_URL} icon={<Apple className="w-7 h-7" />}
+            platform="Mac" label="Baixar (Apple Silicon)" sub="M1, M2, M3 ou mais novo" highlighted={isMac}
+            onHelp={() => setShowHelp('mac')}
+          />
+          <DownloadButton
+            href={MAC_INTEL_URL} icon={<Apple className="w-7 h-7" />}
+            platform="Mac" label="Baixar (Intel)" sub="Macs até 2020" highlighted={isMac}
             onHelp={() => setShowHelp('mac')}
           />
           <DownloadButton
             href={WIN_URL} icon={<Monitor className="w-7 h-7" />}
-            platform="Windows" sub=".exe para Windows" highlighted={isWin}
+            platform="Windows" label="Baixar (.exe)" sub="Windows 10 ou 11" highlighted={isWin}
             onHelp={() => setShowHelp('win')}
           />
         </div>
+
+        {/* Dica de qual Mac */}
+        {isMac && (
+          <p className="text-center text-zinc-500 text-xs max-w-2xl mx-auto mb-4">
+            Não sabe qual Mac você tem? Menu <strong className="text-zinc-300"></strong> → <strong className="text-zinc-300">Sobre Este Mac</strong>.
+            Se aparecer <strong className="text-zinc-300">Apple M1/M2/M3</strong>, use Apple Silicon. Se aparecer <strong className="text-zinc-300">Intel</strong>, use a versão Intel.
+          </p>
+        )}
 
         {/* Ajuda de instalação */}
         {showHelp && (
@@ -121,24 +135,23 @@ export function DownloadPage() {
   )
 }
 
-function DownloadButton({ href, icon, platform, sub, highlighted, onHelp }: {
-  href: string; icon: React.ReactNode; platform: string; sub: string; highlighted: boolean; onHelp: () => void
+function DownloadButton({ href, icon, platform, label, sub, highlighted, onHelp }: {
+  href: string; icon: React.ReactNode; platform: string; label: string; sub: string; highlighted: boolean; onHelp: () => void
 }) {
   return (
-    <div className={`rounded-2xl border p-5 transition-all ${highlighted ? 'bg-orange-500/10 border-orange-500/40' : 'bg-white/[0.03] border-white/10'}`}>
+    <div className={`rounded-2xl border p-5 flex flex-col transition-all ${highlighted ? 'bg-orange-500/[0.07] border-orange-500/30' : 'bg-white/[0.03] border-white/10'}`}>
       <div className="flex items-center gap-3 mb-4">
         <div className="text-white">{icon}</div>
-        <div>
+        <div className="min-w-0">
           <p className="font-bold text-white leading-tight">{platform}</p>
-          <p className="text-zinc-500 text-xs">{sub}</p>
+          <p className="text-zinc-500 text-xs truncate">{sub}</p>
         </div>
-        {highlighted && <span className="ml-auto text-[10px] font-bold uppercase tracking-wider text-orange-400">Seu sistema</span>}
       </div>
       <a
         href={href}
-        className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-orange-500 text-black font-bold text-sm hover:bg-orange-400 active:scale-[0.98] transition-all"
+        className="mt-auto w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-orange-500 text-black font-bold text-[13px] hover:bg-orange-400 active:scale-[0.98] transition-all"
       >
-        <Download className="w-4 h-4" /> Baixar para {platform}
+        <Download className="w-4 h-4" /> {label}
       </a>
       <button onClick={onHelp} className="w-full text-center text-[11px] text-zinc-500 hover:text-zinc-300 mt-2 transition-colors">
         Como instalar?

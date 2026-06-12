@@ -45,6 +45,10 @@ node_modules/
 # Build & Logs (AIOX)
 dist/
 build/
+# Exceto os ícones do app (electron-builder precisa deles no CI)
+!build/
+!build/icon.icns
+!build/icon.png
 logs/
 
 # IDE & OS (AIOX)
