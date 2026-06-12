@@ -3,19 +3,9 @@
 // Esta é a costura pra ligar funções que só existem no app (cache offline,
 // host local, etc) nas próximas fases. Detecção por capability, não user-agent.
 
-export interface PlaybackDesktop {
-  isElectron: true
-  platform: string
-  version: string
-  openExternalUrl: (url: string) => void
-  onDeepLinkAuth: (callback: (fragment: string) => void) => () => void
-}
-
-declare global {
-  interface Window {
-    playbackDesktop?: PlaybackDesktop
-  }
-}
+// A declaração global de window.playbackDesktop vive em src/types.ts (fonte única).
+// Aqui derivamos o tipo dela pra evitar declarações duplicadas/conflitantes.
+export type PlaybackDesktop = NonNullable<Window['playbackDesktop']>
 
 const bridge = typeof window !== 'undefined' ? window.playbackDesktop : undefined
 
