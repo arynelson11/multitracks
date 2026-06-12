@@ -73,6 +73,9 @@ export default function App() {
   const [connectedDevices, setConnectedDevices] = useState<{ id: string; ip: string }[]>([])
   const [approvedIps, setApprovedIps] = useState<string[]>([])
   const connectedIps = [...new Set(connectedDevices.map((d) => d.ip).filter(Boolean))]
+  // Fase 5 — sessão na nuvem: quando ativa, o líder espelha o estado via Supabase Realtime
+  // pra músicos remotos (fora da LAN). O código vai no link compartilhado.
+  const [remoteSessionCode, setRemoteSessionCode] = useState<string | null>(null)
   const [markerLabel, setMarkerLabel] = useState('')
   const [markerLyrics, setMarkerLyrics] = useState('')
   const [markerColor, setMarkerColor] = useState('#10b981')
@@ -124,7 +127,7 @@ export default function App() {
     padVolume,
     pitch: playlist[activeSongIndex]?.pitch || 0,
     originalKey: playlist[activeSongIndex]?.originalKey || null,
-  })
+  }, remoteSessionCode)
 
   // Líder: mantém a lista de dispositivos conectados. As aprovações são por IP e
   // persistem mesmo se a conexão cair (o aparelho reconecta e mantém a liberação).
@@ -1744,6 +1747,8 @@ export default function App() {
           const allApproved = connectedIps.length > 0 && connectedIps.every(ip => approvedIps.includes(ip))
           setApprovedIps(allApproved ? [] : connectedIps)
         }}
+        remoteSessionCode={remoteSessionCode}
+        onToggleRemote={() => setRemoteSessionCode(prev => prev ? null : Math.random().toString(36).slice(2, 8).toUpperCase())}
       />
 
       {/* Editor de Letra & Cifra (Admin) */}

@@ -1,4 +1,4 @@
-import { X, Server, Wifi, Gamepad2, Smartphone } from 'lucide-react';
+import { X, Server, Wifi, Gamepad2, Smartphone, Globe, Copy } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
 interface LiveModeModalProps {
@@ -12,6 +12,8 @@ interface LiveModeModalProps {
     approvedIps: string[];
     onToggleDevice: (ip: string) => void;
     onToggleAll: () => void;
+    remoteSessionCode: string | null;
+    onToggleRemote: () => void;
 }
 
 export function LiveModeModal({
@@ -24,9 +26,12 @@ export function LiveModeModal({
     devices,
     approvedIps,
     onToggleDevice,
-    onToggleAll
+    onToggleAll,
+    remoteSessionCode,
+    onToggleRemote
 }: LiveModeModalProps) {
     const allApproved = devices.length > 0 && devices.every(ip => approvedIps.includes(ip));
+    const remoteLink = remoteSessionCode ? `https://playbackstudio.com.br/?s=${remoteSessionCode}` : '';
     if (!isOpen) return null;
 
     return (
@@ -124,6 +129,38 @@ export function LiveModeModal({
                                                 </div>
                                             );
                                         })}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Músico remoto (internet) */}
+                            <div className="w-full mb-3 bg-[#1c1c1e] border border-border rounded-lg p-3">
+                                <button
+                                    onClick={onToggleRemote}
+                                    className={`w-full py-2.5 px-3 rounded-lg border flex items-center justify-between gap-3 transition-all active:scale-95 ${remoteSessionCode ? 'bg-secondary/15 border-secondary/40 text-secondary' : 'bg-white/5 border-border text-text-muted hover:bg-white/10'}`}
+                                >
+                                    <span className="flex items-center gap-2">
+                                        <Globe size={15} />
+                                        <span className="text-xs font-bold uppercase tracking-wider">Músico remoto (internet)</span>
+                                    </span>
+                                    <span className={`relative w-9 h-5 rounded-full transition-colors ${remoteSessionCode ? 'bg-secondary' : 'bg-white/20'}`}>
+                                        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${remoteSessionCode ? 'left-[18px]' : 'left-0.5'}`} />
+                                    </span>
+                                </button>
+                                {remoteSessionCode && (
+                                    <div className="mt-2.5">
+                                        <p className="text-[10px] text-text-muted mb-1.5">Mande este link pro músico que está fora da rede:</p>
+                                        <div className="flex items-center gap-2">
+                                            <span className="flex-1 text-[11px] text-white font-mono bg-black/30 py-1.5 px-2 rounded-md truncate select-all">{remoteLink}</span>
+                                            <button
+                                                onClick={() => navigator.clipboard?.writeText(remoteLink)}
+                                                className="shrink-0 p-2 rounded-md bg-secondary/15 text-secondary border border-secondary/30 active:scale-90 transition-all"
+                                                title="Copiar link"
+                                            >
+                                                <Copy size={14} />
+                                            </button>
+                                        </div>
+                                        <p className="text-[9px] text-text-muted mt-1.5">O remoto acompanha música, tom, seção e letra (não ouve o áudio).</p>
                                     </div>
                                 )}
                             </div>

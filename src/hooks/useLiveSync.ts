@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { Marker, WsMessage } from '../types';
+import { supabase } from '../lib/supabase';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 export interface FollowerState {
   isPlaying: boolean;
@@ -22,91 +24,110 @@ export interface FollowerState {
   originalKey: string | null;
 }
 
-export function useLiveSync(leaderState: FollowerState) {
+// Hosts privados (rede local) — usados pra distinguir o follower da LAN do site público.
+const PRIVATE_HOST = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
+
+const INITIAL_STATE: FollowerState = {
+  isPlaying: false,
+  currentTime: 0,
+  songName: null,
+  currentMarker: null,
+  nextMarkerLabel: null,
+  nextSong: null,
+  lyrics: null,
+  lyricsSynced: null,
+  chords: null,
+  controlEnabled: false,
+  approvedIps: [],
+  setlist: [],
+  activeIndex: 0,
+  channels: [],
+  activePad: null,
+  padVolume: 1,
+  pitch: 0,
+  originalKey: null,
+};
+
+function buildPayload(state: FollowerState) {
+  return {
+    isPlaying: state.isPlaying,
+    currentTime: state.currentTime,
+    songName: state.songName,
+    currentMarker: state.currentMarker,
+    nextMarkerLabel: state.nextMarkerLabel,
+    nextSong: state.nextSong,
+    approvedIps: state.approvedIps,
+    lyrics: state.lyrics,
+    lyricsSynced: state.lyricsSynced,
+    chords: state.chords,
+    controlEnabled: state.controlEnabled,
+    setlist: state.setlist,
+    activeIndex: state.activeIndex,
+    channels: state.channels,
+    activePad: state.activePad,
+    padVolume: state.padVolume,
+    pitch: state.pitch,
+    originalKey: state.originalKey,
+  };
+}
+
+// sessionCode: ativo no líder quando "convidar remoto" está ligado (publica na nuvem).
+export function useLiveSync(leaderState: FollowerState, sessionCode?: string | null) {
   const isLeader = !!window.playbackDesktop?.isElectron;
-  const [followerState, setFollowerState] = useState<FollowerState>({
-    isPlaying: false,
-    currentTime: 0,
-    songName: null,
-    currentMarker: null,
-    nextMarkerLabel: null,
-    nextSong: null,
-    approvedIps: [],
-    lyrics: null,
-    lyricsSynced: null,
-    chords: null,
-    controlEnabled: false,
-    setlist: [],
-    activeIndex: 0,
-    channels: [],
-    activePad: null,
-    padVolume: 1,
-    pitch: 0,
-    originalKey: null,
-  });
+  const remoteSession = !isLeader ? new URLSearchParams(window.location.search).get('s') : null;
+  const isFollowerRemote = !isLeader && !!remoteSession;
+  const isFollowerLAN = !isLeader && !remoteSession && PRIVATE_HOST.test(window.location.hostname);
+  const isFollowerMode = isFollowerRemote || isFollowerLAN;
+
+  const [followerState, setFollowerState] = useState<FollowerState>(INITIAL_STATE);
   const [isConnected, setIsConnected] = useState(false);
-  const [isFollowerMode] = useState(!isLeader);
   const wsRef = useRef<WebSocket | null>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
   const myIpRef = useRef<string | null>(null);
 
-  // Refs para armazenar o estado mais recente do líder sem recriar o intervalo
   const leaderStateRef = useRef(leaderState);
   useEffect(() => {
     leaderStateRef.current = leaderState;
   }, [leaderState]);
 
-  // Lógica do Líder (Emissor)
+  // Líder: emite o estado na LAN (WebSocket local) a cada 200ms.
   useEffect(() => {
     if (!isLeader) return;
-
-    // Transmite a cada 200ms para não sobrecarregar o WebSocket com os 60fps do requestAnimationFrame
     const intervalId = setInterval(() => {
-      const state = leaderStateRef.current;
-      const message: WsMessage = {
-        type: 'HOST_STATE',
-        payload: {
-          isPlaying: state.isPlaying,
-          currentTime: state.currentTime,
-          songName: state.songName,
-          currentMarker: state.currentMarker,
-          nextMarkerLabel: state.nextMarkerLabel,
-          nextSong: state.nextSong,
-          approvedIps: state.approvedIps,
-          lyrics: state.lyrics,
-          lyricsSynced: state.lyricsSynced,
-          chords: state.chords,
-          controlEnabled: state.controlEnabled,
-          setlist: state.setlist,
-          activeIndex: state.activeIndex,
-          channels: state.channels,
-          activePad: state.activePad,
-          padVolume: state.padVolume,
-          pitch: state.pitch,
-          originalKey: state.originalKey
-        }
-      };
+      const message: WsMessage = { type: 'HOST_STATE', payload: buildPayload(leaderStateRef.current) };
       window.playbackDesktop?.broadcastState?.(message);
     }, 200);
-
     return () => clearInterval(intervalId);
   }, [isLeader]);
 
-  // Lógica do Seguidor (Receptor)
+  // Líder: quando há sessão remota ativa, espelha o estado pela nuvem (Supabase Realtime).
   useEffect(() => {
-    if (isLeader) return;
+    if (!isLeader || !sessionCode || !supabase) return;
+    const sb = supabase;
+    const channel = sb.channel(`live:${sessionCode}`, { config: { broadcast: { self: false } } });
+    channel.subscribe();
+    const intervalId = setInterval(() => {
+      channel.send({ type: 'broadcast', event: 'host-state', payload: buildPayload(leaderStateRef.current) });
+    }, 300);
+    return () => {
+      clearInterval(intervalId);
+      sb.removeChannel(channel);
+    };
+  }, [isLeader, sessionCode]);
+
+  // Follower LAN: WebSocket no servidor local do líder.
+  useEffect(() => {
+    if (!isFollowerLAN) return;
 
     let ws: WebSocket;
     let reconnectTimeout: ReturnType<typeof setTimeout>;
 
     const connect = () => {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      // Usa o mesmo host e porta do servidor web atual
       ws = new WebSocket(`${protocol}//${window.location.host}`);
       wsRef.current = ws;
 
-      ws.onopen = () => {
-        setIsConnected(true);
-      };
+      ws.onopen = () => setIsConnected(true);
 
       ws.onmessage = (event) => {
         try {
@@ -114,7 +135,6 @@ export function useLiveSync(leaderState: FollowerState) {
           if (data.type === 'CLIENT_JOINED') {
             myIpRef.current = data.ip ?? null;
           } else if (data.type === 'HOST_STATE') {
-            // Controle efetivo deste dispositivo: somente se o IP estiver aprovado pelo líder.
             const payload = data.payload;
             const myIp = myIpRef.current;
             const effectiveControl = !!myIp && payload.approvedIps.includes(myIp);
@@ -127,7 +147,6 @@ export function useLiveSync(leaderState: FollowerState) {
 
       ws.onclose = () => {
         setIsConnected(false);
-        // Tenta reconectar a cada 3 segundos
         reconnectTimeout = setTimeout(connect, 3000);
       };
 
@@ -143,13 +162,32 @@ export function useLiveSync(leaderState: FollowerState) {
       clearTimeout(reconnectTimeout);
       if (ws) ws.close();
     };
-  }, [isLeader]);
+  }, [isFollowerLAN]);
 
-  // Follower envia um comando pro líder (só efetivo se o líder permitir).
+  // Follower remoto: segue pela nuvem (Supabase Realtime). Read-only nesta fase.
+  useEffect(() => {
+    if (!isFollowerRemote || !remoteSession || !supabase) return;
+    const sb = supabase;
+    const channel = sb.channel(`live:${remoteSession}`);
+    channel.on('broadcast', { event: 'host-state' }, ({ payload }) => {
+      setFollowerState({ ...(payload as FollowerState), controlEnabled: false });
+      setIsConnected(true);
+    });
+    channel.subscribe();
+    channelRef.current = channel;
+    return () => {
+      sb.removeChannel(channel);
+      channelRef.current = null;
+      setIsConnected(false);
+    };
+  }, [isFollowerRemote, remoteSession]);
+
+  // Follower envia um comando pro líder (LAN via WebSocket, remoto via Realtime).
   const sendCommand = (action: string, extra?: { index?: number; id?: string; value?: number }) => {
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'COMMAND', action, ...(extra || {}) }));
+    if (isFollowerRemote && channelRef.current) {
+      channelRef.current.send({ type: 'broadcast', event: 'command', payload: { action, ...(extra || {}) } });
+    } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'COMMAND', action, ...(extra || {}) }));
     }
   };
 
