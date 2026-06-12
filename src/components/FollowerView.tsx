@@ -1,6 +1,28 @@
-import { useState } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { Wifi, WifiOff, FastForward, Music, FileText, Music2 } from 'lucide-react';
 import type { FollowerState } from '../hooks/useLiveSync';
+
+interface SyncedLine { time: number; text: string }
+
+const LRC_TAG = /\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
+
+// Parseia letra sincronizada no formato LRC ([mm:ss.xx] texto) em linhas com tempo.
+// Suporta múltiplos timestamps por linha; ignora tags de cabeçalho ([ar:], [ti:]...).
+function parseLRC(lrc: string): SyncedLine[] {
+  const out: SyncedLine[] = [];
+  for (const raw of lrc.split('\n')) {
+    const stamps = [...raw.matchAll(LRC_TAG)];
+    if (stamps.length === 0) continue;
+    const text = raw.replace(LRC_TAG, '').trim();
+    for (const m of stamps) {
+      const min = parseInt(m[1], 10);
+      const sec = parseInt(m[2], 10);
+      const frac = m[3] ? parseInt(m[3].padEnd(3, '0').slice(0, 3), 10) / 1000 : 0;
+      out.push({ time: min * 60 + sec + frac, text });
+    }
+  }
+  return out.sort((a, b) => a.time - b.time);
+}
 
 interface FollowerViewProps {
   state: FollowerState;
@@ -41,6 +63,23 @@ export function FollowerView({ state, isConnected }: FollowerViewProps) {
   const effective = view === 'chords' ? (hasChords ? 'chords' : 'lyrics') : (hasLyrics ? 'lyrics' : 'chords');
   const content = effective === 'chords' ? state.chords : state.lyrics;
   const hasAny = hasLyrics || hasChords;
+
+  // Auto-scroll sincronizado: só na aba Letra e quando há LRC com timestamps.
+  const synced = useMemo(() => (state.lyricsSynced ? parseLRC(state.lyricsSynced) : []), [state.lyricsSynced]);
+  const useSynced = effective === 'lyrics' && synced.length > 0;
+  let activeIndex = -1;
+  if (useSynced) {
+    for (let i = 0; i < synced.length; i++) {
+      if (synced[i].time <= state.currentTime + 0.15) activeIndex = i;
+      else break;
+    }
+  }
+  const activeRef = useRef<HTMLParagraphElement | null>(null);
+  useEffect(() => {
+    if (useSynced && activeRef.current) {
+      activeRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [activeIndex, useSynced]);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white flex flex-col font-sans relative overflow-hidden">
@@ -122,18 +161,39 @@ export function FollowerView({ state, isConnected }: FollowerViewProps) {
         </div>
       )}
 
-      {/* ───── Corpo: documento corrido (letra ou cifra), rolável ───── */}
-      <main className="flex-1 z-10 overflow-auto px-5 sm:px-12 py-8">
-        {hasAny && content ? (
-          effective === 'chords' ? (
-            <pre className="w-fit min-w-full mx-auto whitespace-pre font-mono text-lg sm:text-2xl md:text-3xl leading-relaxed text-white/95">
-              {content}
-            </pre>
-          ) : (
-            <pre className="w-full max-w-4xl mx-auto whitespace-pre-wrap break-words font-sans text-2xl sm:text-4xl md:text-5xl font-bold leading-snug text-center text-white/95 drop-shadow-md">
-              {content}
-            </pre>
-          )
+      {/* ───── Corpo: letra sincronizada (auto-scroll) ou documento corrido ───── */}
+      <main className="flex-1 z-10 overflow-auto px-5 sm:px-12">
+        {useSynced ? (
+          // Letra que rola sozinha: linha atual destacada e centralizada.
+          <div className="max-w-4xl mx-auto py-[40vh] space-y-4 text-center">
+            {synced.map((line, i) => (
+              <p
+                key={i}
+                ref={i === activeIndex ? activeRef : null}
+                className={`font-bold leading-snug transition-all duration-500 ${
+                  i === activeIndex
+                    ? 'text-white text-3xl sm:text-5xl md:text-6xl drop-shadow-lg'
+                    : i < activeIndex
+                      ? 'text-zinc-700 text-xl sm:text-3xl'
+                      : 'text-zinc-500 text-xl sm:text-3xl'
+                }`}
+              >
+                {line.text || '♪'}
+              </p>
+            ))}
+          </div>
+        ) : hasAny && content ? (
+          <div className="py-8">
+            {effective === 'chords' ? (
+              <pre className="w-fit min-w-full mx-auto whitespace-pre font-mono text-lg sm:text-2xl md:text-3xl leading-relaxed text-white/95">
+                {content}
+              </pre>
+            ) : (
+              <pre className="w-full max-w-4xl mx-auto whitespace-pre-wrap break-words font-sans text-2xl sm:text-4xl md:text-5xl font-bold leading-snug text-center text-white/95 drop-shadow-md">
+                {content}
+              </pre>
+            )}
+          </div>
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-center text-zinc-600">
             <Music className="w-16 h-16 mb-4 opacity-40" />
