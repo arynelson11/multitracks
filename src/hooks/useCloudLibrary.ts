@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchSongs, searchSongs, fetchStems, downloadFileAsBlobWithProgress, deleteSongFromCloud, type CloudSong, type CloudStem } from '../lib/supabase';
 import { cacheSongsList, getCachedSongsList, cacheSong, getCachedSong, removeCachedSong, getCachedSongIds } from '../lib/offlineCache';
 import { useNetworkStatus } from './useNetworkStatus';
@@ -13,6 +13,16 @@ export function useCloudLibrary() {
     const [deletingSongId, setDeletingSongId] = useState<string | null>(null);
     const [cachedSongIds, setCachedSongIds] = useState<Set<string>>(new Set());
     const isOnline = useNetworkStatus();
+
+    const abortControllersRef = useRef<Record<string, AbortController>>({});
+
+    const cancelDownload = useCallback((songId: string) => {
+        const controller = abortControllersRef.current[songId];
+        if (controller) {
+            controller.abort();
+            delete abortControllersRef.current[songId];
+        }
+    }, []);
 
     // Load songs list and cached list
     useEffect(() => {
@@ -101,6 +111,28 @@ export function useCloudLibrary() {
             }
         }
 
+        // Check storage quota
+        if (isOnline && !isCached && navigator.storage && navigator.storage.estimate) {
+            try {
+                const estimate = await navigator.storage.estimate();
+                const usage = estimate.usage || 0;
+                const quota = estimate.quota || 0;
+                const freeSpace = quota - usage;
+                const MIN_FREE_SPACE = 150 * 1024 * 1024; // 150 MB
+                if (freeSpace < MIN_FREE_SPACE) {
+                    alert('Espaço em disco insuficiente. Por favor, libere pelo menos 150MB no dispositivo.');
+                    setDownloadingSongId(null);
+                    return null;
+                }
+            } catch (err) {
+                console.warn('Failed to estimate storage:', err);
+            }
+        }
+
+        // Initialize AbortController
+        const controller = new AbortController();
+        abortControllersRef.current[songId] = controller;
+
         setDownloadProgress('Buscando stems...');
         try {
             const stems: CloudStem[] = await fetchStems(songId);
@@ -114,12 +146,14 @@ export function useCloudLibrary() {
             const loadedBytesPerStem: Record<string, number> = {};
 
             const updateGlobalProgress = () => {
+                if (controller.signal.aborted) return;
                 const totalLoaded = Object.values(loadedBytesPerStem).reduce((a, b) => a + b, 0);
                 const mbTotal = (totalLoaded / (1024 * 1024)).toFixed(1);
                 setDownloadProgress(`Rede: ${mbTotal} MB lidos (${completed}/${stems.length} concluídos)`);
             };
 
             const downloadTask = async (stem: CloudStem) => {
+                if (controller.signal.aborted) return null;
                 updateGlobalProgress();
                 const ext = stem.file_url.split('.').pop() || 'wav';
                 const file = await downloadFileAsBlobWithProgress(
@@ -128,8 +162,10 @@ export function useCloudLibrary() {
                     (loaded: number) => {
                         loadedBytesPerStem[stem.id] = loaded;
                         updateGlobalProgress();
-                    }
+                    },
+                    controller.signal
                 );
+                if (controller.signal.aborted) return null;
                 completed++;
                 updateGlobalProgress();
                 return file;
@@ -138,9 +174,19 @@ export function useCloudLibrary() {
             const filesResults: (File | null)[] = [];
             const BATCH_SIZE = 4;
             for (let i = 0; i < stems.length; i += BATCH_SIZE) {
+                if (controller.signal.aborted) {
+                    throw new DOMException('Download cancelado pelo usuário.', 'AbortError');
+                }
                 const batch = stems.slice(i, i + BATCH_SIZE);
                 const batchResults = await Promise.all(batch.map(downloadTask));
+                if (controller.signal.aborted) {
+                    throw new DOMException('Download cancelado pelo usuário.', 'AbortError');
+                }
                 filesResults.push(...batchResults);
+            }
+
+            if (filesResults.some((f) => f === null)) {
+                throw new Error('Falha ao baixar um ou mais stems da música.');
             }
 
             const files: File[] = filesResults.filter((f): f is File => f !== null);
@@ -165,10 +211,17 @@ export function useCloudLibrary() {
             const bpm = song?.bpm || undefined;
             return { files, coverUrl, markers, originalKey, artist, bpm };
         } catch (e) {
-            console.error('Error downloading song:', e);
-            setDownloadProgress('Erro ao baixar.');
+            const err = e as Error;
+            console.error('Error downloading song:', err);
+            if (err.name === 'AbortError') {
+                setDownloadProgress('Cancelado.');
+            } else {
+                setDownloadProgress('Erro ao baixar.');
+            }
             setDownloadingSongId(null);
             return null;
+        } finally {
+            delete abortControllersRef.current[songId];
         }
     }, [songs, isOnline, cachedSongIds]);
 
@@ -217,6 +270,7 @@ export function useCloudLibrary() {
         downloadSong,
         refreshSongs: loadSongs,
         removeSong,
+        cancelDownload,
         cachedSongIds,
         isOnline
     };

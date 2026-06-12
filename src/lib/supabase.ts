@@ -117,10 +117,11 @@ export async function fetchStems(songId: string): Promise<CloudStem[]> {
 export async function downloadFileAsBlobWithProgress(
     url: string,
     filename: string,
-    onProgress?: (loaded: number, total: number) => void
+    onProgress?: (loaded: number, total: number) => void,
+    signal?: AbortSignal
 ): Promise<File | null> {
     try {
-        const response = await fetch(url);
+        const response = await fetch(url, { signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const contentLength = response.headers.get('content-length');

@@ -24,6 +24,7 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
         downloadSong,
         refreshSongs,
         removeSong,
+        cancelDownload,
         cachedSongIds,
         isOnline
     } = useCloudLibrary();
@@ -296,6 +297,13 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
                                                 <div className="flex flex-col items-center gap-1 min-w-[70px]">
                                                     <Loader2 size={16} className="animate-spin text-secondary" />
                                                     <span className="text-[8px] text-secondary font-bold text-center font-mono uppercase tracking-wider leading-tight max-w-[80px]">{downloadProgress}</span>
+                                                    <button
+                                                        onClick={() => cancelDownload(song.id)}
+                                                        className="text-[8px] text-accent-red font-bold underline uppercase cursor-pointer hover:text-white mt-0.5 active:scale-95 px-1 rounded hover:bg-white/5 transition-all"
+                                                        title="Cancelar download"
+                                                    >
+                                                        Cancelar
+                                                    </button>
                                                 </div>
                                             ) : isDownloaded ? (
                                                 <div className="flex items-center gap-1 text-primary text-[10px] font-bold px-2 py-1.5 rounded-md bg-primary/10 font-mono uppercase">
