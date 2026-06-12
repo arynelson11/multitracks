@@ -12,10 +12,12 @@ export interface FollowerState {
   lyricsSynced: string | null;
   chords: string | null;
   controlEnabled: boolean;
+  approvedIps: string[];
   setlist: string[];
   activeIndex: number;
   channels: { id: string; name: string; volume: number; muted: boolean; soloed: boolean }[];
   activePad: string | null;
+  padVolume: number;
   pitch: number;
   originalKey: string | null;
 }
@@ -29,6 +31,7 @@ export function useLiveSync(leaderState: FollowerState) {
     currentMarker: null,
     nextMarkerLabel: null,
     nextSong: null,
+    approvedIps: [],
     lyrics: null,
     lyricsSynced: null,
     chords: null,
@@ -37,12 +40,14 @@ export function useLiveSync(leaderState: FollowerState) {
     activeIndex: 0,
     channels: [],
     activePad: null,
+    padVolume: 1,
     pitch: 0,
     originalKey: null,
   });
   const [isConnected, setIsConnected] = useState(false);
   const [isFollowerMode] = useState(!isLeader);
   const wsRef = useRef<WebSocket | null>(null);
+  const myIpRef = useRef<string | null>(null);
 
   // Refs para armazenar o estado mais recente do líder sem recriar o intervalo
   const leaderStateRef = useRef(leaderState);
@@ -66,6 +71,7 @@ export function useLiveSync(leaderState: FollowerState) {
           currentMarker: state.currentMarker,
           nextMarkerLabel: state.nextMarkerLabel,
           nextSong: state.nextSong,
+          approvedIps: state.approvedIps,
           lyrics: state.lyrics,
           lyricsSynced: state.lyricsSynced,
           chords: state.chords,
@@ -74,6 +80,7 @@ export function useLiveSync(leaderState: FollowerState) {
           activeIndex: state.activeIndex,
           channels: state.channels,
           activePad: state.activePad,
+          padVolume: state.padVolume,
           pitch: state.pitch,
           originalKey: state.originalKey
         }
@@ -104,8 +111,14 @@ export function useLiveSync(leaderState: FollowerState) {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data) as WsMessage;
-          if (data.type === 'HOST_STATE') {
-            setFollowerState(data.payload);
+          if (data.type === 'CLIENT_JOINED') {
+            myIpRef.current = data.ip ?? null;
+          } else if (data.type === 'HOST_STATE') {
+            // Controle efetivo deste dispositivo: somente se o IP estiver aprovado pelo líder.
+            const payload = data.payload;
+            const myIp = myIpRef.current;
+            const effectiveControl = !!myIp && payload.approvedIps.includes(myIp);
+            setFollowerState({ ...payload, controlEnabled: effectiveControl });
           }
         } catch (e) {
           console.error('Failed to parse WS message:', e);

@@ -37,9 +37,15 @@ contextBridge.exposeInMainWorld('playbackDesktop', {
     ipcRenderer.send('ws-broadcast', state)
   },
   // Escuta comandos remotos vindos dos dispositivos da banda. Retorna cleanup.
-  onRemoteCommand: (callback: (cmd: { type: 'COMMAND'; action: string; index?: number }) => void) => {
-    const handler = (_e: unknown, cmd: { type: 'COMMAND'; action: string; index?: number }) => callback(cmd)
+  onRemoteCommand: (callback: (cmd: { type: 'COMMAND'; action: string; index?: number; id?: string; value?: number; clientId?: string; ip?: string }) => void) => {
+    const handler = (_e: unknown, cmd: { type: 'COMMAND'; action: string; index?: number; id?: string; value?: number; clientId?: string; ip?: string }) => callback(cmd)
     ipcRenderer.on('remote-command', handler)
     return () => ipcRenderer.removeListener('remote-command', handler)
+  },
+  // Escuta a lista de dispositivos conectados ao servidor local. Retorna cleanup.
+  onClientsUpdate: (callback: (clients: { id: string; ip: string }[]) => void) => {
+    const handler = (_e: unknown, clients: { id: string; ip: string }[]) => callback(clients)
+    ipcRenderer.on('ws-clients', handler)
+    return () => ipcRenderer.removeListener('ws-clients', handler)
   },
 })

@@ -68,8 +68,11 @@ export default function App() {
   const [isTeleprompterMode, setIsTeleprompterMode] = useState(false)
   const [isMarkerEditorOpen, setIsMarkerEditorOpen] = useState(false)
   const [isLyricsEditorOpen, setIsLyricsEditorOpen] = useState(false)
-  // Controle remoto: o líder libera (ou não) que os dispositivos da banda comandem.
-  const [remoteControlEnabled, setRemoteControlEnabled] = useState(false)
+  // Controle remoto: a permissão é por IP (agrupa as conexões do mesmo aparelho e
+  // resiste a reconexões). O líder libera quais IPs podem comandar.
+  const [connectedDevices, setConnectedDevices] = useState<{ id: string; ip: string }[]>([])
+  const [approvedIps, setApprovedIps] = useState<string[]>([])
+  const connectedIps = [...new Set(connectedDevices.map((d) => d.ip).filter(Boolean))]
   const [markerLabel, setMarkerLabel] = useState('')
   const [markerLyrics, setMarkerLyrics] = useState('')
   const [markerColor, setMarkerColor] = useState('#10b981')
@@ -112,20 +115,33 @@ export default function App() {
     lyrics: playlist[activeSongIndex]?.lyrics ?? null,
     lyricsSynced: playlist[activeSongIndex]?.lyricsSynced ?? null,
     chords: playlist[activeSongIndex]?.chords ?? null,
-    controlEnabled: remoteControlEnabled,
+    controlEnabled: false,
+    approvedIps,
     setlist: playlist.map((s) => s.name),
     activeIndex: activeSongIndex,
     channels: channels.map((c) => ({ id: c.id, name: c.name, volume: c.volume, muted: c.muted, soloed: c.soloed })),
     activePad: activeNote,
+    padVolume,
     pitch: playlist[activeSongIndex]?.pitch || 0,
     originalKey: playlist[activeSongIndex]?.originalKey || null,
   })
 
-  // Líder: recebe comandos dos dispositivos da banda e executa — só se o controle estiver liberado.
+  // Líder: mantém a lista de dispositivos conectados. As aprovações são por IP e
+  // persistem mesmo se a conexão cair (o aparelho reconecta e mantém a liberação).
+  useEffect(() => {
+    if (!window.playbackDesktop?.isElectron) return
+    const cleanup = window.playbackDesktop.onClientsUpdate((clients) => {
+      setConnectedDevices(clients)
+    })
+    return cleanup
+  }, [])
+
+  // Líder: recebe comandos dos dispositivos da banda e executa — só dos dispositivos aprovados.
   useEffect(() => {
     if (!window.playbackDesktop?.isElectron) return
     const cleanup = window.playbackDesktop.onRemoteCommand((cmd) => {
-      if (!remoteControlEnabled) return
+      const allowed = !!cmd.ip && approvedIps.includes(cmd.ip)
+      if (!allowed) return
       switch (cmd.action) {
         case 'toggle-play': isPlaying ? pause() : playWithPrecount(); break
         case 'next': nextSong(); break
@@ -136,10 +152,11 @@ export default function App() {
         case 'toggle-solo': if (cmd.id) toggleSolo(cmd.id); break
         case 'set-pitch': if (typeof cmd.value === 'number') changePitch(cmd.value); break
         case 'play-pad': if (cmd.id) playPad(cmd.id); break
+        case 'set-pad-volume': if (typeof cmd.value === 'number') updatePadVolume(cmd.value); break
       }
     })
     return cleanup
-  }, [remoteControlEnabled, isPlaying, pause, playWithPrecount, nextSong, prevSong, jumpToSong, updateVolume, toggleMute, toggleSolo, changePitch, playPad])
+  }, [approvedIps, isPlaying, pause, playWithPrecount, nextSong, prevSong, jumpToSong, updateVolume, toggleMute, toggleSolo, changePitch, playPad, updatePadVolume])
 
   const handleStartLiveMode = async () => {
     setIsLiveModeOpen(true)
@@ -1720,8 +1737,13 @@ export default function App() {
         isStarting={isLiveServerStarting}
         serverError={liveServerError}
         onStopServer={handleStopLiveMode}
-        controlEnabled={remoteControlEnabled}
-        onToggleControl={() => setRemoteControlEnabled(v => !v)}
+        devices={connectedIps}
+        approvedIps={approvedIps}
+        onToggleDevice={(ip) => setApprovedIps(prev => prev.includes(ip) ? prev.filter(x => x !== ip) : [...prev, ip])}
+        onToggleAll={() => {
+          const allApproved = connectedIps.length > 0 && connectedIps.every(ip => approvedIps.includes(ip))
+          setApprovedIps(allApproved ? [] : connectedIps)
+        }}
       />
 
       {/* Editor de Letra & Cifra (Admin) */}

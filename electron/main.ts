@@ -7,6 +7,7 @@ import http from 'http'
 import os from 'os'
 import cors from 'cors'
 import fs from 'fs'
+import { randomUUID } from 'node:crypto'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -129,6 +130,15 @@ function getLocalIp(): string {
   return '127.0.0.1'
 }
 
+// Informa o renderer (líder) sobre os dispositivos conectados, pra gestão de permissão.
+function notifyClients() {
+  if (!wss) return
+  const clients = [...wss.clients]
+    .map((c) => ({ id: (c as any).clientId as string, ip: (c as any).ip as string }))
+    .filter((c) => c.id)
+  mainWindow?.webContents.send('ws-clients', clients)
+}
+
 ipcMain.handle('start-local-server', async (_event, preferredPort = 8080) => {
   // Servidor já no ar (ex: renderer recarregou mas o main seguiu vivo):
   // devolve a URL existente em vez de erro, pra o app se reconectar.
@@ -160,23 +170,28 @@ ipcMain.handle('start-local-server', async (_event, preferredPort = 8080) => {
     const server = http.createServer(appExpress)
     const wsServer = new WebSocketServer({ server })
 
-    wsServer.on('connection', (ws) => {
-      console.log('Client connected to Live Mode WS')
-      ws.send(JSON.stringify({ type: 'CLIENT_JOINED' }))
-      
+    wsServer.on('connection', (ws, req) => {
+      // Identidade por dispositivo: o líder aprova/bloqueia cada um individualmente.
+      const clientId = randomUUID()
+      const ip = (req.socket.remoteAddress || '').replace('::ffff:', '')
+      ;(ws as any).clientId = clientId
+      ;(ws as any).ip = ip
+      ws.send(JSON.stringify({ type: 'CLIENT_JOINED', clientId, ip }))
+      notifyClients()
+
       ws.on('message', (message) => {
-        // Comando reverso (dispositivo da banda -> líder). Encaminha pro renderer,
-        // que valida a permissão e executa no engine.
+        // Comando reverso (dispositivo da banda -> líder). Encaminha pro renderer
+        // com o clientId de origem; o líder valida a permissão e executa no engine.
         try {
           const data = JSON.parse(message.toString())
           if (data && data.type === 'COMMAND') {
-            mainWindow?.webContents.send('remote-command', data)
+            mainWindow?.webContents.send('remote-command', { ...data, clientId, ip })
           }
         } catch {
           // mensagem inválida — ignora
         }
       })
-      ws.on('close', () => console.log('Client disconnected'))
+      ws.on('close', () => notifyClients())
     })
 
     server.on('error', (err: any) => {

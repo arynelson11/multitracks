@@ -1,4 +1,4 @@
-import { X, Server, Wifi, Gamepad2 } from 'lucide-react';
+import { X, Server, Wifi, Gamepad2, Smartphone } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
 interface LiveModeModalProps {
@@ -8,8 +8,10 @@ interface LiveModeModalProps {
     isStarting: boolean;
     serverError: string | null;
     onStopServer: () => void;
-    controlEnabled: boolean;
-    onToggleControl: () => void;
+    devices: string[];
+    approvedIps: string[];
+    onToggleDevice: (ip: string) => void;
+    onToggleAll: () => void;
 }
 
 export function LiveModeModal({
@@ -19,9 +21,12 @@ export function LiveModeModal({
     isStarting,
     serverError,
     onStopServer,
-    controlEnabled,
-    onToggleControl
+    devices,
+    approvedIps,
+    onToggleDevice,
+    onToggleAll
 }: LiveModeModalProps) {
+    const allApproved = devices.length > 0 && devices.every(ip => approvedIps.includes(ip));
     if (!isOpen) return null;
 
     return (
@@ -79,24 +84,49 @@ export function LiveModeModal({
                                 </div>
                             </div>
 
-                            {/* Liberar controle remoto da banda */}
-                            <button
-                                onClick={onToggleControl}
-                                className={`w-full mb-3 py-3 px-4 rounded-lg border flex items-center justify-between gap-3 transition-all active:scale-95 ${controlEnabled ? 'bg-primary/15 border-primary/40 text-primary' : 'bg-white/5 border-border text-text-muted hover:bg-white/10'}`}
-                            >
-                                <span className="flex items-center gap-2">
-                                    <Gamepad2 size={16} />
-                                    <span className="text-xs font-bold uppercase tracking-wider">Controle pela banda</span>
-                                </span>
-                                <span className={`relative w-9 h-5 rounded-full transition-colors ${controlEnabled ? 'bg-primary' : 'bg-white/20'}`}>
-                                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${controlEnabled ? 'left-[18px]' : 'left-0.5'}`} />
-                                </span>
-                            </button>
-                            {controlEnabled && (
-                                <p className="text-[10px] text-text-muted text-center mb-3 -mt-1 px-2">
-                                    Os dispositivos conectados podem dar play/pause e trocar de música.
-                                </p>
-                            )}
+                            {/* Controle remoto — aprovação por dispositivo */}
+                            <div className="w-full mb-3 bg-[#1c1c1e] border border-border rounded-lg p-3">
+                                <div className="flex items-center justify-between gap-2 mb-2.5">
+                                    <span className="flex items-center gap-2 text-text-muted">
+                                        <Gamepad2 size={13} />
+                                        <span className="text-[10px] font-bold uppercase tracking-wider">Quem controla</span>
+                                    </span>
+                                    {devices.length > 0 && (
+                                        <button
+                                            onClick={onToggleAll}
+                                            className="shrink-0 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95 bg-white/5 text-text-muted border border-border hover:text-white"
+                                        >
+                                            {allApproved ? 'Bloquear todos' : 'Liberar todos'}
+                                        </button>
+                                    )}
+                                </div>
+
+                                {devices.length === 0 ? (
+                                    <p className="text-[11px] text-text-muted text-center py-2 flex items-center justify-center gap-1.5">
+                                        <Smartphone size={12} /> Nenhum dispositivo conectado ainda.
+                                    </p>
+                                ) : (
+                                    <div className="space-y-1.5">
+                                        {devices.map((ip, i) => {
+                                            const approved = approvedIps.includes(ip);
+                                            return (
+                                                <div key={ip} className="flex items-center justify-between gap-2">
+                                                    <span className="text-xs text-white font-mono truncate min-w-0 flex items-center gap-1.5">
+                                                        <Smartphone size={12} className="text-text-muted shrink-0" />
+                                                        {ip || `Dispositivo ${i + 1}`}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => onToggleDevice(ip)}
+                                                        className={`shrink-0 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95 ${approved ? 'bg-primary/20 text-primary border border-primary/40' : 'bg-white/5 text-text-muted border border-border'}`}
+                                                    >
+                                                        {approved ? 'Controla' : 'Só segue'}
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
 
                             <button
                                 onClick={onStopServer}

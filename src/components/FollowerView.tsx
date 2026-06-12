@@ -332,7 +332,17 @@ export function FollowerView({ state, isConnected, sendCommand }: FollowerViewPr
               </button>
             ))}
           </div>
-          <p className="shrink-0 text-center text-[11px] text-zinc-500 pb-4">Toque numa nota para acionar o pad no líder.</p>
+          <div className="shrink-0 px-5 pb-6 pt-3 border-t border-white/10" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold shrink-0">Volume Pads</span>
+              <input
+                type="range" min={0} max={1} step={0.01} value={state.padVolume}
+                onChange={(e) => sendCommand('set-pad-volume', { value: parseFloat(e.target.value) })}
+                className="flex-1 accent-secondary cursor-pointer"
+              />
+              <span className="text-xs font-mono text-zinc-400 w-10 text-right shrink-0">{Math.round(state.padVolume * 100)}%</span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -361,14 +371,15 @@ export function FollowerView({ state, isConnected, sendCommand }: FollowerViewPr
           <span className="font-mono text-zinc-400 text-sm tabular-nums">{formatTime(state.currentTime)}</span>
         </div>
 
-        {/* Controles (só quando o líder libera): play centralizado, repertório no canto */}
+        {/* Controles (só quando o líder libera) */}
         {state.controlEnabled && (
-          <div className="relative flex items-center justify-center gap-6 py-3">
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+          <>
+            {/* Linha 1: ferramentas */}
+            <div className="flex items-center justify-center gap-8 pt-2.5">
               {(state.channels?.length ?? 0) > 0 && (
                 <button
                   onClick={() => setShowMixer(true)}
-                  className="p-3 rounded-full bg-white/5 border border-white/10 text-zinc-300 active:scale-95 transition-all cursor-pointer"
+                  className="p-2.5 rounded-full bg-white/5 border border-white/10 text-zinc-300 active:scale-90 transition-all cursor-pointer"
                   title="Mixer"
                 >
                   <SlidersHorizontal className="w-5 h-5" />
@@ -376,43 +387,47 @@ export function FollowerView({ state, isConnected, sendCommand }: FollowerViewPr
               )}
               <button
                 onClick={() => setShowPads(true)}
-                className="p-3 rounded-full bg-white/5 border border-white/10 text-zinc-300 active:scale-95 transition-all cursor-pointer"
+                className="p-2.5 rounded-full bg-white/5 border border-white/10 text-zinc-300 active:scale-90 transition-all cursor-pointer"
                 title="Pads"
               >
                 <LayoutGrid className="w-5 h-5" />
               </button>
+              {(state.setlist?.length ?? 0) > 0 && (
+                <button
+                  onClick={() => setShowSetlist(true)}
+                  className="p-2.5 rounded-full bg-white/5 border border-white/10 text-zinc-300 active:scale-90 transition-all cursor-pointer"
+                  title="Repertório"
+                >
+                  <ListMusic className="w-5 h-5" />
+                </button>
+              )}
             </div>
-            <button
-              onClick={() => sendCommand('prev')}
-              className="p-3 rounded-full bg-white/5 border border-white/10 text-zinc-200 active:scale-95 transition-all cursor-pointer"
-              title="Música anterior"
-            >
-              <SkipBack className="w-6 h-6" fill="currentColor" />
-            </button>
-            <button
-              onClick={() => sendCommand('toggle-play')}
-              className="p-5 rounded-full bg-primary text-black active:scale-95 transition-all cursor-pointer shadow-lg"
-              title={state.isPlaying ? 'Pausar' : 'Tocar'}
-            >
-              {state.isPlaying ? <Pause className="w-8 h-8" fill="currentColor" /> : <Play className="w-8 h-8 ml-0.5" fill="currentColor" />}
-            </button>
-            <button
-              onClick={() => sendCommand('next')}
-              className="p-3 rounded-full bg-white/5 border border-white/10 text-zinc-200 active:scale-95 transition-all cursor-pointer"
-              title="Próxima música"
-            >
-              <SkipForward className="w-6 h-6" fill="currentColor" />
-            </button>
-            {(state.setlist?.length ?? 0) > 0 && (
+
+            {/* Linha 2: transporte centralizado */}
+            <div className="flex items-center justify-center gap-7 pb-3 pt-2">
               <button
-                onClick={() => setShowSetlist(true)}
-                className="absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/5 border border-white/10 text-zinc-300 active:scale-95 transition-all cursor-pointer"
-                title="Repertório"
+                onClick={() => sendCommand('prev')}
+                className="p-3 rounded-full bg-white/5 border border-white/10 text-zinc-200 active:scale-90 transition-all cursor-pointer"
+                title="Música anterior"
               >
-                <ListMusic className="w-5 h-5" />
+                <SkipBack className="w-6 h-6" fill="currentColor" />
               </button>
-            )}
-          </div>
+              <button
+                onClick={() => sendCommand('toggle-play')}
+                className="p-5 rounded-full bg-primary text-black active:scale-95 transition-all cursor-pointer shadow-lg"
+                title={state.isPlaying ? 'Pausar' : 'Tocar'}
+              >
+                {state.isPlaying ? <Pause className="w-8 h-8" fill="currentColor" /> : <Play className="w-8 h-8 ml-0.5" fill="currentColor" />}
+              </button>
+              <button
+                onClick={() => sendCommand('next')}
+                className="p-3 rounded-full bg-white/5 border border-white/10 text-zinc-200 active:scale-90 transition-all cursor-pointer"
+                title="Próxima música"
+              >
+                <SkipForward className="w-6 h-6" fill="currentColor" />
+              </button>
+            </div>
+          </>
         )}
 
         {/* Espaçamento inferior quando não há controles */}

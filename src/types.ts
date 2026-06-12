@@ -49,13 +49,14 @@ declare global {
       startLocalServer: (preferredPort?: number) => Promise<{ url: string | null; error: string | null }>
       stopLocalServer: () => Promise<void>
       broadcastState: (state: any) => void
-      onRemoteCommand: (callback: (cmd: { type: 'COMMAND'; action: string; index?: number; id?: string; value?: number }) => void) => () => void
+      onRemoteCommand: (callback: (cmd: { type: 'COMMAND'; action: string; index?: number; id?: string; value?: number; clientId?: string; ip?: string }) => void) => () => void
+      onClientsUpdate: (callback: (clients: { id: string; ip: string }[]) => void) => () => void
     }
   }
 }
 
-export type WsMessage = 
-  | { type: 'CLIENT_JOINED' }
+export type WsMessage =
+  | { type: 'CLIENT_JOINED'; clientId?: string; ip?: string }
   | { 
       type: 'HOST_STATE'; 
       payload: { 
@@ -69,10 +70,12 @@ export type WsMessage =
         lyricsSynced: string | null;
         chords: string | null;
         controlEnabled: boolean;
+        approvedIps: string[];
         setlist: string[];
         activeIndex: number;
         channels: { id: string; name: string; volume: number; muted: boolean; soloed: boolean }[];
         activePad: string | null;
+        padVolume: number;
         pitch: number;
         originalKey: string | null;
       }
