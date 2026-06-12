@@ -17,6 +17,7 @@ import { AuthPage } from './components/AuthPage'
 import { SeparatorStudio } from './components/SeparatorStudio'
 
 import { LandingPage } from './components/LandingPage'
+import { DownloadPage } from './components/DownloadPage'
 import { useAuth } from './hooks/useAuth'
 import { PricingModal } from './components/PricingModal'
 import { supabase, updateSongMarkers as saveMkToCloud, fetchSongs as fetchCloudSongs, updateSong } from './lib/supabase'
@@ -410,6 +411,11 @@ export default function App() {
     const file = e.target.files?.[0]; if (!file) return
     setIsSetlistMenuOpen(false)
     importPlaylist(file)
+  }
+
+  // ───────────────── PÁGINA DE DOWNLOAD (pública) ─────────────────
+  if (typeof window !== 'undefined' && window.location.pathname === '/download') {
+    return <DownloadPage />
   }
 
   // ───────────────── FOLLOWER (acesso via IP na rede local) ─────────────────

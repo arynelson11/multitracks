@@ -158,6 +158,12 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         <div className="max-w-6xl mx-auto px-5 sm:px-8 h-14 flex items-center justify-between">
           <BrandLogo size="md" tone="light" variant="horizontal" />
           <div className="flex items-center gap-2">
+            <a
+              href="/download"
+              className="hidden sm:flex items-center gap-1.5 text-[13px] text-warm-400 hover:text-bone px-3 py-1.5 transition-colors cursor-pointer font-medium"
+            >
+              <Download size={14} /> Baixar app
+            </a>
             <button
               onClick={goToApp}
               className="hidden sm:block text-[13px] text-warm-400 hover:text-bone px-3 py-1.5 transition-colors cursor-pointer font-medium"

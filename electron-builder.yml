@@ -17,11 +17,14 @@ mac:
   category: public.app-category.music
   target:
     - dmg
+  # Nome fixo pra o link do GitHub Releases ser estável (independe da versão).
+  artifactName: Playback-Studio-mac.${ext}
   # Fase 0: sem assinatura de código. Assinar antes de liberar pros usuários.
   identity: null
 win:
   target:
     - nsis
+  artifactName: Playback-Studio-win.${ext}
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

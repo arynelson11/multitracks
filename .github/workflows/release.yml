@@ -1,0 +1,73 @@
+name: Build & Release Desktop
+
+# Dispara ao publicar uma tag de versão (ex: v1.0.0). Também pode ser
+# rodado manualmente pela aba Actions (workflow_dispatch).
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: release/Playback-Studio-mac.dmg
+          - os: windows-latest
+            artifact: release/Playback-Studio-win.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      # As chaves do Supabase ficam fora do git (GitHub Secrets). Aqui montamos
+      # o .env.local pra o Vite embutir as variáveis no build, igual ao local.
+      - name: Criar .env.local
+        shell: bash
+        run: |
+          echo "VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}" >> .env.local
+          echo "VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}" >> .env.local
+          echo "VITE_R2_PUBLIC_URL=${{ secrets.VITE_R2_PUBLIC_URL }}" >> .env.local
+
+      - name: Build e empacotar
+        env:
+          DESKTOP: '1'
+        run: |
+          npm run build
+          npx electron-builder --publish never
+
+      - name: Subir instalador como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.os }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Baixar artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Criar/atualizar GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Playback Studio ${{ github.ref_name }}
+          generate_release_notes: true
+          files: artifacts/**/*
