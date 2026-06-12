@@ -115,6 +115,8 @@ export default function App() {
     controlEnabled: remoteControlEnabled,
     setlist: playlist.map((s) => s.name),
     activeIndex: activeSongIndex,
+    channels: channels.map((c) => ({ id: c.id, name: c.name, volume: c.volume, muted: c.muted, soloed: c.soloed })),
+    activePad: activeNote,
     pitch: playlist[activeSongIndex]?.pitch || 0,
     originalKey: playlist[activeSongIndex]?.originalKey || null,
   })
@@ -129,10 +131,15 @@ export default function App() {
         case 'next': nextSong(); break
         case 'prev': prevSong(); break
         case 'select-song': if (typeof cmd.index === 'number') jumpToSong(cmd.index); break
+        case 'set-volume': if (cmd.id && typeof cmd.value === 'number') updateVolume(cmd.id, cmd.value); break
+        case 'toggle-mute': if (cmd.id) toggleMute(cmd.id); break
+        case 'toggle-solo': if (cmd.id) toggleSolo(cmd.id); break
+        case 'set-pitch': if (typeof cmd.value === 'number') changePitch(cmd.value); break
+        case 'play-pad': if (cmd.id) playPad(cmd.id); break
       }
     })
     return cleanup
-  }, [remoteControlEnabled, isPlaying, pause, playWithPrecount, nextSong, prevSong, jumpToSong])
+  }, [remoteControlEnabled, isPlaying, pause, playWithPrecount, nextSong, prevSong, jumpToSong, updateVolume, toggleMute, toggleSolo, changePitch, playPad])
 
   const handleStartLiveMode = async () => {
     setIsLiveModeOpen(true)

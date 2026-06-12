@@ -14,6 +14,8 @@ export interface FollowerState {
   controlEnabled: boolean;
   setlist: string[];
   activeIndex: number;
+  channels: { id: string; name: string; volume: number; muted: boolean; soloed: boolean }[];
+  activePad: string | null;
   pitch: number;
   originalKey: string | null;
 }
@@ -33,6 +35,8 @@ export function useLiveSync(leaderState: FollowerState) {
     controlEnabled: false,
     setlist: [],
     activeIndex: 0,
+    channels: [],
+    activePad: null,
     pitch: 0,
     originalKey: null,
   });
@@ -68,6 +72,8 @@ export function useLiveSync(leaderState: FollowerState) {
           controlEnabled: state.controlEnabled,
           setlist: state.setlist,
           activeIndex: state.activeIndex,
+          channels: state.channels,
+          activePad: state.activePad,
           pitch: state.pitch,
           originalKey: state.originalKey
         }
@@ -127,10 +133,10 @@ export function useLiveSync(leaderState: FollowerState) {
   }, [isLeader]);
 
   // Follower envia um comando pro líder (só efetivo se o líder permitir).
-  const sendCommand = (action: string, index?: number) => {
+  const sendCommand = (action: string, extra?: { index?: number; id?: string; value?: number }) => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'COMMAND', action, ...(index !== undefined ? { index } : {}) }));
+      ws.send(JSON.stringify({ type: 'COMMAND', action, ...(extra || {}) }));
     }
   };
 

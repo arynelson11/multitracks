@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Wifi, WifiOff, FastForward, Music, FileText, Music2, Eye, EyeOff, Play, Pause, SkipBack, SkipForward, ListMusic, X, Check } from 'lucide-react';
+import { Wifi, WifiOff, FastForward, Music, FileText, Music2, Eye, EyeOff, Play, Pause, SkipBack, SkipForward, ListMusic, X, Check, SlidersHorizontal, LayoutGrid, Plus, Minus } from 'lucide-react';
 import type { FollowerState } from '../hooks/useLiveSync';
 
 interface SyncedLine { time: number; text: string }
@@ -27,7 +27,7 @@ function parseLRC(lrc: string): SyncedLine[] {
 interface FollowerViewProps {
   state: FollowerState;
   isConnected: boolean;
-  sendCommand: (action: string, index?: number) => void;
+  sendCommand: (action: string, extra?: { index?: number; id?: string; value?: number }) => void;
 }
 
 function formatTime(seconds: number): string {
@@ -63,6 +63,9 @@ export function FollowerView({ state, isConnected, sendCommand }: FollowerViewPr
   // Preferência individual do músico: pode ocultar a letra/cifra na própria tela.
   const [showContent, setShowContent] = useState(true);
   const [showSetlist, setShowSetlist] = useState(false);
+  const [showMixer, setShowMixer] = useState(false);
+  const [showPads, setShowPads] = useState(false);
+  const PAD_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   // Se a aba escolhida não tiver conteúdo, mostra a que tiver.
   const effective = view === 'chords' ? (hasChords ? 'chords' : 'lyrics') : (hasLyrics ? 'lyrics' : 'chords');
   const content = effective === 'chords' ? state.chords : state.lyrics;
@@ -116,6 +119,13 @@ export function FollowerView({ state, isConnected, sendCommand }: FollowerViewPr
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {state.controlEnabled && (
+              <button
+                onClick={() => sendCommand('set-pitch', { value: Math.max(-12, state.pitch - 1) })}
+                className="p-1.5 rounded-full bg-white/5 border border-white/10 text-zinc-300 active:scale-90 transition-all cursor-pointer"
+                title="Descer meio tom"
+              ><Minus className="w-4 h-4" /></button>
+            )}
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30">
               <span className="text-[10px] uppercase tracking-widest font-semibold text-emerald-500/70">Tom</span>
               <span className="text-emerald-300 font-bold text-xl leading-none">{displayKey(state.originalKey, state.pitch)}</span>
@@ -123,6 +133,13 @@ export function FollowerView({ state, isConnected, sendCommand }: FollowerViewPr
                 <span className="text-emerald-500/70 text-[11px] font-mono">{pitchDelta(state.pitch)}</span>
               )}
             </div>
+            {state.controlEnabled && (
+              <button
+                onClick={() => sendCommand('set-pitch', { value: Math.min(12, state.pitch + 1) })}
+                className="p-1.5 rounded-full bg-white/5 border border-white/10 text-zinc-300 active:scale-90 transition-all cursor-pointer"
+                title="Subir meio tom"
+              ><Plus className="w-4 h-4" /></button>
+            )}
             <button
               onClick={() => setShowContent((v) => !v)}
               title={showContent ? 'Ocultar letra/cifra' : 'Mostrar letra/cifra'}
@@ -247,7 +264,7 @@ export function FollowerView({ state, isConnected, sendCommand }: FollowerViewPr
             {(state.setlist ?? []).map((name, i) => (
               <button
                 key={i}
-                onClick={() => { sendCommand('select-song', i); setShowSetlist(false); }}
+                onClick={() => { sendCommand('select-song', { index: i }); setShowSetlist(false); }}
                 className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-left transition-colors cursor-pointer active:scale-[0.99] ${i === state.activeIndex ? 'bg-primary/15 border border-primary/40' : 'bg-white/5 border border-white/10 hover:bg-white/10'}`}
               >
                 <span className={`text-xs font-mono w-6 shrink-0 ${i === state.activeIndex ? 'text-primary' : 'text-zinc-500'}`}>{i + 1}</span>
@@ -256,6 +273,66 @@ export function FollowerView({ state, isConnected, sendCommand }: FollowerViewPr
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ───── Mixer (overlay): a banda ajusta volume/mute/solo ───── */}
+      {showMixer && state.controlEnabled && (
+        <div className="fixed inset-0 z-[70] bg-black/85 backdrop-blur-sm flex flex-col" onClick={() => setShowMixer(false)}>
+          <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-white/10">
+            <h2 className="text-white font-bold uppercase tracking-wider text-sm flex items-center gap-2">
+              <SlidersHorizontal className="w-4 h-4 text-primary" /> Mixer
+            </h2>
+            <button onClick={() => setShowMixer(false)} className="p-2 text-zinc-400 hover:text-white cursor-pointer"><X className="w-5 h-5" /></button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
+            {(state.channels ?? []).map((ch) => (
+              <div key={ch.id} className="bg-white/5 border border-white/10 rounded-xl p-3">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="font-medium text-zinc-200 truncate">{ch.name}</span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => sendCommand('toggle-mute', { id: ch.id })}
+                      className={`w-8 h-8 rounded-lg text-xs font-bold transition-colors cursor-pointer ${ch.muted ? 'bg-red-500/80 text-white' : 'bg-white/10 text-zinc-400'}`}
+                    >M</button>
+                    <button
+                      onClick={() => sendCommand('toggle-solo', { id: ch.id })}
+                      className={`w-8 h-8 rounded-lg text-xs font-bold transition-colors cursor-pointer ${ch.soloed ? 'bg-amber-400 text-black' : 'bg-white/10 text-zinc-400'}`}
+                    >S</button>
+                  </div>
+                </div>
+                <input
+                  type="range" min={0} max={1.2} step={0.01} value={ch.volume}
+                  onChange={(e) => sendCommand('set-volume', { id: ch.id, value: parseFloat(e.target.value) })}
+                  className="w-full accent-primary cursor-pointer"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ───── Pads (overlay): a banda aciona os pads ───── */}
+      {showPads && state.controlEnabled && (
+        <div className="fixed inset-0 z-[70] bg-black/85 backdrop-blur-sm flex flex-col" onClick={() => setShowPads(false)}>
+          <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-white/10">
+            <h2 className="text-white font-bold uppercase tracking-wider text-sm flex items-center gap-2">
+              <LayoutGrid className="w-4 h-4 text-secondary" /> Pads
+            </h2>
+            <button onClick={() => setShowPads(false)} className="p-2 text-zinc-400 hover:text-white cursor-pointer"><X className="w-5 h-5" /></button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 grid grid-cols-3 gap-3 content-center" onClick={(e) => e.stopPropagation()}>
+            {PAD_NOTES.map((note) => (
+              <button
+                key={note}
+                onClick={() => sendCommand('play-pad', { id: note })}
+                className={`aspect-square rounded-2xl text-2xl font-black flex items-center justify-center transition-all active:scale-95 cursor-pointer border ${state.activePad === note ? 'bg-secondary text-black border-secondary shadow-lg shadow-secondary/30' : 'bg-white/5 text-zinc-200 border-white/10'}`}
+              >
+                {note}
+              </button>
+            ))}
+          </div>
+          <p className="shrink-0 text-center text-[11px] text-zinc-500 pb-4">Toque numa nota para acionar o pad no líder.</p>
         </div>
       )}
 
@@ -287,6 +364,24 @@ export function FollowerView({ state, isConnected, sendCommand }: FollowerViewPr
         {/* Controles (só quando o líder libera): play centralizado, repertório no canto */}
         {state.controlEnabled && (
           <div className="relative flex items-center justify-center gap-6 py-3">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+              {(state.channels?.length ?? 0) > 0 && (
+                <button
+                  onClick={() => setShowMixer(true)}
+                  className="p-3 rounded-full bg-white/5 border border-white/10 text-zinc-300 active:scale-95 transition-all cursor-pointer"
+                  title="Mixer"
+                >
+                  <SlidersHorizontal className="w-5 h-5" />
+                </button>
+              )}
+              <button
+                onClick={() => setShowPads(true)}
+                className="p-3 rounded-full bg-white/5 border border-white/10 text-zinc-300 active:scale-95 transition-all cursor-pointer"
+                title="Pads"
+              >
+                <LayoutGrid className="w-5 h-5" />
+              </button>
+            </div>
             <button
               onClick={() => sendCommand('prev')}
               className="p-3 rounded-full bg-white/5 border border-white/10 text-zinc-200 active:scale-95 transition-all cursor-pointer"
