@@ -1,6 +1,12 @@
 import { app, BrowserWindow, shell, ipcMain } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import express from 'express'
+import { WebSocketServer } from 'ws'
+import http from 'http'
+import os from 'os'
+import cors from 'cors'
+import fs from 'fs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -104,6 +110,105 @@ function handleDeepLink(url: string) {
 ipcMain.on('open-external-url', (_event, url: string) => {
   if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
     shell.openExternal(url)
+  }
+})
+
+// ── Local Server (Fase 2) ──
+let localServer: http.Server | null = null
+let wss: WebSocketServer | null = null
+
+function getLocalIp(): string {
+  const interfaces = os.networkInterfaces()
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]!) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address
+      }
+    }
+  }
+  return '127.0.0.1'
+}
+
+ipcMain.handle('start-local-server', async (_event, preferredPort = 8080) => {
+  if (localServer) {
+    return { url: null, error: 'Server is already running' }
+  }
+
+  return new Promise((resolve) => {
+    const appExpress = express()
+    appExpress.use(cors())
+
+    const distPath = path.join(__dirname, '../dist')
+    
+    // Fallback: se dist/ não existir (ex: dev sem build prévio), servimos um aviso
+    if (!fs.existsSync(distPath)) {
+      appExpress.use((_req, res) => {
+        res.send('<h1>Build não encontrado</h1><p>Em modo de desenvolvimento, rode <code>npm run build</code> primeiro para que a banda possa ver a interface.</p>')
+      })
+    } else {
+      appExpress.use(express.static(distPath))
+      // Tratamento para SPA (fallback para index.html)
+      appExpress.use((_req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'))
+      })
+    }
+
+    const server = http.createServer(appExpress)
+    const wsServer = new WebSocketServer({ server })
+
+    wsServer.on('connection', (ws) => {
+      console.log('Client connected to Live Mode WS')
+      ws.send(JSON.stringify({ type: 'CLIENT_JOINED' }))
+      
+      ws.on('message', (message) => {
+        console.log('Received message via WS:', message.toString())
+        // Fase 3: repasse de mensagens
+      })
+      ws.on('close', () => console.log('Client disconnected'))
+    })
+
+    server.on('error', (err: any) => {
+      if (err.code === 'EADDRINUSE') {
+        console.warn(`Port ${preferredPort} in use, trying dynamic port...`)
+        // A porta 0 pede pro SO alocar uma porta disponível
+        server.listen(0, '0.0.0.0')
+      } else {
+        resolve({ url: null, error: err.message })
+      }
+    })
+
+    server.on('listening', () => {
+      localServer = server
+      wss = wsServer
+      const addr = server.address()
+      const port = typeof addr === 'string' ? preferredPort : addr?.port
+      const ip = getLocalIp()
+      resolve({ url: `http://${ip}:${port}`, error: null })
+    })
+
+    server.listen(preferredPort, '0.0.0.0')
+  })
+})
+
+ipcMain.handle('stop-local-server', async () => {
+  if (wss) {
+    wss.clients.forEach((client) => client.terminate())
+    wss.close()
+    wss = null
+  }
+  if (localServer) {
+    localServer.close()
+    localServer = null
+  }
+})
+
+ipcMain.on('ws-broadcast', (event, data) => {
+  if (wss) {
+    wss.clients.forEach((client) => {
+      if (client.readyState === 1) {
+        client.send(JSON.stringify(data))
+      }
+    })
   }
 })
 

@@ -56,3 +56,8 @@ Thumbs.db
 .aiox-core/local/
 .claude/settings.local.json
 .aiox/install-log.txt
+
+# Scratch / experimentos (não relacionados ao app)
+.gemini/
+meu-projeto/
+scratchpad_puppeteer.cjs

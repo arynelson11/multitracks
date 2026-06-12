@@ -33,3 +33,33 @@ export interface Marker {
     lyrics?: string; // Multiline text for teleprompter 
     color?: string; // Optional hex for the timeline UI dot
 }
+
+declare global {
+  interface Window {
+    playbackDesktop?: {
+      isElectron: boolean
+      platform: string
+      version: string
+      openExternalUrl: (url: string) => void
+      onDeepLinkAuth: (callback: (fragment: string) => void) => () => void
+      startLocalServer: (preferredPort?: number) => Promise<{ url: string | null; error: string | null }>
+      stopLocalServer: () => Promise<void>
+      broadcastState: (state: any) => void
+    }
+  }
+}
+
+export type WsMessage = 
+  | { type: 'CLIENT_JOINED' }
+  | { 
+      type: 'HOST_STATE'; 
+      payload: { 
+        isPlaying: boolean; 
+        currentTime: number; 
+        songName: string | null;
+        nextSongName: string | null;
+        currentMarker: Marker | null;
+        pitch: number;
+        originalKey: string | null;
+      } 
+    }

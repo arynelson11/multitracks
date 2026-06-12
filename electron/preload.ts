@@ -21,4 +21,19 @@ contextBridge.exposeInMainWorld('playbackDesktop', {
     // Retorna cleanup pra o React poder limpar no useEffect
     return () => ipcRenderer.removeListener('deep-link-auth', handler)
   },
+
+  // Inicia o servidor HTTP e WS local na porta preferida (ou dinâmica se estiver em uso)
+  startLocalServer: async (preferredPort?: number) => {
+    return await ipcRenderer.invoke('start-local-server', preferredPort)
+  },
+
+  // Para o servidor HTTP e WS local
+  stopLocalServer: async () => {
+    return await ipcRenderer.invoke('stop-local-server')
+  },
+
+  // Envia estado para o main repassar aos clients via WebSocket
+  broadcastState: (state: any) => {
+    ipcRenderer.send('ws-broadcast', state)
+  },
 })
