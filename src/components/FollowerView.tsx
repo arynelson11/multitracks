@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Wifi, WifiOff, FastForward, Music, FileText, Music2 } from 'lucide-react';
+import { Wifi, WifiOff, FastForward, Music, FileText, Music2, Eye, EyeOff, Play, Pause, SkipBack, SkipForward, ListMusic, X, Check } from 'lucide-react';
 import type { FollowerState } from '../hooks/useLiveSync';
 
 interface SyncedLine { time: number; text: string }
@@ -27,6 +27,7 @@ function parseLRC(lrc: string): SyncedLine[] {
 interface FollowerViewProps {
   state: FollowerState;
   isConnected: boolean;
+  sendCommand: (action: string, index?: number) => void;
 }
 
 function formatTime(seconds: number): string {
@@ -53,12 +54,15 @@ function pitchDelta(pitch: number): string | null {
   return pitch > 0 ? `+${pitch}` : `${pitch}`;
 }
 
-export function FollowerView({ state, isConnected }: FollowerViewProps) {
+export function FollowerView({ state, isConnected, sendCommand }: FollowerViewProps) {
   const sectionColor = state.currentMarker?.color || '#6366f1';
 
   const hasLyrics = !!state.lyrics?.trim();
   const hasChords = !!state.chords?.trim();
   const [view, setView] = useState<'lyrics' | 'chords'>('lyrics');
+  // Preferência individual do músico: pode ocultar a letra/cifra na própria tela.
+  const [showContent, setShowContent] = useState(true);
+  const [showSetlist, setShowSetlist] = useState(false);
   // Se a aba escolhida não tiver conteúdo, mostra a que tiver.
   const effective = view === 'chords' ? (hasChords ? 'chords' : 'lyrics') : (hasLyrics ? 'lyrics' : 'chords');
   const content = effective === 'chords' ? state.chords : state.lyrics;
@@ -82,7 +86,7 @@ export function FollowerView({ state, isConnected }: FollowerViewProps) {
   }, [activeIndex, useSynced]);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white flex flex-col font-sans relative overflow-hidden">
+    <div className="h-[100dvh] bg-zinc-950 text-white flex flex-col font-sans relative overflow-hidden">
       {/* Glow sutil com a cor da seção atual */}
       <div
         className="absolute inset-0 pointer-events-none opacity-30 transition-colors duration-700"
@@ -111,12 +115,21 @@ export function FollowerView({ state, isConnected }: FollowerViewProps) {
             <span className="truncate font-medium text-zinc-200">{state.songName || 'Aguardando líder...'}</span>
           </div>
 
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 shrink-0">
-            <span className="text-[10px] uppercase tracking-widest font-semibold text-emerald-500/70">Tom</span>
-            <span className="text-emerald-300 font-bold text-xl leading-none">{displayKey(state.originalKey, state.pitch)}</span>
-            {pitchDelta(state.pitch) && (
-              <span className="text-emerald-500/70 text-[11px] font-mono">{pitchDelta(state.pitch)}</span>
-            )}
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+              <span className="text-[10px] uppercase tracking-widest font-semibold text-emerald-500/70">Tom</span>
+              <span className="text-emerald-300 font-bold text-xl leading-none">{displayKey(state.originalKey, state.pitch)}</span>
+              {pitchDelta(state.pitch) && (
+                <span className="text-emerald-500/70 text-[11px] font-mono">{pitchDelta(state.pitch)}</span>
+              )}
+            </div>
+            <button
+              onClick={() => setShowContent((v) => !v)}
+              title={showContent ? 'Ocultar letra/cifra' : 'Mostrar letra/cifra'}
+              className="p-2 rounded-full bg-white/5 border border-white/10 text-zinc-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            >
+              {showContent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
           </div>
         </div>
 
@@ -143,8 +156,8 @@ export function FollowerView({ state, isConnected }: FollowerViewProps) {
         </div>
       </header>
 
-      {/* ───── Toggle Cifra / Letra (só quando há os dois) ───── */}
-      {hasLyrics && hasChords && (
+      {/* ───── Toggle Cifra / Letra (só quando há os dois e conteúdo visível) ───── */}
+      {showContent && hasLyrics && hasChords && (
         <div className="shrink-0 z-10 flex items-center justify-center gap-2 py-2 border-b border-white/5">
           <button
             onClick={() => setView('lyrics')}
@@ -162,8 +175,25 @@ export function FollowerView({ state, isConnected }: FollowerViewProps) {
       )}
 
       {/* ───── Corpo: letra sincronizada (auto-scroll) ou documento corrido ───── */}
-      <main className="flex-1 z-10 overflow-auto px-5 sm:px-12">
-        {useSynced ? (
+      <main className="flex-1 min-h-0 z-10 overflow-auto px-5 sm:px-12">
+        {!showContent ? (
+          // Letra/cifra ocultada pelo músico — mostra só a seção atual em destaque.
+          <div className="h-full flex flex-col items-center justify-center text-center gap-4">
+            {state.currentMarker ? (
+              <span
+                className="px-8 py-4 rounded-2xl text-4xl sm:text-6xl font-black tracking-tight"
+                style={{ backgroundColor: `${sectionColor}1f`, color: sectionColor, border: `1px solid ${sectionColor}55` }}
+              >
+                {state.currentMarker.label}
+              </span>
+            ) : (
+              <span className="text-zinc-500 text-2xl sm:text-3xl font-medium">{state.songName || 'Aguardando...'}</span>
+            )}
+            <span className="text-zinc-600 text-xs uppercase tracking-widest flex items-center gap-1.5">
+              <EyeOff className="w-3.5 h-3.5" /> Letra/cifra oculta
+            </span>
+          </div>
+        ) : useSynced ? (
           // Letra que rola sozinha: linha atual destacada e centralizada.
           <div className="max-w-4xl mx-auto py-[40vh] space-y-4 text-center">
             {synced.map((line, i) => (
@@ -204,32 +234,94 @@ export function FollowerView({ state, isConnected }: FollowerViewProps) {
         )}
       </main>
 
-      {/* ───── Rodapé: status de reprodução · tempo · próxima música ───── */}
-      <footer className="shrink-0 z-10 px-5 sm:px-8 py-4 border-t border-white/10 backdrop-blur-sm flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <span className={`text-base sm:text-lg font-semibold ${state.isPlaying ? 'text-emerald-400' : 'text-amber-400'}`}>
-            {state.isPlaying ? '▶ Tocando' : '⏸ Pausado'}
-          </span>
-          <span className="font-mono text-zinc-400 text-lg tabular-nums">{formatTime(state.currentTime)}</span>
+      {/* ───── Repertório (overlay): a banda escolhe a música ───── */}
+      {showSetlist && state.controlEnabled && (
+        <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex flex-col" onClick={() => setShowSetlist(false)}>
+          <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-white/10">
+            <h2 className="text-white font-bold uppercase tracking-wider text-sm flex items-center gap-2">
+              <ListMusic className="w-4 h-4 text-primary" /> Repertório
+            </h2>
+            <button onClick={() => setShowSetlist(false)} className="p-2 text-zinc-400 hover:text-white cursor-pointer"><X className="w-5 h-5" /></button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-1.5" onClick={(e) => e.stopPropagation()}>
+            {(state.setlist ?? []).map((name, i) => (
+              <button
+                key={i}
+                onClick={() => { sendCommand('select-song', i); setShowSetlist(false); }}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-left transition-colors cursor-pointer active:scale-[0.99] ${i === state.activeIndex ? 'bg-primary/15 border border-primary/40' : 'bg-white/5 border border-white/10 hover:bg-white/10'}`}
+              >
+                <span className={`text-xs font-mono w-6 shrink-0 ${i === state.activeIndex ? 'text-primary' : 'text-zinc-500'}`}>{i + 1}</span>
+                <span className={`flex-1 font-medium truncate ${i === state.activeIndex ? 'text-primary' : 'text-zinc-200'}`}>{name}</span>
+                {i === state.activeIndex && <Check className="w-4 h-4 text-primary shrink-0" />}
+              </button>
+            ))}
+          </div>
         </div>
+      )}
 
+      {/* ───── Barra de baixo FIXA: próxima música · status · controles ───── */}
+      <footer className="shrink-0 z-10 border-t border-white/10 bg-zinc-950/95 backdrop-blur-sm">
+        {/* Próxima música (linha compacta) */}
         {state.nextSong && (
-          <div className="flex items-center gap-3 text-zinc-500 min-w-0">
-            <FastForward className="w-4 h-4 shrink-0 text-indigo-400" />
-            <div className="flex flex-col items-end leading-tight min-w-0">
-              <span className="uppercase tracking-widest text-[9px] font-semibold text-indigo-400/80">Próxima música</span>
-              <span className="font-medium text-zinc-200 truncate max-w-[50vw]">{state.nextSong.name}</span>
-            </div>
-            <div className="flex items-center gap-2 shrink-0 pl-3 border-l border-white/10">
-              <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-bold text-sm">
-                {displayKey(state.nextSong.originalKey, state.nextSong.pitch)}
-              </span>
-              {state.nextSong.bpm != null && (
-                <span className="text-zinc-400 text-xs font-mono whitespace-nowrap">{Math.round(state.nextSong.bpm)} BPM</span>
-              )}
-            </div>
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-white/5 text-xs min-w-0">
+            <FastForward className="w-3.5 h-3.5 shrink-0 text-indigo-400" />
+            <span className="uppercase tracking-wider text-[9px] font-semibold text-indigo-400/80 shrink-0">Próxima</span>
+            <span className="font-medium text-zinc-200 truncate flex-1 min-w-0">{state.nextSong.name}</span>
+            <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-bold shrink-0">
+              {displayKey(state.nextSong.originalKey, state.nextSong.pitch)}
+            </span>
+            {state.nextSong.bpm != null && (
+              <span className="text-zinc-500 font-mono text-[11px] whitespace-nowrap shrink-0">{Math.round(state.nextSong.bpm)} BPM</span>
+            )}
           </div>
         )}
+
+        {/* Status (sempre) */}
+        <div className="flex items-center justify-center gap-2 pt-2.5">
+          <span className={`text-sm font-semibold ${state.isPlaying ? 'text-emerald-400' : 'text-amber-400'}`}>
+            {state.isPlaying ? '▶ Tocando' : '⏸ Pausado'}
+          </span>
+          <span className="font-mono text-zinc-400 text-sm tabular-nums">{formatTime(state.currentTime)}</span>
+        </div>
+
+        {/* Controles (só quando o líder libera): play centralizado, repertório no canto */}
+        {state.controlEnabled && (
+          <div className="relative flex items-center justify-center gap-6 py-3">
+            <button
+              onClick={() => sendCommand('prev')}
+              className="p-3 rounded-full bg-white/5 border border-white/10 text-zinc-200 active:scale-95 transition-all cursor-pointer"
+              title="Música anterior"
+            >
+              <SkipBack className="w-6 h-6" fill="currentColor" />
+            </button>
+            <button
+              onClick={() => sendCommand('toggle-play')}
+              className="p-5 rounded-full bg-primary text-black active:scale-95 transition-all cursor-pointer shadow-lg"
+              title={state.isPlaying ? 'Pausar' : 'Tocar'}
+            >
+              {state.isPlaying ? <Pause className="w-8 h-8" fill="currentColor" /> : <Play className="w-8 h-8 ml-0.5" fill="currentColor" />}
+            </button>
+            <button
+              onClick={() => sendCommand('next')}
+              className="p-3 rounded-full bg-white/5 border border-white/10 text-zinc-200 active:scale-95 transition-all cursor-pointer"
+              title="Próxima música"
+            >
+              <SkipForward className="w-6 h-6" fill="currentColor" />
+            </button>
+            {(state.setlist?.length ?? 0) > 0 && (
+              <button
+                onClick={() => setShowSetlist(true)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/5 border border-white/10 text-zinc-300 active:scale-95 transition-all cursor-pointer"
+                title="Repertório"
+              >
+                <ListMusic className="w-5 h-5" />
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Espaçamento inferior quando não há controles */}
+        {!state.controlEnabled && <div className="h-2.5" />}
       </footer>
     </div>
   );

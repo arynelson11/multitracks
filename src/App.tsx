@@ -68,6 +68,8 @@ export default function App() {
   const [isTeleprompterMode, setIsTeleprompterMode] = useState(false)
   const [isMarkerEditorOpen, setIsMarkerEditorOpen] = useState(false)
   const [isLyricsEditorOpen, setIsLyricsEditorOpen] = useState(false)
+  // Controle remoto: o líder libera (ou não) que os dispositivos da banda comandem.
+  const [remoteControlEnabled, setRemoteControlEnabled] = useState(false)
   const [markerLabel, setMarkerLabel] = useState('')
   const [markerLyrics, setMarkerLyrics] = useState('')
   const [markerColor, setMarkerColor] = useState('#10b981')
@@ -100,7 +102,7 @@ export default function App() {
     ? { name: _next.name, originalKey: _next.originalKey ?? null, pitch: _next.pitch ?? 0, bpm: _next.bpm ?? null }
     : null
 
-  const { isFollowerMode, isConnected, followerState } = useLiveSync({
+  const { isFollowerMode, isConnected, followerState, sendCommand } = useLiveSync({
     isPlaying,
     currentTime,
     songName: playlist[activeSongIndex]?.name || null,
@@ -110,9 +112,27 @@ export default function App() {
     lyrics: playlist[activeSongIndex]?.lyrics ?? null,
     lyricsSynced: playlist[activeSongIndex]?.lyricsSynced ?? null,
     chords: playlist[activeSongIndex]?.chords ?? null,
+    controlEnabled: remoteControlEnabled,
+    setlist: playlist.map((s) => s.name),
+    activeIndex: activeSongIndex,
     pitch: playlist[activeSongIndex]?.pitch || 0,
     originalKey: playlist[activeSongIndex]?.originalKey || null,
   })
+
+  // Líder: recebe comandos dos dispositivos da banda e executa — só se o controle estiver liberado.
+  useEffect(() => {
+    if (!window.playbackDesktop?.isElectron) return
+    const cleanup = window.playbackDesktop.onRemoteCommand((cmd) => {
+      if (!remoteControlEnabled) return
+      switch (cmd.action) {
+        case 'toggle-play': isPlaying ? pause() : playWithPrecount(); break
+        case 'next': nextSong(); break
+        case 'prev': prevSong(); break
+        case 'select-song': if (typeof cmd.index === 'number') jumpToSong(cmd.index); break
+      }
+    })
+    return cleanup
+  }, [remoteControlEnabled, isPlaying, pause, playWithPrecount, nextSong, prevSong, jumpToSong])
 
   const handleStartLiveMode = async () => {
     setIsLiveModeOpen(true)
@@ -369,7 +389,7 @@ export default function App() {
   // Tela pública de leitura do músico — não exige login nem engine de áudio,
   // então precisa ser checada ANTES dos bloqueios de auth/loading/splash.
   if (isFollowerMode) {
-    return <FollowerView state={followerState} isConnected={isConnected} />
+    return <FollowerView state={followerState} isConnected={isConnected} sendCommand={sendCommand} />
   }
 
   // ───────────────── AUTH BLOCKING ─────────────────
@@ -1693,6 +1713,8 @@ export default function App() {
         isStarting={isLiveServerStarting}
         serverError={liveServerError}
         onStopServer={handleStopLiveMode}
+        controlEnabled={remoteControlEnabled}
+        onToggleControl={() => setRemoteControlEnabled(v => !v)}
       />
 
       {/* Editor de Letra & Cifra (Admin) */}

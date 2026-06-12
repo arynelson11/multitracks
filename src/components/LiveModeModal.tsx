@@ -1,4 +1,4 @@
-import { X, Server, Wifi } from 'lucide-react';
+import { X, Server, Wifi, Gamepad2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
 interface LiveModeModalProps {
@@ -8,15 +8,19 @@ interface LiveModeModalProps {
     isStarting: boolean;
     serverError: string | null;
     onStopServer: () => void;
+    controlEnabled: boolean;
+    onToggleControl: () => void;
 }
 
-export function LiveModeModal({ 
-    isOpen, 
-    onClose, 
-    serverUrl, 
-    isStarting, 
-    serverError, 
-    onStopServer 
+export function LiveModeModal({
+    isOpen,
+    onClose,
+    serverUrl,
+    isStarting,
+    serverError,
+    onStopServer,
+    controlEnabled,
+    onToggleControl
 }: LiveModeModalProps) {
     if (!isOpen) return null;
 
@@ -75,7 +79,26 @@ export function LiveModeModal({
                                 </div>
                             </div>
 
-                            <button 
+                            {/* Liberar controle remoto da banda */}
+                            <button
+                                onClick={onToggleControl}
+                                className={`w-full mb-3 py-3 px-4 rounded-lg border flex items-center justify-between gap-3 transition-all active:scale-95 ${controlEnabled ? 'bg-primary/15 border-primary/40 text-primary' : 'bg-white/5 border-border text-text-muted hover:bg-white/10'}`}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <Gamepad2 size={16} />
+                                    <span className="text-xs font-bold uppercase tracking-wider">Controle pela banda</span>
+                                </span>
+                                <span className={`relative w-9 h-5 rounded-full transition-colors ${controlEnabled ? 'bg-primary' : 'bg-white/20'}`}>
+                                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${controlEnabled ? 'left-[18px]' : 'left-0.5'}`} />
+                                </span>
+                            </button>
+                            {controlEnabled && (
+                                <p className="text-[10px] text-text-muted text-center mb-3 -mt-1 px-2">
+                                    Os dispositivos conectados podem dar play/pause e trocar de música.
+                                </p>
+                            )}
+
+                            <button
                                 onClick={onStopServer}
                                 className="w-full py-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 text-xs font-bold uppercase tracking-wider rounded-lg transition-all active:scale-95"
                             >

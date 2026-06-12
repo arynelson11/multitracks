@@ -130,8 +130,12 @@ function getLocalIp(): string {
 }
 
 ipcMain.handle('start-local-server', async (_event, preferredPort = 8080) => {
+  // Servidor já no ar (ex: renderer recarregou mas o main seguiu vivo):
+  // devolve a URL existente em vez de erro, pra o app se reconectar.
   if (localServer) {
-    return { url: null, error: 'Server is already running' }
+    const addr = localServer.address()
+    const port = addr && typeof addr !== 'string' ? addr.port : preferredPort
+    return { url: `http://${getLocalIp()}:${port}`, error: null }
   }
 
   return new Promise((resolve) => {
@@ -161,8 +165,16 @@ ipcMain.handle('start-local-server', async (_event, preferredPort = 8080) => {
       ws.send(JSON.stringify({ type: 'CLIENT_JOINED' }))
       
       ws.on('message', (message) => {
-        console.log('Received message via WS:', message.toString())
-        // Fase 3: repasse de mensagens
+        // Comando reverso (dispositivo da banda -> líder). Encaminha pro renderer,
+        // que valida a permissão e executa no engine.
+        try {
+          const data = JSON.parse(message.toString())
+          if (data && data.type === 'COMMAND') {
+            mainWindow?.webContents.send('remote-command', data)
+          }
+        } catch {
+          // mensagem inválida — ignora
+        }
       })
       ws.on('close', () => console.log('Client disconnected'))
     })

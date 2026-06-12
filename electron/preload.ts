@@ -36,4 +36,10 @@ contextBridge.exposeInMainWorld('playbackDesktop', {
   broadcastState: (state: any) => {
     ipcRenderer.send('ws-broadcast', state)
   },
+  // Escuta comandos remotos vindos dos dispositivos da banda. Retorna cleanup.
+  onRemoteCommand: (callback: (cmd: { type: 'COMMAND'; action: string; index?: number }) => void) => {
+    const handler = (_e: unknown, cmd: { type: 'COMMAND'; action: string; index?: number }) => callback(cmd)
+    ipcRenderer.on('remote-command', handler)
+    return () => ipcRenderer.removeListener('remote-command', handler)
+  },
 })

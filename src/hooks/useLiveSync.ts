@@ -11,6 +11,9 @@ export interface FollowerState {
   lyrics: string | null;
   lyricsSynced: string | null;
   chords: string | null;
+  controlEnabled: boolean;
+  setlist: string[];
+  activeIndex: number;
   pitch: number;
   originalKey: string | null;
 }
@@ -27,11 +30,15 @@ export function useLiveSync(leaderState: FollowerState) {
     lyrics: null,
     lyricsSynced: null,
     chords: null,
+    controlEnabled: false,
+    setlist: [],
+    activeIndex: 0,
     pitch: 0,
     originalKey: null,
   });
   const [isConnected, setIsConnected] = useState(false);
   const [isFollowerMode] = useState(!isLeader);
+  const wsRef = useRef<WebSocket | null>(null);
 
   // Refs para armazenar o estado mais recente do líder sem recriar o intervalo
   const leaderStateRef = useRef(leaderState);
@@ -58,6 +65,9 @@ export function useLiveSync(leaderState: FollowerState) {
           lyrics: state.lyrics,
           lyricsSynced: state.lyricsSynced,
           chords: state.chords,
+          controlEnabled: state.controlEnabled,
+          setlist: state.setlist,
+          activeIndex: state.activeIndex,
           pitch: state.pitch,
           originalKey: state.originalKey
         }
@@ -79,6 +89,7 @@ export function useLiveSync(leaderState: FollowerState) {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       // Usa o mesmo host e porta do servidor web atual
       ws = new WebSocket(`${protocol}//${window.location.host}`);
+      wsRef.current = ws;
 
       ws.onopen = () => {
         setIsConnected(true);
@@ -115,9 +126,18 @@ export function useLiveSync(leaderState: FollowerState) {
     };
   }, [isLeader]);
 
+  // Follower envia um comando pro líder (só efetivo se o líder permitir).
+  const sendCommand = (action: string, index?: number) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'COMMAND', action, ...(index !== undefined ? { index } : {}) }));
+    }
+  };
+
   return {
     isFollowerMode,
     isConnected,
-    followerState: isLeader ? leaderState : followerState
+    followerState: isLeader ? leaderState : followerState,
+    sendCommand,
   };
 }

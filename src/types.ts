@@ -49,6 +49,7 @@ declare global {
       startLocalServer: (preferredPort?: number) => Promise<{ url: string | null; error: string | null }>
       stopLocalServer: () => Promise<void>
       broadcastState: (state: any) => void
+      onRemoteCommand: (callback: (cmd: { type: 'COMMAND'; action: string; index?: number }) => void) => () => void
     }
   }
 }
@@ -67,7 +68,11 @@ export type WsMessage =
         lyrics: string | null;
         lyricsSynced: string | null;
         chords: string | null;
+        controlEnabled: boolean;
+        setlist: string[];
+        activeIndex: number;
         pitch: number;
         originalKey: string | null;
       }
     }
+  | { type: 'COMMAND'; action: string; index?: number }
