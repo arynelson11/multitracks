@@ -17,9 +17,11 @@ import { LandingPage } from './components/LandingPage'
 import { useAuth } from './hooks/useAuth'
 import { PricingModal } from './components/PricingModal'
 import { supabase, updateSongMarkers as saveMkToCloud, fetchSongs as fetchCloudSongs } from './lib/supabase'
+import { useNetworkStatus } from './hooks/useNetworkStatus'
 
 export default function App() {
   const { user, loading, signOut, userPlan } = useAuth()
+  const isOnline = useNetworkStatus()
 
   const {
     isReady, initEngine, loadFiles, isLoading, isRestoring,
@@ -376,8 +378,12 @@ export default function App() {
           {/* Left: Menu + Brand */}
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="relative flex items-center">
-              <div className="cursor-default focus:outline-none">
+              <div className="cursor-default focus:outline-none flex items-center gap-2.5">
                 <BrandLogo size="sm" tone="light" variant="horizontal" />
+                <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded border text-[9px] font-mono font-bold transition-all ${isOnline ? 'text-primary/70 border-primary/20 bg-primary/5' : 'text-accent-red border-accent-red/20 bg-accent-red/5'}`}>
+                  <span className={`w-1 h-1 rounded-full ${isOnline ? 'bg-primary' : 'bg-accent-red animate-pulse'}`} />
+                  <span>{isOnline ? 'ONLINE' : 'OFFLINE'}</span>
+                </div>
               </div>
             </div>
 
@@ -647,7 +653,9 @@ export default function App() {
           <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none">
             <BrandLogo size="sm" tone="light" variant="horizontal" />
           </div>
-          <div className="ml-auto w-7" />
+          <div className="ml-auto flex items-center">
+            <div className={`w-2 h-2 rounded-full border border-black/50 ${isOnline ? 'bg-primary' : 'bg-accent-red animate-pulse'}`} title={isOnline ? 'Online' : 'Offline'} />
+          </div>
         </div>
 
         {/* Mobile portrait: action buttons grid */}

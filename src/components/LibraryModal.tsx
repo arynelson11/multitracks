@@ -4,11 +4,12 @@ import { useCloudLibrary } from '../hooks/useCloudLibrary';
 import { useAuth } from '../hooks/useAuth';
 import { updateSong, type CloudSong } from '../lib/supabase';
 import { uploadToR2 } from '../lib/r2';
+import { type Marker } from '../types';
 
 interface LibraryModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onDownload: (files: File[], songName: string, coverUrl: string | null, markers?: any[], originalKey?: string | null, artist?: string, bpm?: number) => void;
+    onDownload: (files: File[], songName: string, coverUrl: string | null, markers?: Marker[], originalKey?: string | null, artist?: string, bpm?: number) => void;
 }
 
 export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps) {
@@ -22,7 +23,9 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
         deletingSongId,
         downloadSong,
         refreshSongs,
-        removeSong
+        removeSong,
+        cachedSongIds,
+        isOnline
     } = useCloudLibrary();
 
     const { user } = useAuth();
@@ -243,37 +246,50 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
                                                         {song.bpm} BPM
                                                     </span>
                                                 )}
+                                                {cachedSongIds.has(song.id) && (
+                                                    <span className="text-[9px] font-bold bg-[#5b6b47]/20 text-[#8b9b6e] px-1.5 py-0.5 rounded font-mono flex items-center gap-1">
+                                                        <span className="w-1 h-1 rounded-full bg-[#8b9b6e]" />
+                                                        OFFLINE
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
 
                                         {/* Download and Delete Buttons — quebra para próxima linha em mobile estreito */}
                                         <div className="flex items-center gap-2 ml-auto basis-full sm:basis-auto sm:ml-0 justify-end sm:justify-start pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5 -mx-0.5 sm:mx-0 px-0.5 sm:px-0">
-                                            {(isAdmin || song.user_id === user?.id) && (
+                                            {(cachedSongIds.has(song.id) || (isOnline && (isAdmin || song.user_id === user?.id))) && (
                                                 <div className="flex items-center gap-1">
-                                                    <button
-                                                        onClick={() => setEditingSong({ id: song.id })}
-                                                        className="p-1.5 rounded-md text-xs flex items-center justify-center transition-all cursor-pointer bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white border border-blue-500/15 active:scale-95"
-                                                    >
-                                                        <Edit2 size={14} />
-                                                    </button>
-                                                    <button
-                                                    onClick={async () => {
-                                                        if (window.confirm(`Excluir "${song.name}" da Nuvem? Isso removerá permanentemente todas as tracks para todos os usuários que usam essa conta/nuvem.`)) {
-                                                            await removeSong(song.id);
-                                                        }
-                                                    }}
-                                                    disabled={deletingSongId === song.id}
-                                                    className={`p-1.5 rounded-md text-xs flex items-center justify-center transition-all cursor-pointer ${deletingSongId === song.id
-                                                        ? 'bg-accent-red/10 text-accent-red/50 cursor-not-allowed'
-                                                        : 'bg-accent-red/10 text-accent-red hover:bg-accent-red hover:text-white border border-accent-red/15 active:scale-95'
-                                                        }`}
-                                                >
-                                                    {deletingSongId === song.id ? (
-                                                        <Loader2 size={16} className="animate-spin" />
-                                                    ) : (
-                                                        <Trash2 size={16} />
+                                                    {isOnline && (isAdmin || song.user_id === user?.id) && (
+                                                        <button
+                                                            onClick={() => setEditingSong({ id: song.id })}
+                                                            className="p-1.5 rounded-md text-xs flex items-center justify-center transition-all cursor-pointer bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white border border-blue-500/15 active:scale-95"
+                                                            title="Editar metadados"
+                                                        >
+                                                            <Edit2 size={14} />
+                                                        </button>
                                                     )}
-                                                </button>
+                                                    <button
+                                                        onClick={async () => {
+                                                            const msg = isOnline
+                                                                ? `Excluir "${song.name}" da Nuvem e do Cache Local? Isso removerá permanentemente para todos os usuários.`
+                                                                : `Remover "${song.name}" do Cache Offline local?`;
+                                                            if (window.confirm(msg)) {
+                                                                await removeSong(song.id);
+                                                            }
+                                                        }}
+                                                        disabled={deletingSongId === song.id}
+                                                        className={`p-1.5 rounded-md text-xs flex items-center justify-center transition-all cursor-pointer ${deletingSongId === song.id
+                                                            ? 'bg-accent-red/10 text-accent-red/50 cursor-not-allowed'
+                                                            : 'bg-accent-red/10 text-accent-red hover:bg-accent-red hover:text-white border border-accent-red/15 active:scale-95'
+                                                            }`}
+                                                        title={isOnline ? "Excluir da Nuvem" : "Remover do Cache Local"}
+                                                    >
+                                                        {deletingSongId === song.id ? (
+                                                            <Loader2 size={16} className="animate-spin" />
+                                                        ) : (
+                                                            <Trash2 size={16} />
+                                                        )}
+                                                    </button>
                                                 </div>
                                             )}
                                             {isDownloading ? (
@@ -285,13 +301,19 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
                                                 <div className="flex items-center gap-1 text-primary text-[10px] font-bold px-2 py-1.5 rounded-md bg-primary/10 font-mono uppercase">
                                                     <span>✓</span> ADICIONADA
                                                 </div>
+                                            ) : (!isOnline && !cachedSongIds.has(song.id)) ? (
+                                                <div className="flex items-center gap-1 text-text-muted text-[10px] font-bold px-2.5 py-1.5 rounded-md bg-white/5 border border-white/10 font-mono uppercase cursor-not-allowed" title="Conecte-se à internet para baixar esta música">
+                                                    <span>OFFLINE</span>
+                                                </div>
                                             ) : (
                                                 <button
                                                     onClick={() => handleDownload(song.id, song.name)}
                                                     disabled={!!downloadingSongId}
-                                                    className="flex items-center gap-1.5 bg-secondary/10 hover:bg-secondary/20 text-secondary px-2.5 py-1.5 rounded-md text-[10px] font-bold transition-all active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed min-h-[36px] uppercase tracking-wider font-mono">
-                                                    <Download size={14} />
-                                                    <span className="hidden sm:inline">IMPORTAR</span>
+                                                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[10px] font-bold transition-all active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed min-h-[36px] uppercase tracking-wider font-mono ${cachedSongIds.has(song.id) ? 'bg-primary/15 hover:bg-primary/25 text-primary border border-primary/20' : 'bg-secondary/10 hover:bg-secondary/20 text-secondary border border-secondary/10'}`}
+                                                    title={cachedSongIds.has(song.id) ? "Carregar do cache local offline" : "Baixar e importar da Nuvem"}
+                                                >
+                                                    {cachedSongIds.has(song.id) ? <Cloud size={14} /> : <Download size={14} />}
+                                                    <span className="hidden sm:inline">{cachedSongIds.has(song.id) ? 'ABRIR' : 'IMPORTAR'}</span>
                                                 </button>
                                             )}
                                         </div>
