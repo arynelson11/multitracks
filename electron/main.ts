@@ -11,6 +11,15 @@ import { randomUUID } from 'node:crypto'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+// Rede de segurança: um erro não tratado (ex: porta em uso ao subir o servidor
+// local) não deve derrubar o app inteiro. Loga e segue.
+process.on('uncaughtException', (err) => {
+  console.error('[main] uncaughtException:', err)
+})
+process.on('unhandledRejection', (reason) => {
+  console.error('[main] unhandledRejection:', reason)
+})
+
 // Deep link protocol — playbackstudio://
 // Registra o app pra interceptar URLs com esse esquema.
 const PROTOCOL = 'playbackstudio'
@@ -170,6 +179,34 @@ ipcMain.handle('start-local-server', async (_event, preferredPort = 8080) => {
     const server = http.createServer(appExpress)
     const wsServer = new WebSocketServer({ server })
 
+    // Tenta escutar numa porta; em EADDRINUSE, cai pra porta dinâmica (0).
+    // Usa listeners 'once' removidos a cada tentativa pra o erro não escapar
+    // como uncaughtException (comportamento observado no Windows).
+    let triedDynamic = false
+    const tryListen = (port: number) => {
+      const onError = (err: NodeJS.ErrnoException) => {
+        server.removeListener('listening', onListening)
+        if (err.code === 'EADDRINUSE' && !triedDynamic) {
+          triedDynamic = true
+          console.warn(`Port ${port} in use, trying dynamic port...`)
+          setImmediate(() => tryListen(0))
+        } else {
+          resolve({ url: null, error: err.message })
+        }
+      }
+      const onListening = () => {
+        server.removeListener('error', onError)
+        localServer = server
+        wss = wsServer
+        const addr = server.address()
+        const actualPort = typeof addr === 'string' ? port : addr?.port
+        resolve({ url: `http://${getLocalIp()}:${actualPort}`, error: null })
+      }
+      server.once('error', onError)
+      server.once('listening', onListening)
+      server.listen(port, '0.0.0.0')
+    }
+
     wsServer.on('connection', (ws, req) => {
       // Identidade por dispositivo: o líder aprova/bloqueia cada um individualmente.
       const clientId = randomUUID()
@@ -194,26 +231,7 @@ ipcMain.handle('start-local-server', async (_event, preferredPort = 8080) => {
       ws.on('close', () => notifyClients())
     })
 
-    server.on('error', (err: any) => {
-      if (err.code === 'EADDRINUSE') {
-        console.warn(`Port ${preferredPort} in use, trying dynamic port...`)
-        // A porta 0 pede pro SO alocar uma porta disponível
-        server.listen(0, '0.0.0.0')
-      } else {
-        resolve({ url: null, error: err.message })
-      }
-    })
-
-    server.on('listening', () => {
-      localServer = server
-      wss = wsServer
-      const addr = server.address()
-      const port = typeof addr === 'string' ? preferredPort : addr?.port
-      const ip = getLocalIp()
-      resolve({ url: `http://${ip}:${port}`, error: null })
-    })
-
-    server.listen(preferredPort, '0.0.0.0')
+    tryListen(preferredPort)
   })
 })
 
@@ -273,4 +291,14 @@ app.on('open-url', (event, url) => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+// Libera a porta do servidor local ao sair, pra não deixar a porta presa
+// (causa de EADDRINUSE numa próxima abertura, sobretudo no Windows).
+app.on('before-quit', () => {
+  try {
+    wss?.clients.forEach((c) => c.terminate())
+    wss?.close()
+    localServer?.close()
+  } catch { /* noop */ }
 })
