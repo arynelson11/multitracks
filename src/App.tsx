@@ -510,7 +510,10 @@ export default function App() {
   }
 
   if (!user) {
-    if (showAuth) return <AuthPage />
+    // No app desktop a landing não faz sentido (a distribuição é o próprio app):
+    // vai direto pro login. A página inicial de marketing é só no site (navegador).
+    const isDesktopApp = !!window.playbackDesktop?.isElectron
+    if (showAuth || isDesktopApp) return <AuthPage />
     return <LandingPage onEnter={() => setShowAuth(true)} />
   }
 
