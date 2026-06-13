@@ -20,7 +20,10 @@ export default defineConfig({
       ? []
       : [
           VitePWA({
-            registerType: 'autoUpdate',
+            // 'prompt' (em vez de 'autoUpdate'): em vez de trocar a versão em
+            // silêncio, o app avisa "tem versão nova" e o usuário clica pra
+            // atualizar (UpdateBanner via service worker). Mesma UX do desktop.
+            registerType: 'prompt',
             includeAssets: ['logo.svg', 'logo.png', 'app-icon.svg', 'app-icon.png', 'favicon.svg'],
             manifest: {
               name: 'Playback Studio',

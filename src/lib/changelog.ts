@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.3.0',
+    date: '2026-06-13',
+    title: 'Atualizações também no navegador',
+    items: [
+      'Quem usa pelo navegador agora é avisado quando sai uma versão nova.',
+      'Um clique em Atualizar e você já está na versão mais recente, sem cache antigo.',
+      'Sua aba de Perfil e Novidades disponível em todas as plataformas.',
+    ],
+  },
+  {
     version: '1.2.0',
     date: '2026-06-13',
     title: 'Atualizações automáticas',
