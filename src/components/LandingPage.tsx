@@ -5,7 +5,6 @@ import {
   ArrowRight, Church, Download,
 } from 'lucide-react'
 import { DemoMixer } from './DemoMixer'
-import { usePWAInstall } from '../hooks/usePWAInstall'
 import { BrandLogo } from './BrandLogo'
 import { DomingoMark } from './brand/DomingoMark'
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark'
@@ -135,7 +134,6 @@ const TESTIMONIALS = [
 export function LandingPage({ onEnter }: LandingPageProps) {
   const [billing, setBilling] = useState<'monthly' | 'annual'>('annual')
   const [openFaq, setOpenFaq] = useState<number | null>(null)
-  const { isInstallable, isInstalled, promptInstall } = usePWAInstall()
 
   const goToCheckout = (planId: string, price: number) => {
     if (price > 0) {
@@ -223,14 +221,12 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             >
               Ver como funciona
             </a>
-            {isInstallable && !isInstalled && (
-              <button
-                onClick={promptInstall}
-                className="inline-flex items-center justify-center gap-2.5 bg-musgo/15 hover:bg-musgo/25 border border-musgo/30 text-musgo-light px-8 py-4 rounded-xl font-semibold text-[15px] transition-all cursor-pointer"
-              >
-                <Download size={17} /> Instalar app
-              </button>
-            )}
+            <a
+              href="/download"
+              className="inline-flex items-center justify-center gap-2.5 bg-musgo/15 hover:bg-musgo/25 border border-musgo/30 text-musgo-light px-8 py-4 rounded-xl font-semibold text-[15px] transition-all cursor-pointer"
+            >
+              <Download size={17} /> Baixar app
+            </a>
           </div>
 
           <p className="text-[12px] text-warm-400 mt-5">Sem cartão de crédito · Cancele quando quiser</p>

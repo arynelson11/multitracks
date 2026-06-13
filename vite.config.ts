@@ -28,7 +28,10 @@ export default defineConfig({
               description: 'Stems pra qualquer música. Pra sua banda chegar pronta no domingo. Feito por quem toca.',
               theme_color: '#FF6B35',
               background_color: '#121214',
-              display: 'standalone',
+              // 'browser' (em vez de 'standalone') evita que o navegador ofereça
+              // "Instalar app" (PWA). A distribuição é só o app desktop (/download).
+              // O cache offline via service worker (workbox) segue funcionando.
+              display: 'browser',
               orientation: 'portrait',
               start_url: '/',
               scope: '/',

@@ -133,7 +133,8 @@ export function LiveModeModal({
                                 )}
                             </div>
 
-                            {/* Músico remoto (internet) */}
+                            {/* Músico remoto (internet) — oculto até a Fase 5 (controle pela nuvem) ficar pronta */}
+                            {false && (
                             <div className="w-full mb-3 bg-[#1c1c1e] border border-border rounded-lg p-3">
                                 <button
                                     onClick={onToggleRemote}
@@ -164,6 +165,7 @@ export function LiveModeModal({
                                     </div>
                                 )}
                             </div>
+                            )}
 
                             <button
                                 onClick={onStopServer}
