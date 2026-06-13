@@ -25,7 +25,7 @@ export function useAbacatePayStats() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(apiUrl('/api/abacatepay-stats'));
+      const res = await fetch(apiUrl('/api/admin-stats?source=abacatepay'));
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao buscar dados');
       setStats(data);

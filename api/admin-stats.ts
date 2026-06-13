@@ -1,8 +1,62 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import axios from 'axios';
 import { applyCors } from './_lib/cors.js';
 
-// Replicate hardware pricing (USD per second)
-// Source: https://replicate.com/pricing
+// Endpoint unico de estatisticas de admin, roteado por ?source=.
+// Consolida o que antes eram duas funcoes serverless (abacatepay-stats +
+// replicate-stats) pra respeitar o limite de 12 funcoes do plano Hobby da Vercel.
+
+// ───────────────────────── AbacatePay ─────────────────────────
+async function abacatePayStats(res: VercelResponse) {
+  const token = process.env.ABACATEPAY_ACCESS_TOKEN;
+  if (!token) return res.status(500).json({ error: 'Server misconfiguration' });
+
+  const api = axios.create({
+    baseURL: 'https://api.abacatepay.com/v2',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  });
+
+  const [checkoutsRes, subscriptionsRes] = await Promise.allSettled([
+    api.get('/checkouts'),
+    api.get('/subscriptions'),
+  ]);
+
+  const checkouts: any[] = checkoutsRes.status === 'fulfilled'
+    ? (checkoutsRes.value.data?.data ?? [])
+    : [];
+
+  const subscriptions: any[] = subscriptionsRes.status === 'fulfilled'
+    ? (subscriptionsRes.value.data?.data ?? [])
+    : [];
+
+  const paidCheckouts = checkouts.filter((c: any) => c.status === 'PAID');
+  const totalRevenueCents = paidCheckouts.reduce((sum: number, c: any) => sum + (c.amount ?? 0), 0);
+  const activeSubscriptions = subscriptions.filter((s: any) => s.status === 'ACTIVE');
+
+  // Recent 10 payments across both lists
+  const recent = [...checkouts, ...subscriptions]
+    .sort((a, b) => new Date(b.createdAt ?? b.created_at ?? 0).getTime() - new Date(a.createdAt ?? a.created_at ?? 0).getTime())
+    .slice(0, 10)
+    .map((c: any) => ({
+      id: c.id,
+      status: c.status,
+      amount: c.amount ?? 0,
+      createdAt: c.createdAt ?? c.created_at ?? null,
+      metadata: c.metadata ?? null,
+    }));
+
+  return res.status(200).json({
+    totalRevenueBRL: totalRevenueCents / 100,
+    paidCount: paidCheckouts.length,
+    totalCheckouts: checkouts.length,
+    activeSubscriptions: activeSubscriptions.length,
+    totalSubscriptions: subscriptions.length,
+    recent,
+  });
+}
+
+// ───────────────────────── Replicate ─────────────────────────
+// Replicate hardware pricing (USD per second) — https://replicate.com/pricing
 const HARDWARE_PRICING: Record<string, number> = {
   'cpu':                    0.000100,
   'nvidia-t4-gpu':          0.000225,
@@ -53,7 +107,6 @@ async function getVersionHardware(token: string, model: string, version: string)
     if (!res.ok) return 'cpu';
     const data = await res.json() as ReplicateVersionDetail;
     const hw = data.openapi_schema?.info?.['x-replicate-hardware'] ?? 'cpu';
-    // Cache it for this process lifetime
     VERSION_HARDWARE[version] = hw;
     return hw;
   } catch {
@@ -66,12 +119,7 @@ function costUSD(predictTime: number, hardware: string): number {
   return predictTime * rate;
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  applyCors(req, res, 'GET,OPTIONS');
-
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
-
+async function replicateStats(res: VercelResponse) {
   const token = process.env.REPLICATE_API_TOKEN;
   if (!token) return res.status(500).json({ error: 'REPLICATE_API_TOKEN not configured' });
 
@@ -198,4 +246,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error('replicate-stats error:', error);
     return res.status(500).json({ error: error.message || 'Internal Server Error' });
   }
+}
+
+// ───────────────────────── Router ─────────────────────────
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  applyCors(req, res, 'GET,OPTIONS');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
+  const source = (req.query.source as string) || '';
+  if (source === 'abacatepay') return abacatePayStats(res);
+  if (source === 'replicate') return replicateStats(res);
+  return res.status(400).json({ error: 'Parametro "source" invalido (use abacatepay ou replicate)' });
 }

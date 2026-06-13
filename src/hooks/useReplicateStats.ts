@@ -50,7 +50,7 @@ export function useReplicateStats() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(apiUrl('/api/replicate-stats'));
+      const res = await fetch(apiUrl('/api/admin-stats?source=replicate'));
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `HTTP ${res.status}`);
