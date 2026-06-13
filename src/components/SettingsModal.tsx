@@ -14,11 +14,12 @@ interface SettingsModalProps {
     channels: Channel[];
     onSetChannelBus: (channelId: string, bus: '1' | '2' | '1/2') => void;
     onOpenAdmin: () => void;
+    onReplayTour: () => void;
 }
 
 type Tab = 'Geral' | 'Buses' | 'Assinatura' | 'Sobre';
 
-export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin, onReplayTour }: SettingsModalProps) {
     const { settings, updateSetting, availableAudioDevices, refreshAudioDevices } = useSettings();
     const { user } = useAuth();
     const [activeTab, setActiveTab] = useState<Tab>('Geral');
@@ -71,6 +72,22 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
 
                     {activeTab === 'Geral' && (
                         <div className="flex flex-col gap-6">
+                            {/* Rever tutorial */}
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-white text-sm font-bold">Tutorial</h3>
+                                    <p className="text-text-muted text-[10px] font-mono">Rever o guia de uso do app</p>
+                                </div>
+                                <button
+                                    onClick={() => { onClose(); onReplayTour(); }}
+                                    className="ml-4 shrink-0 px-3 py-1.5 rounded-lg bg-primary/15 text-primary border border-primary/30 text-xs font-bold hover:bg-primary/25 active:scale-95 transition-all cursor-pointer"
+                                >
+                                    Ver tutorial
+                                </button>
+                            </div>
+
+                            <hr className="border-border" />
+
                             {/* Auto Pan */}
                             <div className="flex items-center justify-between">
                                 <div>

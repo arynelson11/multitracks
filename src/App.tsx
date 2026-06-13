@@ -18,6 +18,28 @@ import { SeparatorStudio } from './components/SeparatorStudio'
 
 import { LandingPage } from './components/LandingPage'
 import { DownloadPage } from './components/DownloadPage'
+import { GuidedTour, type TourStep } from './components/GuidedTour'
+
+const TOUR_STEPS: TourStep[] = [
+  { title: 'Bem-vindo ao Playback Studio', body: 'Vou te mostrar tudo rapidinho. Pode pular quando quiser e rever depois pelo Config.' },
+  { target: 'repertorios', title: 'Repertórios', body: 'Monte e gerencie seus repertórios (setlists). Crie um novo, salve em .zip pra fazer backup ou carregue um já pronto.' },
+  { target: 'faixas', title: 'Faixas', body: 'Importe faixas do seu computador ou crie uma faixa de metrônomo infinito num BPM à sua escolha.' },
+  { target: 'biblioteca', title: 'Biblioteca', body: 'Baixe músicas prontas da nuvem. Depois de baixadas, elas tocam offline no palco, sem internet.' },
+  { target: 'metronomo', title: 'Metrônomo', body: 'Click track com levada brasileira pra a banda tocar no tempo certo.' },
+  { target: 'setlist-area', title: 'Suas músicas', body: 'Aqui ficam as músicas do repertório atual, depois de baixar da nuvem ou importar do computador. Toque numa pra carregar.' },
+  { target: 'anotacoes', title: 'Anotações', body: 'Deixe lembretes do culto: ordem das músicas, tons, transições. Fica salvo no seu dispositivo.' },
+  { target: 'modos', title: 'Auto, Parar e Fade', body: 'Escolha o que acontece no fim da música: AUTO segue pra próxima, PARAR encerra, FADE baixa o volume nos últimos segundos.' },
+  { target: 'play', title: 'Tocar', body: 'O play inicia a música. Use os botões ao lado pra ir pra anterior ou próxima.' },
+  { target: 'mixer', title: 'Mixer das faixas', body: 'Controle volume, mute, solo e pan de cada instrumento separadamente. Cada faixa no seu lugar.' },
+  { target: 'pads', title: 'Pads de ambiente', body: 'Toque pads em qualquer tom pra sustentar os momentos do louvor.' },
+  { target: 'tom', title: 'Tom', body: 'Transponha a música pro tom que a banda canta, em segundos, sem mudar a velocidade.' },
+  { target: 'precontagem', title: 'Pré-contagem', body: 'Liga uma contagem de clicks antes da música começar, pra a banda entrar junto no tempo.' },
+  { target: 'editar', title: 'Editar', body: 'Entre no modo de edição pra reordenar faixas e ajustar a sua mesa do jeito que preferir.' },
+  { target: 'host', title: 'Modo Ao Vivo (Host)', body: 'A banda conecta pelo celular (QR Code) e acompanha música, tom, parte e letra. Você decide quem pode controlar.' },
+  { target: 'inicio', title: 'Início', body: 'Volta pra tela inicial, onde você troca de modo e acessa a Separação de Faixas (transforma qualquer música em faixas separadas).' },
+  { target: 'config', title: 'Config', body: 'Ajustes do app, saída de áudio e buses. É aqui também que você reabre este tutorial quando quiser.' },
+  { title: 'Tudo pronto!', body: 'Agora é com você. Bom domingo e bom louvor! 🎶' },
+]
 import { useAuth } from './hooks/useAuth'
 import { PricingModal } from './components/PricingModal'
 import { supabase, updateSongMarkers as saveMkToCloud, fetchSongs as fetchCloudSongs, updateSong } from './lib/supabase'
@@ -69,6 +91,7 @@ export default function App() {
   const [isTeleprompterMode, setIsTeleprompterMode] = useState(false)
   const [isMarkerEditorOpen, setIsMarkerEditorOpen] = useState(false)
   const [isLyricsEditorOpen, setIsLyricsEditorOpen] = useState(false)
+  const [showTour, setShowTour] = useState(false)
   // Controle remoto: a permissão é por IP (agrupa as conexões do mesmo aparelho e
   // resiste a reconexões). O líder libera quais IPs podem comandar.
   const [connectedDevices, setConnectedDevices] = useState<{ id: string; ip: string }[]>([])
@@ -209,6 +232,19 @@ export default function App() {
       }
     }
   }, [user, loading])
+
+  // ── Tutorial guiado na primeira vez (após o app montar, fora do splash) ──
+  useEffect(() => {
+    if (!user || !isReady || forceShowSplash) return
+    if (localStorage.getItem('tour_seen')) return
+    const t = setTimeout(() => setShowTour(true), 600) // espera o layout assentar
+    return () => clearTimeout(t)
+  }, [user, isReady, forceShowSplash])
+
+  const closeTour = () => {
+    setShowTour(false)
+    localStorage.setItem('tour_seen', '1')
+  }
 
   // Helper for Premium Features
   const handlePremiumFeature = (action: () => void) => {
@@ -518,7 +554,7 @@ export default function App() {
             <div className="h-5 w-px bg-border mx-1"></div>
             
             <div className="relative">
-              <button onClick={() => setIsSetlistMenuOpen(!isSetlistMenuOpen)}
+              <button data-tour="repertorios" onClick={() => setIsSetlistMenuOpen(!isSetlistMenuOpen)}
                 className={`transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer ${isSetlistMenuOpen ? 'text-white bg-white/10' : 'text-text-muted hover:text-white'}`}>
                 <ListMusic size={14} /> <span className="hidden sm:inline">REPERTÓRIOS</span>
               </button>
@@ -586,7 +622,7 @@ export default function App() {
             </div>
 
             <div className="relative">
-              <button onClick={() => setIsTracksMenuOpen(!isTracksMenuOpen)}
+              <button data-tour="faixas" onClick={() => setIsTracksMenuOpen(!isTracksMenuOpen)}
                 className={`transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer ${isTracksMenuOpen ? 'text-white bg-white/10' : 'text-text-muted hover:text-white'}`}>
                 <Music size={14} /> <span className="hidden sm:inline">FAIXAS</span>
               </button>
@@ -623,11 +659,11 @@ export default function App() {
               )}
             </div>
 
-            <button onClick={() => handlePremiumFeature(() => setIsLibraryOpen(true))}
+            <button data-tour="biblioteca" onClick={() => handlePremiumFeature(() => setIsLibraryOpen(true))}
               className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-white">
               <Cloud size={14} /> <span className="hidden sm:inline">BIBLIOTECA</span>
             </button>
-            <button onClick={() => setIsMetronomeModalOpen(true)}
+            <button data-tour="metronomo" onClick={() => setIsMetronomeModalOpen(true)}
               className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-white">
               <Timer size={14} /> <span className="hidden sm:inline">METRÔNOMO</span>
             </button>
@@ -638,7 +674,7 @@ export default function App() {
 
             {/* Key Selector */}
             <div className="relative">
-              <button onClick={() => handlePremiumFeature(() => setIsKeyPickerOpen(!isKeyPickerOpen))}
+              <button data-tour="tom" onClick={() => handlePremiumFeature(() => setIsKeyPickerOpen(!isKeyPickerOpen))}
                 className={`transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer ${isKeyPickerOpen ? 'text-primary' : 'text-text-muted hover:text-white'}`}>
                 <span>TOM</span>
                 {currentKeyName && <span className="text-primary font-mono">{currentKeyName}</span>}
@@ -686,6 +722,7 @@ export default function App() {
             {/* Pré-contagem */}
             <div className="relative">
               <button
+                data-tour="precontagem"
                 onClick={() => setIsPrecountOpen(!isPrecountOpen)}
                 className={`transport-btn flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer ${precountEnabled ? 'text-primary' : 'text-text-muted hover:text-white'}`}
                 title="Pré-contagem"
@@ -731,7 +768,7 @@ export default function App() {
             <div className="h-5 w-px bg-border hidden sm:block"></div>
 
             {/* EDITAR */}
-            <button onClick={() => setIsEditMode(!isEditMode)}
+            <button data-tour="editar" onClick={() => setIsEditMode(!isEditMode)}
               className={`items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95 border cursor-pointer hidden sm:flex ${isEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border hover:bg-white/5 hover:text-white'}`}>
               {isEditMode ? <Check size={12} /> : <Edit2 size={12} />}
               {isEditMode ? 'OK' : 'EDITAR'}
@@ -747,20 +784,20 @@ export default function App() {
 
             {/* Live Mode - only for Electron */}
             {window.playbackDesktop?.isElectron && (
-              <button onClick={handleStartLiveMode}
+              <button data-tour="host" onClick={handleStartLiveMode}
                 className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-primary hover:bg-primary/10 border border-primary/20 hover:border-primary/40 transition-all">
                 <Server size={14} /><span className="hidden sm:inline uppercase">Host</span>
               </button>
             )}
 
             {/* Config */}
-            <button onClick={() => setIsSettingsOpen(true)}
+            <button data-tour="config" onClick={() => setIsSettingsOpen(true)}
               className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-white">
               <Settings size={14} /><span className="hidden sm:inline">CONFIG</span>
             </button>
 
             {/* Início */}
-            <button onClick={() => setForceShowSplash(true)}
+            <button data-tour="inicio" onClick={() => setForceShowSplash(true)}
               className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-white border border-border hover:border-white/20 transition-all">
               <Home size={14} /><span className="hidden sm:inline">INÍCIO</span>
             </button>
@@ -914,7 +951,7 @@ export default function App() {
         {/* Transport Controls Row */}
         <div className="flex flex-col items-center px-3 py-2 sm:py-2.5 bg-[#141416] gap-1">
           {/* Playback Mode — acima dos controles */}
-          <div className="hidden sm:flex items-center lcd-display rounded-md overflow-hidden">
+          <div data-tour="modos" className="hidden sm:flex items-center lcd-display rounded-md overflow-hidden">
             <button onClick={() => setPlaybackMode('continue')}
               className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer font-mono ${playbackMode === 'continue' ? 'bg-primary/15 text-primary' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
               title="Continuar para próxima música">▶ AUTO</button>
@@ -929,7 +966,7 @@ export default function App() {
           {/* Play controls — centralizados abaixo */}
           <div className="flex items-center gap-1.5">
             <button onClick={prevSong} className="transport-btn p-2 rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipBack size={18} /></button>
-            <button onClick={isCountingIn ? cancelCountIn : isPlaying ? pause : playWithPrecount}
+            <button data-tour="play" onClick={isCountingIn ? cancelCountIn : isPlaying ? pause : playWithPrecount}
               className={`transport-btn p-3 rounded-lg active:scale-90 cursor-pointer ${isPlaying || isCountingIn ? 'active text-primary' : 'text-white'}`}>
               {isPlaying ? <Pause size={24} fill="currentColor" /> : isCountingIn ? <Loader2 size={24} className="animate-spin" /> : <Play size={24} fill="currentColor" className="ml-0.5" />}
             </button>
@@ -949,9 +986,9 @@ export default function App() {
       )}
 
       {/* ═══ SETLIST & NOTES AREA ═══ */}
-      <section className="h-56 sm:h-48 border-b border-border bg-[#141416] flex flex-col sm:flex-row shrink-0 relative overflow-hidden">
+      <section data-tour="setlist-area" className="h-56 sm:h-48 border-b border-border bg-[#141416] flex flex-col sm:flex-row shrink-0 relative overflow-hidden">
         {/* Left: Notes Panel */}
-        <div className="h-20 sm:h-auto w-full sm:w-80 border-b sm:border-b-0 sm:border-r border-[#222] p-3 flex flex-col bg-[#0e0e10] shrink-0">
+        <div data-tour="anotacoes" className="h-20 sm:h-auto w-full sm:w-80 border-b sm:border-b-0 sm:border-r border-[#222] p-3 flex flex-col bg-[#0e0e10] shrink-0">
           <div className="text-[10px] font-bold text-text-muted/60 uppercase tracking-[0.15em] mb-2 font-mono flex items-center justify-between">
             Anotações
             <Edit2 size={10} className="text-text-muted/40" />
@@ -1315,7 +1352,7 @@ export default function App() {
         <section className="flex-1 flex overflow-hidden pointer-coarse:min-h-[70vh]">
 
           {/* ═══ MIXER ═══ */}
-          <div ref={mixerRef}
+          <div ref={mixerRef} data-tour="mixer"
             className={`bg-[#111113] overflow-x-auto flex flex-col items-stretch
               ${mobileView === 'mixer' ? 'flex' : 'hidden'} md:flex flex-1`}
             style={{ touchAction: 'pan-x' }}>
@@ -1496,7 +1533,7 @@ export default function App() {
           </div>
 
           {/* ═══ PAD PLAYER ═══ */}
-          <div className={`bg-[#18181a] border-l border-border p-3 sm:p-4 flex flex-col z-10 shadow-[-10px_0_20px_rgba(0,0,0,0.4)] min-h-0 overflow-hidden shrink-0
+          <div data-tour="pads" className={`bg-[#18181a] border-l border-border p-3 sm:p-4 flex flex-col z-10 shadow-[-10px_0_20px_rgba(0,0,0,0.4)] min-h-0 overflow-hidden shrink-0
             ${mobileView === 'pads' ? 'flex w-full' : 'hidden'} md:flex md:w-72 lg:w-96`}>
             <div className="font-bold text-[10px] tracking-[0.15em] text-text-muted mb-2 flex justify-between uppercase items-center font-mono">
               <span>{padActiveView === 'pads' ? 'REPRODUTOR DE PADS' : padActiveView === 'samples' ? 'SAMPLES' : 'LOOPS'}</span>
@@ -1712,6 +1749,7 @@ export default function App() {
         channels={channels}
         onSetChannelBus={setChannelBus}
         onOpenAdmin={() => setIsAdminOpen(true)}
+        onReplayTour={() => setShowTour(true)}
       />
 
       {/* Library Modal */}
@@ -1738,6 +1776,8 @@ export default function App() {
         onClose={() => setIsAdminOpen(false)}
       />
       )}
+
+      {showTour && <GuidedTour steps={TOUR_STEPS} onClose={closeTour} />}
 
       <LiveModeModal
         isOpen={isLiveModeOpen}

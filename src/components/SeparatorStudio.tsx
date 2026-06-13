@@ -10,6 +10,16 @@ import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
 import { useSeparationLibrary, type SavedSeparation } from '../hooks/useSeparationLibrary';
 import { audioBlobToMp3Blob } from '../lib/audioExport';
+import { GuidedTour, type TourStep } from './GuidedTour';
+
+const SEP_TOUR_STEPS: TourStep[] = [
+  { title: 'Separação de Faixas', body: 'Aqui você transforma qualquer música em faixas separadas (vocal, bateria, baixo, instrumentos) usando IA. Veja como funciona.' },
+  { target: 'sep-upload', title: '1. Carregue a música', body: 'Envie um arquivo de áudio (MP3, WAV ou AAC) do seu computador. É o ponto de partida.' },
+  { title: '2. Escolha as faixas', body: 'Depois de enviar, você escolhe em quantas faixas separar: 2, 4 ou 6. Quanto mais faixas, mais controle sobre cada instrumento.' },
+  { title: '3. Processa na nuvem', body: 'A IA separa a música em segundos. Você pode ouvir cada faixa isolada, ajustar e gerar um click track na levada.' },
+  { target: 'sep-biblioteca', title: '4. Suas separações', body: 'Tudo que você separa fica salvo aqui. Reabra quando quiser ou mande direto pro seu repertório do Multitracks.' },
+  { title: 'Pronto!', body: 'Carregue uma música e experimente. A separação é o atalho pra ter qualquer faixa pronta pro domingo.' },
+]
 
 type DownloadFormat = 'wav' | 'mp3';
 const DOWNLOAD_FORMAT_KEY = 'playback-studio:download-format';
@@ -154,7 +164,19 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const [publishGlobal, setPublishGlobal] = useState(false);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
   const [separationStep, setSeparationStep] = useState<'upload' | 'options'>('upload');
+  const [showSepTour, setShowSepTour] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+
+  // Tutorial da separação na primeira vez que a tela abre.
+  useEffect(() => {
+    if (localStorage.getItem('sep_tour_seen')) return;
+    const t = setTimeout(() => setShowSepTour(true), 500);
+    return () => clearTimeout(t);
+  }, []);
+  const closeSepTour = () => {
+    setShowSepTour(false);
+    localStorage.setItem('sep_tour_seen', '1');
+  };
   const [file, setFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressMsg, setProgressMsg] = useState('');
@@ -1101,6 +1123,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   if (separationStep === 'upload' && !file && stems.length === 0) {
     return (
       <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col overflow-hidden">
+        {showSepTour && <GuidedTour steps={SEP_TOUR_STEPS} onClose={closeSepTour} />}
         <button onClick={onClose} className="transport-btn absolute top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold text-text-muted cursor-pointer uppercase tracking-wider">
           <ChevronLeft size={13}/> Voltar
         </button>
@@ -1114,7 +1137,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
             </div>
             <h1 className="text-3xl font-black tracking-[0.15em] uppercase mb-2 text-white">SEPARADOR IA</h1>
             <p className="text-text-muted mb-8 text-[10px] font-mono tracking-widest uppercase">Motor de Separação Multi-faixa Profissional</p>
-            <label className="w-full max-w-md hw-btn flex flex-col items-center gap-4 px-8 py-10 rounded-xl cursor-pointer group">
+            <label data-tour="sep-upload" className="w-full max-w-md hw-btn flex flex-col items-center gap-4 px-8 py-10 rounded-xl cursor-pointer group">
               <UploadCloud size={36} className="text-primary group-hover:scale-110 transition-transform" />
               <div>
                 <div className="font-black text-white uppercase tracking-wider text-sm mb-1">Carregar Áudio & Iniciar</div>
@@ -1125,7 +1148,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
           </div>
 
           {/* ── Separation Library ── */}
-          <div className="max-w-3xl mx-auto px-4 pb-12">
+          <div data-tour="sep-biblioteca" className="max-w-3xl mx-auto px-4 pb-12">
             <div className="flex items-center gap-2 mb-4">
               <FolderOpen size={14} className="text-primary" />
               <h2 className="text-white font-black text-xs uppercase tracking-[0.15em]">Minhas Separações</h2>
