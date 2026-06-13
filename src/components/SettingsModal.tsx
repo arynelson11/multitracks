@@ -7,6 +7,9 @@ import { PricingModal } from './PricingModal';
 import { supabase } from '../lib/supabase';
 import { planDisplayName, isPaidPlan } from '../lib/plans';
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark';
+import { ProfileTab } from './ProfileTab';
+import { CHANGELOG } from '../lib/changelog';
+import { Sparkles } from 'lucide-react';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -17,12 +20,12 @@ interface SettingsModalProps {
     onReplayTour: () => void;
 }
 
-type Tab = 'Geral' | 'Buses' | 'Assinatura' | 'Sobre';
+type Tab = 'Perfil' | 'Geral' | 'Buses' | 'Novidades' | 'Assinatura' | 'Sobre';
 
 export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin, onReplayTour }: SettingsModalProps) {
     const { settings, updateSetting, availableAudioDevices, refreshAudioDevices } = useSettings();
-    const { user } = useAuth();
-    const [activeTab, setActiveTab] = useState<Tab>('Geral');
+    const { user, updateProfile, updatePassword, signOutEverywhere, deleteAccount } = useAuth();
+    const [activeTab, setActiveTab] = useState<Tab>('Perfil');
     const [isPricingOpen, setIsPricingOpen] = useState(false);
     const [userPlan, setUserPlan] = useState<string>('free');
 
@@ -40,7 +43,7 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
 
     if (!isOpen) return null;
 
-    const tabs: Tab[] = ['Geral', 'Buses', 'Assinatura', 'Sobre'];
+    const tabs: Tab[] = ['Perfil', 'Geral', 'Buses', 'Novidades', 'Assinatura', 'Sobre'];
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
@@ -69,6 +72,19 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto min-h-[400px] max-h-[70vh] p-6 bg-[#0e0e10]">
+
+                    {activeTab === 'Perfil' && user && (
+                        <ProfileTab
+                            user={user}
+                            userPlan={userPlan}
+                            updateProfile={updateProfile}
+                            updatePassword={updatePassword}
+                            signOutEverywhere={signOutEverywhere}
+                            deleteAccount={deleteAccount}
+                            onUpgrade={() => setIsPricingOpen(true)}
+                            onClose={onClose}
+                        />
+                    )}
 
                     {activeTab === 'Geral' && (
                         <div className="flex flex-col gap-6">
@@ -188,6 +204,28 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                                     ))}
                                 </>
                             )}
+                        </div>
+                    )}
+
+                    {activeTab === 'Novidades' && (
+                        <div className="flex flex-col gap-5 max-w-lg mx-auto">
+                            {CHANGELOG.map((entry, idx) => (
+                                <div key={entry.version} className={idx === 0 ? 'bg-primary/[0.06] border border-primary/20 rounded-xl p-4' : 'border-b border-white/5 pb-5'}>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        {idx === 0 && <Sparkles size={14} className="text-primary" />}
+                                        <span className={`font-bold ${idx === 0 ? 'text-white' : 'text-zinc-300'}`}>{entry.title}</span>
+                                        <span className="text-[10px] font-mono text-text-muted ml-auto">v{entry.version}</span>
+                                    </div>
+                                    <ul className="space-y-1.5">
+                                        {entry.items.map((item, i) => (
+                                            <li key={i} className="flex items-start gap-2 text-[13px] text-zinc-400 leading-relaxed">
+                                                <span className="mt-1.5 w-1 h-1 rounded-full bg-text-muted shrink-0" />
+                                                {item}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ))}
                         </div>
                     )}
 

@@ -19,6 +19,8 @@ import { SeparatorStudio } from './components/SeparatorStudio'
 import { LandingPage } from './components/LandingPage'
 import { DownloadPage } from './components/DownloadPage'
 import { GuidedTour, type TourStep } from './components/GuidedTour'
+import { WhatsNewModal } from './components/WhatsNewModal'
+import { CURRENT_VERSION } from './lib/changelog'
 
 const TOUR_STEPS: TourStep[] = [
   { title: 'Bem-vindo ao Playback Studio', body: 'Vou te mostrar tudo rapidinho. Pode pular quando quiser e rever depois pelo Config.' },
@@ -92,6 +94,7 @@ export default function App() {
   const [isMarkerEditorOpen, setIsMarkerEditorOpen] = useState(false)
   const [isLyricsEditorOpen, setIsLyricsEditorOpen] = useState(false)
   const [showTour, setShowTour] = useState(false)
+  const [showWhatsNew, setShowWhatsNew] = useState(false)
   // Controle remoto: a permissão é por IP (agrupa as conexões do mesmo aparelho e
   // resiste a reconexões). O líder libera quais IPs podem comandar.
   const [connectedDevices, setConnectedDevices] = useState<{ id: string; ip: string }[]>([])
@@ -244,6 +247,21 @@ export default function App() {
   const closeTour = () => {
     setShowTour(false)
     localStorage.setItem('tour_seen', '1')
+  }
+
+  // ── Popup de novidades: mostra quando há versão nova que o usuário não viu ──
+  // Só dispara depois do tutorial (pra não empilhar dois popups na 1ª vez).
+  useEffect(() => {
+    if (!user || !isReady || forceShowSplash || showTour) return
+    if (!localStorage.getItem('tour_seen')) return
+    if (localStorage.getItem('last_seen_version') === CURRENT_VERSION) return
+    const t = setTimeout(() => setShowWhatsNew(true), 700)
+    return () => clearTimeout(t)
+  }, [user, isReady, forceShowSplash, showTour])
+
+  const closeWhatsNew = () => {
+    setShowWhatsNew(false)
+    localStorage.setItem('last_seen_version', CURRENT_VERSION)
   }
 
   // Helper for Premium Features
@@ -805,7 +823,16 @@ export default function App() {
             <div className="h-5 w-px bg-border hidden sm:block"></div>
 
             {/* User + SAIR */}
-            <span className="text-white text-[10px] font-mono font-medium hidden sm:block">{user.email?.split('@')[0]}</span>
+            <button onClick={() => setIsSettingsOpen(true)} className="items-center gap-2 hidden sm:flex cursor-pointer group" title="Meu perfil">
+              {user.user_metadata?.avatar_url ? (
+                <img src={user.user_metadata.avatar_url} alt="" className="w-6 h-6 rounded-full object-cover border border-white/15" />
+              ) : (
+                <span className="w-6 h-6 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center text-primary text-[10px] font-black">
+                  {(user.user_metadata?.display_name || user.email || '?').trim().charAt(0).toUpperCase()}
+                </span>
+              )}
+              <span className="text-white text-[10px] font-mono font-medium group-hover:text-primary transition-colors">{user.user_metadata?.display_name || user.email?.split('@')[0]}</span>
+            </button>
             <button onClick={signOut}
               className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-accent-red border border-border hover:border-accent-red/40 transition-all">
               <LogOut size={12} /><span className="hidden sm:inline font-mono">SAIR</span>
@@ -1778,6 +1805,7 @@ export default function App() {
       )}
 
       {showTour && <GuidedTour steps={TOUR_STEPS} onClose={closeTour} />}
+      {showWhatsNew && <WhatsNewModal onClose={closeWhatsNew} />}
 
       <LiveModeModal
         isOpen={isLiveModeOpen}
