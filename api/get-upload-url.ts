@@ -8,7 +8,7 @@ const R2_ACCESS_KEY_ID     = process.env.R2_ACCESS_KEY_ID;
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
 const R2_BUCKET_NAME       = process.env.VITE_R2_BUCKET_NAME || 'multitracks-bucket';
 
-const ALLOWED_FOLDERS       = new Set(['covers', 'stems', 'temp']);
+const ALLOWED_FOLDERS       = new Set(['covers', 'stems', 'temp', 'avatars']);
 const ALLOWED_CONTENT_TYPES = /^(audio\/|image\/|application\/octet-stream$)/;
 const MAX_FILENAME_LEN      = 200;
 
