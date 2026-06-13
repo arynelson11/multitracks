@@ -8,6 +8,9 @@ import os from 'os'
 import cors from 'cors'
 import fs from 'fs'
 import { randomUUID } from 'node:crypto'
+import electronUpdater from 'electron-updater'
+
+const { autoUpdater } = electronUpdater
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -120,6 +123,75 @@ function handleDeepLink(url: string) {
 ipcMain.on('open-external-url', (_event, url: string) => {
   if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
     shell.openExternal(url)
+  }
+})
+
+// ── Auto-update ──
+// Windows: o electron-updater baixa a nova versão sozinho e instala no próximo
+//   restart. O renderer recebe 'update:ready' e oferece reiniciar na hora.
+// macOS (sem assinatura): o macOS recusa aplicar updates de apps não assinados,
+//   então só checamos a versão mais recente no GitHub e avisamos pra baixar.
+const GH_REPO = 'arynelson11/multitracks'
+const SIX_HOURS = 1000 * 60 * 60 * 6
+
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map(Number)
+  const pb = b.split('.').map(Number)
+  for (let i = 0; i < 3; i++) {
+    const diff = (pa[i] || 0) - (pb[i] || 0)
+    if (diff !== 0) return diff > 0 ? 1 : -1
+  }
+  return 0
+}
+
+async function checkMacUpdate() {
+  try {
+    const res = await fetch(`https://api.github.com/repos/${GH_REPO}/releases/latest`, {
+      headers: { Accept: 'application/vnd.github+json' },
+    })
+    if (!res.ok) return
+    const data = (await res.json()) as { tag_name?: string }
+    const latest = (data.tag_name || '').replace(/^v/, '')
+    if (latest && compareVersions(latest, app.getVersion()) > 0) {
+      mainWindow?.webContents.send('update:available', {
+        version: latest,
+        url: 'https://playbackstudio.com.br/download',
+      })
+    }
+  } catch (err) {
+    console.error('[update] checagem mac falhou:', err)
+  }
+}
+
+function setupAutoUpdate() {
+  if (!app.isPackaged) return // dev não tem pacote pra atualizar
+
+  if (process.platform === 'win32') {
+    autoUpdater.autoDownload = true
+    autoUpdater.autoInstallOnAppQuit = true
+    autoUpdater.on('update-downloaded', (info) => {
+      mainWindow?.webContents.send('update:ready', info.version)
+    })
+    autoUpdater.on('error', (err) => console.error('[update] win:', err))
+    // Atraso inicial: dá tempo do renderer montar os listeners antes de avisar.
+    setTimeout(() => {
+      autoUpdater.checkForUpdates().catch(() => {})
+      setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), SIX_HOURS)
+    }, 4000)
+  } else if (process.platform === 'darwin') {
+    setTimeout(() => {
+      checkMacUpdate()
+      setInterval(checkMacUpdate, SIX_HOURS)
+    }, 4000)
+  }
+}
+
+// Renderer pede pra aplicar a atualização (botão "Reiniciar"/"Baixar").
+ipcMain.handle('install-update', () => {
+  if (process.platform === 'win32') {
+    autoUpdater.quitAndInstall()
+  } else {
+    shell.openExternal('https://playbackstudio.com.br/download')
   }
 })
 
@@ -278,6 +350,7 @@ app.whenReady().then(() => {
   })
 
   createWindow()
+  setupAutoUpdate()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

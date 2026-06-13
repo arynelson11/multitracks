@@ -48,4 +48,20 @@ contextBridge.exposeInMainWorld('playbackDesktop', {
     ipcRenderer.on('ws-clients', handler)
     return () => ipcRenderer.removeListener('ws-clients', handler)
   },
+
+  // ── Auto-update ──
+  // Mac: avisa que existe versão nova pra baixar ({version, url}). Retorna cleanup.
+  onUpdateAvailable: (callback: (info: { version: string; url: string }) => void) => {
+    const handler = (_e: unknown, info: { version: string; url: string }) => callback(info)
+    ipcRenderer.on('update:available', handler)
+    return () => ipcRenderer.removeListener('update:available', handler)
+  },
+  // Windows: a nova versão já foi baixada e está pronta pra instalar. Retorna cleanup.
+  onUpdateReady: (callback: (version: string) => void) => {
+    const handler = (_e: unknown, version: string) => callback(version)
+    ipcRenderer.on('update:ready', handler)
+    return () => ipcRenderer.removeListener('update:ready', handler)
+  },
+  // Aplica a atualização: Windows reinicia e instala; Mac abre a página de download.
+  installUpdate: () => ipcRenderer.invoke('install-update'),
 })

@@ -51,6 +51,9 @@ declare global {
       broadcastState: (state: any) => void
       onRemoteCommand: (callback: (cmd: { type: 'COMMAND'; action: string; index?: number; id?: string; value?: number; clientId?: string; ip?: string }) => void) => () => void
       onClientsUpdate: (callback: (clients: { id: string; ip: string }[]) => void) => () => void
+      onUpdateAvailable: (callback: (info: { version: string; url: string }) => void) => () => void
+      onUpdateReady: (callback: (version: string) => void) => () => void
+      installUpdate: () => Promise<void>
     }
   }
 }

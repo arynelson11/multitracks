@@ -14,10 +14,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Inclui os metadados do electron-updater (latest*.yml + .blockmap),
+          # senão o auto-update não consegue achar/baixar a nova versão.
           - os: macos-latest
-            artifact: 'release/Playback-Studio-mac-*.dmg'
+            artifact: |
+              release/Playback-Studio-mac-*.dmg
+              release/*.blockmap
+              release/latest-mac.yml
           - os: windows-latest
-            artifact: release/Playback-Studio-win.exe
+            artifact: |
+              release/Playback-Studio-win.exe
+              release/*.blockmap
+              release/latest.yml
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

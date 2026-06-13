@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.2.0',
+    date: '2026-06-13',
+    title: 'Atualizações automáticas',
+    items: [
+      'No Windows, o app baixa e instala as novidades sozinho. É só reiniciar quando avisar.',
+      'No Mac, o app avisa quando sai uma versão nova, com um clique pra baixar.',
+      'Agora você não precisa ficar de olho no site pra atualizar.',
+    ],
+  },
+  {
     version: '1.1.0',
     date: '2026-06-13',
     title: 'Seu perfil e novidades',

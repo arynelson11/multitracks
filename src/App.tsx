@@ -20,6 +20,7 @@ import { LandingPage } from './components/LandingPage'
 import { DownloadPage } from './components/DownloadPage'
 import { GuidedTour, type TourStep } from './components/GuidedTour'
 import { WhatsNewModal } from './components/WhatsNewModal'
+import { UpdateBanner } from './components/UpdateBanner'
 import { CURRENT_VERSION } from './lib/changelog'
 
 const TOUR_STEPS: TourStep[] = [
@@ -1806,6 +1807,7 @@ export default function App() {
 
       {showTour && <GuidedTour steps={TOUR_STEPS} onClose={closeTour} />}
       {showWhatsNew && <WhatsNewModal onClose={closeWhatsNew} />}
+      <UpdateBanner />
 
       <LiveModeModal
         isOpen={isLiveModeOpen}

@@ -3,6 +3,12 @@ productName: Playback Studio
 directories:
   output: release
   buildResources: build
+# Onde o app procura novas versões (embute app-update.yml no pacote).
+# O electron-updater lê o latest.yml / latest-mac.yml publicado no Release.
+publish:
+  provider: github
+  owner: arynelson11
+  repo: multitracks
 # Empacota só o que o app precisa: o renderer (dist) e o main/preload (dist-electron).
 files:
   - dist/**/*
