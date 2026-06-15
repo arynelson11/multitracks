@@ -11,6 +11,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.3.5',
+    date: '2026-06-15',
+    title: 'Importar faixas do computador corrigido',
+    items: [
+      'Resolvido o travamento ao importar faixas direto do computador pelo app.',
+      'As faixas agora carregam e aparecem no repertório normalmente.',
+    ],
+  },
+  {
     version: '1.3.4',
     date: '2026-06-15',
     title: 'Atualizar ficou mais fácil',

@@ -8,6 +8,12 @@ import { useSettings } from '../contexts/SettingsContext';
 import { detectKey, generateEndlessClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { loadClickSelection } from '../lib/clickLibrary';
 
+// O worklet do RubberBand fica em public/. Resolver via BASE_URL faz a URL
+// funcionar tanto no site (base '/') quanto no app desktop (base './' sob
+// file://), onde um caminho absoluto RUBBERBAND_PROCESSOR_URL apontaria pra
+// raiz do disco e falharia o carregamento.
+const RUBBERBAND_PROCESSOR_URL = `${import.meta.env.BASE_URL}rubberband-processor.js`;
+
 interface SavedChannel {
     id: string;
     name: string;
@@ -206,7 +212,7 @@ export function useAudioEngine(userId?: string) {
                             panner.connect(gain);
                             gain.connect(master);
 
-                            const rbNode = await createRubberBandNode(ctx, '/rubberband-processor.js');
+                            const rbNode = await createRubberBandNode(ctx, RUBBERBAND_PROCESSOR_URL);
 
                             return {
                                 id: metaCh.id,
@@ -566,6 +572,9 @@ export function useAudioEngine(userId?: string) {
         if (!audioCtxRef.current || !masterGainRef.current) return;
         setIsLoading(true);
 
+        // try/finally garante que o loading sempre desligue: se qualquer decode
+        // ou worklet falhar no meio, a UI não fica presa em "carregando".
+        try {
         const filesDb = await get<Map<string, File>>(DB_KEY_FILES) || new Map<string, File>();
 
         const filesArray = Array.from(files);
@@ -608,7 +617,7 @@ export function useAudioEngine(userId?: string) {
                 panner.pan.value = panValue;
                 gain.gain.value = 1;
 
-                const rbNode = await createRubberBandNode(audioCtxRef.current, '/rubberband-processor.js');
+                const rbNode = await createRubberBandNode(audioCtxRef.current, RUBBERBAND_PROCESSOR_URL);
 
                 panner.connect(gain);
 
@@ -700,7 +709,9 @@ export function useAudioEngine(userId?: string) {
             setCurrentTime(0);
         }
         updatePlaylistAndSave(newPlaylist);
-        setIsLoading(false);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const createEndlessMetronomeSong = async (bpm: number) => {
@@ -736,7 +747,7 @@ export function useAudioEngine(userId?: string) {
             filesDb.set(uuid, file);
             await set(DB_KEY_FILES, filesDb);
 
-            const rbNode = await createRubberBandNode(audioCtxRef.current, '/rubberband-processor.js');
+            const rbNode = await createRubberBandNode(audioCtxRef.current, RUBBERBAND_PROCESSOR_URL);
 
             const newChannel: Channel = {
                 id: uuid,
@@ -822,7 +833,7 @@ export function useAudioEngine(userId?: string) {
             filesDb.set(uuid, file);
             await set(DB_KEY_FILES, filesDb);
 
-            const rbNode = await createRubberBandNode(audioCtxRef.current, '/rubberband-processor.js');
+            const rbNode = await createRubberBandNode(audioCtxRef.current, RUBBERBAND_PROCESSOR_URL);
 
             const newChannel: Channel = {
                 id: uuid,
