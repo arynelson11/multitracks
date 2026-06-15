@@ -11,6 +11,19 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.3.6',
+    date: '2026-06-15',
+    title: 'Repita partes da música ao vivo',
+    items: [
+      'Marque as seções da música (Intro, Verso, Refrão...) e repita qualquer parte: escolha quantas vezes ou deixe em loop infinito.',
+      'Use o botão Voltar pra retornar a uma parte no fim da seção atual, sem cortar nada.',
+      'Barra de seções nova com a forma de onda da música e as partes em cores.',
+      'Atalhos no teclado: espaço toca/pausa, setas andam na música, e as letras I, V, P, R, B, F marcam as partes.',
+      'A banda também repete e volta as partes pelo celular, no Modo Ao Vivo.',
+      'As marcações, letra e cifra agora ficam salvas no aparelho, pra usar offline.',
+    ],
+  },
+  {
     version: '1.3.5',
     date: '2026-06-15',
     title: 'Importar faixas do computador corrigido',

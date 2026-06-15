@@ -20,6 +20,7 @@ import { LandingPage } from './components/LandingPage'
 import { DownloadPage } from './components/DownloadPage'
 import { GuidedTour, type TourStep } from './components/GuidedTour'
 import { WhatsNewModal } from './components/WhatsNewModal'
+import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/SectionBar'
 import { UpdateBanner } from './components/UpdateBanner'
 import { useDesktopUpdate } from './hooks/useDesktopUpdate'
 import { CURRENT_VERSION } from './lib/changelog'
@@ -34,12 +35,16 @@ const TOUR_STEPS: TourStep[] = [
   { target: 'anotacoes', title: 'Anotações', body: 'Deixe lembretes do culto: ordem das músicas, tons, transições. Fica salvo no seu dispositivo.' },
   { target: 'modos', title: 'Auto, Parar e Fade', body: 'Escolha o que acontece no fim da música: AUTO segue pra próxima, PARAR encerra, FADE baixa o volume nos últimos segundos.' },
   { target: 'play', title: 'Tocar', body: 'O play inicia a música. Use os botões ao lado pra ir pra anterior ou próxima.' },
+  { target: 'secoes', title: 'Seções da música', body: 'Marque as partes da música (Intro, Verso, Refrão...). Cada parte vira um bloco colorido na régua. Toque num bloco pra pular direto pra aquela parte.' },
+  { target: 'secoes', title: 'Repetir uma parte', body: 'Escolha quantas vezes repetir (Nx) ou ∞ e toque no ↻ da seção. No ao vivo, dá pra estender o refrão sem cortar nada: a repetição entra no fim da parte. O botão Sair encerra o loop.' },
+  { target: 'secoes', title: 'Voltar pra uma parte', body: 'O botão ↩ numa seção agenda voltar pra ela no fim da parte atual. Perfeito pra "voltar no refrão" quando o momento pede.' },
+  { target: 'secoes', title: 'Atalhos de teclado', body: 'Espaço toca/pausa. Setas ← → andam 5s na música (com Shift, 1s, pra ajuste fino). Pra marcar uma parte na hora certa, tecle a inicial: I Intro, V Verso, P Pré, R Refrão, B Ponte, F Final.' },
   { target: 'mixer', title: 'Mixer das faixas', body: 'Controle volume, mute, solo e pan de cada instrumento separadamente. Cada faixa no seu lugar.' },
   { target: 'pads', title: 'Pads de ambiente', body: 'Toque pads em qualquer tom pra sustentar os momentos do louvor.' },
   { target: 'tom', title: 'Tom', body: 'Transponha a música pro tom que a banda canta, em segundos, sem mudar a velocidade.' },
   { target: 'precontagem', title: 'Pré-contagem', body: 'Liga uma contagem de clicks antes da música começar, pra a banda entrar junto no tempo.' },
   { target: 'editar', title: 'Editar', body: 'Entre no modo de edição pra reordenar faixas e ajustar a sua mesa do jeito que preferir.' },
-  { target: 'host', title: 'Modo Ao Vivo (Host)', body: 'A banda conecta pelo celular (QR Code) e acompanha música, tom, parte e letra. Você decide quem pode controlar.' },
+  { target: 'host', title: 'Modo Ao Vivo (Host)', body: 'A banda conecta pelo celular (QR Code) e acompanha música, tom, parte e letra. Quem você liberar também repete e volta seções pelo próprio celular. Você decide quem controla.' },
   { target: 'inicio', title: 'Início', body: 'Volta pra tela inicial, onde você troca de modo e acessa a Separação de Faixas (transforma qualquer música em faixas separadas).' },
   { target: 'config', title: 'Config', body: 'Ajustes do app, saída de áudio e buses. É aqui também que você reabre este tutorial quando quiser.' },
   { title: 'Tudo pronto!', body: 'Agora é com você. Bom domingo e bom louvor! 🎶' },
@@ -64,6 +69,7 @@ export default function App() {
     masterVolume, updateVolume, toggleMute, toggleSolo, updateMasterVolume,
     changePitch, setOriginalKey, currentMarker, setSongMarkers, setSongLyrics,
     playbackMode, setPlaybackMode,
+    activeLoop, pendingJump, armLoop, cancelLoop, armJump, cancelJump,
     addChannelToActiveSong,
     updatePan, removeChannel, reorderChannels,
     precountEnabled, precountBeats, isCountingIn,
@@ -159,6 +165,8 @@ export default function App() {
     padVolume,
     pitch: playlist[activeSongIndex]?.pitch || 0,
     originalKey: playlist[activeSongIndex]?.originalKey || null,
+    sections: (playlist[activeSongIndex]?.markers || []).map((m) => ({ label: m.label, color: m.color || '#FF6B35' })),
+    activeLoop,
   }, remoteSessionCode)
 
   // Líder: mantém a lista de dispositivos conectados. As aprovações são por IP e
@@ -188,10 +196,58 @@ export default function App() {
         case 'set-pitch': if (typeof cmd.value === 'number') changePitch(cmd.value); break
         case 'play-pad': if (cmd.id) playPad(cmd.id); break
         case 'set-pad-volume': if (typeof cmd.value === 'number') updatePadVolume(cmd.value); break
+        // Seções: value === -1 sinaliza loop infinito; senão é o nº de repetições.
+        case 'arm-loop': if (typeof cmd.index === 'number') armLoop(cmd.index, cmd.value === -1 ? 'infinite' : (cmd.value ?? 1)); break
+        case 'cancel-loop': cancelLoop(); break
+        case 'arm-jump': if (typeof cmd.index === 'number') armJump(cmd.index); break
       }
     })
     return cleanup
-  }, [approvedIps, isPlaying, pause, playWithPrecount, nextSong, prevSong, jumpToSong, updateVolume, toggleMute, toggleSolo, changePitch, playPad, updatePadVolume])
+  }, [approvedIps, isPlaying, pause, playWithPrecount, nextSong, prevSong, jumpToSong, updateVolume, toggleMute, toggleSolo, changePitch, playPad, updatePadVolume, armLoop, cancelLoop, armJump])
+
+  // Cria uma seção no ponto atual com o nome dado. Usado pelo menu "Marcar" e
+  // pelos atalhos de teclado (V, R, ...).
+  const addSectionMarker = useCallback((label: string) => {
+    const activeSong = playlist[activeSongIndex]
+    if (!activeSong) return
+    const newMarker = { id: crypto.randomUUID(), time: currentTime, label, color: colorForSection(label) }
+    const newMarkers = [...(activeSong.markers || []), newMarker].sort((a, b) => a.time - b.time)
+    setSongMarkers(activeSong.id, newMarkers)
+  }, [playlist, activeSongIndex, currentTime, setSongMarkers])
+
+  // Atalhos de teclado: espaço = play/pause; setas = andar na barra (passo fino
+  // com Shift); letras (V, R, ...) marcam a seção no ponto atual. Ignora quando
+  // o foco está num campo de texto pra não atrapalhar anotações, etc.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null
+      const tag = el?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return
+      if (playlist.length === 0) return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+
+      if (e.code === 'Space') {
+        e.preventDefault()
+        isPlaying ? pause() : playWithPrecount()
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault()
+        const step = e.shiftKey ? 1 : 5
+        seekTo(Math.min(duration, currentTime + step))
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault()
+        const step = e.shiftKey ? 1 : 5
+        seekTo(Math.max(0, currentTime - step))
+      } else {
+        const shortcut = SECTION_SHORTCUTS.find((s) => s.code === e.code)
+        if (shortcut) {
+          e.preventDefault()
+          addSectionMarker(shortcut.name)
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker])
 
   const handleStartLiveMode = async () => {
     setIsLiveModeOpen(true)
@@ -1218,38 +1274,39 @@ export default function App() {
             />
           </div>
 
-          {/* Section Markers Row (below bar) */}
-          {playlist[activeSongIndex]?.markers && playlist[activeSongIndex].markers!.length > 0 && (
-            <div className="flex items-center gap-1.5 mt-1.5 overflow-x-auto scrollbar-hide">
-              {playlist[activeSongIndex].markers!.map((marker) => {
-                const isActive = currentMarker?.id === marker.id;
-                return (
-                  <button
-                    key={marker.id}
-                    onClick={() => seekTo(marker.time)}
-                    className={`shrink-0 px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold tracking-wider transition-all cursor-pointer active:scale-95 border font-mono uppercase ${isActive
-                      ? 'shadow-lg scale-105'
-                      : 'opacity-50 hover:opacity-100'
-                      }`}
-                    style={{
-                      color: marker.color || '#fff',
-                      borderColor: isActive ? marker.color || '#fff' : `${marker.color || '#fff'}30`,
-                      backgroundColor: isActive ? `${marker.color || '#fff'}20` : 'transparent',
-                      boxShadow: isActive ? `0 0 12px ${marker.color || '#fff'}30` : 'none'
-                    }}
-                  >
-                    {marker.label}
-                  </button>
-                );
-              })}
-              {/* Marker Editor Toggle (Admin only) */}
+          {/* Barra de Seções: chips + loop (N/∞) + voltar + marcar */}
+          {playlist[activeSongIndex] && (
+            <div data-tour="secoes">
+              <SectionBar
+                markers={playlist[activeSongIndex].markers || []}
+                currentMarkerId={currentMarker?.id || null}
+                currentTime={currentTime}
+                duration={duration}
+                waveBuffer={(channels.find(c => { const n = c.name.toLowerCase(); return !n.includes('click') && !n.includes('metronomo') && !n.includes('guia') && !n.includes('guide'); }) || channels[0])?.buffer || null}
+                bpm={playlist[activeSongIndex].bpm}
+                activeLoop={activeLoop}
+                pendingJump={pendingJump}
+                canEdit={!!user}
+                onSeek={seekTo}
+                onArmLoop={armLoop}
+                onCancelLoop={cancelLoop}
+                onArmJump={armJump}
+                onCancelJump={cancelJump}
+                onAddMarker={addSectionMarker}
+                onRemoveMarker={(id) => {
+                  const activeSong = playlist[activeSongIndex];
+                  if (!activeSong) return;
+                  setSongMarkers(activeSong.id, (activeSong.markers || []).filter((x) => x.id !== id));
+                }}
+              />
+              {/* Ferramentas avançadas (admin): cor/letra por marcador + salvar na nuvem */}
               {user?.email === 'arynelson11@gmail.com' && (
-                <>
+                <div className="flex items-center gap-1.5 mt-1.5">
                   <button
                     onClick={() => setIsMarkerEditorOpen(!isMarkerEditorOpen)}
                     className={`shrink-0 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold tracking-wide cursor-pointer active:scale-95 border transition-all ${isMarkerEditorOpen ? 'bg-primary/20 text-primary border-primary/40' : 'text-text-muted border-white/10 hover:bg-white/5'}`}
                   >
-                    ✏️ Editar
+                    ✏️ Editor avançado
                   </button>
                   <button
                     onClick={() => setIsLyricsEditorOpen(true)}
@@ -1257,26 +1314,8 @@ export default function App() {
                   >
                     📝 Letra/Cifra
                   </button>
-                </>
+                </div>
               )}
-            </div>
-          )}
-
-          {/* No markers yet + admin can add (hidden on mobile portrait) */}
-          {(!playlist[activeSongIndex]?.markers || playlist[activeSongIndex].markers!.length === 0) && user?.email === 'arynelson11@gmail.com' && (
-            <div className="flex pointer-coarse:hidden items-center gap-1.5 mt-1.5">
-              <button
-                onClick={() => setIsMarkerEditorOpen(!isMarkerEditorOpen)}
-                className="shrink-0 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold tracking-wide cursor-pointer active:scale-95 border text-text-muted border-white/10 hover:bg-white/5"
-              >
-                + Adicionar Marcadores
-              </button>
-              <button
-                onClick={() => setIsLyricsEditorOpen(true)}
-                className="shrink-0 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold tracking-wide cursor-pointer active:scale-95 border text-text-muted border-white/10 hover:bg-white/5"
-              >
-                📝 Letra/Cifra
-              </button>
             </div>
           )}
 

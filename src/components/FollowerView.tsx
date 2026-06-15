@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Wifi, WifiOff, FastForward, Music, FileText, Music2, Eye, EyeOff, Play, Pause, SkipBack, SkipForward, ListMusic, X, Check, SlidersHorizontal, LayoutGrid, Plus, Minus } from 'lucide-react';
+import { Wifi, WifiOff, FastForward, Music, FileText, Music2, Eye, EyeOff, Play, Pause, SkipBack, SkipForward, ListMusic, X, Check, SlidersHorizontal, LayoutGrid, Plus, Minus, Repeat, Infinity as InfinityIcon, CornerUpLeft } from 'lucide-react';
 import type { FollowerState } from '../hooks/useLiveSync';
 
 interface SyncedLine { time: number; text: string }
@@ -65,6 +65,9 @@ export function FollowerView({ state, isConnected, sendCommand }: FollowerViewPr
   const [showSetlist, setShowSetlist] = useState(false);
   const [showMixer, setShowMixer] = useState(false);
   const [showPads, setShowPads] = useState(false);
+  const [showSections, setShowSections] = useState(false);
+  // Repetições escolhidas antes de armar o loop pelo celular (1..9).
+  const [bandRepeat, setBandRepeat] = useState(2);
   const PAD_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   // Se a aba escolhida não tiver conteúdo, mostra a que tiver.
   const effective = view === 'chords' ? (hasChords ? 'chords' : 'lyrics') : (hasLyrics ? 'lyrics' : 'chords');
@@ -276,6 +279,87 @@ export function FollowerView({ state, isConnected, sendCommand }: FollowerViewPr
         </div>
       )}
 
+      {/* ───── Seções (overlay): a banda repete/volta trechos ───── */}
+      {showSections && state.controlEnabled && (
+        <div className="fixed inset-0 z-[70] bg-black/85 backdrop-blur-sm flex flex-col" onClick={() => setShowSections(false)}>
+          <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-white/10">
+            <h2 className="text-white font-bold uppercase tracking-wider text-sm flex items-center gap-2">
+              <Repeat className="w-4 h-4 text-primary" /> Seções
+            </h2>
+            <button onClick={() => setShowSections(false)} className="p-2 text-zinc-400 hover:text-white cursor-pointer"><X className="w-5 h-5" /></button>
+          </div>
+
+          {/* Estado do loop + seletor de repetições */}
+          <div className="shrink-0 px-4 py-3 border-b border-white/10 flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+            {state.activeLoop ? (
+              <>
+                <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/30 text-primary text-xs font-bold uppercase tracking-wider">
+                  <Repeat className="w-3.5 h-3.5" />
+                  {state.activeLoop.remaining === 'infinite'
+                    ? `Repetindo ${state.sections[state.activeLoop.index]?.label ?? ''} · ∞`
+                    : `Repetindo · faltam ${state.activeLoop.remaining}`}
+                </span>
+                <button
+                  onClick={() => sendCommand('cancel-loop')}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-white/15 text-zinc-300 hover:text-white text-xs font-bold uppercase tracking-wider cursor-pointer active:scale-95"
+                >
+                  <X className="w-3.5 h-3.5" /> Sair
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="text-[11px] text-zinc-400 uppercase tracking-wider font-mono">Repetir</span>
+                <div className="flex items-center gap-1 bg-white/5 rounded-lg border border-white/10 px-1 py-0.5">
+                  <button onClick={() => setBandRepeat((n) => Math.max(1, n - 1))} disabled={bandRepeat <= 1} className="p-1.5 text-zinc-400 hover:text-white disabled:opacity-30 cursor-pointer"><Minus className="w-3.5 h-3.5" /></button>
+                  <span className="text-sm font-bold text-white font-mono w-8 text-center">{bandRepeat}x</span>
+                  <button onClick={() => setBandRepeat((n) => Math.min(9, n + 1))} disabled={bandRepeat >= 9} className="p-1.5 text-zinc-400 hover:text-white disabled:opacity-30 cursor-pointer"><Plus className="w-3.5 h-3.5" /></button>
+                </div>
+                <span className="text-[11px] text-zinc-500 font-mono">toque na seção pra repetir · ↩ pra voltar</span>
+              </>
+            )}
+          </div>
+
+          {/* Lista de seções */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-1.5" onClick={(e) => e.stopPropagation()}>
+            {(state.sections ?? []).map((sec, i) => {
+              const isCurrent = state.currentMarker?.label === sec.label;
+              const isLoopHere = state.activeLoop?.index === i;
+              return (
+                <div
+                  key={i}
+                  className={`w-full flex items-center gap-2 px-3 py-3 rounded-xl border transition-colors ${isCurrent ? 'bg-white/10 border-white/20' : 'bg-white/5 border-white/10'}`}
+                  style={isLoopHere ? { boxShadow: `inset 0 0 0 1.5px ${sec.color}` } : undefined}
+                >
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: sec.color }} />
+                  <span className="flex-1 font-bold uppercase tracking-wide truncate" style={{ color: sec.color }}>{sec.label}</span>
+                  <button
+                    onClick={() => sendCommand('arm-loop', { index: i, value: bandRepeat })}
+                    className="flex items-center gap-1 px-3 py-2 rounded-lg bg-primary/15 border border-primary/30 text-primary text-xs font-bold uppercase tracking-wider cursor-pointer active:scale-95"
+                    title={`Repetir ${bandRepeat}x`}
+                  >
+                    <Repeat className="w-3.5 h-3.5" /> {bandRepeat}x
+                  </button>
+                  <button
+                    onClick={() => sendCommand('arm-loop', { index: i, value: -1 })}
+                    className="px-2.5 py-2 rounded-lg border border-white/15 text-zinc-300 hover:text-white cursor-pointer active:scale-95"
+                    title="Repetir até sair"
+                  >
+                    <InfinityIcon className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => sendCommand('arm-jump', { index: i })}
+                    className="px-2.5 py-2 rounded-lg border border-white/15 text-zinc-300 hover:text-white cursor-pointer active:scale-95"
+                    title="Voltar pra esta seção no fim da atual"
+                  >
+                    <CornerUpLeft className="w-4 h-4" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ───── Mixer (overlay): a banda ajusta volume/mute/solo ───── */}
       {showMixer && state.controlEnabled && (
         <div className="fixed inset-0 z-[70] bg-black/85 backdrop-blur-sm flex flex-col" onClick={() => setShowMixer(false)}>
@@ -392,6 +476,20 @@ export function FollowerView({ state, isConnected, sendCommand }: FollowerViewPr
               >
                 <LayoutGrid className="w-5 h-5" />
               </button>
+              {(state.sections?.length ?? 0) > 0 && (
+                <button
+                  onClick={() => setShowSections(true)}
+                  className={`relative p-2.5 rounded-full border active:scale-90 transition-all cursor-pointer ${state.activeLoop ? 'bg-primary/20 border-primary/40 text-primary' : 'bg-white/5 border-white/10 text-zinc-300'}`}
+                  title="Seções / Repetir"
+                >
+                  <Repeat className="w-5 h-5" />
+                  {state.activeLoop && (
+                    <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-primary text-black text-[9px] font-black flex items-center justify-center">
+                      {state.activeLoop.remaining === 'infinite' ? '∞' : state.activeLoop.remaining}
+                    </span>
+                  )}
+                </button>
+              )}
               {(state.setlist?.length ?? 0) > 0 && (
                 <button
                   onClick={() => setShowSetlist(true)}

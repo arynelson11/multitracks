@@ -33,6 +33,13 @@ interface SavedSong {
     duration: number;
     pitch?: number;
     originalKey?: string | null;
+    // Metadados que também precisam sobreviver offline (reabrir o app). Sem
+    // isso, marcadores/seções, letra e cifra se perdiam ao fechar.
+    artist?: string;
+    markers?: Marker[];
+    lyrics?: string | null;
+    lyricsSynced?: string | null;
+    chords?: string | null;
 }
 
 export function useAudioEngine(userId?: string) {
@@ -52,11 +59,18 @@ export function useAudioEngine(userId?: string) {
     const [duration, setDuration] = useState(0);
     const [currentMarker, setCurrentMarker] = useState<Marker | null>(null);
 
-    // === Phase 2: Playback Modes & VAMP ===
+    // === Phase 2: Playback Modes ===
     const [playbackMode, setPlaybackMode] = useState<'continue' | 'stop' | 'fade-out'>('continue');
-    const [vampActive, setVampActive] = useState(false);
-    const vampStartRef = useRef<number | null>(null);
-    const vampEndRef = useRef<number | null>(null);
+
+    // === Seções: loop (N vezes ou infinito) e salto agendado ===
+    // Os refs são a fonte da verdade dentro do loop de rAF (updateTime); os
+    // estados só espelham pra UI re-renderizar. Loop e salto disparam no FIM da
+    // seção atual (transição musical), nunca no clique.
+    const loopRef = useRef<{ index: number; remaining: number | 'infinite' } | null>(null);
+    const jumpRef = useRef<number | null>(null);
+    const lastSectionRef = useRef<number>(-1); // última seção do playhead (detecta transições)
+    const [activeLoop, setActiveLoop] = useState<{ index: number; remaining: number | 'infinite' } | null>(null);
+    const [pendingJump, setPendingJump] = useState<number | null>(null);
 
     // === Phase 3: Bus Groups & Time-Stretch ===
     const bus1GainRef = useRef<GainNode | null>(null);
@@ -109,7 +123,12 @@ export function useAudioEngine(userId?: string) {
             })),
             pitch: song.pitch || 0,
             originalKey: song.originalKey || null,
-            bpm: song.bpm
+            bpm: song.bpm,
+            artist: song.artist,
+            markers: song.markers,
+            lyrics: song.lyrics ?? null,
+            lyricsSynced: song.lyricsSynced ?? null,
+            chords: song.chords ?? null
         }));
         await set(DB_KEY_META, metaFormat);
     };
@@ -256,7 +275,12 @@ export function useAudioEngine(userId?: string) {
                         pitch: metaSong.pitch || 0,
                         originalKey,
                         bpm,
-                        channels
+                        channels,
+                        artist: metaSong.artist,
+                        markers: metaSong.markers,
+                        lyrics: metaSong.lyrics ?? null,
+                        lyricsSynced: metaSong.lyricsSynced ?? null,
+                        chords: metaSong.chords ?? null
                     };
                 };
 
@@ -510,11 +534,59 @@ export function useAudioEngine(userId?: string) {
             setCurrentMarker(active);
         }
 
-        // === VAMP: Loop between markers ===
-        if (vampActive && vampEndRef.current !== null && elapsed >= vampEndRef.current) {
-            const loopStart = vampStartRef.current || 0;
-            seekTo(loopStart);
-            return;
+        // === Seções: loop e salto ===
+        const songMarkers = playlist[activeSongIndex]?.markers;
+        if (songMarkers && songMarkers.length > 0) {
+            // seekTo reinicia o playback via play(), mas NÃO reagenda o rAF (o
+            // useEffect só reage a mudança de isPlaying, que aqui continua true).
+            // Reagendamos manualmente após cada salto, senão o updateTime morre
+            // e a repetição não se sustenta.
+            const loopBackTo = (time: number) => {
+                seekTo(time);
+                animationRef.current = requestAnimationFrame(updateTime);
+            };
+
+            // Seção atual (última cujo início já passou).
+            let curIdx = -1;
+            for (let i = songMarkers.length - 1; i >= 0; i--) {
+                if (elapsed >= songMarkers[i].time) { curIdx = i; break; }
+            }
+
+            // LOOP: compara com o fim FIXO da seção do loop. Recalcular a seção
+            // a cada frame não funciona — quando o playhead alcança o próximo
+            // marcador, a "seção atual" já avançou pra ele e a condição nunca bate.
+            if (loopRef.current) {
+                const li = loopRef.current.index;
+                const loopEnd = li < songMarkers.length - 1 ? songMarkers[li + 1].time : duration;
+                if (elapsed >= loopEnd) {
+                    const rem = loopRef.current.remaining;
+                    if (rem === 'infinite') {
+                        loopBackTo(songMarkers[li].time);
+                        return;
+                    }
+                    if (rem > 0) {
+                        loopRef.current = { index: li, remaining: rem - 1 };
+                        setActiveLoop({ index: li, remaining: rem - 1 });
+                        loopBackTo(songMarkers[li].time);
+                        return;
+                    }
+                    // Acabaram as repetições: desarma e segue normal.
+                    loopRef.current = null;
+                    setActiveLoop(null);
+                }
+            }
+
+            // SALTO: dispara na primeira troca de seção depois de armado (= fim
+            // da seção atual), comparando com a seção do frame anterior.
+            if (jumpRef.current !== null && lastSectionRef.current >= 0 && curIdx !== lastSectionRef.current) {
+                const target = jumpRef.current;
+                jumpRef.current = null;
+                setPendingJump(null);
+                lastSectionRef.current = curIdx;
+                loopBackTo(songMarkers[target].time);
+                return;
+            }
+            lastSectionRef.current = curIdx;
         }
 
         if (elapsed >= duration) {
@@ -554,7 +626,7 @@ export function useAudioEngine(userId?: string) {
 
         setCurrentTime(elapsed);
         animationRef.current = requestAnimationFrame(updateTime);
-    }, [isPlaying, duration, activeSongIndex, playlist.length, stopAllNodes, executeNextSong, vampActive, playbackMode, masterVolume, seekTo]);
+    }, [isPlaying, duration, activeSongIndex, playlist, stopAllNodes, executeNextSong, playbackMode, masterVolume, seekTo]);
 
     useEffect(() => {
         if (isPlaying) {
@@ -1361,36 +1433,50 @@ export function useAudioEngine(userId?: string) {
         });
     }, [channels]);
 
-    // VAMP controls
-    const toggleVamp = useCallback(() => {
-        if (vampActive) {
-            // Deactivate VAMP
-            setVampActive(false);
-            vampStartRef.current = null;
-            vampEndRef.current = null;
-        } else {
-            // Activate VAMP - loop current marker section
-            const song = playlist[activeSongIndex];
-            if (!song?.markers || song.markers.length === 0) return;
+    // === Controles de seção: loop (N/∞) e salto agendado ===
+    // Armar loop numa seção: ao terminar aquela seção, repete `repeats` vezes
+    // (ou infinito) e sai sozinho. Loop e salto são mutuamente exclusivos.
+    const armLoop = useCallback((sectionIndex: number, repeats: number | 'infinite') => {
+        const song = playlist[activeSongIndex];
+        if (!song?.markers || sectionIndex < 0 || sectionIndex >= song.markers.length) return;
+        const markers = song.markers;
+        loopRef.current = { index: sectionIndex, remaining: repeats };
+        setActiveLoop({ index: sectionIndex, remaining: repeats });
+        jumpRef.current = null;
+        setPendingJump(null);
 
-            const markers = song.markers;
-            let currentIdx = -1;
-            for (let i = markers.length - 1; i >= 0; i--) {
-                if (currentTime >= markers[i].time) {
-                    currentIdx = i;
-                    break;
-                }
-            }
-
-            if (currentIdx === -1) return;
-
-            vampStartRef.current = markers[currentIdx].time;
-            vampEndRef.current = currentIdx < markers.length - 1
-                ? markers[currentIdx + 1].time
-                : duration;
-            setVampActive(true);
+        // Qual seção está tocando agora?
+        let curIdx = -1;
+        for (let i = markers.length - 1; i >= 0; i--) {
+            if (currentTime >= markers[i].time) { curIdx = i; break; }
         }
-    }, [vampActive, playlist, activeSongIndex, currentTime, duration]);
+        // Repetir uma seção diferente da atual: vai pra ela já (o playhead pode
+        // já ter passado, então esperar o "fim" dela nunca dispararia). Na
+        // própria seção atual, deixa terminar e repetir no fim, sem cortar.
+        if (curIdx !== sectionIndex) {
+            seekTo(markers[sectionIndex].time);
+        }
+    }, [playlist, activeSongIndex, currentTime, seekTo]);
+
+    const cancelLoop = useCallback(() => {
+        loopRef.current = null;
+        setActiveLoop(null);
+    }, []);
+
+    // Agendar salto: no fim da seção atual, volta pra seção alvo uma vez.
+    const armJump = useCallback((sectionIndex: number) => {
+        const song = playlist[activeSongIndex];
+        if (!song?.markers || sectionIndex < 0 || sectionIndex >= song.markers.length) return;
+        jumpRef.current = sectionIndex;
+        setPendingJump(sectionIndex);
+        loopRef.current = null;
+        setActiveLoop(null);
+    }, [playlist, activeSongIndex]);
+
+    const cancelJump = useCallback(() => {
+        jumpRef.current = null;
+        setPendingJump(null);
+    }, []);
 
     return {
         isReady,
@@ -1445,8 +1531,13 @@ export function useAudioEngine(userId?: string) {
         // Phase 2
         playbackMode,
         setPlaybackMode,
-        vampActive,
-        toggleVamp,
+        // Seções: loop (N/∞) e salto agendado
+        activeLoop,
+        pendingJump,
+        armLoop,
+        cancelLoop,
+        armJump,
+        cancelJump,
         addChannelToActiveSong,
 
         // Channel management

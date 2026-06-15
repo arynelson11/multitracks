@@ -82,6 +82,8 @@ export type WsMessage =
         padVolume: number;
         pitch: number;
         originalKey: string | null;
+        sections: { label: string; color: string }[];
+        activeLoop: { index: number; remaining: number | 'infinite' } | null;
       }
     }
   | { type: 'COMMAND'; action: string; index?: number; id?: string; value?: number }

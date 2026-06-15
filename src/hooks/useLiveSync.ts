@@ -22,6 +22,9 @@ export interface FollowerState {
   padVolume: number;
   pitch: number;
   originalKey: string | null;
+  // Seções da música atual + estado do loop (pra banda comandar pelo celular).
+  sections: { label: string; color: string }[];
+  activeLoop: { index: number; remaining: number | 'infinite' } | null;
 }
 
 // Hosts privados (rede local) — usados pra distinguir o follower da LAN do site público.
@@ -46,6 +49,8 @@ const INITIAL_STATE: FollowerState = {
   padVolume: 1,
   pitch: 0,
   originalKey: null,
+  sections: [],
+  activeLoop: null,
 };
 
 function buildPayload(state: FollowerState) {
@@ -68,6 +73,8 @@ function buildPayload(state: FollowerState) {
     padVolume: state.padVolume,
     pitch: state.pitch,
     originalKey: state.originalKey,
+    sections: state.sections,
+    activeLoop: state.activeLoop,
   };
 }
 
