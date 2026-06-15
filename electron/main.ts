@@ -335,12 +335,19 @@ app.whenReady().then(() => {
   // headers Access-Control-* nas respostas dessas chamadas (cobre preflight e
   // resposta real), permitindo que o renderer as consuma.
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    if (details.url.includes('playbackstudio.com.br/api/')) {
+    // /api/* roda no domínio de produção; o upload binário (capa, stems, pads) vai
+    // direto pro R2 via URL assinada (*.r2.cloudflarestorage.com). Ambos precisam
+    // dos headers CORS injetados, pois a origin do app desktop (file://) não está
+    // na allowlist de nenhum dos dois. PUT entra na lista por causa do upload R2.
+    const needsCors =
+      details.url.includes('playbackstudio.com.br/api/') ||
+      details.url.includes('.r2.cloudflarestorage.com')
+    if (needsCors) {
       callback({
         responseHeaders: {
           ...details.responseHeaders,
           'access-control-allow-origin': ['*'],
-          'access-control-allow-methods': ['GET,POST,PATCH,DELETE,OPTIONS'],
+          'access-control-allow-methods': ['GET,POST,PUT,PATCH,DELETE,OPTIONS'],
           'access-control-allow-headers': ['Content-Type, Authorization'],
         },
       })

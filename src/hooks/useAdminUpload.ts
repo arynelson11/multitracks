@@ -143,7 +143,7 @@ export function useAdminUpload() {
                 const contentType = file.type || 'audio/mpeg';
                 // Use dedicated pad upload endpoint — no timestamp, predictable path
                 const urlRes = await fetch(
-                    `/api/upload-pad-file?basePath=${encodeURIComponent(basePath)}&note=${encodeURIComponent(note)}&contentType=${encodeURIComponent(contentType)}`,
+                    apiUrl(`/api/upload-pad-file?basePath=${encodeURIComponent(basePath)}&note=${encodeURIComponent(note)}&contentType=${encodeURIComponent(contentType)}`),
                     { headers: await getAuthHeaders() }
                 );
                 if (!urlRes.ok) throw new Error(`Erro ao obter URL para Pad ${note}`);

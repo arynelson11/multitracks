@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.3.3',
+    date: '2026-06-15',
+    title: 'Upload de músicas no app corrigido',
+    items: [
+      'Agora dá pra subir capa e faixas direto pelo app de computador.',
+      'Resolvido o travamento ao adicionar arquivos do seu computador.',
+      'O envio de pads do sistema também voltou a funcionar no app.',
+    ],
+  },
+  {
     version: '1.3.0',
     date: '2026-06-13',
     title: 'Atualizações também no navegador',

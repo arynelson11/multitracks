@@ -1,10 +1,11 @@
 import { getAuthHeaders } from './supabase';
+import { apiUrl } from './api';
 
 export const uploadToR2 = async (bucketFolder: string, fileName: string, file: File) => {
     try {
         const type = file.type || 'application/octet-stream';
         const res = await fetch(
-            `/api/get-upload-url?filename=${encodeURIComponent(fileName)}&contentType=${encodeURIComponent(type)}&bucketFolder=${encodeURIComponent(bucketFolder)}`,
+            apiUrl(`/api/get-upload-url?filename=${encodeURIComponent(fileName)}&contentType=${encodeURIComponent(type)}&bucketFolder=${encodeURIComponent(bucketFolder)}`),
             { headers: await getAuthHeaders() }
         );
         if (!res.ok) {
