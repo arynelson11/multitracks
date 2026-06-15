@@ -8,11 +8,11 @@ interface PricingModalProps {
     onClose: () => void;
 }
 
+// planKey = nome interno do plano (vai pro backend, que sabe o preço e o ciclo).
 const PLANS = [
     {
-        id: 'prod_juQuBRcaAeyJYYKJEGeRJ3DZ',
+        planKey: 'essencial_mensal',
         name: 'Pro Mensal',
-        price: 49.90,
         priceStr: 'R$ 49,90',
         period: '/mês',
         description: 'Pra equipe que toca toda semana',
@@ -20,27 +20,24 @@ const PLANS = [
         isPopular: true
     },
     {
-        id: 'prod_CYyTuP1NcGyqAfxBUHF4Zxkp',
+        planKey: 'essencial_anual',
         name: 'Pro Anual',
-        price: 454.80,
         priceStr: 'R$ 454,80',
         period: '/ano',
         description: 'Pra equipe que toca toda semana',
         features: ['Tudo do Pro Mensal', 'Modo Ao Vivo (até 4 aparelhos)', 'Loop infinito ao vivo', 'Equivale a R$ 37,90/mês']
     },
     {
-        id: 'prod_JdjCauZnpEP6dcYWQqZAPxd5',
+        planKey: 'pro_mensal',
         name: 'Studio Mensal',
-        price: 119.90,
         priceStr: 'R$ 119,90',
         period: '/mês',
         description: 'Pra quem leva o ao vivo a sério',
         features: ['Tudo do Pro', 'Modo Ao Vivo sem limite de aparelhos', 'A banda controla loop e seções pelo celular', '150 separações de faixas por mês']
     },
     {
-        id: 'prod_4hmhxB0NCUKaSxGut6jx2eFU',
+        planKey: 'pro_anual',
         name: 'Studio Anual',
-        price: 1078.80,
         priceStr: 'R$ 1.078,80',
         period: '/ano',
         description: 'Pra quem leva o ao vivo a sério',
@@ -61,16 +58,15 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
         }
 
         try {
-            setLoadingPlan(plan.id);
+            setLoadingPlan(plan.planKey);
             const response = await fetch(apiUrl('/api/checkout'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    productId: plan.id,
-                    productName: plan.name,
-                    priceCents: Math.round(plan.price * 100),
+                    planKey: plan.planKey,
                     userId: user.id,
-                    email: user.email
+                    email: user.email,
+                    name: user.user_metadata?.full_name || user.user_metadata?.name || ''
                 })
             });
 
@@ -117,7 +113,7 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         {PLANS.map((plan) => (
                             <div 
-                                key={plan.id} 
+                                key={plan.planKey}
                                 className={`relative flex flex-col rounded-xl overflow-hidden border ${plan.isPopular ? 'border-primary ring-1 ring-primary/50' : 'border-border'} bg-[#1c1c1e] transition-transform hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/5`}
                             >
                                 {plan.isPopular && (
@@ -148,14 +144,14 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
                                 <div className="p-4 border-t border-border/50 bg-[#141416]">
                                     <button
                                         onClick={() => handleSubscribe(plan)}
-                                        disabled={loadingPlan === plan.id}
+                                        disabled={loadingPlan === plan.planKey}
                                         className={`w-full py-2.5 rounded textxs font-bold uppercase tracking-wider transition-all active:scale-[0.98] ${
                                             plan.isPopular 
                                             ? 'bg-primary text-black hover:bg-[#b0f545] disabled:opacity-50' 
                                             : 'bg-white/10 text-white hover:bg-white/20 disabled:opacity-50'
                                         }`}
                                     >
-                                        {loadingPlan === plan.id ? 'Processando...' : 'Assinar Agora'}
+                                        {loadingPlan === plan.planKey ? 'Processando...' : 'Assinar Agora'}
                                     </button>
                                 </div>
                             </div>

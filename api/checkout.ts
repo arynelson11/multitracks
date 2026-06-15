@@ -2,8 +2,19 @@
 import axios from 'axios';
 import { applyCors } from './_lib/cors.js';
 
+// ── Tabela de preços (fonte única) ──
+// O valor da assinatura é definido aqui, no backend, e enviado pro Asaas via
+// API. Assim o preço não depende de produto configurado em painel (era a dor
+// do AbacatePay). As chaves são os nomes internos usados em profiles.plan.
+// Anual: `value` é o total cobrado uma vez por ano (ciclo YEARLY).
+const PLAN_PRICING: Record<string, { value: number; cycle: 'MONTHLY' | 'YEARLY'; description: string }> = {
+  essencial_mensal: { value: 49.90, cycle: 'MONTHLY', description: 'Playback Studio Pro (mensal)' },
+  essencial_anual:  { value: 454.80, cycle: 'YEARLY',  description: 'Playback Studio Pro (anual)' },
+  pro_mensal:       { value: 119.90, cycle: 'MONTHLY', description: 'Playback Studio Studio (mensal)' },
+  pro_anual:        { value: 1078.80, cycle: 'YEARLY', description: 'Playback Studio Studio (anual)' },
+};
+
 function parseBody(req: any): Record<string, any> {
-  // Em runtimes recentes da Vercel, req.body pode chegar como string, Buffer ou undefined.
   const raw = req?.body;
   if (raw == null) return {};
   if (typeof raw === 'object' && !Buffer.isBuffer?.(raw)) return raw;
@@ -15,39 +26,43 @@ function parseBody(req: any): Record<string, any> {
   }
 }
 
+// Base da API conforme o ambiente. Sandbox por padrão; produção só quando
+// ASAAS_ENV === 'production' (evita cobrar de verdade por engano em testes).
+function asaasBaseUrl(): string {
+  return process.env.ASAAS_ENV === 'production'
+    ? 'https://api.asaas.com/v3'
+    : 'https://api-sandbox.asaas.com/v3';
+}
+
 export default async function handler(req: any, res: any) {
-  // Garante que qualquer falha retorne JSON válido (nunca HTML da Vercel).
   try {
     applyCors(req, res, 'POST,OPTIONS');
-
     if (req.method === 'OPTIONS') return res.status(200).end();
     if (req.method !== 'POST')    return res.status(405).json({ error: 'Method Not Allowed' });
 
     const body = parseBody(req);
-    const productId = typeof body.productId === 'string' ? body.productId : '';
-    const userId    = typeof body.userId    === 'string' ? body.userId    : '';
-    const email     = typeof body.email     === 'string' ? body.email     : '';
+    const planKey = typeof body.planKey === 'string' ? body.planKey : '';
+    const userId  = typeof body.userId  === 'string' ? body.userId  : '';
+    const email   = typeof body.email   === 'string' ? body.email   : '';
 
-    if (!productId || !userId || !email) {
+    const plan = PLAN_PRICING[planKey];
+    if (!plan || !userId || !email) {
       return res.status(400).json({
-        error: 'Missing required fields',
-        missing: { productId: !productId, userId: !userId, email: !email },
+        error: 'Missing or invalid fields',
+        detail: { planKey: !plan, userId: !userId, email: !email },
       });
     }
 
-    const token = process.env.ABACATEPAY_ACCESS_TOKEN;
-    if (!token) {
-      console.error('[checkout] Missing ABACATEPAY_ACCESS_TOKEN');
-      return res.status(500).json({ error: 'Server misconfiguration: ABACATEPAY_ACCESS_TOKEN' });
+    const apiKey = process.env.ASAAS_API_KEY;
+    if (!apiKey) {
+      console.error('[checkout] Missing ASAAS_API_KEY');
+      return res.status(500).json({ error: 'Server misconfiguration: ASAAS_API_KEY' });
     }
 
     const api = axios.create({
-      baseURL: 'https://api.abacatepay.com/v2',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 8000, // Falha rápido em vez de estourar o timeout do Vercel.
+      baseURL: asaasBaseUrl(),
+      headers: { access_token: apiKey, 'Content-Type': 'application/json' },
+      timeout: 9000,
     });
 
     const baseUrl = process.env.VITE_APP_URL
@@ -55,70 +70,42 @@ export default async function handler(req: any, res: any) {
       || req.headers.origin
       || 'http://localhost:5173';
 
-    const completionUrl = `${baseUrl}/?payment=success`;
-    const returnUrl     = `${baseUrl}/?payment=cancelled`;
+    // Data da 1ª cobrança = hoje (o cliente paga ao concluir o checkout).
+    const today = new Date().toISOString().slice(0, 10);
 
-    // Coleta de erros por tentativa — sempre devolve JSON com a resposta crua do AbacatePay
-    // para que possamos ver no front exatamente o que a API rejeitou.
-    const attempts: Array<{ endpoint: string; payload: any; error: any }> = [];
+    // Checkout hospedado do Asaas: coleta os dados do pagador (inclui CPF) na
+    // própria página, cobra no cartão e cria a assinatura recorrente sozinho.
+    const payload = {
+      billingTypes: ['CREDIT_CARD'],
+      chargeTypes: ['RECURRENT'],
+      minutesToExpire: 60,
+      callback: {
+        successUrl: `${baseUrl}/?payment=success`,
+        cancelUrl: `${baseUrl}/?payment=cancelled`,
+        expiredUrl: `${baseUrl}/?payment=expired`,
+      },
+      items: [{ name: plan.description, description: plan.description, quantity: 1, value: plan.value }],
+      subscription: { cycle: plan.cycle, nextDueDate: today },
+      // Sem customerData: o checkout hospedado do Asaas coleta nome, CPF,
+      // telefone e endereço do pagador na própria página (mais simples e seguro).
+      // Liga o pagamento ao usuário e ao plano (lido no webhook).
+      externalReference: `${userId}::${planKey}`,
+    };
 
-    // Tentativa 1: /v2/subscriptions/create com id direto (produtos com cycle pré-criados).
     try {
-      const payload = { items: [{ id: productId, quantity: 1 }], customer: { email }, returnUrl, completionUrl, metadata: { userId } };
-      const response = await api.post('/subscriptions/create', payload);
-      const url = response.data?.data?.url || response.data?.url;
+      const response = await api.post('/checkouts', payload);
+      const data = response.data ?? {};
+      const url = data.link || data.url || data.checkoutUrl || data?.data?.link;
       if (url) return res.status(200).json({ url });
-      attempts.push({ endpoint: '/subscriptions/create', payload, error: { reason: 'no url', body: response.data } });
+      console.error('[checkout] no url in Asaas response:', JSON.stringify(data));
+      return res.status(502).json({ error: 'Checkout criado sem URL', details: data });
     } catch (err: any) {
-      attempts.push({ endpoint: '/subscriptions/create', payload: 'see code', error: err?.response?.data || err?.message });
+      const detail = err?.response?.data || err?.message;
+      console.error('[checkout] Asaas error:', JSON.stringify(detail));
+      return res.status(502).json({ error: 'Falha ao criar checkout no Asaas', details: detail });
     }
-
-    // Tentativa 2: /v2/checkouts/create com items[].
-    try {
-      const payload = {
-        items: [{ id: productId, quantity: 1 }],
-        customer: { email },
-        returnUrl,
-        completionUrl,
-        metadata: { userId },
-      };
-      const response = await api.post('/checkouts/create', payload);
-      const url = response.data?.data?.url || response.data?.url;
-      if (url) return res.status(200).json({ url });
-      attempts.push({ endpoint: '/checkouts/create', payload, error: { reason: 'no url', body: response.data } });
-    } catch (err: any) {
-      attempts.push({ endpoint: '/checkouts/create', payload: 'see code', error: err?.response?.data || err?.message });
-    }
-
-    // Tentativa 3: /v2/billing/create — schema oficial documentado (one-time, products inline).
-    try {
-      const payload = {
-        frequency: 'ONE_TIME',
-        methods: ['PIX'],
-        items: [{ externalId: productId, name: productId, description: productId, quantity: 1, price: 0 }],
-        customer: { email },
-        returnUrl,
-        completionUrl,
-      };
-      const response = await api.post('/billing/create', payload);
-      const url = response.data?.data?.url || response.data?.url;
-      if (url) return res.status(200).json({ url });
-      attempts.push({ endpoint: '/billing/create', payload, error: { reason: 'no url', body: response.data } });
-    } catch (err: any) {
-      attempts.push({ endpoint: '/billing/create', payload: 'see code', error: err?.response?.data || err?.message });
-    }
-
-    console.error('[checkout] all attempts failed:', JSON.stringify(attempts));
-    return res.status(502).json({
-      error: 'Failed to create checkout',
-      details: attempts,
-    });
   } catch (e: any) {
-    // Última linha de defesa — qualquer crash inesperado retorna JSON.
     console.error('[checkout] unexpected handler error:', e?.message, e?.stack);
-    return res.status(500).json({
-      error: 'Unexpected handler error',
-      message: e?.message || 'unknown',
-    });
+    return res.status(500).json({ error: 'Unexpected handler error', message: e?.message || 'unknown' });
   }
 }
