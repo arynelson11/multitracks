@@ -1,4 +1,4 @@
-import { X, MonitorSpeaker, RefreshCcw } from 'lucide-react';
+import { X, MonitorSpeaker, RefreshCcw, Download } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../hooks/useAuth';
 import { useState, useEffect } from 'react';
@@ -18,11 +18,13 @@ interface SettingsModalProps {
     onSetChannelBus: (channelId: string, bus: '1' | '2' | '1/2') => void;
     onOpenAdmin: () => void;
     onReplayTour: () => void;
+    desktopUpdate?: { latestVersion: string; url: string } | null;
+    onInstallUpdate?: () => void;
 }
 
 type Tab = 'Perfil' | 'Geral' | 'Buses' | 'Novidades' | 'Assinatura' | 'Sobre';
 
-export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin, onReplayTour }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin, onReplayTour, desktopUpdate, onInstallUpdate }: SettingsModalProps) {
     const { settings, updateSetting, availableAudioDevices, refreshAudioDevices } = useSettings();
     const { user, updateProfile, updatePassword, signOutEverywhere, deleteAccount } = useAuth();
     const [activeTab, setActiveTab] = useState<Tab>('Perfil');
@@ -209,6 +211,23 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
 
                     {activeTab === 'Novidades' && (
                         <div className="flex flex-col gap-5 max-w-lg mx-auto">
+                            {desktopUpdate && (
+                                <div className="bg-primary/10 border border-primary/30 rounded-xl p-4 flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center shrink-0">
+                                        <Download size={18} className="text-primary" />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-white font-bold text-sm leading-tight">Atualização disponível</p>
+                                        <p className="text-text-muted text-[12px]">A versão {desktopUpdate.latestVersion} já saiu. Baixe para atualizar o app.</p>
+                                    </div>
+                                    <button
+                                        onClick={() => onInstallUpdate?.()}
+                                        className="shrink-0 px-4 py-2 rounded-lg bg-primary text-black text-xs font-bold hover:bg-primary/90 active:scale-95 transition-all cursor-pointer"
+                                    >
+                                        Baixar
+                                    </button>
+                                </div>
+                            )}
                             {CHANGELOG.map((entry, idx) => (
                                 <div key={entry.version} className={idx === 0 ? 'bg-primary/[0.06] border border-primary/20 rounded-xl p-4' : 'border-b border-white/5 pb-5'}>
                                     <div className="flex items-center gap-2 mb-2">

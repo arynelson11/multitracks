@@ -62,6 +62,9 @@ contextBridge.exposeInMainWorld('playbackDesktop', {
     ipcRenderer.on('update:ready', handler)
     return () => ipcRenderer.removeListener('update:ready', handler)
   },
+  // Checa sob demanda se há versão nova publicada. Retorna info de versão
+  // (request/response — confiável, não se perde por timing como os eventos).
+  checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
   // Aplica a atualização: Windows reinicia e instala; Mac abre a página de download.
   installUpdate: () => ipcRenderer.invoke('install-update'),
 })

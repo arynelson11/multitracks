@@ -21,6 +21,7 @@ import { DownloadPage } from './components/DownloadPage'
 import { GuidedTour, type TourStep } from './components/GuidedTour'
 import { WhatsNewModal } from './components/WhatsNewModal'
 import { UpdateBanner } from './components/UpdateBanner'
+import { useDesktopUpdate } from './hooks/useDesktopUpdate'
 import { CURRENT_VERSION } from './lib/changelog'
 
 const TOUR_STEPS: TourStep[] = [
@@ -96,6 +97,9 @@ export default function App() {
   const [isLyricsEditorOpen, setIsLyricsEditorOpen] = useState(false)
   const [showTour, setShowTour] = useState(false)
   const [showWhatsNew, setShowWhatsNew] = useState(false)
+  // Atualização do app desktop: checa no foco e na abertura. Alimenta o botão
+  // do cabeçalho e o aviso na aba Novidades.
+  const { update: desktopUpdate, install: installDesktopUpdate } = useDesktopUpdate()
   // Controle remoto: a permissão é por IP (agrupa as conexões do mesmo aparelho e
   // resiste a reconexões). O líder libera quais IPs podem comandar.
   const [connectedDevices, setConnectedDevices] = useState<{ id: string; ip: string }[]>([])
@@ -809,6 +813,14 @@ export default function App() {
               <button data-tour="host" onClick={handleStartLiveMode}
                 className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-primary hover:bg-primary/10 border border-primary/20 hover:border-primary/40 transition-all">
                 <Server size={14} /><span className="hidden sm:inline uppercase">Host</span>
+              </button>
+            )}
+
+            {/* Atualização disponível (desktop) */}
+            {desktopUpdate && (
+              <button onClick={installDesktopUpdate} title={`Baixar versão ${desktopUpdate.latestVersion}`}
+                className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-black bg-primary hover:bg-primary/90 border border-primary transition-all">
+                <Download size={14} /><span className="hidden sm:inline uppercase">Atualizar</span>
               </button>
             )}
 
@@ -1781,6 +1793,8 @@ export default function App() {
         onSetChannelBus={setChannelBus}
         onOpenAdmin={() => setIsAdminOpen(true)}
         onReplayTour={() => setShowTour(true)}
+        desktopUpdate={desktopUpdate}
+        onInstallUpdate={installDesktopUpdate}
       />
 
       {/* Library Modal */}

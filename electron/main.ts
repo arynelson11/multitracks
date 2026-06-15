@@ -133,6 +133,7 @@ ipcMain.on('open-external-url', (_event, url: string) => {
 //   então só checamos a versão mais recente no GitHub e avisamos pra baixar.
 const GH_REPO = 'arynelson11/multitracks'
 const SIX_HOURS = 1000 * 60 * 60 * 6
+const DOWNLOAD_PAGE = 'https://playbackstudio.com.br/download'
 
 function compareVersions(a: string, b: string): number {
   const pa = a.split('.').map(Number)
@@ -144,22 +145,27 @@ function compareVersions(a: string, b: string): number {
   return 0
 }
 
-async function checkMacUpdate() {
+// Consulta a versão publicada mais recente no GitHub. O header User-Agent é
+// exigido pela API do GitHub. Retorna null se a rede ou o parse falharem.
+async function fetchLatestVersion(): Promise<string | null> {
   try {
     const res = await fetch(`https://api.github.com/repos/${GH_REPO}/releases/latest`, {
-      headers: { Accept: 'application/vnd.github+json' },
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'PlaybackStudio-Desktop' },
     })
-    if (!res.ok) return
+    if (!res.ok) return null
     const data = (await res.json()) as { tag_name?: string }
     const latest = (data.tag_name || '').replace(/^v/, '')
-    if (latest && compareVersions(latest, app.getVersion()) > 0) {
-      mainWindow?.webContents.send('update:available', {
-        version: latest,
-        url: 'https://playbackstudio.com.br/download',
-      })
-    }
+    return latest || null
   } catch (err) {
-    console.error('[update] checagem mac falhou:', err)
+    console.error('[update] consulta de versão falhou:', err)
+    return null
+  }
+}
+
+async function checkMacUpdate() {
+  const latest = await fetchLatestVersion()
+  if (latest && compareVersions(latest, app.getVersion()) > 0) {
+    mainWindow?.webContents.send('update:available', { version: latest, url: DOWNLOAD_PAGE })
   }
 }
 
@@ -186,12 +192,22 @@ function setupAutoUpdate() {
   }
 }
 
+// Checagem sob demanda: o renderer pergunta e recebe a resposta direto (não
+// depende do timing de um evento enviado, como o aviso proativo). É o que os
+// botões de "Atualizar" usam — funciona mesmo com o app aberto há horas.
+ipcMain.handle('check-for-update', async () => {
+  const currentVersion = app.getVersion()
+  const latestVersion = await fetchLatestVersion()
+  const hasUpdate = !!latestVersion && compareVersions(latestVersion, currentVersion) > 0
+  return { hasUpdate, currentVersion, latestVersion, url: DOWNLOAD_PAGE }
+})
+
 // Renderer pede pra aplicar a atualização (botão "Reiniciar"/"Baixar").
 ipcMain.handle('install-update', () => {
   if (process.platform === 'win32') {
     autoUpdater.quitAndInstall()
   } else {
-    shell.openExternal('https://playbackstudio.com.br/download')
+    shell.openExternal(DOWNLOAD_PAGE)
   }
 })
 

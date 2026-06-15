@@ -53,6 +53,7 @@ declare global {
       onClientsUpdate: (callback: (clients: { id: string; ip: string }[]) => void) => () => void
       onUpdateAvailable: (callback: (info: { version: string; url: string }) => void) => () => void
       onUpdateReady: (callback: (version: string) => void) => () => void
+      checkForUpdate: () => Promise<{ hasUpdate: boolean; currentVersion: string; latestVersion: string | null; url: string }>
       installUpdate: () => Promise<void>
     }
   }

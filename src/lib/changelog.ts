@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.3.4',
+    date: '2026-06-15',
+    title: 'Atualizar ficou mais fácil',
+    items: [
+      'Quando sai uma versão nova, aparece um botão Atualizar no topo do app.',
+      'A aba de Novidades também mostra um aviso com botão pra baixar.',
+      'O app passa a checar atualização toda vez que você volta pra ele.',
+    ],
+  },
+  {
     version: '1.3.3',
     date: '2026-06-15',
     title: 'Upload de músicas no app corrigido',
