@@ -84,6 +84,7 @@ export type WsMessage =
         originalKey: string | null;
         sections: { label: string; color: string }[];
         activeLoop: { index: number; remaining: number | 'infinite' } | null;
+        bandSectionsEnabled: boolean;
       }
     }
   | { type: 'COMMAND'; action: string; index?: number; id?: string; value?: number }

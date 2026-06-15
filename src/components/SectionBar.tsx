@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Repeat, Infinity as InfinityIcon, CornerUpLeft, Plus, X, Minus } from 'lucide-react';
+import { Repeat, Infinity as InfinityIcon, CornerUpLeft, Plus, X, Minus, Lock } from 'lucide-react';
 import type { Marker } from '../types';
 
 interface SectionBarProps {
@@ -12,6 +12,9 @@ interface SectionBarProps {
   activeLoop: { index: number; remaining: number | 'infinite' } | null;
   pendingJump: number | null;
   canEdit: boolean;
+  infiniteAllowed: boolean; // loop infinito é exclusivo de plano pago
+  maxRepeats: number;       // teto de repetições do seletor (grátis = 4)
+  onUpgrade: () => void;    // abre o pricing quando esbarra num limite de plano
   onSeek: (time: number) => void;
   onArmLoop: (index: number, repeats: number | 'infinite') => void;
   onCancelLoop: () => void;
@@ -70,6 +73,9 @@ export function SectionBar({
   activeLoop,
   pendingJump,
   canEdit,
+  infiniteAllowed,
+  maxRepeats,
+  onUpgrade,
   onSeek,
   onArmLoop,
   onCancelLoop,
@@ -311,8 +317,9 @@ export function SectionBar({
                     <Minus size={12} />
                   </button>
                   <span className="text-[11px] font-bold text-white font-mono w-8 text-center">{repeatCount}x</span>
-                  <button onClick={() => setRepeatCount((n) => Math.min(9, n + 1))} disabled={repeatCount >= 9}
-                    className="p-0.5 text-text-muted hover:text-white disabled:opacity-30 cursor-pointer disabled:cursor-default">
+                  <button
+                    onClick={() => { if (repeatCount >= maxRepeats) { onUpgrade(); return; } setRepeatCount((n) => Math.min(maxRepeats, n + 1)); }}
+                    className="p-0.5 text-text-muted hover:text-white cursor-pointer">
                     <Plus size={12} />
                   </button>
                 </div>
@@ -325,12 +332,12 @@ export function SectionBar({
                   <Repeat size={12} /> Repetir atual
                 </button>
                 <button
-                  onClick={() => currentIdx >= 0 && onArmLoop(currentIdx, 'infinite')}
-                  disabled={currentIdx < 0}
+                  onClick={() => { if (!infiniteAllowed) { onUpgrade(); return; } if (currentIdx >= 0) onArmLoop(currentIdx, 'infinite'); }}
+                  disabled={infiniteAllowed && currentIdx < 0}
                   className="flex items-center gap-1 px-2 py-1 rounded-md border border-white/15 text-text-muted hover:text-white hover:bg-white/5 text-[10px] font-bold uppercase tracking-wider cursor-pointer active:scale-95 transition-all disabled:opacity-30 disabled:cursor-default"
-                  title="Repetir até mandar sair"
+                  title={infiniteAllowed ? 'Repetir até mandar sair' : 'Loop infinito é dos planos pagos'}
                 >
-                  <InfinityIcon size={13} />
+                  {infiniteAllowed ? <InfinityIcon size={13} /> : <Lock size={12} />}
                 </button>
                 <span className="text-[9px] text-text-muted/70 font-mono">Defina as vezes e toque no ↻ da seção</span>
               </>

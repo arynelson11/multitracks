@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.3.7',
+    date: '2026-06-15',
+    title: 'Planos atualizados',
+    items: [
+      'O Modo Ao Vivo, onde a banda acompanha pelo celular, agora faz parte dos planos Pro e Studio.',
+      'Loop infinito das partes da música nos planos pagos. No Livre você repete um trecho até 4 vezes.',
+      'No Studio, a banda controla as repetições e as seções direto do celular, sem limite de aparelhos.',
+    ],
+  },
+  {
     version: '1.3.6',
     date: '2026-06-15',
     title: 'Repita partes da música ao vivo',

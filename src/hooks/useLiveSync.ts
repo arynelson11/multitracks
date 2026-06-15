@@ -25,6 +25,8 @@ export interface FollowerState {
   // Seções da música atual + estado do loop (pra banda comandar pelo celular).
   sections: { label: string; color: string }[];
   activeLoop: { index: number; remaining: number | 'infinite' } | null;
+  // Banda pode controlar loop/seções pelo celular? (exclusivo do Studio)
+  bandSectionsEnabled: boolean;
 }
 
 // Hosts privados (rede local) — usados pra distinguir o follower da LAN do site público.
@@ -51,6 +53,7 @@ const INITIAL_STATE: FollowerState = {
   originalKey: null,
   sections: [],
   activeLoop: null,
+  bandSectionsEnabled: false,
 };
 
 function buildPayload(state: FollowerState) {
@@ -75,6 +78,7 @@ function buildPayload(state: FollowerState) {
     originalKey: state.originalKey,
     sections: state.sections,
     activeLoop: state.activeLoop,
+    bandSectionsEnabled: state.bandSectionsEnabled,
   };
 }
 

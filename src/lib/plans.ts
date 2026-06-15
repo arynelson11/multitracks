@@ -34,3 +34,51 @@ export function isPaidPlan(internalId: string | null | undefined): boolean {
   const id = internalId.toLowerCase()
   return id !== 'free' && id !== 'gratuito'
 }
+
+/**
+ * Nível do plano, independente do ciclo de cobrança (mensal/anual).
+ * O gating por feature usa o tier, não o ID bruto — assim Pro e Studio podem
+ * ter regras diferentes (o `isPaidPlan` só distingue grátis de pago).
+ */
+export type PlanTier = 'free' | 'pro' | 'studio'
+
+const PLAN_TIERS: Record<string, PlanTier> = {
+  free: 'free',
+  gratuito: 'free',
+  essencial_mensal: 'pro',
+  essencial_anual: 'pro',
+  pro_mensal: 'studio',
+  pro_anual: 'studio',
+}
+
+export function planTier(internalId: string | null | undefined): PlanTier {
+  if (!internalId) return 'free'
+  return PLAN_TIERS[internalId.toLowerCase()] ?? 'free'
+}
+
+// ── Regras de feature por plano (fonte única) ──
+
+// Loop de seção: grátis repete um número limitado de vezes; pago libera o
+// infinito (uso de ministração ao vivo).
+export const FREE_MAX_LOOP_REPEATS = 4
+export function canUseInfiniteLoop(id: string | null | undefined): boolean {
+  return planTier(id) !== 'free'
+}
+
+// Modo Ao Vivo (banda conecta o celular): exclusivo dos planos pagos.
+export function canUseLiveMode(id: string | null | undefined): boolean {
+  return planTier(id) !== 'free'
+}
+
+// Quantos aparelhos da banda podem conectar na sessão ao vivo.
+export function maxLiveDevices(id: string | null | undefined): number {
+  const t = planTier(id)
+  if (t === 'studio') return Infinity
+  if (t === 'pro') return 4
+  return 0
+}
+
+// Controle de loop/seções pela banda (pelo celular) é exclusivo do Studio.
+export function canBandControlSections(id: string | null | undefined): boolean {
+  return planTier(id) === 'studio'
+}

@@ -22,9 +22,9 @@ interface LandingPageProps {
  */
 const AUDIENCE = [
   { icon: Church,    title: 'Equipes de adoração',  desc: 'Do ensaio ao culto, qualquer música pronta com a levada na mão.' },
-  { icon: Music,     title: 'Bandas em geral',      desc: 'Gospel, sertanejo, MPB, rock, indie. Qualquer ritmo, stems prontos pro próximo show.' },
+  { icon: Music,     title: 'Bandas em geral',      desc: 'Gospel, sertanejo, MPB, rock, indie. Qualquer ritmo, faixas separadas pro próximo show.' },
   { icon: Mic2,      title: 'Vocalistas e ministros', desc: 'Voice guide discreto, tonalidade no seu alcance, referência sem inundar o in-ear.' },
-  { icon: Guitar,    title: 'Instrumentistas',      desc: 'Stems de qualquer música. Guitarra, baixo, teclado, piano pra ensaiar como sua banda toca.' },
+  { icon: Guitar,    title: 'Instrumentistas',      desc: 'Faixas separadas de qualquer música. Guitarra, baixo, teclado, piano pra ensaiar como sua banda toca.' },
   { icon: Drumstick, title: 'Bateristas',           desc: 'Click track no seu jeito, separação que respeita a levada original.' },
   { icon: Disc3,     title: 'Solo e produtores',    desc: 'Construa em cima de qualquer faixa. Separe, remixe, refaça arranjos.' },
 ]
@@ -38,28 +38,30 @@ const PLANS = [
     badge: null as string | null,
     highlight: false,
     features: [
-      '5 separações por mês',
+      '5 separações de faixas por mês',
       'Separação em 2 ou 4 faixas',
-      'Biblioteca local salva no navegador',
-      'Não gasta tokens ao recarregar músicas',
-      'Mixer básico multicanal',
+      'Biblioteca local, toca offline no palco',
+      'Mixer multicanal',
+      'Marque as seções da música (intro, verso, refrão)',
+      'Repita um trecho ao vivo, até 4 vezes',
     ],
     cta: 'Começar grátis',
   },
   {
     id: 'essencial',
     name: 'Pro',
-    monthly: 49.90, annual: 39.90,
+    monthly: 49.90, annual: 37.90,
     desc: 'Pra equipe que toca toda semana',
     badge: 'Mais escolhido',
     highlight: true,
     features: [
-      '50 separações por mês',
-      'Separação Avançada (6 faixas)',
-      'Pads ambiente completos',
-      'Voice guide auto-detector',
+      '50 separações de faixas por mês',
+      'Separação avançada em 6 faixas',
+      'Pads de ambiente e voice guide',
       'Click com levada brasileira',
-      'Auto-detecção de seções (worship)',
+      'Repita partes em loop infinito ao vivo',
+      'Modo Ao Vivo: a banda acompanha pelo celular (até 4 aparelhos)',
+      'Transposição de tom',
       'Suporte por email',
     ],
     cta: 'Assinar Pro',
@@ -67,17 +69,18 @@ const PLANS = [
   {
     id: 'pro',
     name: 'Studio',
-    monthly: 99.90, annual: 79.90,
-    desc: 'Pra quem leva isso a sério',
+    monthly: 119.90, annual: 89.90,
+    desc: 'Pra quem leva o ao vivo a sério',
     badge: null as string | null,
     highlight: false,
     features: [
-      '150 separações por mês',
-      'Qualidade máxima (Processamento Avançado)',
-      'Tudo do Pro +',
+      '150 separações de faixas por mês',
+      'Qualidade máxima de separação',
+      'Tudo do Pro',
+      'Modo Ao Vivo sem limite de aparelhos',
+      'A banda controla loop e seções pelo celular',
+      'Múltiplos repertórios',
       'Prioridade no processamento',
-      'Múltiplos repertórios simultâneos',
-      'Acesso antecipado a features',
       'Suporte prioritário',
     ],
     cta: 'Assinar Studio',
@@ -86,8 +89,16 @@ const PLANS = [
 
 const FAQS = [
   {
-    q: 'O que são stems?',
-    a: 'Stems são as faixas individuais de uma música. Voz separada, bateria separada, baixo separado, etc. Com o Playback Studio você sobe qualquer música e recebe tudo separado pra sua banda ensaiar e tocar como precisa.'
+    q: 'O que é separação de faixas?',
+    a: 'São as faixas individuais de uma música (também chamadas de stems): voz separada, bateria separada, baixo separado, e por aí vai. Com o Playback Studio você sobe qualquer música e recebe tudo separado pra sua banda ensaiar e tocar como precisa.'
+  },
+  {
+    q: 'Dá pra repetir uma parte da música ao vivo?',
+    a: 'Dá. Você marca as seções (intro, verso, refrão, ponte) e, no momento do louvor, repete um trecho quantas vezes quiser ou deixa em loop até decidir seguir. A volta acontece no fim da parte, sem cortar a música no meio.'
+  },
+  {
+    q: 'A banda consegue acompanhar pelo celular?',
+    a: 'Sim, no Modo Ao Vivo. Cada músico conecta o celular e acompanha a música, o tom e a letra em tempo real. Nos planos pagos a banda também ajuda a controlar a execução, e no Studio controla as repetições e seções direto do celular.'
   },
   {
     q: 'Como funciona a separação?',
@@ -195,7 +206,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           </div>
 
           <h1 className="font-display font-semibold text-[clamp(2.4rem,7vw,5rem)] leading-[1.05] tracking-[-0.02em] text-bone mb-6">
-            Stems pra qualquer música.
+            Multitracks de qualquer música.
             <br />
             Pra sua banda chegar
             <br />
@@ -205,7 +216,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <p className="text-[clamp(.95rem,2vw,1.2rem)] text-warm-200 max-w-2xl mx-auto mb-10 leading-relaxed">
             Sábado 23h alguém manda mudando o setlist. O Playback Studio separa qualquer
             música, do worship ao sertanejo, do rock ao MPB,
-            em stems prontos.
+            em faixas prontas. No domingo, repita o refrão e estenda a ministração sem cortar nada.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
@@ -300,7 +311,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             {[
               { n: '1', title: 'Sobe a música', desc: 'Qualquer formato: MP3, WAV, ou link do YouTube.' },
               { n: '2', title: 'O Playback Studio separa tudo', desc: 'Voz, guitarra, baixo, bateria, piano, pads. Em alguns minutos.' },
-              { n: '3', title: 'Sua banda chega pronta no domingo', desc: 'Stems, click, voice guide, seções marcadas (intro, verso, refrão, ponte). Tudo na mão.' },
+              { n: '3', title: 'Sua banda chega pronta no domingo', desc: 'Faixas separadas, click e voice guide. Você marca as seções (intro, verso, refrão) pra repetir trechos ao vivo, e a banda acompanha pelo celular.' },
             ].map(step => (
               <div key={step.n} className="bg-tinta-raised border border-tinta-border rounded-2xl p-6 sm:p-8 flex items-start gap-6">
                 <div className="w-14 h-14 rounded-full bg-laranja text-bone flex items-center justify-center font-display font-semibold text-[24px] shrink-0">

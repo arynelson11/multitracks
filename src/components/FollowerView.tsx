@@ -476,7 +476,7 @@ export function FollowerView({ state, isConnected, sendCommand }: FollowerViewPr
               >
                 <LayoutGrid className="w-5 h-5" />
               </button>
-              {(state.sections?.length ?? 0) > 0 && (
+              {(state.sections?.length ?? 0) > 0 && state.bandSectionsEnabled && (
                 <button
                   onClick={() => setShowSections(true)}
                   className={`relative p-2.5 rounded-full border active:scale-90 transition-all cursor-pointer ${state.activeLoop ? 'bg-primary/20 border-primary/40 text-primary' : 'bg-white/5 border-white/10 text-zinc-300'}`}

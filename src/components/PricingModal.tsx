@@ -15,36 +15,36 @@ const PLANS = [
         price: 49.90,
         priceStr: 'R$ 49,90',
         period: '/mês',
-        description: 'Pra banda que toca todo fim de semana',
-        features: ['Acesso a pads online', 'Gerenciamento de setlists', 'Recursos essenciais'],
+        description: 'Pra equipe que toca toda semana',
+        features: ['50 separações de faixas por mês', 'Loop infinito ao vivo', 'Modo Ao Vivo (até 4 aparelhos)', 'Pads, voice guide e click brasileiro'],
         isPopular: true
     },
     {
         id: 'prod_CYyTuP1NcGyqAfxBUHF4Zxkp',
         name: 'Pro Anual',
-        price: 478.80,
-        priceStr: 'R$ 478,80',
+        price: 454.80,
+        priceStr: 'R$ 454,80',
         period: '/ano',
-        description: 'Pra banda que toca todo fim de semana',
-        features: ['Acesso a pads online', 'Gerenciamento de setlists', 'Recursos essenciais', 'Desconto especial anual']
+        description: 'Pra equipe que toca toda semana',
+        features: ['Tudo do Pro Mensal', 'Modo Ao Vivo (até 4 aparelhos)', 'Loop infinito ao vivo', 'Equivale a R$ 37,90/mês']
     },
     {
         id: 'prod_JdjCauZnpEP6dcYWQqZAPxd5',
         name: 'Studio Mensal',
-        price: 99.90,
-        priceStr: 'R$ 99,90',
+        price: 119.90,
+        priceStr: 'R$ 119,90',
         period: '/mês',
-        description: 'Pra quem leva isso a sério',
-        features: ['Tudo do Pro', 'Separação de áudio AI (Spleeter)', 'Uploads de multi-faixas', 'Ferramentas de admin']
+        description: 'Pra quem leva o ao vivo a sério',
+        features: ['Tudo do Pro', 'Modo Ao Vivo sem limite de aparelhos', 'A banda controla loop e seções pelo celular', '150 separações de faixas por mês']
     },
     {
         id: 'prod_4hmhxB0NCUKaSxGut6jx2eFU',
         name: 'Studio Anual',
-        price: 958.80,
-        priceStr: 'R$ 958,80',
+        price: 1078.80,
+        priceStr: 'R$ 1.078,80',
         period: '/ano',
-        description: 'Pra quem leva isso a sério',
-        features: ['Tudo do Pro', 'Separação de áudio AI (Spleeter)', 'Uploads de multi-faixas', 'Desconto de 2 meses']
+        description: 'Pra quem leva o ao vivo a sério',
+        features: ['Tudo do Studio Mensal', 'Modo Ao Vivo ilimitado', 'Controle total pela banda', 'Equivale a R$ 89,90/mês']
     }
 ];
 

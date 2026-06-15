@@ -21,6 +21,7 @@ import { DownloadPage } from './components/DownloadPage'
 import { GuidedTour, type TourStep } from './components/GuidedTour'
 import { WhatsNewModal } from './components/WhatsNewModal'
 import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/SectionBar'
+import { canUseInfiniteLoop, canUseLiveMode, maxLiveDevices, canBandControlSections, FREE_MAX_LOOP_REPEATS } from './lib/plans'
 import { UpdateBanner } from './components/UpdateBanner'
 import { useDesktopUpdate } from './hooks/useDesktopUpdate'
 import { CURRENT_VERSION } from './lib/changelog'
@@ -167,6 +168,7 @@ export default function App() {
     originalKey: playlist[activeSongIndex]?.originalKey || null,
     sections: (playlist[activeSongIndex]?.markers || []).map((m) => ({ label: m.label, color: m.color || '#FF6B35' })),
     activeLoop,
+    bandSectionsEnabled: canBandControlSections(userPlan),
   }, remoteSessionCode)
 
   // Líder: mantém a lista de dispositivos conectados. As aprovações são por IP e
@@ -196,14 +198,14 @@ export default function App() {
         case 'set-pitch': if (typeof cmd.value === 'number') changePitch(cmd.value); break
         case 'play-pad': if (cmd.id) playPad(cmd.id); break
         case 'set-pad-volume': if (typeof cmd.value === 'number') updatePadVolume(cmd.value); break
-        // Seções: value === -1 sinaliza loop infinito; senão é o nº de repetições.
-        case 'arm-loop': if (typeof cmd.index === 'number') armLoop(cmd.index, cmd.value === -1 ? 'infinite' : (cmd.value ?? 1)); break
-        case 'cancel-loop': cancelLoop(); break
-        case 'arm-jump': if (typeof cmd.index === 'number') armJump(cmd.index); break
+        // Seções pela banda: exclusivo do Studio. value === -1 = loop infinito.
+        case 'arm-loop': if (canBandControlSections(userPlan) && typeof cmd.index === 'number') armLoop(cmd.index, cmd.value === -1 ? 'infinite' : (cmd.value ?? 1)); break
+        case 'cancel-loop': if (canBandControlSections(userPlan)) cancelLoop(); break
+        case 'arm-jump': if (canBandControlSections(userPlan) && typeof cmd.index === 'number') armJump(cmd.index); break
       }
     })
     return cleanup
-  }, [approvedIps, isPlaying, pause, playWithPrecount, nextSong, prevSong, jumpToSong, updateVolume, toggleMute, toggleSolo, changePitch, playPad, updatePadVolume, armLoop, cancelLoop, armJump])
+  }, [approvedIps, userPlan, isPlaying, pause, playWithPrecount, nextSong, prevSong, jumpToSong, updateVolume, toggleMute, toggleSolo, changePitch, playPad, updatePadVolume, armLoop, cancelLoop, armJump])
 
   // Cria uma seção no ponto atual com o nome dado. Usado pelo menu "Marcar" e
   // pelos atalhos de teclado (V, R, ...).
@@ -250,6 +252,11 @@ export default function App() {
   }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker])
 
   const handleStartLiveMode = async () => {
+    // Modo Ao Vivo é exclusivo dos planos pagos.
+    if (!canUseLiveMode(userPlan)) {
+      setIsPricingOpen(true)
+      return
+    }
     setIsLiveModeOpen(true)
     if (liveServerUrl || !window.playbackDesktop?.isElectron) return
 
@@ -1287,6 +1294,9 @@ export default function App() {
                 activeLoop={activeLoop}
                 pendingJump={pendingJump}
                 canEdit={!!user}
+                infiniteAllowed={canUseInfiniteLoop(userPlan)}
+                maxRepeats={canUseInfiniteLoop(userPlan) ? 9 : FREE_MAX_LOOP_REPEATS}
+                onUpgrade={() => setIsPricingOpen(true)}
                 onSeek={seekTo}
                 onArmLoop={armLoop}
                 onCancelLoop={cancelLoop}
@@ -1874,10 +1884,16 @@ export default function App() {
         onStopServer={handleStopLiveMode}
         devices={connectedIps}
         approvedIps={approvedIps}
-        onToggleDevice={(ip) => setApprovedIps(prev => prev.includes(ip) ? prev.filter(x => x !== ip) : [...prev, ip])}
+        onToggleDevice={(ip) => setApprovedIps(prev => {
+          if (prev.includes(ip)) return prev.filter(x => x !== ip)
+          // Limite de aparelhos por plano (Pro = 4, Studio = ilimitado).
+          if (prev.length >= maxLiveDevices(userPlan)) { setIsPricingOpen(true); return prev }
+          return [...prev, ip]
+        })}
         onToggleAll={() => {
           const allApproved = connectedIps.length > 0 && connectedIps.every(ip => approvedIps.includes(ip))
-          setApprovedIps(allApproved ? [] : connectedIps)
+          // Aprovar todos respeita o teto do plano.
+          setApprovedIps(allApproved ? [] : connectedIps.slice(0, maxLiveDevices(userPlan)))
         }}
         remoteSessionCode={remoteSessionCode}
         onToggleRemote={() => setRemoteSessionCode(prev => prev ? null : Math.random().toString(36).slice(2, 8).toUpperCase())}
