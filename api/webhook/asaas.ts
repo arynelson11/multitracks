@@ -36,8 +36,19 @@ export default async function handler(req: any, res: any) {
     ? req.headers['asaas-access-token'] as string
     : '';
   if (!provided || !safeEqualStr(provided, webhookToken)) {
+    // Diagnóstico temporário: compara formato sem expor os valores, pra
+    // resolver desalinhamento de token entre Vercel e painel do Asaas.
     console.warn('[asaas-webhook] invalid or missing token');
-    return res.status(401).json({ error: 'Unauthorized' });
+    return res.status(401).json({
+      error: 'Unauthorized',
+      _diag: {
+        envLen: webhookToken.length,
+        envPrefix: webhookToken.slice(0, 6),
+        gotLen: provided.length,
+        gotPrefix: provided.slice(0, 6),
+        match: provided === webhookToken,
+      },
+    });
   }
 
   try {
