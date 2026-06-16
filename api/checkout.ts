@@ -1,5 +1,6 @@
 /// <reference types="node" />
 import axios from 'axios';
+import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
 
 // ── Tabela de preços (fonte única) ──
@@ -96,6 +97,23 @@ export default async function handler(req: any, res: any) {
       const response = await api.post('/checkouts', payload);
       const data = response.data ?? {};
       const url = data.link || data.url || data.checkoutUrl || data?.data?.link;
+      const checkoutId = data.id || data?.data?.id;
+      if (url && checkoutId) {
+        // Grava o vínculo checkout -> usuário/plano. O webhook CHECKOUT_PAID lê
+        // isso pelo id do checkout (o Asaas não propaga nosso externalReference
+        // pro pagamento/assinatura, então guardamos do nosso lado).
+        const supaUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        if (supaUrl && serviceKey) {
+          try {
+            const supabase = createClient(supaUrl, serviceKey);
+            await supabase.from('pending_checkouts').insert({ id: checkoutId, user_id: userId, plan_key: planKey });
+          } catch (e: any) {
+            console.error('[checkout] failed to save pending_checkout:', e?.message);
+          }
+        }
+        return res.status(200).json({ url });
+      }
       if (url) return res.status(200).json({ url });
       console.error('[checkout] no url in Asaas response:', JSON.stringify(data));
       return res.status(502).json({ error: 'Checkout criado sem URL', details: data });

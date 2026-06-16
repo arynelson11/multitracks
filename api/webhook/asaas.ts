@@ -12,9 +12,6 @@ const webhookToken = process.env.ASAAS_WEBHOOK_TOKEN;
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const VALID_PLANS = new Set(['essencial_mensal', 'essencial_anual', 'pro_mensal', 'pro_anual']);
 
-// Eventos que significam "dinheiro confirmado" -> ativa/renova o plano.
-const PAID_EVENTS = new Set(['PAYMENT_CONFIRMED', 'PAYMENT_RECEIVED']);
-
 function safeEqualStr(a: string, b: string): boolean {
   const ab = Buffer.from(a);
   const bb = Buffer.from(b);
@@ -22,12 +19,9 @@ function safeEqualStr(a: string, b: string): boolean {
   return timingSafeEqual(ab, bb);
 }
 
-// externalReference foi gravado como `${userId}::${planKey}` no checkout.
-function parseRef(ref?: string): { userId: string; planKey: string } | null {
-  if (!ref || !ref.includes('::')) return null;
-  const [userId, planKey] = ref.split('::');
-  if (!UUID_V4_RE.test(userId) || !VALID_PLANS.has(planKey)) return null;
-  return { userId, planKey };
+// Valida o par userId/planKey (venha de onde vier) antes de ativar o plano.
+function validRef(userId?: string, planKey?: string): boolean {
+  return !!userId && !!planKey && UUID_V4_RE.test(userId) && VALID_PLANS.has(planKey);
 }
 
 export default async function handler(req: any, res: any) {
@@ -38,7 +32,6 @@ export default async function handler(req: any, res: any) {
     return res.status(500).json({ error: 'Server misconfiguration' });
   }
 
-  // Valida o token enviado pelo Asaas no header.
   const provided = typeof req.headers?.['asaas-access-token'] === 'string'
     ? req.headers['asaas-access-token'] as string
     : '';
@@ -50,32 +43,50 @@ export default async function handler(req: any, res: any) {
   try {
     const payload = typeof req.body === 'object' && req.body ? req.body : {};
     const event: string | undefined = payload?.event;
-    const payment = payload?.payment ?? {};
 
-    // Só agimos em pagamento confirmado. Outros eventos respondem 200 (ack) pra
-    // o Asaas não reenviar, mas não alteram nada.
-    if (!event || !PAID_EVENTS.has(event)) {
+    // Ativamos o plano no CHECKOUT_PAID (1ª cobrança da assinatura concluída).
+    if (event !== 'CHECKOUT_PAID') {
       return res.status(200).json({ received: true, ignored: event ?? 'no-event' });
     }
 
-    const ref = parseRef(payment?.externalReference);
-    if (!ref) {
-      console.warn('[asaas-webhook] missing/invalid externalReference', { event });
+    const checkout = payload?.checkout ?? {};
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+    // 1) Caminho principal: vínculo gravado por nós (checkout id -> user/plano).
+    let userId: string | undefined;
+    let planKey: string | undefined;
+    if (checkout?.id) {
+      const { data } = await supabase
+        .from('pending_checkouts')
+        .select('user_id, plan_key')
+        .eq('id', checkout.id)
+        .single();
+      if (data) { userId = data.user_id; planKey = data.plan_key; }
+    }
+
+    // 2) Bônus: se o Asaas tiver propagado nosso externalReference, usa também.
+    if (!validRef(userId, planKey) && typeof checkout?.externalReference === 'string' && checkout.externalReference.includes('::')) {
+      const [u, p] = checkout.externalReference.split('::');
+      userId = u; planKey = p;
+    }
+
+    if (!validRef(userId, planKey)) {
+      console.warn('[asaas-webhook] could not resolve user/plan', { checkoutId: checkout?.id });
       return res.status(200).json({ received: true, reason: 'no-ref' });
     }
 
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
-    const { error } = await supabase
-      .from('profiles')
-      .update({ plan: ref.planKey })
-      .eq('id', ref.userId);
-
+    const { error } = await supabase.from('profiles').update({ plan: planKey }).eq('id', userId);
     if (error) {
       console.error('[asaas-webhook] supabase update failed:', error.message);
       return res.status(500).json({ error: 'Failed to update profile' });
     }
 
-    console.log('[asaas-webhook] plan updated', { plan: ref.planKey });
+    // Limpa o vínculo já consumido (não bloqueia o sucesso se falhar).
+    if (checkout?.id) {
+      await supabase.from('pending_checkouts').delete().eq('id', checkout.id);
+    }
+
+    console.log('[asaas-webhook] plan updated', { plan: planKey });
     return res.status(200).json({ received: true, updated: true });
   } catch (error: any) {
     console.error('[asaas-webhook] handler error:', error?.message);
