@@ -102,7 +102,17 @@ export default async function handler(req: any, res: any) {
     } catch (err: any) {
       const detail = err?.response?.data || err?.message;
       console.error('[checkout] Asaas error:', JSON.stringify(detail));
-      return res.status(502).json({ error: 'Falha ao criar checkout no Asaas', details: detail });
+      // Diagnóstico temporário: revela o ambiente e o formato da chave (sem
+      // expor o valor) pra resolver problemas de configuração na Vercel.
+      const _diag = {
+        env: process.env.ASAAS_ENV || 'unset',
+        base: asaasBaseUrl(),
+        keyPresent: !!apiKey,
+        keyStartsWithDollar: apiKey.startsWith('$'),
+        keyPrefix: apiKey.slice(0, 11),
+        keyLen: apiKey.length,
+      };
+      return res.status(502).json({ error: 'Falha ao criar checkout no Asaas', details: detail, _diag });
     }
   } catch (e: any) {
     console.error('[checkout] unexpected handler error:', e?.message, e?.stack);
