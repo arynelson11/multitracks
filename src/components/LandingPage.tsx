@@ -105,8 +105,8 @@ const FAQS = [
     a: 'Você sobe a música (MP3, WAV ou link). A IA do Playback Studio separa em voz, guitarra, baixo, bateria, piano e pads em alguns minutos. Os stems ficam disponíveis pra download, no mixer e pra compartilhar com a equipe.'
   },
   {
-    q: 'O Playback Studio serve pra qualquer música?',
-    a: 'Sim. Diferente de catálogos licenciados, o Playback Studio não depende de uma biblioteca pré-aprovada. Qualquer música funciona: worship, gospel, sertanejo, MPB, rock, indie, original da banda.'
+    q: 'Qual a diferença pra um catálogo de multitracks?',
+    a: 'Catálogo te dá só as músicas que já foram licenciadas, e você espera o release sair. O Playback Studio é uma ferramenta: você sobe qualquer música e ela vira multitracks na hora. Worship, gospel, sertanejo, MPB, rock, indie, até a original da sua banda. Você cria o que precisa, não espera o que existe.'
   },
   {
     q: 'Funciona no celular?',
@@ -214,8 +214,8 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           </h1>
 
           <p className="text-[clamp(.95rem,2vw,1.2rem)] text-warm-200 max-w-2xl mx-auto mb-10 leading-relaxed">
-            Sábado 23h alguém manda mudando o setlist. O Playback Studio separa qualquer
-            música, do worship ao sertanejo, do rock ao MPB,
+            Sábado 23h alguém manda mudando o setlist, e a música não está em catálogo nenhum.
+            O Playback Studio separa qualquer música, do worship ao sertanejo,
             em faixas prontas. No domingo, repita o refrão e estenda a ministração sem cortar nada.
           </p>
 
@@ -283,9 +283,9 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           </h2>
           <div className="grid sm:grid-cols-3 gap-6">
             {[
-              { title: 'Qualquer música, separada', desc: 'Sobe MP3, WAV ou link. O Playback Studio separa em voz, bateria, baixo, guitarras e mais.' },
+              { title: 'Qualquer música, não só o catálogo', desc: 'A música que o ministro escolheu não está em catálogo nenhum? Sobe ela aqui. Qualquer música vira multitracks, na hora.' },
               { title: 'Biblioteca de Separações Local', desc: 'Suas separações ficam salvas no seu navegador. Feche e abra depois sem gastar tokens novamente.' },
-              { title: 'Sem catálogo travando', desc: 'Você escolhe a música. O Playback Studio prepara. Sem esperar release, sem licença gringa.' },
+              { title: 'Você cria, não espera release', desc: 'No catálogo você recebe o que já existe. Aqui você prepara o que a sua equipe precisa, sem esperar lançamento nem licença gringa.' },
             ].map((item, i) => (
               <div key={i} className="bg-tinta-raised border border-tinta-border rounded-2xl p-7 hover:border-laranja/40 transition-colors">
                 <div className="w-9 h-9 rounded-lg bg-laranja/15 border border-laranja/25 flex items-center justify-center mb-5">
