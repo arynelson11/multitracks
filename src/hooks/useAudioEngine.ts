@@ -290,10 +290,18 @@ export function useAudioEngine(userId?: string) {
 
                     const bpm = metaSong.bpm ?? undefined;
 
+                    // Capas antigas podem ter sido salvas como blob: URL (object
+                    // URL de sessão). Ao reabrir o app esse blob está morto e a
+                    // imagem quebra (no desktop, ERR_FILE_NOT_FOUND). Descarta pra
+                    // cair no placeholder; novas capas já vêm como data: URL durável.
+                    const coverImage = metaSong.coverImage?.startsWith('blob:')
+                        ? undefined
+                        : metaSong.coverImage;
+
                     return {
                         id: metaSong.id,
                         name: metaSong.name,
-                        coverImage: metaSong.coverImage,
+                        coverImage,
                         duration: metaSong.duration,
                         pitch: metaSong.pitch || 0,
                         originalKey,

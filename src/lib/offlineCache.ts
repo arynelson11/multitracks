@@ -33,6 +33,21 @@ export async function getCachedSongsList(): Promise<CloudSong[]> {
     }
 }
 
+// Converte um blob de capa em data: URL. Diferente de URL.createObjectURL
+// (blob:), o data: URL é DURÁVEL: sobrevive ao restart do app, funciona offline
+// e sob file:// (desktop). Persistir um blob: na meta do repertório deixava a
+// capa quebrada ao reabrir — no desktop o blob morto virava ERR_FILE_NOT_FOUND.
+// Capas definidas pelo usuário já usam readAsDataURL (App.tsx); aqui seguimos o
+// mesmo padrão pras capas vindas do cache offline.
+function blobToDataUrl(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+    });
+}
+
 // Download cover image as a blob
 async function downloadCoverAsBlob(url: string): Promise<Blob | null> {
     try {
@@ -115,10 +130,12 @@ export async function getCachedSong(songId: string): Promise<{
             return new File([f.blob], f.name, { type: f.blob.type });
         });
 
-        // Reconstruct cover URL as an object URL if coverBlob is present
+        // Reconstrói a capa como data: URL (durável) quando há blob em cache;
+        // senão cai na cover_url remota (https). Nunca um blob: de sessão, que
+        // morre ao reabrir o app e quebra a imagem no desktop (file://).
         let coverUrl: string | null = null;
         if (data.coverBlob) {
-            coverUrl = URL.createObjectURL(data.coverBlob);
+            coverUrl = await blobToDataUrl(data.coverBlob);
         } else if (data.song.cover_url) {
             coverUrl = data.song.cover_url;
         }
