@@ -2,17 +2,16 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { get, set } from 'idb-keyval';
 import JSZip from 'jszip';
 import * as Tone from 'tone';
-import { createRubberBandNode } from 'rubberband-web';
+import SignalsmithStretch from 'signalsmith-stretch';
 import type { Channel, Song, Marker } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { detectKey, generateEndlessClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { loadClickSelection } from '../lib/clickLibrary';
 
-// O worklet do RubberBand fica em public/. Resolver via BASE_URL faz a URL
-// funcionar tanto no site (base '/') quanto no app desktop (base './' sob
-// file://), onde um caminho absoluto RUBBERBAND_PROCESSOR_URL apontaria pra
-// raiz do disco e falharia o carregamento.
-const RUBBERBAND_PROCESSOR_URL = `${import.meta.env.BASE_URL}rubberband-processor.js`;
+// Engine de tom: signalsmith-stretch (MIT). O worklet e o WASM são gerados
+// inline em runtime (Blob + base64), então funciona offline no desktop sob
+// file:// — sem arquivo servido e sem caminho absoluto (que era o que quebrava
+// o RubberBand no desktop). Pitch puro: muda o tom sem alterar a velocidade.
 
 interface SavedChannel {
     id: string;
@@ -101,9 +100,33 @@ export function useAudioEngine(userId?: string) {
     const activeSong = playlist[activeSongIndex];
     const channels = activeSong?.channels || [];
 
-    // rubberband-web setPitch expects a pitch SCALE RATIO, not semitones.
-    // Formula universal (Moises, DAWs, MultiTracks etc): ratio = 2^(semitones/12).
-    const semitonesToPitchRatio = (semitones: number): number => Math.pow(2, semitones / 12);
+    // Click/voz-guia nunca transpõem (ficam em 0 semitons).
+    const isClickOrGuideName = (name: string): boolean => {
+        const n = name.toLowerCase();
+        return n.includes('click') || n.includes('metronomo') || n.includes('guia') || n.includes('guide');
+    };
+
+    // Cria a engine de tom, pré-conecta ao panner e inicia neutra (modo
+    // live-input). Ela fica SEMPRE na cadeia (source→engine→panner); mudar de
+    // tom só troca um parâmetro, sem reconectar nós nem pause/play.
+    const setupPitchNode = async (ctx: AudioContext, panner: StereoPannerNode): Promise<any> => {
+        const node = await SignalsmithStretch(ctx, { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+        node.connect(panner);
+        node.start();
+        node.schedule({ semitones: 0, formantCompensation: true, formantBaseHz: 0 });
+        return node;
+    };
+
+    // Aplica o tom numa faixa (preservando formantes; click/guia ficam neutros).
+    const applyPitchToChannel = (ch: Channel, semitones: number) => {
+        if (!ch.pitchShiftNode || typeof ch.pitchShiftNode.schedule !== 'function') return;
+        const isClickOrGuide = isClickOrGuideName(ch.name);
+        ch.pitchShiftNode.schedule({
+            semitones: isClickOrGuide ? 0 : semitones,
+            formantCompensation: !isClickOrGuide,
+            formantBaseHz: 0,
+        });
+    };
 
     // Core persistence
     const saveStateToDB = async (list: Song[]) => {
@@ -231,7 +254,7 @@ export function useAudioEngine(userId?: string) {
                             panner.connect(gain);
                             gain.connect(master);
 
-                            const rbNode = await createRubberBandNode(ctx, RUBBERBAND_PROCESSOR_URL);
+                            const rbNode = await setupPitchNode(ctx, panner);
 
                             return {
                                 id: metaCh.id,
@@ -303,7 +326,8 @@ export function useAudioEngine(userId?: string) {
                 ch.sourceNode.disconnect();
                 ch.sourceNode = null;
             }
-            // Do NOT disconnect pitchShiftNode here, as RubberBandNode should persist per channel
+            // Não desconectar a engine de tom aqui: ela fica sempre na cadeia,
+            // persistente por canal (só a fonte é parada/recriada a cada play).
         });
     }, [channels]);
 
@@ -338,8 +362,7 @@ export function useAudioEngine(userId?: string) {
             source.buffer = ch.buffer;
             
             const nameL = ch.name.toLowerCase();
-            const isClickOrGuide = nameL.includes('click') || nameL.includes('metronomo') || nameL.includes('guia') || nameL.includes('guide');
-            
+
             if (nameL.includes('metronomo loop')) {
                 source.loop = true;
             }
@@ -351,20 +374,14 @@ export function useAudioEngine(userId?: string) {
                 ch.gainNode.gain.setValueAtTime(vol, ctx.currentTime);
             }
 
-            if (currentPitchRef.current !== 0 || timeStretch !== 1) {
-                if (ch.pitchShiftNode && typeof ch.pitchShiftNode.setPitch === 'function') {
-                    const ratio = isClickOrGuide ? 1 : semitonesToPitchRatio(currentPitchRef.current);
-                    ch.pitchShiftNode.setPitch(ratio);
-                    ch.pitchShiftNode.setTempo(timeStretch);
-                    source.playbackRate.value = 1.0;
-                    source.connect(ch.pitchShiftNode);
-                    ch.pitchShiftNode.connect(ch.pannerNode);
-                } else {
-                    source.playbackRate.value = timeStretch;
-                    source.connect(ch.pannerNode);
-                }
+            // Engine de tom SEMPRE na cadeia (pré-conectada ao panner). A fonte
+            // só entra nela; o tom atual já está aplicado no nó. playbackRate
+            // fica em 1.0 — mudar o tom nunca altera a velocidade/BPM da música.
+            source.playbackRate.value = 1.0;
+            if (ch.pitchShiftNode) {
+                applyPitchToChannel(ch, currentPitchRef.current);
+                source.connect(ch.pitchShiftNode);
             } else {
-                source.playbackRate.value = 1.0;
                 source.connect(ch.pannerNode);
             }
 
@@ -374,7 +391,7 @@ export function useAudioEngine(userId?: string) {
 
         startTimeRef.current = ctx.currentTime;
         setIsPlaying(true);
-    }, [channels, stopAllNodes, timeStretch, masterVolume]);
+    }, [channels, stopAllNodes, masterVolume]);
 
     const pause = useCallback(() => {
         const ctx = audioCtxRef.current;
@@ -689,7 +706,7 @@ export function useAudioEngine(userId?: string) {
                 panner.pan.value = panValue;
                 gain.gain.value = 1;
 
-                const rbNode = await createRubberBandNode(audioCtxRef.current, RUBBERBAND_PROCESSOR_URL);
+                const rbNode = await setupPitchNode(audioCtxRef.current, panner);
 
                 panner.connect(gain);
 
@@ -819,7 +836,7 @@ export function useAudioEngine(userId?: string) {
             filesDb.set(uuid, file);
             await set(DB_KEY_FILES, filesDb);
 
-            const rbNode = await createRubberBandNode(audioCtxRef.current, RUBBERBAND_PROCESSOR_URL);
+            const rbNode = await setupPitchNode(audioCtxRef.current, panner);
 
             const newChannel: Channel = {
                 id: uuid,
@@ -905,7 +922,7 @@ export function useAudioEngine(userId?: string) {
             filesDb.set(uuid, file);
             await set(DB_KEY_FILES, filesDb);
 
-            const rbNode = await createRubberBandNode(audioCtxRef.current, RUBBERBAND_PROCESSOR_URL);
+            const rbNode = await setupPitchNode(audioCtxRef.current, panner);
 
             const newChannel: Channel = {
                 id: uuid,
@@ -1038,6 +1055,10 @@ export function useAudioEngine(userId?: string) {
     const removeSongFromPlaylist = (songId: string) => {
         const currentActiveId = playlist[activeSongIndex]?.id;
         const removedIndex = playlist.findIndex(s => s.id === songId);
+        // Fecha as engines de tom da música removida (libera os worklets WASM).
+        playlist.find(s => s.id === songId)?.channels.forEach(ch => {
+            try { ch.pitchShiftNode?.close?.(); } catch { /* engine já encerrada */ }
+        });
         const newPlaylist = playlist.filter(s => s.id !== songId);
 
         updatePlaylistAndSave(newPlaylist);
@@ -1189,6 +1210,7 @@ export function useAudioEngine(userId?: string) {
                 try { ch.sourceNode.stop(); } catch (_) {}
                 ch.sourceNode.disconnect();
             }
+            try { ch.pitchShiftNode?.close?.(); } catch { /* engine já encerrada */ }
             ch.gainNode.disconnect();
             ch.pannerNode.disconnect();
         }
@@ -1236,35 +1258,21 @@ export function useAudioEngine(userId?: string) {
         const clampedPitch = Math.max(-12, Math.min(12, newPitch));
         if (currentPitchRef.current === clampedPitch) return;
 
-        const wasZero = currentPitchRef.current === 0;
-        const isZero = clampedPitch === 0;
-
         const newPlaylist = [...playlist];
         const song = { ...newPlaylist[activeSongIndex] };
         song.pitch = clampedPitch;
 
         currentPitchRef.current = clampedPitch;
 
-        if (isPlaying) {
-            if (wasZero !== isZero) {
-                // Routing muda (bypass → rubberband ou vice-versa) — precisa reiniciar pra reconectar a cadeia.
-                pause();
-                setTimeout(() => play(), 10);
-            } else {
-                const ratio = semitonesToPitchRatio(clampedPitch);
-                song.channels.forEach(ch => {
-                    const nameL = ch.name.toLowerCase();
-                    const isClickOrGuide = nameL.includes('click') || nameL.includes('metronomo') || nameL.includes('guia') || nameL.includes('guide');
-                    if (!isClickOrGuide && ch.pitchShiftNode && typeof ch.pitchShiftNode.setPitch === 'function') {
-                        ch.pitchShiftNode.setPitch(ratio);
-                    }
-                });
-            }
-        }
+        // Engine sempre na cadeia: trocar de tom é só atualizar o parâmetro nos
+        // nós (com preservação de formantes). Sem pause/play, sem reconectar
+        // cadeia — era esse reroute que silenciava/travava ao cruzar o tom 0.
+        // Aplica esteja tocando ou não; o nó guarda o estado pro próximo play.
+        song.channels.forEach(ch => applyPitchToChannel(ch, clampedPitch));
 
         newPlaylist[activeSongIndex] = song;
         updatePlaylistAndSave(newPlaylist);
-    }, [playlist, activeSongIndex, activeSong, isPlaying, pause, play]);
+    }, [playlist, activeSongIndex, activeSong]);
 
     // Clear Session
     const clearSession = async () => {
