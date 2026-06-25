@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500;1,9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Caveat:wght@600&display=swap');
+
+  :root {
+    --tinta: #121214;
+    --raised: #1A1A1E;
+    --border: #2A2A2E;
+    --bone: #E8E8EC;
+    --warm-200: #B8B4AE;
+    --warm-400: #8A8680;
+    --laranja: #FF6B35;
+    --musgo: #5B6B47;
+    --musgo-light: #8FA875;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @page { size: A4; margin: 0; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--tinta);
+    color: var(--bone);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 18mm 16mm;
+    position: relative;
+    page-break-after: always;
+    overflow: hidden;
+  }
+  .page:last-child { page-break-after: auto; }
+
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .display { font-family: 'Fraunces', serif; }
+  .laranja { color: var(--laranja); }
+  .italic-laranja { font-style: italic; color: var(--laranja); }
+  .hand { font-family: 'Caveat', cursive; color: var(--laranja); font-size: 1.1em; }
+
+  .kicker {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--laranja);
+    margin-bottom: 14px;
+  }
+
+  /* PlayMark (triângulo de play com 3 cortes) */
+  .playmark {
+    display: inline-flex;
+    gap: 3px;
+    align-items: center;
+    vertical-align: middle;
+  }
+  .playmark span {
+    display: block;
+    width: 0; height: 0;
+    border-style: solid;
+    border-width: 7px 0 7px 12px;
+    border-color: transparent transparent transparent var(--laranja);
+  }
+  .playmark span:nth-child(2) { opacity: 0.7; }
+  .playmark span:nth-child(3) { opacity: 0.4; }
+
+  /* waveform decorativa */
+  .wave {
+    display: flex; align-items: center; gap: 3px; height: 28px;
+  }
+  .wave i {
+    display: block; width: 3px; background: var(--laranja); border-radius: 2px; opacity: 0.85;
+  }
+
+  /* ---- CAPA ---- */
+  .cover {
+    display: flex; flex-direction: column; justify-content: center;
+    min-height: 297mm;
+    background: radial-gradient(120% 80% at 50% 30%, rgba(255,107,53,0.10), transparent 60%), var(--tinta);
+  }
+  .cover .brandrow { display: flex; align-items: center; gap: 12px; margin-bottom: 50px; }
+  .cover h1 { font-family:'Fraunces',serif; font-weight:600; font-size: 58px; line-height: 1.05; letter-spacing: -1.5px; margin-bottom: 22px; }
+  .cover .sub { font-size: 17px; color: var(--warm-200); max-width: 420px; line-height: 1.6; }
+  .cover .foot { position: absolute; bottom: 18mm; left: 16mm; right: 16mm; display:flex; justify-content: space-between; align-items:center; font-size: 12px; color: var(--warm-400); }
+
+  h2.section { font-family:'Fraunces',serif; font-weight:600; font-size: 34px; letter-spacing:-0.5px; margin-bottom: 6px; }
+  .section-sub { font-size: 14px; color: var(--warm-200); margin-bottom: 28px; }
+
+  .card { background: var(--raised); border: 1px solid var(--border); border-radius: 16px; padding: 22px 24px; margin-bottom: 14px; }
+  .card h3 { font-family:'Fraunces',serif; font-weight:600; font-size: 20px; margin-bottom: 8px; }
+  .card p { font-size: 13.5px; color: var(--warm-200); line-height: 1.6; }
+
+  .pillars { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .pillar { background: var(--raised); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
+  .pillar .pct { font-family:'Fraunces',serif; font-size: 30px; color: var(--laranja); font-weight:600; }
+  .pillar h4 { font-size: 14px; margin: 4px 0 6px; text-transform: uppercase; letter-spacing: 1px; }
+  .pillar p { font-size: 12px; color: var(--warm-400); line-height: 1.5; }
+
+  /* paleta */
+  .swatches { display:flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+  .sw { flex:1; min-width: 90px; border:1px solid var(--border); border-radius: 12px; overflow:hidden; }
+  .sw .chip { height: 56px; }
+  .sw .lbl { padding: 8px 10px; font-size: 10px; }
+  .sw .lbl b { display:block; font-family:'JetBrains Mono',monospace; font-size: 11px; color: var(--bone); }
+  .sw .lbl span { color: var(--warm-400); }
+
+  .type-row { display:flex; align-items: baseline; gap: 16px; border-bottom: 1px solid var(--border); padding: 14px 0; }
+  .type-row .name { width: 130px; font-size: 11px; color: var(--warm-400); font-family:'JetBrains Mono',monospace; text-transform: uppercase; letter-spacing:1px; }
+  .type-row .demo { flex:1; }
+
+  /* calendário */
+  .week-label { font-family:'JetBrains Mono',monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--laranja); margin: 18px 0 10px; }
+  table.cal { width:100%; border-collapse: collapse; margin-bottom: 6px; }
+  table.cal td, table.cal th { border: 1px solid var(--border); padding: 9px 11px; vertical-align: top; }
+  table.cal th { background: var(--raised); font-size: 10px; text-transform: uppercase; letter-spacing:1px; color: var(--warm-400); font-weight:600; text-align:left; }
+  .day { font-family:'JetBrains Mono',monospace; font-size: 11px; color: var(--warm-400); width: 64px; }
+  .ptype { display:inline-block; font-family:'JetBrains Mono',monospace; font-size: 8.5px; padding: 2px 7px; border-radius: 20px; letter-spacing:0.5px; text-transform: uppercase; margin-bottom:5px; }
+  .t-demo { background: rgba(255,107,53,0.16); color: var(--laranja); border:1px solid rgba(255,107,53,0.3); }
+  .t-prova { background: rgba(143,168,117,0.16); color: var(--musgo-light); border:1px solid rgba(143,168,117,0.3); }
+  .t-edu { background: rgba(232,232,236,0.10); color: var(--warm-200); border:1px solid var(--border); }
+  .t-bast { background: rgba(92,110,126,0.18); color: #9fb3c4; border:1px solid rgba(92,110,126,0.35); }
+  .ptitle { font-size: 12px; color: var(--bone); line-height: 1.4; }
+  .pfmt { font-size: 10px; color: var(--warm-400); margin-top: 2px; }
+
+  ul.clean { list-style: none; }
+  ul.clean li { font-size: 13px; color: var(--warm-200); line-height: 1.7; padding-left: 18px; position: relative; }
+  ul.clean li::before { content: ''; position:absolute; left:0; top: 9px; width:6px; height:6px; border-radius:50%; background: var(--laranja); }
+
+  .pagenum { position: absolute; bottom: 10mm; right: 16mm; font-family:'JetBrains Mono',monospace; font-size: 10px; color: var(--warm-400); }
+  .pagetag { position: absolute; top: 10mm; left: 16mm; font-family:'JetBrains Mono',monospace; font-size: 9px; letter-spacing:2px; color: var(--warm-400); text-transform: uppercase; }
+</style>
+</head>
+<body>
+
+<!-- ============ CAPA ============ -->
+<section class="page cover">
+  <div class="brandrow">
+    <span class="playmark"><span></span><span></span><span></span></span>
+    <span class="display" style="font-size:22px;font-weight:600;">Playback <span class="italic-laranja">Studio</span></span>
+  </div>
+  <div class="kicker">Plano de lançamento · Instagram</div>
+  <h1>Marketing<br>pra chegar pronto<br>no <span class="hand">domingo</span>.</h1>
+  <p class="sub">Estratégia de conteúdo orgânico, identidade visual e calendário de 30 dias. Pra equipe aprovar e a gente colocar de pé.</p>
+  <div class="foot">
+    <span>Feito por quem toca</span>
+    <span class="mono">v1 · proposta interna</span>
+  </div>
+</section>
+
+<!-- ============ ESTRATÉGIA ============ -->
+<section class="page">
+  <div class="pagetag">Estratégia</div>
+  <h2 class="section">A jogada</h2>
+  <p class="section-sub">Por que vamos liderar com demonstração, não com venda.</p>
+
+  <div class="card">
+    <h3>O ponto de partida</h3>
+    <p>Quem toca na igreja <b style="color:var(--bone)">sente a dor</b> (sábado 23h o setlist muda, domingo vira correria), mas <b style="color:var(--bone)">não sabe que existe solução brasileira</b>. O mercado já viu "IA separa música". Então não lideramos por aí. Lideramos pelo que ninguém mostra: <span class="laranja">repetir o refrão ao vivo</span> e a <span class="laranja">banda acompanhando pelo celular</span>. Mostrar vence dizer.</p>
+  </div>
+
+  <div class="week-label">Os 4 pilares de conteúdo</div>
+  <div class="pillars">
+    <div class="pillar"><div class="pct">50%</div><h4>Demonstração</h4><p>A tela do app fazendo coisa real. O carro-chefe, o que prende nos 3 primeiros segundos.</p></div>
+    <div class="pillar"><div class="pct">20%</div><h4>Dor e Prova</h4><p>A narrativa do sábado 23h e o contraste com o depois. Gera identificação e compartilhamento.</p></div>
+    <div class="pillar"><div class="pct">20%</div><h4>Educativo</h4><p>Dicas técnicas reais que servem o domingo. Constrói autoridade e alcance.</p></div>
+    <div class="pillar"><div class="pct">10%</div><h4>Bastidor</h4><p>A construção, o ensaio real, a comunidade. Humaniza e cria pertencimento.</p></div>
+  </div>
+
+  <div class="card" style="margin-top:18px;">
+    <h3>Cadência</h3>
+    <p>5 a 6 posts por semana: 3 reels (sempre 2 de demonstração), 2 feed ou carrossel, 1 bastidor. Stories leves todo dia. Orgânico primeiro: anúncios só depois que um reel provar que engaja sozinho.</p>
+  </div>
+  <div class="pagenum">02</div>
+</section>
+
+<!-- ============ ANÁLISE COMPETITIVA ============ -->
+<section class="page">
+  <div class="pagetag">Posicionamento</div>
+  <h2 class="section">Contra quem jogamos</h2>
+  <p class="section-sub">Dois concorrentes, dois jogos diferentes. E o território que é só nosso.</p>
+
+  <div class="card">
+    <h3>MultiTracks <span style="color:var(--warm-400);font-size:13px;font-weight:400;">· catálogo licenciado</span></h3>
+    <p>Vende multitracks <b style="color:var(--bone)">prontos</b> de músicas que eles licenciaram. Forte em artistas e prova social. <b style="color:var(--bone)">Brecha:</b> você depende do que está no catálogo e espera o release. Nosso contraste: <span class="laranja">qualquer música vira multitracks, na hora.</span></p>
+  </div>
+
+  <div class="card">
+    <h3>Moises <span style="color:var(--warm-400);font-size:13px;font-weight:400;">· suite de IA pra músicos</span></h3>
+    <p>Também separa qualquer música por IA. Ou seja, "separo música" <b style="color:var(--bone)">não</b> é diferencial contra eles (é commodity). Mas o Moises é ferramenta de <b style="color:var(--bone)">estúdio e estudo</b>, não toca ao vivo no culto. Nosso contraste: <span class="laranja">a camada de execução ao vivo, pro palco.</span></p>
+  </div>
+
+  <div style="margin-top:20px;padding:22px 24px;border:1px solid rgba(255,107,53,0.3);border-radius:16px;background:rgba(255,107,53,0.06);">
+    <div class="kicker" style="margin-bottom:10px;">O território que é só nosso</div>
+    <div class="display" style="font-size:21px;font-weight:600;line-height:1.4;">Ninguém junta num produto só: separar qualquer música <span class="laranja">+</span> tocar offline no palco <span class="laranja">+</span> repetir o refrão ao vivo <span class="laranja">+</span> banda no celular <span class="laranja">+</span> levada brasileira. Pensado pro <span class="italic-laranja">domingo</span>.</div>
+    <p style="font-size:12.5px;color:var(--warm-200);margin-top:14px;line-height:1.6;">O diferencial defensável não é a separação (commodity). É a <b style="color:var(--bone)">execução ao vivo + worship brasileiro</b>. O Moises te ajuda a estudar a música. O Playback Studio te faz tocar ela no domingo.</p>
+  </div>
+  <div class="pagenum">03</div>
+</section>
+
+<!-- ============ IDENTIDADE VISUAL ============ -->
+<section class="page">
+  <div class="pagetag">Identidade Visual</div>
+  <h2 class="section">A cara do feed</h2>
+  <p class="section-sub">Estúdio que entende de domingo. Frio na estrutura, quente no detalhe.</p>
+
+  <div class="week-label">Paleta</div>
+  <div class="swatches">
+    <div class="sw"><div class="chip" style="background:#121214;border-bottom:1px solid var(--border)"></div><div class="lbl"><b>#121214</b><span>Tinta · base 60%</span></div></div>
+    <div class="sw"><div class="chip" style="background:#1A1A1E"></div><div class="lbl"><b>#1A1A1E</b><span>Raised · cards</span></div></div>
+    <div class="sw"><div class="chip" style="background:#FF6B35"></div><div class="lbl"><b>#FF6B35</b><span>Laranja · ação</span></div></div>
+    <div class="sw"><div class="chip" style="background:#5B6B47"></div><div class="lbl"><b>#5B6B47</b><span>Musgo · sucesso</span></div></div>
+    <div class="sw"><div class="chip" style="background:#E8E8EC"></div><div class="lbl"><b>#E8E8EC</b><span>Bone · texto</span></div></div>
+  </div>
+  <p style="font-size:11px;color:var(--warm-400);margin-top:10px;line-height:1.5;">Regra do grid: a cada 9 posts, no máximo 2-3 podem ser "laranja-forte". O laranja é pontuação (3-5% por arte), não preenchimento. Nunca preto puro, nunca branco puro.</p>
+
+  <div class="week-label" style="margin-top:24px;">Tipografia</div>
+  <div class="type-row"><div class="name">Fraunces</div><div class="demo display" style="font-size:26px;font-weight:600;">Pronto pro <span class="italic-laranja">domingo</span>.</div></div>
+  <div class="type-row"><div class="name">Inter</div><div class="demo" style="font-size:15px;color:var(--warm-200)">Corpo de texto, legendas e rótulos do dia a dia.</div></div>
+  <div class="type-row"><div class="name">JetBrains Mono</div><div class="demo mono" style="font-size:14px;">SEPARAÇÃO · 72 BPM · TOM G · REFRÃO</div></div>
+  <div class="type-row"><div class="name">Manuscrito</div><div class="demo"><span class="hand" style="font-size:28px;">domingo.</span></div></div>
+
+  <div class="week-label" style="margin-top:24px;">Elementos que se repetem</div>
+  <div style="display:flex;align-items:center;gap:30px;background:var(--raised);border:1px solid var(--border);border-radius:14px;padding:20px 24px;">
+    <div style="text-align:center;">
+      <span class="playmark" style="transform:scale(1.4)"><span></span><span></span><span></span></span>
+      <div style="font-size:10px;color:var(--warm-400);margin-top:14px;">PlayMark</div>
+    </div>
+    <div style="text-align:center;">
+      <div class="wave"><i style="height:8px"></i><i style="height:18px"></i><i style="height:26px"></i><i style="height:14px"></i><i style="height:22px"></i><i style="height:10px"></i><i style="height:20px"></i><i style="height:28px"></i><i style="height:12px"></i></div>
+      <div style="font-size:10px;color:var(--warm-400);margin-top:10px;">Forma de onda</div>
+    </div>
+    <div style="text-align:center;">
+      <div style="display:flex;gap:5px;">
+        <span class="mono" style="font-size:9px;padding:3px 8px;border-radius:20px;background:rgba(255,107,53,0.16);color:var(--laranja)">REFRÃO</span>
+        <span class="mono" style="font-size:9px;padding:3px 8px;border-radius:20px;background:rgba(143,168,117,0.16);color:var(--musgo-light)">PONTE</span>
+      </div>
+      <div style="font-size:10px;color:var(--warm-400);margin-top:12px;">Seções coloridas</div>
+    </div>
+  </div>
+  <p style="font-size:11px;color:var(--warm-400);margin-top:12px;line-height:1.5;">Worship vive no contexto e na copy (domingo, equipe, igreja), nunca na estética. Sem mãos levantadas, sem palco colorido, sem stock gospel. A estética é estúdio.</p>
+  <div class="pagenum">04</div>
+</section>
+
+<!-- ============ REELS ============ -->
+<section class="page">
+  <div class="pagetag">Conteúdo · Reels</div>
+  <h2 class="section">Os 6 reels de estreia</h2>
+  <p class="section-sub">Demonstração é o trunfo. Cada reel já tem gancho, roteiro e legenda no documento de execução.</p>
+
+  <div class="card"><h3><span class="t-demo ptype">Demo</span><br>1. Loop ao vivo</h3><p>"O pastor pediu pra repetir o refrão. De novo." Marca a seção, manda repetir, a música volta sozinha no fim da parte. O recurso mais único.</p></div>
+  <div class="card"><h3><span class="t-demo ptype">Demo</span><br>2. Separação de faixas</h3><p>Sobe a música, recebe voz, bateria, baixo, guitarra, teclado e pads separados. O "uau" visual que mostra o produto na hora.</p></div>
+  <div class="card"><h3><span class="t-demo ptype">Demo</span><br>3. Modo Ao Vivo</h3><p>A banda conecta o celular e acompanha música, tom e letra em tempo real. No Studio, controla o loop pelo aparelho.</p></div>
+  <div class="card"><h3><span class="t-prova ptype">Prova</span><br>4. A dor de sábado 23h</h3><p>A narrativa visceral: o setlist muda tarde, a madrugada de busca, e a virada. "Sexta separa, sábado ensaia, domingo flui."</p></div>
+  <div class="card"><h3><span class="t-edu ptype">Educativo</span><br>5. Click com levada brasileira</h3><p>Click seco gringo vs click com a nossa levada. A banda encaixa no tempo de um jeito natural.</p></div>
+  <div class="card"><h3><span class="t-demo ptype">Demo</span><br>6. Offline no palco</h3><p>"Internet caiu? O playback nem percebe." Toca offline, mixer ao vivo, transposição de tom na hora.</p></div>
+  <div class="pagenum">05</div>
+</section>
+
+<!-- ============ CALENDÁRIO SEMANAS 1-2 ============ -->
+<section class="page">
+  <div class="pagetag">Calendário · 30 dias</div>
+  <h2 class="section">As 4 semanas</h2>
+  <p class="section-sub">Sugestão de cadência. Horários de pico pro nicho: 12h e 19h-21h. Ajuste conforme o ritmo da equipe.</p>
+
+  <div class="week-label">Semana 1 · Estreia (montar o perfil + os 2 reels mais fortes)</div>
+  <table class="cal">
+    <tr><th>Dia</th><th>Tipo</th><th>Post</th></tr>
+    <tr><td class="day">Seg</td><td><span class="ptype t-prova">Prova</span></td><td><div class="ptitle">Manifesto de abertura: "Feito por quem toca" + os 3 passos</div><div class="pfmt">Carrossel · fixar no perfil</div></td></tr>
+    <tr><td class="day">Ter</td><td><span class="ptype t-demo">Demo</span></td><td><div class="ptitle">Reel 2: Separação de faixas (o "uau" visual)</div><div class="pfmt">Reel</div></td></tr>
+    <tr><td class="day">Qua</td><td><span class="ptype t-edu">Educativo</span></td><td><div class="ptitle">Carrossel: "3 jeitos de ensaiar melhor essa semana"</div><div class="pfmt">Carrossel</div></td></tr>
+    <tr><td class="day">Qui</td><td><span class="ptype t-demo">Demo</span></td><td><div class="ptitle">Reel 1: Loop ao vivo (repetir o refrão)</div><div class="pfmt">Reel · carro-chefe</div></td></tr>
+    <tr><td class="day">Sex</td><td><span class="ptype t-prova">Prova</span></td><td><div class="ptitle">Reel 4: A dor de sábado 23h</div><div class="pfmt">Reel · timing perfeito (sexta)</div></td></tr>
+    <tr><td class="day">Sáb</td><td><span class="ptype t-bast">Bastidor</span></td><td><div class="ptitle">Story/post: "Bora pro domingo?" + enquete de setlist</div><div class="pfmt">Story</div></td></tr>
+  </table>
+
+  <div class="week-label">Semana 2 · Profundidade (mostrar mais features + autoridade)</div>
+  <table class="cal">
+    <tr><th>Dia</th><th>Tipo</th><th>Post</th></tr>
+    <tr><td class="day">Seg</td><td><span class="ptype t-demo">Demo</span></td><td><div class="ptitle">Reel 3: Modo Ao Vivo (banda no celular)</div><div class="pfmt">Reel</div></td></tr>
+    <tr><td class="day">Ter</td><td><span class="ptype t-edu">Educativo</span></td><td><div class="ptitle">Carrossel: "Multitracks vs catálogo" (sem citar concorrente)</div><div class="pfmt">Carrossel</div></td></tr>
+    <tr><td class="day">Qua</td><td><span class="ptype t-demo">Demo</span></td><td><div class="ptitle">Reel 5: Click com levada brasileira</div><div class="pfmt">Reel</div></td></tr>
+    <tr><td class="day">Qui</td><td><span class="ptype t-bast">Bastidor</span></td><td><div class="ptitle">"A gente também toca": mãos no instrumento + a história</div><div class="pfmt">Post único</div></td></tr>
+    <tr><td class="day">Sex</td><td><span class="ptype t-demo">Demo</span></td><td><div class="ptitle">Reel 6: Offline no palco (internet caiu, nem percebe)</div><div class="pfmt">Reel</div></td></tr>
+    <tr><td class="day">Sáb</td><td><span class="ptype t-prova">Prova</span></td><td><div class="ptitle">Enquete: "Qual a música mais difícil que te pediram de última hora?"</div><div class="pfmt">Story interativo</div></td></tr>
+  </table>
+  <div class="pagenum">06</div>
+</section>
+
+<!-- ============ CALENDÁRIO SEMANAS 3-4 ============ -->
+<section class="page">
+  <div class="pagetag">Calendário · 30 dias</div>
+  <h2 class="section">Semanas 3 e 4</h2>
+  <p class="section-sub">Repetir o que funcionou, variar os ganchos, começar a expansão (bandas em geral).</p>
+
+  <div class="week-label">Semana 3 · Variação (novos ganchos pros mesmos pilares)</div>
+  <table class="cal">
+    <tr><th>Dia</th><th>Tipo</th><th>Post</th></tr>
+    <tr><td class="day">Seg</td><td><span class="ptype t-demo">Demo</span></td><td><div class="ptitle">Reel: loop ao vivo, novo gancho (foco na transição suave)</div><div class="pfmt">Reel</div></td></tr>
+    <tr><td class="day">Ter</td><td><span class="ptype t-edu">Educativo</span></td><td><div class="ptitle">Carrossel: "Como montar o tom pro alcance do vocalista"</div><div class="pfmt">Carrossel</div></td></tr>
+    <tr><td class="day">Qua</td><td><span class="ptype t-demo">Demo</span></td><td><div class="ptitle">Reel: separação aplicada a uma música fora do worship (expansão)</div><div class="pfmt">Reel · bandas em geral</div></td></tr>
+    <tr><td class="day">Qui</td><td><span class="ptype t-prova">Prova</span></td><td><div class="ptitle">Depoimento de equipe usando (assim que tiver o primeiro)</div><div class="pfmt">Post prova social</div></td></tr>
+    <tr><td class="day">Sex</td><td><span class="ptype t-prova">Prova</span></td><td><div class="ptitle">Reel: a rotina sexta→sábado→domingo (timeline)</div><div class="pfmt">Reel</div></td></tr>
+    <tr><td class="day">Sáb</td><td><span class="ptype t-bast">Bastidor</span></td><td><div class="ptitle">Responder dúvidas da semana (caixinha de perguntas)</div><div class="pfmt">Story</div></td></tr>
+  </table>
+
+  <div class="week-label">Semana 4 · Conversão (chamar pra ação, sem pressão)</div>
+  <table class="cal">
+    <tr><th>Dia</th><th>Tipo</th><th>Post</th></tr>
+    <tr><td class="day">Seg</td><td><span class="ptype t-demo">Demo</span></td><td><div class="ptitle">Reel: o app inteiro em 30s (do upload ao palco)</div><div class="pfmt">Reel · visão geral</div></td></tr>
+    <tr><td class="day">Ter</td><td><span class="ptype t-edu">Educativo</span></td><td><div class="ptitle">Carrossel: "5 erros no playback ao vivo (e como evitar)"</div><div class="pfmt">Carrossel</div></td></tr>
+    <tr><td class="day">Qua</td><td><span class="ptype t-demo">Demo</span></td><td><div class="ptitle">Reel: Modo Ao Vivo com a banda real, prova de uso</div><div class="pfmt">Reel</div></td></tr>
+    <tr><td class="day">Qui</td><td><span class="ptype t-prova">Prova</span></td><td><div class="ptitle">Post: comparação "antes e depois" de um domingo</div><div class="pfmt">Carrossel</div></td></tr>
+    <tr><td class="day">Sex</td><td><span class="ptype t-demo">Demo</span></td><td><div class="ptitle">Reel: "Começa de graça" + tour rápido do plano Livre</div><div class="pfmt">Reel · CTA</div></td></tr>
+    <tr><td class="day">Sáb</td><td><span class="ptype t-bast">Bastidor</span></td><td><div class="ptitle">Recap do mês + agradecimento à comunidade que chegou</div><div class="pfmt">Post/Story</div></td></tr>
+  </table>
+  <div class="pagenum">07</div>
+</section>
+
+<!-- ============ PRÓXIMOS PASSOS ============ -->
+<section class="page">
+  <div class="pagetag">Execução</div>
+  <h2 class="section">Pra começar</h2>
+  <p class="section-sub">O que destrava a primeira semana. Plano não posta sozinho.</p>
+
+  <div class="card"><h3>1. Travar o perfil</h3><p>Nome, @ e bio (15 minutos). Conferir disponibilidade de <span class="mono laranja">@playbackstudio.app</span> e pegar o mesmo no YouTube e TikTok.</p></div>
+  <div class="card"><h3>2. Gravar os 2 reels mais fortes</h3><p>Loop ao vivo e Separação de faixas. Não precisa de produção: captura de tela em alta + alguém mexendo no app. Conteúdo de música rende o dobro com mão na massa.</p></div>
+  <div class="card"><h3>3. Montar 1 template no Canva</h3><p>A "moldura de estúdio" pros screenshots. A partir dela, os 9 primeiros posts saem rápido.</p></div>
+  <div class="card"><h3>4. Entrar nas comunidades</h3><p>Grupos de ministros de louvor e músicos. Regra 9 contribuições para 1 menção. Entrar como músico que ajuda, nunca como anunciante.</p></div>
+
+  <div style="margin-top:26px;padding:22px 24px;border:1px solid rgba(255,107,53,0.3);border-radius:16px;background:rgba(255,107,53,0.06);">
+    <div class="wave" style="margin-bottom:14px;"><i style="height:6px"></i><i style="height:14px"></i><i style="height:22px"></i><i style="height:28px"></i><i style="height:18px"></i><i style="height:24px"></i><i style="height:10px"></i><i style="height:20px"></i><i style="height:8px"></i><i style="height:16px"></i></div>
+    <div class="display" style="font-size:26px;font-weight:600;">Sexta separa. Sábado ensaia.<br><span class="italic-laranja">Domingo flui.</span></div>
+  </div>
+
+  <div style="position:absolute;bottom:18mm;left:16mm;display:flex;align-items:center;gap:10px;">
+    <span class="playmark"><span></span><span></span><span></span></span>
+    <span class="mono" style="font-size:11px;color:var(--warm-400)">Playback Studio · feito por quem toca</span>
+  </div>
+  <div class="pagenum">08</div>
+</section>
+
+</body>
+</html>

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500;1,9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Caveat:wght@600&display=swap');
+
+  :root {
+    --tinta: #121214;
+    --raised: #1A1A1E;
+    --border: #2A2A2E;
+    --bone: #E8E8EC;
+    --warm-200: #B8B4AE;
+    --warm-400: #8A8680;
+    --laranja: #FF6B35;
+    --musgo: #5B6B47;
+    --musgo-light: #8FA875;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @page { size: A4; margin: 0; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--tinta);
+    color: var(--bone);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 18mm 16mm;
+    position: relative;
+    page-break-after: always;
+    overflow: hidden;
+  }
+  .page:last-child { page-break-after: auto; }
+
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .display { font-family: 'Fraunces', serif; }
+  .laranja { color: var(--laranja); }
+  .italic-laranja { font-style: italic; color: var(--laranja); }
+  .hand { font-family: 'Caveat', cursive; color: var(--laranja); font-size: 1.1em; }
+
+  .kicker {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--laranja);
+    margin-bottom: 14px;
+  }
+
+  /* PlayMark (triângulo de play com 3 cortes) */
+  .playmark {
+    display: inline-flex;
+    gap: 3px;
+    align-items: center;
+    vertical-align: middle;
+  }
+  .playmark span {
+    display: block;
+    width: 0; height: 0;
+    border-style: solid;
+    border-width: 7px 0 7px 12px;
+    border-color: transparent transparent transparent var(--laranja);
+  }
+  .playmark span:nth-child(2) { opacity: 0.7; }
+  .playmark span:nth-child(3) { opacity: 0.4; }
+
+  /* waveform decorativa */
+  .wave {
+    display: flex; align-items: center; gap: 3px; height: 28px;
+  }
+  .wave i {
+    display: block; width: 3px; background: var(--laranja); border-radius: 2px; opacity: 0.85;
+  }
+
+  /* ---- CAPA ---- */
+  .cover {
+    display: flex; flex-direction: column; justify-content: center;
+    min-height: 297mm;
+    background: radial-gradient(120% 80% at 50% 30%, rgba(255,107,53,0.10), transparent 60%), var(--tinta);
+  }
+  .cover .brandrow { display: flex; align-items: center; gap: 12px; margin-bottom: 50px; }
+  .cover h1 { font-family:'Fraunces',serif; font-weight:600; font-size: 58px; line-height: 1.05; letter-spacing: -1.5px; margin-bottom: 22px; }
+  .cover .sub { font-size: 17px; color: var(--warm-200); max-width: 420px; line-height: 1.6; }
+  .cover .foot { position: absolute; bottom: 18mm; left: 16mm; right: 16mm; display:flex; justify-content: space-between; align-items:center; font-size: 12px; color: var(--warm-400); }
+
+  h2.section { font-family:'Fraunces',serif; font-weight:600; font-size: 34px; letter-spacing:-0.5px; margin-bottom: 6px; }
+  .section-sub { font-size: 14px; color: var(--warm-200); margin-bottom: 28px; }
+
+  .card { background: var(--raised); border: 1px solid var(--border); border-radius: 16px; padding: 22px 24px; margin-bottom: 14px; }
+  .card h3 { font-family:'Fraunces',serif; font-weight:600; font-size: 20px; margin-bottom: 8px; }
+  .card p { font-size: 13.5px; color: var(--warm-200); line-height: 1.6; }
+
+  .pillars { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .pillar { background: var(--raised); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
+  .pillar .pct { font-family:'Fraunces',serif; font-size: 30px; color: var(--laranja); font-weight:600; }
+  .pillar h4 { font-size: 14px; margin: 4px 0 6px; text-transform: uppercase; letter-spacing: 1px; }
+  .pillar p { font-size: 12px; color: var(--warm-400); line-height: 1.5; }
+
+  /* paleta */
+  .swatches { display:flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+  .sw { flex:1; min-width: 90px; border:1px solid var(--border); border-radius: 12px; overflow:hidden; }
+  .sw .chip { height: 56px; }
+  .sw .lbl { padding: 8px 10px; font-size: 10px; }
+  .sw .lbl b { display:block; font-family:'JetBrains Mono',monospace; font-size: 11px; color: var(--bone); }
+  .sw .lbl span { color: var(--warm-400); }
+
+  .type-row { display:flex; align-items: baseline; gap: 16px; border-bottom: 1px solid var(--border); padding: 14px 0; }
+  .type-row .name { width: 130px; font-size: 11px; color: var(--warm-400); font-family:'JetBrains Mono',monospace; text-transform: uppercase; letter-spacing:1px; }
+  .type-row .demo { flex:1; }
+
+  /* calendário */
+  .week-label { font-family:'JetBrains Mono',monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--laranja); margin: 18px 0 10px; }
+  table.cal { width:100%; border-collapse: collapse; margin-bottom: 6px; }
+  table.cal td, table.cal th { border: 1px solid var(--border); padding: 9px 11px; vertical-align: top; }
+  table.cal th { background: var(--raised); font-size: 10px; text-transform: uppercase; letter-spacing:1px; color: var(--warm-400); font-weight:600; text-align:left; }
+  .day { font-family:'JetBrains Mono',monospace; font-size: 11px; color: var(--warm-400); width: 64px; }
+  .ptype { display:inline-block; font-family:'JetBrains Mono',monospace; font-size: 8.5px; padding: 2px 7px; border-radius: 20px; letter-spacing:0.5px; text-transform: uppercase; margin-bottom:5px; }
+  .t-demo { background: rgba(255,107,53,0.16); color: var(--laranja); border:1px solid rgba(255,107,53,0.3); }
+  .t-prova { background: rgba(143,168,117,0.16); color: var(--musgo-light); border:1px solid rgba(143,168,117,0.3); }
+  .t-edu { background: rgba(232,232,236,0.10); color: var(--warm-200); border:1px solid var(--border); }
+  .t-bast { background: rgba(92,110,126,0.18); color: #9fb3c4; border:1px solid rgba(92,110,126,0.35); }
+  .ptitle { font-size: 12px; color: var(--bone); line-height: 1.4; }
+  .pfmt { font-size: 10px; color: var(--warm-400); margin-top: 2px; }
+
+  ul.clean { list-style: none; }
+  ul.clean li { font-size: 13px; color: var(--warm-200); line-height: 1.7; padding-left: 18px; position: relative; }
+  ul.clean li::before { content: ''; position:absolute; left:0; top: 9px; width:6px; height:6px; border-radius:50%; background: var(--laranja); }
+
+  .pagenum { position: absolute; bottom: 10mm; right: 16mm; font-family:'JetBrains Mono',monospace; font-size: 10px; color: var(--warm-400); }
+  .pagetag { position: absolute; top: 10mm; left: 16mm; font-family:'JetBrains Mono',monospace; font-size: 9px; letter-spacing:2px; color: var(--warm-400); text-transform: uppercase; }
+</style>
+</head>
+<body>
+<section class="page">
+  <div class="pagetag">Posicionamento</div>
+  <h2 class="section">Contra quem jogamos</h2>
+  <p class="section-sub">Dois concorrentes, dois jogos diferentes. E o território que é só nosso.</p>
+
+  <div class="card">
+    <h3>MultiTracks <span style="color:var(--warm-400);font-size:13px;font-weight:400;">· catálogo licenciado</span></h3>
+    <p>Vende multitracks <b style="color:var(--bone)">prontos</b> de músicas que eles licenciaram. Forte em artistas e prova social. <b style="color:var(--bone)">Brecha:</b> você depende do que está no catálogo e espera o release. Nosso contraste: <span class="laranja">qualquer música vira multitracks, na hora.</span></p>
+  </div>
+
+  <div class="card">
+    <h3>Moises <span style="color:var(--warm-400);font-size:13px;font-weight:400;">· suite de IA pra músicos</span></h3>
+    <p>Também separa qualquer música por IA. Ou seja, "separo música" <b style="color:var(--bone)">não</b> é diferencial contra eles (é commodity). Mas o Moises é ferramenta de <b style="color:var(--bone)">estúdio e estudo</b>, não toca ao vivo no culto. Nosso contraste: <span class="laranja">a camada de execução ao vivo, pro palco.</span></p>
+  </div>
+
+  <div style="margin-top:20px;padding:22px 24px;border:1px solid rgba(255,107,53,0.3);border-radius:16px;background:rgba(255,107,53,0.06);">
+    <div class="kicker" style="margin-bottom:10px;">O território que é só nosso</div>
+    <div class="display" style="font-size:21px;font-weight:600;line-height:1.4;">Ninguém junta num produto só: separar qualquer música <span class="laranja">+</span> tocar offline no palco <span class="laranja">+</span> repetir o refrão ao vivo <span class="laranja">+</span> banda no celular <span class="laranja">+</span> levada brasileira. Pensado pro <span class="italic-laranja">domingo</span>.</div>
+    <p style="font-size:12.5px;color:var(--warm-200);margin-top:14px;line-height:1.6;">O diferencial defensável não é a separação (commodity). É a <b style="color:var(--bone)">execução ao vivo + worship brasileiro</b>. O Moises te ajuda a estudar a música. O Playback Studio te faz tocar ela no domingo.</p>
+  </div>
+  <div class="pagenum">03</div>
+</section></body></html>

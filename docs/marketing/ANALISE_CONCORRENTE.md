@@ -6,7 +6,7 @@
 ## Modelo de negócio deles (e por que importa)
 MultiTracks é **catálogo licenciado**: você assina e baixa multitracks **prontos** de músicas específicas que eles licenciaram com os artistas. Exige contratos, produção e escala. Pra liderar nisso precisaria de mais artista, mais produção, mais fama. **Não competimos aqui.**
 
-## O que eles fazem bem (aprender)
+## O que eles fazem bem (aprender)y
 - Prova social pesada com rostos e artistas worship conhecidos (palco, equipes, cantores).
 - Mix de feed equilibrado: produto + pessoas + educativo (formato podcast/depoimento) + lançamentos.
 - Consistência de marca (marca d'água em tudo).

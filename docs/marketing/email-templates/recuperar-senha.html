@@ -1,0 +1,53 @@
+<!-- Supabase → Authentication → Email Templates → "Reset Password" -->
+<!-- Assunto sugerido: Redefinir sua senha do Playback Studio -->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#0e0e10;margin:0;padding:0;">
+  <tr>
+    <td align="center" style="padding:32px 16px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#1A1A1E;border:1px solid #2A2A2E;border-radius:16px;overflow:hidden;">
+        <tr>
+          <td style="padding:34px 40px 10px 40px;font-family:Georgia,'Times New Roman',serif;">
+            <span style="color:#FF6B35;font-size:14px;letter-spacing:1px;">&#9658;&#9658;&#9658;</span>
+            <span style="color:#E8E8EC;font-size:20px;font-weight:bold;vertical-align:middle;margin-left:8px;">Playback <span style="color:#FF6B35;font-style:italic;">Studio</span></span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:14px 40px 8px 40px;">
+            <h1 style="margin:0 0 16px 0;font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.2;color:#E8E8EC;font-weight:bold;">Vamos recuperar seu acesso.</h1>
+            <p style="margin:0 0 20px 0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#B8B4AE;">
+              Recebemos um pedido pra redefinir a senha da sua conta. Clica no botão abaixo pra criar uma nova senha. O link vale por tempo limitado.
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:6px 40px 14px 40px;">
+            <table role="presentation" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="border-radius:10px;background-color:#FF6B35;">
+                  <a href="{{ .ConfirmationURL }}" target="_blank" style="display:inline-block;padding:14px 30px;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;color:#0e0e10;text-decoration:none;border-radius:10px;">Redefinir minha senha</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:6px 40px 28px 40px;">
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#8A8680;">
+              Se o botão não funcionar, copia e cola este endereço no navegador:<br>
+              <a href="{{ .ConfirmationURL }}" target="_blank" style="color:#FF6B35;word-break:break-all;">{{ .ConfirmationURL }}</a>
+            </p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:20px 40px 30px 40px;border-top:1px solid #2A2A2E;">
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#8A8680;">
+              Se você não pediu pra redefinir a senha, pode ignorar este email. Sua senha atual continua valendo.
+            </p>
+            <p style="margin:14px 0 0 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#8A8680;">
+              Playback Studio &middot; feito por quem toca
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
