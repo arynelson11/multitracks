@@ -5,7 +5,7 @@ import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume
 import { uploadToR2 } from '../lib/r2';
 import { getAuthHeaders } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { canDownloadStems, canUseVoiceGuide } from '../lib/plans';
+import { canDownloadStems, canUseVoiceGuide, canUseBpmDetection } from '../lib/plans';
 import { PricingModal } from './PricingModal';
 import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
@@ -154,6 +154,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const isAdmin = user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com';
   const canDownload = isAdmin || canDownloadStems(userPlan);
   const canVoiceGuide = isAdmin || canUseVoiceGuide(userPlan);
+  const canBpm = isAdmin || canUseBpmDetection(userPlan);
   const { separations, saveSeparation, deleteSeparation, isLoading: isLibLoading } = useSeparationLibrary();
   const [activeSepId, setActiveSepId] = useState<string | null>(null);
   const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>(() => {
@@ -1745,12 +1746,14 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                    </div>
                  </div>
                  <div className="grid grid-cols-2 gap-3">
-                   <div>
-                     <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">BPM (IA)</label>
-                     <input type="number" value={bpm} onChange={e => setBpm(e.target.value)} 
-                       className="w-full daw-input rounded-md px-3 py-2 text-white text-xs font-mono"
-                     />
-                   </div>
+                   {canBpm && (
+                     <div>
+                       <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">BPM (IA)</label>
+                       <input type="number" value={bpm} onChange={e => setBpm(e.target.value)}
+                         className="w-full daw-input rounded-md px-3 py-2 text-white text-xs font-mono"
+                       />
+                     </div>
+                   )}
                    <div>
                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Tom</label>
                      <select value={songKey} onChange={e => setSongKey(e.target.value)}
