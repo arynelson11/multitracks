@@ -58,13 +58,6 @@ export function planTier(internalId: string | null | undefined): PlanTier {
 
 // ── Regras de feature por plano (fonte única) ──
 
-// Loop de seção: grátis repete um número limitado de vezes; pago libera o
-// infinito (uso de ministração ao vivo).
-export const FREE_MAX_LOOP_REPEATS = 4
-export function canUseInfiniteLoop(id: string | null | undefined): boolean {
-  return planTier(id) !== 'free'
-}
-
 // Modo Ao Vivo (banda conecta o celular): exclusivo dos planos pagos.
 export function canUseLiveMode(id: string | null | undefined): boolean {
   return planTier(id) !== 'free'

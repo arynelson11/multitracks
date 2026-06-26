@@ -21,7 +21,7 @@ import { DownloadPage } from './components/DownloadPage'
 import { GuidedTour, type TourStep } from './components/GuidedTour'
 import { WhatsNewModal } from './components/WhatsNewModal'
 import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/SectionBar'
-import { canUseInfiniteLoop, canUseLiveMode, maxLiveDevices, canBandControlSections, FREE_MAX_LOOP_REPEATS } from './lib/plans'
+import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections } from './lib/plans'
 import { UpdateBanner } from './components/UpdateBanner'
 import { useDesktopUpdate } from './hooks/useDesktopUpdate'
 import { CURRENT_VERSION } from './lib/changelog'
@@ -210,12 +210,13 @@ export default function App() {
   // Cria uma seção no ponto atual com o nome dado. Usado pelo menu "Marcar" e
   // pelos atalhos de teclado (V, R, ...).
   const addSectionMarker = useCallback((label: string) => {
+    if (!canUseSections(userPlan)) { setIsPricingOpen(true); return }
     const activeSong = playlist[activeSongIndex]
     if (!activeSong) return
     const newMarker = { id: crypto.randomUUID(), time: currentTime, label, color: colorForSection(label) }
     const newMarkers = [...(activeSong.markers || []), newMarker].sort((a, b) => a.time - b.time)
     setSongMarkers(activeSong.id, newMarkers)
-  }, [playlist, activeSongIndex, currentTime, setSongMarkers])
+  }, [playlist, activeSongIndex, currentTime, setSongMarkers, userPlan])
 
   // Atalhos de teclado: espaço = play/pause; setas = andar na barra (passo fino
   // com Shift); letras (V, R, ...) marcam a seção no ponto atual. Ignora quando
@@ -1294,8 +1295,8 @@ export default function App() {
                 activeLoop={activeLoop}
                 pendingJump={pendingJump}
                 canEdit={!!user}
-                infiniteAllowed={canUseInfiniteLoop(userPlan)}
-                maxRepeats={canUseInfiniteLoop(userPlan) ? 9 : FREE_MAX_LOOP_REPEATS}
+                infiniteAllowed={canUseSections(userPlan)}
+                maxRepeats={9}
                 onUpgrade={() => setIsPricingOpen(true)}
                 onSeek={seekTo}
                 onArmLoop={armLoop}
