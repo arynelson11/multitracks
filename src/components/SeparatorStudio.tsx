@@ -5,6 +5,7 @@ import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume
 import { uploadToR2 } from '../lib/r2';
 import { getAuthHeaders } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
+import { canDownloadStems } from '../lib/plans';
 import { PricingModal } from './PricingModal';
 import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
@@ -151,6 +152,7 @@ function getAudioContext() {
 export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => {
   const { user, userPlan } = useAuth();
   const isAdmin = user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com';
+  const canDownload = isAdmin || canDownloadStems(userPlan);
   const { separations, saveSeparation, deleteSeparation, isLoading: isLibLoading } = useSeparationLibrary();
   const [activeSepId, setActiveSepId] = useState<string | null>(null);
   const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>(() => {
@@ -240,6 +242,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   };
 
   const downloadStem = async (stem: StemData) => {
+    if (!canDownload) { setIsPricingOpen(true); return; }
     try {
       setEncodingStemId(stem.id);
       const res = await fetch(stem.url);
@@ -1620,10 +1623,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                         className={`w-6 h-5 rounded text-[8px] font-black transition-all active:scale-90 cursor-pointer border border-[#222] ${state.muted ? 'bg-[#ff3b30] text-white shadow-[0_0_8px_rgba(255,59,48,0.5)]' : 'bg-[#333] text-[#666] hover:bg-[#444]'}`}>M</button>
                       <button onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], soloed: !p[stem.id].soloed } }))}
                         className={`w-6 h-5 rounded text-[8px] font-black transition-all active:scale-90 cursor-pointer border border-[#222] ${state.soloed ? 'bg-[#ffcc00] text-black shadow-[0_0_8px_rgba(255,204,0,0.5)]' : 'bg-[#333] text-[#666] hover:bg-[#444]'}`}>S</button>
-                      <button onClick={() => downloadStem(stem)} disabled={encodingStemId === stem.id}
-                        title={`Baixar ${stem.name} (${downloadFormat.toUpperCase()})`}
+                      <button onClick={() => canDownload ? downloadStem(stem) : setIsPricingOpen(true)} disabled={encodingStemId === stem.id}
+                        title={canDownload ? `Baixar ${stem.name} (${downloadFormat.toUpperCase()})` : 'Download disponível nos planos pagos'}
                         className="w-6 h-5 rounded cursor-pointer border border-[#222] bg-[#333] text-[#666] hover:bg-[#444] hover:text-primary flex items-center justify-center transition-all active:scale-90 disabled:opacity-60 disabled:cursor-wait">
-                        {encodingStemId === stem.id ? <Loader2 size={9} className="animate-spin" /> : <Download size={9} />}
+                        {encodingStemId === stem.id ? <Loader2 size={9} className="animate-spin" /> : canDownload ? <Download size={9} /> : <Lock size={9} />}
                       </button>
                     </div>
                   </div>
