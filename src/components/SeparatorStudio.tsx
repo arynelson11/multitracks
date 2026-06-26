@@ -5,7 +5,7 @@ import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume
 import { uploadToR2 } from '../lib/r2';
 import { getAuthHeaders } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { canDownloadStems } from '../lib/plans';
+import { canDownloadStems, canUseVoiceGuide } from '../lib/plans';
 import { PricingModal } from './PricingModal';
 import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
@@ -153,6 +153,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const { user, userPlan } = useAuth();
   const isAdmin = user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com';
   const canDownload = isAdmin || canDownloadStems(userPlan);
+  const canVoiceGuide = isAdmin || canUseVoiceGuide(userPlan);
   const { separations, saveSeparation, deleteSeparation, isLoading: isLibLoading } = useSeparationLibrary();
   const [activeSepId, setActiveSepId] = useState<string | null>(null);
   const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>(() => {
@@ -1552,9 +1553,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
           {/* Direita: VOZ · SYNC · MASTER (encostados no centro) */}
           <div className="flex-1 flex items-center justify-start gap-2.5 min-w-0">
             {stems.length > 0 && (
-              <button onClick={() => setShowVoiceGuide(true)}
+              <button onClick={() => canVoiceGuide ? setShowVoiceGuide(true) : setIsPricingOpen(true)}
+                title={canVoiceGuide ? 'Voz guia' : 'Voz guia disponível nos planos pagos'}
                 className={`transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md cursor-pointer transition-all ${voiceCues.length > 0 ? 'text-yellow-400 border-yellow-500/30' : 'text-white/70 hover:text-yellow-400'}`}>
-                <Mic size={12} />
+                {canVoiceGuide ? <Mic size={12} /> : <Lock size={12} />}
                 <span className="text-[7px] uppercase tracking-widest font-bold font-mono hidden md:inline">
                   VOZ {voiceCues.length > 0 && `(${voiceCues.length})`}
                 </span>
