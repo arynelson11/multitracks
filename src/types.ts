@@ -16,6 +16,10 @@ export interface Channel {
 
 export interface Song {
     id: string;
+    // Liga o item do repertório à música na nuvem (biblioteca). Permite
+    // ressincronizar nome/tom/bpm/capa quando a música é editada na biblioteca,
+    // mesmo já estando baixada/no ao vivo. Itens antigos não têm (fallback p/ nome).
+    sourceId?: string;
     name: string;
     coverImage?: string;
     channels: Channel[];

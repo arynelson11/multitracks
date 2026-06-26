@@ -685,7 +685,7 @@ export function useAudioEngine(userId?: string) {
     }, [isPlaying, updateTime]);
 
     // Load files
-    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string, songMarkers?: Marker[], overrideOriginalKey?: string | null, overrideBpm?: number, meta?: { artist?: string; lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null }) => {
+    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string, songMarkers?: Marker[], overrideOriginalKey?: string | null, overrideBpm?: number, meta?: { artist?: string; lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null; sourceId?: string }) => {
         if (!audioCtxRef.current || !masterGainRef.current) return;
         setIsLoading(true);
 
@@ -811,6 +811,7 @@ export function useAudioEngine(userId?: string) {
 
         const newSong: Song = {
             id: crypto.randomUUID(),
+            sourceId: meta?.sourceId,
             name: songName,
             coverImage: coverImage,
             channels: newChannels,
@@ -999,6 +1000,46 @@ export function useAudioEngine(userId?: string) {
     const setSongLyrics = (songId: string, data: { lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null }) => {
         const newPlaylist = playlist.map(s => s.id === songId ? { ...s, ...data } : s);
         updatePlaylistAndSave(newPlaylist);
+    };
+
+    // Ressincroniza no repertório (e no ao vivo, via estado/follower) a música
+    // editada na biblioteca, mesmo já estando baixada. Casa pelo sourceId (id da
+    // nuvem) ou, p/ itens antigos sem sourceId, pelo nome completo anterior.
+    // Atualiza só os campos informados (nome, artista, tom, bpm, capa).
+    const syncSongMeta = (opts: {
+        sourceId?: string;
+        prevName?: string;
+        prevBpm?: number;
+        prevOriginalKey?: string | null;
+        name?: string;
+        artist?: string;
+        originalKey?: string | null;
+        bpm?: number;
+        coverImage?: string;
+    }) => {
+        let changed = false;
+        const newPlaylist = playlist.map(s => {
+            // Match por sourceId é exato. Para itens antigos (sem sourceId) caímos
+            // no nome anterior — mas reforçado com bpm+tom anteriores p/ desempatar
+            // músicas de nome idêntico: só colide quem tem nome+bpm+tom iguais, e
+            // nesse caso é efetivamente a mesma música (atualizar ambas é correto).
+            const nameMatch = !!opts.prevName && !s.sourceId && s.name === opts.prevName
+                && (opts.prevBpm === undefined || (s.bpm ?? undefined) === opts.prevBpm)
+                && (opts.prevOriginalKey === undefined || (s.originalKey ?? null) === (opts.prevOriginalKey ?? null));
+            const matches = (!!opts.sourceId && s.sourceId === opts.sourceId) || nameMatch;
+            if (!matches) return s;
+            changed = true;
+            return {
+                ...s,
+                ...(opts.sourceId ? { sourceId: opts.sourceId } : {}),
+                ...(opts.name !== undefined ? { name: opts.name } : {}),
+                ...(opts.artist !== undefined ? { artist: opts.artist } : {}),
+                ...(opts.originalKey !== undefined ? { originalKey: opts.originalKey } : {}),
+                ...(opts.bpm !== undefined ? { bpm: opts.bpm } : {}),
+                ...(opts.coverImage !== undefined ? { coverImage: opts.coverImage } : {}),
+            };
+        });
+        if (changed) updatePlaylistAndSave(newPlaylist);
     };
 
     // Setlist actions
@@ -1581,6 +1622,7 @@ export function useAudioEngine(userId?: string) {
         currentMarker,
         setSongMarkers,
         setSongLyrics,
+        syncSongMeta,
 
         // Phase 3
         bus1Volume,

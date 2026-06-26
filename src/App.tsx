@@ -68,7 +68,7 @@ export default function App() {
     setChannelBus, exportPlaylist, importPlaylist,
     channels, pause, seekTo, prevSong, nextSong, isPlaying, currentTime, duration,
     masterVolume, updateVolume, toggleMute, toggleSolo, updateMasterVolume,
-    changePitch, setOriginalKey, currentMarker, setSongMarkers, setSongLyrics,
+    changePitch, setOriginalKey, currentMarker, setSongMarkers, setSongLyrics, syncSongMeta,
     playbackMode, setPlaybackMode,
     activeLoop, pendingJump, armLoop, cancelLoop, armJump, cancelJump,
     addChannelToActiveSong,
@@ -1850,7 +1850,7 @@ export default function App() {
       <LibraryModal
         isOpen={isLibraryOpen}
         onClose={() => setIsLibraryOpen(false)}
-        onDownload={async (files, songName, coverUrl, markers, originalKey, artist, bpm, extra) => {
+        onDownload={async (files, songName, coverUrl, markers, originalKey, artist, bpm, extra, songId) => {
           const dt = new DataTransfer();
           files.forEach(f => dt.items.add(f));
           const fullName = artist ? `${artist} - ${songName}` : songName;
@@ -1859,7 +1859,12 @@ export default function App() {
             lyrics: extra?.lyrics ?? null,
             lyricsSynced: extra?.lyricsSynced ?? null,
             chords: extra?.chords ?? null,
+            sourceId: songId,
           });
+        }}
+        onSongEdited={({ songId, prevName, prevBpm, prevOriginalKey, name, artist, originalKey, bpm, coverImage }) => {
+          // Reflete a edição da biblioteca no repertório já carregado (e no ao vivo).
+          syncSongMeta({ sourceId: songId, prevName, prevBpm, prevOriginalKey, name, artist, originalKey, bpm, coverImage });
         }}
       />
 

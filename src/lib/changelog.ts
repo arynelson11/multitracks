@@ -11,6 +11,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.3.12',
+    date: '2026-06-26',
+    title: 'Editou na biblioteca, atualiza em todo lugar',
+    items: [
+      'Ao editar nome, tom, BPM ou capa de uma música na biblioteca, a alteração agora aparece também na música já baixada, no repertório e no Modo Ao Vivo. Antes ficava com os dados antigos de quando você baixou.',
+      'A atualização vale tanto online quanto offline: a versão salva no aparelho também é corrigida.',
+    ],
+  },
+  {
     version: '1.3.11',
     date: '2026-06-26',
     title: 'Separação de faixas repaginada',

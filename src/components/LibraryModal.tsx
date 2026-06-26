@@ -3,16 +3,19 @@ import { Search, X, Download, Cloud, Loader2, Music, RefreshCcw, Trash2, Edit2, 
 import { useCloudLibrary } from '../hooks/useCloudLibrary';
 import { useAuth } from '../hooks/useAuth';
 import { updateSong, type CloudSong } from '../lib/supabase';
+import { updateCachedSongMeta } from '../lib/offlineCache';
 import { uploadToR2 } from '../lib/r2';
 import { type Marker } from '../types';
 
 interface LibraryModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onDownload: (files: File[], songName: string, coverUrl: string | null, markers?: Marker[], originalKey?: string | null, artist?: string, bpm?: number, extra?: { lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null }) => void;
+    onDownload: (files: File[], songName: string, coverUrl: string | null, markers?: Marker[], originalKey?: string | null, artist?: string, bpm?: number, extra?: { lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null }, songId?: string) => void;
+    // Reflete a edição (nome/tom/bpm/capa) na música já baixada/no ao vivo.
+    onSongEdited?: (e: { songId: string; prevName: string; prevBpm?: number; prevOriginalKey?: string | null; name: string; artist?: string; originalKey?: string | null; bpm?: number; coverImage?: string }) => void;
 }
 
-export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps) {
+export function LibraryModal({ isOpen, onClose, onDownload, onSongEdited }: LibraryModalProps) {
     const {
         songs,
         searchQuery,
@@ -63,6 +66,24 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
             
             const ok = await updateSong(song.id, updates);
             if (ok) {
+                // Sincroniza os dois snapshots que ficavam congelados de quando a
+                // música foi baixada: (1) o índice do cache offline e (2) o item
+                // já presente no repertório/ao vivo. Sem isto, a lista atualizava
+                // mas a música baixada continuava com nome/tom/bpm antigos.
+                await updateCachedSongMeta(song.id, updates);
+                const prevName = song.artist ? `${song.artist} - ${song.name}` : song.name;
+                const newName = updates.artist ? `${updates.artist} - ${updates.name}` : updates.name;
+                onSongEdited?.({
+                    songId: song.id,
+                    prevName,
+                    prevBpm: song.bpm,
+                    prevOriginalKey: song.key ?? null,
+                    name: newName,
+                    artist: updates.artist ?? undefined,
+                    originalKey: updates.key ?? null,
+                    bpm: updates.bpm,
+                    coverImage: newCoverUrl ?? undefined,
+                });
                 await refreshSongs();
                 setEditingSong({});
             } else {
@@ -82,7 +103,7 @@ export function LibraryModal({ isOpen, onClose, onDownload }: LibraryModalProps)
     const handleDownload = async (songId: string, songName: string) => {
         const result = await downloadSong(songId);
         if (result && result.files.length > 0) {
-            onDownload(result.files, songName, result.coverUrl, result.markers || undefined, result.originalKey, result.artist, result.bpm, { lyrics: result.lyrics, lyricsSynced: result.lyricsSynced, chords: result.chords });
+            onDownload(result.files, songName, result.coverUrl, result.markers || undefined, result.originalKey, result.artist, result.bpm, { lyrics: result.lyrics, lyricsSynced: result.lyricsSynced, chords: result.chords }, songId);
             setDownloadedIds(prev => new Set(prev).add(songId));
         }
     };

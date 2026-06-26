@@ -164,6 +164,34 @@ export async function cacheSong(
     }
 }
 
+// Atualiza só os metadados (nome, artista, tom, bpm, capa) do snapshot guardado
+// no índice offline quando a música é editada na biblioteca. Sem isso, reabrir
+// uma música já baixada mostrava os dados de quando ela foi baixada. Os stems
+// não mudam — reescrevemos apenas o índice leve. Se a capa mudou, rebaixa o blob
+// durável (mantém o anterior se o download falhar). No-op se não há cache.
+export async function updateCachedSongMeta(
+    songId: string,
+    patch: Partial<CloudSong>
+): Promise<void> {
+    try {
+        const data = await get<CachedSongIndex | LegacyCachedSongData>(indexKey(songId));
+        if (!data) return; // música não baixada: nada a sincronizar
+
+        const coverChanged = patch.cover_url !== undefined && patch.cover_url !== data.song.cover_url;
+        data.song = { ...data.song, ...patch };
+
+        if (coverChanged && patch.cover_url) {
+            const newCover = await downloadCoverAsBlob(patch.cover_url);
+            if (newCover) data.coverBlob = newCover;
+        }
+
+        await set(indexKey(songId), data);
+        console.log(`Cached meta de ${songId} atualizada (offline).`);
+    } catch (e) {
+        console.error(`Failed to update cached meta for ${songId}:`, e);
+    }
+}
+
 // Check if a song is cached offline (índice presente)
 export async function isSongCached(songId: string): Promise<boolean> {
     try {
