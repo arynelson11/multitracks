@@ -1248,32 +1248,35 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
               {/* Separação Básica */}
               <div>
                 <h2 className="text-white font-bold text-sm mb-4">Separação Básica</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div 
+                <div className="grid grid-cols-1 gap-4">
+                  <div
                     onClick={() => handleSelectOption(2, false, false)}
                     className="hw-btn flex flex-col p-6 rounded-xl cursor-pointer hover:bg-white/5 transition-colors border border-border/50 hover:border-primary/50 group"
                   >
                     <div className="text-white font-bold text-base mb-2 group-hover:text-primary transition-colors">Vocais, Instrumental</div>
                     <div className="text-text-muted text-xs">2 faixas</div>
                   </div>
-                  <div 
-                    onClick={() => handleSelectOption(4, false, false)}
-                    className="hw-btn flex flex-col p-6 rounded-xl cursor-pointer hover:bg-white/5 transition-colors border border-border/50 hover:border-primary/50 group"
-                  >
-                    <div className="text-white font-bold text-base mb-2 group-hover:text-primary transition-colors">Vocais, Bateria, Baixo, Outros</div>
-                    <div className="text-text-muted text-xs">4 faixas</div>
-                  </div>
                 </div>
               </div>
 
-              {/* Separação Pro */}
+              {/* Separação Avançada (Pro) */}
               <div>
                 <h2 className="text-white font-bold text-sm mb-4 flex items-center gap-2">
                   Separação Avançada
                   {!canUsePro && <span className="bg-yellow-500/20 text-yellow-500 text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider ml-2">PRO</span>}
                 </h2>
                 <div className="grid grid-cols-1 gap-4">
-                  <div 
+                  <div
+                    onClick={() => handleSelectOption(4, true, false)}
+                    className={`hw-btn flex items-center p-6 rounded-xl border transition-colors group ${canUsePro ? 'cursor-pointer hover:bg-white/5 border-border/50 hover:border-primary/50' : 'cursor-not-allowed opacity-50 border-border/20 bg-black/20'}`}
+                  >
+                    <div className="flex-1">
+                      <div className="text-white font-bold text-base mb-2">Vocais, Bateria, Baixo, Outros</div>
+                      <div className="text-text-muted text-xs">4 faixas</div>
+                    </div>
+                    {!canUsePro && <Lock size={20} className="text-text-muted/50" />}
+                  </div>
+                  <div
                     onClick={() => handleSelectOption(6, true, false)}
                     className={`hw-btn flex items-center p-6 rounded-xl border transition-colors group ${canUsePro ? 'cursor-pointer hover:bg-white/5 border-border/50 hover:border-primary/50' : 'cursor-not-allowed opacity-50 border-border/20 bg-black/20'}`}
                   >
