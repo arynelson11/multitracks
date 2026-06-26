@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.3.13',
+    date: '2026-06-26',
+    title: 'Planos mais claros',
+    items: [
+      'O plano Livre agora foca em experimentar a separação: você separa em 2 faixas (voz e instrumental) e ouve cada uma no mixer, até 5 músicas por mês.',
+      'Baixar as faixas, separar em 4 ou 6, BPM detectado pela IA, voz guia e marcar seções pra repetir trechos ao vivo agora fazem parte dos planos Pro e Studio.',
+      'Quem já é Pro ou Studio continua com tudo liberado, sem mudança.',
+    ],
+  },
+  {
     version: '1.3.12',
     date: '2026-06-26',
     title: 'Editou na biblioteca, atualiza em todo lugar',
