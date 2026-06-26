@@ -82,3 +82,23 @@ export function maxLiveDevices(id: string | null | undefined): number {
 export function canBandControlSections(id: string | null | undefined): boolean {
   return planTier(id) === 'studio'
 }
+
+// Baixar a faixa separada pro computador (WAV/MP3) é exclusivo do pago.
+export function canDownloadStems(id: string | null | undefined): boolean {
+  return planTier(id) !== 'free'
+}
+
+// BPM detectado pela IA: recurso de preparo, exclusivo do pago.
+export function canUseBpmDetection(id: string | null | undefined): boolean {
+  return planTier(id) !== 'free'
+}
+
+// Voz guia (manual e automática): exclusivo do pago.
+export function canUseVoiceGuide(id: string | null | undefined): boolean {
+  return planTier(id) !== 'free'
+}
+
+// Marcar seções e usar loop ao vivo: exclusivo do pago.
+export function canUseSections(id: string | null | undefined): boolean {
+  return planTier(id) !== 'free'
+}
