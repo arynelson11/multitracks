@@ -5,7 +5,7 @@ import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume
 import { uploadToR2 } from '../lib/r2';
 import { getAuthHeaders } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { canDownloadStems, canUseVoiceGuide, canUseBpmDetection, planTier } from '../lib/plans';
+import { canDownloadStems, canUseVoiceGuide, canUseBpmDetection, planTier, maxSeparationsPerMonth } from '../lib/plans';
 import { PricingModal } from './PricingModal';
 import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
@@ -802,9 +802,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
   const processAudio = async (audioFile: File, stemCount: number) => {
     // ── Limit check based on Plan ──
-    const LIMITS = { free: 5, essencial: 50, pro: 150, essencial_anual: 50, pro_anual: 150 };
-    const userPlanKey = (userPlan || 'free').toLowerCase();
-    const maxLimit = LIMITS[userPlanKey as keyof typeof LIMITS] || 5;
+    const maxLimit = maxSeparationsPerMonth(userPlan);
     
     const count = parseInt(localStorage.getItem('separator_usage') || '0');
     if (count >= maxLimit) {

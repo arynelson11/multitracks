@@ -76,6 +76,15 @@ export function canBandControlSections(id: string | null | undefined): boolean {
   return planTier(id) === 'studio'
 }
 
+// Cota de separações de faixas por mês conforme o tier. Usa planTier pra valer
+// tanto pro ciclo mensal quanto anual (os IDs crus divergem; o tier não).
+export function maxSeparationsPerMonth(id: string | null | undefined): number {
+  const t = planTier(id)
+  if (t === 'studio') return 150
+  if (t === 'pro') return 50
+  return 5
+}
+
 // Baixar a faixa separada pro computador (WAV/MP3) é exclusivo do pago.
 export function canDownloadStems(id: string | null | undefined): boolean {
   return planTier(id) !== 'free'

@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import type { Channel } from '../types';
 import { PricingModal } from './PricingModal';
 import { supabase } from '../lib/supabase';
-import { planDisplayName, isPaidPlan } from '../lib/plans';
+import { planDisplayName, isPaidPlan, maxSeparationsPerMonth } from '../lib/plans';
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark';
 import { ProfileTab } from './ProfileTab';
 import { CHANGELOG } from '../lib/changelog';
@@ -264,9 +264,7 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                                 </p>
 
                                 {(() => {
-                                    const LIMITS = { free: 5, essencial: 50, pro: 150, essencial_anual: 50, pro_anual: 150 };
-                                    const userPlanKey = (userPlan || 'free').toLowerCase();
-                                    const maxLimit = LIMITS[userPlanKey as keyof typeof LIMITS] || 5;
+                                    const maxLimit = maxSeparationsPerMonth(userPlan);
                                     const currentUsage = parseInt(localStorage.getItem('separator_usage') || '0');
                                     const usagePercent = Math.min(100, Math.round((currentUsage / maxLimit) * 100));
                                     
