@@ -5,7 +5,7 @@ import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume
 import { uploadToR2 } from '../lib/r2';
 import { getAuthHeaders } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { canDownloadStems, canUseVoiceGuide, canUseBpmDetection } from '../lib/plans';
+import { canDownloadStems, canUseVoiceGuide, canUseBpmDetection, planTier } from '../lib/plans';
 import { PricingModal } from './PricingModal';
 import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
@@ -1218,9 +1218,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   };
 
   if (separationStep === 'options' && pendingFile) {
-    const userPlanKey = (userPlan || 'free').toLowerCase();
-    const canUsePro = userPlanKey.includes('pro') || userPlanKey.includes('studio') || isAdmin;
-    const canUseStudio = userPlanKey.includes('studio') || isAdmin;
+    const tier = planTier(userPlan);
+    const canUsePro = isAdmin || tier !== 'free';
+    const canUseStudio = isAdmin || tier === 'studio';
 
     const handleSelectOption = (stemsCount: number, requirePro: boolean, requireStudio: boolean) => {
       if (requireStudio && !canUseStudio) {

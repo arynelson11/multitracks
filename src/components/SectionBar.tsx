@@ -252,7 +252,7 @@ export function SectionBar({
                     <span
                       role="button"
                       tabIndex={0}
-                      onClick={(e) => { e.stopPropagation(); isLoopHere ? onCancelLoop() : onArmLoop(index, repeatCount); }}
+                      onClick={(e) => { e.stopPropagation(); isLoopHere ? onCancelLoop() : (infiniteAllowed ? onArmLoop(index, repeatCount) : onUpgrade()); }}
                       title={isLoopHere ? 'Cancelar repetição' : `Repetir esta seção ${repeatCount}x`}
                       className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold cursor-pointer transition-all backdrop-blur-sm ${isLoopHere ? 'bg-primary text-black' : 'bg-black/50 text-white/80 hover:text-white'}`}
                     >
@@ -324,7 +324,7 @@ export function SectionBar({
                   </button>
                 </div>
                 <button
-                  onClick={() => currentIdx >= 0 && onArmLoop(currentIdx, repeatCount)}
+                  onClick={() => { if (!infiniteAllowed) { onUpgrade(); return; } if (currentIdx >= 0) onArmLoop(currentIdx, repeatCount); }}
                   disabled={currentIdx < 0}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-primary/15 border border-primary/30 text-primary text-[10px] font-bold uppercase tracking-wider cursor-pointer active:scale-95 transition-all disabled:opacity-30 disabled:cursor-default"
                   title="Repetir a seção que está tocando"
