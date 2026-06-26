@@ -3,6 +3,7 @@ import {
   Mic2, Drumstick, Guitar, Music, Disc3,
   Star, ChevronDown, Check,
   ArrowRight, Church, Download,
+  Gauge, Archive, ScrollText, Sparkles, FileAudio, WifiOff, QrCode,
 } from 'lucide-react'
 import { DemoMixer } from './DemoMixer'
 import { BrandLogo } from './BrandLogo'
@@ -29,6 +30,20 @@ const AUDIENCE = [
   { icon: Disc3,     title: 'Solo e produtores',    desc: 'Construa em cima de qualquer faixa. Separe, remixe, refaça arranjos.' },
 ]
 
+/**
+ * Recursos que já existem no produto mas costumam passar batido na primeira
+ * visita. Tudo aqui é entregue de verdade hoje, sem promessa de roadmap.
+ */
+const FEATURES = [
+  { icon: Gauge,      title: 'BPM detectado pela IA',      desc: 'Ao separar, a IA já estima o andamento da música. O click entra na velocidade certa, sem você contar nada.' },
+  { icon: ScrollText, title: 'Teleprompter de letras',     desc: 'Suba a letra da música e a equipe acompanha na tela, sincronizada com as seções, no palco ou pelo celular.' },
+  { icon: Sparkles,   title: 'Voz guia automática',        desc: 'O Playback Studio marca sozinho os pontos de entrada e monta a voz guia pra orientar quem canta.' },
+  { icon: Archive,    title: 'Repertório com backup .zip', desc: 'Monte seus repertórios e salve tudo num arquivo .zip. Carregue de volta em qualquer aparelho, quando quiser.' },
+  { icon: FileAudio,  title: 'Download em WAV ou MP3',     desc: 'Baixe cada faixa separada no formato que precisar. WAV pra produzir, MP3 pra mandar rápido pra equipe.' },
+  { icon: QrCode,     title: 'Banda conecta por QR Code',  desc: 'No Modo Ao Vivo, cada músico aponta o celular pro QR Code e entra na sessão. Música, tom e letra em tempo real.' },
+  { icon: WifiOff,    title: 'App desktop que toca offline', desc: 'Baixe o app pro Mac ou Windows. Depois de carregar as músicas, tudo funciona no palco mesmo sem internet.' },
+]
+
 const PLANS = [
   {
     id: 'gratuito',
@@ -40,8 +55,9 @@ const PLANS = [
     features: [
       '5 separações de faixas por mês',
       'Separação em 2 ou 4 faixas',
-      'Biblioteca local, toca offline no palco',
+      'Biblioteca de separações local, toca offline no palco',
       'Mixer multicanal',
+      'Voz guia pra orientar a equipe',
       'Marque as seções da música (intro, verso, refrão)',
       'Repita um trecho ao vivo, até 4 vezes',
     ],
@@ -57,7 +73,7 @@ const PLANS = [
     features: [
       '50 separações de faixas por mês',
       'Separação avançada em 6 faixas',
-      'Pads de ambiente e voice guide',
+      'Pads de ambiente',
       'Click com levada brasileira',
       'Repita partes em loop infinito ao vivo',
       'Modo Ao Vivo: a banda acompanha pelo celular (até 4 aparelhos)',
@@ -79,7 +95,6 @@ const PLANS = [
       'Tudo do Pro',
       'Modo Ao Vivo sem limite de aparelhos',
       'A banda controla loop e seções pelo celular',
-      'Múltiplos repertórios',
       'Prioridade no processamento',
       'Suporte prioritário',
     ],
@@ -102,7 +117,7 @@ const FAQS = [
   },
   {
     q: 'Como funciona a separação?',
-    a: 'Você sobe a música (MP3, WAV ou link). A IA do Playback Studio separa em voz, guitarra, baixo, bateria, piano e pads em alguns minutos. Os stems ficam disponíveis pra download, no mixer e pra compartilhar com a equipe.'
+    a: 'Você sobe a música (MP3, WAV ou AAC). A IA do Playback Studio separa em voz, bateria, baixo, guitarra, piano e os outros instrumentos em alguns minutos. Os stems ficam disponíveis pra download, no mixer e pra compartilhar com a equipe.'
   },
   {
     q: 'Qual a diferença pra um catálogo de multitracks?',
@@ -309,8 +324,8 @@ export function LandingPage({ onEnter }: LandingPageProps) {
 
           <div className="space-y-5">
             {[
-              { n: '1', title: 'Sobe a música', desc: 'Qualquer formato: MP3, WAV, ou link do YouTube.' },
-              { n: '2', title: 'O Playback Studio separa tudo', desc: 'Voz, guitarra, baixo, bateria, piano, pads. Em alguns minutos.' },
+              { n: '1', title: 'Sobe a música', desc: 'Qualquer formato de áudio: MP3, WAV ou AAC.' },
+              { n: '2', title: 'O Playback Studio separa tudo', desc: 'Voz, bateria, baixo, guitarra, piano e os outros instrumentos. Em alguns minutos.' },
               { n: '3', title: 'Sua banda chega pronta no domingo', desc: 'Faixas separadas, click e voice guide. Você marca as seções (intro, verso, refrão) pra repetir trechos ao vivo, e a banda acompanha pelo celular.' },
             ].map(step => (
               <div key={step.n} className="bg-tinta-raised border border-tinta-border rounded-2xl p-6 sm:p-8 flex items-start gap-6">
@@ -351,6 +366,30 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                 </div>
                 <h4 className="font-display font-semibold text-[16px] text-bone mb-2">{a.title}</h4>
                 <p className="text-[13px] text-warm-200 leading-relaxed">{a.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ════════ FEATURES — tudo que vem junto ════════ */}
+      <section className="py-24 px-5 sm:px-8">
+        <div className="max-w-5xl mx-auto">
+          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">tudo que vem junto</p>
+          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-4 text-center">
+            Mais do que separar faixas.
+          </h2>
+          <p className="text-warm-200 text-[15px] max-w-2xl mx-auto mb-16 text-center leading-relaxed">
+            A separação é só o começo. O Playback Studio leva a música do upload até o palco, com tudo que a banda precisa no caminho.
+          </p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {FEATURES.map((f, i) => (
+              <div key={i} className="group bg-tinta-raised border border-tinta-border hover:border-laranja/40 rounded-2xl p-6 transition-colors">
+                <div className="w-10 h-10 rounded-xl bg-laranja/15 group-hover:bg-laranja/25 flex items-center justify-center mb-4 transition-colors">
+                  <f.icon size={20} className="text-laranja" />
+                </div>
+                <h4 className="font-display font-semibold text-[16px] text-bone mb-2">{f.title}</h4>
+                <p className="text-[13px] text-warm-200 leading-relaxed">{f.desc}</p>
               </div>
             ))}
           </div>
