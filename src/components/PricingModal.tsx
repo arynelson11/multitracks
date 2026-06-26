@@ -16,7 +16,7 @@ const PLANS = [
         priceStr: 'R$ 49,90',
         period: '/mês',
         description: 'Pra equipe que toca toda semana',
-        features: ['50 separações de faixas por mês', 'Loop infinito ao vivo', 'Modo Ao Vivo (até 4 aparelhos)', 'Pads, voice guide e click brasileiro'],
+        features: ['Separação em 2, 4 e 6 faixas', 'Download em WAV e MP3', 'BPM pela IA, voz guia e pads', 'Modo Ao Vivo (até 4 aparelhos)'],
         isPopular: true
     },
     {

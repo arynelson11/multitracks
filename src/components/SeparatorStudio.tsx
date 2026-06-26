@@ -5,6 +5,7 @@ import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume
 import { uploadToR2 } from '../lib/r2';
 import { getAuthHeaders } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
+import { canDownloadStems, canUseVoiceGuide, canUseBpmDetection, planTier, maxSeparationsPerMonth } from '../lib/plans';
 import { PricingModal } from './PricingModal';
 import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
@@ -151,6 +152,9 @@ function getAudioContext() {
 export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => {
   const { user, userPlan } = useAuth();
   const isAdmin = user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com';
+  const canDownload = isAdmin || canDownloadStems(userPlan);
+  const canVoiceGuide = isAdmin || canUseVoiceGuide(userPlan);
+  const canBpm = isAdmin || canUseBpmDetection(userPlan);
   const { separations, saveSeparation, deleteSeparation, isLoading: isLibLoading } = useSeparationLibrary();
   const [activeSepId, setActiveSepId] = useState<string | null>(null);
   const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>(() => {
@@ -240,6 +244,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   };
 
   const downloadStem = async (stem: StemData) => {
+    if (!canDownload) { setIsPricingOpen(true); return; }
     try {
       setEncodingStemId(stem.id);
       const res = await fetch(stem.url);
@@ -797,9 +802,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
   const processAudio = async (audioFile: File, stemCount: number) => {
     // ── Limit check based on Plan ──
-    const LIMITS = { free: 5, essencial: 50, pro: 150, essencial_anual: 50, pro_anual: 150 };
-    const userPlanKey = (userPlan || 'free').toLowerCase();
-    const maxLimit = LIMITS[userPlanKey as keyof typeof LIMITS] || 5;
+    const maxLimit = maxSeparationsPerMonth(userPlan);
     
     const count = parseInt(localStorage.getItem('separator_usage') || '0');
     if (count >= maxLimit) {
@@ -1213,9 +1216,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   };
 
   if (separationStep === 'options' && pendingFile) {
-    const userPlanKey = (userPlan || 'free').toLowerCase();
-    const canUsePro = userPlanKey.includes('pro') || userPlanKey.includes('studio') || isAdmin;
-    const canUseStudio = userPlanKey.includes('studio') || isAdmin;
+    const tier = planTier(userPlan);
+    const canUsePro = isAdmin || tier !== 'free';
+    const canUseStudio = isAdmin || tier === 'studio';
 
     const handleSelectOption = (stemsCount: number, requirePro: boolean, requireStudio: boolean) => {
       if (requireStudio && !canUseStudio) {
@@ -1248,32 +1251,35 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
               {/* Separação Básica */}
               <div>
                 <h2 className="text-white font-bold text-sm mb-4">Separação Básica</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div 
+                <div className="grid grid-cols-1 gap-4">
+                  <div
                     onClick={() => handleSelectOption(2, false, false)}
                     className="hw-btn flex flex-col p-6 rounded-xl cursor-pointer hover:bg-white/5 transition-colors border border-border/50 hover:border-primary/50 group"
                   >
                     <div className="text-white font-bold text-base mb-2 group-hover:text-primary transition-colors">Vocais, Instrumental</div>
                     <div className="text-text-muted text-xs">2 faixas</div>
                   </div>
-                  <div 
-                    onClick={() => handleSelectOption(4, false, false)}
-                    className="hw-btn flex flex-col p-6 rounded-xl cursor-pointer hover:bg-white/5 transition-colors border border-border/50 hover:border-primary/50 group"
-                  >
-                    <div className="text-white font-bold text-base mb-2 group-hover:text-primary transition-colors">Vocais, Bateria, Baixo, Outros</div>
-                    <div className="text-text-muted text-xs">4 faixas</div>
-                  </div>
                 </div>
               </div>
 
-              {/* Separação Pro */}
+              {/* Separação Avançada (Pro) */}
               <div>
                 <h2 className="text-white font-bold text-sm mb-4 flex items-center gap-2">
                   Separação Avançada
                   {!canUsePro && <span className="bg-yellow-500/20 text-yellow-500 text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider ml-2">PRO</span>}
                 </h2>
                 <div className="grid grid-cols-1 gap-4">
-                  <div 
+                  <div
+                    onClick={() => handleSelectOption(4, true, false)}
+                    className={`hw-btn flex items-center p-6 rounded-xl border transition-colors group ${canUsePro ? 'cursor-pointer hover:bg-white/5 border-border/50 hover:border-primary/50' : 'cursor-not-allowed opacity-50 border-border/20 bg-black/20'}`}
+                  >
+                    <div className="flex-1">
+                      <div className="text-white font-bold text-base mb-2">Vocais, Bateria, Baixo, Outros</div>
+                      <div className="text-text-muted text-xs">4 faixas</div>
+                    </div>
+                    {!canUsePro && <Lock size={20} className="text-text-muted/50" />}
+                  </div>
+                  <div
                     onClick={() => handleSelectOption(6, true, false)}
                     className={`hw-btn flex items-center p-6 rounded-xl border transition-colors group ${canUsePro ? 'cursor-pointer hover:bg-white/5 border-border/50 hover:border-primary/50' : 'cursor-not-allowed opacity-50 border-border/20 bg-black/20'}`}
                   >
@@ -1546,9 +1552,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
           {/* Direita: VOZ · SYNC · MASTER (encostados no centro) */}
           <div className="flex-1 flex items-center justify-start gap-2.5 min-w-0">
             {stems.length > 0 && (
-              <button onClick={() => setShowVoiceGuide(true)}
+              <button onClick={() => canVoiceGuide ? setShowVoiceGuide(true) : setIsPricingOpen(true)}
+                title={canVoiceGuide ? 'Voz guia' : 'Voz guia disponível nos planos pagos'}
                 className={`transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md cursor-pointer transition-all ${voiceCues.length > 0 ? 'text-yellow-400 border-yellow-500/30' : 'text-white/70 hover:text-yellow-400'}`}>
-                <Mic size={12} />
+                {canVoiceGuide ? <Mic size={12} /> : <Lock size={12} />}
                 <span className="text-[7px] uppercase tracking-widest font-bold font-mono hidden md:inline">
                   VOZ {voiceCues.length > 0 && `(${voiceCues.length})`}
                 </span>
@@ -1617,10 +1624,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                         className={`w-6 h-5 rounded text-[8px] font-black transition-all active:scale-90 cursor-pointer border border-[#222] ${state.muted ? 'bg-[#ff3b30] text-white shadow-[0_0_8px_rgba(255,59,48,0.5)]' : 'bg-[#333] text-[#666] hover:bg-[#444]'}`}>M</button>
                       <button onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], soloed: !p[stem.id].soloed } }))}
                         className={`w-6 h-5 rounded text-[8px] font-black transition-all active:scale-90 cursor-pointer border border-[#222] ${state.soloed ? 'bg-[#ffcc00] text-black shadow-[0_0_8px_rgba(255,204,0,0.5)]' : 'bg-[#333] text-[#666] hover:bg-[#444]'}`}>S</button>
-                      <button onClick={() => downloadStem(stem)} disabled={encodingStemId === stem.id}
-                        title={`Baixar ${stem.name} (${downloadFormat.toUpperCase()})`}
+                      <button onClick={() => canDownload ? downloadStem(stem) : setIsPricingOpen(true)} disabled={encodingStemId === stem.id}
+                        title={canDownload ? `Baixar ${stem.name} (${downloadFormat.toUpperCase()})` : 'Download disponível nos planos pagos'}
                         className="w-6 h-5 rounded cursor-pointer border border-[#222] bg-[#333] text-[#666] hover:bg-[#444] hover:text-primary flex items-center justify-center transition-all active:scale-90 disabled:opacity-60 disabled:cursor-wait">
-                        {encodingStemId === stem.id ? <Loader2 size={9} className="animate-spin" /> : <Download size={9} />}
+                        {encodingStemId === stem.id ? <Loader2 size={9} className="animate-spin" /> : canDownload ? <Download size={9} /> : <Lock size={9} />}
                       </button>
                     </div>
                   </div>
@@ -1737,12 +1744,14 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                    </div>
                  </div>
                  <div className="grid grid-cols-2 gap-3">
-                   <div>
-                     <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">BPM (IA)</label>
-                     <input type="number" value={bpm} onChange={e => setBpm(e.target.value)} 
-                       className="w-full daw-input rounded-md px-3 py-2 text-white text-xs font-mono"
-                     />
-                   </div>
+                   {canBpm && (
+                     <div>
+                       <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">BPM (IA)</label>
+                       <input type="number" value={bpm} onChange={e => setBpm(e.target.value)}
+                         className="w-full daw-input rounded-md px-3 py-2 text-white text-xs font-mono"
+                       />
+                     </div>
+                   )}
                    <div>
                      <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Tom</label>
                      <select value={songKey} onChange={e => setSongKey(e.target.value)}

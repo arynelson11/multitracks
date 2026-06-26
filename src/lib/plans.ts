@@ -58,13 +58,6 @@ export function planTier(internalId: string | null | undefined): PlanTier {
 
 // ── Regras de feature por plano (fonte única) ──
 
-// Loop de seção: grátis repete um número limitado de vezes; pago libera o
-// infinito (uso de ministração ao vivo).
-export const FREE_MAX_LOOP_REPEATS = 4
-export function canUseInfiniteLoop(id: string | null | undefined): boolean {
-  return planTier(id) !== 'free'
-}
-
 // Modo Ao Vivo (banda conecta o celular): exclusivo dos planos pagos.
 export function canUseLiveMode(id: string | null | undefined): boolean {
   return planTier(id) !== 'free'
@@ -81,4 +74,33 @@ export function maxLiveDevices(id: string | null | undefined): number {
 // Controle de loop/seções pela banda (pelo celular) é exclusivo do Studio.
 export function canBandControlSections(id: string | null | undefined): boolean {
   return planTier(id) === 'studio'
+}
+
+// Cota de separações de faixas por mês conforme o tier. Usa planTier pra valer
+// tanto pro ciclo mensal quanto anual (os IDs crus divergem; o tier não).
+export function maxSeparationsPerMonth(id: string | null | undefined): number {
+  const t = planTier(id)
+  if (t === 'studio') return 150
+  if (t === 'pro') return 50
+  return 5
+}
+
+// Baixar a faixa separada pro computador (WAV/MP3) é exclusivo do pago.
+export function canDownloadStems(id: string | null | undefined): boolean {
+  return planTier(id) !== 'free'
+}
+
+// BPM detectado pela IA: recurso de preparo, exclusivo do pago.
+export function canUseBpmDetection(id: string | null | undefined): boolean {
+  return planTier(id) !== 'free'
+}
+
+// Voz guia (manual e automática): exclusivo do pago.
+export function canUseVoiceGuide(id: string | null | undefined): boolean {
+  return planTier(id) !== 'free'
+}
+
+// Marcar seções e usar loop ao vivo: exclusivo do pago.
+export function canUseSections(id: string | null | undefined): boolean {
+  return planTier(id) !== 'free'
 }
