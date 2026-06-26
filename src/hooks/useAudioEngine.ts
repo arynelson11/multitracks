@@ -106,15 +106,24 @@ export function useAudioEngine(userId?: string) {
         return n.includes('click') || n.includes('metronomo') || n.includes('guia') || n.includes('guide');
     };
 
-    // Cria a engine de tom, pré-conecta ao panner e inicia neutra (modo
-    // live-input). Ela fica SEMPRE na cadeia (source→engine→panner); mudar de
-    // tom só troca um parâmetro, sem reconectar nós nem pause/play.
+    // Cria a engine de tom (worklet+WASM) e pré-conecta ao panner. IMPORTANTE: ela
+    // NÃO fica mais sempre na cadeia. Cada instância é um phase-vocoder com FFT
+    // (formantes) que roda DSP pesado por quadro mesmo no tom 0; com muitas faixas
+    // (ex.: 24 canais) isso satura a thread de áudio e zera o som SEM lançar erro.
+    // Por isso agora é criada sob demanda só quando a música está transposta (ver
+    // o bypass no play). Se o worklet falhar, retorna null e a faixa toca sem
+    // transpose — áudio nunca fica refém do efeito de tom.
     const setupPitchNode = async (ctx: AudioContext, panner: StereoPannerNode): Promise<any> => {
-        const node = await SignalsmithStretch(ctx, { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
-        node.connect(panner);
-        node.start();
-        node.schedule({ semitones: 0, formantCompensation: true, formantBaseHz: 0 });
-        return node;
+        try {
+            const node = await SignalsmithStretch(ctx, { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+            node.connect(panner);
+            node.start();
+            node.schedule({ semitones: 0, formantCompensation: true, formantBaseHz: 0 });
+            return node;
+        } catch (e) {
+            console.error('setupPitchNode falhou; faixa tocará sem transpose', e);
+            return null;
+        }
     };
 
     // Aplica o tom numa faixa (preservando formantes; click/guia ficam neutros).
@@ -254,8 +263,7 @@ export function useAudioEngine(userId?: string) {
                             panner.connect(gain);
                             gain.connect(master);
 
-                            const rbNode = await setupPitchNode(ctx, panner);
-
+                            // Worklet de tom é lazy: só nasce no play se houver transpose.
                             return {
                                 id: metaCh.id,
                                 name: metaCh.name,
@@ -263,7 +271,7 @@ export function useAudioEngine(userId?: string) {
                                 file: file,
                                 gainNode: gain,
                                 pannerNode: panner,
-                                pitchShiftNode: rbNode,
+                                pitchShiftNode: null,
                                 sourceNode: null,
                                 volume: metaCh.volume,
                                 muted: metaCh.muted,
@@ -365,10 +373,10 @@ export function useAudioEngine(userId?: string) {
         }
 
         const anySoloed = channels.some(c => c.soloed);
-        channels.forEach(ch => {
+        for (const ch of channels) {
             const source = ctx.createBufferSource();
             source.buffer = ch.buffer;
-            
+
             const nameL = ch.name.toLowerCase();
 
             if (nameL.includes('metronomo loop')) {
@@ -382,20 +390,32 @@ export function useAudioEngine(userId?: string) {
                 ch.gainNode.gain.setValueAtTime(vol, ctx.currentTime);
             }
 
-            // Engine de tom SEMPRE na cadeia (pré-conectada ao panner). A fonte
-            // só entra nela; o tom atual já está aplicado no nó. playbackRate
-            // fica em 1.0 — mudar o tom nunca altera a velocidade/BPM da música.
+            // BYPASS NO TOM 0: a engine de tom (worklet+WASM) é um phase-vocoder
+            // caro que roda DSP por quadro mesmo parada. No tom 0 (caso comum) a
+            // fonte vai DIRETO pro panner — sem worklet — então N faixas não
+            // saturam a thread de áudio (era isso que zerava o som em músicas de
+            // muitos canais). O worklet só nasce, sob demanda, quando a música
+            // está transposta e a faixa não é click/guia.
             source.playbackRate.value = 1.0;
-            if (ch.pitchShiftNode) {
-                applyPitchToChannel(ch, currentPitchRef.current);
-                source.connect(ch.pitchShiftNode);
+            const wantPitch = currentPitchRef.current !== 0 && !isClickOrGuideName(ch.name);
+            if (wantPitch) {
+                if (!ch.pitchShiftNode) {
+                    ch.pitchShiftNode = await setupPitchNode(ctx, ch.pannerNode);
+                }
+                if (ch.pitchShiftNode) {
+                    applyPitchToChannel(ch, currentPitchRef.current);
+                    source.connect(ch.pitchShiftNode);
+                } else {
+                    // Worklet falhou: toca sem transpose, nunca em silêncio.
+                    source.connect(ch.pannerNode);
+                }
             } else {
                 source.connect(ch.pannerNode);
             }
 
             source.start(0, pausedAtRef.current);
             ch.sourceNode = source;
-        });
+        }
 
         startTimeRef.current = ctx.currentTime;
         setIsPlaying(true);
@@ -714,8 +734,6 @@ export function useAudioEngine(userId?: string) {
                 panner.pan.value = panValue;
                 gain.gain.value = 1;
 
-                const rbNode = await setupPitchNode(audioCtxRef.current, panner);
-
                 panner.connect(gain);
 
                 const uuid = crypto.randomUUID();
@@ -745,7 +763,7 @@ export function useAudioEngine(userId?: string) {
                     file: file,
                     gainNode: gain,
                     pannerNode: panner,
-                    pitchShiftNode: rbNode,
+                    pitchShiftNode: null,
                     sourceNode: null,
                     volume: 1,
                     muted: false,
@@ -758,6 +776,14 @@ export function useAudioEngine(userId?: string) {
             results.push(...batchResults);
         }
         const newChannels: Channel[] = results.filter((ch): ch is Channel => ch !== null);
+
+        // Se NADA decodificou (arquivos corrompidos ou cache offline quebrado), não
+        // cria uma música vazia no repertório (00:00, mixer sem canais). Aborta — o
+        // finally desliga o loading. Vale pro caso da Estações com cache incompleto.
+        if (newChannels.length === 0) {
+            console.error('loadFiles: nenhuma faixa decodificou — música não adicionada.');
+            return;
+        }
 
         let maxDuration = 0;
         newChannels.forEach(ch => {
@@ -844,8 +870,6 @@ export function useAudioEngine(userId?: string) {
             filesDb.set(uuid, file);
             await set(DB_KEY_FILES, filesDb);
 
-            const rbNode = await setupPitchNode(audioCtxRef.current, panner);
-
             const newChannel: Channel = {
                 id: uuid,
                 name: 'Metronomo Loop',
@@ -853,7 +877,7 @@ export function useAudioEngine(userId?: string) {
                 file: file,
                 gainNode: gain,
                 pannerNode: panner,
-                pitchShiftNode: rbNode,
+                pitchShiftNode: null,
                 sourceNode: null,
                 volume: 1,
                 muted: false,
@@ -930,8 +954,6 @@ export function useAudioEngine(userId?: string) {
             filesDb.set(uuid, file);
             await set(DB_KEY_FILES, filesDb);
 
-            const rbNode = await setupPitchNode(audioCtxRef.current, panner);
-
             const newChannel: Channel = {
                 id: uuid,
                 name: file.name.replace(/\.[^/.]+$/, ''),
@@ -939,7 +961,7 @@ export function useAudioEngine(userId?: string) {
                 file: file,
                 gainNode: gain,
                 pannerNode: panner,
-                pitchShiftNode: rbNode,
+                pitchShiftNode: null,
                 sourceNode: null,
                 volume: 1,
                 muted: false,
@@ -1264,23 +1286,47 @@ export function useAudioEngine(userId?: string) {
 
         // Clamp to -12 / +12 Semitones
         const clampedPitch = Math.max(-12, Math.min(12, newPitch));
-        if (currentPitchRef.current === clampedPitch) return;
+        const prevPitch = currentPitchRef.current;
+        if (prevPitch === clampedPitch) return;
 
         const newPlaylist = [...playlist];
         const song = { ...newPlaylist[activeSongIndex] };
         song.pitch = clampedPitch;
-
         currentPitchRef.current = clampedPitch;
 
-        // Engine sempre na cadeia: trocar de tom é só atualizar o parâmetro nos
-        // nós (com preservação de formantes). Sem pause/play, sem reconectar
-        // cadeia — era esse reroute que silenciava/travava ao cruzar o tom 0.
-        // Aplica esteja tocando ou não; o nó guarda o estado pro próximo play.
-        song.channels.forEach(ch => applyPitchToChannel(ch, clampedPitch));
+        const ctx = audioCtxRef.current;
+        // Cruzar a fronteira do bypass (tom 0 <-> tom != 0) muda o ROTEAMENTO da
+        // cadeia: o worklet de tom entra ou sai. Quando isso acontece tocando, a
+        // posição é preservada e as fontes são recriadas pelo play() já com a
+        // cadeia certa — mesmo caminho do seek. Entre dois tons != 0 (sem trocar
+        // roteamento) basta reprogramar o parâmetro, sem reiniciar a fonte.
+        const crossesBypass = (prevPitch === 0) !== (clampedPitch === 0);
+
+        if (isPlaying && ctx) {
+            if (crossesBypass) {
+                const elapsed = (ctx.currentTime - startTimeRef.current) * timeStretch + pausedAtRef.current;
+                pausedAtRef.current = Math.min(Math.max(elapsed, 0), duration || elapsed);
+                stopAllNodes();
+                // Voltando ao tom 0: solta os worklets pra liberar CPU/WASM — senão
+                // seguiriam rodando o DSP à toa, presos ao panner.
+                if (clampedPitch === 0) {
+                    song.channels.forEach(ch => {
+                        if (ch.pitchShiftNode) {
+                            try { ch.pitchShiftNode.disconnect(); ch.pitchShiftNode.close?.(); } catch { /* já encerrado */ }
+                            ch.pitchShiftNode = null;
+                        }
+                    });
+                }
+                void play();
+            } else if (clampedPitch !== 0) {
+                song.channels.forEach(ch => applyPitchToChannel(ch, clampedPitch));
+            }
+        }
+        // Parado: o próximo play() monta o roteamento certo pelo currentPitchRef.
 
         newPlaylist[activeSongIndex] = song;
         updatePlaylistAndSave(newPlaylist);
-    }, [playlist, activeSongIndex, activeSong]);
+    }, [playlist, activeSongIndex, activeSong, isPlaying, duration, timeStretch, play, stopAllNodes]);
 
     // Clear Session
     const clearSession = async () => {

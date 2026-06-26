@@ -195,11 +195,20 @@ export function useCloudLibrary() {
             const song = songs.find(s => s.id === songId);
             const coverUrl = song?.cover_url || null;
 
-            // Cache for offline play
+            // Cache for offline play. Só marca como OFFLINE se a gravação deu certo
+            // de verdade (cacheSong agora verifica e retorna boolean). Antes o erro
+            // era engolido e a música virava "offline" falsa — abria vazia depois.
             if (song && files.length > 0) {
                 setDownloadProgress('Salvando no cache...');
-                await cacheSong(songId, song, files);
-                setCachedSongIds(prev => new Set(prev).add(songId));
+                const cached = await cacheSong(songId, song, files);
+                if (cached) {
+                    setCachedSongIds(prev => new Set(prev).add(songId));
+                } else {
+                    // Não coube no cache (ex.: multitrack grande demais p/ a quota).
+                    // A música ainda toca agora (online); só não fica offline — melhor
+                    // que um selo "offline" mentiroso que abre repertório vazio.
+                    setDownloadProgress('Grande demais para salvar offline.');
+                }
             }
 
             setDownloadProgress('');
