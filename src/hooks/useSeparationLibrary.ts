@@ -10,6 +10,8 @@ export interface SavedStem {
   name: string;
   url: string;
   color: string;
+  // Estado do mixer persistido junto (jsonb aceita campos extras, sem migração).
+  state?: { muted: boolean; soloed: boolean; volume: number; pan: number };
 }
 
 export interface SavedVoiceCue {

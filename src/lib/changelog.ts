@@ -11,6 +11,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.3.11',
+    date: '2026-06-26',
+    title: 'Separação de faixas repaginada',
+    items: [
+      'A tela de separação ganhou visual novo: controles numa barra no topo, faixas bem mais coloridas, cronômetro da música e botão de loop.',
+      'Voz guia: agora você arrasta os marcadores na linha do tempo pra onde quiser, a auto detecção ficou mais precisa, e tem botão pra transformar em canal, igual ao click.',
+      'O metrônomo manual e a voz guia voltaram a funcionar no app de computador.',
+      'Salva tudo sozinho: marcadores, ajustes do mixer e os canais de click e voz guia. Tem botão Salvar e aviso de confirmação.',
+      'Ao voltar da separação, você cai direto em Minhas Separações.',
+    ],
+  },
+  {
     version: '1.3.7',
     date: '2026-06-15',
     title: 'Planos atualizados',

@@ -41,5 +41,6 @@ export function saveClickSelection(sel: ClickLibrarySelection): void {
 
 export function getClickSampleUrl(type: ClickTrackType, subdivision: ClickSubdivision): string {
   const filename = `New Click -  ${type}-${subdivision}.wav`;
-  return `/Click Tracks/${encodeURIComponent(filename)}`;
+  // BASE_URL = '/' na web, './' no desktop (file://). Caminho absoluto quebra no Electron.
+  return `${import.meta.env.BASE_URL}Click Tracks/${encodeURIComponent(filename)}`;
 }

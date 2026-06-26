@@ -1,7 +1,7 @@
 import { apiUrl } from '../lib/api';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import WaveSurfer from 'wavesurfer.js';
-import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Minus, Plus, Mic, Download, Trash2, FolderOpen, Clock, CheckCircle2, Lock } from 'lucide-react';
+import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Minus, Plus, Mic, Download, Trash2, FolderOpen, Clock, CheckCircle2, Lock, Repeat, SkipBack, SkipForward } from 'lucide-react';
 import { uploadToR2 } from '../lib/r2';
 import { getAuthHeaders } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -110,7 +110,9 @@ const GUIDE_DYNAMICS: { label: string; file: string }[] = [
 ];
 
 function guideUrl(file: string): string {
-  return `/Portugese Guides/${file}`.split('/').map(s => encodeURIComponent(s)).join('/');
+  // BASE_URL = '/' na web, './' no desktop (file://). Caminho absoluto quebra no Electron.
+  const encoded = `Portugese Guides/${file}`.split('/').map(s => encodeURIComponent(s)).join('/');
+  return `${import.meta.env.BASE_URL}${encoded}`;
 }
 
 function formatCueTime(secs: number): string {
@@ -185,11 +187,15 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   
   // Áudio Core
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isLooping, setIsLooping] = useState(false);
+  const isLoopingRef = useRef(false);
   const wavesurfers = useRef<Record<string, WaveSurfer>>({});
   const panners = useRef<Record<string, StereoPannerNode>>({});
   const gainNodes = useRef<Record<string, GainNode>>({});
   const [masterVolume, setMasterVolume] = useState(0.8);
   const [progressPlayback, setProgressPlayback] = useState(0);
+  // Altura de cada faixa: preenche o espaço vertical disponível conforme o nº de stems.
+  const [laneHeight, setLaneHeight] = useState(96);
   
   // Estado das Trilhas
   const [stemStates, setStemStates] = useState<Record<string, { muted: boolean, soloed: boolean, volume: number, pan: number }>>({});
@@ -272,8 +278,14 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const [voiceGuideTab, setVoiceGuideTab] = useState<'sections' | 'dynamic'>('sections');
   const [songDuration, setSongDuration] = useState(0);
   const [isAutoDetecting, setIsAutoDetecting] = useState(false);
+  const [isRenderingGuide, setIsRenderingGuide] = useState(false);
+  const [isManualSaving, setIsManualSaving] = useState(false);
   const voiceCuesRef = useRef<(VoiceCue & { fired: boolean })[]>([]);
   const guideBufferCache = useRef<Map<string, AudioBuffer>>(new Map());
+  // Drag de marcadores na timeline
+  const waveAreaRef = useRef<HTMLDivElement>(null);
+  const draggingCueRef = useRef<string | null>(null);
+  const cueDragMovedRef = useRef(false);
   const cueRafRef = useRef<number | null>(null);
   const isPlayingRef = useRef(false);
 
@@ -348,6 +360,68 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     setVoiceCues(prev => prev.map(c => c.id === id ? { ...c, time: total } : c).sort((a, b) => a.time - b.time));
   };
 
+  // ── Arrastar marcador na timeline ──
+  const timeFromClientX = (clientX: number): number => {
+    const rect = waveAreaRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0 || songDuration <= 0) return 0;
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    return ratio * songDuration;
+  };
+  const handleCuePointerDown = (e: React.PointerEvent, cueId: string) => {
+    e.stopPropagation();
+    draggingCueRef.current = cueId;
+    cueDragMovedRef.current = false;
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  };
+  const handleCuePointerMove = (e: React.PointerEvent) => {
+    if (draggingCueRef.current === null) return;
+    cueDragMovedRef.current = true;
+    const t = timeFromClientX(e.clientX);
+    setVoiceCues(prev => prev.map(c => c.id === draggingCueRef.current ? { ...c, time: t } : c));
+  };
+  const handleCuePointerUp = (e: React.PointerEvent, cue: VoiceCue) => {
+    const wasDragging = draggingCueRef.current !== null;
+    const moved = cueDragMovedRef.current;
+    draggingCueRef.current = null;
+    if (!wasDragging) return;
+    if (moved) {
+      // Reordena por tempo e rearma o disparo das cues a partir do novo ponto.
+      setVoiceCues(prev => [...prev].sort((a, b) => a.time - b.time));
+      voiceCuesRef.current.forEach(c => { c.fired = c.time < timeFromClientX(e.clientX) - 0.1; });
+    } else {
+      // Clique simples (sem arrastar) = navega o playhead até a cue.
+      Object.values(wavesurfers.current).forEach(ws => ws.setTime(cue.time));
+      voiceCuesRef.current.forEach(c => { c.fired = c.time < cue.time - 0.1; });
+    }
+  };
+
+  // ── Renderiza a Voz Guia num canal real (igual ao Click) ──
+  // Sobe o áudio pro R2 → URL https → persiste automaticamente como qualquer stem.
+  const commitVoiceGuideChannel = async () => {
+    if (voiceCues.length === 0) { alert('Adicione marcadores de voz primeiro.'); return; }
+    setIsRenderingGuide(true);
+    try {
+      const blob = await renderVoiceGuideToBlob();
+      if (!blob) throw new Error('Falha ao renderizar voz guia');
+      const file = new File([blob], 'voz_guia.wav', { type: 'audio/wav' });
+      const up = await uploadToR2('stems', `${user?.id || 'anon'}/${activeSepId || 'tmp'}/voz_guia_${Date.now()}.wav`, file);
+      const url = (!up.error && up.url) ? up.url : URL.createObjectURL(blob);
+      setStems(prev => {
+        const old = prev.find(s => s.id === 'voiceguide');
+        if (old && old.url.startsWith('blob:')) URL.revokeObjectURL(old.url);
+        const guideStem: StemData = { id: 'voiceguide', name: 'Voz Guia', url, color: '#fbbf24' };
+        return [...prev.filter(s => s.id !== 'voiceguide'), guideStem];
+      });
+      setStemStates(p => ({ ...p, voiceguide: p.voiceguide ?? { muted: false, soloed: false, volume: 0.9, pan: 0 } }));
+      setShowVoiceGuide(false);
+    } catch (e) {
+      console.error('Erro ao gerar canal de Voz Guia', e);
+      alert('Erro ao gerar canal de voz guia.');
+    } finally {
+      setIsRenderingGuide(false);
+    }
+  };
+
   const renderVoiceGuideToBlob = async (): Promise<Blob | null> => {
     if (voiceCues.length === 0) return null;
     const ctx = getAudioContext();
@@ -381,14 +455,23 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       const ctx = getAudioContext();
       let buffer: AudioBuffer;
 
-      if (file) {
-        const ab = await file.arrayBuffer();
-        buffer = await ctx.decodeAudioData(ab);
-      } else {
-        const mainStem = stems.find(s => s.id !== 'click' && s.id !== 'metronome');
-        if (!mainStem) throw new Error('Sem faixas para analisar');
-        const res = await fetch(mainStem.url);
+      // Preferimos a faixa de VOCAIS como fonte: em louvor a entrada/saída e a
+      // intensidade do vocal demarcam as seções com muito mais clareza do que a
+      // energia do mix completo (onde a bateria domina e borra os limites).
+      const vocalStem = stems.find(s => {
+        const n = (s.name || '').toLowerCase();
+        return n.includes('vocal') || n.includes('voz') || n.includes('voc');
+      });
+      const fallbackStem = stems.find(s => !['click', 'metronome', 'voiceguide'].includes(s.id));
+      const sourceStem = vocalStem || fallbackStem;
+
+      if (sourceStem) {
+        const res = await fetch(sourceStem.url);
         buffer = await ctx.decodeAudioData(await res.arrayBuffer());
+      } else if (file) {
+        buffer = await ctx.decodeAudioData(await file.arrayBuffer());
+      } else {
+        throw new Error('Sem faixas para analisar');
       }
 
       // 2-second chunks for finer resolution (pre-choruses can be as short as 8s)
@@ -432,7 +515,11 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
       // Detect boundaries: look for sustained energy change over ±8 chunks (±16s)
       const MIN_GAP_CHUNKS = Math.max(7, Math.floor(14 / CHUNK_SECS)); // min 14s between sections
-      const THRESHOLD = 0.08;
+      // Threshold adaptativo: proporcional à variação real do sinal (desvio-padrão),
+      // com piso de 0.06. Songs mais dinâmicas exigem salto maior pra contar como seção.
+      const meanS = smoothed.reduce((a, b) => a + b, 0) / (smoothed.length || 1);
+      const stdS = Math.sqrt(smoothed.reduce((a, v) => a + (v - meanS) * (v - meanS), 0) / (smoothed.length || 1));
+      const THRESHOLD = Math.max(0.06, stdS * 0.6);
 
       const boundaries: { time: number; startChunk: number }[] = [{ time: 0, startChunk: 0 }];
 
@@ -590,8 +677,69 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     voiceCuesRef.current = voiceCues.map(c => ({ ...c, fired: currentMap.get(c.id) ?? false }));
   }, [voiceCues]);
 
+  // Persiste o estado atual na biblioteca local. Só os stems com URL remota (IA);
+  // canais locais (blob: voz guia/metrônomo) são efêmeros e o usuário regera ao reabrir.
+  const persistSeparation = useCallback(() => {
+    if (!activeSepId) return Promise.resolve();
+    return saveSeparation({
+      id: activeSepId,
+      songName, artist, bpm, songKey,
+      // Persiste todo stem com URL remota (IA + canais já subidos pro R2), levando
+      // junto o estado do mixer (mute/solo/volume/pan) de cada faixa.
+      stems: stems
+        .filter(s => /^https?:\/\//.test(s.url))
+        .map(s => ({ id: s.id, name: s.name, url: s.url, color: s.color, state: stemStates[s.id] })),
+      voiceCues,
+    }).catch(() => {});
+  }, [activeSepId, songName, artist, bpm, songKey, stems, stemStates, voiceCues, saveSeparation]);
+
+  // Mantém uma ref pra versão mais recente — usada no flush ao desmontar.
+  const persistRef = useRef(persistSeparation);
+  useEffect(() => { persistRef.current = persistSeparation; }, [persistSeparation]);
+
+  // Auto-save (debounced) em qualquer edição: cues, BPM, tom, nome, artista.
+  useEffect(() => {
+    if (!activeSepId) return;
+    const t = setTimeout(() => { persistSeparation(); }, 800);
+    return () => clearTimeout(t);
+  }, [voiceCues, bpm, songKey, songName, artist, activeSepId, persistSeparation]);
+
+  // Flush ao desmontar (ex.: fechar o estúdio) — garante o último estado salvo.
+  useEffect(() => {
+    return () => { persistRef.current?.(); };
+  }, []);
+
+  // Voltar do estúdio → tela inicial do Separador (upload + Minhas Separações),
+  // não pra home do app. Salva antes e limpa a sessão atual.
+  const goToSeparatorHome = () => {
+    persistSeparation();
+    // Revoga URLs locais dos canais gerados pra não vazar memória.
+    stems.forEach(s => { if (s.url.startsWith('blob:')) URL.revokeObjectURL(s.url); });
+    setStems([]);
+    setStemStates({});
+    setVoiceCues([]);
+    voiceCuesRef.current = [];
+    setFile(null);
+    setActiveSepId(null);
+    setSeparationStep('upload');
+  };
+
+  // Salvar manual (botão) — força a gravação e mostra confirmação ao usuário.
+  const forceSave = async () => {
+    if (!activeSepId || isManualSaving) return;
+    setIsManualSaving(true);
+    try {
+      await persistSeparation();
+      setLibSaveToast(true);
+      setTimeout(() => setLibSaveToast(false), 2500);
+    } finally {
+      setIsManualSaving(false);
+    }
+  };
+
   // Atualiza isPlayingRef
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { isLoopingRef.current = isLooping; }, [isLooping]);
 
   // Scheduler de cues — RAF loop
   useEffect(() => {
@@ -780,6 +928,12 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   useEffect(() => {
     if (stems.length === 0) return;
 
+    // Distribui a altura disponível (viewport menos header 144 e régua 28) entre as
+    // faixas, com um piso de 100px. Assim as lanes descem e preenchem o vazio embaixo.
+    const available = window.innerHeight - 144 - 28;
+    const lh = Math.max(100, Math.min(240, Math.floor(available / stems.length)));
+    setLaneHeight(lh);
+
     stems.forEach((stem) => {
       const container = document.getElementById(`waveform-${stem.id}`);
       if (!container) return;
@@ -787,13 +941,13 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
       const ws = WaveSurfer.create({
         container,
-        waveColor: stem.color + '40', // 25% opacity
+        waveColor: stem.color + '8c', // ~55% opacity — onda destaca sobre a lane colorida
         progressColor: stem.color,
         cursorColor: '#ffffff',
         barWidth: 2,
         barGap: 2,
         barRadius: 2,
-        height: 88,
+        height: lh,
         normalize: true,
         url: stem.url,
       });
@@ -823,8 +977,15 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
           setProgressPlayback((time / ws.getDuration()) * 100);
         });
         ws.on('finish', () => {
-          setIsPlaying(false);
-          setProgressPlayback(0);
+          if (isLoopingRef.current) {
+            // Loop: rebobina todas as faixas e segue tocando, rearmando as cues.
+            voiceCuesRef.current.forEach(c => { c.fired = false; });
+            Object.values(wavesurfers.current).forEach(w => { w.setTime(0); w.play(); });
+            setProgressPlayback(0);
+          } else {
+            setIsPlaying(false);
+            setProgressPlayback(0);
+          }
         });
       }
 
@@ -938,8 +1099,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         setSaveProgress(10 + Math.floor(((i + 1) / total) * 80));
       }
 
-      // Render & upload Voz Guia stem if cues exist
-      if (voiceCues.length > 0) {
+      // Render & upload Voz Guia stem if cues exist — só quando o canal não foi
+      // commitado ainda (senão ele já subiu junto no loop de stems acima).
+      if (voiceCues.length > 0 && !stems.some(s => s.id === 'voiceguide')) {
         setSaveStatus('Renderizando Voz Guia...');
         try {
           const guideBlob = await renderVoiceGuideToBlob();
@@ -1003,14 +1165,26 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       );
       if (!clickTrackUrl) throw new Error('Falha ao gerar metrônomo');
 
+      // Sobe o click pro R2 → URL https → persiste automaticamente.
+      const resp = await fetch(clickTrackUrl);
+      const blob = await resp.blob();
+      const file = new File([blob], 'click.wav', { type: 'audio/wav' });
+      const up = await uploadToR2('stems', `${user?.id || 'anon'}/${activeSepId || 'tmp'}/click_${Date.now()}.wav`, file);
+      const url = (!up.error && up.url) ? up.url : clickTrackUrl;
+      if (url !== clickTrackUrl) URL.revokeObjectURL(clickTrackUrl);
+
       const metroStem: StemData = {
         id: 'metronome',
         name: 'Metrônomo',
-        url: clickTrackUrl,
+        url,
         color: '#e2e8f0'
       };
-      setStemStates(p => ({ ...p, metronome: { muted: false, soloed: false, volume: 0.8, pan: 0 } }));
-      setStems(prev => [...prev.filter(s => s.id !== 'metronome'), metroStem]);
+      setStems(prev => {
+        const old = prev.find(s => s.id === 'metronome');
+        if (old && old.url.startsWith('blob:')) URL.revokeObjectURL(old.url);
+        return [...prev.filter(s => s.id !== 'metronome'), metroStem];
+      });
+      setStemStates(p => ({ ...p, metronome: p.metronome ?? { muted: false, soloed: false, volume: 0.8, pan: 0 } }));
       setShowBpmModal(false);
     } catch (e) {
       console.error('Erro ao gerar metrônomo', e);
@@ -1023,8 +1197,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const handleOpenSavedSeparation = (sep: SavedSeparation) => {
     const stemsArray: StemData[] = sep.stems.map(s => ({ id: s.id, name: s.name, url: s.url, color: s.color }));
     const initialStates: Record<string, { muted: boolean; soloed: boolean; volume: number; pan: number }> = {};
-    stemsArray.forEach(s => {
-      initialStates[s.id] = { muted: false, soloed: false, volume: 1, pan: 0 };
+    sep.stems.forEach(s => {
+      // Restaura o mixer salvo (mute/solo/volume/pan); default se não houver.
+      initialStates[s.id] = s.state ?? { muted: false, soloed: false, volume: 1, pan: 0 };
     });
     setStemStates(initialStates);
     setStems(stemsArray);
@@ -1254,61 +1429,159 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   return (
     <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col font-sans select-none overflow-hidden">
 
-      {/* ═══ HEADER ═══ */}
-      <header className="h-12 bg-[#18181a] border-b border-[#222] flex items-center justify-between px-3 shrink-0 z-10 shadow-[0_2px_8px_rgba(0,0,0,0.6)]">
-        <div className="flex items-center gap-2">
-          <button onClick={onClose} className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[10px] font-bold text-text-muted hover:text-white cursor-pointer uppercase tracking-wider">
-            <ChevronLeft size={13}/> Voltar
-          </button>
-          <div className="h-5 w-px bg-border mx-1 hidden sm:block" />
-          <div className="hidden sm:flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-primary/10 border border-primary/20 flex items-center justify-center">
-              <Disc3 size={12} className="text-primary" />
+      {/* ═══ HEADER (barra única, estilo BandLab) ═══ */}
+      <header className="bg-[#18181a] border-b border-[#222] shrink-0 z-50 shadow-[0_2px_8px_rgba(0,0,0,0.6)] flex flex-col">
+
+        {/* ── Linha 1: Voltar · Título centralizado · Export ── */}
+        <div className="h-16 flex items-center justify-between px-4 border-b border-[#1f1f22]">
+          <div className="flex-1 flex items-center gap-2 min-w-0">
+            <button onClick={goToSeparatorHome} className="transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md text-[10px] font-bold text-white/80 hover:text-white cursor-pointer uppercase tracking-wider">
+              <ChevronLeft size={14}/> <span className="hidden sm:inline">Voltar</span>
+            </button>
+          </div>
+
+          <div className="flex flex-col items-center justify-center min-w-0 px-2 gap-1.5">
+            <div className="text-white font-black text-base sm:text-lg tracking-wide truncate max-w-[420px] sm:max-w-[720px] leading-none">
+              {songName || 'Sem título'}
             </div>
-            <div>
-              <div className="font-black text-white text-[10px] uppercase tracking-[0.15em] leading-tight">Separador IA</div>
-              <div className="text-[8px] font-mono text-text-muted truncate max-w-[180px]">{songName || 'Sem título'}</div>
+            <div className="flex items-center gap-1.5 text-[8px] font-mono text-white/45 uppercase tracking-[0.2em]">
+              <Disc3 size={9} className="text-primary" /> Separador IA · {stems.length} CH
             </div>
           </div>
-        </div>
 
-        {/* Center info chips */}
-        <div className="hidden md:flex items-center gap-2">
-          <div className="lcd-display px-2.5 py-1 rounded text-[9px] font-mono font-black text-primary">{bpm} BPM</div>
-          <div className="lcd-display px-2.5 py-1 rounded text-[9px] font-mono font-black text-text-muted">{songKey}</div>
-          <div className="lcd-display px-2.5 py-1 rounded text-[9px] font-mono text-text-muted/50">{stems.length} CH</div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 bg-[#0e0e10] border border-[#222] rounded-md p-0.5" title="Formato de download dos stems">
-            <span className="text-[7px] font-mono font-bold text-text-muted/60 uppercase tracking-widest px-1.5 hidden sm:inline">DL</span>
-            {(['wav', 'mp3'] as DownloadFormat[]).map((fmt) => (
-              <button
-                key={fmt}
-                onClick={() => setDownloadFormat(fmt)}
-                className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider font-mono transition-all cursor-pointer ${
-                  downloadFormat === fmt
-                    ? 'bg-primary/20 text-primary shadow-[0_0_8px_rgba(255,107,53,0.3)]'
-                    : 'text-text-muted/60 hover:text-white'
-                }`}
-              >
-                {fmt}
+          <div className="flex-1 flex items-center justify-end gap-2.5">
+            <div className="flex items-center gap-1 bg-[#0e0e10] border border-[#222] rounded-md p-0.5 h-9" title="Formato de download dos stems">
+              <span className="text-[7px] font-mono font-bold text-white/60 uppercase tracking-widest px-1.5 hidden sm:inline">DL</span>
+              {(['wav', 'mp3'] as DownloadFormat[]).map((fmt) => (
+                <button
+                  key={fmt}
+                  onClick={() => setDownloadFormat(fmt)}
+                  className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider font-mono transition-all cursor-pointer ${
+                    downloadFormat === fmt
+                      ? 'bg-primary/20 text-primary shadow-[0_0_8px_rgba(255,107,53,0.3)]'
+                      : 'text-white/55 hover:text-white'
+                  }`}
+                >
+                  {fmt}
+                </button>
+              ))}
+            </div>
+            {activeSepId && (
+              <button onClick={forceSave} disabled={isManualSaving}
+                title="Salvar tudo na sua biblioteca"
+                className="transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md text-[10px] font-black uppercase tracking-wider text-white/85 hover:text-white cursor-pointer disabled:opacity-50 disabled:cursor-wait">
+                {isManualSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                <span className="hidden sm:inline">{isManualSaving ? 'SALVANDO' : 'SALVAR'}</span>
               </button>
-            ))}
+            )}
+            <button onClick={() => setShowSaveForm(true)}
+              className="transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md text-[10px] font-black uppercase tracking-wider text-primary cursor-pointer border-primary/20">
+              <UploadCloud size={13} /> <span className="hidden sm:inline">EXPORTAR</span>
+            </button>
           </div>
-          <button onClick={() => setShowSaveForm(true)}
-            className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-wider text-primary cursor-pointer border-primary/20">
-            <Save size={12} /> EXPORTAR
-          </button>
+        </div>
+
+        {/* ── Linha 2: BPM/TOM · Transporte + cronômetro · VOZ/SYNC/MASTER ── */}
+        <div className="h-20 flex items-center justify-between px-4 gap-5">
+
+          {/* Esquerda: BPM · TOM (encostados no centro) */}
+          <div className="flex-1 flex items-center justify-end gap-2.5 min-w-0">
+            <button onClick={() => setShowBpmModal(true)}
+              className="transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md cursor-pointer">
+              <span className="text-[7px] text-white/70 uppercase tracking-widest font-bold font-mono">BPM</span>
+              <span className="text-primary text-[11px] font-mono font-black">{bpm}</span>
+            </button>
+
+            <div className="relative">
+              <button onClick={() => setIsKeyPickerOpen(p => !p)}
+                className={`transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md cursor-pointer ${isKeyPickerOpen ? 'border-primary/40' : ''}`}>
+                <span className="text-[7px] text-white/70 uppercase tracking-widest font-bold font-mono">TOM</span>
+                <span className="text-primary text-[11px] font-mono font-black">{songKey}</span>
+              </button>
+              {isKeyPickerOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsKeyPickerOpen(false)} />
+                  <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-[#1c1c1e] border border-[#3a3a3a] rounded-xl z-[60] p-3 w-44 shadow-[0_12px_40px_rgba(0,0,0,0.8)]">
+                    <p className="text-[8px] text-text-muted mb-2 font-mono uppercase tracking-wider">Selecionar tom:</p>
+                    <div className="grid grid-cols-4 gap-1">
+                      {KEYS.map(k => (
+                        <button key={k} onClick={() => { setSongKey(k); setIsKeyPickerOpen(false); }}
+                          className={`py-1.5 text-[9px] font-bold rounded transition-colors cursor-pointer font-mono ${songKey === k ? 'bg-primary text-black' : 'text-white/70 bg-white/5 hover:bg-primary/20 hover:text-primary'}`}>
+                          {k}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Centro: Transporte + cronômetro */}
+          <div className="flex items-center gap-3 justify-center shrink-0">
+            <button onClick={() => { Object.values(wavesurfers.current).forEach(ws => ws.setTime(0)); voiceCuesRef.current.forEach(c => { c.fired = false; }); setProgressPlayback(0); }}
+              title="Voltar ao início"
+              className="transport-btn w-9 h-9 flex items-center justify-center rounded-md text-white/70 hover:text-white cursor-pointer active:scale-90">
+              <SkipBack size={16}/>
+            </button>
+            <button onClick={togglePlay}
+              className={`transport-btn w-11 h-11 rounded-lg flex items-center justify-center cursor-pointer active:scale-95 transition-all ${isPlaying ? 'text-primary border-primary/40 shadow-[0_0_16px_rgba(255,107,53,0.25)]' : 'text-white hover:text-primary'}`}>
+              {isPlaying ? <Pause size={20} fill="currentColor"/> : <Play size={20} fill="currentColor" className="ml-0.5"/>}
+            </button>
+            <button onClick={() => Object.values(wavesurfers.current).forEach(ws => ws.setTime(ws.getDuration()))}
+              title="Ir para o fim"
+              className="transport-btn w-9 h-9 flex items-center justify-center rounded-md text-white/70 hover:text-white cursor-pointer active:scale-90">
+              <SkipForward size={16}/>
+            </button>
+            <button onClick={() => setIsLooping(p => !p)}
+              title={isLooping ? 'Loop ativado' : 'Loop desativado'}
+              className={`transport-btn w-9 h-9 flex items-center justify-center rounded-md cursor-pointer active:scale-90 transition-all ${isLooping ? 'text-primary border-primary/40 shadow-[0_0_12px_rgba(255,107,53,0.25)]' : 'text-white/70 hover:text-white'}`}>
+              <Repeat size={16}/>
+            </button>
+            <div className="lcd-display ml-1 px-3 h-9 flex items-center rounded text-[11px] font-mono font-black text-primary tabular-nums whitespace-nowrap">
+              {formatCueTime(songDuration * progressPlayback / 100)} <span className="text-white/30 mx-1">/</span> <span className="text-white/55">{formatCueTime(songDuration)}</span>
+            </div>
+          </div>
+
+          {/* Direita: VOZ · SYNC · MASTER (encostados no centro) */}
+          <div className="flex-1 flex items-center justify-start gap-2.5 min-w-0">
+            {stems.length > 0 && (
+              <button onClick={() => setShowVoiceGuide(true)}
+                className={`transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md cursor-pointer transition-all ${voiceCues.length > 0 ? 'text-yellow-400 border-yellow-500/30' : 'text-white/70 hover:text-yellow-400'}`}>
+                <Mic size={12} />
+                <span className="text-[7px] uppercase tracking-widest font-bold font-mono hidden md:inline">
+                  VOZ {voiceCues.length > 0 && `(${voiceCues.length})`}
+                </span>
+              </button>
+            )}
+
+            <div className="transport-btn flex items-center gap-0.5 rounded-md px-1.5 h-9">
+              <span className="text-[7px] text-white/70 uppercase tracking-widest font-bold px-1 font-mono hidden lg:inline">SYNC</span>
+              <button onClick={() => setClickOffsetMs(p => p - 10)} className="w-5 h-full flex items-center justify-center text-white/60 hover:text-white rounded cursor-pointer"><ChevronLeft size={12}/></button>
+              <span className="text-[9px] text-primary font-mono font-black w-9 text-center tabular-nums">{clickOffsetMs > 0 ? '+' : ''}{clickOffsetMs}</span>
+              <button onClick={() => setClickOffsetMs(p => p + 10)} className="w-5 h-full flex items-center justify-center text-white/60 hover:text-white rounded cursor-pointer"><ChevronRight size={12}/></button>
+              <span className="text-[6px] text-white/40 font-mono mr-1 hidden lg:inline">ms</span>
+            </div>
+
+            <div className="transport-btn flex items-center gap-1.5 h-9 px-2.5 rounded-md">
+              <Volume2 size={13} className="text-white/70 shrink-0"/>
+              <input type="range" min="0" max="1" step="0.01" value={masterVolume}
+                onChange={(e) => setMasterVolume(parseFloat(e.target.value))}
+                className="daw-slider w-16 lg:w-24" title="Master Volume" />
+              <div className="lcd-display px-1.5 py-0.5 rounded-[3px] text-[8px] font-mono text-accent-green w-10 text-center shrink-0 tabular-nums">
+                {masterVolume === 0 ? '-∞' : (masterVolume * 10 - 10).toFixed(1)}
+              </div>
+            </div>
+          </div>
         </div>
       </header>
 
-      {/* ── Auto-save Toast ── */}
-      <div className={`absolute top-16 left-1/2 -translate-x-1/2 z-[100] transition-all duration-500 pointer-events-none flex flex-col items-center
+      {/* ── Save Toast ── */}
+      <div className={`absolute top-[156px] left-1/2 -translate-x-1/2 z-[120] transition-all duration-500 pointer-events-none flex flex-col items-center
         ${libSaveToast ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
-        <div className="bg-[#111] border border-[#333] shadow-2xl rounded-full px-4 py-2 flex items-center gap-2">
-          <CheckCircle2 size={14} className="text-primary" />
-          <span className="text-[10px] font-bold text-white uppercase tracking-wider font-mono">Salvo na Biblioteca</span>
+        <div className="bg-[#0f1a12] border border-accent-green/40 shadow-[0_8px_30px_rgba(0,0,0,0.6)] rounded-full px-5 py-2.5 flex items-center gap-2">
+          <CheckCircle2 size={15} className="text-accent-green" />
+          <span className="text-[11px] font-black text-white uppercase tracking-wider font-mono">Tudo salvo na biblioteca</span>
         </div>
       </div>
 
@@ -1327,14 +1600,14 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
             if (!state) return null;
             const isMutedByOther = (Object.values(stemStates).some(s => s.soloed) && !state.soloed) || state.muted;
             return (
-              <div key={`ctrl-${stem.id}`} className="h-[88px] flex flex-col border-b border-[#1a1a1c] relative hover:bg-white/[0.01] transition-colors shrink-0">
+              <div key={`ctrl-${stem.id}`} style={{ height: laneHeight }} className="flex flex-col border-b border-[#1a1a1c] relative hover:bg-white/[0.01] transition-colors shrink-0">
                 {/* Color strip */}
                 <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ backgroundColor: stem.color, boxShadow: `0 0 8px ${stem.color}50` }} />
                 <div className="flex flex-col pt-3 px-2.5 pb-2 h-full">
                   {/* Row 1: number + name + M/S/DL */}
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-1 min-w-0">
-                      <span className="text-[7px] font-mono font-bold text-text-muted/25 shrink-0">{String(trackIdx + 1).padStart(2, '0')}</span>
+                      <span className="text-[7px] font-mono font-bold text-white/40 shrink-0">{String(trackIdx + 1).padStart(2, '0')}</span>
                       <span className="text-[8px] font-bold tracking-[0.1em] uppercase truncate font-mono" style={{ color: isMutedByOther ? '#444' : stem.color }}>
                         {stem.name}
                       </span>
@@ -1352,15 +1625,19 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                     </div>
                   </div>
                   {/* Row 2: Pan knob + Volume fader */}
-                  <div className="flex items-center gap-2 flex-1">
-                    <div className="flex flex-col items-center gap-0.5 shrink-0">
-                      <div className="logic-pan-knob" style={{ width: 22, height: 22, cursor: 'ew-resize' }}
-                        title="Pan (scroll=ajuste, clique=centro)"
-                        onWheel={(e) => { e.preventDefault(); const np = Math.round(Math.max(-1, Math.min(1, state.pan + (e.deltaY > 0 ? -0.1 : 0.1))) * 10) / 10; setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], pan: np } })); }}
-                        onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], pan: 0 } }))}>
-                        <div className="logic-pan-indicator" style={{ transform: `rotate(${state.pan * 135}deg)` }} />
+                  <div className="flex items-center gap-2.5 flex-1">
+                    <div className="flex flex-col items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[8px] font-mono font-black text-white/60 leading-none">L</span>
+                        <div className="logic-pan-knob" style={{ width: 34, height: 34, cursor: 'ew-resize' }}
+                          title="Pan (scroll=ajuste, clique=centro)"
+                          onWheel={(e) => { e.preventDefault(); const np = Math.round(Math.max(-1, Math.min(1, state.pan + (e.deltaY > 0 ? -0.1 : 0.1))) * 10) / 10; setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], pan: np } })); }}
+                          onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], pan: 0 } }))}>
+                          <div className="logic-pan-indicator" style={{ transform: `rotate(${state.pan * 135}deg)` }} />
+                        </div>
+                        <span className="text-[8px] font-mono font-black text-white/60 leading-none">R</span>
                       </div>
-                      <span className="text-[6px] font-mono text-text-muted/30">
+                      <span className="text-[7px] font-mono font-bold text-white/50">
                         {state.pan === 0 ? 'C' : state.pan > 0 ? `R${Math.round(Math.abs(state.pan) * 50)}` : `L${Math.round(Math.abs(state.pan) * 50)}`}
                       </span>
                     </div>
@@ -1369,7 +1646,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                         onChange={(e) => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], volume: parseFloat(e.target.value) } }))}
                         className="daw-slider w-full" />
                       <div className="flex items-center justify-between">
-                        <span className="text-[6px] font-mono text-text-muted/30 uppercase">VOL</span>
+                        <span className="text-[7px] font-mono font-bold text-white/50 uppercase">VOL</span>
                         <div className="lcd-display px-1.5 py-0.5 rounded-[2px] text-[7px] font-mono text-accent-green">
                           {state.volume === 0 ? '-∞' : (state.volume * 10 - 10).toFixed(1)}
                         </div>
@@ -1383,7 +1660,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         </div>
 
         {/* RIGHT: Waveform area */}
-        <div className="flex-1 bg-[#0a0a0c] relative overflow-y-auto overflow-x-hidden flex flex-col">
+        <div ref={waveAreaRef} className="flex-1 bg-[#0a0a0c] relative overflow-y-auto overflow-x-hidden flex flex-col">
 
           {/* Time ruler */}
           <div className="h-7 bg-[#0e0e10] border-b border-[#1e1e20] sticky top-0 z-30 relative overflow-hidden shrink-0">
@@ -1405,118 +1682,32 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
             <div className="absolute -top-1.5 -translate-x-1/2 w-0 h-0 border-l-[4px] border-r-[4px] border-t-[6px] border-transparent border-t-white" />
           </div>
 
-          {/* Voice Cue Markers */}
+          {/* Voice Cue Markers — arrastáveis */}
           {songDuration > 0 && voiceCues.map(cue => (
             <div key={`marker-${cue.id}`}
-              className="absolute top-7 bottom-0 z-20 cursor-pointer group/cue"
+              className="absolute top-7 bottom-0 z-20 cursor-ew-resize group/cue touch-none"
               style={{ left: `${(cue.time / songDuration) * 100}%` }}
-              onClick={() => { Object.values(wavesurfers.current).forEach(ws => ws.setTime(cue.time)); voiceCuesRef.current.forEach(c => { c.fired = c.time < cue.time - 0.1; }); }}
-              title={`${cue.label} · ${formatCueTime(cue.time)}`}
+              onPointerDown={(e) => handleCuePointerDown(e, cue.id)}
+              onPointerMove={handleCuePointerMove}
+              onPointerUp={(e) => handleCuePointerUp(e, cue)}
+              title={`${cue.label} · ${formatCueTime(cue.time)} — arraste para mover`}
             >
               <div className="w-px h-full bg-yellow-400/40 group-hover/cue:bg-yellow-400 transition-colors" />
-              <div className="absolute top-0 left-0.5 bg-yellow-400 text-black text-[6px] font-black px-1 py-0.5 rounded-[3px] whitespace-nowrap leading-tight shadow-sm group-hover/cue:bg-yellow-300 transition-colors">
+              <div className="absolute top-0 left-0.5 bg-yellow-400 text-black text-[6px] font-black px-1 py-0.5 rounded-[3px] whitespace-nowrap leading-tight shadow-sm group-hover/cue:bg-yellow-300 transition-colors select-none">
                 {cue.label}
               </div>
             </div>
           ))}
 
           {stems.map((stem) => (
-            <div key={`wavewrap-${stem.id}`} className="h-[88px] border-b border-[#1a1a1c] relative shrink-0"
-              style={{ background: `linear-gradient(180deg, ${stem.color}05 0%, transparent 100%)` }}>
+            <div key={`wavewrap-${stem.id}`} className="border-b border-black/30 relative shrink-0"
+              style={{ height: laneHeight, background: `linear-gradient(180deg, ${stem.color}40 0%, ${stem.color}1f 100%)` }}>
+              <div className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: stem.color }} />
               <div id={`waveform-${stem.id}`} className="absolute w-full top-0 h-full" />
             </div>
           ))}
         </div>
       </div>
-
-      {/* ═══ TRANSPORT FOOTER ═══ */}
-      <footer className="h-14 bg-[#18181a] border-t border-[#222] shrink-0 px-3 flex items-center justify-between z-20 shadow-[0_-2px_12px_rgba(0,0,0,0.6)]">
-
-        {/* Left: Tool buttons */}
-        <div className="flex-1 flex items-center gap-1.5">
-          <button onClick={() => setShowBpmModal(true)}
-            className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md cursor-pointer">
-            <span className="text-[7px] text-text-muted uppercase tracking-widest font-bold font-mono">BPM</span>
-            <span className="text-primary text-[11px] font-mono font-black">{bpm}</span>
-          </button>
-
-          <div className="relative">
-            <button onClick={() => setIsKeyPickerOpen(p => !p)}
-              className={`transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md cursor-pointer ${isKeyPickerOpen ? 'border-primary/40' : ''}`}>
-              <span className="text-[7px] text-text-muted uppercase tracking-widest font-bold font-mono">TOM</span>
-              <span className="text-primary text-[11px] font-mono font-black">{songKey}</span>
-            </button>
-            {isKeyPickerOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setIsKeyPickerOpen(false)} />
-                <div className="absolute bottom-full mb-2 left-0 bg-[#1c1c1e] border border-[#333] rounded-xl z-50 p-3 w-44 shadow-2xl">
-                  <p className="text-[8px] text-text-muted mb-2 font-mono uppercase tracking-wider">Selecionar tom:</p>
-                  <div className="grid grid-cols-4 gap-1">
-                    {KEYS.map(k => (
-                      <button key={k} onClick={() => { setSongKey(k); setIsKeyPickerOpen(false); }}
-                        className={`py-1.5 text-[9px] font-bold rounded transition-colors cursor-pointer font-mono ${songKey === k ? 'bg-primary text-black' : 'text-white/70 bg-white/5 hover:bg-primary/20 hover:text-primary'}`}>
-                        {k}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-
-          {stems.length > 0 && (
-            <button onClick={() => setShowBpmModal(true)}
-              className="transport-btn flex items-center gap-1 px-2.5 py-1.5 rounded-md cursor-pointer text-text-muted hover:text-primary transition-colors">
-              <span className="text-[7px] uppercase tracking-widest font-bold font-mono">+ CLICK</span>
-            </button>
-          )}
-
-          {stems.length > 0 && (
-            <button onClick={() => setShowVoiceGuide(true)}
-              className={`transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md cursor-pointer transition-all ${voiceCues.length > 0 ? 'text-yellow-400 border-yellow-500/30' : 'text-text-muted hover:text-yellow-400'}`}>
-              <Mic size={10} />
-              <span className="text-[7px] uppercase tracking-widest font-bold font-mono hidden sm:inline">
-                VOZ {voiceCues.length > 0 && `(${voiceCues.length})`}
-              </span>
-            </button>
-          )}
-
-          <div className="transport-btn flex items-center gap-0.5 rounded-md px-1 h-8">
-            <span className="text-[7px] text-text-muted uppercase tracking-widest font-bold px-1.5 font-mono hidden sm:inline">SYNC</span>
-            <button onClick={() => setClickOffsetMs(p => p - 10)} className="w-5 h-full flex items-center justify-center text-text-muted hover:text-white rounded cursor-pointer"><ChevronLeft size={11}/></button>
-            <span className="text-[9px] text-primary font-mono font-black w-9 text-center">{clickOffsetMs > 0 ? '+' : ''}{clickOffsetMs}</span>
-            <button onClick={() => setClickOffsetMs(p => p + 10)} className="w-5 h-full flex items-center justify-center text-text-muted hover:text-white rounded cursor-pointer"><ChevronRight size={11}/></button>
-            <span className="text-[6px] text-text-muted/40 font-mono mr-1">ms</span>
-          </div>
-        </div>
-
-        {/* Center: Transport controls */}
-        <div className="flex gap-2 items-center flex-1 justify-center">
-          <button onClick={() => { Object.values(wavesurfers.current).forEach(ws => ws.setTime(0)); voiceCuesRef.current.forEach(c => { c.fired = false; }); }}
-            className="transport-btn p-2 rounded-md text-text-muted hover:text-white cursor-pointer active:scale-90">
-            <ChevronLeft size={18}/>
-          </button>
-          <button onClick={togglePlay}
-            className={`transport-btn w-12 h-12 rounded-lg flex items-center justify-center cursor-pointer active:scale-95 transition-all ${isPlaying ? 'text-primary border-primary/40 shadow-[0_0_16px_rgba(212,168,67,0.2)]' : 'text-white hover:text-primary'}`}>
-            {isPlaying ? <Pause size={22} fill="currentColor"/> : <Play size={22} fill="currentColor" className="ml-0.5"/>}
-          </button>
-          <button className="transport-btn p-2 rounded-md text-text-muted/20 cursor-not-allowed">
-            <ChevronLeft size={18} className="rotate-180"/>
-          </button>
-        </div>
-
-        {/* Right: Master volume */}
-        <div className="flex-1 flex items-center justify-end gap-2">
-          <span className="text-[7px] text-text-muted uppercase tracking-widest font-bold font-mono hidden sm:inline">MASTER</span>
-          <Volume2 size={12} className="text-text-muted"/>
-          <input type="range" min="0" max="1" step="0.01" value={masterVolume}
-            onChange={(e) => setMasterVolume(parseFloat(e.target.value))}
-            className="daw-slider w-24" title="Master Volume" />
-          <div className="lcd-display px-2 py-1 rounded-[3px] text-[8px] font-mono text-accent-green w-11 text-center shrink-0">
-            {masterVolume === 0 ? '-∞' : (masterVolume * 10 - 10).toFixed(1)}
-          </div>
-        </div>
-      </footer>
 
       {/* SAVE MODAL */}
       {showSaveForm && (
@@ -1827,6 +2018,25 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                 >
                   Limpar todos
                 </button>
+              </div>
+            )}
+
+            {/* Footer: gerar/atualizar canal de Voz Guia */}
+            {voiceCues.length > 0 && (
+              <div className="border-t border-white/8 px-5 py-3 shrink-0">
+                <button
+                  onClick={commitVoiceGuideChannel}
+                  disabled={isRenderingGuide}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-yellow-400 text-black hover:bg-yellow-300 active:scale-[0.98] shadow-[0_4px_15px_rgba(251,191,36,0.2)]"
+                >
+                  {isRenderingGuide ? <Loader2 size={13} className="animate-spin" /> : <Mic size={13} />}
+                  {isRenderingGuide
+                    ? 'Gerando canal...'
+                    : stems.some(s => s.id === 'voiceguide') ? 'Atualizar canal de Voz Guia' : 'Gerar canal de Voz Guia'}
+                </button>
+                <p className="text-[8px] text-text-muted/60 font-mono text-center mt-1.5 leading-tight">
+                  Vira um canal no mixer (igual ao Click). Edite os marcadores e clique de novo para atualizar.
+                </p>
               </div>
             )}
           </div>
