@@ -102,7 +102,9 @@ export function LibraryModal({ isOpen, onClose, onDownload, onSongEdited }: Libr
 
     const handleDownload = async (songId: string, songName: string) => {
         const result = await downloadSong(songId);
-        if (result && result.files.length > 0) {
+        // files vazio + cachedSourceId = música no cache: o engine carrega lendo do
+        // cache 1 stem por vez (sem segurar todos os blobs na memória = OOM mobile).
+        if (result && (result.files.length > 0 || result.cachedSourceId)) {
             onDownload(result.files, songName, result.coverUrl, result.markers || undefined, result.originalKey, result.artist, result.bpm, { lyrics: result.lyrics, lyricsSynced: result.lyricsSynced, chords: result.chords }, songId);
             setDownloadedIds(prev => new Set(prev).add(songId));
         }

@@ -8,7 +8,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { detectKey, generateEndlessClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { loadClickSelection } from '../lib/clickLibrary';
 import { pbTrace, pbTraceClear } from '../lib/pbTrace';
-import { getCachedStem, isSongCached } from '../lib/offlineCache';
+import { getCachedStem, getCachedStemNames, isSongCached } from '../lib/offlineCache';
 
 // Engine de tom: signalsmith-stretch (MIT). O worklet e o WASM são gerados
 // inline em runtime (Blob + base64), então funciona offline no desktop sob
@@ -742,7 +742,6 @@ export function useAudioEngine(userId?: string) {
         // ou worklet falhar no meio, a UI não fica presa em "carregando".
         try {
         const filesArray = Array.from(files);
-        pbTrace(`LOAD start: ${filesArray.length} stems`);
 
         // Roteamento (pan/bus) sai só do nome do arquivo — não precisa do áudio
         // decodificado. Mesma regra de antes (click/guia à esquerda, resto à
@@ -757,26 +756,43 @@ export function useAudioEngine(userId?: string) {
             return { pan, bus };
         };
 
-        // Pré-atribui UUID e roteamento a cada stem SEM decodificar.
-        const prepared = filesArray.map((file, idx) => {
-            const uuid = crypto.randomUUID();
-            const { pan, bus } = routingFor(file.name);
-            return { uuid, file, idx, pan, bus, name: file.name.replace(/\.[^/.]+$/, "") };
-        });
-
-        // Música baixada da nuvem e já no cache offline? Então o repertório
-        // REUSA os bytes do cache (srcId/srcIdx) em vez de gravar uma 2ª cópia.
-        // Gravar os stems duas vezes (cache + repertório) era o que estourava a
-        // memória da aba no iPhone. A ordem dos stems no cache == ordem aqui.
+        // Música baixada e já no cache? Então NÃO recebemos os blobs em memória:
+        // carregamos lendo do cache 1 stem por vez (getCachedStem) no decode, e
+        // o repertório referencia o cache (srcId/srcIdx) em vez de 2ª cópia.
+        // Segurar todos os blobs + os buffers decodificados estourava o iPhone.
         const cacheSrcId = meta?.sourceId && await isSongCached(meta.sourceId)
             ? meta.sourceId
             : null;
 
+        // Lista de stems a processar (sem decodificar ainda). file é opcional:
+        // no modo cache-streaming os bytes vêm do cache no momento do decode.
+        type Prep = { uuid: string; idx: number; pan: number; bus: '1' | '2' | '1/2'; name: string; file?: File };
+        let prepared: Prep[];
+        if (filesArray.length === 0 && cacheSrcId) {
+            const names = (await getCachedStemNames(cacheSrcId)) || [];
+            prepared = names.map((nm, idx) => {
+                const { pan, bus } = routingFor(nm);
+                return { uuid: crypto.randomUUID(), idx, pan, bus, name: nm.replace(/\.[^/.]+$/, "") };
+            });
+        } else {
+            prepared = filesArray.map((file, idx) => {
+                const { pan, bus } = routingFor(file.name);
+                return { uuid: crypto.randomUUID(), idx, pan, bus, name: file.name.replace(/\.[^/.]+$/, ""), file };
+            });
+        }
+        pbTrace(`LOAD start: ${prepared.length} stems${cacheSrcId ? ' (cache stream)' : ''}`);
+
+        if (prepared.length === 0) {
+            console.error('loadFiles: nada a carregar (sem arquivos e sem cache).');
+            return;
+        }
+
         // Nome da música (folder/override/primeiro arquivo).
         let songName = overrideSongName;
         if (!songName) {
-            const pathParts = files[0].webkitRelativePath ? files[0].webkitRelativePath.split('/') : [];
-            songName = pathParts.length > 1 ? pathParts[0] : (files[0].name.split('-')[0] || `Música ${playlist.length + 1}`);
+            const first = filesArray[0];
+            const pathParts = first?.webkitRelativePath ? first.webkitRelativePath.split('/') : [];
+            songName = pathParts.length > 1 ? pathParts[0] : (first?.name.split('-')[0] || `Música ${playlist.length + 1}`);
         }
 
         const newSongId = crypto.randomUUID();
@@ -840,10 +856,18 @@ export function useAudioEngine(userId?: string) {
 
                 let audioBuffer: AudioBuffer;
                 try {
-                    const arrayBuffer = await p.file.arrayBuffer();
+                    // Bytes vêm da memória (import local) OU do cache 1 por vez
+                    // (música baixada). srcFile sai de escopo após o decode, então
+                    // só 1 blob fica vivo por vez — não todos juntos.
+                    const srcFile = p.file ?? (cacheSrcId ? await getCachedStem(cacheSrcId, p.idx) : null);
+                    if (!srcFile) {
+                        console.error(`Sem fonte para o stem ${p.idx} (${p.name})`);
+                        return null;
+                    }
+                    const arrayBuffer = await srcFile.arrayBuffer();
                     audioBuffer = await audioCtxRef.current.decodeAudioData(arrayBuffer);
                 } catch (e) {
-                    console.error(`Failed to decode ${p.file.name}`, e);
+                    console.error(`Failed to decode ${p.name}`, e);
                     return null;
                 }
 

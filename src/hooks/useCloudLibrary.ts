@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchSongs, searchSongs, fetchStems, downloadFileAsBlobWithProgress, deleteSongFromCloud, type CloudSong, type CloudStem } from '../lib/supabase';
-import { cacheSongsList, getCachedSongsList, cacheSong, getCachedSong, removeCachedSong, getCachedSongIds } from '../lib/offlineCache';
+import { cacheSongsList, getCachedSongsList, cacheSong, isSongCached, removeCachedSong, getCachedSongIds } from '../lib/offlineCache';
 import { useNetworkStatus } from './useNetworkStatus';
 import { pbTrace, pbTraceReset } from '../lib/pbTrace';
 import { type Marker } from '../types';
@@ -85,7 +85,7 @@ export function useCloudLibrary() {
     }, [searchQuery, isOnline]);
 
     // Download a song (or load from local cache if offline/cached)
-    const downloadSong = useCallback(async (songId: string): Promise<{ files: File[], coverUrl: string | null, markers: Marker[] | null, originalKey: string | null, artist?: string, bpm?: number, lyrics?: string | null, lyricsSynced?: string | null, chords?: string | null } | null> => {
+    const downloadSong = useCallback(async (songId: string): Promise<{ files: File[], coverUrl: string | null, markers: Marker[] | null, originalKey: string | null, artist?: string, bpm?: number, lyrics?: string | null, lyricsSynced?: string | null, chords?: string | null, cachedSourceId?: string } | null> => {
         setDownloadingSongId(songId);
 
         // Check cache first
@@ -93,11 +93,25 @@ export function useCloudLibrary() {
         if (!isOnline || isCached) {
             setDownloadProgress('Carregando offline...');
             try {
-                const cachedData = await getCachedSong(songId);
-                if (cachedData) {
+                // Música no cache: NÃO carrega os blobs na memória aqui. Devolve só
+                // a meta + cachedSourceId; o engine decodifica lendo do cache 1 stem
+                // por vez (sem segurar todos os blobs + buffers = OOM no iPhone).
+                if (await isSongCached(songId)) {
+                    const s = songs.find(x => x.id === songId);
                     setDownloadProgress('');
                     setDownloadingSongId(null);
-                    return cachedData;
+                    return {
+                        files: [],
+                        cachedSourceId: songId,
+                        coverUrl: s?.cover_url ?? null,
+                        markers: s?.markers ?? null,
+                        originalKey: s?.key ?? null,
+                        artist: s?.artist ?? undefined,
+                        bpm: s?.bpm ?? undefined,
+                        lyrics: s?.lyrics ?? null,
+                        lyricsSynced: s?.lyrics_synced ?? null,
+                        chords: s?.chords ?? null
+                    };
                 }
                 if (!isOnline) {
                     throw new Error('Música não encontrada no cache offline.');
@@ -135,7 +149,7 @@ export function useCloudLibrary() {
         abortControllersRef.current[songId] = controller;
 
         setDownloadProgress('Buscando stems...');
-        pbTraceReset(`build=diag-5 | DL start ${songId}`);
+        pbTraceReset(`build=diag-6 | DL start ${songId}`);
         try {
             const stems: CloudStem[] = await fetchStems(songId);
             pbTrace(`DL stems encontrados: ${stems.length}`);
@@ -202,12 +216,13 @@ export function useCloudLibrary() {
             // Cache for offline play. Só marca como OFFLINE se a gravação deu certo
             // de verdade (cacheSong agora verifica e retorna boolean). Antes o erro
             // era engolido e a música virava "offline" falsa — abria vazia depois.
+            let cachedOk = false;
             if (song && files.length > 0) {
                 setDownloadProgress('Salvando no cache...');
                 pbTrace('DL cacheando offline...');
-                const cached = await cacheSong(songId, song, files);
-                pbTrace(`DL cache offline resultado: ${cached}`);
-                if (cached) {
+                cachedOk = await cacheSong(songId, song, files);
+                pbTrace(`DL cache offline resultado: ${cachedOk}`);
+                if (cachedOk) {
                     setCachedSongIds(prev => new Set(prev).add(songId));
                 } else {
                     // Não coube no cache (ex.: multitrack grande demais p/ a quota).
@@ -219,7 +234,7 @@ export function useCloudLibrary() {
 
             setDownloadProgress('');
             setDownloadingSongId(null);
-            
+
             const markers = song?.markers || null;
             const originalKey = song?.key || null;
             const artist = song?.artist || undefined;
@@ -227,7 +242,18 @@ export function useCloudLibrary() {
             const lyrics = song?.lyrics ?? null;
             const lyricsSynced = song?.lyrics_synced ?? null;
             const chords = song?.chords ?? null;
-            pbTrace('DL retornando p/ loadFiles (vai carregar no repertório)');
+
+            // Cacheou com sucesso? Então NÃO devolve os blobs na memória: o engine
+            // lê do cache 1 stem por vez (cachedSourceId). Segurar todos os blobs +
+            // os buffers decodificados estourava a aba no iPhone. Os `files` locais
+            // viram lixo coletável assim que esta função retorna.
+            if (cachedOk) {
+                pbTrace('DL cacheado — engine carrega do cache (sem segurar blobs)');
+                return { files: [], cachedSourceId: songId, coverUrl, markers, originalKey, artist, bpm, lyrics, lyricsSynced, chords };
+            }
+
+            // Sem cache (offline grande demais): cai no carregamento em memória.
+            pbTrace('DL sem cache — carrega da memória');
             return { files, coverUrl, markers, originalKey, artist, bpm, lyrics, lyricsSynced, chords };
         } catch (e) {
             const err = e as Error;

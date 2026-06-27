@@ -222,6 +222,21 @@ export async function getCachedStem(songId: string, index: number): Promise<File
     }
 }
 
+// Nomes dos stems no cache (na ordem). Usado pelo repertório para carregar a
+// música lendo do cache 1 stem por vez, sem segurar todos os blobs na memória.
+export async function getCachedStemNames(songId: string): Promise<string[] | null> {
+    try {
+        const data = await get<CachedSongIndex | LegacyCachedSongData>(indexKey(songId));
+        if (!data) return null;
+        if ('files' in data && Array.isArray(data.files)) return data.files.map((f) => f.name);
+        if ('stemNames' in data && Array.isArray(data.stemNames)) return data.stemNames;
+        return null;
+    } catch (e) {
+        console.error(`Failed to get cached stem names ${songId}:`, e);
+        return null;
+    }
+}
+
 // Check if a song is cached offline (índice presente)
 export async function isSongCached(songId: string): Promise<boolean> {
     try {
