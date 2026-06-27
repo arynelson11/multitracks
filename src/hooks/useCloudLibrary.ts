@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchSongs, searchSongs, fetchStems, downloadFileAsBlobWithProgress, deleteSongFromCloud, type CloudSong, type CloudStem } from '../lib/supabase';
 import { cacheSongsList, getCachedSongsList, cacheSong, getCachedSong, removeCachedSong, getCachedSongIds } from '../lib/offlineCache';
 import { useNetworkStatus } from './useNetworkStatus';
+import { pbTrace, pbTraceReset } from '../lib/pbTrace';
 import { type Marker } from '../types';
 
 export function useCloudLibrary() {
@@ -134,10 +135,10 @@ export function useCloudLibrary() {
         abortControllersRef.current[songId] = controller;
 
         setDownloadProgress('Buscando stems...');
-        console.log('[PB] DL start:', songId);
+        pbTraceReset(`build=diag-4 | DL start ${songId}`);
         try {
             const stems: CloudStem[] = await fetchStems(songId);
-            console.log('[PB] DL stems encontrados:', stems.length);
+            pbTrace(`DL stems encontrados: ${stems.length}`);
             if (stems.length === 0) {
                 setDownloadProgress('Nenhum stem encontrado.');
                 setDownloadingSongId(null);
@@ -192,7 +193,7 @@ export function useCloudLibrary() {
             }
 
             const files: File[] = filesResults.filter((f): f is File => f !== null);
-            console.log('[PB] DL baixou todos os stems:', files.length);
+            pbTrace(`DL baixou todos os stems: ${files.length}`);
 
             // Get cover URL from current song list
             const song = songs.find(s => s.id === songId);
@@ -203,9 +204,9 @@ export function useCloudLibrary() {
             // era engolido e a música virava "offline" falsa — abria vazia depois.
             if (song && files.length > 0) {
                 setDownloadProgress('Salvando no cache...');
-                console.log('[PB] DL cacheando offline...');
+                pbTrace('DL cacheando offline...');
                 const cached = await cacheSong(songId, song, files);
-                console.log('[PB] DL cache offline resultado:', cached);
+                pbTrace(`DL cache offline resultado: ${cached}`);
                 if (cached) {
                     setCachedSongIds(prev => new Set(prev).add(songId));
                 } else {
@@ -226,7 +227,7 @@ export function useCloudLibrary() {
             const lyrics = song?.lyrics ?? null;
             const lyricsSynced = song?.lyrics_synced ?? null;
             const chords = song?.chords ?? null;
-            console.log('[PB] DL retornando p/ loadFiles (vai carregar no repertório)');
+            pbTrace('DL retornando p/ loadFiles (vai carregar no repertório)');
             return { files, coverUrl, markers, originalKey, artist, bpm, lyrics, lyricsSynced, chords };
         } catch (e) {
             const err = e as Error;

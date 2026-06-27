@@ -7,6 +7,7 @@ import type { Channel, Song, Marker } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { detectKey, generateEndlessClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { loadClickSelection } from '../lib/clickLibrary';
+import { pbTrace, pbTraceClear } from '../lib/pbTrace';
 
 // Engine de tom: signalsmith-stretch (MIT). O worklet e o WASM são gerados
 // inline em runtime (Blob + base64), então funciona offline no desktop sob
@@ -722,7 +723,7 @@ export function useAudioEngine(userId?: string) {
         // ou worklet falhar no meio, a UI não fica presa em "carregando".
         try {
         const filesArray = Array.from(files);
-        console.log('[PB] build=perstem-diag-3 | LOAD start:', filesArray.length, 'stems');
+        pbTrace(`LOAD start: ${filesArray.length} stems`);
 
         // Roteamento (pan/bus) sai só do nome do arquivo — não precisa do áudio
         // decodificado. Mesma regra de antes (click/guia à esquerda, resto à
@@ -765,7 +766,7 @@ export function useAudioEngine(userId?: string) {
         for (const p of prepared) {
             await set(fileKey(p.uuid), p.file);
         }
-        console.log('[PB] LOAD stems persisted (per-stem keys gravadas)');
+        pbTrace('LOAD stems persisted (per-stem keys gravadas)');
         const existingMeta = await get<SavedSong[]>(DB_KEY_META) || [];
         const preliminarySaved: SavedSong = {
             id: newSongId,
@@ -785,7 +786,7 @@ export function useAudioEngine(userId?: string) {
             chords: meta?.chords ?? null
         };
         await set(DB_KEY_META, [...existingMeta, preliminarySaved]);
-        console.log('[PB] LOAD meta persisted (PONTO SEGURO — música já no repertório)');
+        pbTrace('LOAD meta persisted (PONTO SEGURO — música já no repertório)');
 
         const results: (Channel | null)[] = [];
         // Use small batches on touch devices to keep peak memory low.
@@ -796,9 +797,9 @@ export function useAudioEngine(userId?: string) {
             && window.matchMedia('(pointer: coarse)').matches;
         const BATCH_SIZE = isTouch ? 1 : 4;
 
-        console.log('[PB] LOAD decoding', prepared.length, 'stems (batch', BATCH_SIZE, ')...');
+        pbTrace(`LOAD decoding ${prepared.length} stems (batch ${BATCH_SIZE})...`);
         for (let i = 0; i < prepared.length; i += BATCH_SIZE) {
-            console.log('[PB] LOAD decode batch @', i);
+            pbTrace(`LOAD decode batch @ ${i}`);
             const batch = prepared.slice(i, i + BATCH_SIZE);
             const batchPromises = batch.map(async (p) => {
                 if (!audioCtxRef.current || !masterGainRef.current) return null;
@@ -907,7 +908,8 @@ export function useAudioEngine(userId?: string) {
             setCurrentTime(0);
         }
         updatePlaylistAndSave(newPlaylist);
-        console.log('[PB] LOAD done — meta final salvo, música pronta');
+        pbTrace('LOAD done — meta final salvo, música pronta');
+        pbTraceClear();
         } finally {
             setIsLoading(false);
         }
