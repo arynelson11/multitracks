@@ -298,6 +298,14 @@ export function useAudioEngine(userId?: string) {
 
                     const bpm = metaSong.bpm ?? undefined;
 
+                    // Meta salvo ANTES do decode (loadFiles persiste cedo p/ a
+                    // música sobreviver a um reload no celular) entra com duration
+                    // 0. Aqui já temos os buffers, então recalculamos a partir
+                    // deles em vez de mostrar 00:00.
+                    const restoredDuration = metaSong.duration && metaSong.duration > 0
+                        ? metaSong.duration
+                        : Math.max(0, ...channels.map((c) => c.buffer.duration));
+
                     // Capas antigas podem ter sido salvas como blob: URL (object
                     // URL de sessão). Ao reabrir o app esse blob está morto e a
                     // imagem quebra (no desktop, ERR_FILE_NOT_FOUND). Descarta pra
@@ -310,7 +318,7 @@ export function useAudioEngine(userId?: string) {
                         id: metaSong.id,
                         name: metaSong.name,
                         coverImage,
-                        duration: metaSong.duration,
+                        duration: restoredDuration,
                         pitch: metaSong.pitch || 0,
                         originalKey,
                         bpm,
@@ -695,6 +703,66 @@ export function useAudioEngine(userId?: string) {
         const filesDb = await get<Map<string, File>>(DB_KEY_FILES) || new Map<string, File>();
 
         const filesArray = Array.from(files);
+
+        // Roteamento (pan/bus) sai só do nome do arquivo — não precisa do áudio
+        // decodificado. Mesma regra de antes (click/guia à esquerda, resto à
+        // direita), extraída pra rodar ANTES do decode.
+        const routingFor = (fileName: string): { pan: number; bus: '1' | '2' | '1/2' } => {
+            const n = fileName.toLowerCase();
+            let pan = 0;
+            if (settings.autoPan) {
+                pan = (n.includes('click') || n.includes('metronomo') || n.includes('guia') || n.includes('guide')) ? -1 : 1;
+            }
+            const bus: '1' | '2' | '1/2' = pan === -1 ? '1' : pan === 1 ? '2' : '1/2';
+            return { pan, bus };
+        };
+
+        // Pré-atribui UUID e roteamento a cada stem SEM decodificar.
+        const prepared = filesArray.map((file) => {
+            const uuid = crypto.randomUUID();
+            const { pan, bus } = routingFor(file.name);
+            filesDb.set(uuid, file);
+            return { uuid, file, pan, bus, name: file.name.replace(/\.[^/.]+$/, "") };
+        });
+
+        // Nome da música (folder/override/primeiro arquivo).
+        let songName = overrideSongName;
+        if (!songName) {
+            const pathParts = files[0].webkitRelativePath ? files[0].webkitRelativePath.split('/') : [];
+            songName = pathParts.length > 1 ? pathParts[0] : (files[0].name.split('-')[0] || `Música ${playlist.length + 1}`);
+        }
+
+        const newSongId = crypto.randomUUID();
+
+        // PERSISTE ANTES DO DECODE. No celular, decodificar todos os stems de uma
+        // vez segura ~1GB de AudioBuffer na RAM e a aba estoura a memória: o SO a
+        // recarrega ("reinicia a página") e a música sumia do repertório, porque o
+        // save só acontecia DEPOIS do decode. Gravando arquivos + meta provisório
+        // agora, a música sobrevive ao reload e é decodificada na inicialização —
+        // onde o pico é menor (sem os blobs do download/cache concorrendo).
+        // duration/tom definitivos saem após o decode; aqui ficam provisórios
+        // (a inicialização recalcula a duration a partir do buffer).
+        await set(DB_KEY_FILES, filesDb);
+        const existingMeta = await get<SavedSong[]>(DB_KEY_META) || [];
+        const preliminarySaved: SavedSong = {
+            id: newSongId,
+            name: songName,
+            coverImage,
+            duration: 0,
+            channels: prepared.map((p) => ({
+                id: p.uuid, name: p.name, volume: 1, muted: false, soloed: false, pan: p.pan, bus: p.bus
+            })),
+            pitch: 0,
+            originalKey: overrideOriginalKey ?? null,
+            bpm: overrideBpm,
+            artist: meta?.artist,
+            markers: songMarkers,
+            lyrics: meta?.lyrics ?? null,
+            lyricsSynced: meta?.lyricsSynced ?? null,
+            chords: meta?.chords ?? null
+        };
+        await set(DB_KEY_META, [...existingMeta, preliminarySaved]);
+
         const results: (Channel | null)[] = [];
         // Use small batches on touch devices to keep peak memory low.
         // Each concurrent decode holds an ArrayBuffer + the resulting AudioBuffer
@@ -704,47 +772,32 @@ export function useAudioEngine(userId?: string) {
             && window.matchMedia('(pointer: coarse)').matches;
         const BATCH_SIZE = isTouch ? 1 : 4;
 
-        for (let i = 0; i < filesArray.length; i += BATCH_SIZE) {
-            const batch = filesArray.slice(i, i + BATCH_SIZE);
-            const batchPromises = batch.map(async (file) => {
+        for (let i = 0; i < prepared.length; i += BATCH_SIZE) {
+            const batch = prepared.slice(i, i + BATCH_SIZE);
+            const batchPromises = batch.map(async (p) => {
                 if (!audioCtxRef.current || !masterGainRef.current) return null;
 
                 let audioBuffer: AudioBuffer;
                 try {
-                    const arrayBuffer = await file.arrayBuffer();
+                    const arrayBuffer = await p.file.arrayBuffer();
                     audioBuffer = await audioCtxRef.current.decodeAudioData(arrayBuffer);
                 } catch (e) {
-                    console.error(`Failed to decode ${file.name}`, e);
+                    console.error(`Failed to decode ${p.file.name}`, e);
                     return null;
                 }
 
                 const panner = audioCtxRef.current.createStereoPanner();
                 const gain = audioCtxRef.current.createGain();
 
-                const fileNameLower = file.name.toLowerCase();
-                let panValue = 0;
-                if (settings.autoPan) {
-                    if (fileNameLower.includes('click') || fileNameLower.includes('metronomo') || fileNameLower.includes('guia') || fileNameLower.includes('guide')) {
-                        panValue = -1;
-                    } else {
-                        panValue = 1;
-                    }
-                }
-
-                panner.pan.value = panValue;
+                panner.pan.value = p.pan;
                 gain.gain.value = 1;
 
                 panner.connect(gain);
 
-                const uuid = crypto.randomUUID();
-                filesDb.set(uuid, file);
-
-                const busValue: '1' | '2' | '1/2' = panValue === -1 ? '1' : panValue === 1 ? '2' : '1/2';
-
                 // Route through bus nodes based on assignment
-                if (busValue === '1' && bus1GainRef.current) {
+                if (p.bus === '1' && bus1GainRef.current) {
                     gain.connect(bus1GainRef.current);
-                } else if (busValue === '2' && bus2GainRef.current) {
+                } else if (p.bus === '2' && bus2GainRef.current) {
                     gain.connect(bus2GainRef.current);
                 } else {
                     // '1/2' = goes to both buses (or direct to master as fallback)
@@ -757,10 +810,10 @@ export function useAudioEngine(userId?: string) {
                 }
 
                 return {
-                    id: uuid,
-                    name: file.name.replace(/\.[^/.]+$/, ""), // remove extension
+                    id: p.uuid,
+                    name: p.name,
                     buffer: audioBuffer,
-                    file: file,
+                    file: p.file,
                     gainNode: gain,
                     pannerNode: panner,
                     pitchShiftNode: null,
@@ -768,8 +821,8 @@ export function useAudioEngine(userId?: string) {
                     volume: 1,
                     muted: false,
                     soloed: false,
-                    pan: panValue,
-                    bus: busValue
+                    pan: p.pan,
+                    bus: p.bus
                 } as Channel;
             });
             const batchResults = await Promise.all(batchPromises);
@@ -777,11 +830,17 @@ export function useAudioEngine(userId?: string) {
         }
         const newChannels: Channel[] = results.filter((ch): ch is Channel => ch !== null);
 
-        // Se NADA decodificou (arquivos corrompidos ou cache offline quebrado), não
-        // cria uma música vazia no repertório (00:00, mixer sem canais). Aborta — o
-        // finally desliga o loading. Vale pro caso da Estações com cache incompleto.
+        // Se NADA decodificou (arquivos corrompidos ou cache offline quebrado),
+        // desfaz o registro provisório (arquivos + meta) pra não deixar uma música
+        // fantasma (00:00, mixer sem canais) no repertório persistido. O finally
+        // desliga o loading. Vale pro caso da Estações com cache incompleto.
         if (newChannels.length === 0) {
             console.error('loadFiles: nenhuma faixa decodificou — música não adicionada.');
+            const revertMeta = await get<SavedSong[]>(DB_KEY_META) || [];
+            await set(DB_KEY_META, revertMeta.filter((s) => s.id !== newSongId));
+            const revertFiles = await get<Map<string, File>>(DB_KEY_FILES) || new Map<string, File>();
+            prepared.forEach((p) => revertFiles.delete(p.uuid));
+            await set(DB_KEY_FILES, revertFiles);
             return;
         }
 
@@ -789,15 +848,6 @@ export function useAudioEngine(userId?: string) {
         newChannels.forEach(ch => {
             if (ch.buffer.duration > maxDuration) maxDuration = ch.buffer.duration;
         });
-
-        await set(DB_KEY_FILES, filesDb);
-
-        // Use override name, folder name, or first file name as Song Name
-        let songName = overrideSongName;
-        if (!songName) {
-            const pathParts = files[0].webkitRelativePath ? files[0].webkitRelativePath.split('/') : [];
-            songName = pathParts.length > 1 ? pathParts[0] : (files[0].name.split('-')[0] || `Música ${playlist.length + 1}`);
-        }
 
         const mainChannel = newChannels.find(ch => {
             const n = ch.name.toLowerCase();
@@ -810,7 +860,7 @@ export function useAudioEngine(userId?: string) {
         const bpm = overrideBpm !== undefined ? overrideBpm : undefined;
 
         const newSong: Song = {
-            id: crypto.randomUUID(),
+            id: newSongId,
             sourceId: meta?.sourceId,
             name: songName,
             coverImage: coverImage,
