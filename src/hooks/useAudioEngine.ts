@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { get, set } from 'idb-keyval';
+import { get, set, del, keys } from 'idb-keyval';
 import JSZip from 'jszip';
 import * as Tone from 'tone';
 import SignalsmithStretch from 'signalsmith-stretch';
@@ -44,6 +44,25 @@ interface SavedSong {
 export function useAudioEngine(userId?: string) {
     const DB_KEY_META = userId ? `mt_meta_playlist_${userId}` : 'mt_meta_playlist';
     const DB_KEY_FILES = userId ? `mt_files_${userId}` : 'mt_files';
+
+    // Persistência por-stem do repertório. Gravar TODOS os arquivos de TODAS as
+    // músicas num único registro (Map sob DB_KEY_FILES) estourava a memória da
+    // aba no celular num write monolítico só: a aba era morta antes de o
+    // repertório salvar e a música "sumia" — enquanto o cache offline, que grava
+    // por stem, sobrevivia. Cada stem do repertório agora vive numa chave própria
+    // (write pequeno e durável), mesmo padrão de offlineCache. O Map vira fallback
+    // de LEITURA para repertórios antigos (gravados antes desta mudança).
+    const fileKey = (channelId: string) => `${DB_KEY_FILES}:ch:${channelId}`;
+
+    // Lê o arquivo de um canal: chave por-stem primeiro, Map legado como fallback.
+    const getChannelFile = async (
+        channelId: string,
+        legacyMap?: Map<string, File> | null
+    ): Promise<File | undefined> => {
+        const perStem = await get<File>(fileKey(channelId));
+        if (perStem) return perStem;
+        return legacyMap?.get(channelId);
+    };
     const { settings } = useSettings();
     const audioCtxRef = useRef<AudioContext | null>(null);
     const masterGainRef = useRef<GainNode | null>(null);
@@ -237,14 +256,16 @@ export function useAudioEngine(userId?: string) {
 
             // Try Restore
             const savedMeta = await get<SavedSong[]>(DB_KEY_META);
+            // Map legado (repertórios gravados antes da migração por-stem). Pode
+            // não existir mais; os arquivos novos vivem em chaves por-stem.
             const savedFiles = await get<Map<string, File>>(DB_KEY_FILES);
 
-            if (savedMeta && savedMeta.length > 0 && savedFiles) {
+            if (savedMeta && savedMeta.length > 0) {
                 setIsRestoring(true);
 
                 const restoreSongs = async (metaSong: SavedSong): Promise<Song | null> => {
                     const channelPromises = metaSong.channels.map(async (metaCh): Promise<Channel | null> => {
-                        const file = savedFiles.get(metaCh.id);
+                        const file = await getChannelFile(metaCh.id, savedFiles);
                         if (!file || !ctx) return null;
 
                         try {
@@ -700,8 +721,6 @@ export function useAudioEngine(userId?: string) {
         // try/finally garante que o loading sempre desligue: se qualquer decode
         // ou worklet falhar no meio, a UI não fica presa em "carregando".
         try {
-        const filesDb = await get<Map<string, File>>(DB_KEY_FILES) || new Map<string, File>();
-
         const filesArray = Array.from(files);
 
         // Roteamento (pan/bus) sai só do nome do arquivo — não precisa do áudio
@@ -721,7 +740,6 @@ export function useAudioEngine(userId?: string) {
         const prepared = filesArray.map((file) => {
             const uuid = crypto.randomUUID();
             const { pan, bus } = routingFor(file.name);
-            filesDb.set(uuid, file);
             return { uuid, file, pan, bus, name: file.name.replace(/\.[^/.]+$/, "") };
         });
 
@@ -734,15 +752,18 @@ export function useAudioEngine(userId?: string) {
 
         const newSongId = crypto.randomUUID();
 
-        // PERSISTE ANTES DO DECODE. No celular, decodificar todos os stems de uma
-        // vez segura ~1GB de AudioBuffer na RAM e a aba estoura a memória: o SO a
-        // recarrega ("reinicia a página") e a música sumia do repertório, porque o
-        // save só acontecia DEPOIS do decode. Gravando arquivos + meta provisório
-        // agora, a música sobrevive ao reload e é decodificada na inicialização —
-        // onde o pico é menor (sem os blobs do download/cache concorrendo).
-        // duration/tom definitivos saem após o decode; aqui ficam provisórios
-        // (a inicialização recalcula a duration a partir do buffer).
-        await set(DB_KEY_FILES, filesDb);
+        // PERSISTE ANTES DO DECODE, POR STEM. No celular, decodificar todos os
+        // stems de uma vez segura ~1GB de AudioBuffer e a aba estoura a memória: o
+        // SO recarrega a página e a música sumia do repertório, porque o save só
+        // acontecia DEPOIS do decode E num write monolítico (o Map inteiro) que
+        // por si só já dava pico. Gravando cada stem numa chave própria + o meta
+        // ANTES do decode, a música sobrevive ao reload (igual ao cache offline) e
+        // é decodificada na inicialização. Arquivos primeiro, meta depois: se o
+        // meta referencia um stem, o stem já está no disco. duration/tom saem
+        // definitivos após o decode (a restauração recalcula a duration provisória).
+        for (const p of prepared) {
+            await set(fileKey(p.uuid), p.file);
+        }
         const existingMeta = await get<SavedSong[]>(DB_KEY_META) || [];
         const preliminarySaved: SavedSong = {
             id: newSongId,
@@ -838,9 +859,7 @@ export function useAudioEngine(userId?: string) {
             console.error('loadFiles: nenhuma faixa decodificou — música não adicionada.');
             const revertMeta = await get<SavedSong[]>(DB_KEY_META) || [];
             await set(DB_KEY_META, revertMeta.filter((s) => s.id !== newSongId));
-            const revertFiles = await get<Map<string, File>>(DB_KEY_FILES) || new Map<string, File>();
-            prepared.forEach((p) => revertFiles.delete(p.uuid));
-            await set(DB_KEY_FILES, revertFiles);
+            await Promise.all(prepared.map((p) => del(fileKey(p.uuid))));
             return;
         }
 
@@ -892,8 +911,6 @@ export function useAudioEngine(userId?: string) {
         if (!audioCtxRef.current || !masterGainRef.current) return;
         setIsLoading(true);
 
-        const filesDb = await get<Map<string, File>>(DB_KEY_FILES) || new Map<string, File>();
-
         try {
             const { type, subdivision } = loadClickSelection();
             const { clickBlob } = await generateEndlessClickTrackFromSample(type, subdivision, bpm);
@@ -918,8 +935,7 @@ export function useAudioEngine(userId?: string) {
             }
 
             const uuid = crypto.randomUUID();
-            filesDb.set(uuid, file);
-            await set(DB_KEY_FILES, filesDb);
+            await set(fileKey(uuid), file);
 
             const newChannel: Channel = {
                 id: uuid,
@@ -966,8 +982,6 @@ export function useAudioEngine(userId?: string) {
         if (!audioCtxRef.current || !masterGainRef.current || playlist.length === 0 || activeSongIndex < 0) return;
         setIsLoading(true);
 
-        const filesDb = await get(DB_KEY_FILES) || new Map();
-
         try {
             const arrayBuffer = await file.arrayBuffer();
             const audioBuffer = await audioCtxRef.current.decodeAudioData(arrayBuffer);
@@ -1002,8 +1016,7 @@ export function useAudioEngine(userId?: string) {
             }
 
             const uuid = crypto.randomUUID();
-            filesDb.set(uuid, file);
-            await set(DB_KEY_FILES, filesDb);
+            await set(fileKey(uuid), file);
 
             const newChannel: Channel = {
                 id: uuid,
@@ -1340,10 +1353,10 @@ export function useAudioEngine(userId?: string) {
         newPlaylist[activeSongIndex] = song;
         updatePlaylistAndSave(newPlaylist);
 
-        // Remove from files DB
+        // Remove from files DB. Chave por-stem (novo) + Map legado (compat).
+        await del(fileKey(channelId));
         const filesDb = await get<Map<string, File>>(DB_KEY_FILES);
-        if (filesDb) {
-            filesDb.delete(channelId);
+        if (filesDb && filesDb.delete(channelId)) {
             await set(DB_KEY_FILES, filesDb);
         }
     };
@@ -1423,6 +1436,14 @@ export function useAudioEngine(userId?: string) {
     const clearSession = async () => {
         await set(DB_KEY_META, []);
         await set(DB_KEY_FILES, new Map());
+        // Apaga também as chaves por-stem do repertório (novo formato).
+        const stemPrefix = `${DB_KEY_FILES}:ch:`;
+        const allKeys = await keys();
+        await Promise.all(
+            allKeys
+                .filter((k): k is string => typeof k === 'string' && k.startsWith(stemPrefix))
+                .map((k) => del(k))
+        );
         window.location.reload();
     }
 
@@ -1447,7 +1468,8 @@ export function useAudioEngine(userId?: string) {
     // V5: Export playlist as ZIP (with full audio files)
     const exportPlaylist = async (): Promise<void> => {
         const zip = new JSZip();
-        const filesDb = await get<Map<string, File>>(DB_KEY_FILES) || new Map<string, File>();
+        // Map legado como fallback; arquivos novos vêm das chaves por-stem.
+        const legacyFilesDb = await get<Map<string, File>>(DB_KEY_FILES) || new Map<string, File>();
 
         const manifest = playlist.map(song => ({
             id: song.id,
@@ -1470,7 +1492,7 @@ export function useAudioEngine(userId?: string) {
         // Add each audio file to the zip
         for (const song of playlist) {
             for (const ch of song.channels) {
-                const file = filesDb.get(ch.id);
+                const file = await getChannelFile(ch.id, legacyFilesDb);
                 if (file) {
                     const ext = file.name.split('.').pop() || 'wav';
                     zip.file(`audio/${ch.id}.${ext}`, file);
@@ -1516,9 +1538,19 @@ export function useAudioEngine(userId?: string) {
             if (!data.songs || !Array.isArray(data.songs)) return;
 
             const importedMeta: SavedSong[] = data.songs;
-            const filesMap = new Map<string, File>();
 
-            // Restore audio files
+            // Limpa o repertório anterior (Map legado + chaves por-stem órfãs)
+            // antes de importar o novo, pra não deixar stems velhos no disco.
+            await set(DB_KEY_FILES, new Map());
+            const stemPrefix = `${DB_KEY_FILES}:ch:`;
+            const oldKeys = await keys();
+            await Promise.all(
+                oldKeys
+                    .filter((k): k is string => typeof k === 'string' && k.startsWith(stemPrefix))
+                    .map((k) => del(k))
+            );
+
+            // Restore audio files — uma chave por stem (igual loadFiles).
             for (const song of importedMeta) {
                 for (const ch of song.channels) {
                     // Find audio file for this channel ID
@@ -1527,7 +1559,7 @@ export function useAudioEngine(userId?: string) {
                         const audioBlob = await audioFiles[0].async('blob');
                         const ext = audioFiles[0].name.split('.').pop() || 'wav';
                         const audioFile = new File([audioBlob], `${ch.name}.${ext}`, { type: `audio/${ext}` });
-                        filesMap.set(ch.id, audioFile);
+                        await set(fileKey(ch.id), audioFile);
                     }
                 }
             }
@@ -1557,7 +1589,6 @@ export function useAudioEngine(userId?: string) {
             }
 
             await set(DB_KEY_META, importedMeta);
-            await set(DB_KEY_FILES, filesMap);
 
             window.location.reload();
         } catch (e) {
