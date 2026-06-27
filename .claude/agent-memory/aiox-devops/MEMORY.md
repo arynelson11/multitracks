@@ -1,0 +1,2 @@
+- [Push authority hook](feedback_push_authority_hook.md) — prefix pushes with `AIOX_ACTIVE_AGENT=devops` or the hook denies as @unknown
+- [Release deploy flow](reference_release_deploy_flow.md) — tag push (v*) fires .github/workflows/release.yml; builds mac+win installers, makes GitHub Release

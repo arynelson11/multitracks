@@ -1,0 +1,1 @@
+- [Playback landing/pricing copy](project_playback_landing.md) — onde vive a copy, diferencial ao vivo como promessa central, matriz de planos, erros a vigiar

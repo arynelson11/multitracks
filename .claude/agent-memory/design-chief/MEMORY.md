@@ -1,0 +1,1 @@
+- [Playback Studio brand source](brand_playback_studio.md) — onde vive a marca canônica (Brand Book + Design System) e regras inegociáveis de design

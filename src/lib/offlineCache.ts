@@ -192,6 +192,36 @@ export async function updateCachedSongMeta(
     }
 }
 
+// Lê UM stem do cache offline (índice + chave do stem). Usado pelo repertório
+// para reaproveitar os bytes já baixados em vez de gravar uma 2ª cópia — gravar
+// os stems duas vezes (cache + repertório) estourava a memória da aba no iPhone.
+export async function getCachedStem(songId: string, index: number): Promise<File | null> {
+    try {
+        const data = await get<CachedSongIndex | LegacyCachedSongData>(indexKey(songId));
+        if (!data) return null;
+
+        // Formato antigo: blobs embutidos no registro único.
+        if ('files' in data && Array.isArray(data.files)) {
+            const f = data.files[index];
+            return f ? new File([f.blob], f.name, { type: f.blob.type }) : null;
+        }
+
+        // Formato novo: 1 chave por stem.
+        if ('stemNames' in data && Array.isArray(data.stemNames)) {
+            const name = data.stemNames[index];
+            if (!name) return null;
+            const blob = await get<Blob>(stemKey(songId, index));
+            if (!blob || blob.size === 0) return null;
+            return new File([blob], name, { type: blob.type });
+        }
+
+        return null;
+    } catch (e) {
+        console.error(`Failed to get cached stem ${songId}#${index}:`, e);
+        return null;
+    }
+}
+
 // Check if a song is cached offline (índice presente)
 export async function isSongCached(songId: string): Promise<boolean> {
     try {

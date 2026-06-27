@@ -135,7 +135,7 @@ export function useCloudLibrary() {
         abortControllersRef.current[songId] = controller;
 
         setDownloadProgress('Buscando stems...');
-        pbTraceReset(`build=diag-4 | DL start ${songId}`);
+        pbTraceReset(`build=diag-5 | DL start ${songId}`);
         try {
             const stems: CloudStem[] = await fetchStems(songId);
             pbTrace(`DL stems encontrados: ${stems.length}`);

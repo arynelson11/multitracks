@@ -3,6 +3,11 @@ export interface Channel {
     name: string;
     buffer: AudioBuffer;
     file?: File;
+    // Para músicas baixadas da nuvem: ponteiro pro stem no cache offline
+    // (songId + índice). O repertório reaproveita esses bytes em vez de gravar
+    // uma 2ª cópia — gravar duas vezes estourava a memória no iPhone.
+    srcId?: string;
+    srcIdx?: number;
     gainNode: GainNode;
     pannerNode: StereoPannerNode;
     sourceNode: AudioBufferSourceNode | null;

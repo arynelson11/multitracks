@@ -1,0 +1,1 @@
+- [Packaging da feature Ao Vivo](project_live_feature_packaging.md) — gate no eixo "indivíduo→equipe"; multi-device é a alavanca de receita, não a cota de IA

@@ -8,6 +8,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { detectKey, generateEndlessClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { loadClickSelection } from '../lib/clickLibrary';
 import { pbTrace, pbTraceClear } from '../lib/pbTrace';
+import { getCachedStem, isSongCached } from '../lib/offlineCache';
 
 // Engine de tom: signalsmith-stretch (MIT). O worklet e o WASM são gerados
 // inline em runtime (Blob + base64), então funciona offline no desktop sob
@@ -22,6 +23,10 @@ interface SavedChannel {
     soloed: boolean;
     pan: number;
     bus: '1' | '2' | '1/2';
+    // Ponteiro pro stem no cache offline (músicas baixadas). Quando presente, o
+    // repertório lê os bytes do cache em vez de ter uma 2ª cópia própria.
+    srcId?: string;
+    srcIdx?: number;
 }
 
 interface SavedSong {
@@ -55,11 +60,19 @@ export function useAudioEngine(userId?: string) {
     // de LEITURA para repertórios antigos (gravados antes desta mudança).
     const fileKey = (channelId: string) => `${DB_KEY_FILES}:ch:${channelId}`;
 
-    // Lê o arquivo de um canal: chave por-stem primeiro, Map legado como fallback.
+    // Lê o arquivo de um canal. Ordem: cache offline (músicas baixadas, via
+    // srcId/srcIdx) → chave por-stem do repertório → Map legado. O cache primeiro
+    // evita a 2ª cópia que estourava a memória no iPhone.
     const getChannelFile = async (
         channelId: string,
-        legacyMap?: Map<string, File> | null
+        legacyMap?: Map<string, File> | null,
+        srcId?: string,
+        srcIdx?: number
     ): Promise<File | undefined> => {
+        if (srcId && typeof srcIdx === 'number') {
+            const fromCache = await getCachedStem(srcId, srcIdx);
+            if (fromCache) return fromCache;
+        }
         const perStem = await get<File>(fileKey(channelId));
         if (perStem) return perStem;
         return legacyMap?.get(channelId);
@@ -171,7 +184,9 @@ export function useAudioEngine(userId?: string) {
                 muted: ch.muted,
                 soloed: ch.soloed,
                 pan: ch.pan,
-                bus: ch.bus || '1/2'
+                bus: ch.bus || '1/2',
+                srcId: ch.srcId,
+                srcIdx: ch.srcIdx
             })),
             pitch: song.pitch || 0,
             originalKey: song.originalKey || null,
@@ -266,7 +281,7 @@ export function useAudioEngine(userId?: string) {
 
                 const restoreSongs = async (metaSong: SavedSong): Promise<Song | null> => {
                     const channelPromises = metaSong.channels.map(async (metaCh): Promise<Channel | null> => {
-                        const file = await getChannelFile(metaCh.id, savedFiles);
+                        const file = await getChannelFile(metaCh.id, savedFiles, metaCh.srcId, metaCh.srcIdx);
                         if (!file || !ctx) return null;
 
                         try {
@@ -286,11 +301,15 @@ export function useAudioEngine(userId?: string) {
                             gain.connect(master);
 
                             // Worklet de tom é lazy: só nasce no play se houver transpose.
+                            // Não guarda o blob (file) na memória viva: já está
+                            // persistido (cache/IDB) e é relido só quando preciso
+                            // (export). Segurar file + buffer dobrava a RAM.
                             return {
                                 id: metaCh.id,
                                 name: metaCh.name,
                                 buffer: audioBuffer,
-                                file: file,
+                                srcId: metaCh.srcId,
+                                srcIdx: metaCh.srcIdx,
                                 gainNode: gain,
                                 pannerNode: panner,
                                 pitchShiftNode: null,
@@ -739,11 +758,19 @@ export function useAudioEngine(userId?: string) {
         };
 
         // Pré-atribui UUID e roteamento a cada stem SEM decodificar.
-        const prepared = filesArray.map((file) => {
+        const prepared = filesArray.map((file, idx) => {
             const uuid = crypto.randomUUID();
             const { pan, bus } = routingFor(file.name);
-            return { uuid, file, pan, bus, name: file.name.replace(/\.[^/.]+$/, "") };
+            return { uuid, file, idx, pan, bus, name: file.name.replace(/\.[^/.]+$/, "") };
         });
+
+        // Música baixada da nuvem e já no cache offline? Então o repertório
+        // REUSA os bytes do cache (srcId/srcIdx) em vez de gravar uma 2ª cópia.
+        // Gravar os stems duas vezes (cache + repertório) era o que estourava a
+        // memória da aba no iPhone. A ordem dos stems no cache == ordem aqui.
+        const cacheSrcId = meta?.sourceId && await isSongCached(meta.sourceId)
+            ? meta.sourceId
+            : null;
 
         // Nome da música (folder/override/primeiro arquivo).
         let songName = overrideSongName;
@@ -763,10 +790,16 @@ export function useAudioEngine(userId?: string) {
         // é decodificada na inicialização. Arquivos primeiro, meta depois: se o
         // meta referencia um stem, o stem já está no disco. duration/tom saem
         // definitivos após o decode (a restauração recalcula a duration provisória).
-        for (const p of prepared) {
-            await set(fileKey(p.uuid), p.file);
+        if (cacheSrcId) {
+            pbTrace('LOAD reusa cache offline (sem 2ª cópia)');
+        } else {
+            // Arquivos locais (não vieram da nuvem) ou cache indisponível: o
+            // repertório guarda sua própria cópia por stem.
+            for (const p of prepared) {
+                await set(fileKey(p.uuid), p.file);
+            }
+            pbTrace('LOAD stems persisted (per-stem keys gravadas)');
         }
-        pbTrace('LOAD stems persisted (per-stem keys gravadas)');
         const existingMeta = await get<SavedSong[]>(DB_KEY_META) || [];
         const preliminarySaved: SavedSong = {
             id: newSongId,
@@ -774,7 +807,8 @@ export function useAudioEngine(userId?: string) {
             coverImage,
             duration: 0,
             channels: prepared.map((p) => ({
-                id: p.uuid, name: p.name, volume: 1, muted: false, soloed: false, pan: p.pan, bus: p.bus
+                id: p.uuid, name: p.name, volume: 1, muted: false, soloed: false, pan: p.pan, bus: p.bus,
+                srcId: cacheSrcId ?? undefined, srcIdx: cacheSrcId ? p.idx : undefined
             })),
             pitch: 0,
             originalKey: overrideOriginalKey ?? null,
@@ -836,11 +870,15 @@ export function useAudioEngine(userId?: string) {
                     }
                 }
 
+                // Não retém o blob (file) na memória viva: já está persistido
+                // (cache offline ou per-stem) e é relido só p/ export. Segurar
+                // file + buffer ao mesmo tempo dobrava a RAM no iPhone.
                 return {
                     id: p.uuid,
                     name: p.name,
                     buffer: audioBuffer,
-                    file: p.file,
+                    srcId: cacheSrcId ?? undefined,
+                    srcIdx: cacheSrcId ? p.idx : undefined,
                     gainNode: gain,
                     pannerNode: panner,
                     pitchShiftNode: null,
@@ -1500,7 +1538,7 @@ export function useAudioEngine(userId?: string) {
         // Add each audio file to the zip
         for (const song of playlist) {
             for (const ch of song.channels) {
-                const file = await getChannelFile(ch.id, legacyFilesDb);
+                const file = await getChannelFile(ch.id, legacyFilesDb, ch.srcId, ch.srcIdx);
                 if (file) {
                     const ext = file.name.split('.').pop() || 'wav';
                     zip.file(`audio/${ch.id}.${ext}`, file);
