@@ -11,6 +11,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.3.16',
+    date: '2026-06-28',
+    title: 'Separações novas ficam firmes',
+    items: [
+      'Ao reabrir uma separação, as faixas continuam carregando mesmo depois de gerar o click, adicionar a voz guia ou ajustar o mixer. Antes, nesses casos, elas podiam voltar a aparecer em branco.',
+      'Separações antigas que já estavam com as faixas em branco ainda precisam ser refeitas uma vez pra voltar a funcionar.',
+    ],
+  },
+  {
     version: '1.3.15',
     date: '2026-06-28',
     title: 'Suas separações voltam a abrir',
