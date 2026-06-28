@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.3.15',
+    date: '2026-06-28',
+    title: 'Suas separações voltam a abrir',
+    items: [
+      'Ao reabrir uma separação salva, as faixas agora carregam normalmente. Antes, depois de um tempo, elas podiam aparecer em branco.',
+      'As separações feitas a partir de agora ficam guardadas de forma permanente, prontas pra abrir sempre que você quiser.',
+      'Separações antigas que já estavam com as faixas em branco precisam ser refeitas uma vez pra voltar a funcionar.',
+    ],
+  },
+  {
     version: '1.3.14',
     date: '2026-06-28',
     title: 'Espaço controla a página certa',
