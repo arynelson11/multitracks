@@ -11,6 +11,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.3.14',
+    date: '2026-06-28',
+    title: 'Espaço controla a página certa',
+    items: [
+      'Na tela de separação, apertar Espaço agora toca e pausa as faixas separadas, e não mais a playback que estava aberta por trás.',
+      'Cada tela responde só ao próprio áudio: o que você faz controla a página em que você está.',
+    ],
+  },
+  {
     version: '1.3.13',
     date: '2026-06-26',
     title: 'Planos mais claros',

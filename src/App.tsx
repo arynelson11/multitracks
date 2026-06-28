@@ -223,6 +223,10 @@ export default function App() {
   // o foco está num campo de texto pra não atrapalhar anotações, etc.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // A página de separação tem seus próprios atalhos (Espaço toca os multitracks
+      // separados, não a playlist). Enquanto ela estiver aberta, o App não responde
+      // ao teclado pra não controlar a playback errada.
+      if (isSeparatorOpen) return
       const el = e.target as HTMLElement | null
       const tag = el?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return
@@ -250,7 +254,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker])
+  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker, isSeparatorOpen])
 
   const handleStartLiveMode = async () => {
     // Modo Ao Vivo é exclusivo dos planos pagos.
