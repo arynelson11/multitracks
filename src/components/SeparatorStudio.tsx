@@ -890,9 +890,38 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       stemsArray.forEach(s => {
         initialStates[s.id] = { muted: false, soloed: false, volume: 1, pan: 0 };
       });
-      
+
+      // As URLs do motor de IA (replicate.delivery) são EFÊMERAS: expiram em ~1h.
+      // Re-hospedamos cada stem no R2 ANTES de exibir/salvar e usamos as URLs do
+      // R2 também no estado em memória. Assim qualquer re-save posterior (gerar
+      // click, voz guia, mexer no mixer, renomear via persistSeparation) grava as
+      // URLs permanentes, e não as do Replicate — senão reabrir mostra as faixas
+      // em branco. O upload é server-side (/api/upload-stem-from-url busca a URL e
+      // grava no R2): o cliente não segura blob na RAM, seguro p/ memória do iOS.
+      setProgress(92);
+      const songSlug = `sep_${Date.now()}`;
+      const persistedStems: StemData[] = await Promise.all(stemsArray.map(async (s) => {
+        if (!user?.id || !/^https?:\/\//.test(s.url)) return s;
+        try {
+          const key = `stems/${user.id}/${songSlug}/${s.id}_${Date.now()}.wav`;
+          const copyRes = await fetch(apiUrl('/api/upload-stem-from-url'), {
+            method: 'POST',
+            headers: await getAuthHeaders(),
+            body: JSON.stringify({ sourceUrl: s.url, key, contentType: 'audio/wav' }),
+          });
+          if (copyRes.ok) {
+            const data = await copyRes.json();
+            if (data?.url) return { ...s, url: data.url };
+          }
+          console.warn('[SepLib] Re-host falhou, mantendo URL temporária:', s.id, copyRes.status);
+        } catch (e) {
+          console.warn('[SepLib] Re-host erro:', s.id, e);
+        }
+        return s;
+      }));
+
       setStemStates(initialStates);
-      setStems(stemsArray);
+      setStems(persistedStems);
       setProgress(100);
       setIsProcessing(false);
 
@@ -902,40 +931,12 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
       // ── Auto-save to local library ──
       try {
-        // As URLs do motor de IA (replicate.delivery) são EFÊMERAS: expiram em
-        // ~1h. Se salvássemos elas direto, reabrir a separação depois mostraria
-        // as faixas em branco (waveform não carrega, duração NaN). Persistimos
-        // cada stem no R2 antes de salvar. O upload é server-side
-        // (/api/upload-stem-from-url busca a URL e grava no R2) — o cliente não
-        // segura blob na RAM, então é seguro pra memória do iOS.
-        const songSlug = `sep_${Date.now()}`;
-        const persistedStems = await Promise.all(stemsArray.map(async (s) => {
-          const base = { id: s.id, name: s.name, url: s.url, color: s.color };
-          if (!user?.id || !/^https?:\/\//.test(s.url)) return base;
-          try {
-            const key = `stems/${user.id}/${songSlug}/${s.id}_${Date.now()}.wav`;
-            const copyRes = await fetch(apiUrl('/api/upload-stem-from-url'), {
-              method: 'POST',
-              headers: await getAuthHeaders(),
-              body: JSON.stringify({ sourceUrl: s.url, key, contentType: 'audio/wav' }),
-            });
-            if (copyRes.ok) {
-              const data = await copyRes.json();
-              if (data?.url) return { ...base, url: data.url };
-            }
-            console.warn('[SepLib] Re-host falhou, salvando URL temporária:', s.id, copyRes.status);
-          } catch (e) {
-            console.warn('[SepLib] Re-host erro:', s.id, e);
-          }
-          return base;
-        }));
-
         const sepId = await saveSeparation({
           songName: audioFile.name.replace(/\.[^/.]+$/, ''),
           artist: '',
           bpm: bpm,
           songKey: songKey,
-          stems: persistedStems,
+          stems: persistedStems.map(s => ({ id: s.id, name: s.name, url: s.url, color: s.color })),
           voiceCues: [],
         });
         if (sepId) {
