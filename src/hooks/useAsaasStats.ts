@@ -1,7 +1,8 @@
 import { apiUrl } from '../lib/api';
+import { getAuthHeaders } from '../lib/supabase';
 import { useState, useEffect, useCallback } from 'react';
 
-export interface AbacatePayStats {
+export interface AsaasStats {
   totalRevenueBRL: number;
   paidCount: number;
   totalCheckouts: number;
@@ -16,8 +17,8 @@ export interface AbacatePayStats {
   }[];
 }
 
-export function useAbacatePayStats() {
-  const [stats, setStats] = useState<AbacatePayStats | null>(null);
+export function useAsaasStats() {
+  const [stats, setStats] = useState<AsaasStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,7 +26,9 @@ export function useAbacatePayStats() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(apiUrl('/api/admin-stats?source=abacatepay'));
+      const res = await fetch(apiUrl('/api/admin-stats?source=asaas'), {
+        headers: await getAuthHeaders(),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao buscar dados');
       setStats(data);

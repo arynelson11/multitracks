@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { verifyUser } from './_lib/auth.js';
 import { applyCors } from './_lib/cors.js';
+import { getUserPlan, isPaidPlan } from './_lib/plan.js';
 
 const supabaseUrl    = process.env.VITE_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -64,6 +65,19 @@ export default async function handler(req: any, res: any) {
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+    // Salvar/publicar na nuvem é recurso pago (par do insert-song). Admin passa.
+    if (!auth.isAdmin) {
+        let plan: string;
+        try { plan = await getUserPlan(supabase, auth.userId); }
+        catch (e: any) {
+            console.error('[insert-stems] plan lookup failed:', e?.message);
+            return res.status(500).json({ error: 'Plan lookup failed' });
+        }
+        if (!isPaidPlan(plan)) {
+            return res.status(403).json({ error: 'Salvar na nuvem é um recurso dos planos pagos. Assine o Pro.', plan });
+        }
+    }
 
     // Verifica ownership: usuário comum só insere stems em músicas próprias.
     // Admin pode inserir em qualquer música (catálogo global).

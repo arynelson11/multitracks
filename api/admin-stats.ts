@@ -1,54 +1,76 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import axios from 'axios';
 import { applyCors } from './_lib/cors.js';
+import { verifyAdmin } from './_lib/auth.js';
 
 // Endpoint unico de estatisticas de admin, roteado por ?source=.
-// Consolida o que antes eram duas funcoes serverless (abacatepay-stats +
+// Consolida o que antes eram duas funcoes serverless (payment-stats +
 // replicate-stats) pra respeitar o limite de 12 funcoes do plano Hobby da Vercel.
 
-// ───────────────────────── AbacatePay ─────────────────────────
-async function abacatePayStats(res: VercelResponse) {
-  const token = process.env.ABACATEPAY_ACCESS_TOKEN;
-  if (!token) return res.status(500).json({ error: 'Server misconfiguration' });
+// ───────────────────────── Asaas ─────────────────────────
+// Provedor de pagamento atual (migrou do AbacatePay). value vem em REAIS
+// (não centavos). Statuses que representam dinheiro efetivamente recebido:
+const ASAAS_PAID_STATUSES = new Set(['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH']);
+
+function asaasBaseUrl(): string {
+  return process.env.ASAAS_ENV === 'production'
+    ? 'https://api.asaas.com/v3'
+    : 'https://api-sandbox.asaas.com/v3';
+}
+
+async function asaasStats(res: VercelResponse) {
+  const apiKey = process.env.ASAAS_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'Server misconfiguration: ASAAS_API_KEY' });
 
   const api = axios.create({
-    baseURL: 'https://api.abacatepay.com/v2',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    baseURL: asaasBaseUrl(),
+    headers: { access_token: apiKey, 'Content-Type': 'application/json' },
+    timeout: 9000,
   });
 
-  const [checkoutsRes, subscriptionsRes] = await Promise.allSettled([
-    api.get('/checkouts'),
-    api.get('/subscriptions'),
+  // Pagina uma lista do Asaas (offset/limit + hasMore), com cap defensivo.
+  async function fetchAll(path: string, maxPages = 10): Promise<any[]> {
+    const out: any[] = [];
+    const limit = 100;
+    let offset = 0;
+    for (let page = 0; page < maxPages; page++) {
+      const { data } = await api.get(path, { params: { limit, offset } });
+      const rows: any[] = data?.data ?? [];
+      out.push(...rows);
+      if (!data?.hasMore || rows.length < limit) break;
+      offset += limit;
+    }
+    return out;
+  }
+
+  const [paymentsRes, subscriptionsRes] = await Promise.allSettled([
+    fetchAll('/payments'),
+    fetchAll('/subscriptions'),
   ]);
 
-  const checkouts: any[] = checkoutsRes.status === 'fulfilled'
-    ? (checkoutsRes.value.data?.data ?? [])
-    : [];
+  const payments: any[]      = paymentsRes.status === 'fulfilled' ? paymentsRes.value : [];
+  const subscriptions: any[] = subscriptionsRes.status === 'fulfilled' ? subscriptionsRes.value : [];
 
-  const subscriptions: any[] = subscriptionsRes.status === 'fulfilled'
-    ? (subscriptionsRes.value.data?.data ?? [])
-    : [];
-
-  const paidCheckouts = checkouts.filter((c: any) => c.status === 'PAID');
-  const totalRevenueCents = paidCheckouts.reduce((sum: number, c: any) => sum + (c.amount ?? 0), 0);
+  const paid = payments.filter((p: any) => ASAAS_PAID_STATUSES.has(p.status));
+  const totalRevenueBRL = paid.reduce((sum: number, p: any) => sum + (Number(p.value) || 0), 0);
   const activeSubscriptions = subscriptions.filter((s: any) => s.status === 'ACTIVE');
 
-  // Recent 10 payments across both lists
-  const recent = [...checkouts, ...subscriptions]
-    .sort((a, b) => new Date(b.createdAt ?? b.created_at ?? 0).getTime() - new Date(a.createdAt ?? a.created_at ?? 0).getTime())
+  // Cobranças mais recentes (valor em reais — o front formata direto com fmtBRL).
+  const recent = [...payments]
+    .sort((a, b) => new Date(b.dateCreated ?? 0).getTime() - new Date(a.dateCreated ?? 0).getTime())
     .slice(0, 10)
-    .map((c: any) => ({
-      id: c.id,
-      status: c.status,
-      amount: c.amount ?? 0,
-      createdAt: c.createdAt ?? c.created_at ?? null,
-      metadata: c.metadata ?? null,
+    .map((p: any) => ({
+      id: p.id,
+      status: p.status,
+      amount: Number(p.value) || 0,
+      createdAt: p.dateCreated ?? null,
+      metadata: null,
     }));
 
   return res.status(200).json({
-    totalRevenueBRL: totalRevenueCents / 100,
-    paidCount: paidCheckouts.length,
-    totalCheckouts: checkouts.length,
+    totalRevenueBRL,
+    paidCount: paid.length,
+    totalCheckouts: payments.length,
     activeSubscriptions: activeSubscriptions.length,
     totalSubscriptions: subscriptions.length,
     recent,
@@ -254,8 +276,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
+  // Dados de negócio (receita, assinaturas, custos): só admin.
+  const auth = await verifyAdmin(req);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+
   const source = (req.query.source as string) || '';
-  if (source === 'abacatepay') return abacatePayStats(res);
+  if (source === 'asaas') return asaasStats(res);
   if (source === 'replicate') return replicateStats(res);
-  return res.status(400).json({ error: 'Parametro "source" invalido (use abacatepay ou replicate)' });
+  return res.status(400).json({ error: 'Parametro "source" invalido (use asaas ou replicate)' });
 }

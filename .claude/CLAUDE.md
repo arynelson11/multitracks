@@ -2,6 +2,12 @@
 
 You are working with Synkra AIOX, an AI-Orchestrated System for Full Stack Development.
 
+## Documentação viva (Playback Studio) — NON-NEGOTIABLE
+
+A fonte única de verdade dos fatos do produto (planos, preços, features, provedor de pagamento, stack) é **`PLAYBACK_STUDIO_FATOS.md`** na raiz do repo. Antes de criar conteúdo, copy, proposta ou tomar decisão de produto, **leia esse arquivo** — não confie em docs de marketing/brand isolados, que podem estar velhos.
+
+Toda alteração relevante (preço, plano, feature, provedor, stack, fix de produto) **atualiza `PLAYBACK_STUDIO_FATOS.md` no mesmo passo** (seções de planos + a linha datada em "Histórico de mudanças"). Se um doc antigo (Brand Book, memórias de agente, marketing) contradiz o FATOS, o FATOS vence; corrija ou anote um banner "ESTADO ATUAL" apontando pra ele. Objetivo: agentes não erram com info velha e dá pra saber o que foi feito sem re-rodar o código.
+
 <!-- AIOX-MANAGED-START: core-framework -->
 ## Core Framework Understanding
 

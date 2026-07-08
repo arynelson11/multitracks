@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchSongs, searchSongs, fetchStems, downloadFileAsBlobWithProgress, deleteSongFromCloud, type CloudSong, type CloudStem } from '../lib/supabase';
 import { cacheSongsList, getCachedSongsList, cacheSong, isSongCached, removeCachedSong, getCachedSongIds } from '../lib/offlineCache';
 import { useNetworkStatus } from './useNetworkStatus';
-import { pbTrace, pbTraceReset } from '../lib/pbTrace';
 import { type Marker } from '../types';
 
 export function useCloudLibrary() {
@@ -149,10 +148,8 @@ export function useCloudLibrary() {
         abortControllersRef.current[songId] = controller;
 
         setDownloadProgress('Buscando stems...');
-        pbTraceReset(`build=diag-6 | DL start ${songId}`);
         try {
             const stems: CloudStem[] = await fetchStems(songId);
-            pbTrace(`DL stems encontrados: ${stems.length}`);
             if (stems.length === 0) {
                 setDownloadProgress('Nenhum stem encontrado.');
                 setDownloadingSongId(null);
@@ -207,7 +204,6 @@ export function useCloudLibrary() {
             }
 
             const files: File[] = filesResults.filter((f): f is File => f !== null);
-            pbTrace(`DL baixou todos os stems: ${files.length}`);
 
             // Get cover URL from current song list
             const song = songs.find(s => s.id === songId);
@@ -219,9 +215,7 @@ export function useCloudLibrary() {
             let cachedOk = false;
             if (song && files.length > 0) {
                 setDownloadProgress('Salvando no cache...');
-                pbTrace('DL cacheando offline...');
                 cachedOk = await cacheSong(songId, song, files);
-                pbTrace(`DL cache offline resultado: ${cachedOk}`);
                 if (cachedOk) {
                     setCachedSongIds(prev => new Set(prev).add(songId));
                 } else {
@@ -248,12 +242,10 @@ export function useCloudLibrary() {
             // os buffers decodificados estourava a aba no iPhone. Os `files` locais
             // viram lixo coletável assim que esta função retorna.
             if (cachedOk) {
-                pbTrace('DL cacheado — engine carrega do cache (sem segurar blobs)');
                 return { files: [], cachedSourceId: songId, coverUrl, markers, originalKey, artist, bpm, lyrics, lyricsSynced, chords };
             }
 
             // Sem cache (offline grande demais): cai no carregamento em memória.
-            pbTrace('DL sem cache — carrega da memória');
             return { files, coverUrl, markers, originalKey, artist, bpm, lyrics, lyricsSynced, chords };
         } catch (e) {
             const err = e as Error;

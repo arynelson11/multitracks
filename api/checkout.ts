@@ -2,6 +2,7 @@
 import axios from 'axios';
 import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
+import { verifyUser } from './_lib/auth.js';
 
 // ── Tabela de preços (fonte única) ──
 // O valor da assinatura é definido aqui, no backend, e enviado pro Asaas via
@@ -41,17 +42,18 @@ export default async function handler(req: any, res: any) {
     if (req.method === 'OPTIONS') return res.status(200).end();
     if (req.method !== 'POST')    return res.status(405).json({ error: 'Method Not Allowed' });
 
+    // Autenticação: userId/email vêm SEMPRE do JWT, nunca do body.
+    // Impede criar cobrança em nome de terceiros e poluir pending_checkouts.
+    const auth = await verifyUser(req);
+    if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+    const userId = auth.userId;
+
     const body = parseBody(req);
     const planKey = typeof body.planKey === 'string' ? body.planKey : '';
-    const userId  = typeof body.userId  === 'string' ? body.userId  : '';
-    const email   = typeof body.email   === 'string' ? body.email   : '';
 
     const plan = PLAN_PRICING[planKey];
-    if (!plan || !userId || !email) {
-      return res.status(400).json({
-        error: 'Missing or invalid fields',
-        detail: { planKey: !plan, userId: !userId, email: !email },
-      });
+    if (!plan) {
+      return res.status(400).json({ error: 'Invalid planKey' });
     }
 
     const apiKey = process.env.ASAAS_API_KEY;

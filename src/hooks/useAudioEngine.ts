@@ -7,7 +7,6 @@ import type { Channel, Song, Marker } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { detectKey, generateEndlessClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { loadClickSelection } from '../lib/clickLibrary';
-import { pbTrace, pbTraceClear } from '../lib/pbTrace';
 import { getCachedStem, getCachedStemNames, isSongCached } from '../lib/offlineCache';
 
 // Engine de tom: signalsmith-stretch (MIT). O worklet e o WASM são gerados
@@ -780,8 +779,6 @@ export function useAudioEngine(userId?: string) {
                 return { uuid: crypto.randomUUID(), idx, pan, bus, name: file.name.replace(/\.[^/.]+$/, ""), file };
             });
         }
-        pbTrace(`LOAD start: ${prepared.length} stems${cacheSrcId ? ' (cache stream)' : ''}`);
-
         if (prepared.length === 0) {
             console.error('loadFiles: nada a carregar (sem arquivos e sem cache).');
             return;
@@ -806,15 +803,13 @@ export function useAudioEngine(userId?: string) {
         // é decodificada na inicialização. Arquivos primeiro, meta depois: se o
         // meta referencia um stem, o stem já está no disco. duration/tom saem
         // definitivos após o decode (a restauração recalcula a duration provisória).
-        if (cacheSrcId) {
-            pbTrace('LOAD reusa cache offline (sem 2ª cópia)');
-        } else {
-            // Arquivos locais (não vieram da nuvem) ou cache indisponível: o
-            // repertório guarda sua própria cópia por stem.
+        // Arquivos locais (não vieram da nuvem) ou cache indisponível: o
+        // repertório guarda sua própria cópia por stem. Se veio do cache
+        // offline (cacheSrcId), reusa sem 2ª cópia.
+        if (!cacheSrcId) {
             for (const p of prepared) {
                 await set(fileKey(p.uuid), p.file);
             }
-            pbTrace('LOAD stems persisted (per-stem keys gravadas)');
         }
         const existingMeta = await get<SavedSong[]>(DB_KEY_META) || [];
         const preliminarySaved: SavedSong = {
@@ -836,7 +831,6 @@ export function useAudioEngine(userId?: string) {
             chords: meta?.chords ?? null
         };
         await set(DB_KEY_META, [...existingMeta, preliminarySaved]);
-        pbTrace('LOAD meta persisted (PONTO SEGURO — música já no repertório)');
 
         const results: (Channel | null)[] = [];
         // Use small batches on touch devices to keep peak memory low.
@@ -847,9 +841,7 @@ export function useAudioEngine(userId?: string) {
             && window.matchMedia('(pointer: coarse)').matches;
         const BATCH_SIZE = isTouch ? 1 : 4;
 
-        pbTrace(`LOAD decoding ${prepared.length} stems (batch ${BATCH_SIZE})...`);
         for (let i = 0; i < prepared.length; i += BATCH_SIZE) {
-            pbTrace(`LOAD decode batch @ ${i}`);
             const batch = prepared.slice(i, i + BATCH_SIZE);
             const batchPromises = batch.map(async (p) => {
                 if (!audioCtxRef.current || !masterGainRef.current) return null;
@@ -970,8 +962,6 @@ export function useAudioEngine(userId?: string) {
             setCurrentTime(0);
         }
         updatePlaylistAndSave(newPlaylist);
-        pbTrace('LOAD done — meta final salvo, música pronta');
-        pbTraceClear();
         } finally {
             setIsLoading(false);
         }

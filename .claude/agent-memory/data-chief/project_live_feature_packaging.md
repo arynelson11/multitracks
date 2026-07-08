@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> ⚠️ **ESTADO ATUAL (2026-07-08):** este é um documento de RECOMENDAÇÃO (jun/2026), não o estado enviado. O que shipou diverge: **Livre NÃO tem seções nem loop** (o loop finito grátis proposto abaixo foi cortado; Livre é só 2 faixas + ouvir + biblioteca local). Preços shipados batem com a recomendação (Pro R$ 49,90/37,90 anual, Studio R$ 119,90/89,90 anual). Fonte única de fatos: `PLAYBACK_STUDIO_FATOS.md`.
+
 Recomendação de Data Chief (2026-06-15) sobre packaging da feature nova de controle ao vivo (marcar seções, loop finito/infinito, "voltar para parte", controle multi-dispositivo da banda via LAN). Custo marginal da feature ~zero (não usa nuvem, diferente da separação por IA).
 
 **Tese central — gate no eixo "indivíduo → equipe", NÃO na feature em si:**

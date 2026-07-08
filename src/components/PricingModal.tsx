@@ -1,4 +1,5 @@
 import { apiUrl } from '../lib/api';
+import { getAuthHeaders } from '../lib/supabase';
 import { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { X, Check } from 'lucide-react';
@@ -61,13 +62,8 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
             setLoadingPlan(plan.planKey);
             const response = await fetch(apiUrl('/api/checkout'), {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    planKey: plan.planKey,
-                    userId: user.id,
-                    email: user.email,
-                    name: user.user_metadata?.full_name || user.user_metadata?.name || ''
-                })
+                headers: await getAuthHeaders(),
+                body: JSON.stringify({ planKey: plan.planKey })
             });
 
             const rawText = await response.text();

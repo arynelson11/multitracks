@@ -5,6 +5,8 @@ metadata:
   type: project
 ---
 
+> ⚠️ **ESTADO ATUAL (2026-07-08):** fatos de produto vivem em `PLAYBACK_STUDIO_FATOS.md` (fonte única). Correções sobre o texto abaixo: pagamento é **Asaas** (não AbacatePay); **Livre separa só 2 faixas** e NÃO tem seções/loop (loop finito grátis foi removido); Pro separa 2/4/6 faixas; Studio = 150 sep/mês + Ao Vivo ilimitado. Preços: Pro R$ 49,90 (R$ 37,90 anual), Studio R$ 119,90 (R$ 89,90 anual).
+
 Landing e pricing do Playback Studio vivem em `src/components/LandingPage.tsx` (array `PLANS`, `FAQS`, `AUDIENCE`, seções hero/guide/como-funciona) e `src/components/PricingModal.tsx` (4 cards mensal/anual, IDs de produto AbacatePay fixos). Mapa de planos canônico em `src/lib/plans.ts`.
 
 **Diferencial central de conversão (2026-06-15):** o unique mechanism defensável do produto é o USO AO VIVO no palco (loop de seção infinito + Modo Ao Vivo com a banda conectando o celular), não só a separação por IA. A copy deve elevar isso a promessa central, não detalhe escondido. Mercado já está saturado em "separação por IA" (sofisticação estágio 3-4).

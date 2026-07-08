@@ -3,6 +3,7 @@ import Replicate from 'replicate';
 import { createClient } from '@supabase/supabase-js';
 import { verifyUser } from './_lib/auth.js';
 import { applyCors } from './_lib/cors.js';
+import { PAID_PLANS } from './_lib/plan.js';
 
 const DEMUCS_VERSION = '25a173108cff36ef9f80f854c162d01df9e6528be175794b81158fa03836d953';
 
@@ -14,6 +15,10 @@ const PLAN_LIMITS: Record<string, number> = {
     pro_mensal:        150,
     pro_anual:         150,
 };
+
+// Planos pagos podem separar em 2/4/6 faixas. O Livre (free) só 2 (vocal+instrumental).
+// PAID_PLANS vem de _lib/plan (fonte única, compartilhada com insert-song/insert-stems).
+const VALID_STEM_COUNTS = new Set([2, 4, 6]);
 
 function getAllowedAudioPrefix(): string | null {
     const raw = process.env.VITE_R2_PUBLIC_URL || process.env.R2_PUBLIC_URL;
@@ -39,16 +44,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!auth.ok) { res.status(auth.status).json({ error: auth.error }); return; }
 
     const audioUrl: unknown = req.body?.audioUrl;
-    const stemCount: unknown = req.body?.stemCount || 4;
+    const stemCount: unknown = req.body?.stemCount ?? 4;
     if (typeof audioUrl !== 'string' || !audioUrl.startsWith(allowedPrefix)) {
         res.status(400).json({ error: 'audioUrl must be hosted on our storage' });
         return;
     }
     const requestedStems = typeof stemCount === 'number' ? stemCount : 4;
+    if (!VALID_STEM_COUNTS.has(requestedStems)) {
+        res.status(400).json({ error: 'stemCount must be 2, 4 or 6' });
+        return;
+    }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    // Admin não tem cota.
+    // Admin não tem cota nem trava de faixas.
     if (!auth.isAdmin) {
         const { data: profile, error: profErr } = await supabase
             .from('profiles')
@@ -62,6 +71,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return;
         }
         const plan  = profile?.plan ?? 'free';
+
+        // Trava de faixas por plano (server-side): Livre só separa em 2 faixas.
+        // Impede burlar a trava client-side (plans.ts) mandando stemCount: 4/6.
+        if (!PAID_PLANS.has(plan) && requestedStems !== 2) {
+            res.status(403).json({
+                error: 'Seu plano Livre permite separação em 2 faixas. Assine o Pro para 4 ou 6 faixas.',
+                plan,
+            });
+            return;
+        }
+
         const limit = PLAN_LIMITS[plan] ?? PLAN_LIMITS.free;
 
         const { data: consumed, error: rpcErr } = await supabase
@@ -94,6 +114,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             version: DEMUCS_VERSION,
             input: inputOptions,
         });
+
+        // Registra ownership da prediction para o check-separation validar depois
+        // (impede que outro usuário consulte esta separação por ID). Best-effort:
+        // falha aqui não deve derrubar a resposta, mas é logada.
+        if (prediction?.id) {
+            const { error: ownErr } = await supabase
+                .from('predictions')
+                .insert({ replicate_id: prediction.id, user_id: auth.userId });
+            if (ownErr) {
+                console.error('[separate-audio] ownership insert failed:', ownErr.message);
+            }
+        }
+
         res.status(200).json({ success: true, prediction, model_name });
     } catch (error: any) {
         console.error('[separate-audio] replicate error:', error?.message);

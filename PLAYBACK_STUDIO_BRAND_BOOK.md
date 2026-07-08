@@ -1030,15 +1030,17 @@ nos outros planos.
 
 ## 7. Planos e Pricing
 
+> **⚠️ Preços e features atuais vivem em `PLAYBACK_STUDIO_FATOS.md` (fonte única de verdade, sincronizada com o código).** Esta seção foi atualizada em 2026-07-08 para bater com produção. Em caso de divergência, o FATOS vence.
+
 ### 7.1 Estrutura de Planos
 
 **Decisão travada pelo founder:** nomes simples, "Studio" no top-tier ecoa o nome da marca, "Livre" mantém personalidade BR.
 
-| Plano | Nome | Preço (mensal/anual) | Posicionamento | Público |
+| Plano | Nome | Preço (mensal / anual equiv.) | Posicionamento | Público |
 |-------|------|----------------------|----------------|---------|
 | **Free** | **Livre** | R$ 0 | Pra você experimentar e ver se funciona | Músicos individuais, bandas pequenas testando |
-| **Essencial** | **Pro** | R$ 49,90 / R$ 39,90 | Pra banda que toca todo fim de semana | Equipes ativas, ministérios regulares |
-| **Premium** | **Studio** | R$ 99,90 / R$ 79,90 | Pra quem leva isso a sério | Igrejas grandes, equipes profissionais, múltiplos cultos/semana |
+| **Essencial** | **Pro** | R$ 49,90 / R$ 37,90 no anual | Pra banda que toca todo fim de semana | Equipes ativas, ministérios regulares |
+| **Premium** | **Studio** | R$ 119,90 / R$ 89,90 no anual | Pra quem leva isso a sério | Igrejas grandes, equipes profissionais, múltiplos cultos/semana |
 
 **Hierarquia conceitual:**
 - **Livre** = ponto de entrada, descomprometido. Não é "Free" em inglês — é convite cordial em PT-BR.
@@ -1060,9 +1062,9 @@ LIVRE
 Grátis pra sempre
 ─────────────────
 • 5 separações por mês
-• Stems padrão
-• Acesso à biblioteca de clicks
-• Mixer básico multicanal
+• Separação em 2 faixas (voz + instrumental)
+• Ouvir no mixer multicanal
+• Biblioteca local (no navegador)
 
 Pra experimentar e ver se funciona.
 
@@ -1071,17 +1073,17 @@ Pra experimentar e ver se funciona.
 
 ```
 PRO  ⭐ Mais escolhido
-R$ 39,90/mês (anual)
+R$ 37,90/mês (anual)
 ou R$ 49,90/mês
 ─────────────────
 • 50 separações por mês
-• Stems de qualidade estendida
-• Pads ambiente completos
-• Voice guide auto-detector
-• Click com levada brasileira
-• Auto-detecção de seções (worship)
-• Biblioteca em nuvem
-• Suporte por email
+• Separação em 2, 4 ou 6 faixas
+• Download em WAV e MP3
+• BPM pela IA, voz guia e pads
+• Marcar seções + loop infinito ao vivo
+• Transposição de tom
+• Modo Ao Vivo até 4 aparelhos
+• Biblioteca em nuvem + repertório
 
 Pra equipe que toca toda semana.
 
@@ -1090,16 +1092,14 @@ Pra equipe que toca toda semana.
 
 ```
 STUDIO
-R$ 79,90/mês (anual)
-ou R$ 99,90/mês
+R$ 89,90/mês (anual)
+ou R$ 119,90/mês
 ─────────────────
-• Separações ilimitadas
-• Qualidade máxima
-• Tudo do Pro +
+• 150 separações por mês
+• Tudo do Pro
+• Modo Ao Vivo sem limite de aparelhos
+• A banda controla loop e seções pelo celular
 • Prioridade no processamento
-• Múltiplos repertórios simultâneos
-• Acesso antecipado a features
-• Suporte prioritário
 
 Pra quem leva isso a sério.
 
@@ -1288,10 +1288,10 @@ Pontos que o time de design vai precisar refinar ou decidir junto:
 
 - Frontend: Vite + React 19 + TypeScript
 - Backend: Supabase (auth/DB/storage), Cloudflare R2 (audio storage)
-- IA: Replicate (htdemucs_6s para separação)
-- Pagamento: AbacatePay (BRL)
-- Deploy: Vercel
-- Áreas técnicas: Separation, Pads, Voice Guide, Click Library, Auto-section detection
+- IA: Replicate (htdemucs para separação, 2/4/6 faixas)
+- Pagamento: **Asaas** (BRL, checkout hospedado, assinatura recorrente). Migrou do AbacatePay.
+- Deploy: Vercel (web) + Electron builder (desktop Mac Apple Silicon/Intel e Windows)
+- Áreas técnicas: Separação, Pads, Voz Guia, Marcação manual de seções, Modo Ao Vivo (LAN)
 
 ### 11.5 Recursos e Inspirações Visuais
 

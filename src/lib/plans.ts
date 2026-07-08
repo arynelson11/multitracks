@@ -1,10 +1,10 @@
 /**
  * Plan display name mapping.
  *
- * Internal IDs (stored in DB via `profiles.plan` column, returned by the
- * AbacatePay webhook, and used as keys in LIMITS objects) are kept as the
- * legacy product names — changing them would require renaming AbacatePay
- * products and migrating existing rows in `profiles`.
+ * Internal IDs (stored in DB via `profiles.plan` column, resolved by the
+ * payment webhook, and used as keys in LIMITS objects) are kept as the
+ * legacy product names. Changing them would require migrating existing rows
+ * in `profiles` and the plan keys in api/checkout.ts + api/webhook/asaas.ts.
  *
  * This helper translates the internal ID to the user-facing name that
  * matches the current brand naming (Livre / Pro / Studio).
@@ -12,7 +12,8 @@
  * If you add a new tier, also:
  *   1. add it to LIMITS in SeparatorStudio.tsx + SettingsModal.tsx
  *   2. add a product entry in PricingModal.tsx
- *   3. configure the corresponding product in AbacatePay dashboard
+ *   3. add its price/cycle to PLAN_PRICING in api/checkout.ts
+ *   4. add its key to VALID_PLANS in api/webhook/asaas.ts
  */
 
 const PLAN_DISPLAY_NAMES: Record<string, string> = {

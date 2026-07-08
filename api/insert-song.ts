@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { verifyUser } from './_lib/auth.js';
 import { applyCors } from './_lib/cors.js';
+import { getUserPlan, isPaidPlan } from './_lib/plan.js';
 
 const supabaseUrl     = process.env.VITE_SUPABASE_URL;
 const serviceRoleKey  = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -36,6 +37,21 @@ export default async function handler(req: any, res: any) {
     const auth = await verifyUser(req);
     if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
 
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+    // Salvar/publicar na nuvem (songs/stems + WAVs no R2) é recurso pago. Admin passa.
+    if (!auth.isAdmin) {
+        let plan: string;
+        try { plan = await getUserPlan(supabase, auth.userId); }
+        catch (e: any) {
+            console.error('[insert-song] plan lookup failed:', e?.message);
+            return res.status(500).json({ error: 'Plan lookup failed' });
+        }
+        if (!isPaidPlan(plan)) {
+            return res.status(403).json({ error: 'Salvar na nuvem é um recurso dos planos pagos. Assine o Pro.', plan });
+        }
+    }
+
     const body = req.body ?? {};
     const name = clampStr(body.name, MAX_NAME_LEN);
     if (!name) return res.status(400).json({ error: 'name is required' });
@@ -52,7 +68,6 @@ export default async function handler(req: any, res: any) {
         is_global: auth.isAdmin && body.is_global === true,
     };
 
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
     const { data, error } = await supabase
         .from('songs')
         .insert(insertPayload)

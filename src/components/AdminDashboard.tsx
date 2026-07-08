@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { useAdminDashboard, type AdminUser } from '../hooks/useAdminDashboard';
 import { useReplicateStats, type ReplicatePredictionRow, type ReplicateMonthlyCost } from '../hooks/useReplicateStats';
-import { useAbacatePayStats } from '../hooks/useAbacatePayStats';
+import { useAsaasStats } from '../hooks/useAsaasStats';
 
 interface AdminDashboardProps {
     isOpen: boolean;
@@ -229,7 +229,7 @@ function fmtBRL(val: number) {
 
 function FinancialSection() {
     const { stats: repl, loading: replLoading } = useReplicateStats();
-    const { stats: pay, loading: payLoading, error: payError, refetch: payRefetch } = useAbacatePayStats();
+    const { stats: pay, loading: payLoading, error: payError, refetch: payRefetch } = useAsaasStats();
 
     const formatMonth = (ym: string) => {
         const [y, m] = ym.split('-');
@@ -252,7 +252,7 @@ function FinancialSection() {
                 </button>
             </div>
 
-            {/* AbacatePay KPIs */}
+            {/* Asaas KPIs */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {/* Receita total */}
                 <div className="daw-panel rounded-xl p-4 flex flex-col gap-2 relative overflow-hidden">
@@ -336,7 +336,7 @@ function FinancialSection() {
                 <div className="daw-panel rounded-lg overflow-hidden">
                     <div className="flex items-center gap-2 px-4 py-2.5 bg-[#141416] border-b border-border text-[9px] font-bold text-text-muted/50 uppercase tracking-widest font-mono">
                         <DollarSign size={11} className="text-accent-green" />
-                        <span className="flex-1">Últimos pagamentos (AbacatePay)</span>
+                        <span className="flex-1">Últimos pagamentos (Asaas)</span>
                     </div>
                     <div className="divide-y divide-border max-h-48 overflow-y-auto">
                         {pay.recent.map(p => (
@@ -346,7 +346,7 @@ function FinancialSection() {
                                     {p.status}
                                 </span>
                                 <span className="text-[10px] text-accent-green font-mono font-bold w-20 text-right">
-                                    {p.amount > 0 ? fmtBRL(p.amount / 100) : '—'}
+                                    {p.amount > 0 ? fmtBRL(p.amount) : '—'}
                                 </span>
                                 <span className="text-[10px] text-text-muted font-mono w-16 text-right hidden sm:block">
                                     {p.createdAt ? new Date(p.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }) : '—'}

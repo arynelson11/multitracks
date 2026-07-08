@@ -155,6 +155,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const canDownload = isAdmin || canDownloadStems(userPlan);
   const canVoiceGuide = isAdmin || canUseVoiceGuide(userPlan);
   const canBpm = isAdmin || canUseBpmDetection(userPlan);
+  // Salvar/publicar na nuvem (songs/stems + WAVs no R2) é recurso pago. Livre usa só biblioteca local.
+  const canCloudSave = isAdmin || planTier(userPlan) !== 'free';
   const { separations, saveSeparation, deleteSeparation, isLoading: isLibLoading } = useSeparationLibrary();
   const [activeSepId, setActiveSepId] = useState<string | null>(null);
   const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>(() => {
@@ -1064,6 +1066,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   };
 
   const handleSaveToDatabase = async () => {
+    if (!canCloudSave) { setIsPricingOpen(true); return; }
     if (!songName) return alert("Preencha o Nome da Música.");
 
     setIsSaving(true);
