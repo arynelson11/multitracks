@@ -67,3 +67,6 @@ meu-projeto/
 scratchpad_puppeteer.cjs
 scratchpad/
 .env*
+
+# Arquivos de arte para posts em redes sociais (binários pesados, ficam fora do git)
+marketing/
