@@ -10,6 +10,7 @@ import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark';
 import { ProfileTab } from './ProfileTab';
 import { CHANGELOG } from '../lib/changelog';
 import { Sparkles } from 'lucide-react';
+import { isAdminEmail } from '../lib/admin';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -41,7 +42,7 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
         fetchPlan();
     }, [user]);
 
-    const isAdmin = user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com';
+    const isAdmin = isAdminEmail(user?.email);
 
     if (!isOpen) return null;
 

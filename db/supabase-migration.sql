@@ -53,14 +53,14 @@ CREATE POLICY stems_public_read
 CREATE POLICY songs_admin_write
     ON public.songs FOR ALL
     TO authenticated
-    USING       (auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com'))
-    WITH CHECK  (auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com'));
+    USING       (auth.jwt() ->> 'email' = 'arynelson11@gmail.com')
+    WITH CHECK  (auth.jwt() ->> 'email' = 'arynelson11@gmail.com');
 
 CREATE POLICY stems_admin_write
     ON public.stems FOR ALL
     TO authenticated
-    USING       (auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com'))
-    WITH CHECK  (auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com'));
+    USING       (auth.jwt() ->> 'email' = 'arynelson11@gmail.com')
+    WITH CHECK  (auth.jwt() ->> 'email' = 'arynelson11@gmail.com');
 
 -- 6. Verificação (RLS songs/stems)
 SELECT tablename, rowsecurity AS rls_enabled
@@ -95,9 +95,9 @@ CREATE POLICY storage_admin_write
     ON storage.objects FOR ALL
     TO authenticated
     USING      (bucket_id IN ('covers', 'stems', 'samples', 'loops')
-                AND auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com'))
+                AND auth.jwt() ->> 'email' = 'arynelson11@gmail.com')
     WITH CHECK (bucket_id IN ('covers', 'stems', 'samples', 'loops')
-                AND auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com'));
+                AND auth.jwt() ->> 'email' = 'arynelson11@gmail.com');
 
 -- Verificação (storage)
 SELECT policyname, cmd, roles

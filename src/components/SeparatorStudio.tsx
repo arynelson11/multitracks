@@ -12,6 +12,7 @@ import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection
 import { useSeparationLibrary, type SavedSeparation } from '../hooks/useSeparationLibrary';
 import { audioBlobToMp3Blob } from '../lib/audioExport';
 import { GuidedTour, type TourStep } from './GuidedTour';
+import { isAdminEmail } from '../lib/admin';
 
 const SEP_TOUR_STEPS: TourStep[] = [
   { title: 'Separação de Faixas', body: 'Aqui você transforma qualquer música em faixas separadas (vocal, bateria, baixo, instrumentos) usando IA. Veja como funciona.' },
@@ -151,7 +152,7 @@ function getAudioContext() {
 
 export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => {
   const { user, userPlan } = useAuth();
-  const isAdmin = user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com';
+  const isAdmin = isAdminEmail(user?.email);
   const canDownload = isAdmin || canDownloadStems(userPlan);
   const canVoiceGuide = isAdmin || canUseVoiceGuide(userPlan);
   const canBpm = isAdmin || canUseBpmDetection(userPlan);

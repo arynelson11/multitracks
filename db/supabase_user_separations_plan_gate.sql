@@ -28,7 +28,7 @@ as $$
         where p.id = auth.uid()),
       false
     )
-    or coalesce(auth.jwt() ->> 'email', '') in ('arynelson11@gmail.com', 'arynel11@gmail.com');
+    or coalesce(auth.jwt() ->> 'email', '') = 'arynelson11@gmail.com';
 $$;
 
 revoke execute on function public.user_has_cloud_library() from public, anon;

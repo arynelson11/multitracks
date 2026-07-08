@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 
-const ADMIN_EMAILS = ['arynelson11@gmail.com', 'arynel11@gmail.com'];
+const ADMIN_EMAILS = ['arynelson11@gmail.com'];
 
 export type AuthOk    = { ok: true;  userId: string; email: string; isAdmin: boolean };
 export type AuthFail  = { ok: false; status: number; error: string };

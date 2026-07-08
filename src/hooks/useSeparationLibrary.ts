@@ -3,9 +3,7 @@ import { get, set } from 'idb-keyval';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
 import { planTier } from '../lib/plans';
-
-// Mesma lista de admin usada nos outros pontos do app (débito: centralizar).
-const ADMIN_EMAILS = ['arynelson11@gmail.com', 'arynel11@gmail.com'];
+import { isAdminEmail } from '../lib/admin';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -91,7 +89,7 @@ export function useSeparationLibrary() {
   // Biblioteca em nuvem é recurso pago. O Livre usa só o local (IndexedDB).
   // A trava real está na RLS de user_separations; aqui roteamos o Livre pro local
   // para ele NÃO perder a biblioteca quando o insert na nuvem for negado pela RLS.
-  const hasCloud = (!!user?.email && ADMIN_EMAILS.includes(user.email)) || planTier(userPlan) !== 'free';
+  const hasCloud = isAdminEmail(user?.email) || planTier(userPlan) !== 'free';
   const useCloud = !!(userId && supabase && hasCloud);
 
   const [separations, setSeparations] = useState<SavedSeparation[]>([]);

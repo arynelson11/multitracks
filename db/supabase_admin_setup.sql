@@ -28,7 +28,7 @@ CREATE POLICY "Users can read own profile"
 CREATE POLICY "Admin can read all profiles"
     ON public.profiles FOR SELECT
     USING (
-        auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com')
+        auth.jwt() ->> 'email' = 'arynelson11@gmail.com'
     );
 
 -- 5. Sincronizar usuários existentes do auth.users -> profiles

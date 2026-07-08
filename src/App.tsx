@@ -22,6 +22,7 @@ import { GuidedTour, type TourStep } from './components/GuidedTour'
 import { WhatsNewModal } from './components/WhatsNewModal'
 import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/SectionBar'
 import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections } from './lib/plans'
+import { isAdminEmail } from './lib/admin'
 import { UpdateBanner } from './components/UpdateBanner'
 import { useDesktopUpdate } from './hooks/useDesktopUpdate'
 import { CURRENT_VERSION } from './lib/changelog'
@@ -869,7 +870,7 @@ export default function App() {
             </button>
 
             {/* Admin Dashboard - only for admin */}
-            {(user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com') && (
+            {(isAdminEmail(user?.email)) && (
               <button onClick={() => setIsAdminDashboardOpen(true)}
                 className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-primary/70 hover:text-primary border border-primary/20 hover:border-primary/40 transition-all">
                 <Shield size={14} /><span className="hidden sm:inline">ADMIN</span>
@@ -1315,7 +1316,7 @@ export default function App() {
                 }}
               />
               {/* Ferramentas avançadas (admin): cor/letra por marcador + salvar na nuvem */}
-              {user?.email === 'arynelson11@gmail.com' && (
+              {isAdminEmail(user?.email) && (
                 <div className="flex items-center gap-1.5 mt-1.5">
                   <button
                     onClick={() => setIsMarkerEditorOpen(!isMarkerEditorOpen)}
@@ -1335,7 +1336,7 @@ export default function App() {
           )}
 
           {/* ─── Marker Editor Panel (Admin) ─── */}
-          {isMarkerEditorOpen && user?.email === 'arynelson11@gmail.com' && (
+          {isMarkerEditorOpen && isAdminEmail(user?.email) && (
             <div className="mt-1.5 bg-black/40 rounded-lg border border-white/10 p-2 sm:p-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Editor de Marcadores</span>
@@ -1874,7 +1875,7 @@ export default function App() {
       />
 
       {/* Admin Modal */}
-      {user?.email === 'arynelson11@gmail.com' && (
+      {isAdminEmail(user?.email) && (
         <AdminModal
         isOpen={isAdminOpen}
         onClose={() => setIsAdminOpen(false)}
@@ -1935,7 +1936,7 @@ export default function App() {
       )}
 
       {/* Admin Dashboard */}
-      {(user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com') && (
+      {(isAdminEmail(user?.email)) && (
         <AdminDashboard isOpen={isAdminDashboardOpen} onClose={() => setIsAdminDashboardOpen(false)} />
       )}
 
@@ -1944,7 +1945,7 @@ export default function App() {
         onClose={() => setIsPadSetsModalOpen(false)}
         onSelect={selectPadSet}
         selectedPadSet={selectedPadSet}
-        isAdmin={user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com'}
+        isAdmin={isAdminEmail(user?.email)}
       />
 
       {/* ═══ TELEPROMPTER OVERLAY ═══ */}
@@ -2077,7 +2078,7 @@ export default function App() {
                   <hr className="border-border my-2" />
 
                   {/* ADMIN */}
-                  {(user?.email === 'arynelson11@gmail.com' || user?.email === 'arynel11@gmail.com') && (
+                  {(isAdminEmail(user?.email)) && (
                     <button onClick={() => { setIsAdminDashboardOpen(true); setIsMobileDrawerOpen(false); }}
                       className="w-full text-left px-3 py-3 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors border border-transparent hover:border-border">
                       <span className="text-white text-sm font-bold flex items-center gap-3">

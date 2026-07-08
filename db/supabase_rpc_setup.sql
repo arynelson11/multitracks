@@ -16,7 +16,7 @@ DECLARE
     caller_email text;
     -- Mantenha em sincronia com a lista de admins em src/App.tsx.
     -- TODO: migrar para uma coluna profiles.is_admin para evitar duplicação.
-    admin_emails constant text[] := ARRAY['arynelson11@gmail.com', 'arynel11@gmail.com'];
+    admin_emails constant text[] := ARRAY['arynelson11@gmail.com'];
 BEGIN
     caller_email := auth.jwt() ->> 'email';
     IF caller_email IS NULL OR NOT (caller_email = ANY(admin_emails)) THEN

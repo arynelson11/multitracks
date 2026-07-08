@@ -39,11 +39,11 @@ CREATE POLICY stems_public_read ON stems FOR SELECT
     TO anon, authenticated USING (true);
 
 CREATE POLICY songs_admin_write ON songs FOR ALL TO authenticated
-    USING      (auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com'))
-    WITH CHECK (auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com'));
+    USING      (auth.jwt() ->> 'email' = 'arynelson11@gmail.com')
+    WITH CHECK (auth.jwt() ->> 'email' = 'arynelson11@gmail.com');
 CREATE POLICY stems_admin_write ON stems FOR ALL TO authenticated
-    USING      (auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com'))
-    WITH CHECK (auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com'));
+    USING      (auth.jwt() ->> 'email' = 'arynelson11@gmail.com')
+    WITH CHECK (auth.jwt() ->> 'email' = 'arynelson11@gmail.com');
 
 -- ============================================
 -- Storage Buckets (criar pelo Dashboard > Storage)
@@ -94,6 +94,6 @@ CREATE POLICY storage_admin_write
     ON storage.objects FOR ALL
     TO authenticated
     USING      (bucket_id IN ('covers', 'stems', 'samples', 'loops')
-                AND auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com'))
+                AND auth.jwt() ->> 'email' = 'arynelson11@gmail.com')
     WITH CHECK (bucket_id IN ('covers', 'stems', 'samples', 'loops')
-                AND auth.jwt() ->> 'email' IN ('arynelson11@gmail.com', 'arynel11@gmail.com'));
+                AND auth.jwt() ->> 'email' = 'arynelson11@gmail.com');
