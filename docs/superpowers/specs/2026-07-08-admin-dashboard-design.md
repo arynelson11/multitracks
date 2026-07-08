@@ -14,7 +14,7 @@ Hoje o "admin" do Playback Studio é um **modal dentro do app** (`AdminDashboard
 
 ## 2. Objetivo
 
-Uma **página dedicada em `/admin`**, com acesso só do email admin, organizada em abas, mostrando **dados reais**: quem entrou, quantos são, quais planos assinaram, quanto entra de dinheiro, quanto sai em API do Replicate, lucro estimado, e sinais de uso (quem usa, quem sumiu, quem bate a cota).
+Uma **página dedicada em `/admin`**, com acesso só do email admin, organizada em abas, mostrando **dados reais**: quem entrou, quantos são, quais planos assinaram, quanto entra de dinheiro, quanto sai em API do Replicate, lucro estimado, sinais de uso (quem usa, quem sumiu, quem bate a cota) e **economia por usuário** (quanto cada um paga × quanto cada um custa = margem). O dono usa isso para ajustar preços, mostrar para sócio e em due diligence de venda: controle total de tudo que entra e sai.
 
 ## 3. Achado de segurança (corrigir junto)
 
@@ -28,6 +28,23 @@ O email `arynel11@gmail.com` está cravado como admin e **não pertence ao dono*
 - `PLAYBACK_STUDIO_FATOS.md` → seção Admin
 
 **Fica só:** `arynelson11@gmail.com`. Para não repetir a lista em 5 lugares, centralizar num único ponto por camada: uma constante compartilhada no front, uma no `api/_lib/`, e (idealmente) migrar o gate do banco para ler uma allowlist única. Mínimo aceitável: um único email em todos os pontos, sem o email estranho.
+
+## 3.5 Economia por usuário (unit economics)
+
+Objetivo do dono: saber, por cliente, **quanto paga × quanto custa = margem**. Levantamento de viabilidade no código:
+
+**Custo por usuário — EXATO.** A tabela `public.predictions` (`replicate_id`, `user_id`, `created_at`) grava o dono de cada separação (`separate-audio.ts`). O Replicate expõe o custo por prediction (predict_time × hardware). Cruzando `predictions.user_id` com o custo de cada `replicate_id`, obtém-se o custo de IA real por usuário (total e por mês).
+
+- **Onde cruzar:** no endpoint `admin-stats?source=replicate` — é o único ponto com o token do Replicate **e** o service role do Supabase juntos. Ele carrega as predictions do Replicate (id + custo), lê `predictions` (id → user_id) via service role, e agrega custo por `user_id`. Retorna um mapa `userId → { runs, custoUSD, custoUSD30d }`.
+
+**Receita por usuário — dois caminhos, os dois no escopo:**
+
+- **(A) Aproximado, retroativo (já):** receita/MRR por usuário = `profiles.plan` atual × preço do plano (tabela em `checkout.ts` / `plans.ts`). Cobre a base atual sem tocar em pagamento. É a contribuição de MRR de cada cliente.
+- **(B) Exato, dali em diante:** hoje o vínculo pagamento→usuário **não é durável** — `pending_checkouts` é **deletado** após ativar o plano (`webhook/asaas.ts` linha 86) e o Asaas **não propaga** nosso `externalReference` para o objeto de pagamento. Solução: no webhook `CHECKOUT_PAID`, **antes** de limpar o `pending_checkouts`, gravar uma linha numa tabela nova `public.payments` (`id`, `user_id`, `plan_key`, `value`, `cycle`, `paid_at`, `asaas_checkout_id`). A partir do lançamento, histórico exato de tudo que entra por usuário. Sem backfill do passado (não há como reconstruir com certeza).
+
+**Margem por usuário** = receita (A ou B) − custo de IA (exato). Exibida na aba Usuários (por linha) e ordenável, com destaque para clientes **no vermelho** (custam mais IA do que pagam) — sinal direto pra ajuste de preço/cota.
+
+**Nova tabela `public.payments`:** RLS habilitada, escrita só via service role (webhook), leitura só admin (policy por email admin, mesmo padrão de `profiles`). SQL em `db/supabase_payments.sql`.
 
 ## 4. Arquitetura
 
@@ -57,7 +74,7 @@ src/admin/
   AdminShell.tsx          # header + navegação de abas + slot de conteúdo
   tabs/
     OverviewTab.tsx       # Visão Geral (KPIs consolidados + lucro)
-    UsersTab.tsx          # Usuários (lista real, busca, filtros)
+    UsersTab.tsx          # Usuários (lista real + paga×custa×margem, busca, filtros, ordenar por margem)
     FinanceTab.tsx        # Financeiro (Asaas: receita, MRR, por plano)
     AiCostTab.tsx         # Custos IA (Replicate)
     UsageTab.tsx          # Uso & Sinais (atividade, churn, cota)
@@ -66,9 +83,9 @@ src/admin/
     DataTable.tsx         # tabela genérica com header + linhas
     BarChart.tsx          # gráfico de barras simples (sem lib nova)
   hooks/
-    useAdminUsers.ts      # RPC expandido (plano/atividade reais)
-    useFinanceStats.ts    # admin-stats?source=asaas (expandido)
-    useAiCostStats.ts     # admin-stats?source=replicate (já existe, renomear/reusar)
+    useAdminUsers.ts      # RPC expandido (plano/atividade reais) + merge custo/receita por usuário
+    useFinanceStats.ts    # admin-stats?source=asaas (expandido: MRR, por plano, payments)
+    useAiCostStats.ts     # admin-stats?source=replicate (expandido: custo por usuário)
     useAdminGuard.ts      # sessão + checagem de admin
   lib/
     metrics.ts            # cálculos derivados (MRR, lucro, conversão, câmbio)
@@ -88,14 +105,19 @@ O modal atual (`AdminModal.tsx` / `AdminDashboard.tsx`) e o botão Admin na barr
 - Já retorna receita total, pagos, assinaturas ativas, recentes.
 - Adicionar: **MRR** (soma do valor mensal das assinaturas ativas), **receita por plano** (mapear `subscription.value`/ciclo → plano via tabela de preços do `plans.ts`/`checkout.ts`), novos assinantes no mês.
 
-**c) Custos IA — `admin-stats?source=replicate` (já pronto):**
+**c) Custos IA — `admin-stats?source=replicate` (expandir):**
 - Total/30d de custo USD, por mês, por hardware, top models, runs, tempo de compute. Adicionar **custo médio por separação** (custo total ÷ nº de runs succeeded).
+- **Custo por usuário (novo):** cruzar predictions do Replicate com a tabela `predictions` (via service role) e retornar mapa `userId → { runs, custoUSD, custoUSD30d }` (ver seção 3.5). Endpoint passa a ler o service role do Supabase além do token Replicate.
 
-**d) Lucro — `src/admin/lib/metrics.ts` (cliente):**
-- `lucroBRL = receitaBRL − (custoReplicateUSD × câmbioUSDBRL)`.
+**d) Pagamentos por usuário — `db/supabase_payments.sql` + webhook (novo):**
+- Tabela `public.payments` gravada pelo webhook no `CHECKOUT_PAID` (ver 3.5-B). Leitura por admin via RPC ou por `admin-stats?source=asaas` (agregar por `user_id`). Retroativo fica no aproximado (A).
+
+**e) Lucro e margem — `src/admin/lib/metrics.ts` (cliente):**
+- Global: `lucroBRL = receitaBRL − (custoReplicateUSD × câmbioUSDBRL)`.
+- Por usuário: `margemBRL = receitaUsuário − (custoIAUsuárioUSD × câmbioUSDBRL)`, onde receita = exata (payments) quando houver, senão aproximada (plano atual × preço).
 - Câmbio: constante configurável (ex.: `USD_BRL = 5.4`) com nota de que é estimativa. Sem chamar API de câmbio (YAGNI).
 
-**e) Uso & Sinais — deriva do RPC + Replicate:**
+**f) Uso & Sinais — deriva do RPC + Replicate:**
 - Separações ao longo do tempo (por mês, do Replicate).
 - Taxa de sucesso/erro (do Replicate).
 - Quem sumiu: usuários com `last_sign_in_at` > 30d (risco de churn), destacando os que já foram pagantes.
@@ -135,16 +157,19 @@ O modal atual (`AdminModal.tsx` / `AdminDashboard.tsx`) e o botão Admin na barr
 - Conferir que o custo Replicate bate (ordem de grandeza) com o painel do Replicate.
 - `npm run lint` e `npm run build` limpos.
 - Confirmar que o bundle principal (usuário comum) **não** cresceu com o admin (code-split funcionando).
-- Rodar os SQLs alterados no Supabase e confirmar que o RPC retorna plano real.
+- Rodar os SQLs alterados no Supabase (`get_admin_dashboard_stats` atualizado + `db/supabase_payments.sql`) e confirmar que o RPC retorna plano real.
+- Conferir custo por usuário: um usuário conhecido que separou N faixas deve aparecer com custo coerente (cruzamento `predictions` × Replicate).
+- Após um pagamento de teste (sandbox), confirmar que uma linha entra em `public.payments` e aparece na receita daquele usuário.
 
 ## 8. Fora de escopo (YAGNI)
 
 - Sistema de feedback escrito pelo usuário (o dono confirmou que "feedbacks" = sinais de uso).
 - Ações de escrita no painel (banir usuário, mudar plano manual, reembolso) — só leitura nesta versão.
+- Backfill de pagamentos passados por usuário (receita retroativa fica no aproximado A; exata só do lançamento em diante via `payments`).
 - API de câmbio em tempo real (constante basta).
 - `react-router` ou entrada Vite separada.
 - Gráficos com biblioteca externa (barras simples em CSS/SVG bastam, sem dependência nova).
 
 ## 9. Deploy
 
-Segue a regra do projeto: toda atualização sai junto para **web (Vercel) e desktop (Electron Mac AS/Intel, Win)** via bump + push + tag pelo @devops. SQLs alterados rodam no Supabase no passo do deploy. Atualizar `PLAYBACK_STUDIO_FATOS.md` (seção Admin + linha no histórico) no mesmo passo.
+Segue a regra do projeto: toda atualização sai junto para **web (Vercel) e desktop (Electron Mac AS/Intel, Win)** via bump + push + tag pelo @devops. SQLs alterados rodam no Supabase no passo do deploy (`get_admin_dashboard_stats` atualizado, `db/supabase_payments.sql`, e a remoção do email não-admin nos gates SQL). A mudança no `webhook/asaas.ts` é **área sensível de pagamento** — testar em sandbox antes de produção. Atualizar `PLAYBACK_STUDIO_FATOS.md` (seção Admin + linha no histórico) no mesmo passo.
