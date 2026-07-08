@@ -11,6 +11,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.3.17',
+    date: '2026-07-08',
+    title: 'Ajustes de lançamento',
+    items: [
+      'Melhorias de segurança e estabilidade em toda a plataforma.',
+      'Ajustes nos planos: no Livre, sua biblioteca de separações fica salva no próprio aparelho; a biblioteca em nuvem e o repertório fazem parte dos planos pagos.',
+    ],
+  },
+  {
     version: '1.3.16',
     date: '2026-06-28',
     title: 'Separações novas ficam firmes',
