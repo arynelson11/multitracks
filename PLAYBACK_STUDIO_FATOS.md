@@ -56,7 +56,7 @@ Os nomes internos (no banco `profiles.plan`, no checkout e no webhook) são: `fr
 - Prioridade no processamento.
 
 ### Admin
-Contas admin (`arynelson11@gmail.com`, `arynel11@gmail.com`) têm tudo ilimitado e furam todas as travas.
+Conta admin (`arynelson11@gmail.com`) tem tudo ilimitado e fura todas as travas.
 
 ### Exclusivo do app desktop (não tem na web)
 Confirmado no código (2026-07-08):
