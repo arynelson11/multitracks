@@ -44,7 +44,7 @@ Os nomes internos (no banco `profiles.plan`, no checkout e no webhook) são: `fr
 - Pads.
 - Marcar seções + loop infinito ao vivo.
 - Transposição de tom.
-- **Modo Ao Vivo até 4 aparelhos** (banda conecta o celular por QR Code; acompanha música/tom/letra e play/próxima).
+- **Modo Ao Vivo até 4 aparelhos** (banda conecta o celular por QR Code; acompanha música/tom/letra e play/próxima). **Exclusivo do app desktop** (ver seção "Exclusivo do app desktop").
 - Teleprompter.
 - Biblioteca em nuvem + repertório (salvar/publicar).
 
@@ -57,6 +57,12 @@ Os nomes internos (no banco `profiles.plan`, no checkout e no webhook) são: `fr
 
 ### Admin
 Contas admin (`arynelson11@gmail.com`, `arynel11@gmail.com`) têm tudo ilimitado e furam todas as travas.
+
+### Exclusivo do app desktop (não tem na web)
+Confirmado no código (2026-07-08):
+- **Modo Ao Vivo (Host):** o botão HOST e o servidor local só existem no app Electron (`window.playbackDesktop?.isElectron` em `src/App.tsx`; `startLocalServer()` é nativo do desktop). Na web o botão HOST nem aparece. **A banda NÃO instala nada:** cada músico abre o **navegador do celular** no endereço/QR da rede local (ex.: `http://192.168.x.x:8080`) e acompanha player, mixer, pads, repertório, letra e cifra em tempo real. Quem o host liberar também controla (play/próxima, seções, loop); no Studio, controle total sem limite de aparelhos.
+- **Tocar offline:** depois de carregar as músicas, o app desktop funciona sem internet (bom pra igreja com Wi-Fi ruim). A web depende de conexão.
+- Resto (separação IA, mixer multicanal, pads, repertório, transposição, biblioteca) é **igual** na web e no desktop. O único recurso realmente exclusivo do app é o **Modo Ao Vivo**; offline é uma vantagem prática do desktop.
 
 ## 3. Posicionamento e marca (resumo; detalhe no Brand Book)
 
@@ -96,6 +102,9 @@ Confirmado por prints do produto em produção (2026-07-08):
 - Transport ao vivo: Auto / Parar / Fade, com anterior / play / próxima.
 
 ## 6. Histórico de mudanças (para saber o que foi feito sem rodar tudo)
+
+### 2026-07-08 — Confirmado o que é exclusivo do app desktop (para marketing)
+Auditoria de código + site pra separar web × desktop. **Único recurso exclusivo do app: Modo Ao Vivo (Host)** — botão HOST e servidor local só rodam no Electron (`src/App.tsx`, `startLocalServer`); web não tem o botão. A banda entra pelo **navegador do celular** (não instala app). Offline é vantagem prática do desktop. Todo o resto (separação, mixer, pads, repertório, transpose, biblioteca) é igual nas duas plataformas. Registrado na nova seção "Exclusivo do app desktop". Motivou um 2º post/carrossel só do app (Modo Ao Vivo). Prints guardados em `marketing/prints/` (web, app-desktop, app-celular).
 
 ### 2026-07-08 — Lançamento v1.3.17 no ar (deployado)
 Push `8537b83` + tag `v1.3.17` no `origin/main`; deploy Vercel em Production com status Ready. Ambos os SQL rodados no Supabase (`predictions` antes, `user_separations_plan_gate` depois): 4 policies ativas na biblioteca em nuvem. Webhook Asaas verificado: `CHECKOUT_PAID` marcado, webhook ativo e `ASAAS_WEBHOOK_TOKEN` batendo com a Vercel. Fluxo pagamento → upgrade automático de plano confirmado ponta a ponta na config. Consolida as duas entradas abaixo (checkup de segurança + remoção do diagnóstico), que agora estão em produção.
