@@ -20,6 +20,17 @@ function asaasBaseUrl(): string {
 }
 
 async function asaasStats(res: VercelResponse) {
+  // Mapa valor+ciclo -> plano (espelha PLAN_PRICING de checkout.ts). Usado para
+  // classificar assinaturas do Asaas por plano e calcular MRR.
+  const PLAN_BY_VALUE: Record<string, string> = {
+    '49.9|MONTHLY': 'essencial_mensal',
+    '454.8|YEARLY': 'essencial_anual',
+    '119.9|MONTHLY': 'pro_mensal',
+    '1078.8|YEARLY': 'pro_anual',
+  };
+  const monthlyEquiv = (value: number, cycle: string) =>
+    cycle === 'YEARLY' ? value / 12 : value;
+
   const apiKey = process.env.ASAAS_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'Server misconfiguration: ASAAS_API_KEY' });
 
@@ -56,6 +67,25 @@ async function asaasStats(res: VercelResponse) {
   const totalRevenueBRL = paid.reduce((sum: number, p: any) => sum + (Number(p.value) || 0), 0);
   const activeSubscriptions = subscriptions.filter((s: any) => s.status === 'ACTIVE');
 
+  let mrrBRL = 0;
+  const byPlan = new Map<string, { count: number; monthlyBRL: number }>();
+  for (const s of activeSubscriptions) {
+    const value = Number(s.value) || 0;
+    const cycle = String(s.cycle || 'MONTHLY');
+    const monthly = monthlyEquiv(value, cycle);
+    mrrBRL += monthly;
+    const key = PLAN_BY_VALUE[`${value}|${cycle}`] ?? 'desconhecido';
+    const cur = byPlan.get(key) ?? { count: 0, monthlyBRL: 0 };
+    cur.count += 1;
+    cur.monthlyBRL += monthly;
+    byPlan.set(key, cur);
+  }
+  const revenueByPlan = [...byPlan.entries()].map(([planKey, v]) => ({
+    planKey,
+    count: v.count,
+    monthlyBRL: parseFloat(v.monthlyBRL.toFixed(2)),
+  }));
+
   // Cobranças mais recentes (valor em reais — o front formata direto com fmtBRL).
   const recent = [...payments]
     .sort((a, b) => new Date(b.dateCreated ?? 0).getTime() - new Date(a.dateCreated ?? 0).getTime())
@@ -74,6 +104,8 @@ async function asaasStats(res: VercelResponse) {
     totalCheckouts: payments.length,
     activeSubscriptions: activeSubscriptions.length,
     totalSubscriptions: subscriptions.length,
+    mrrBRL: parseFloat(mrrBRL.toFixed(2)),
+    revenueByPlan,
     recent,
   });
 }
