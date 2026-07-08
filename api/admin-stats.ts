@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import axios from 'axios';
+import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
 import { verifyAdmin } from './_lib/auth.js';
 
@@ -249,6 +250,49 @@ async function replicateStats(res: VercelResponse) {
       estimated_cost: parseFloat(p.cost.toFixed(4)),
     }));
 
+    // Custo de IA por usuário: cruza predictions do Replicate (id + custo) com
+    // a tabela public.predictions (replicate_id -> user_id) via service role.
+    const perUser: Array<{ userId: string; runs: number; costUSD: number; costUSD30d: number }> = [];
+    const supaUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (supaUrl && serviceKey) {
+      try {
+        const supabase = createClient(supaUrl, serviceKey);
+        const ids = enriched.map(p => p.id);
+        // Busca ownership em lotes (evita URL gigante no .in()).
+        const ownerMap = new Map<string, string>(); // replicate_id -> user_id
+        const CHUNK = 200;
+        for (let i = 0; i < ids.length; i += CHUNK) {
+          const slice = ids.slice(i, i + CHUNK);
+          const { data } = await supabase
+            .from('predictions')
+            .select('replicate_id, user_id')
+            .in('replicate_id', slice);
+          for (const row of data ?? []) ownerMap.set(row.replicate_id, row.user_id);
+        }
+        const agg = new Map<string, { runs: number; costUSD: number; costUSD30d: number }>();
+        for (const p of enriched) {
+          const uid = ownerMap.get(p.id);
+          if (!uid) continue;
+          const cur = agg.get(uid) ?? { runs: 0, costUSD: 0, costUSD30d: 0 };
+          cur.runs += 1;
+          cur.costUSD += p.cost;
+          if (new Date(p.created_at) >= startOf30d) cur.costUSD30d += p.cost;
+          agg.set(uid, cur);
+        }
+        for (const [userId, v] of agg) {
+          perUser.push({
+            userId,
+            runs: v.runs,
+            costUSD: parseFloat(v.costUSD.toFixed(4)),
+            costUSD30d: parseFloat(v.costUSD30d.toFixed(4)),
+          });
+        }
+      } catch (e: any) {
+        console.error('[admin-stats] perUser cost join failed:', e?.message);
+      }
+    }
+
     return res.status(200).json({
       total: enriched.length,
       succeeded,
@@ -263,6 +307,7 @@ async function replicateStats(res: VercelResponse) {
       monthlyCosts: monthlyCostsSorted,
       topModels,
       recentList,
+      perUser,
     });
   } catch (error: any) {
     console.error('replicate-stats error:', error);
