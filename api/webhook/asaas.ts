@@ -12,6 +12,15 @@ const webhookToken = process.env.ASAAS_WEBHOOK_TOKEN;
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const VALID_PLANS = new Set(['essencial_mensal', 'essencial_anual', 'pro_mensal', 'pro_anual']);
 
+// Valores por plano (espelha PLAN_PRICING de api/checkout.ts). Usado para
+// registrar o pagamento em public.payments (unit economics).
+const PLAN_VALUES: Record<string, { value: number; cycle: 'MONTHLY' | 'YEARLY' }> = {
+  essencial_mensal: { value: 49.90, cycle: 'MONTHLY' },
+  essencial_anual:  { value: 454.80, cycle: 'YEARLY' },
+  pro_mensal:       { value: 119.90, cycle: 'MONTHLY' },
+  pro_anual:        { value: 1078.80, cycle: 'YEARLY' },
+};
+
 function safeEqualStr(a: string, b: string): boolean {
   const ab = Buffer.from(a);
   const bb = Buffer.from(b);
@@ -79,6 +88,23 @@ export default async function handler(req: any, res: any) {
     if (error) {
       console.error('[asaas-webhook] supabase update failed:', error.message);
       return res.status(500).json({ error: 'Failed to update profile' });
+    }
+
+    // Registra o pagamento para histórico por usuário (unit economics).
+    // Upsert por checkout.id => idempotente se o Asaas reenviar o webhook.
+    const priced = PLAN_VALUES[planKey];
+    if (checkout?.id && priced) {
+      const { error: payErr } = await supabase
+        .from('payments')
+        .upsert({
+          id: checkout.id,
+          user_id: userId,
+          plan_key: planKey,
+          value: priced.value,
+          cycle: priced.cycle,
+          asaas_checkout_id: checkout.id,
+        }, { onConflict: 'id' });
+      if (payErr) console.error('[asaas-webhook] payments insert failed:', payErr.message);
     }
 
     // Limpa o vínculo já consumido (não bloqueia o sucesso se falhar).
