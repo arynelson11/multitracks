@@ -97,6 +97,9 @@ Confirmado por prints do produto em produção (2026-07-08):
 
 ## 6. Histórico de mudanças (para saber o que foi feito sem rodar tudo)
 
+### 2026-07-08 — Lançamento v1.3.17 no ar (deployado)
+Push `8537b83` + tag `v1.3.17` no `origin/main`; deploy Vercel em Production com status Ready. Ambos os SQL rodados no Supabase (`predictions` antes, `user_separations_plan_gate` depois): 4 policies ativas na biblioteca em nuvem. Webhook Asaas verificado: `CHECKOUT_PAID` marcado, webhook ativo e `ASAAS_WEBHOOK_TOKEN` batendo com a Vercel. Fluxo pagamento → upgrade automático de plano confirmado ponta a ponta na config. Consolida as duas entradas abaixo (checkup de segurança + remoção do diagnóstico), que agora estão em produção.
+
 ### 2026-07-08 — Remoção do diagnóstico temporário (implementado, aguardando deploy)
 Removido o sistema de trace de diagnóstico (`src/lib/pbTrace.ts`) que era debug temporário do bug de iOS (aba morrendo no download/load). Sumiu a caixa "DIAGNÓSTICO" que aparecia no topo da tela após reload. Removidas as chamadas em `main.tsx`, `useAudioEngine.ts` e `useCloudLibrary.ts`. Sem impacto funcional (era só log).
 
