@@ -15,9 +15,19 @@ if (!supabase) {
 export async function getAuthHeaders(): Promise<Record<string, string>> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (!supabase) return headers;
-    const { data } = await supabase.auth.getSession();
-    if (data.session?.access_token) {
-        headers.Authorization = `Bearer ${data.session.access_token}`;
+    let session = (await supabase.auth.getSession()).data.session;
+    // Renova o token se já expirou ou expira em menos de 60s, antes de usar.
+    // Evita o 401 "Invalid or expired token" quando o app ficou aberto tempo
+    // demais e o auto-refresh não disparou (comum no Electron com janela
+    // inativa). Se o refresh falhar (refresh token morto), mantém o token atual
+    // e o servidor responde 401 — aí o usuário precisa relogar mesmo.
+    const expiresAtMs = (session?.expires_at ?? 0) * 1000;
+    if (session && expiresAtMs < Date.now() + 60_000) {
+        const refreshed = await supabase.auth.refreshSession();
+        if (refreshed.data.session) session = refreshed.data.session;
+    }
+    if (session?.access_token) {
+        headers.Authorization = `Bearer ${session.access_token}`;
     }
     return headers;
 }
