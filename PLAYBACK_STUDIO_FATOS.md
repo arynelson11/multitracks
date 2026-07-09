@@ -105,6 +105,9 @@ Confirmado por prints do produto em produção (2026-07-08):
 
 ## 6. Histórico de mudanças (para saber o que foi feito sem rodar tudo)
 
+### 2026-07-09 — Email de contato/suporte no site [v1.4.3]
+Adicionado o email de suporte `contatoplaybackstudio@gmail.com` como canal de contato no rodapé da landing (`src/components/LandingPage.tsx`, link "Email" via `mailto:`, ao lado do WhatsApp). Este é o email oficial de suporte do Playback Studio daqui pra frente. Só afeta a landing web.
+
 ### 2026-07-09 — Contato/suporte por WhatsApp no site [v1.4.2]
 Adicionado contato de WhatsApp na landing (`src/components/LandingPage.tsx`): botão flutuante fixo verde no canto inferior direito ("Fale com a gente") + link "Suporte" no rodapé. Número `5522997249896` via `wa.me` com mensagem pré-preenchida. Ícone WhatsApp é SVG do glifo oficial (lucide não tem ícone de marca). Só afeta a landing web.
 

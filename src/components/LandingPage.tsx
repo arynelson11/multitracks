@@ -15,6 +15,9 @@ const WHATSAPP_URL =
   'https://wa.me/5522997249896?text=' +
   encodeURIComponent('Olá! Vim pelo site do Playback Studio e preciso de ajuda.')
 
+// Suporte / contato por email
+const SUPPORT_EMAIL = 'contatoplaybackstudio@gmail.com'
+
 function WhatsappIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
@@ -629,6 +632,9 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             >
               <WhatsappIcon className="w-3.5 h-3.5" />
               Suporte
+            </a>
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-bone transition-colors">
+              Email
             </a>
           </div>
           <p className="text-[11px] text-warm-400">© {new Date().getFullYear()} Playback Studio · Feito por quem toca.</p>
