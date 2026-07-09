@@ -14,8 +14,8 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
     caller_email text;
-    -- Mantenha em sincronia com a lista de admins em src/App.tsx.
-    -- TODO: migrar para uma coluna profiles.is_admin para evitar duplicação.
+    -- Mantenha em sincronia com a allowlist do front (src/lib/admin.ts) e do
+    -- backend (api/_lib/auth.ts). TODO: migrar para profiles.is_admin.
     admin_emails constant text[] := ARRAY['arynelson11@gmail.com'];
 BEGIN
     caller_email := auth.jwt() ->> 'email';

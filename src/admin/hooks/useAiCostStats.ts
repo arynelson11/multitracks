@@ -7,6 +7,7 @@ export interface AiCostStats {
   recentTotal: number; recentCostUSD: number; totalCostUSD: number;
   recentPredictTime: number; totalPredictTime: number;
   monthlyCosts: { month: string; cost: number }[];
+  monthlyCounts: { month: string; count: number }[];
   topModels: { model: string; total: number; succeeded: number; totalTime: number; totalCost: number }[];
   recentList: { id: string; model: string; status: string; source: string; created_at: string; predict_time: number | null; hardware: string; estimated_cost: number }[];
   perUser: { userId: string; runs: number; costUSD: number; costUSD30d: number }[];

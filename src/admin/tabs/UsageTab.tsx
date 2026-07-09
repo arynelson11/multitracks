@@ -41,10 +41,10 @@ export function UsageTab() {
         <StatCard icon={UserX}    label="Pagantes sumidos"  value={churned.length} subtext="risco de churn" color="#ef4444" iconBg="#ef444410" />
       </div>
 
-      {ai && ai.monthlyCosts.length > 0 && (
+      {ai && ai.monthlyCounts.length > 0 && (
         <div className="daw-panel rounded-lg p-4 space-y-3">
-          <span className="text-[9px] font-bold text-text-muted uppercase tracking-widest font-mono">Separações por mês (proxy: runs de IA)</span>
-          <BarChart data={ai.monthlyCosts.map(c => ({ label: monthLabel(c.month), value: c.cost }))} />
+          <span className="text-[9px] font-bold text-text-muted uppercase tracking-widest font-mono">Separações por mês</span>
+          <BarChart data={ai.monthlyCounts.map(c => ({ label: monthLabel(c.month), value: c.count }))} />
         </div>
       )}
 

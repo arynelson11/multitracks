@@ -14,7 +14,7 @@ export function FinanceTab() {
   const { stats, loading, error, refetch } = useFinanceStats();
 
   const planCols: Column<{ planKey: string; count: number; monthlyBRL: number }>[] = [
-    { key: 'plan', header: 'Plano', className: 'flex-1', render: r => <span className="text-xs text-white">{planDisplayName(r.planKey)}</span> },
+    { key: 'plan', header: 'Plano', className: 'flex-1', render: r => <span className="text-xs text-white">{r.planKey === 'desconhecido' ? 'Outro (preço fora do padrão)' : planDisplayName(r.planKey)}</span> },
     { key: 'count', header: 'Assinantes', className: 'w-24 text-center text-[10px] text-text-muted font-mono', render: r => r.count },
     { key: 'mrr', header: 'MRR', className: 'w-24 text-right text-[10px] text-accent-green font-mono font-bold', render: r => fmtBRL(r.monthlyBRL) },
   ];

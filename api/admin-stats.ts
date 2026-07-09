@@ -240,14 +240,21 @@ async function replicateStats(res: VercelResponse) {
 
     // Monthly cost breakdown (last 6 months)
     const monthlyCosts: Record<string, number> = {};
+    const monthlyRuns: Record<string, number> = {};
     for (const p of enriched) {
       const month = p.created_at.slice(0, 7); // "YYYY-MM"
       monthlyCosts[month] = (monthlyCosts[month] ?? 0) + p.cost;
+      monthlyRuns[month] = (monthlyRuns[month] ?? 0) + 1;
     }
     const monthlyCostsSorted = Object.entries(monthlyCosts)
       .sort((a, b) => a[0].localeCompare(b[0]))
       .slice(-6)
       .map(([month, cost]) => ({ month, cost: parseFloat(cost.toFixed(4)) }));
+    // Contagem real de separações por mês (não custo) — usado na aba Uso & Sinais.
+    const monthlyCountsSorted = Object.entries(monthlyRuns)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .slice(-6)
+      .map(([month, count]) => ({ month, count }));
 
     // Top models by usage + cost
     const modelMap: Record<string, { total: number; succeeded: number; totalTime: number; totalCost: number }> = {};
@@ -320,8 +327,8 @@ async function replicateStats(res: VercelResponse) {
             costUSD30d: parseFloat(v.costUSD30d.toFixed(4)),
           });
         }
-      } catch (e: any) {
-        console.error('[admin-stats] perUser cost join failed:', e?.message);
+      } catch (e) {
+        console.error('[admin-stats] perUser cost join failed:', e instanceof Error ? e.message : e);
       }
     }
 
@@ -337,6 +344,7 @@ async function replicateStats(res: VercelResponse) {
       totalCostUSD: parseFloat(totalCostUSD.toFixed(4)),
       recentCostUSD: parseFloat(recentCostUSD.toFixed(4)),
       monthlyCosts: monthlyCostsSorted,
+      monthlyCounts: monthlyCountsSorted,
       topModels,
       recentList,
       perUser,
