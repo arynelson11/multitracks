@@ -11,7 +11,7 @@ import { planMonthlyBRL, userMarginBRL } from '../lib/metrics';
 interface Row {
   id: string; name: string; email: string; plan: string; created_at: string;
   last_sign_in_at: string | null; is_active: boolean; separations: number;
-  revenueBRL: number; costUSD: number; marginBRL: number;
+  revenueBRL: number; revenueExact: boolean; totalPaid: number; costUSD: number; marginBRL: number;
 }
 
 export function UsersTab() {
@@ -29,12 +29,14 @@ export function UsersTab() {
   const rows: Row[] = useMemo(() => {
     return (stats?.users ?? []).map(u => {
       const costUSD = costByUser.get(u.id) ?? 0;
-      const revenueBRL = planMonthlyBRL(u.plan);
+      const exact = u.exact_monthly_brl ?? undefined;
+      const revenueBRL = exact ?? planMonthlyBRL(u.plan);
       return {
         id: u.id, name: u.display_name || u.email, email: u.email, plan: u.plan,
         created_at: u.created_at, last_sign_in_at: u.last_sign_in_at, is_active: u.is_active,
-        separations: u.separations_count, revenueBRL, costUSD,
-        marginBRL: userMarginBRL({ plan: u.plan, costUSD }),
+        separations: u.separations_count, revenueBRL, revenueExact: exact != null,
+        totalPaid: u.total_paid ?? 0, costUSD,
+        marginBRL: userMarginBRL({ plan: u.plan, costUSD, exactMonthlyBRL: exact }),
       };
     });
   }, [stats, costByUser]);
@@ -57,7 +59,11 @@ export function UsersTab() {
     { key: 'plan', header: 'Plano', className: 'w-20 text-center', render: r => (
       <span className={`text-[10px] font-bold ${r.plan === 'free' ? 'text-text-muted' : 'text-primary'}`}>{planDisplayName(r.plan)}</span>) },
     { key: 'sep', header: 'Sep.', className: 'w-12 text-center text-[10px] text-text-muted font-mono', render: r => r.separations },
-    { key: 'rev', header: 'Paga/mês', className: 'w-20 text-right text-[10px] text-accent-green font-mono', render: r => fmtBRL(r.revenueBRL) },
+    { key: 'rev', header: 'Paga/mês', className: 'w-20 text-right text-[10px] text-accent-green font-mono', render: r => (
+      <span title={r.revenueExact ? 'Valor exato (pagamento registrado)' : 'Aproximado pelo plano atual'}>
+        {fmtBRL(r.revenueBRL)}{r.revenueExact ? '' : ' ~'}
+      </span>) },
+    { key: 'ltv', header: 'Total pago', className: 'w-20 text-right text-[10px] text-accent-green/70 font-mono hidden sm:block', render: r => r.totalPaid > 0 ? fmtBRL(r.totalPaid) : '—' },
     { key: 'cost', header: 'Custa IA', className: 'w-20 text-right text-[10px] text-cyan-400 font-mono', render: r => fmtUSD(r.costUSD) },
     { key: 'margin', header: 'Margem/mês', className: 'w-24 text-right text-[10px] font-mono font-bold', render: r => (
       <span className={r.marginBRL < 0 ? 'text-accent-red' : 'text-accent-green'}>{fmtBRL(r.marginBRL)}</span>) },
@@ -94,7 +100,7 @@ export function UsersTab() {
         </button>
       </div>
 
-      <p className="text-[10px] text-text-muted/50 font-mono">Receita = plano atual × preço (aproximado). Custo IA = real (Replicate). Margem em BRL, câmbio estimado.</p>
+      <p className="text-[10px] text-text-muted/50 font-mono">Paga/mês = valor exato do último pagamento quando registrado, senão plano × preço (marcado com ~). Total pago = tudo que o usuário já pagou. Custo IA = real (Replicate). Margem em BRL, câmbio estimado.</p>
       <DataTable columns={columns} rows={filtered} empty="Nenhum usuário encontrado" />
     </div>
   );

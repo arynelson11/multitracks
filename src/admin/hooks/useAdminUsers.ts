@@ -5,6 +5,7 @@ export interface AdminUser {
   id: string; email: string; display_name: string | null; provider: string | null;
   created_at: string; last_sign_in_at: string | null; is_active: boolean;
   plan: string; separations_count: number;
+  total_paid: number; exact_monthly_brl: number | null;
 }
 export interface UsersStats {
   totalUsers: number; activeUsers: number; inactiveUsers: number;

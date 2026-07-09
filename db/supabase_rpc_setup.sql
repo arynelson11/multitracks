@@ -29,6 +29,17 @@ BEGIN
             SELECT user_id, COUNT(*)::int AS cnt
             FROM public.predictions
             GROUP BY user_id
+        ),
+        pay AS (
+            -- Receita EXATA por usuário a partir da tabela payments (gravada pelo
+            -- webhook do Asaas). total_paid = LTV; last_value/last_cycle = último
+            -- pagamento, pra derivar o mensal-equivalente exato da margem.
+            SELECT user_id,
+                   SUM(value) AS total_paid,
+                   (ARRAY_AGG(value ORDER BY paid_at DESC))[1] AS last_value,
+                   (ARRAY_AGG(cycle ORDER BY paid_at DESC))[1] AS last_cycle
+            FROM public.payments
+            GROUP BY user_id
         )
         SELECT jsonb_build_object(
             'totalUsers',      (SELECT COUNT(*) FROM auth.users),
@@ -56,11 +67,18 @@ BEGIN
                     'last_sign_in_at', u.last_sign_in_at,
                     'is_active', (u.last_sign_in_at >= now() - interval '30 days'),
                     'plan', COALESCE(p.plan, 'free'),
-                    'separations_count', COALESCE(s.cnt, 0)
+                    'separations_count', COALESCE(s.cnt, 0),
+                    'total_paid', COALESCE(py.total_paid, 0),
+                    'exact_monthly_brl', CASE
+                        WHEN py.last_value IS NULL THEN NULL
+                        WHEN py.last_cycle = 'YEARLY' THEN round((py.last_value / 12)::numeric, 2)
+                        ELSE py.last_value
+                    END
                 ) ORDER BY u.created_at DESC)
                 FROM auth.users u
                 LEFT JOIN public.profiles p ON p.id = u.id
                 LEFT JOIN sep s ON s.user_id = u.id
+                LEFT JOIN pay py ON py.user_id = u.id
             ), '[]'::jsonb)
         )
     );
