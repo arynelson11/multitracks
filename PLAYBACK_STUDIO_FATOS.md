@@ -105,6 +105,9 @@ Confirmado por prints do produto em produção (2026-07-08):
 
 ## 6. Histórico de mudanças (para saber o que foi feito sem rodar tudo)
 
+### 2026-07-09 — Contato/suporte por WhatsApp no site [v1.4.2]
+Adicionado contato de WhatsApp na landing (`src/components/LandingPage.tsx`): botão flutuante fixo verde no canto inferior direito ("Fale com a gente") + link "Suporte" no rodapé. Número `5522997249896` via `wa.me` com mensagem pré-preenchida. Ícone WhatsApp é SVG do glifo oficial (lucide não tem ícone de marca). Só afeta a landing web.
+
 ### 2026-07-09 — Player da landing com stems reais + token durável [v1.4.1]
 O player de demonstração da landing (`src/components/DemoMixer.tsx`) tocava tudo sintetizado via Web Audio (osciladores), o que soava artificial e feio. Passou a carregar **6 stems reais** separados no próprio Playback Studio (`public/demo/{vocais,bateria,baixo,guitarra,teclado,outros}.mp3` — trecho de 24s, mono, 96kbps, ~282KB cada, ~1.7MB total) e tocá-los em loop sincronizado. Mute/solo agora cortam/isolam a faixa real (cada stem tem seu ganho → analyser → master com compressor + boost de 1.5x, já que stems separados vêm baixos); os VU meters reagem ao áudio real. Canais reduzidos de 8 → 7 (removidos Click/Piano/Pad que não existiam como stem). Paths via `import.meta.env.BASE_URL`. **Auth durável:** `getAuthHeaders()` em `src/lib/supabase.ts` passou a renovar o token de sessão antes de expirar (janela de 60s), eliminando o erro "401 Invalid or expired token" no upload/separação quando a sessão do desktop ficava velha (commit `17bdd9c`). Deploy: web (Vercel) + desktop (Electron Mac AS/Intel + Win).
 
