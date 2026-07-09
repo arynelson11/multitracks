@@ -10,7 +10,6 @@ import { SettingsModal } from './components/SettingsModal'
 import { MetronomeModal } from './components/MetronomeModal'
 import { LibraryModal } from './components/LibraryModal'
 import { AdminModal } from './components/AdminModal'
-import { AdminDashboard } from './components/AdminDashboard'
 import { PadSetsModal } from './components/PadSetsModal'
 import { LiveModeModal } from './components/LiveModeModal'
 import { FollowerView } from './components/FollowerView'
@@ -96,7 +95,6 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isLibraryOpen, setIsLibraryOpen] = useState(false)
   const [isAdminOpen, setIsAdminOpen] = useState(false)
-  const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false)
   const [isSetlistMenuOpen, setIsSetlistMenuOpen] = useState(false)
   const [isTracksMenuOpen, setIsTracksMenuOpen] = useState(false)
   const [isPadEditMode, setIsPadEditMode] = useState(false)
@@ -881,7 +879,7 @@ export default function App() {
 
             {/* Admin Dashboard - only for admin */}
             {(isAdminEmail(user?.email)) && (
-              <button onClick={() => setIsAdminDashboardOpen(true)}
+              <button onClick={() => { window.location.href = '/admin' }}
                 className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-primary/70 hover:text-primary border border-primary/20 hover:border-primary/40 transition-all">
                 <Shield size={14} /><span className="hidden sm:inline">ADMIN</span>
               </button>
@@ -1945,10 +1943,6 @@ export default function App() {
         />
       )}
 
-      {/* Admin Dashboard */}
-      {(isAdminEmail(user?.email)) && (
-        <AdminDashboard isOpen={isAdminDashboardOpen} onClose={() => setIsAdminDashboardOpen(false)} />
-      )}
 
       <PadSetsModal
         isOpen={isPadSetsModalOpen}
@@ -2089,7 +2083,7 @@ export default function App() {
 
                   {/* ADMIN */}
                   {(isAdminEmail(user?.email)) && (
-                    <button onClick={() => { setIsAdminDashboardOpen(true); setIsMobileDrawerOpen(false); }}
+                    <button onClick={() => { window.location.href = '/admin' }}
                       className="w-full text-left px-3 py-3 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors border border-transparent hover:border-border">
                       <span className="text-white text-sm font-bold flex items-center gap-3">
                         <Shield size={16} className="text-primary" />
