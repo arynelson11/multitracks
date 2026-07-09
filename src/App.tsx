@@ -1,5 +1,6 @@
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback, lazy, Suspense } from 'react'
 import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut, Shield, Home, Disc, Repeat, Square, Menu, Server } from 'lucide-react'
+const AdminApp = lazy(() => import('./admin/AdminApp'))
 import { BrandLogo } from './components/BrandLogo'
 import { PlayMark } from './components/brand/PlayMark'
 import { useAudioEngine } from './hooks/useAudioEngine'
@@ -539,6 +540,15 @@ export default function App() {
     const file = e.target.files?.[0]; if (!file) return
     setIsSetlistMenuOpen(false)
     importPlaylist(file)
+  }
+
+  // ───────────────── PAINEL ADMIN (/admin) ─────────────────
+  if (typeof window !== 'undefined' && window.location.pathname === '/admin') {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-[#0e0e10] flex items-center justify-center"><Loader2 size={40} className="text-orange-500 animate-spin" /></div>}>
+        <AdminApp />
+      </Suspense>
+    )
   }
 
   // ───────────────── PÁGINA DE DOWNLOAD (pública) ─────────────────
