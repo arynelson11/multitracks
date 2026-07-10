@@ -1526,7 +1526,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         </div>
 
         {/* ── Linha 2: BPM/TOM · Transporte + cronômetro · VOZ/SYNC/MASTER ── */}
-        <div className="min-h-20 flex flex-wrap md:flex-nowrap items-center justify-center md:justify-between px-2 md:px-4 py-2 md:py-0 gap-x-2 gap-y-2 md:gap-5">
+        <div className="min-h-20 flex flex-wrap items-center justify-center md:justify-between px-2 md:px-4 py-2 md:py-0 gap-x-2 gap-y-2 md:gap-5">
 
           {/* Esquerda: BPM · TOM (encostados no centro) */}
           <div className="flex-none md:flex-1 flex items-center justify-center md:justify-end gap-2.5 min-w-0">
