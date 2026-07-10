@@ -11,6 +11,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.4',
+    date: '2026-07-09',
+    title: 'Separador de faixas ajustado pro celular e tablet',
+    items: [
+      'Layout do separador reorganizado pra telas menores: mixer e ondas continuam lado a lado, sem sobrepor botões nem cortar o nome da música.',
+      'A área de ondas agora rola de lado pra você ver a música inteira, sem ficar comprimida.',
+    ],
+  },
+  {
     version: '1.3.17',
     date: '2026-07-08',
     title: 'Ajustes de lançamento',

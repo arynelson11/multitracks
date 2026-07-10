@@ -25,6 +25,9 @@ const SEP_TOUR_STEPS: TourStep[] = [
 
 type DownloadFormat = 'wav' | 'mp3';
 const DOWNLOAD_FORMAT_KEY = 'playback-studio:download-format';
+// Densidade da waveform: px por segundo de áudio. Timeline nunca comprime —
+// se a duração * esse valor passar da largura visível, a área rola de lado.
+const WAVEFORM_PX_PER_SECOND = 40;
 
 interface StemData {
   id: string;
@@ -292,6 +295,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const guideBufferCache = useRef<Map<string, AudioBuffer>>(new Map());
   // Drag de marcadores na timeline
   const waveAreaRef = useRef<HTMLDivElement>(null);
+  // Wrapper interno com a largura real da timeline (pode ser mais larga que o viewport visível e rolar de lado)
+  const timelineContentRef = useRef<HTMLDivElement>(null);
   const draggingCueRef = useRef<string | null>(null);
   const cueDragMovedRef = useRef(false);
   const cueRafRef = useRef<number | null>(null);
@@ -370,7 +375,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
   // ── Arrastar marcador na timeline ──
   const timeFromClientX = (clientX: number): number => {
-    const rect = waveAreaRef.current?.getBoundingClientRect();
+    const rect = timelineContentRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0 || songDuration <= 0) return 0;
     const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
     return ratio * songDuration;
@@ -1472,15 +1477,15 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       <header className="bg-[#18181a] border-b border-[#222] shrink-0 z-50 shadow-[0_2px_8px_rgba(0,0,0,0.6)] flex flex-col">
 
         {/* ── Linha 1: Voltar · Título centralizado · Export ── */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-[#1f1f22]">
-          <div className="flex-1 flex items-center gap-2 min-w-0">
+        <div className="h-16 flex items-center justify-between px-2 sm:px-4 border-b border-[#1f1f22]">
+          <div className="shrink-0 flex items-center gap-2">
             <button onClick={goToSeparatorHome} className="transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md text-[10px] font-bold text-white/80 hover:text-white cursor-pointer uppercase tracking-wider">
               <ChevronLeft size={14}/> <span className="hidden sm:inline">Voltar</span>
             </button>
           </div>
 
-          <div className="flex flex-col items-center justify-center min-w-0 px-2 gap-1.5">
-            <div className="text-white font-black text-base sm:text-lg tracking-wide truncate max-w-[420px] sm:max-w-[720px] leading-none">
+          <div className="flex-1 flex flex-col items-center justify-center min-w-0 px-2 gap-1.5">
+            <div className="text-white font-black text-base sm:text-lg tracking-wide truncate max-w-full leading-none">
               {songName || 'Sem título'}
             </div>
             <div className="flex items-center gap-1.5 text-[8px] font-mono text-white/45 uppercase tracking-[0.2em]">
@@ -1488,7 +1493,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
             </div>
           </div>
 
-          <div className="flex-1 flex items-center justify-end gap-2.5">
+          <div className="shrink-0 flex items-center justify-end gap-1.5 sm:gap-2.5">
             <div className="flex items-center gap-1 bg-[#0e0e10] border border-[#222] rounded-md p-0.5 h-9" title="Formato de download dos stems">
               <span className="text-[7px] font-mono font-bold text-white/60 uppercase tracking-widest px-1.5 hidden sm:inline">DL</span>
               {(['wav', 'mp3'] as DownloadFormat[]).map((fmt) => (
@@ -1521,10 +1526,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         </div>
 
         {/* ── Linha 2: BPM/TOM · Transporte + cronômetro · VOZ/SYNC/MASTER ── */}
-        <div className="h-20 flex items-center justify-between px-4 gap-5">
+        <div className="min-h-20 flex flex-wrap md:flex-nowrap items-center justify-center md:justify-between px-2 md:px-4 py-2 md:py-0 gap-x-2 gap-y-2 md:gap-5">
 
           {/* Esquerda: BPM · TOM (encostados no centro) */}
-          <div className="flex-1 flex items-center justify-end gap-2.5 min-w-0">
+          <div className="flex-none md:flex-1 flex items-center justify-center md:justify-end gap-2.5 min-w-0">
             <button onClick={() => setShowBpmModal(true)}
               className="transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md cursor-pointer">
               <span className="text-[7px] text-white/70 uppercase tracking-widest font-bold font-mono">BPM</span>
@@ -1583,7 +1588,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
           </div>
 
           {/* Direita: VOZ · SYNC · MASTER (encostados no centro) */}
-          <div className="flex-1 flex items-center justify-start gap-2.5 min-w-0">
+          <div className="flex-none md:flex-1 flex items-center justify-center md:justify-start gap-2.5 min-w-0">
             {stems.length > 0 && (
               <button onClick={() => canVoiceGuide ? setShowVoiceGuide(true) : setIsPricingOpen(true)}
                 title={canVoiceGuide ? 'Voz guia' : 'Voz guia disponível nos planos pagos'}
@@ -1595,7 +1600,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
               </button>
             )}
 
-            <div className="transport-btn flex items-center gap-0.5 rounded-md px-1.5 h-9">
+            <div className="transport-btn hidden sm:flex items-center gap-0.5 rounded-md px-1.5 h-9">
               <span className="text-[7px] text-white/70 uppercase tracking-widest font-bold px-1 font-mono hidden lg:inline">SYNC</span>
               <button onClick={() => setClickOffsetMs(p => p - 10)} className="w-5 h-full flex items-center justify-center text-white/60 hover:text-white rounded cursor-pointer"><ChevronLeft size={12}/></button>
               <span className="text-[9px] text-primary font-mono font-black w-9 text-center tabular-nums">{clickOffsetMs > 0 ? '+' : ''}{clickOffsetMs}</span>
@@ -1607,8 +1612,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
               <Volume2 size={13} className="text-white/70 shrink-0"/>
               <input type="range" min="0" max="1" step="0.01" value={masterVolume}
                 onChange={(e) => setMasterVolume(parseFloat(e.target.value))}
-                className="daw-slider w-16 lg:w-24" title="Master Volume" />
-              <div className="lcd-display px-1.5 py-0.5 rounded-[3px] text-[8px] font-mono text-accent-green w-10 text-center shrink-0 tabular-nums">
+                className="daw-slider w-12 sm:w-16 lg:w-24" title="Master Volume" />
+              <div className="lcd-display px-1.5 py-0.5 rounded-[3px] text-[8px] font-mono text-accent-green w-10 text-center shrink-0 tabular-nums hidden sm:block">
                 {masterVolume === 0 ? '-∞' : (masterVolume * 10 - 10).toFixed(1)}
               </div>
             </div>
@@ -1626,7 +1631,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       </div>
 
       {/* ═══ WORKSPACE ═══ */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Mixer e waveform sempre lado a lado (também em mobile/tablet).
+          min-w-0 na waveform (abaixo) evita que ela vaze da tela em telas estreitas. */}
+      <div className="flex-1 flex overflow-hidden min-h-0">
 
         {/* LEFT: Channel Strip Controls */}
         <div className="w-[220px] bg-[#111113] border-r border-[#222] flex flex-col overflow-y-auto overflow-x-hidden shrink-0 z-10 shadow-[2px_0_12px_rgba(0,0,0,0.5)]">
@@ -1699,53 +1706,57 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
           })}
         </div>
 
-        {/* RIGHT: Waveform area */}
-        <div ref={waveAreaRef} className="flex-1 bg-[#0a0a0c] relative overflow-y-auto overflow-x-hidden flex flex-col">
+        {/* RIGHT: Waveform area — viewport com scroll (vertical p/ canais, horizontal p/ timeline) */}
+        <div ref={waveAreaRef} className="flex-1 min-w-0 min-h-0 bg-[#0a0a0c] overflow-auto flex flex-col">
 
-          {/* Time ruler */}
-          <div className="h-7 bg-[#0e0e10] border-b border-[#1e1e20] sticky top-0 z-30 relative overflow-hidden shrink-0">
-            {[10, 20, 30, 40, 50, 60, 70, 80, 90].map(pct => (
-              <div key={pct} className="absolute bottom-0 flex flex-col items-center pointer-events-none" style={{ left: `${pct}%` }}>
-                <span className="text-[6px] font-mono text-text-muted/30 mb-0.5 -translate-x-1/2">
-                  {songDuration > 0 ? formatCueTime(songDuration * pct / 100) : ''}
-                </span>
-                <div className="w-px h-2 bg-white/8" />
+          {/* Conteúdo com largura real da timeline (duração × px/s) — nunca comprime, rola de lado se passar da tela */}
+          <div ref={timelineContentRef} className="relative flex flex-col" style={{ width: songDuration > 0 ? Math.max(songDuration * WAVEFORM_PX_PER_SECOND, 100) : '100%', minWidth: '100%' }}>
+
+            {/* Time ruler */}
+            <div className="h-7 bg-[#0e0e10] border-b border-[#1e1e20] sticky top-0 z-30 relative overflow-hidden shrink-0">
+              {[10, 20, 30, 40, 50, 60, 70, 80, 90].map(pct => (
+                <div key={pct} className="absolute bottom-0 flex flex-col items-center pointer-events-none" style={{ left: `${pct}%` }}>
+                  <span className="text-[6px] font-mono text-text-muted/30 mb-0.5 -translate-x-1/2">
+                    {songDuration > 0 ? formatCueTime(songDuration * pct / 100) : ''}
+                  </span>
+                  <div className="w-px h-2 bg-white/8" />
+                </div>
+              ))}
+              {/* Playhead on ruler */}
+              <div className="absolute top-0 bottom-0 w-px bg-primary/50 pointer-events-none z-10" style={{ left: `${progressPlayback}%` }} />
+            </div>
+
+            {/* Playhead over waveforms */}
+            <div className="absolute top-7 bottom-0 w-px bg-white/80 z-20 pointer-events-none shadow-[0_0_6px_rgba(255,255,255,0.6)]"
+              style={{ left: `${progressPlayback}%` }}>
+              <div className="absolute -top-1.5 -translate-x-1/2 w-0 h-0 border-l-[4px] border-r-[4px] border-t-[6px] border-transparent border-t-white" />
+            </div>
+
+            {/* Voice Cue Markers — arrastáveis */}
+            {songDuration > 0 && voiceCues.map(cue => (
+              <div key={`marker-${cue.id}`}
+                className="absolute top-7 bottom-0 z-20 cursor-ew-resize group/cue touch-none"
+                style={{ left: `${(cue.time / songDuration) * 100}%` }}
+                onPointerDown={(e) => handleCuePointerDown(e, cue.id)}
+                onPointerMove={handleCuePointerMove}
+                onPointerUp={(e) => handleCuePointerUp(e, cue)}
+                title={`${cue.label} · ${formatCueTime(cue.time)} — arraste para mover`}
+              >
+                <div className="w-px h-full bg-yellow-400/40 group-hover/cue:bg-yellow-400 transition-colors" />
+                <div className="absolute top-0 left-0.5 bg-yellow-400 text-black text-[6px] font-black px-1 py-0.5 rounded-[3px] whitespace-nowrap leading-tight shadow-sm group-hover/cue:bg-yellow-300 transition-colors select-none">
+                  {cue.label}
+                </div>
               </div>
             ))}
-            {/* Playhead on ruler */}
-            <div className="absolute top-0 bottom-0 w-px bg-primary/50 pointer-events-none z-10" style={{ left: `${progressPlayback}%` }} />
-          </div>
 
-          {/* Playhead over waveforms */}
-          <div className="absolute top-7 bottom-0 w-px bg-white/80 z-20 pointer-events-none shadow-[0_0_6px_rgba(255,255,255,0.6)]"
-            style={{ left: `${progressPlayback}%` }}>
-            <div className="absolute -top-1.5 -translate-x-1/2 w-0 h-0 border-l-[4px] border-r-[4px] border-t-[6px] border-transparent border-t-white" />
-          </div>
-
-          {/* Voice Cue Markers — arrastáveis */}
-          {songDuration > 0 && voiceCues.map(cue => (
-            <div key={`marker-${cue.id}`}
-              className="absolute top-7 bottom-0 z-20 cursor-ew-resize group/cue touch-none"
-              style={{ left: `${(cue.time / songDuration) * 100}%` }}
-              onPointerDown={(e) => handleCuePointerDown(e, cue.id)}
-              onPointerMove={handleCuePointerMove}
-              onPointerUp={(e) => handleCuePointerUp(e, cue)}
-              title={`${cue.label} · ${formatCueTime(cue.time)} — arraste para mover`}
-            >
-              <div className="w-px h-full bg-yellow-400/40 group-hover/cue:bg-yellow-400 transition-colors" />
-              <div className="absolute top-0 left-0.5 bg-yellow-400 text-black text-[6px] font-black px-1 py-0.5 rounded-[3px] whitespace-nowrap leading-tight shadow-sm group-hover/cue:bg-yellow-300 transition-colors select-none">
-                {cue.label}
+            {stems.map((stem) => (
+              <div key={`wavewrap-${stem.id}`} className="border-b border-black/30 relative shrink-0"
+                style={{ height: laneHeight, background: `linear-gradient(180deg, ${stem.color}40 0%, ${stem.color}1f 100%)` }}>
+                <div className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: stem.color }} />
+                <div id={`waveform-${stem.id}`} className="absolute w-full top-0 h-full" />
               </div>
-            </div>
-          ))}
-
-          {stems.map((stem) => (
-            <div key={`wavewrap-${stem.id}`} className="border-b border-black/30 relative shrink-0"
-              style={{ height: laneHeight, background: `linear-gradient(180deg, ${stem.color}40 0%, ${stem.color}1f 100%)` }}>
-              <div className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: stem.color }} />
-              <div id={`waveform-${stem.id}`} className="absolute w-full top-0 h-full" />
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
 

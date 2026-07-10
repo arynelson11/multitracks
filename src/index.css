@@ -70,6 +70,13 @@
 }
 
 @layer base {
+  html, body {
+    /* Trava o viewport em mobile: qualquer descendente mais largo que a tela
+       (ex: mixer com painel de waveform) não deve abrir scroll horizontal na página. */
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
   body {
     @apply bg-background text-text-main antialiased;
     font-family: var(--font-sans);
