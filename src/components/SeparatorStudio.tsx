@@ -1529,7 +1529,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         <div className="min-h-20 flex flex-wrap items-center justify-center md:justify-between px-2 md:px-4 py-2 md:py-0 gap-x-2 gap-y-2 md:gap-5">
 
           {/* Esquerda: BPM · TOM (encostados no centro) */}
-          <div className="flex-none md:flex-1 flex items-center justify-center md:justify-end gap-2.5 min-w-0">
+          <div className="flex-none md:flex-auto flex items-center justify-center md:justify-end gap-2.5 min-w-0">
             <button onClick={() => setShowBpmModal(true)}
               className="transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md cursor-pointer">
               <span className="text-[7px] text-white/70 uppercase tracking-widest font-bold font-mono">BPM</span>
@@ -1588,7 +1588,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
           </div>
 
           {/* Direita: VOZ · SYNC · MASTER (encostados no centro) */}
-          <div className="flex-none md:flex-1 flex items-center justify-center md:justify-start gap-2.5 min-w-0">
+          <div className="flex-none md:flex-auto flex items-center justify-center md:justify-start gap-2.5 min-w-0">
             {stems.length > 0 && (
               <button onClick={() => canVoiceGuide ? setShowVoiceGuide(true) : setIsPricingOpen(true)}
                 title={canVoiceGuide ? 'Voz guia' : 'Voz guia disponível nos planos pagos'}
