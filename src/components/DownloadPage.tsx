@@ -77,7 +77,7 @@ export function DownloadPage() {
         {/* Dica de qual Mac */}
         {isMac && (
           <p className="text-center text-zinc-500 text-xs max-w-2xl mx-auto mb-4">
-            Não sabe qual Mac você tem? Menu <strong className="text-zinc-300"></strong> → <strong className="text-zinc-300">Sobre Este Mac</strong>.
+            Não sabe qual Mac você tem? <strong className="text-zinc-300">Menu </strong> → <strong className="text-zinc-300">Sobre Este Mac</strong>.
             Se aparecer <strong className="text-zinc-300">Apple M1/M2/M3</strong>, use Apple Silicon. Se aparecer <strong className="text-zinc-300">Intel</strong>, use a versão Intel.
           </p>
         )}
@@ -87,8 +87,23 @@ export function DownloadPage() {
           <div className="max-w-2xl mx-auto mb-6 bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-zinc-300">
             <p className="font-bold text-white mb-1 flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-orange-400" /> Primeira vez abrindo</p>
             {showHelp === 'mac' ? (
-              <p>O app ainda não tem assinatura da Apple, então o Mac pode bloquear o duplo clique.
-                Clique com o <strong>botão direito no app</strong> e escolha <strong>Abrir</strong>. Só na primeira vez.</p>
+              <div className="space-y-3">
+                <p>O app ainda não tem certificado pago da Apple, então o Mac pode bloquear a primeira abertura.
+                  Tente nesta ordem, só precisa fazer uma vez:</p>
+                <ol className="list-decimal list-inside space-y-1.5 text-zinc-300">
+                  <li>Clique com o <strong>botão direito no app</strong> (não duplo clique) e escolha <strong>Abrir</strong>.</li>
+                  <li>Se não aparecer essa opção, vá em <strong>Menu  → Ajustes do Sistema → Privacidade e Segurança</strong>, role até o aviso sobre o Playback Studio e clique em <strong>Abrir Mesmo Assim</strong>.</li>
+                </ol>
+                <p>Se mesmo assim aparecer <strong>"o app está danificado"</strong>, isso é só o Gatekeeper sendo mais rígido no Apple Silicon, o app não está corrompido. Resolve assim:</p>
+                <ol className="list-decimal list-inside space-y-1.5 text-zinc-300">
+                  <li>Abra o <strong>Terminal</strong> (Spotlight <kbd className="px-1 py-0.5 rounded bg-white/10 text-[11px]">⌘Espaço</kbd> → digite "Terminal").</li>
+                  <li>Cole o comando abaixo e aperte Enter:</li>
+                </ol>
+                <code className="block bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-orange-300 overflow-x-auto select-all">
+                  xattr -cr "/Applications/Playback Studio.app"
+                </code>
+                <p className="text-zinc-500 text-[13px]">Depois disso o app abre normal, sempre, sem precisar repetir.</p>
+              </div>
             ) : (
               <p>O Windows pode mostrar um aviso do SmartScreen (app sem certificado ainda).
                 Clique em <strong>Mais informações</strong> e depois <strong>Executar assim mesmo</strong>. Só na primeira vez.</p>

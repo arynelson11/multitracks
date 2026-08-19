@@ -30,8 +30,14 @@ mac:
         - arm64
   # Nome fixo por arquitetura pra os links do GitHub Releases serem estáveis.
   artifactName: Playback-Studio-mac-${arch}.${ext}
-  # Fase 0: sem assinatura de código. Assinar antes de liberar pros usuários.
-  identity: null
+  # Fase 0: sem certificado Developer ID (pago) nem notarização.
+  # Assinatura ad-hoc (grátis) evita o erro "app está danificado" no Apple Silicon,
+  # trocando por "desenvolvedor não identificado" (contornável sem terminal em boa
+  # parte dos casos). hardenedRuntime false porque sem notarização ele não ajuda em
+  # nada e pode travar o app sem os entitlements certos. Assinar com Developer ID
+  # de verdade quando o orçamento permitir.
+  identity: "-"
+  hardenedRuntime: false
 win:
   icon: build/icon.png
   target:
