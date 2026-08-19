@@ -87,26 +87,46 @@ export function DownloadPage() {
           <div className="max-w-2xl mx-auto mb-6 bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-zinc-300">
             <p className="font-bold text-white mb-1 flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-orange-400" /> Primeira vez abrindo</p>
             {showHelp === 'mac' ? (
-              <div className="space-y-3">
-                <p>O app ainda não tem certificado pago da Apple, então o Mac pode bloquear a primeira abertura.
-                  Tente nesta ordem, só precisa fazer uma vez:</p>
-                <ol className="list-decimal list-inside space-y-1.5 text-zinc-300">
-                  <li>Clique com o <strong>botão direito no app</strong> (não duplo clique) e escolha <strong>Abrir</strong>.</li>
-                  <li>Se não aparecer essa opção, vá em <strong>Menu  → Ajustes do Sistema → Privacidade e Segurança</strong>, role até o aviso sobre o Playback Studio e clique em <strong>Abrir Mesmo Assim</strong>.</li>
-                </ol>
-                <p>Se mesmo assim aparecer <strong>"o app está danificado"</strong>, isso é só o Gatekeeper sendo mais rígido no Apple Silicon, o app não está corrompido. Resolve assim:</p>
-                <ol className="list-decimal list-inside space-y-1.5 text-zinc-300">
-                  <li>Abra o <strong>Terminal</strong> (Spotlight <kbd className="px-1 py-0.5 rounded bg-white/10 text-[11px]">⌘Espaço</kbd> → digite "Terminal").</li>
-                  <li>Cole o comando abaixo e aperte Enter:</li>
-                </ol>
-                <code className="block bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-orange-300 overflow-x-auto select-all">
-                  xattr -cr "/Applications/Playback Studio.app"
-                </code>
-                <p className="text-zinc-500 text-[13px]">Depois disso o app abre normal, sempre, sem precisar repetir.</p>
+              <div className="space-y-4">
+                <p className="text-zinc-400">O app ainda não tem certificado pago da Apple (custa caro e estamos começando), então na primeira vez o Mac avisa antes de abrir. <strong className="text-zinc-200">Isso é normal, o app não tem vírus nem nada de errado.</strong> Segue os passos na ordem, geralmente resolve já no passo 2.</p>
+
+                <div>
+                  <p className="font-semibold text-white mb-1">1. Depois de baixar o arquivo</p>
+                  <p>Abra o arquivo <strong>.dmg</strong> que baixou (fica na pasta <strong>Downloads</strong>). Vai abrir uma janela: arraste o ícone do <strong>Playback Studio</strong> para cima do ícone da pasta <strong>Applications</strong> ao lado. Pronto, o app já está instalado.</p>
+                </div>
+
+                <div>
+                  <p className="font-semibold text-white mb-1">2. Primeira abertura (o pulo do gato)</p>
+                  <p>Abra o <strong>Finder</strong> e vá em <strong>Applications</strong> (Aplicativos). Ache o <strong>Playback Studio</strong>. <strong className="text-zinc-200">Não dê duplo clique.</strong> Clique com o <strong>botão direito do mouse</strong> em cima do ícone (no trackpad, clique com dois dedos) e escolha <strong>Abrir</strong> no menu que aparecer. Vai surgir um aviso da Apple perguntando se quer mesmo abrir: clique em <strong>Abrir</strong> de novo. Só precisa fazer isso uma vez, da próxima vez pode dar duplo clique normal.</p>
+                </div>
+
+                <div>
+                  <p className="font-semibold text-white mb-1">3. Se o menu não tiver a opção "Abrir"</p>
+                  <p>Clique no <strong>menu Apple</strong> (o logo da maçã, no canto superior esquerdo da tela) e escolha <strong>Ajustes do Sistema</strong> (em Macs mais antigos chama <strong>Preferências do Sistema</strong>). No menu da esquerda, clique em <strong>Privacidade e Segurança</strong>. Role a página até o final: vai ter uma mensagem parecida com <strong>"Playback Studio" foi bloqueado para proteger o Mac</strong>, com um botão <strong>Abrir Mesmo Assim</strong> do lado. Clique nele, digite a senha do seu Mac se pedir, tente abrir o app de novo e confirme uma última vez.</p>
+                </div>
+
+                <div>
+                  <p className="font-semibold text-white mb-1">4. Se aparecer a mensagem "o app está danificado"</p>
+                  <p className="mb-1.5">Esse aviso específico não tem botão para liberar direto na tela, mas o app <strong className="text-zinc-200">não está corrompido</strong>: é só o macOS sendo mais rígido em Mac com chip Apple Silicon (M1, M2, M3). Resolve assim, uma vez só:</p>
+                  <ol className="list-decimal list-inside space-y-1.5 text-zinc-300">
+                    <li>Abra o app <strong>Terminal</strong> (aperte <kbd className="px-1 py-0.5 rounded bg-white/10 text-[11px]">⌘ Espaço</kbd>, digite <strong>Terminal</strong> e aperte Enter).</li>
+                    <li>Copie o comando abaixo (clique nele pra selecionar tudo), cole no Terminal e aperte Enter.</li>
+                  </ol>
+                  <code className="block bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-orange-300 overflow-x-auto select-all my-2">
+                    xattr -cr "/Applications/Playback Studio.app"
+                  </code>
+                  <p className="text-zinc-500 text-[13px]">Se pedir a senha do seu Mac, digite ela e aperte Enter (é normal a tela não mostrar nenhuma letra enquanto você digita a senha, é assim mesmo no Terminal). Depois disso, abra o Playback Studio normalmente pela pasta Applications: ele nunca mais vai pedir isso de novo.</p>
+                </div>
               </div>
             ) : (
-              <p>O Windows pode mostrar um aviso do SmartScreen (app sem certificado ainda).
-                Clique em <strong>Mais informações</strong> e depois <strong>Executar assim mesmo</strong>. Só na primeira vez.</p>
+              <div className="space-y-2">
+                <p>O Windows pode mostrar uma tela azul do <strong>Windows Defender SmartScreen</strong> dizendo que protegeu o PC (o app ainda não tem certificado pago). É normal, não tem vírus.</p>
+                <ol className="list-decimal list-inside space-y-1.5 text-zinc-300">
+                  <li>Nessa tela, clique no linkzinho <strong>Mais informações</strong>.</li>
+                  <li>Vai aparecer um botão novo, <strong>Executar assim mesmo</strong>. Clique nele.</li>
+                </ol>
+                <p className="text-zinc-500 text-[13px]">Só precisa fazer isso na primeira vez que instalar. Depois é só seguir o instalador normal.</p>
+              </div>
             )}
           </div>
         )}
