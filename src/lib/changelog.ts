@@ -11,6 +11,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.10',
+    date: '2026-11-09',
+    title: 'Click do separador no tempo da música',
+    items: [
+      'O click agora nasce alinhado à bateria: o app mede o BPM exato e onde cai o primeiro tempo, e o click acompanha do começo ao fim da música sem escorregar.',
+      'Todas as faixas do separador tocam juntas na mesma batida, inclusive depois de pular pra outro trecho ou repetir em loop.',
+      'Novo botão "Detectar BPM da música" e opção "Mover o 1" pra acertar o tempo forte do compasso. O ajuste fino SYNC (±10 ms) voltou a funcionar.',
+      'Corrigido o erro ao enviar música pelo iPad e iPhone ("Invalid contentType").',
+    ],
+  },
+  {
     version: '1.4.7',
     date: '2026-07-09',
     title: 'Separador de faixas ajustado pro celular e tablet',

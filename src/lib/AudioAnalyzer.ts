@@ -593,13 +593,23 @@ export async function generateManualClickTrack(
 import type { ClickTrackType, ClickSubdivision } from './clickLibrary';
 import { getClickSampleUrl, CLICK_SUBDIVISIONS } from './clickLibrary';
 
+/** Onde a grade do click cai na música (vem de detectBeatGrid em lib/beatGrid). */
+export interface ClickGridAlignment {
+  /** Segundos do primeiro tempo (pode ser negativo/maior que um tempo: é normalizado). */
+  firstBeat: number;
+  /** Qual tempo, a partir de firstBeat, é o "1" do compasso. */
+  downbeat: number;
+}
+
 export async function generateManualClickTrackFromSample(
   type: ClickTrackType,
   subdivision: ClickSubdivision,
   bpm: number,
   durationInSeconds: number,
   accentBeat1: boolean,
-  timeSignature: TimeSignatureType
+  timeSignature: TimeSignatureType,
+  // Sem grade, o 1º click fica em 0:00 (comportamento antigo, usado no click "solto").
+  grid?: ClickGridAlignment
 ): Promise<{ clickTrackUrl: string }> {
   const sampleRate = 44100;
   const sampleUrl = getClickSampleUrl(type, subdivision);
@@ -626,14 +636,22 @@ export async function generateManualClickTrackFromSample(
   const totalSamples = Math.ceil(sampleRate * Math.max(1, durationInSeconds));
   const output = new Float32Array(totalSamples);
 
-  let tick = 0;
+  // Cada click é posicionado pelo tempo ABSOLUTO (âncora + n × período), nunca
+  // somando intervalos: zero erro acumulado ao longo da música. Ticks antes da
+  // âncora (n negativo) também entram, desde que caiam em t >= 0.
+  const anchor = grid?.firstBeat ?? 0;
+  const downbeat = grid?.downbeat ?? 0;
+  const mod = (a: number, m: number) => ((a % m) + m) % m;
+  let tick = Math.ceil(-anchor / secondsPerTick - 1e-9);
   while (true) {
-    const tickStart = Math.round(tick * secondsPerTick * sampleRate);
+    const t = anchor + tick * secondsPerTick;
+    const tickStart = Math.round(t * sampleRate);
     if (tickStart >= totalSamples) break;
+    if (tickStart < 0) { tick++; continue; }
 
     const beatIndex = Math.floor(tick / subBeats);
-    const subIndex = tick % subBeats;
-    const isDownbeat = accentBeat1 && (beatIndex % beatsPerMeasure === 0) && subIndex === 0;
+    const subIndex = mod(tick, subBeats);
+    const isDownbeat = accentBeat1 && mod(beatIndex - downbeat, beatsPerMeasure) === 0 && subIndex === 0;
     const vol = isDownbeat ? 1.0 : subIndex === 0 ? 0.65 : 0.45;
 
     const copyLen = Math.min(sampleLen, totalSamples - tickStart);

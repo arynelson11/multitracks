@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Loader2, X, CheckCircle, Minus, Plus, Wand2 } from 'lucide-react';
 import { analyzeBufferAndGenerateClick, generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
+import { detectBeatGrid, formatBpm } from '../lib/beatGrid';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
 import type { ClickTrackType, ClickSubdivision } from '../lib/clickLibrary';
 import type { Channel } from '../types';
 
 export type TimeSignature = '3/4' | '4/4' | '5/4' | '6/8' | '7/8' | '12/8';
+
+const BEATS_PER_BAR: Record<TimeSignature, number> = { '3/4': 3, '4/4': 4, '5/4': 5, '6/8': 6, '7/8': 7, '12/8': 12 };
 
 interface MetronomeModalProps {
   isOpen: boolean;
@@ -172,10 +175,21 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
     setStatusMsg(`Analisando faixa "${targetChannel.name}"...`);
 
     try {
-      const { bpm: detected, clickTrackUrl } = await analyzeBufferAndGenerateClick(
-        targetChannel.buffer,
-        setStatusMsg
-      );
+      // Mede BPM exato + onde cai o 1º tempo (antes o click "IA" começava em 0:00
+      // com BPM inteiro e saía fora da música, igual ao bug do Separador).
+      const buf = targetChannel.buffer;
+      const channelsData: Float32Array[] = [];
+      for (let c = 0; c < buf.numberOfChannels; c++) channelsData.push(buf.getChannelData(c));
+      await new Promise(r => setTimeout(r, 30)); // deixa a mensagem pintar antes do cálculo
+      const grid = detectBeatGrid(channelsData, buf.sampleRate, { beatsPerBar: BEATS_PER_BAR[timeSignature] ?? 4 });
+      const detected = Math.round(grid.bpm);
+      setStatusMsg(`BPM ${formatBpm(grid.bpm)} detectado. Gerando click alinhado...`);
+      const { clickTrackUrl } = grid.confidence >= 0.1
+        ? await generateManualClickTrackFromSample(
+            clickSel.type, clickSel.subdivision, grid.bpm, buf.duration, accentBeat1, timeSignature,
+            { firstBeat: grid.firstBeat, downbeat: grid.downbeat }
+          )
+        : await analyzeBufferAndGenerateClick(buf, setStatusMsg);
 
       setDetectedBpm(detected);
 

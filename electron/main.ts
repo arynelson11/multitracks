@@ -80,8 +80,10 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => mainWindow!.show())
 
   // Links externos abrem no navegador do sistema, não dentro da janela do app.
+  // Só http(s): um link com file://, smb:// ou protocolo de outro app não pode ser
+  // repassado pro sistema operacional abrir (mesma regra do IPC 'open-external-url').
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url)
     return { action: 'deny' }
   })
 

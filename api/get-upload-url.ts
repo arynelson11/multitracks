@@ -45,6 +45,11 @@ export default async function handler(req: any, res: any) {
         return res.status(400).json({ error: 'Invalid bucketFolder' });
     }
     if (!ALLOWED_CONTENT_TYPES.test(ct)) {
+        // Loga o tipo recusado (sem dado pessoal) pra diagnosticar casos como o do
+        // iPad em 2026-11-09, em que um MP3 chegou com um tipo fora de audio/* e o
+        // log da Vercel não mostrava qual era. A extensão ajuda a ver o padrão.
+        const ext = String(filename).split('.').pop()?.slice(0, 10) ?? '';
+        console.warn('[get-upload-url] contentType recusado:', JSON.stringify(ct.slice(0, 100)), 'ext:', ext);
         return res.status(400).json({ error: 'Invalid contentType' });
     }
 

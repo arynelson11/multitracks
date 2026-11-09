@@ -421,6 +421,19 @@ export function useAudioEngine(userId?: string) {
         }
 
         const anySoloed = channels.some(c => c.soloed);
+
+        // Prepara ANTES os nós de tom que faltam (é assíncrono). Antes o await ficava
+        // dentro do laço de start(): na 1ª vez tocando transposto, cada faixa começava
+        // depois da anterior (dezenas de ms) e o click saía fora do resto da banda.
+        // Agora todos os start() rodam no mesmo tick, então começam juntos.
+        if (currentPitchRef.current !== 0) {
+            for (const ch of channels) {
+                if (!ch.pitchShiftNode && !isClickOrGuideName(ch.name)) {
+                    ch.pitchShiftNode = await setupPitchNode(ctx, ch.pannerNode);
+                }
+            }
+        }
+
         for (const ch of channels) {
             const source = ctx.createBufferSource();
             source.buffer = ch.buffer;
@@ -447,9 +460,6 @@ export function useAudioEngine(userId?: string) {
             source.playbackRate.value = 1.0;
             const wantPitch = currentPitchRef.current !== 0 && !isClickOrGuideName(ch.name);
             if (wantPitch) {
-                if (!ch.pitchShiftNode) {
-                    ch.pitchShiftNode = await setupPitchNode(ctx, ch.pannerNode);
-                }
                 if (ch.pitchShiftNode) {
                     applyPitchToChannel(ch, currentPitchRef.current);
                     source.connect(ch.pitchShiftNode);

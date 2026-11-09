@@ -1,9 +1,11 @@
 import { getAuthHeaders } from './supabase';
 import { apiUrl } from './api';
+import { resolveUploadContentType } from './uploadContentType';
 
 export const uploadToR2 = async (bucketFolder: string, fileName: string, file: File) => {
     try {
-        const type = file.type || 'application/octet-stream';
+        // Normaliza o tipo (iPad manda video/mp4, maiúsculas etc.) pra um que o servidor aceita.
+        const type = resolveUploadContentType(file);
         const res = await fetch(
             apiUrl(`/api/get-upload-url?filename=${encodeURIComponent(fileName)}&contentType=${encodeURIComponent(type)}&bucketFolder=${encodeURIComponent(bucketFolder)}`),
             { headers: await getAuthHeaders() }

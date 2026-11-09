@@ -8,6 +8,8 @@ import { useAuth } from '../hooks/useAuth';
 import { canDownloadStems, canUseVoiceGuide, canUseBpmDetection, planTier, maxSeparationsPerMonth } from '../lib/plans';
 import { PricingModal } from './PricingModal';
 import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
+import { detectBeatGrid, formatBpm, type BeatGrid } from '../lib/beatGrid';
+import { SyncedTrackPlayer } from '../lib/syncedTrackPlayer';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
 import { useSeparationLibrary, type SavedSeparation } from '../hooks/useSeparationLibrary';
 import { audioBlobToMp3Blob } from '../lib/audioExport';
@@ -202,6 +204,12 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const wavesurfers = useRef<Record<string, WaveSurfer>>({});
   const panners = useRef<Record<string, StereoPannerNode>>({});
   const gainNodes = useRef<Record<string, GainNode>>({});
+  // Um player Web Audio por faixa, todos no mesmo AudioContext (sincronia por amostra).
+  const players = useRef<Record<string, SyncedTrackPlayer>>({});
+  // URL carregada em cada faixa: o efeito das ondas só recria a faixa que mudou.
+  const trackUrls = useRef<Record<string, string>>({});
+  // Faixa de referência do transporte (a primeira): tempo, fim da música, loop.
+  const masterIdRef = useRef<string | null>(null);
   const [masterVolume, setMasterVolume] = useState(0.8);
   const [progressPlayback, setProgressPlayback] = useState(0);
   // Altura de cada faixa: preenche o espaço vertical disponível conforme o nº de stems.
@@ -314,24 +322,18 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     return 'Presto';
   };
 
-  // Metronome Sync Nudge
-  const [clickOffsetMs, setClickOffsetMsState] = useState(0);
-  const offsetRef = useRef(0);
-  const setClickOffsetMs = (val: number | ((v: number) => number)) => {
-     setClickOffsetMsState(prev => {
-        const next = typeof val === 'function' ? val(prev) : val;
-        offsetRef.current = next;
-        
-        // Apply immediately
-        const clickWs = wavesurfers.current['click'];
-        const masterWs = wavesurfers.current[stems.find(s => s.id !== 'click')?.id || ''];
-        if (clickWs && masterWs) {
-           const masterTime = masterWs.getCurrentTime();
-           clickWs.setTime(Math.max(0, masterTime - (next / 1000)));
-        }
-        return next;
-     });
-  };
+  // ── Click sincronizado ──
+  // Ajuste fino (ms) que vai GRAVADO no arquivo do click na hora de gerar
+  // (positivo = click mais tarde). Antes o SYNC tentava deslocar o <audio> do
+  // click na reprodução, mas procurava a faixa 'click' (o id é 'metronome'):
+  // nunca fazia nada, e ainda se perdia no loop e no começo da música.
+  const [clickOffsetMs, setClickOffsetMs] = useState(0);
+  // "Mover o 1": quantos tempos deslocar o acento caso a detecção erre o tempo forte.
+  const [downbeatShift, setDownbeatShift] = useState(0);
+  const [isDetectingBpm, setIsDetectingBpm] = useState(false);
+  const [gridInfo, setGridInfo] = useState<string>('');
+  // Grade medida do áudio, reaproveitada no ajuste fino sem reanalisar.
+  const beatGridRef = useRef<{ key: string; grid: BeatGrid } | null>(null);
 
   const playGuideBuffer = useCallback(async (file: string) => {
     const ctx = getAudioContext();
@@ -659,30 +661,64 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     }
   };
 
-  // Controle de Master e Mute/Solo via GainNode (garante funcionamento no Safari)
-  useEffect(() => {
-    const hasSolo = Object.values(stemStates).some(s => s.soloed);
+  // Controle de Master e Mute/Solo via GainNode (garante funcionamento no Safari).
+  // Lê de refs pra poder ser chamado também quando uma faixa nasce (senão o click
+  // recém-gerado tocava com volume cheio até alguém mexer no mixer).
+  const stemStatesRef = useRef(stemStates);
+  const masterVolumeRef = useRef(masterVolume);
+  const applyMix = useCallback(() => {
+    const states = stemStatesRef.current;
+    const hasSolo = Object.values(states).some(s => s.soloed);
     const ctx = getAudioContext();
-
-    stems.forEach(stem => {
-      const state = stemStates[stem.id];
-      const gainNode = gainNodes.current[stem.id];
-      const panner = panners.current[stem.id];
-
-      if (gainNode && state) {
-        let finalVol = state.volume * masterVolume;
-        if (state.muted) finalVol = 0;
-        else if (hasSolo && !state.soloed) finalVol = 0;
-
-        gainNode.gain.cancelScheduledValues(ctx.currentTime);
-        gainNode.gain.setValueAtTime(finalVol, ctx.currentTime);
-      }
-
-      if (panner && state) {
-        panner.pan.value = state.pan;
-      }
+    Object.keys(gainNodes.current).forEach(id => {
+      const state = states[id];
+      const gainNode = gainNodes.current[id];
+      const panner = panners.current[id];
+      if (!state || !gainNode) return;
+      let finalVol = state.volume * masterVolumeRef.current;
+      if (state.muted) finalVol = 0;
+      else if (hasSolo && !state.soloed) finalVol = 0;
+      gainNode.gain.cancelScheduledValues(ctx.currentTime);
+      gainNode.gain.setValueAtTime(finalVol, ctx.currentTime);
+      if (panner) panner.pan.value = state.pan;
     });
-  }, [stemStates, masterVolume, stems]);
+  }, []);
+  useEffect(() => {
+    stemStatesRef.current = stemStates;
+    masterVolumeRef.current = masterVolume;
+    applyMix();
+  }, [stemStates, masterVolume, stems, applyMix]);
+
+  // ── Transporte: todas as faixas no mesmo relógio ──
+  const getMasterWs = useCallback((): WaveSurfer | undefined => {
+    const id = masterIdRef.current;
+    return (id && wavesurfers.current[id]) || Object.values(wavesurfers.current)[0];
+  }, []);
+
+  const playAll = useCallback(async () => {
+    const ctx = getAudioContext();
+    // iOS/Safari: precisa ESPERAR o resume antes de agendar, senão as faixas são
+    // agendadas com o relógio parado e saem mudas.
+    if (ctx.state !== 'running') {
+      try { await ctx.resume(); } catch (e) { console.error('Falha ao retomar o áudio', e); }
+    }
+    const all = Object.values(wavesurfers.current);
+    const t = getMasterWs()?.getCurrentTime() ?? 0;
+    // Mesmo tick de JS → mesmo instante de início em todas (ver SyncedTrackPlayer).
+    all.forEach(ws => ws.setTime(t));
+    all.forEach(ws => { void ws.play(); });
+    setIsPlaying(true);
+  }, [getMasterWs]);
+
+  const pauseAll = useCallback(() => {
+    Object.values(wavesurfers.current).forEach(ws => ws.pause());
+    setIsPlaying(false);
+  }, []);
+
+  const seekAll = useCallback((time: number) => {
+    const t = Math.max(0, time);
+    Object.values(wavesurfers.current).forEach(ws => ws.setTime(t));
+  }, []);
 
   // Sincroniza voiceCuesRef com state preservando fired
   useEffect(() => {
@@ -735,7 +771,17 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     setFile(null);
     setActiveSepId(null);
     setSeparationStep('upload');
+    resetClickSync();
   };
+
+  // Grade e ajuste fino são da música aberta: zera ao trocar de separação.
+  function resetClickSync() {
+    beatGridRef.current = null;
+    autoDetectedForRef.current = null;
+    setClickOffsetMs(0);
+    setDownbeatShift(0);
+    setGridInfo('');
+  }
 
   // Salvar manual (botão) — força a gravação e mostra confirmação ao usuário.
   const forceSave = async () => {
@@ -761,7 +807,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       return;
     }
     const runScheduler = () => {
-      const firstWs = Object.values(wavesurfers.current)[0];
+      const firstWs = getMasterWs();
       if (firstWs && isPlayingRef.current) {
         const t = firstWs.getCurrentTime();
         voiceCuesRef.current.forEach(cue => {
@@ -775,7 +821,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     };
     cueRafRef.current = requestAnimationFrame(runScheduler);
     return () => { if (cueRafRef.current !== null) { cancelAnimationFrame(cueRafRef.current); cueRafRef.current = null; } };
-  }, [isPlaying, playGuideBuffer]);
+  }, [isPlaying, playGuideBuffer, getMasterWs]);
 
   // Spacebar play/stop
   useEffect(() => {
@@ -783,14 +829,12 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       if (e.code !== 'Space') return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       e.preventDefault();
-      if (getAudioContext().state === 'suspended') getAudioContext().resume();
-      const action = isPlayingRef.current ? 'pause' : 'play';
-      Object.values(wavesurfers.current).forEach(ws => ws[action]());
-      setIsPlaying(p => !p);
+      if (isPlayingRef.current) pauseAll();
+      else void playAll();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [playAll, pauseAll]);
 
   // Handle Drag & Drop e Upload
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement> | React.DragEvent) => {
@@ -964,9 +1008,29 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     }
   };
 
-  // Desenhando UI das formas de onda
+  // Solta uma faixa: para o som, desliga do mixer e libera o áudio decodificado.
+  const destroyTrack = useCallback((id: string) => {
+    try { wavesurfers.current[id]?.destroy(); } catch { /* já destruída */ }
+    players.current[id]?.release();
+    try { gainNodes.current[id]?.disconnect(); } catch { /* já desconectado */ }
+    try { panners.current[id]?.disconnect(); } catch { /* já desconectado */ }
+    delete wavesurfers.current[id];
+    delete players.current[id];
+    delete gainNodes.current[id];
+    delete panners.current[id];
+    delete trackUrls.current[id];
+  }, []);
+
+  // Desenhando as ondas + criando os players. INCREMENTAL: só mexe na faixa que
+  // entrou, saiu ou mudou de URL. Antes, gerar o click ou a voz guia destruía e
+  // baixava de novo TODAS as faixas (e a música parava).
   useEffect(() => {
-    if (stems.length === 0) return;
+    if (stems.length === 0) {
+      Object.keys(wavesurfers.current).forEach(destroyTrack);
+      masterIdRef.current = null;
+      setIsPlaying(false);
+      return;
+    }
 
     // Distribui a altura disponível (viewport menos header 144 e régua 28) entre as
     // faixas, com um piso de 100px. Assim as lanes descem e preenchem o vazio embaixo.
@@ -974,10 +1038,41 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     const lh = Math.max(100, Math.min(240, Math.floor(available / stems.length)));
     setLaneHeight(lh);
 
+    const wanted = new Map(stems.map(s => [s.id, s]));
+    Object.keys(wavesurfers.current).forEach(id => {
+      const s = wanted.get(id);
+      // Mesmo áudio que só trocou de endereço (blob: local → URL do R2 após o upload):
+      // mantém a faixa tocando em vez de baixar tudo de novo.
+      if (s && trackUrls.current[id] !== s.url && urlAliases.current.get(s.url) === trackUrls.current[id]) {
+        trackUrls.current[id] = s.url;
+        return;
+      }
+      if (!s || trackUrls.current[id] !== s.url) destroyTrack(id);
+    });
+    masterIdRef.current = stems[0].id;
+    const ctx = getAudioContext();
+
     stems.forEach((stem) => {
+      const existing = wavesurfers.current[stem.id];
+      if (existing) {
+        existing.setOptions({ height: lh });
+        return;
+      }
       const container = document.getElementById(`waveform-${stem.id}`);
       if (!container) return;
       container.innerHTML = '';
+
+      // Roteamento Web Audio: player → gain → panner → destination (mesmo contexto pra todas)
+      const player = new SyncedTrackPlayer(ctx);
+      const gainNode = ctx.createGain();
+      const panner = ctx.createStereoPanner();
+      player.output.connect(gainNode);
+      gainNode.connect(panner);
+      panner.connect(ctx.destination);
+      players.current[stem.id] = player;
+      gainNodes.current[stem.id] = gainNode;
+      panners.current[stem.id] = panner;
+      trackUrls.current[stem.id] = stem.url;
 
       const ws = WaveSurfer.create({
         container,
@@ -989,86 +1084,67 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         barRadius: 2,
         height: lh,
         normalize: true,
+        media: player as unknown as HTMLMediaElement,
         url: stem.url,
       });
 
-      // Roteamento Web Audio: source → gain → panner → destination
       ws.on('ready', () => {
-         try {
-           const media = ws.getMediaElement();
-           if (!media.dataset.routed) {
-             media.dataset.routed = "true";
-             const ctx = getAudioContext();
-             const source = ctx.createMediaElementSource(media);
-             const gainNode = ctx.createGain();
-             const panner = ctx.createStereoPanner();
-             source.connect(gainNode);
-             gainNode.connect(panner);
-             panner.connect(ctx.destination);
-             gainNodes.current[stem.id] = gainNode;
-             panners.current[stem.id] = panner;
-           }
-         } catch (e) { console.warn("Panner error", e) }
-         if (stem.id === stems[0].id) setSongDuration(ws.getDuration());
+        const isMaster = masterIdRef.current === stem.id;
+        if (isMaster) setSongDuration(ws.getDuration());
+        // Faixa que ficou pronta com a música andando (ex.: click gerado durante o
+        // play) entra alinhada à de referência, no mesmo instante do relógio.
+        const masterPlayer = masterIdRef.current ? players.current[masterIdRef.current] : undefined;
+        const ref = masterPlayer && masterPlayer !== player && masterPlayer.isLoaded ? masterPlayer : player;
+        if (isPlayingRef.current) player.joinPlayback(ref);
+        else if (ref !== player) ws.setTime(ref.currentTime);
       });
 
-      if (stem.id === stems[0].id) {
-        ws.on('audioprocess', (time) => {
-          setProgressPlayback((time / ws.getDuration()) * 100);
-        });
-        ws.on('finish', () => {
-          if (isLoopingRef.current) {
-            // Loop: rebobina todas as faixas e segue tocando, rearmando as cues.
-            voiceCuesRef.current.forEach(c => { c.fired = false; });
-            Object.values(wavesurfers.current).forEach(w => { w.setTime(0); w.play(); });
-            setProgressPlayback(0);
-          } else {
-            setIsPlaying(false);
-            setProgressPlayback(0);
-          }
-        });
-      }
+      // Tempo/fim da música vêm só da faixa de referência.
+      ws.on('timeupdate', (time) => {
+        if (masterIdRef.current !== stem.id) return;
+        const d = ws.getDuration();
+        if (d > 0) setProgressPlayback((time / d) * 100);
+      });
+      ws.on('finish', () => {
+        if (masterIdRef.current !== stem.id) return;
+        voiceCuesRef.current.forEach(c => { c.fired = false; });
+        const all = Object.values(wavesurfers.current);
+        if (isLoopingRef.current) {
+          // Loop: todas voltam pro 0 e recomeçam no mesmo instante.
+          all.forEach(w => w.setTime(0));
+          all.forEach(w => { void w.play(); });
+        } else {
+          // Para TODAS (a mais longa não segue tocando sozinha) e rebobina.
+          all.forEach(w => { w.pause(); w.setTime(0); });
+          setIsPlaying(false);
+        }
+        setProgressPlayback(0);
+      });
 
-      // Sync seeks
+      // Clique na onda: leva TODAS (inclusive esta) pro mesmo ponto no mesmo tick,
+      // então reiniciam juntas. Nada de compensação por faixa: o ajuste do click
+      // já está gravado no arquivo dele.
       ws.on('interaction', () => {
         const time = ws.getCurrentTime();
-        // Reset fired state para cues que estão após o novo ponto
         voiceCuesRef.current.forEach(cue => { cue.fired = time > cue.time + 0.3; });
-        Object.values(wavesurfers.current).forEach(otherWs => {
-          if (otherWs !== ws) {
-            let targetTime = time;
-            const offsetSec = offsetRef.current / 1000;
-            const otherContainer = otherWs.options.container;
-            const wsContainer = ws.options.container;
-            const otherId = typeof otherContainer === 'string' ? otherContainer : otherContainer.id;
-            const wsId = typeof wsContainer === 'string' ? wsContainer : wsContainer.id;
-            if (otherId === 'waveform-click' || otherId === 'waveform-metronome') targetTime -= offsetSec;
-            else if (wsId === 'waveform-click' || wsId === 'waveform-metronome') targetTime += offsetSec;
-            otherWs.setTime(Math.max(0, targetTime));
-          }
-        });
+        seekAll(time);
       });
 
       wavesurfers.current[stem.id] = ws;
     });
 
-    return () => {
-      Object.values(wavesurfers.current).forEach(ws => ws.destroy());
-      wavesurfers.current = {};
-      panners.current = {};
-      gainNodes.current = {};
-    };
-  }, [stems]);
+    applyMix();
+  }, [stems, destroyTrack, applyMix, seekAll]);
+
+  // Fechou o estúdio: para tudo e solta o áudio da memória.
+  useEffect(() => () => {
+    Object.keys(wavesurfers.current).forEach(destroyTrack);
+  }, [destroyTrack]);
 
   // Controles
   const togglePlay = () => {
-    // Retomar contexto de áudio suspendido pelo navegador
-    if (getAudioContext().state === 'suspended') {
-       getAudioContext().resume();
-    }
-    const action = isPlaying ? 'pause' : 'play';
-    Object.values(wavesurfers.current).forEach(ws => ws[action]());
-    setIsPlaying(!isPlaying);
+    if (isPlaying) pauseAll();
+    else void playAll();
   };
 
   const handleSaveToDatabase = async () => {
@@ -1194,44 +1270,150 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     }
   };
 
-  const addMetronomeChannel = async () => {
-    const bpmNum = parseInt(bpm) || 120;
+  // ── Click sincronizado com a música ──
+  const BEATS_PER_BAR: Record<typeof timeSignature, number> = { '3/4': 3, '4/4': 4, '5/4': 5, '6/8': 6, '7/8': 7, '12/8': 12 };
+
+  // Faixa usada pra medir a grade: bateria é a referência; sem ela, instrumental/baixo.
+  const pickGridSource = (): StemData | undefined => {
+    const notGenerated = (s: StemData) => !['metronome', 'click', 'voiceguide', 'vocals'].includes(s.id);
+    return stems.find(s => s.id === 'drums')
+      || stems.find(s => /bateria|drum/i.test(s.name))
+      || stems.find(s => s.id === 'no_vocals')
+      || stems.find(s => s.id === 'bass')
+      || stems.find(notGenerated);
+  };
+
+  // Mede BPM exato + 1º tempo no áudio decodificado (o mesmo que está tocando,
+  // então a grade fica na mesma linha do tempo do player). Cacheado por faixa/BPM.
+  const analyzeGrid = async (nearBpm: number | undefined, beatsPerBar: number): Promise<{ grid: BeatGrid; source: StemData } | null> => {
+    const source = pickGridSource();
+    if (!source) return null;
+    const key = `${source.url}|${nearBpm ?? 'auto'}|${beatsPerBar}`;
+    if (beatGridRef.current?.key === key) return { grid: beatGridRef.current.grid, source };
+
+    let channels: Float32Array[] = [];
+    let sampleRate = 0;
+    const player = players.current[source.id];
+    if (player?.isLoaded) {
+      channels = player.getChannelData();
+      sampleRate = player.sampleRate;
+    } else {
+      const buf = await getAudioContext().decodeAudioData(await (await fetch(source.url)).arrayBuffer());
+      for (let c = 0; c < buf.numberOfChannels; c++) channels.push(buf.getChannelData(c));
+      sampleRate = buf.sampleRate;
+    }
+    // Deixa o spinner pintar antes do cálculo (roda na thread principal, ~0,2-1 s).
+    await new Promise(r => setTimeout(r, 30));
+    const grid = detectBeatGrid(channels, sampleRate, { nearBpm, beatsPerBar });
+    beatGridRef.current = { key, grid };
+    return { grid, source };
+  };
+
+  const detectBpmFromAudio = async () => {
+    if (!canBpm) { setIsPricingOpen(true); return; }
+    setIsDetectingBpm(true);
+    setGridInfo('');
+    try {
+      const res = await analyzeGrid(undefined, BEATS_PER_BAR[timeSignature]);
+      if (!res) { setGridInfo('Nenhuma faixa pra analisar.'); return; }
+      setBpm(formatBpm(res.grid.bpm));
+      setDownbeatShift(0);
+      setGridInfo(res.grid.confidence < 0.15
+        ? `Pulso pouco claro nessa música (${res.source.name}). Confira o BPM no TAP.`
+        : `${res.grid.bpm.toFixed(2)} BPM medido na faixa ${res.source.name}.`);
+    } catch (e) {
+      console.error('[Click] detecção de BPM falhou', e);
+      setGridInfo('Não deu pra analisar o áudio. Tenta de novo.');
+    } finally {
+      setIsDetectingBpm(false);
+    }
+  };
+
+  // Planos com detecção: abrir o modal com o BPM ainda no padrão (120) já mede sozinho.
+  const autoDetectedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!showBpmModal || !canBpm || stems.length === 0) return;
+    const sourceUrl = pickGridSource()?.url;
+    if (!sourceUrl || autoDetectedForRef.current === sourceUrl || bpm !== '120') return;
+    autoDetectedForRef.current = sourceUrl;
+    void detectBpmFromAudio();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showBpmModal]);
+
+  // blob: → URL do R2 do MESMO áudio: o efeito das faixas não recarrega a faixa.
+  const urlAliases = useRef<Map<string, string>>(new Map());
+
+  const addMetronomeChannel = async (offsetOverrideMs?: number) => {
+    const typed = parseFloat(bpm);
+    const bpmNum = Number.isFinite(typed) && typed >= 20 ? typed : 120;
+    const offsetMs = offsetOverrideMs ?? clickOffsetMs;
     setIsGeneratingClick(true);
     try {
-      const firstWs = Object.values(wavesurfers.current)[0];
-      const duration = (firstWs?.getDuration() > 0 ? firstWs.getDuration() : 0) || 600;
+      const beatsPerBar = BEATS_PER_BAR[timeSignature];
+      // Grade medida no áudio, refinada em volta do BPM escolhido: acha o BPM exato
+      // (ex.: 120 digitado, 119,87 real) e onde cai o 1º tempo da música.
+      let grid: BeatGrid | null = null;
+      try {
+        grid = (await analyzeGrid(bpmNum, beatsPerBar))?.grid ?? null;
+      } catch (e) {
+        console.warn('[Click] análise falhou, gerando no BPM digitado a partir de 0:00', e);
+      }
+      const aligned = !!grid && grid.confidence >= 0.1;
+      const clickBpm = aligned ? grid!.bpm : bpmNum;
+      const firstBeat = (aligned ? grid!.firstBeat : 0) + offsetMs / 1000;
+      const downbeat = (aligned ? grid!.downbeat : 0) + downbeatShift;
 
+      const master = getMasterWs();
+      const duration = (master && master.getDuration() > 0 ? master.getDuration() : 0) || songDuration || 600;
       const { clickTrackUrl } = await generateManualClickTrackFromSample(
-        clickSel.type, clickSel.subdivision, bpmNum, duration, accentBeat1, timeSignature
+        clickSel.type, clickSel.subdivision, clickBpm, duration, accentBeat1, timeSignature, { firstBeat, downbeat }
       );
       if (!clickTrackUrl) throw new Error('Falha ao gerar metrônomo');
 
-      // Sobe o click pro R2 → URL https → persiste automaticamente.
-      const resp = await fetch(clickTrackUrl);
-      const blob = await resp.blob();
-      const file = new File([blob], 'click.wav', { type: 'audio/wav' });
-      const up = await uploadToR2('stems', `${user?.id || 'anon'}/${activeSepId || 'tmp'}/click_${Date.now()}.wav`, file);
-      const url = (!up.error && up.url) ? up.url : clickTrackUrl;
-      if (url !== clickTrackUrl) URL.revokeObjectURL(clickTrackUrl);
-
-      const metroStem: StemData = {
-        id: 'metronome',
-        name: 'Metrônomo',
-        url,
-        color: '#e2e8f0'
-      };
-      setStems(prev => {
-        const old = prev.find(s => s.id === 'metronome');
-        if (old && old.url.startsWith('blob:')) URL.revokeObjectURL(old.url);
-        return [...prev.filter(s => s.id !== 'metronome'), metroStem];
-      });
+      // Entra na hora (URL local), já tocando junto se a música estiver rodando.
+      const oldUrl = stems.find(s => s.id === 'metronome')?.url;
+      setStems(prev => [
+        ...prev.filter(s => s.id !== 'metronome'),
+        { id: 'metronome', name: 'Metrônomo', url: clickTrackUrl, color: '#e2e8f0' },
+      ]);
+      if (oldUrl?.startsWith('blob:')) setTimeout(() => URL.revokeObjectURL(oldUrl), 5000);
       setStemStates(p => ({ ...p, metronome: p.metronome ?? { muted: false, soloed: false, volume: 0.8, pan: 0 } }));
       setShowBpmModal(false);
+
+      // Sobe pro R2 em segundo plano → URL https → persiste com a separação.
+      void (async () => {
+        try {
+          const blob = await (await fetch(clickTrackUrl)).blob();
+          const file = new File([blob], 'click.wav', { type: 'audio/wav' });
+          const up = await uploadToR2('stems', `${user?.id || 'anon'}/${activeSepId || 'tmp'}/click_${Date.now()}.wav`, file);
+          if (up.error || !up.url) { console.warn('[Click] upload falhou, fica só nesta sessão:', up.error); return; }
+          const remoteUrl = up.url;
+          urlAliases.current.set(remoteUrl, clickTrackUrl);
+          setStems(prev => prev.map(s => (s.id === 'metronome' && s.url === clickTrackUrl ? { ...s, url: remoteUrl } : s)));
+          // O player já tem o áudio decodificado: solta o WAV local (~16 MB) da memória.
+          setTimeout(() => URL.revokeObjectURL(clickTrackUrl), 10000);
+        } catch (e) {
+          console.warn('[Click] upload falhou, fica só nesta sessão:', e);
+        }
+      })();
     } catch (e) {
       console.error('Erro ao gerar metrônomo', e);
+      alert('Não deu pra gerar o click. Tenta de novo.');
     } finally {
       setIsGeneratingClick(false);
     }
+  };
+
+  // SYNC da barra: ajuste fino de ±10 ms. Regera o click com o deslocamento
+  // gravado no arquivo (reaproveita a grade já medida, então é rápido).
+  const nudgeTimerRef = useRef<number | null>(null);
+  const hasMetronome = stems.some(s => s.id === 'metronome');
+  const nudgeClick = (deltaMs: number) => {
+    const next = Math.max(-500, Math.min(500, clickOffsetMs + deltaMs));
+    setClickOffsetMs(next);
+    if (!hasMetronome) return;
+    if (nudgeTimerRef.current) clearTimeout(nudgeTimerRef.current);
+    nudgeTimerRef.current = window.setTimeout(() => { void addMetronomeChannel(next); }, 600);
   };
 
   // ── Load a saved separation ──
@@ -1251,6 +1433,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     setVoiceCues(sep.voiceCues || []);
     setActiveSepId(sep.id);
     setFile(null); // signal we're in "loaded" mode, stems drive the UI
+    resetClickSync();
   };
 
   if (separationStep === 'options' && pendingFile) {
@@ -1602,11 +1785,14 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
               </button>
             )}
 
-            <div className="transport-btn hidden sm:flex items-center gap-0.5 rounded-md px-1.5 h-9">
+            <div className={`transport-btn hidden sm:flex items-center gap-0.5 rounded-md px-1.5 h-9 ${hasMetronome ? '' : 'opacity-40'}`}
+              title={hasMetronome ? 'Ajuste fino do click: < adianta, > atrasa (10 ms por toque)' : 'Gere o click no BPM pra usar o ajuste fino'}>
               <span className="text-[7px] text-white/70 uppercase tracking-widest font-bold px-1 font-mono hidden lg:inline">SYNC</span>
-              <button onClick={() => setClickOffsetMs(p => p - 10)} className="w-5 h-full flex items-center justify-center text-white/60 hover:text-white rounded cursor-pointer"><ChevronLeft size={12}/></button>
-              <span className="text-[9px] text-primary font-mono font-black w-9 text-center tabular-nums">{clickOffsetMs > 0 ? '+' : ''}{clickOffsetMs}</span>
-              <button onClick={() => setClickOffsetMs(p => p + 10)} className="w-5 h-full flex items-center justify-center text-white/60 hover:text-white rounded cursor-pointer"><ChevronRight size={12}/></button>
+              <button onClick={() => nudgeClick(-10)} disabled={!hasMetronome} className="w-5 h-full flex items-center justify-center text-white/60 hover:text-white rounded cursor-pointer disabled:cursor-not-allowed"><ChevronLeft size={12}/></button>
+              <span className="text-[9px] text-primary font-mono font-black w-9 text-center tabular-nums">
+                {isGeneratingClick ? <Loader2 size={10} className="animate-spin inline" /> : <>{clickOffsetMs > 0 ? '+' : ''}{clickOffsetMs}</>}
+              </span>
+              <button onClick={() => nudgeClick(10)} disabled={!hasMetronome} className="w-5 h-full flex items-center justify-center text-white/60 hover:text-white rounded cursor-pointer disabled:cursor-not-allowed"><ChevronRight size={12}/></button>
               <span className="text-[6px] text-white/40 font-mono mr-1 hidden lg:inline">ms</span>
             </div>
 
@@ -1869,17 +2055,17 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
             {/* BPM stepper */}
             <div className="flex items-center justify-between bg-[#141415] border border-white/5 rounded-xl p-2">
-              <button onClick={() => setBpm(String(Math.max(40, (parseInt(bpm) || 120) - 1)))} disabled={isGeneratingClick}
+              <button onClick={() => setBpm(String(Math.max(40, Math.round(parseFloat(bpm) || 120) - 1)))} disabled={isGeneratingClick}
                 className="w-12 h-12 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg active:scale-95 transition-all text-white/80 cursor-pointer disabled:opacity-50">
                 <Minus size={20} />
               </button>
               <input type="number" value={bpm}
                 onChange={e => setBpm(e.target.value)}
-                onBlur={() => { const n = parseInt(bpm); if (isNaN(n)) setBpm('120'); else setBpm(String(Math.max(40, Math.min(300, n)))); }}
+                onBlur={() => { const n = parseFloat(bpm); if (isNaN(n)) setBpm('120'); else setBpm(formatBpm(Math.max(40, Math.min(300, n)))); }}
                 disabled={isGeneratingClick}
                 className="text-white font-black text-4xl w-24 text-center bg-transparent focus:outline-none"
               />
-              <button onClick={() => setBpm(String(Math.min(300, (parseInt(bpm) || 120) + 1)))} disabled={isGeneratingClick}
+              <button onClick={() => setBpm(String(Math.min(300, Math.round(parseFloat(bpm) || 120) + 1)))} disabled={isGeneratingClick}
                 className="w-12 h-12 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg active:scale-95 transition-all text-white/80 cursor-pointer disabled:opacity-50">
                 <Plus size={20} />
               </button>
@@ -1894,18 +2080,29 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                 TAP TEMPO
               </button>
               <button
-                onClick={() => setBpm(String(Math.min(300, (parseInt(bpm) || 120) * 2)))}
+                onClick={() => setBpm(formatBpm(Math.min(300, (parseFloat(bpm) || 120) * 2)))}
                 disabled={isGeneratingClick}
                 className="px-4 py-3 rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40">
                 2×
               </button>
               <button
-                onClick={() => setBpm(String(Math.max(40, Math.round((parseInt(bpm) || 120) / 2))))}
+                onClick={() => setBpm(formatBpm(Math.max(40, (parseFloat(bpm) || 120) / 2)))}
                 disabled={isGeneratingClick}
                 className="px-4 py-3 rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40">
                 ½×
               </button>
             </div>
+
+            {/* Detectar BPM no áudio (recurso pago) */}
+            <button
+              onClick={() => { void detectBpmFromAudio(); }}
+              disabled={isDetectingBpm || isGeneratingClick || stems.length === 0}
+              title={canBpm ? 'Mede o BPM exato na bateria da música' : 'Detecção de BPM disponível nos planos pagos'}
+              className="w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 disabled:opacity-50 flex items-center justify-center gap-2">
+              {isDetectingBpm ? <Loader2 size={12} className="animate-spin" /> : canBpm ? null : <Lock size={11} />}
+              {isDetectingBpm ? 'Analisando a música...' : 'Detectar BPM da música'}
+            </button>
+            {gridInfo && <p className="text-white/50 text-[10px] text-center -mt-2 leading-snug">{gridInfo}</p>}
 
             {/* Time signature */}
             <div>
@@ -1930,6 +2127,20 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                 <div className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${accentBeat1 ? 'left-5 bg-black' : 'left-0.5 bg-white/40'}`} />
               </button>
             </div>
+
+            {/* Mover o "1": se o acento cair no tempo errado do compasso */}
+            {accentBeat1 && (
+              <div className="flex items-center justify-between bg-[#141415] border border-white/5 rounded-xl px-4 py-2">
+                <span className="text-white/60 text-xs font-bold uppercase tracking-wider" title="Use se o acento do click cair no tempo errado do compasso">Mover o "1"</span>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setDownbeatShift(s => s - 1)} disabled={isGeneratingClick}
+                    className="w-7 h-7 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg text-white/70 cursor-pointer disabled:opacity-50"><ChevronLeft size={14} /></button>
+                  <span className="text-primary text-xs font-mono font-black w-8 text-center tabular-nums">{downbeatShift > 0 ? '+' : ''}{downbeatShift}</span>
+                  <button onClick={() => setDownbeatShift(s => s + 1)} disabled={isGeneratingClick}
+                    className="w-7 h-7 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg text-white/70 cursor-pointer disabled:opacity-50"><ChevronRight size={14} /></button>
+                </div>
+              </div>
+            )}
 
             {/* Click Sound selector */}
             {!isGeneratingClick && (
@@ -1960,11 +2171,14 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
               </div>
             )}
 
-            <button onClick={addMetronomeChannel} disabled={isGeneratingClick || stems.length === 0}
+            <button onClick={() => { void addMetronomeChannel(); }} disabled={isGeneratingClick || isDetectingBpm || stems.length === 0}
               className="w-full bg-[#2a2a2d] hover:bg-[#343438] text-white py-3.5 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-xs tracking-wider cursor-pointer border border-white/5 active:scale-95">
               {isGeneratingClick ? <Loader2 size={16} className="animate-spin" /> : <Play fill="currentColor" size={14} />}
               GERAR CLICK · {clickSel.type} {timeSignature} {clickSel.subdivision}
             </button>
+            <p className="text-white/35 text-[9px] text-center -mt-2 leading-snug">
+              O click é alinhado sozinho à bateria da música. Se precisar, ajuste fino no SYNC da barra.
+            </p>
           </div>
         </div>
       )}
