@@ -5,11 +5,18 @@
     <!-- Browser tab favicon: transparent SVG (sits on browser chrome bg) -->
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <!-- iOS home screen / Apple touch icon: backgrounded so iOS doesn't paint white behind -->
-    <link rel="apple-touch-icon" href="/app-icon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Quadrado com fundo cheio (180x180): o iOS aplica os cantos; canto transparente vira preto -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- maximum-scale=1: o iPhone não dá zoom sozinho ao tocar num campo (o zoom com dois dedos continua no iOS) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <meta name="theme-color" content="#FF6B35" />
+    <!-- App instalado na tela de início (iPhone/iPad/Android): abre sem a barra do navegador -->
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- 'black' (e não 'black-translucent'): o app fica ABAIXO do relógio/notch.
+         Com translucent ele desenha por baixo e o CSS não trata safe-area, então
+         VOLTAR/SALVAR do topo ficariam escondidos atrás do relógio. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="Playback Studio" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

@@ -24,35 +24,33 @@ export default defineConfig({
             // silêncio, o app avisa "tem versão nova" e o usuário clica pra
             // atualizar (UpdateBanner via service worker). Mesma UX do desktop.
             registerType: 'prompt',
-            includeAssets: ['logo.svg', 'logo.png', 'app-icon.svg', 'app-icon.png', 'favicon.svg'],
+            includeAssets: ['logo.svg', 'logo.png', 'app-icon.svg', 'app-icon.png', 'favicon.svg', 'apple-touch-icon.png', 'pwa-192.png', 'pwa-512.png'],
             manifest: {
+              id: '/',
               name: 'Playback Studio',
               short_name: 'Playback',
-              description: 'Stems pra qualquer música. Pra sua banda chegar pronta no domingo. Feito por quem toca.',
+              description: 'Multitracks pra qualquer música. Pra sua banda chegar pronta no domingo. Feito por quem toca.',
               theme_color: '#FF6B35',
               background_color: '#121214',
-              // 'browser' (em vez de 'standalone') evita que o navegador ofereça
-              // "Instalar app" (PWA). A distribuição é só o app desktop (/download).
-              // O cache offline via service worker (workbox) segue funcionando.
-              display: 'browser',
-              orientation: 'portrait',
+              // Desde 2026-11-09 o site também é app de celular/tablet: "standalone"
+              // deixa instalar na tela de início (Android oferece "Instalar app";
+              // iPhone/iPad via Compartilhar > Adicionar à Tela de Início) e abre
+              // sem a barra do navegador. Antes era 'browser' de propósito, pra
+              // distribuição ser só o app desktop.
+              display: 'standalone',
+              // 'any': o mixer do Separador usa melhor a tela deitada (iPad/celular).
+              orientation: 'any',
               start_url: '/',
               scope: '/',
+              categories: ['music', 'productivity'],
+              lang: 'pt-BR',
               icons: [
-                // Backgrounded SVG — primary install icon for browsers that support SVG manifests
-                {
-                  src: '/app-icon.svg',
-                  sizes: 'any',
-                  type: 'image/svg+xml',
-                  purpose: 'any',
-                },
-                // Backgrounded PNG 512x512 — for Android (Chrome install) + iOS-style maskable adaptive icons
-                {
-                  src: '/app-icon.png',
-                  sizes: '512x512',
-                  type: 'image/png',
-                  purpose: 'any maskable',
-                },
+                // Quadrados com fundo cheio (sem canto transparente): cada sistema
+                // aplica a própria máscara (círculo/gota no Android, cantos no iOS).
+                { src: '/pwa-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+                { src: '/pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+                // O desenho cabe na área segura de 80%: serve como ícone adaptativo.
+                { src: '/pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
               ],
             },
             workbox: {

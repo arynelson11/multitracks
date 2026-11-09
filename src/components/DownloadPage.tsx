@@ -4,6 +4,8 @@ import {
   Sliders, Wand2, WifiOff, Radio, Smartphone, FileText, Music4, Keyboard,
 } from 'lucide-react'
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark'
+import { InstallAppGuide } from './InstallAppGuide'
+import { detectInstallPlatform } from '../hooks/usePWAInstall'
 
 const GH = 'https://github.com/arynelson11/multitracks/releases/latest/download'
 const MAC_ARM_URL = `${GH}/Playback-Studio-mac-arm64.dmg`
@@ -23,9 +25,26 @@ const FEATURES = [
 
 export function DownloadPage() {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
-  const isMac = /Macintosh|Mac OS X/.test(ua)
+  // iPad no Safari se apresenta como Mac: só destaca os instaladores no computador.
+  const isMobile = detectInstallPlatform() !== 'desktop'
+  const isMac = /Macintosh|Mac OS X/.test(ua) && !isMobile
   const isWin = /Windows/.test(ua)
   const [showHelp, setShowHelp] = useState<'mac' | 'win' | null>(null)
+
+  // App de celular/tablet = o site instalado na tela de início (PWA).
+  const mobileSection = (
+    <section className="max-w-3xl mx-auto mb-12 bg-white/[0.03] border border-white/10 rounded-2xl p-5 sm:p-7">
+      <div className="flex items-center gap-2 mb-2">
+        <Smartphone className="w-5 h-5 text-orange-400" />
+        <h2 className="font-display font-bold text-xl sm:text-2xl">No celular e no tablet</h2>
+      </div>
+      <p className="text-zinc-400 text-sm mb-5 leading-relaxed">
+        Instale o Playback Studio na tela de início. Ele abre como app, em tela cheia, com separação de faixas,
+        mixer, repertório e pads. O Modo Ao Vivo e o uso sem internet ficam no app de computador.
+      </p>
+      <InstallAppGuide />
+    </section>
+  )
 
   return (
     <div className="min-h-screen bg-[#0a0a0c] text-white font-sans">
@@ -44,16 +63,19 @@ export function DownloadPage() {
         {/* Hero */}
         <div className="text-center mb-12">
           <span className="inline-block px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-400 text-[11px] font-bold uppercase tracking-widest mb-5">
-            App para desktop
+            Computador, celular e tablet
           </span>
           <h1 className="font-display font-bold text-4xl sm:text-6xl tracking-tight mb-4">
             Baixe o <span className="text-orange-500 italic">Playback Studio</span>
           </h1>
           <p className="text-zinc-400 text-base sm:text-lg max-w-2xl mx-auto leading-relaxed">
-            A plataforma do domingo no seu computador. Toque o repertório offline, conduza a banda
-            ao vivo e separe qualquer música em faixas, tudo num app só.
+            A plataforma do domingo onde você estiver. No computador, toque o repertório offline e conduza
+            a banda ao vivo. No celular e no tablet, leve tudo no bolso direto da tela de início.
           </p>
         </div>
+
+        {/* No celular/tablet, a instalação dele vem primeiro */}
+        {isMobile && mobileSection}
 
         {/* Botões de download */}
         <div className="grid sm:grid-cols-3 gap-4 max-w-3xl mx-auto mb-3">
@@ -134,6 +156,9 @@ export function DownloadPage() {
         <p className="text-center text-zinc-600 text-xs mb-16">
           Grátis pra instalar. As funções seguem o seu plano (Livre, Pro ou Studio).
         </p>
+
+        {/* No computador, o celular vem depois dos instaladores (com QR code) */}
+        {!isMobile && mobileSection}
 
         {/* Funcionalidades */}
         <div className="mb-14">

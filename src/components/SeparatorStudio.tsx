@@ -303,6 +303,19 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const guideBufferCache = useRef<Map<string, AudioBuffer>>(new Map());
   // Drag de marcadores na timeline
   const waveAreaRef = useRef<HTMLDivElement>(null);
+  // Coluna de controles (esquerda) e ondas (direita) rolam JUNTAS na vertical: com
+  // mais faixas do que cabem na tela (ex.: celular deitado), as linhas não desalinham.
+  const ctrlColRef = useRef<HTMLDivElement>(null);
+  const syncingScrollRef = useRef(false);
+  const syncVerticalScroll = (from: 'ctrl' | 'wave') => (e: React.UIEvent<HTMLDivElement>) => {
+    if (syncingScrollRef.current) { syncingScrollRef.current = false; return; }
+    const other = from === 'ctrl' ? waveAreaRef.current : ctrlColRef.current;
+    const top = e.currentTarget.scrollTop;
+    if (other && Math.abs(other.scrollTop - top) > 0.5) {
+      syncingScrollRef.current = true;
+      other.scrollTop = top;
+    }
+  };
   // Wrapper interno com a largura real da timeline (pode ser mais larga que o viewport visível e rolar de lado)
   const timelineContentRef = useRef<HTMLDivElement>(null);
   const draggingCueRef = useRef<string | null>(null);
@@ -1008,6 +1021,40 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     }
   };
 
+  // Altura de cada faixa a partir da área visível das ondas (menos a régua de 28px).
+  // Piso menor em tela baixa (celular deitado) pra caberem mais faixas sem cortar.
+  const computeLaneHeight = useCallback((count: number) => {
+    const areaH = waveAreaRef.current?.clientHeight || (window.innerHeight - 172);
+    const available = areaH - 28;
+    const floor = window.innerHeight <= 560 ? 56 : 100;
+    return Math.max(floor, Math.min(240, Math.floor(available / Math.max(1, count))));
+  }, []);
+  // A barra de rolagem horizontal da timeline ocupa altura só na coluna das ondas;
+  // o mesmo espaço vai no fim da coluna de controles pra as linhas casarem até o fim.
+  useEffect(() => {
+    const wave = waveAreaRef.current;
+    const ctrl = ctrlColRef.current;
+    if (!wave || !ctrl) return;
+    ctrl.style.paddingBottom = `${Math.max(0, wave.offsetHeight - wave.clientHeight)}px`;
+  }, [songDuration, laneHeight, stems.length]);
+
+  // Girou o aparelho ou mudou o tamanho da janela: recalcula e redesenha as ondas.
+  useEffect(() => {
+    let t: number | undefined;
+    const onResize = () => {
+      window.clearTimeout(t);
+      t = window.setTimeout(() => {
+        const n = Object.keys(wavesurfers.current).length;
+        if (!n) return;
+        const lh = computeLaneHeight(n);
+        setLaneHeight(lh);
+        Object.values(wavesurfers.current).forEach(ws => ws.setOptions({ height: lh }));
+      }, 150);
+    };
+    window.addEventListener('resize', onResize);
+    return () => { window.removeEventListener('resize', onResize); window.clearTimeout(t); };
+  }, [computeLaneHeight]);
+
   // Solta uma faixa: para o som, desliga do mixer e libera o áudio decodificado.
   const destroyTrack = useCallback((id: string) => {
     try { wavesurfers.current[id]?.destroy(); } catch { /* já destruída */ }
@@ -1032,10 +1079,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       return;
     }
 
-    // Distribui a altura disponível (viewport menos header 144 e régua 28) entre as
-    // faixas, com um piso de 100px. Assim as lanes descem e preenchem o vazio embaixo.
-    const available = window.innerHeight - 144 - 28;
-    const lh = Math.max(100, Math.min(240, Math.floor(available / stems.length)));
+    // Distribui a altura REAL da área das ondas (medida, não suposta) entre as
+    // faixas. Assim as lanes preenchem a tela em qualquer aparelho/orientação.
+    const lh = computeLaneHeight(stems.length);
     setLaneHeight(lh);
 
     const wanted = new Map(stems.map(s => [s.id, s]));
@@ -1134,7 +1180,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     });
 
     applyMix();
-  }, [stems, destroyTrack, applyMix, seekAll]);
+  }, [stems, destroyTrack, applyMix, seekAll, computeLaneHeight]);
 
   // Fechou o estúdio: para tudo e solta o áudio da memória.
   useEffect(() => () => {
@@ -1660,15 +1706,15 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       <header className="bg-[#18181a] border-b border-[#222] shrink-0 z-50 shadow-[0_2px_8px_rgba(0,0,0,0.6)] flex flex-col">
 
         {/* ── Linha 1: Voltar · Título centralizado · Export ── */}
-        <div className="h-16 flex items-center justify-between px-2 sm:px-4 border-b border-[#1f1f22]">
+        <div className="h-16 short:h-11 flex items-center justify-between px-2 sm:px-4 border-b border-[#1f1f22]">
           <div className="shrink-0 flex items-center gap-2">
             <button onClick={goToSeparatorHome} className="transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md text-[10px] font-bold text-white/80 hover:text-white cursor-pointer uppercase tracking-wider">
               <ChevronLeft size={14}/> <span className="hidden sm:inline">Voltar</span>
             </button>
           </div>
 
-          <div className="flex-1 flex flex-col items-center justify-center min-w-0 px-2 gap-1.5">
-            <div className="text-white font-black text-base sm:text-lg tracking-wide truncate max-w-full leading-none">
+          <div className="flex-1 flex flex-col items-center justify-center min-w-0 px-2 gap-1.5 short:gap-1">
+            <div className="text-white font-black text-base sm:text-lg short:text-sm tracking-wide truncate max-w-full leading-none">
               {songName || 'Sem título'}
             </div>
             <div className="flex items-center gap-1.5 text-[8px] font-mono text-white/45 uppercase tracking-[0.2em]">
@@ -1711,7 +1757,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         {/* ── Linha 2: BPM/TOM · Transporte + cronômetro · VOZ/SYNC/MASTER ── */}
         {/* Grupo inteiro sempre centralizado; se não couber numa linha, quebra e cada
             linha também fica centralizada (nada de "encostar" num lado só). */}
-        <div className="min-h-20 flex flex-wrap items-center justify-center px-3 sm:px-4 py-3 gap-x-3 gap-y-3 sm:gap-x-5">
+        <div className="min-h-20 short:min-h-0 flex flex-wrap items-center justify-center px-3 sm:px-4 py-3 short:py-1.5 gap-x-3 gap-y-3 short:gap-y-1.5 sm:gap-x-5">
 
           {/* Esquerda: BPM · TOM */}
           <div className="flex-none flex items-center justify-center gap-2.5 min-w-0">
@@ -1824,9 +1870,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       <div className="flex-1 flex overflow-hidden min-h-0">
 
         {/* LEFT: Channel Strip Controls */}
-        <div className="w-[220px] bg-[#111113] border-r border-[#222] flex flex-col overflow-y-auto overflow-x-hidden shrink-0 z-10 shadow-[2px_0_12px_rgba(0,0,0,0.5)]">
-          {/* Ruler spacer */}
-          <div className="h-7 bg-[#0e0e10] border-b border-[#1e1e20] flex items-center px-3 shrink-0">
+        <div ref={ctrlColRef} onScroll={syncVerticalScroll('ctrl')} className="w-[220px] compact:w-[156px] short:w-[184px] bg-[#111113] border-r border-[#222] flex flex-col overflow-y-auto overflow-x-hidden shrink-0 z-10 shadow-[2px_0_12px_rgba(0,0,0,0.5)]">
+          {/* Ruler spacer (fixo no topo, igual à régua das ondas) */}
+          <div className="h-7 bg-[#0e0e10] border-b border-[#1e1e20] flex items-center px-3 shrink-0 sticky top-0 z-10">
             <span className="text-[7px] font-mono text-text-muted/30 uppercase tracking-[0.25em]">MIXER · {stems.length} CH</span>
           </div>
 
@@ -1838,9 +1884,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
               <div key={`ctrl-${stem.id}`} style={{ height: laneHeight }} className="flex flex-col border-b border-[#1a1a1c] relative hover:bg-white/[0.01] transition-colors shrink-0">
                 {/* Color strip */}
                 <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ backgroundColor: stem.color, boxShadow: `0 0 8px ${stem.color}50` }} />
-                <div className="flex flex-col pt-3 px-2.5 pb-2 h-full">
+                <div className="flex flex-col pt-3 px-2.5 pb-2 short:pt-2 short:pb-1 h-full">
                   {/* Row 1: number + name + M/S/DL */}
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-2 short:mb-1">
                     <div className="flex items-center gap-1 min-w-0">
                       <span className="text-[7px] font-mono font-bold text-white/40 shrink-0">{String(trackIdx + 1).padStart(2, '0')}</span>
                       <span className="text-[8px] font-bold tracking-[0.1em] uppercase truncate font-mono" style={{ color: isMutedByOther ? '#444' : stem.color }}>
@@ -1861,7 +1907,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                   </div>
                   {/* Row 2: Pan knob + Volume fader */}
                   <div className="flex items-center gap-2.5 flex-1">
-                    <div className="flex flex-col items-center gap-1 shrink-0">
+                    {/* Em tela baixa (celular deitado) o pan sai pra a linha caber na faixa */}
+                    <div className="flex flex-col items-center gap-1 shrink-0 short:hidden">
                       <div className="flex items-center gap-1.5">
                         <span className="text-[8px] font-mono font-black text-white/60 leading-none">L</span>
                         <div className="logic-pan-knob" style={{ width: 34, height: 34, cursor: 'ew-resize' }}
@@ -1880,7 +1927,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                       <input type="range" min="0" max="1" step="0.01" value={state.volume}
                         onChange={(e) => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], volume: parseFloat(e.target.value) } }))}
                         className="daw-slider w-full" />
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between short:hidden">
                         <span className="text-[7px] font-mono font-bold text-white/50 uppercase">VOL</span>
                         <div className="lcd-display px-1.5 py-0.5 rounded-[2px] text-[7px] font-mono text-accent-green">
                           {state.volume === 0 ? '-∞' : (state.volume * 10 - 10).toFixed(1)}
@@ -1895,7 +1942,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         </div>
 
         {/* RIGHT: Waveform area — viewport com scroll (vertical p/ canais, horizontal p/ timeline) */}
-        <div ref={waveAreaRef} className="flex-1 min-w-0 min-h-0 bg-[#0a0a0c] overflow-auto flex flex-col">
+        <div ref={waveAreaRef} onScroll={syncVerticalScroll('wave')} className="flex-1 min-w-0 min-h-0 bg-[#0a0a0c] overflow-auto flex flex-col">
 
           {/* Conteúdo com largura real da timeline (duração × px/s) — nunca comprime, rola de lado se passar da tela */}
           <div ref={timelineContentRef} className="relative flex flex-col" style={{ width: songDuration > 0 ? Math.max(songDuration * WAVEFORM_PX_PER_SECOND, 100) : '100%', minWidth: '100%' }}>

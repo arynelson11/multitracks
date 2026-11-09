@@ -1,5 +1,30 @@
 @import "tailwindcss";
 
+/* ── Layout por TAMANHO de tela (não por tipo de tela) ─────────────────
+   O app decidia o layout por "tela de toque" (pointer-coarse): qualquer iPad,
+   até deitado, caía no layout empilhado de celular. Agora decide pelo espaço:
+   - compact: celular em pé (estreito) → layout de celular.
+   - tight:   largo mas com altura média (notebook 1280x720, iPad deitado) →
+              layout completo, mais enxuto na vertical.
+   - short:   largo e baixo (celular deitado) → layout completo bem compacto,
+              com o mixer ganhando a altura que sobra. */
+@custom-variant compact (@media (max-width: 639.98px));
+@custom-variant tight (@media (min-width: 640px) and (max-height: 860px));
+@custom-variant short (@media (min-width: 640px) and (max-height: 560px));
+
+/* ── Comportamento de app nativo (iPhone, iPad, Android, desktop) ────── */
+html { -webkit-text-size-adjust: 100%; }
+/* Sem "pulo" elástico nem puxar-pra-atualizar ao rolar: o app é uma tela fixa. */
+html, body { overscroll-behavior: none; }
+/* Toque sem o destaque cinza do navegador e sem o atraso do duplo toque (zoom). */
+body { -webkit-tap-highlight-color: transparent; }
+button, a, label, select, summary, [role="button"], input[type="range"], input[type="checkbox"] { touch-action: manipulation; }
+/* Controles não selecionam texto nem abrem o menu de copiar ao segurar o dedo. */
+button, [role="button"], .no-select { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+/* Barra de rolagem escondida onde a rolagem é por gesto (faixas, cartões). */
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
 /* ════════════════════════════════════════════════════════════════════
    PLAYBACK STUDIO DESIGN SYSTEM
    ─────────────────────────────────────────────────────────────────
@@ -461,3 +486,16 @@ input[type="range"].daw-slider::-moz-range-thumb {
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+/* Celular deitado: botões do cabeçalho mais estreitos pra caber transporte + navegação numa linha. */
+@media (min-width: 640px) and (max-height: 560px) {
+  .app-topbar .transport-btn { padding-left: 0.5rem; padding-right: 0.5rem; }
+}
+
+/* Celular deitado: capa do fader menor pra não cobrir o knob nem o M/S
+   (o deslocamento usa a metade da altura: --knob-half). */
+@media (min-width: 640px) and (max-height: 560px) {
+  :root { --knob-half: 15px; --knob-half-master: 17px; }
+  .logic-fader-knob { width: 34px; height: 30px; }
+  .logic-fader-knob.master { width: 42px; height: 34px; }
+}

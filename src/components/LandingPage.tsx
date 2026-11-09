@@ -237,7 +237,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             <DomingoMark size="md" tone="laranja" />
           </div>
 
-          <h1 className="font-display font-semibold text-[clamp(2.4rem,7vw,5rem)] leading-[1.05] tracking-[-0.02em] text-bone mb-6">
+          <h1 className="font-display font-semibold text-[clamp(2.4rem,7vw,5rem)] short:text-[clamp(1.8rem,4.6vw,2.7rem)] leading-[1.05] tracking-[-0.02em] text-bone mb-6">
             Multitracks de qualquer música.
             <br />
             Pra sua banda chegar
@@ -650,7 +650,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full bg-[#25D366] px-4 py-3 text-white shadow-lg shadow-black/30 transition-transform hover:scale-105 active:scale-95"
       >
         <WhatsappIcon className="w-6 h-6" />
-        <span className="hidden sm:block text-sm font-semibold pr-1">Fale com a gente</span>
+        <span className="hidden sm:block short:hidden text-sm font-semibold pr-1">Fale com a gente</span>
       </a>
     </div>
   )

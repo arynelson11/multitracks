@@ -162,9 +162,9 @@ export function SectionBar({
   }, [peaks, bpm, duration]);
 
   return (
-    <div className="mt-1.5 rounded-lg border border-white/10 bg-black/30 p-2">
+    <div className="mt-1.5 short:mt-1 rounded-lg border border-white/10 bg-black/30 p-2 short:p-1.5">
       {/* Cabeçalho */}
-      <div className="flex items-center justify-between mb-1.5">
+      <div className="flex items-center justify-between mb-1.5 short:mb-1">
         <span className="text-[9px] font-bold text-text-muted uppercase tracking-widest font-mono">Seções</span>
         {canEdit && (
           <div className="flex items-center gap-1">
@@ -210,13 +210,13 @@ export function SectionBar({
       </div>
 
       {markers.length === 0 ? (
-        <p className="text-[10px] text-text-muted/60 font-mono py-2 text-center">
+        <p className="text-[10px] text-text-muted/60 font-mono py-2 tight:py-1 text-center short:hidden">
           {canEdit ? 'Toque em "Marcar" pra criar seções (Refrão, Verso...) e repetir trechos ao vivo.' : 'Sem seções nesta música.'}
         </p>
       ) : (
         <>
           {/* Régua com waveform + grid + blocos de seção */}
-          <div ref={trackRef} className="relative w-full h-16 rounded-md bg-black/50 border border-white/5 overflow-hidden">
+          <div ref={trackRef} className="relative w-full h-16 tight:h-12 short:h-9 rounded-md bg-black/50 border border-white/5 overflow-hidden">
             {/* Fundo: forma de onda e grid */}
             <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" />
 

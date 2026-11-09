@@ -11,6 +11,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.11',
+    date: '2026-11-09',
+    title: 'Playback Studio no celular e no tablet',
+    items: [
+      'Agora dá pra instalar o Playback Studio na tela de início do celular e do tablet. Ele abre como app, em tela cheia.',
+      'Com o celular deitado, você vê o mesmo layout do computador: transporte no topo, repertório, mixer completo e pads, sem nada cortado.',
+      'O app se ajusta a qualquer tela: iPhone, iPad, notebook e computador. A página não rola mais inteira e nenhum botão some.',
+      'Mixer sem canal cortado pela metade, com encaixe ao deslizar o dedo. No Separador, os controles e as ondas rolam juntos.',
+    ],
+  },
+  {
     version: '1.4.10',
     date: '2026-11-09',
     title: 'Click do separador no tempo da música',

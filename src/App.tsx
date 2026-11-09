@@ -24,6 +24,7 @@ import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/Sec
 import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections } from './lib/plans'
 import { isAdminEmail } from './lib/admin'
 import { UpdateBanner } from './components/UpdateBanner'
+import { InstallAppBanner } from './components/InstallAppBanner'
 import { useDesktopUpdate } from './hooks/useDesktopUpdate'
 import { CURRENT_VERSION } from './lib/changelog'
 
@@ -85,6 +86,31 @@ export default function App() {
   const [activeFolder, setActiveFolder] = useState<string | null>(null)
   const { samples, loops, loading: samplesLoading, playingUrl, playSample, stopPlayback } = useSamplesLibrary()
   const mixerRef = useRef<HTMLDivElement>(null)
+  // Mixer sem canal cortado pela metade: mede a área visível e calcula a largura
+  // dos canais pra caber um número INTEIRO deles (o resto rola de lado). Recalcula
+  // ao girar o aparelho ou redimensionar a janela. Callback ref: funciona mesmo o
+  // mixer aparecendo só depois do login.
+  const stripsObserverRef = useRef<ResizeObserver | null>(null)
+  const stripsRef = useCallback((el: HTMLDivElement | null) => {
+    stripsObserverRef.current?.disconnect()
+    stripsObserverRef.current = null
+    if (!el) return
+    const fit = () => {
+      const cs = getComputedStyle(el)
+      const padL = parseFloat(cs.paddingLeft) || 0
+      const inner = el.clientWidth - padL - (parseFloat(cs.paddingRight) || 0)
+      const gap = parseFloat(cs.columnGap) || 4
+      const minW = window.innerWidth < 640 ? 84 : window.innerHeight <= 560 ? 74 : 104
+      const n = Math.max(1, Math.floor((inner + gap) / (minW + gap)))
+      const w = Math.floor((inner - (n - 1) * gap) / n)
+      el.style.setProperty('--strip-w', `${w}px`)
+      el.style.scrollPaddingLeft = `${padL}px`
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(el)
+    stripsObserverRef.current = ro
+  }, [])
 
   const [showAuth, setShowAuth] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
@@ -635,20 +661,21 @@ export default function App() {
 
   // ───────────────── MAIN APP ─────────────────
   return (
-    <div className="h-[100dvh] w-screen fixed inset-0 overflow-hidden pointer-coarse:h-auto pointer-coarse:min-h-[100dvh] pointer-coarse:static pointer-coarse:inset-auto pointer-coarse:overflow-y-auto pointer-coarse:overflow-x-hidden bg-[#0e0e10] text-text-main flex flex-col select-none">
+    <div className="h-[100dvh] w-screen fixed inset-0 overflow-hidden compact:overflow-y-auto compact:overflow-x-hidden bg-[#0e0e10] text-text-main flex flex-col select-none">
 
       {/* ═══ HEADER / TRANSPORT ═══ */}
       <header className="bg-[#18181a] border-b border-border shrink-0">
         {/* Top row: Brand + Tools + Timer */}
-        <div className="flex pointer-coarse:hidden items-center justify-between px-3 sm:px-4 h-11 sm:h-12 border-b border-border">
+        <div className="app-topbar flex compact:hidden items-center justify-between gap-2 px-3 sm:px-4 h-11 sm:h-12 short:h-10 border-b border-border">
           {/* Left: Menu + Brand */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 xl:gap-3 shrink-0">
             <div className="relative flex items-center">
               <div className="cursor-default focus:outline-none flex items-center gap-2.5">
-                <BrandLogo size="sm" tone="light" variant="horizontal" />
-                <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded border text-[9px] font-mono font-bold transition-all ${isOnline ? 'text-primary/70 border-primary/20 bg-primary/5' : 'text-accent-red border-accent-red/20 bg-accent-red/5'}`}>
+                <span className="flex lg:hidden"><BrandLogo size="sm" tone="light" variant="mark" /></span>
+                <span className="hidden lg:flex"><BrandLogo size="sm" tone="light" variant="horizontal" /></span>
+                <div className={`flex short:hidden items-center gap-1.5 px-2 py-0.5 rounded border text-[9px] font-mono font-bold transition-all ${isOnline ? 'text-primary/70 border-primary/20 bg-primary/5' : 'text-accent-red border-accent-red/20 bg-accent-red/5'}`}>
                   <span className={`w-1 h-1 rounded-full ${isOnline ? 'bg-primary' : 'bg-accent-red animate-pulse'}`} />
-                  <span>{isOnline ? 'ONLINE' : 'OFFLINE'}</span>
+                  <span className="hidden xl:inline">{isOnline ? 'ONLINE' : 'OFFLINE'}</span>
                 </div>
               </div>
             </div>
@@ -657,9 +684,9 @@ export default function App() {
             <div className="h-5 w-px bg-border mx-1"></div>
             
             <div className="relative">
-              <button data-tour="repertorios" onClick={() => setIsSetlistMenuOpen(!isSetlistMenuOpen)}
+              <button data-tour="repertorios" title="Repertórios" aria-label="Repertórios" onClick={() => setIsSetlistMenuOpen(!isSetlistMenuOpen)}
                 className={`transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer ${isSetlistMenuOpen ? 'text-white bg-white/10' : 'text-text-muted hover:text-white'}`}>
-                <ListMusic size={14} /> <span className="hidden sm:inline">REPERTÓRIOS</span>
+                <ListMusic size={14} /> <span className="hidden xl:inline">REPERTÓRIOS</span>
               </button>
 
               {/* ─── Setlist Dropdown ─── */}
@@ -725,9 +752,9 @@ export default function App() {
             </div>
 
             <div className="relative">
-              <button data-tour="faixas" onClick={() => setIsTracksMenuOpen(!isTracksMenuOpen)}
+              <button data-tour="faixas" title="Faixas" aria-label="Faixas" onClick={() => setIsTracksMenuOpen(!isTracksMenuOpen)}
                 className={`transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer ${isTracksMenuOpen ? 'text-white bg-white/10' : 'text-text-muted hover:text-white'}`}>
-                <Music size={14} /> <span className="hidden sm:inline">FAIXAS</span>
+                <Music size={14} /> <span className="hidden xl:inline">FAIXAS</span>
               </button>
 
               {isTracksMenuOpen && (
@@ -762,18 +789,37 @@ export default function App() {
               )}
             </div>
 
-            <button data-tour="biblioteca" onClick={() => handlePremiumFeature(() => setIsLibraryOpen(true))}
+            <button data-tour="biblioteca" title="Biblioteca" aria-label="Biblioteca" onClick={() => handlePremiumFeature(() => setIsLibraryOpen(true))}
               className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-white">
-              <Cloud size={14} /> <span className="hidden sm:inline">BIBLIOTECA</span>
+              <Cloud size={14} /> <span className="hidden xl:inline">BIBLIOTECA</span>
             </button>
-            <button data-tour="metronomo" onClick={() => setIsMetronomeModalOpen(true)}
+            <button data-tour="metronomo" title="Metrônomo" aria-label="Metrônomo" onClick={() => setIsMetronomeModalOpen(true)}
               className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-white">
-              <Timer size={14} /> <span className="hidden sm:inline">METRÔNOMO</span>
+              <Timer size={14} /> <span className="hidden xl:inline">METRÔNOMO</span>
             </button>
           </div>
 
+          {/* Transporte compacto (celular deitado): entra no cabeçalho pra o mixer ganhar a altura.
+              Modo ao terminar (AUTO/PARAR/FADE) vira um botão que alterna a cada toque. */}
+          <div className="hidden short:flex items-center gap-1 shrink-0">
+            <button
+              onClick={() => setPlaybackMode(playbackMode === 'continue' ? 'stop' : playbackMode === 'stop' ? 'fade-out' : 'continue')}
+              title="Ao terminar a música: toque pra trocar (Auto, Parar, Fade)"
+              className={`transport-btn h-8 px-2 rounded-md text-[9px] font-bold uppercase tracking-wider font-mono cursor-pointer whitespace-nowrap ${playbackMode === 'continue' ? 'text-primary' : playbackMode === 'stop' ? 'text-accent-red' : 'text-purple-400'}`}>
+              {playbackMode === 'continue' ? '▶ Auto' : playbackMode === 'stop' ? '■ Parar' : 'Fade'}
+            </button>
+            <button onClick={prevSong} title="Música anterior" aria-label="Música anterior"
+              className="transport-btn w-8 h-8 flex items-center justify-center rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipBack size={15} /></button>
+            <button onClick={isCountingIn ? cancelCountIn : isPlaying ? pause : playWithPrecount} title={isPlaying ? 'Pausar' : 'Tocar'} aria-label={isPlaying ? 'Pausar' : 'Tocar'}
+              className={`transport-btn w-11 h-8 flex items-center justify-center rounded-md active:scale-90 cursor-pointer ${isPlaying || isCountingIn ? 'active text-primary' : 'text-white'}`}>
+              {isPlaying ? <Pause size={17} fill="currentColor" /> : isCountingIn ? <Loader2 size={17} className="animate-spin" /> : <Play size={17} fill="currentColor" className="ml-0.5" />}
+            </button>
+            <button onClick={nextSong} title="Próxima música" aria-label="Próxima música"
+              className="transport-btn w-8 h-8 flex items-center justify-center rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipForward size={15} /></button>
+          </div>
+
           {/* Right: Controls + User */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 xl:gap-3 shrink-0">
 
             {/* Key Selector */}
             <div className="relative">
@@ -830,8 +876,8 @@ export default function App() {
                 className={`transport-btn flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer ${precountEnabled ? 'text-primary' : 'text-text-muted hover:text-white'}`}
                 title="Pré-contagem"
               >
-                <span className="sm:hidden text-[10px] font-mono tracking-wider">1·2·3</span>
-                <span className="hidden sm:inline">PRÉ-CONTAGEM</span>
+                <span className="min-[1680px]:hidden text-[10px] font-mono tracking-wider whitespace-nowrap">1·2·3</span>
+                <span className="hidden min-[1680px]:inline whitespace-nowrap">PRÉ-CONTAGEM</span>
               </button>
               {isPrecountOpen && (
                 <>
@@ -868,20 +914,20 @@ export default function App() {
               )}
             </div>
 
-            <div className="h-5 w-px bg-border hidden sm:block"></div>
+            <div className="h-5 w-px bg-border hidden sm:block short:hidden"></div>
 
             {/* EDITAR */}
-            <button data-tour="editar" onClick={() => setIsEditMode(!isEditMode)}
+            <button data-tour="editar" title="Editar" aria-label="Editar" onClick={() => setIsEditMode(!isEditMode)}
               className={`items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95 border cursor-pointer hidden sm:flex ${isEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border hover:bg-white/5 hover:text-white'}`}>
               {isEditMode ? <Check size={12} /> : <Edit2 size={12} />}
-              {isEditMode ? 'OK' : 'EDITAR'}
+              <span className="hidden min-[1680px]:inline">{isEditMode ? 'OK' : 'EDITAR'}</span>
             </button>
 
             {/* Admin Dashboard - only for admin */}
             {(isAdminEmail(user?.email)) && (
               <button onClick={() => { window.location.href = '/admin' }}
                 className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-primary/70 hover:text-primary border border-primary/20 hover:border-primary/40 transition-all">
-                <Shield size={14} /><span className="hidden sm:inline">ADMIN</span>
+                <Shield size={14} /><span className="hidden min-[1680px]:inline">ADMIN</span>
               </button>
             )}
 
@@ -889,7 +935,7 @@ export default function App() {
             {window.playbackDesktop?.isElectron && (
               <button data-tour="host" onClick={handleStartLiveMode}
                 className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-primary hover:bg-primary/10 border border-primary/20 hover:border-primary/40 transition-all">
-                <Server size={14} /><span className="hidden sm:inline uppercase">Host</span>
+                <Server size={14} /><span className="hidden min-[1680px]:inline uppercase">Host</span>
               </button>
             )}
 
@@ -897,26 +943,26 @@ export default function App() {
             {desktopUpdate && (
               <button onClick={installDesktopUpdate} title={`Baixar versão ${desktopUpdate.latestVersion}`}
                 className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-black bg-primary hover:bg-primary/90 border border-primary transition-all">
-                <Download size={14} /><span className="hidden sm:inline uppercase">Atualizar</span>
+                <Download size={14} /><span className="hidden min-[1680px]:inline uppercase">Atualizar</span>
               </button>
             )}
 
             {/* Config */}
-            <button data-tour="config" onClick={() => setIsSettingsOpen(true)}
+            <button data-tour="config" title="Configurações" aria-label="Configurações" onClick={() => setIsSettingsOpen(true)}
               className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-white">
-              <Settings size={14} /><span className="hidden sm:inline">CONFIG</span>
+              <Settings size={14} /><span className="hidden min-[1680px]:inline">CONFIG</span>
             </button>
 
             {/* Início */}
-            <button data-tour="inicio" onClick={() => setForceShowSplash(true)}
+            <button data-tour="inicio" title="Início" aria-label="Início" onClick={() => setForceShowSplash(true)}
               className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-white border border-border hover:border-white/20 transition-all">
-              <Home size={14} /><span className="hidden sm:inline">INÍCIO</span>
+              <Home size={14} /><span className="hidden min-[1680px]:inline">INÍCIO</span>
             </button>
 
-            <div className="h-5 w-px bg-border hidden sm:block"></div>
+            <div className="h-5 w-px bg-border hidden sm:block short:hidden"></div>
 
             {/* User + SAIR */}
-            <button onClick={() => setIsSettingsOpen(true)} className="items-center gap-2 hidden sm:flex cursor-pointer group" title="Meu perfil">
+            <button onClick={() => setIsSettingsOpen(true)} className="items-center gap-2 hidden sm:flex short:hidden cursor-pointer group" title="Meu perfil">
               {user.user_metadata?.avatar_url ? (
                 <img src={user.user_metadata.avatar_url} alt="" className="w-6 h-6 rounded-full object-cover border border-white/15" />
               ) : (
@@ -924,17 +970,17 @@ export default function App() {
                   {(user.user_metadata?.display_name || user.email || '?').trim().charAt(0).toUpperCase()}
                 </span>
               )}
-              <span className="text-white text-[10px] font-mono font-medium group-hover:text-primary transition-colors">{user.user_metadata?.display_name || user.email?.split('@')[0]}</span>
+              <span className="hidden min-[1680px]:inline text-white text-[10px] font-mono font-medium group-hover:text-primary transition-colors">{user.user_metadata?.display_name || user.email?.split('@')[0]}</span>
             </button>
-            <button onClick={signOut}
-              className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-accent-red border border-border hover:border-accent-red/40 transition-all">
-              <LogOut size={12} /><span className="hidden sm:inline font-mono">SAIR</span>
+            <button onClick={signOut} title="Sair" aria-label="Sair"
+              className="transport-btn flex short:hidden items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-accent-red border border-border hover:border-accent-red/40 transition-all">
+              <LogOut size={12} /><span className="hidden min-[1680px]:inline font-mono">SAIR</span>
             </button>
           </div>
         </div>
 
         {/* ═══ MOBILE PORTRAIT HEADER ═══ */}
-        <div className="hidden pointer-coarse:flex items-center px-3 h-12 border-b border-border relative">
+        <div className="hidden compact:flex items-center px-3 h-12 border-b border-border relative">
           <button
             onClick={() => { setIsMobileDrawerOpen(true); setMobileDrawerView('main'); }}
             className="text-text-muted hover:text-white p-1.5 -ml-1.5 rounded-md cursor-pointer active:scale-90 transition-transform"
@@ -951,7 +997,7 @@ export default function App() {
         </div>
 
         {/* Mobile portrait: action buttons grid */}
-        <div className="hidden pointer-coarse:grid grid-cols-5 gap-1.5 px-3 py-2.5 border-b border-border bg-[#141416]">
+        <div className="hidden compact:grid grid-cols-5 gap-1.5 px-3 py-2.5 border-b border-border bg-[#141416]">
           {/* REPERTÓRIO */}
           <div className="relative">
             <button
@@ -1069,7 +1115,7 @@ export default function App() {
         </div>
 
         {/* Transport Controls Row */}
-        <div className="flex flex-col items-center px-3 py-2 sm:py-2.5 bg-[#141416] gap-1">
+        <div className="flex flex-col tight:flex-row tight:justify-center items-center px-3 py-2 sm:py-2.5 tight:py-1.5 short:py-1 short:hidden bg-[#141416] gap-1 tight:gap-4">
           {/* Playback Mode — acima dos controles */}
           <div data-tour="modos" className="hidden sm:flex items-center lcd-display rounded-md overflow-hidden">
             <button onClick={() => setPlaybackMode('continue')}
@@ -1087,13 +1133,13 @@ export default function App() {
           <div className="flex items-center gap-1.5">
             <button onClick={prevSong} className="transport-btn p-2 rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipBack size={18} /></button>
             <button data-tour="play" onClick={isCountingIn ? cancelCountIn : isPlaying ? pause : playWithPrecount}
-              className={`transport-btn p-3 rounded-lg active:scale-90 cursor-pointer ${isPlaying || isCountingIn ? 'active text-primary' : 'text-white'}`}>
+              className={`transport-btn p-3 short:p-2 rounded-lg active:scale-90 cursor-pointer ${isPlaying || isCountingIn ? 'active text-primary' : 'text-white'}`}>
               {isPlaying ? <Pause size={24} fill="currentColor" /> : isCountingIn ? <Loader2 size={24} className="animate-spin" /> : <Play size={24} fill="currentColor" className="ml-0.5" />}
             </button>
             <button onClick={nextSong} className="transport-btn p-2 rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipForward size={18} /></button>
             {/* Mobile edit toggle (landscape only — portrait has it in the buttons grid) */}
             <button onClick={() => setIsEditMode(!isEditMode)}
-              className={`sm:hidden pointer-coarse:hidden ml-2 items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-colors border cursor-pointer flex ${isEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border'}`}>
+              className={`hidden ml-2 items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-colors border cursor-pointer ${isEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border'}`}>
               {isEditMode ? <Check size={12} /> : <Edit2 size={12} />}
             </button>
           </div>
@@ -1106,15 +1152,15 @@ export default function App() {
       )}
 
       {/* ═══ SETLIST & NOTES AREA ═══ */}
-      <section data-tour="setlist-area" className="h-56 sm:h-48 border-b border-border bg-[#141416] flex flex-col sm:flex-row shrink-0 relative overflow-hidden">
+      <section data-tour="setlist-area" className="h-56 sm:h-48 tight:h-36 short:h-[64px] border-b border-border bg-[#141416] flex flex-col sm:flex-row shrink-0 relative overflow-hidden">
         {/* Left: Notes Panel */}
-        <div data-tour="anotacoes" className="h-20 sm:h-auto w-full sm:w-80 border-b sm:border-b-0 sm:border-r border-[#222] p-3 flex flex-col bg-[#0e0e10] shrink-0">
-          <div className="text-[10px] font-bold text-text-muted/60 uppercase tracking-[0.15em] mb-2 font-mono flex items-center justify-between">
+        <div data-tour="anotacoes" className="h-20 sm:h-auto w-full sm:w-80 tight:w-64 short:w-52 border-b sm:border-b-0 sm:border-r border-[#222] p-3 short:p-2 flex flex-col bg-[#0e0e10] shrink-0">
+          <div className="text-[10px] font-bold text-text-muted/60 uppercase tracking-[0.15em] mb-2 short:mb-1 font-mono flex items-center justify-between">
             Anotações
             <Edit2 size={10} className="text-text-muted/40" />
           </div>
           <textarea 
-            className="flex-1 w-full bg-[#141416] border border-[#222] rounded-md p-2.5 text-[11px] sm:text-xs text-text-main resize-none focus:outline-none focus:border-primary/50 font-mono leading-relaxed"
+            className="flex-1 w-full bg-[#141416] border border-[#222] rounded-md p-2.5 short:p-1.5 text-[11px] sm:text-xs text-text-main resize-none focus:outline-none focus:border-primary/50 font-mono leading-relaxed"
             placeholder="Ex: 1. Abertura (Tom: C)&#10;2. Medley Rápido (Tom: G)..."
             value={repertoireNotes}
             onChange={(e) => setRepertoireNotes(e.target.value)}
@@ -1122,8 +1168,8 @@ export default function App() {
         </div>
 
         {/* Right: Repertoire Horizontal Scroll */}
-        <div className="flex-1 p-3 overflow-x-auto overflow-y-hidden bg-[#141416] relative scrollbar-hide flex flex-col">
-          <div className="text-[10px] font-bold text-text-muted/40 uppercase tracking-[0.2em] font-mono mb-2 shrink-0">FAIXAS NO REPERTÓRIO</div>
+        <div className="flex-1 p-3 short:p-2 overflow-x-auto overflow-y-hidden bg-[#141416] relative scrollbar-hide flex flex-col">
+          <div className="text-[10px] font-bold text-text-muted/40 uppercase tracking-[0.2em] font-mono mb-2 shrink-0 short:hidden">FAIXAS NO REPERTÓRIO</div>
           
           <div className="flex flex-1 items-center gap-3">
             {playlist.map((song, i) => (
@@ -1135,7 +1181,7 @@ export default function App() {
                 onDragEnd={handleDragEnd}
                 onClick={() => !isEditMode && jumpToSong(i)}
                 className={`
-                  flex-none w-48 sm:w-72 h-full rounded-md flex flex-col p-3 gap-2 border transition-all overflow-hidden relative justify-center
+                  flex-none w-48 sm:w-72 tight:w-60 short:w-52 h-full rounded-md flex flex-col p-3 short:p-1.5 gap-2 short:gap-0 border transition-all overflow-hidden relative justify-center
                   ${isEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer hover:border-border-light'}
                   ${isEditMode && dragOverIndex === i ? 'border-primary border-2 bg-primary/5' : ''}
                   ${isEditMode && dragIndex === i ? 'opacity-40' : ''}
@@ -1145,7 +1191,7 @@ export default function App() {
                 
                 <div className="flex items-center gap-3 h-full">
                   {/* Cover */}
-                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded bg-black/40 flex-shrink-0 overflow-hidden relative group flex items-center justify-center border border-border shadow-md">
+                  <div className="w-14 h-14 sm:w-16 sm:h-16 tight:w-12 tight:h-12 short:w-9 short:h-9 rounded bg-black/40 flex-shrink-0 overflow-hidden relative group flex items-center justify-center border border-border shadow-md">
                     {song.coverImage ? (
                       <img src={song.coverImage} className="w-full h-full object-cover" alt="" />
                     ) : (
@@ -1163,7 +1209,7 @@ export default function App() {
                     )}
                   </div>
 
-                  <div className="flex-1 flex flex-col justify-center min-w-0 pr-1 gap-1">
+                  <div className="flex-1 flex flex-col justify-center min-w-0 pr-1 gap-1 short:gap-0.5">
                     {isEditMode ? (
                       <>
                         <input type="text"
@@ -1194,18 +1240,18 @@ export default function App() {
                           const title = parts.length >= 2 ? parts.slice(1).join(' - ').trim() : song.name
                           return (
                             <>
-                              <div className={`font-bold text-xs sm:text-sm truncate leading-snug ${i === activeSongIndex ? 'text-white' : 'text-text-main/80'}`}>
+                              <div className={`font-bold text-xs sm:text-sm short:text-xs truncate leading-snug ${i === activeSongIndex ? 'text-white' : 'text-text-main/80'}`}>
                                 {i + 1}. {title}
                               </div>
                               {artist && (
-                                <div className="text-[10px] text-text-muted/60 truncate font-mono">{artist}</div>
+                                <div className="text-[10px] text-text-muted/60 truncate font-mono short:hidden">{artist}</div>
                               )}
-                              <div className="flex items-center gap-2 mt-0.5">
+                              <div className="flex items-center gap-2 mt-0.5 short:mt-0">
                                 {song.originalKey && (
                                   <span className="text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">{song.originalKey}</span>
                                 )}
                                 {song.bpm && (
-                                  <span className="text-[9px] font-mono text-text-muted/60">{song.bpm} BPM</span>
+                                  <span className="text-[9px] font-mono text-text-muted/60 whitespace-nowrap">{song.bpm} BPM</span>
                                 )}
                                 <span className="text-[9px] font-mono text-text-muted/50 ml-auto flex items-center gap-1">
                                   {i === activeSongIndex && isPlaying && <Play size={8} fill="currentColor" className="text-primary" />}
@@ -1222,7 +1268,7 @@ export default function App() {
                 </div>
 
                 {/* Active indicator bar */}
-                {i === activeSongIndex && !isEditMode && <div className="absolute bottom-0 left-3 right-3 h-[3px] bg-primary rounded-t-sm shadow-[0_0_8px_rgba(212,168,67,1)]"></div>}
+                {i === activeSongIndex && !isEditMode && <div className="absolute bottom-0 left-3 right-3 h-[3px] short:h-[2px] bg-primary rounded-t-sm shadow-[0_0_8px_rgba(212,168,67,1)]"></div>}
               </div>
             ))}
           </div>
@@ -1237,10 +1283,10 @@ export default function App() {
       </section>
 
       {/* ═══ MAIN CONTENT ═══ */}
-      <main className="flex-1 flex flex-col overflow-hidden pointer-coarse:overflow-visible pointer-coarse:flex-none">
+      <main className="flex-1 min-h-0 flex flex-col overflow-hidden compact:overflow-visible compact:flex-none">
 
         {/* Timeline */}
-        <section className="border-b border-border px-3 sm:px-4 py-1.5 sm:py-2 flex flex-col relative shrink-0 bg-[#111113]">
+        <section className="border-b border-border px-3 sm:px-4 py-1.5 sm:py-2 short:py-1 flex flex-col relative shrink-0 bg-[#111113]">
           {/* Progress Bar */}
           <div className="h-6 sm:h-7 bg-[#0a0a0c] rounded relative overflow-hidden border border-border cursor-pointer group">
             {/* Fill */}
@@ -1445,17 +1491,17 @@ export default function App() {
         {/* ─── Mobile View Toggle ─── */}
         <div className="flex md:hidden border-b border-border bg-[#141416] shrink-0">
           <button onClick={() => setMobileView('mixer')}
-            className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-[0.15em] transition-colors cursor-pointer font-mono ${mobileView === 'mixer' ? 'text-primary border-b-2 border-primary' : 'text-text-muted'}`}>
+            className={`flex-1 py-2 short:py-1 text-[10px] font-bold uppercase tracking-[0.15em] transition-colors cursor-pointer font-mono ${mobileView === 'mixer' ? 'text-primary border-b-2 border-primary' : 'text-text-muted'}`}>
             MIXER
           </button>
           <button onClick={() => handlePremiumFeature(() => setMobileView('pads'))}
-            className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-[0.15em] transition-colors cursor-pointer font-mono ${mobileView === 'pads' ? 'text-secondary border-b-2 border-secondary' : 'text-text-muted'}`}>
+            className={`flex-1 py-2 short:py-1 text-[10px] font-bold uppercase tracking-[0.15em] transition-colors cursor-pointer font-mono ${mobileView === 'pads' ? 'text-secondary border-b-2 border-secondary' : 'text-text-muted'}`}>
             PADS
           </button>
         </div>
 
         {/* ─── Lower Split ─── */}
-        <section className="flex-1 flex overflow-hidden pointer-coarse:min-h-[70vh]">
+        <section className="flex-1 min-h-0 flex overflow-hidden compact:min-h-[72dvh]">
 
           {/* ═══ MIXER ═══ */}
           <div ref={mixerRef} data-tour="mixer"
@@ -1465,7 +1511,7 @@ export default function App() {
 
             {/* Mixer Toolbar */}
             {channels.length > 0 && (
-              <div className="flex items-center justify-between px-3 sm:px-4 py-1.5 border-b border-border bg-[#141416] shrink-0">
+              <div className="flex items-center justify-between px-3 sm:px-4 py-1.5 short:py-0.5 border-b border-border bg-[#141416] shrink-0">
                 <span className="text-[9px] font-mono font-bold text-text-muted/40 uppercase tracking-[0.2em]">MIXER • {channels.length} CANAIS</span>
                 <button onClick={() => setIsChannelEditMode(!isChannelEditMode)}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider transition-all active:scale-95 border cursor-pointer ${isChannelEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border hover:bg-white/5'}`}>
@@ -1475,7 +1521,7 @@ export default function App() {
               </div>
             )}
 
-            <div className="flex-1 flex flex-nowrap items-end p-3 sm:p-4 gap-1 overflow-x-auto"
+            <div ref={stripsRef} className="flex-1 min-h-0 flex flex-nowrap items-stretch p-3 sm:p-4 tight:p-2 short:p-1.5 gap-1 overflow-x-auto overflow-y-hidden pointer-coarse:snap-x pointer-coarse:snap-mandatory"
               style={{ cursor: 'grab' }}
               onMouseDown={onMixerMouseDown} onMouseMove={onMixerMouseMove} onMouseUp={onMixerMouseUp} onMouseLeave={onMixerMouseUp}>
 
@@ -1489,7 +1535,7 @@ export default function App() {
                 onDragOver={(e) => onChDragOver(e, idx)}
                 onDrop={() => onChDrop(idx)}
                 onDragEnd={onChDragEnd}
-                className={`channel-strip w-24 sm:w-28 h-full rounded-md flex flex-col items-center p-1.5 sm:p-2 pt-1 flex-shrink-0 relative overflow-hidden ${isChannelEditMode ? 'cursor-grab active:cursor-grabbing' : ''} ${isChannelEditMode && chDragOverIdx === idx ? 'border-primary border-2' : ''} ${isChannelEditMode && chDragIdx === idx ? 'opacity-40' : ''}`}>
+                className={`channel-strip [width:var(--strip-w,6rem)] snap-start h-full min-h-0 rounded-md flex flex-col items-center p-1.5 sm:p-2 pt-1 flex-shrink-0 relative overflow-hidden ${isChannelEditMode ? 'cursor-grab active:cursor-grabbing' : ''} ${isChannelEditMode && chDragOverIdx === idx ? 'border-primary border-2' : ''} ${isChannelEditMode && chDragIdx === idx ? 'opacity-40' : ''}`}>
                 {/* Group color strip */}
                 <div className="channel-group-strip" style={{ backgroundColor: grp.color }}></div>
 
@@ -1499,12 +1545,12 @@ export default function App() {
                 )}
 
                 {/* Channel Label */}
-                <div className="font-bold text-[8px] sm:text-[9px] tracking-[0.08em] truncate w-full text-center mb-1.5 uppercase font-mono mt-1" style={{ color: grp.color }} title={ch.name}>
+                <div className="font-bold text-[8px] sm:text-[9px] tracking-[0.08em] truncate w-full text-center mb-1.5 short:mb-0.5 uppercase font-mono mt-1 short:mt-0.5" style={{ color: grp.color }} title={ch.name}>
                   {ch.name.length > 8 ? ch.name.substring(0, 8) + '..' : ch.name}
                 </div>
 
                 {/* Pan Knob container */}
-                <div className="logic-pan-knob-container mb-2 w-full">
+                <div className="logic-pan-knob-container mb-2 short:mb-0.5 w-full">
                   <div className="logic-pan-knob"
                     title={`Pan: ${ch.pan === 0 ? 'C' : ch.pan < 0 ? 'L'+Math.round(Math.abs(ch.pan) * 100) : 'R'+Math.round(ch.pan * 100)}`}
                     onDoubleClick={() => updatePan(ch.id, 0)}
@@ -1520,7 +1566,7 @@ export default function App() {
                     <div className="logic-pan-indicator" style={{ transform: `rotate(${ch.pan * 135}deg)` }}></div>
                   </div>
                   {/* Values box like Logic: Pan | Vol */}
-                  <div className="flex justify-center gap-1 mt-1 w-full px-1">
+                  <div className="flex justify-center gap-1 mt-1 w-full px-1 short:hidden">
                     <div className="bg-[#1a1a1c] text-[#ddd] text-[8px] font-mono px-1 py-0.5 rounded-[2px] border border-black/80 w-8 text-center flex-1">
                       {ch.pan === 0 ? '0.0' : ch.pan > 0 ? `+${Math.round(ch.pan * 50)}` : `${Math.round(ch.pan * 50)}`}
                     </div>
@@ -1531,7 +1577,7 @@ export default function App() {
                 </div>
 
                 {/* Fader + VU Meter */}
-                <div className="flex-1 w-full flex justify-center py-1 mt-1 mb-2 relative gap-1 lg:gap-2">
+                <div className="flex-1 min-h-0 w-full flex justify-center py-1 mt-1 mb-2 short:mt-0 short:mb-1 relative gap-1 lg:gap-2">
                   {/* Fader Track */}
                   <div className="relative h-full flex justify-center w-6">
                     <input type="range" min="0" max="1.2" step="0.01" value={ch.volume}
@@ -1547,7 +1593,7 @@ export default function App() {
                           : `linear-gradient(to top, ${grp.color}66, ${grp.color}15)`
                       }}></div>
                     </div>
-                    <div className="logic-fader-knob absolute pointer-events-none transition-all duration-75 z-20" style={{ bottom: `calc(${(ch.volume / 1.2) * 100}% - 26px)` }}>
+                    <div className="logic-fader-knob absolute pointer-events-none transition-all duration-75 z-20" style={{ bottom: `calc(${(ch.volume / 1.2) * 100}% - var(--knob-half, 26px))` }}>
                     </div>
                   </div>
 
@@ -1560,8 +1606,8 @@ export default function App() {
 
                 {/* M/S Buttons */}
                 <div className="flex gap-1 mb-1.5 w-[90%] px-0.5 justify-center mt-auto">
-                  <button onClick={() => toggleMute(ch.id)} className={`flex-1 h-5 sm:h-6 rounded text-[9px] font-black transition-all active:scale-90 cursor-pointer border border-[#222] ${ch.muted ? 'bg-[#ff3b30] text-white shadow-[0_0_8px_rgba(255,59,48,0.6)]' : 'bg-[#444] text-[#999] hover:bg-[#555]'}`}>M</button>
-                  <button onClick={() => toggleSolo(ch.id)} className={`flex-1 h-5 sm:h-6 rounded text-[9px] font-black transition-all active:scale-90 cursor-pointer border border-[#222] ${ch.soloed ? 'bg-[#ffcc00] text-black shadow-[0_0_8px_rgba(255,204,0,0.6)]' : 'bg-[#444] text-[#999] hover:bg-[#555]'}`}>S</button>
+                  <button onClick={() => toggleMute(ch.id)} className={`flex-1 h-5 sm:h-6 pointer-coarse:h-7 rounded text-[9px] font-black transition-all active:scale-90 cursor-pointer border border-[#222] ${ch.muted ? 'bg-[#ff3b30] text-white shadow-[0_0_8px_rgba(255,59,48,0.6)]' : 'bg-[#444] text-[#999] hover:bg-[#555]'}`}>M</button>
+                  <button onClick={() => toggleSolo(ch.id)} className={`flex-1 h-5 sm:h-6 pointer-coarse:h-7 rounded text-[9px] font-black transition-all active:scale-90 cursor-pointer border border-[#222] ${ch.soloed ? 'bg-[#ffcc00] text-black shadow-[0_0_8px_rgba(255,204,0,0.6)]' : 'bg-[#444] text-[#999] hover:bg-[#555]'}`}>S</button>
                 </div>
 
                 {/* Channel Edit Overlay */}
@@ -1589,14 +1635,14 @@ export default function App() {
             <div className="flex-1"></div>
 
             {/* Master Fader */}
-            <div className="channel-strip w-28 sm:w-32 h-full rounded-md flex flex-col items-center p-1.5 sm:p-2 pt-1 flex-shrink-0 ml-2 sm:ml-4 relative border-primary/20 bg-[#38383a]">
+            <div className="channel-strip w-28 sm:w-32 short:w-24 h-full min-h-0 rounded-md flex flex-col items-center p-1.5 sm:p-2 pt-1 flex-shrink-0 ml-2 sm:ml-4 relative border-primary/20 bg-[#38383a]">
               <div className="channel-group-strip" style={{ backgroundColor: '#d4a843' }}></div>
               <div className="font-bold text-[8px] sm:text-[9px] tracking-[0.08em] w-full text-center mb-1.5 uppercase font-mono mt-1" style={{ color: '#d4a843' }}>
                 PRINCIPAL
               </div>
 
               {/* Master Fake Pan Knob Area */}
-              <div className="logic-pan-knob-container mb-2 w-full">
+              <div className="logic-pan-knob-container mb-2 short:mb-0.5 w-full">
                 <div className="logic-pan-knob opacity-50 select-none">
                   <div className="logic-pan-indicator" style={{ transform: 'rotate(0deg)' }}></div>
                 </div>
@@ -1625,7 +1671,7 @@ export default function App() {
                       background: 'linear-gradient(to top, rgba(212,168,67,0.5), rgba(212,168,67,0.1))'
                     }}></div>
                   </div>
-                  <div className="logic-fader-knob master absolute pointer-events-none transition-all duration-75 z-20" style={{ bottom: `calc(${(masterVolume / 1.2) * 100}% - 30px)` }}>
+                  <div className="logic-fader-knob master absolute pointer-events-none transition-all duration-75 z-20" style={{ bottom: `calc(${(masterVolume / 1.2) * 100}% - var(--knob-half-master, 30px))` }}>
                   </div>
                 </div>
                 
@@ -1639,9 +1685,9 @@ export default function App() {
           </div>
 
           {/* ═══ PAD PLAYER ═══ */}
-          <div data-tour="pads" className={`bg-[#18181a] border-l border-border p-3 sm:p-4 flex flex-col z-10 shadow-[-10px_0_20px_rgba(0,0,0,0.4)] min-h-0 overflow-hidden shrink-0
-            ${mobileView === 'pads' ? 'flex w-full' : 'hidden'} md:flex md:w-72 lg:w-96`}>
-            <div className="font-bold text-[10px] tracking-[0.15em] text-text-muted mb-2 flex justify-between uppercase items-center font-mono">
+          <div data-tour="pads" className={`bg-[#18181a] border-l border-border p-3 sm:p-4 short:p-2 flex flex-col z-10 shadow-[-10px_0_20px_rgba(0,0,0,0.4)] min-h-0 overflow-hidden shrink-0
+            ${mobileView === 'pads' ? 'flex w-full' : 'hidden'} md:flex md:w-72 lg:w-96 tight:lg:w-80 short:md:w-60`}>
+            <div className="font-bold text-[10px] tracking-[0.15em] text-text-muted mb-2 short:mb-1 flex justify-between uppercase items-center font-mono">
               <span>{padActiveView === 'pads' ? 'REPRODUTOR DE PADS' : padActiveView === 'samples' ? 'SAMPLES' : 'LOOPS'}</span>
               {padActiveView === 'pads' && (
                 <button onClick={() => setIsPadEditMode(!isPadEditMode)}
@@ -1653,7 +1699,7 @@ export default function App() {
 
             {/* Pad Cloud Selector — only in pads view */}
             {padActiveView === 'pads' && (
-              <div className="flex gap-1 mb-2">
+              <div className="flex gap-1 mb-2 short:mb-1">
                 <button
                   onClick={() => handlePremiumFeature(() => setIsPadSetsModalOpen(true))}
                   className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center gap-1.5 font-mono tracking-wider border transition-all active:scale-95 cursor-pointer
@@ -1668,7 +1714,7 @@ export default function App() {
             )}
 
             {/* ═══ 3-WAY VIEW TOGGLE ═══ */}
-            <div className="flex gap-1 mb-3">
+            <div className="flex gap-1 mb-3 short:mb-1.5">
               <button
                 onClick={() => { stopPlayback(); setPadActiveView('pads'); setActiveFolder(null); }}
                 className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center gap-1.5 font-mono tracking-wider border transition-all active:scale-95 cursor-pointer
@@ -1702,7 +1748,7 @@ export default function App() {
             {padActiveView === 'pads' ? (
               <>
                 {/* Volume */}
-                <div className="flex items-center gap-3 mb-3 px-1">
+                <div className="flex items-center gap-3 mb-3 short:mb-1.5 px-1">
                   <span className="text-[9px] text-text-muted uppercase tracking-[0.15em] font-bold shrink-0 font-mono">VOL</span>
                   <input type="range" min="0" max="1" step="0.01" value={padVolume}
                     onChange={(e) => updatePadVolume(parseFloat(e.target.value))}
@@ -1710,12 +1756,12 @@ export default function App() {
                   <span className="text-[9px] text-text-muted font-mono w-8 text-right font-bold">{Math.round(padVolume * 100)}%</span>
                 </div>
                 {/* Grid */}
-                <div className="flex-1 grid grid-cols-4 md:grid-cols-3 gap-1.5 sm:gap-2">
+                <div className="flex-1 min-h-0 grid grid-cols-4 grid-rows-3 md:grid-cols-3 md:grid-rows-4 short:md:grid-cols-4 short:md:grid-rows-3 gap-1.5 sm:gap-2 short:gap-1">
                   {['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map(note => (
                     <div key={note} className="relative">
                       <button onClick={() => !isPadEditMode && playPad(note)}
                         className={`
-                          mpc-pad w-full h-full rounded-lg flex flex-col items-center justify-center text-base sm:text-lg font-bold cursor-pointer min-h-[48px] sm:min-h-[56px] active:scale-95 font-mono relative
+                          mpc-pad w-full h-full rounded-lg flex flex-col items-center justify-center text-base sm:text-lg font-bold cursor-pointer min-h-[48px] sm:min-h-[56px] tight:min-h-0 active:scale-95 font-mono relative
                           ${activeNote === note
                             ? 'pressed border-secondary/50 text-secondary shadow-[0_0_15px_rgba(6,182,212,0.3)]'
                             : customPads.has(note) ? 'border-purple-500/30 text-purple-300 hover:border-purple-400/50' : 'text-text-main/70 hover:text-white hover:border-border-light'}
@@ -1893,6 +1939,7 @@ export default function App() {
       {showTour && <GuidedTour steps={TOUR_STEPS} onClose={closeTour} />}
       {showWhatsNew && <WhatsNewModal onClose={closeWhatsNew} />}
       <UpdateBanner />
+      <InstallAppBanner />
 
       <LiveModeModal
         isOpen={isLiveModeOpen}
@@ -2016,7 +2063,7 @@ export default function App() {
 
       {/* ═══ MOBILE PORTRAIT DRAWER ═══ */}
       {isMobileDrawerOpen && (
-        <div className="hidden pointer-coarse:block fixed inset-0 z-[60]">
+        <div className="hidden compact:block fixed inset-0 z-[60]">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setIsMobileDrawerOpen(false)} />
           <div className="absolute top-0 left-0 bottom-0 w-72 bg-[#141416] border-r border-border flex flex-col shadow-2xl">
             {/* Header */}

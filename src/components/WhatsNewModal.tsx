@@ -13,7 +13,7 @@ export function WhatsNewModal({ onClose }: WhatsNewModalProps) {
 
   return (
     <div className="fixed inset-0 z-[150] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[#141416] border border-primary/20 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-[#141416] border border-primary/20 rounded-2xl w-full max-w-md shadow-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="relative px-6 pt-6 pb-5 bg-gradient-to-b from-primary/10 to-transparent">
           <button onClick={onClose} className="absolute top-4 right-4 text-text-muted hover:text-white cursor-pointer"><X size={18} /></button>
