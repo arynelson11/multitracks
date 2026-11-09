@@ -24,6 +24,7 @@ import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/Sec
 import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections } from './lib/plans'
 import { isAdminEmail } from './lib/admin'
 import { InstallAppBanner } from './components/InstallAppBanner'
+import { AUDIO_FILE_ACCEPT } from './lib/uploadContentType'
 import { useDesktopUpdate } from './hooks/useDesktopUpdate'
 import { CURRENT_VERSION } from './lib/changelog'
 
@@ -708,7 +709,7 @@ export default function App() {
                         className="w-full text-left px-4 py-2.5 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors">
                         <span className="text-white text-sm font-medium flex items-center gap-3"><FolderOpen size={16} className="text-primary" />Importar Stems</span>
                         <ChevronRight size={14} className="text-text-muted" />
-                        <input type="file" multiple accept="audio/*" className="hidden"
+                        <input type="file" multiple accept={AUDIO_FILE_ACCEPT} className="hidden"
                           onChange={(e) => { if (e.target.files) { loadFiles(e.target.files); setIsSetlistMenuOpen(false) } }} />
                       </label>
                       <hr className="border-border my-1" />
@@ -762,7 +763,7 @@ export default function App() {
                   <div className="absolute top-full left-0 mt-2 w-56 glass border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden flex flex-col py-1">
                     <label className="w-full text-left px-4 py-2 text-xs font-medium text-text hover:bg-white/10 transition-colors cursor-pointer flex items-center gap-2">
                         <Upload size={14} /> Importar do dispositivo
-                        <input type="file" multiple accept="audio/*" className="hidden"
+                        <input type="file" multiple accept={AUDIO_FILE_ACCEPT} className="hidden"
                           onChange={(e) => { 
                             setIsTracksMenuOpen(false); 
                             if (e.target.files) loadFiles(e.target.files) 
@@ -1024,7 +1025,7 @@ export default function App() {
                     <label className="w-full text-left px-4 py-2.5 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer">
                       <span className="text-white text-sm font-medium flex items-center gap-3"><FolderOpen size={16} className="text-primary" />Importar Stems</span>
                       <ChevronRight size={14} className="text-text-muted" />
-                      <input type="file" multiple accept="audio/*" className="hidden"
+                      <input type="file" multiple accept={AUDIO_FILE_ACCEPT} className="hidden"
                         onChange={(e) => { if (e.target.files) { loadFiles(e.target.files); setIsSetlistMenuOpen(false) } }} />
                     </label>
                     <hr className="border-border my-1" />
@@ -1775,7 +1776,7 @@ export default function App() {
                         <div className="absolute inset-0 bg-black/85 rounded-lg flex flex-col items-center justify-center gap-1 z-10 border border-border">
                           <label className="text-[7px] font-bold text-white uppercase cursor-pointer hover:text-primary transition-colors flex items-center gap-1 font-mono tracking-wider">
                             <Upload size={9} />CARREGAR
-                            <input type="file" accept="audio/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) loadCustomPad(note, f) }} />
+                            <input type="file" accept={AUDIO_FILE_ACCEPT} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) loadCustomPad(note, f) }} />
                           </label>
                           {customPads.has(note) && (
                             <button onClick={() => clearCustomPad(note)} className="text-[7px] font-bold text-accent-red hover:text-red-300 cursor-pointer flex items-center gap-1 font-mono tracking-wider">
@@ -2202,7 +2203,7 @@ export default function App() {
                       Importar do dispositivo
                     </span>
                     <ChevronRight size={14} className="text-text-muted" />
-                    <input type="file" multiple accept="audio/*" className="hidden"
+                    <input type="file" multiple accept={AUDIO_FILE_ACCEPT} className="hidden"
                       onChange={(e) => {
                         if (e.target.files) {
                           loadFiles(e.target.files)

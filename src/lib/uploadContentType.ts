@@ -44,3 +44,13 @@ export function resolveUploadContentType(file: { type?: string; name?: string })
 
   return 'application/octet-stream';
 }
+
+// Filtro dos botões de escolher áudio (<input type="file" accept=...>).
+// Só "audio/*" não basta no iPhone/iPad: o seletor do iOS deixava MP3 APAGADO,
+// sem dar pra tocar (visto em 2026-11-09 com um .mp3 baixado pelo Chrome).
+// Listar as extensões e os tipos explícitos faz o iOS reconhecer cada formato.
+export const AUDIO_FILE_ACCEPT = [
+  'audio/*',
+  '.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.oga', '.opus', '.aif', '.aiff', '.caf',
+  'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/flac',
+].join(',');

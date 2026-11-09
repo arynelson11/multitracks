@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Minus, Plus, Mic, Download, Trash2, FolderOpen, Clock, CheckCircle2, Lock, Repeat, SkipBack, SkipForward } from 'lucide-react';
 import { uploadToR2 } from '../lib/r2';
+import { AUDIO_FILE_ACCEPT } from '../lib/uploadContentType';
 import { getAuthHeaders } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { canDownloadStems, canUseVoiceGuide, canUseBpmDetection, planTier, maxSeparationsPerMonth } from '../lib/plans';
@@ -1591,7 +1592,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                 <div className="font-black text-white uppercase tracking-wider text-sm mb-1">Carregar Áudio & Iniciar</div>
                 <div className="text-[10px] text-text-muted/50 font-mono">MP3, WAV ou AAC</div>
               </div>
-              <input type="file" accept="audio/*" onChange={handleFileUpload} className="hidden" />
+              <input type="file" accept={AUDIO_FILE_ACCEPT} onChange={handleFileUpload} className="hidden" />
             </label>
           </div>
 

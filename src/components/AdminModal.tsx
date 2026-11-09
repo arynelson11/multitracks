@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { X, Upload, Music, Image as ImageIcon, Loader2, AlertCircle, CheckCircle2, ChevronRight, Hash, Activity, Layers, Disc, Repeat } from 'lucide-react';
 import { useAdminUpload, type UploadMetadata } from '../hooks/useAdminUpload';
+import { AUDIO_FILE_ACCEPT } from '../lib/uploadContentType';
 
 interface AdminModalProps {
     isOpen: boolean;
@@ -269,7 +270,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                                 <span className="text-[9px] text-text-muted/30 font-mono">Selecionar todos os stems</span>
                                             </>
                                         )}
-                                        <input type="file" ref={stemsInputRef} multiple accept="audio/*" className="hidden" onChange={e => setStemFiles(Array.from(e.target.files || []))} />
+                                        <input type="file" ref={stemsInputRef} multiple accept={AUDIO_FILE_ACCEPT} className="hidden" onChange={e => setStemFiles(Array.from(e.target.files || []))} />
                                     </div>
                                 </div>
                             </>
@@ -312,7 +313,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                     {padFiles.size > 0 && padFiles.size !== 12 && (
                                         <span className="text-[9px] text-yellow-500 font-bold font-mono">Necessário exatamente 12 arquivos válidos!</span>
                                     )}
-                                    <input type="file" ref={padsInputRef} multiple accept="audio/*" className="hidden" onChange={e => handlePadsSelection(e.target.files)} />
+                                    <input type="file" ref={padsInputRef} multiple accept={AUDIO_FILE_ACCEPT} className="hidden" onChange={e => handlePadsSelection(e.target.files)} />
                                 </div>
 
                                 {padFiles.size > 0 && (
@@ -361,7 +362,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                             {(sampleFiles.reduce((acc, f) => acc + f.size, 0) / (1024 * 1024)).toFixed(1)} MB total
                                         </span>
                                     )}
-                                    <input id={`${activeTab}-file-input`} type="file" multiple accept="audio/*" className="hidden" onChange={e => setSampleFiles(Array.from(e.target.files || []))} />
+                                    <input id={`${activeTab}-file-input`} type="file" multiple accept={AUDIO_FILE_ACCEPT} className="hidden" onChange={e => setSampleFiles(Array.from(e.target.files || []))} />
                                 </div>
 
                                 {sampleFiles.length > 0 && (
