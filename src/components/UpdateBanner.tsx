@@ -46,6 +46,17 @@ export function UpdateBanner() {
       setDismissed(false);
     };
 
+    // Com autoUpdate a versão nova assume sozinha. Se isso acontecer com o app
+    // aberto, avisa e oferece recarregar (sem recarregar sozinho: não corta música).
+    const hadController = !!navigator.serviceWorker.controller;
+    const onControllerChange = () => {
+      if (!hadController || cancelled) return;
+      setWaitingSW(null);
+      setState({ kind: 'web' });
+      setDismissed(false);
+    };
+    navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+
     navigator.serviceWorker.getRegistration().then((reg) => {
       if (!reg || cancelled) return;
 
@@ -70,6 +81,7 @@ export function UpdateBanner() {
 
     return () => {
       cancelled = true;
+      navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
       if (interval) clearInterval(interval);
       if (onFocus) window.removeEventListener('focus', onFocus);
     };

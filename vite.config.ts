@@ -20,10 +20,14 @@ export default defineConfig({
       ? []
       : [
           VitePWA({
-            // 'prompt' (em vez de 'autoUpdate'): em vez de trocar a versão em
-            // silêncio, o app avisa "tem versão nova" e o usuário clica pra
-            // atualizar (UpdateBanner via service worker). Mesma UX do desktop.
-            registerType: 'prompt',
+            // 'autoUpdate' (era 'prompt' até 2026-11-09): com 'prompt' a versão nova
+            // só entrava quando a pessoa tocava no aviso, e o aviso só existia na tela
+            // de Multitracks. Quem ia direto pro Separador ficava PRESO na versão velha
+            // (o iPad do irmão do Ary continuou com o bug do upload depois do fix).
+            // Agora a versão nova assume sozinha e vale na próxima abertura; o aviso
+            // (global, em main.tsx) só oferece recarregar, nunca recarrega sozinho pra
+            // não cortar uma música tocando.
+            registerType: 'autoUpdate',
             includeAssets: ['logo.svg', 'logo.png', 'app-icon.svg', 'app-icon.png', 'favicon.svg', 'apple-touch-icon.png', 'pwa-192.png', 'pwa-512.png'],
             manifest: {
               id: '/',
@@ -54,6 +58,10 @@ export default defineConfig({
               ],
             },
             workbox: {
+              // Versão nova assume na hora e limpa caches de versões antigas.
+              skipWaiting: true,
+              clientsClaim: true,
+              cleanupOutdatedCaches: true,
               globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
               runtimeCaching: [
                 {

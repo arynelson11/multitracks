@@ -23,7 +23,6 @@ import { WhatsNewModal } from './components/WhatsNewModal'
 import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/SectionBar'
 import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections } from './lib/plans'
 import { isAdminEmail } from './lib/admin'
-import { UpdateBanner } from './components/UpdateBanner'
 import { InstallAppBanner } from './components/InstallAppBanner'
 import { useDesktopUpdate } from './hooks/useDesktopUpdate'
 import { CURRENT_VERSION } from './lib/changelog'
@@ -1938,7 +1937,6 @@ export default function App() {
 
       {showTour && <GuidedTour steps={TOUR_STEPS} onClose={closeTour} />}
       {showWhatsNew && <WhatsNewModal onClose={closeWhatsNew} />}
-      <UpdateBanner />
       <InstallAppBanner />
 
       <LiveModeModal
