@@ -7,8 +7,9 @@ import type { Channel, Song, Marker } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { detectKey, generateEndlessClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { loadClickSelection } from '../lib/clickLibrary';
-import { isClickOrGuideName, sanitizeSemitones, wantsFormantCompensation } from '../lib/pitchRules';
+import { sanitizeSemitones, wantsFormantCompensation } from '../lib/pitchRules';
 import { getCachedStem, getCachedStemNames, isSongCached } from '../lib/offlineCache';
+import { autoPanFor, channelGain, isPitchExempt, pickMainChannel } from '../lib/channelRoles';
 
 // Engine de tom: signalsmith-stretch (MIT). O worklet e o WASM são gerados
 // inline em runtime (Blob + base64), então funciona offline no desktop sob
@@ -137,6 +138,10 @@ export function useAudioEngine(userId?: string) {
 
     const activeSong = playlist[activeSongIndex];
     const channels = activeSong?.channels || [];
+
+    // Papel do canal (Click, Guia, Normal), troca de tom, pan automático e ganho
+    // com Solo/M saem da regra central em src/lib/channelRoles.ts. Click e Guia
+    // nunca transpõem (ficam em 0 semitons) e continuam tocando no Solo de outro canal.
 
     // === Engine de tom (signalsmith): um worklet por canal, reaproveitado ===
     // O nó do pacote NÃO pode ser destruído: não existe close() e o process()
@@ -288,7 +293,13 @@ export function useAudioEngine(userId?: string) {
     const applyPitchToChannel = (ch: Channel, semitones: number) => {
         const slot = pitchSlotsRef.current.get(ch.id);
         if (!slot || !slot.active) return;
-        void slot.node.schedule({ semitones, formantCompensation: wantsFormantCompensation(ch.name), formantBaseHz: 0 });
+        // Click e Guia (regra central, o papel manual vale) nunca transpõem: ficam em 0.
+        const exempt = isPitchExempt(ch);
+        void slot.node.schedule({
+            semitones: exempt ? 0 : semitones,
+            formantCompensation: !exempt && wantsFormantCompensation(ch.name),
+            formantBaseHz: 0,
+        });
     };
 
     // Posição atual da música. Com um play() pendente nada está tocando: a
@@ -360,14 +371,9 @@ export function useAudioEngine(userId?: string) {
             const newList = [...prev];
             const updatedSong = { ...newList[activeSongIndex] };
             updatedSong.channels = updatedSong.channels.map(ch => {
-                const isClickOrGuide = isClickOrGuideName(ch.name);
-
-                let newPan = ch.pan;
-                if (settings.autoPan) {
-                    newPan = isClickOrGuide ? -1 : 1;
-                } else {
-                    newPan = 0; // Restore center if disabled
-                }
+                // Ligado: Click e Guia à esquerda, o resto à direita (papel manual vence).
+                // Desligado: volta ao centro. Mexe só no pan, como antes.
+                const newPan = settings.autoPan ? autoPanFor(ch, true).pan : 0;
 
                 // Apply immediately to node
                 if (ch.pannerNode && audioCtxRef.current) {
@@ -421,10 +427,7 @@ export function useAudioEngine(userId?: string) {
                             const gain = ctx.createGain();
 
                             panner.pan.value = metaCh.pan;
-                            let effectiveVol = metaCh.volume;
-                            if (metaCh.muted) effectiveVol = 0;
-                            if (metaSong.channels.some(c => c.soloed) && !metaCh.soloed) effectiveVol = 0;
-                            gain.gain.value = effectiveVol;
+                            gain.gain.value = channelGain(metaCh, metaSong.channels);
 
                             panner.connect(gain);
                             gain.connect(master);
@@ -457,7 +460,7 @@ export function useAudioEngine(userId?: string) {
                     const channels = (await Promise.all(channelPromises)).filter((c): c is Channel => c !== null);
                     if (channels.length === 0) return null;
 
-                    const mainCh = channels.find(ch => !isClickOrGuideName(ch.name));
+                    const mainCh = pickMainChannel(channels);
 
                     let originalKey = metaSong.originalKey || null;
                     if (!originalKey && mainCh) originalKey = detectKey(mainCh.buffer);
@@ -555,8 +558,6 @@ export function useAudioEngine(userId?: string) {
             autoNextTimeoutRef.current = null;
         }
 
-        const anySoloed = channels.some(c => c.soloed);
-
         // Worklets de canais que não são desta música (música trocada) voltam pra reserva.
         releasePitchNodesExcept(channels);
 
@@ -566,7 +567,7 @@ export function useAudioEngine(userId?: string) {
         // Agora todos os start() rodam no mesmo tick, então começam juntos.
         if (currentPitchRef.current !== 0) {
             await Promise.all(channels
-                .filter(ch => !isClickOrGuideName(ch.name))
+                .filter(ch => !isPitchExempt(ch))
                 .map(ch => ensurePitchSlot(ctx, ch)));
             // Outro play() (troca de tom, seek, pausa) começou enquanto o worklet
             // nascia: este desiste. Sem isso as duas levas de fontes tocavam juntas.
@@ -592,8 +593,9 @@ export function useAudioEngine(userId?: string) {
         // ou dois blocos depois (medido: 7 a 10 de 52 reinícios, até 5,3 ms).
         const when = ctx.currentTime + START_LEAD_S;
         // Com tom != 0 as faixas transpostas saem com a latência do worklet; quem
-        // não passa por ele (click, guia) atrasa o mesmo tanto. Tom 0: sem atraso.
-        const viaPitch = (ch: Channel) => playPitch !== 0 && !isClickOrGuideName(ch.name) && pitchSlotsRef.current.has(ch.id);
+        // não passa por ele (Click e Guia pela regra central, ou worklet que falhou)
+        // atrasa o mesmo tanto. Tom 0: sem atraso.
+        const viaPitch = (ch: Channel) => playPitch !== 0 && !isPitchExempt(ch) && pitchSlotsRef.current.has(ch.id);
         const compensation = channels.some(viaPitch) ? pitchLatencyRef.current : null;
 
         for (const ch of channels) {
@@ -608,9 +610,7 @@ export function useAudioEngine(userId?: string) {
             // Cancel any pending gain automation and apply correct volume immediately
             if (ch.gainNode) {
                 ch.gainNode.gain.cancelScheduledValues(ctx.currentTime);
-                let vol = ch.volume;
-                if (ch.muted || (anySoloed && !ch.soloed)) vol = 0;
-                ch.gainNode.gain.setValueAtTime(vol, ctx.currentTime);
+                ch.gainNode.gain.setValueAtTime(channelGain(ch, channels), ctx.currentTime);
             }
 
             // BYPASS NO TOM 0: a engine de tom (worklet+WASM) é um phase-vocoder
@@ -921,17 +921,11 @@ export function useAudioEngine(userId?: string) {
         try {
         const filesArray = Array.from(files);
 
-        // Roteamento (pan/bus) sai só do nome do arquivo — não precisa do áudio
-        // decodificado. Mesma regra de antes (click/guia à esquerda, resto à
-        // direita), extraída pra rodar ANTES do decode.
-        const routingFor = (fileName: string): { pan: number; bus: '1' | '2' | '1/2' } => {
-            let pan = 0;
-            if (settings.autoPan) {
-                pan = isClickOrGuideName(fileName) ? -1 : 1;
-            }
-            const bus: '1' | '2' | '1/2' = pan === -1 ? '1' : pan === 1 ? '2' : '1/2';
-            return { pan, bus };
-        };
+        // Roteamento (pan/bus) sai só do nome do arquivo, sem precisar do áudio
+        // decodificado, então roda ANTES do decode. Regra central: com pan
+        // automático, Click e Guia à esquerda (bus 1) e o resto à direita (bus 2).
+        const routingFor = (fileName: string): { pan: number; bus: '1' | '2' | '1/2' } =>
+            autoPanFor({ id: '', name: fileName }, settings.autoPan);
 
         // Música baixada e já no cache? Então NÃO recebemos os blobs em memória:
         // carregamos lendo do cache 1 stem por vez (getCachedStem) no decode, e
@@ -1105,7 +1099,7 @@ export function useAudioEngine(userId?: string) {
             if (ch.buffer.duration > maxDuration) maxDuration = ch.buffer.duration;
         });
 
-        const mainChannel = newChannels.find(ch => !isClickOrGuideName(ch.name));
+        const mainChannel = pickMainChannel(newChannels);
         const originalKey = overrideOriginalKey !== undefined
             ? overrideOriginalKey
             : (mainChannel ? detectKey(mainChannel.buffer) : null);
@@ -1156,8 +1150,9 @@ export function useAudioEngine(userId?: string) {
             const panner = audioCtxRef.current.createStereoPanner();
             const gain = audioCtxRef.current.createGain();
 
-            // Panner para click tradicionalmente fica em L ou C. autoPan joga click pra L (-1)
-            panner.pan.value = settings.autoPan ? -1 : 0;
+            // O loop é Click pela regra central: com pan automático vai pra L (-1, bus 1); sem, centro.
+            const routing = autoPanFor({ id: '', name: file.name }, settings.autoPan);
+            panner.pan.value = routing.pan;
             gain.gain.value = 1;
 
             panner.connect(gain);
@@ -1182,8 +1177,8 @@ export function useAudioEngine(userId?: string) {
                 volume: 1,
                 muted: false,
                 soloed: false,
-                pan: panner.pan.value,
-                bus: settings.autoPan ? '1' : '1/2'
+                pan: routing.pan,
+                bus: routing.bus
             };
 
             const newSong: Song = {
@@ -1222,12 +1217,9 @@ export function useAudioEngine(userId?: string) {
             const panner = audioCtxRef.current.createStereoPanner();
             const gain = audioCtxRef.current.createGain();
 
-            let panValue = 0;
-            if (settings.autoPan && isClickOrGuideName(file.name)) {
-                panValue = -1;
-            } else if (settings.autoPan) {
-                panValue = 1;
-            }
+            // Regra central: com pan automático, Click e Guia à esquerda (bus 1) e o resto à direita (bus 2).
+            const routing = autoPanFor({ id: '', name: file.name }, settings.autoPan);
+            const panValue = routing.pan;
 
             panner.pan.value = panValue;
             gain.gain.value = 1;
@@ -1262,7 +1254,7 @@ export function useAudioEngine(userId?: string) {
                 muted: false,
                 soloed: false,
                 pan: panValue,
-                bus: panValue === -1 ? '1' : panValue === 1 ? '2' : '1/2'
+                bus: routing.bus
             };
 
             const newPlaylist = [...playlist];
@@ -1481,19 +1473,20 @@ export function useAudioEngine(userId?: string) {
     }
 
     // Mixer controls
+    // O ganho de cada canal sai do channelGain com a lista JÁ com a mudança do
+    // clique: M cala sempre (inclusive Click e Guia); Solo de outro canal cala os
+    // normais, mas Click e Guia continuam tocando. Mexer no fader de um canal
+    // calado pelo Solo não faz ele voltar a tocar.
     const updateVolume = (id: string, volume: number) => {
         const newPlaylist = [...playlist];
         const song = { ...newPlaylist[activeSongIndex] };
         if (!song) return;
 
-        song.channels = song.channels.map(ch => {
-            if (ch.id === id && audioCtxRef.current) {
-                const effectiveVol = ch.muted ? 0 : volume;
-                ch.gainNode.gain.setTargetAtTime(effectiveVol, audioCtxRef.current.currentTime, 0.05);
-                return { ...ch, volume };
-            }
-            return ch;
-        });
+        song.channels = song.channels.map(ch => (ch.id === id ? { ...ch, volume } : ch));
+        const changed = song.channels.find(ch => ch.id === id);
+        if (changed?.gainNode && audioCtxRef.current) {
+            changed.gainNode.gain.setTargetAtTime(channelGain(changed, song.channels), audioCtxRef.current.currentTime, 0.05);
+        }
         newPlaylist[activeSongIndex] = song;
         updatePlaylistAndSave(newPlaylist);
     };
@@ -1503,18 +1496,12 @@ export function useAudioEngine(userId?: string) {
         const song = { ...newPlaylist[activeSongIndex] };
         if (!song) return;
 
-        song.channels = song.channels.map(ch => {
-            if (ch.id === id) {
-                const isMuted = !ch.muted;
-                const effectiveVol = isMuted ? 0 : ch.volume;
-                if (ch.gainNode && audioCtxRef.current) {
-                    ch.gainNode.gain.cancelScheduledValues(audioCtxRef.current.currentTime);
-                    ch.gainNode.gain.setValueAtTime(effectiveVol, audioCtxRef.current.currentTime);
-                }
-                return { ...ch, muted: isMuted };
-            }
-            return ch;
-        });
+        song.channels = song.channels.map(ch => (ch.id === id ? { ...ch, muted: !ch.muted } : ch));
+        const changed = song.channels.find(ch => ch.id === id);
+        if (changed?.gainNode && audioCtxRef.current) {
+            changed.gainNode.gain.cancelScheduledValues(audioCtxRef.current.currentTime);
+            changed.gainNode.gain.setValueAtTime(channelGain(changed, song.channels), audioCtxRef.current.currentTime);
+        }
         newPlaylist[activeSongIndex] = song;
         updatePlaylistAndSave(newPlaylist);
     };
@@ -1524,22 +1511,13 @@ export function useAudioEngine(userId?: string) {
         const song = { ...newPlaylist[activeSongIndex] };
         if (!song) return;
 
-        song.channels = song.channels.map(ch => {
-            if (ch.id === id) {
-                return { ...ch, soloed: !ch.soloed };
-            }
-            return ch;
-        });
+        song.channels = song.channels.map(ch => (ch.id === id ? { ...ch, soloed: !ch.soloed } : ch));
 
-        const anySoloed = song.channels.some(ch => ch.soloed);
-
+        // O Solo muda quem toca em toda a música, então reaplica o ganho em todos.
         song.channels.forEach(ch => {
             if (ch.gainNode && audioCtxRef.current) {
-                let effectiveVol = ch.volume;
-                if (ch.muted) effectiveVol = 0;
-                if (anySoloed && !ch.soloed) effectiveVol = 0;
                 ch.gainNode.gain.cancelScheduledValues(audioCtxRef.current.currentTime);
-                ch.gainNode.gain.setValueAtTime(effectiveVol, audioCtxRef.current.currentTime);
+                ch.gainNode.gain.setValueAtTime(channelGain(ch, song.channels), audioCtxRef.current.currentTime);
             }
         });
 
