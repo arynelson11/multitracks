@@ -9,44 +9,17 @@ import { detectKey, generateEndlessClickTrackFromSample } from '../lib/AudioAnal
 import { loadClickSelection } from '../lib/clickLibrary';
 import { sanitizeSemitones, wantsFormantCompensation } from '../lib/pitchRules';
 import { getCachedStem, getCachedStemNames, isSongCached } from '../lib/offlineCache';
-import { autoPanFor, channelGain, isPitchExempt, pickMainChannel } from '../lib/channelRoles';
+import { applyChannelMetaToList, autoPanFor, channelGain, isPitchExempt, pickMainChannel, pitchChangeAction, type ChannelMetaPatch } from '../lib/channelRoles';
+import { arrangeChannels } from '../lib/channelNames';
+import { REPERTOIRE_SCHEMA_VERSION, migrateManifestSong, migrateSavedSong, toManifestSong, toSavedSong, type SavedSong } from '../lib/repertoireSchema';
 
 // Engine de tom: signalsmith-stretch (MIT). O worklet e o WASM são gerados
 // inline em runtime (Blob + base64), então funciona offline no desktop sob
 // file:// — sem arquivo servido e sem caminho absoluto (que era o que quebrava
 // o RubberBand no desktop). Pitch puro: muda o tom sem alterar a velocidade.
 
-interface SavedChannel {
-    id: string;
-    name: string;
-    volume: number;
-    muted: boolean;
-    soloed: boolean;
-    pan: number;
-    bus: '1' | '2' | '1/2';
-    // Ponteiro pro stem no cache offline (músicas baixadas). Quando presente, o
-    // repertório lê os bytes do cache em vez de ter uma 2ª cópia própria.
-    srcId?: string;
-    srcIdx?: number;
-}
-
-interface SavedSong {
-    id: string;
-    name: string;
-    bpm?: number;
-    coverImage?: string;
-    channels: SavedChannel[];
-    duration: number;
-    pitch?: number;
-    originalKey?: string | null;
-    // Metadados que também precisam sobreviver offline (reabrir o app). Sem
-    // isso, marcadores/seções, letra e cifra se perdiam ao fechar.
-    artist?: string;
-    markers?: Marker[];
-    lyrics?: string | null;
-    lyricsSynced?: string | null;
-    chords?: string | null;
-}
+// O formato do repertório salvo no aparelho (SavedSong, v2 com nome, papel e
+// ordem do usuário) e do manifest do ZIP vive em src/lib/repertoireSchema.ts.
 
 // Folga entre o play e o som sair: todas as faixas são agendadas pro MESMO
 // instante `when`, um pouco à frente do relógio (mesmo padrão do
@@ -126,6 +99,9 @@ export function useAudioEngine(userId?: string) {
     const pausedAtRef = useRef<number>(0);
     const autoNextTimeoutRef = useRef<number | null>(null);
     const currentPitchRef = useRef<number>(0);
+    // Marca do setChannelMeta: o papel mudou tocando com tom diferente de 0 e o
+    // áudio precisa reiniciar com os canais novos (efeito depois do changePitch).
+    const restartAfterMetaRef = useRef(false);
 
     // === Pré-contagem ===
     const [precountEnabled, setPrecountEnabled] = useState<boolean>(() =>
@@ -311,34 +287,10 @@ export function useAudioEngine(userId?: string) {
         return Math.max(0, ctx.currentTime - startTimeRef.current) * timeStretch + pausedAtRef.current;
     };
 
-    // Core persistence
+    // Core persistence. Grava o repertório v2: tudo o que já era salvo (mixagem,
+    // tom, marcadores, letra, cifra) mais sourceId, nome e papel do usuário e a ordem.
     const saveStateToDB = async (list: Song[]) => {
-        const metaFormat: SavedSong[] = list.map(song => ({
-            id: song.id,
-            name: song.name,
-            coverImage: song.coverImage,
-            duration: song.duration,
-            channels: song.channels.map(ch => ({
-                id: ch.id,
-                name: ch.name,
-                volume: ch.volume,
-                muted: ch.muted,
-                soloed: ch.soloed,
-                pan: ch.pan,
-                bus: ch.bus || '1/2',
-                srcId: ch.srcId,
-                srcIdx: ch.srcIdx
-            })),
-            pitch: song.pitch || 0,
-            originalKey: song.originalKey || null,
-            bpm: song.bpm,
-            artist: song.artist,
-            markers: song.markers,
-            lyrics: song.lyrics ?? null,
-            lyricsSynced: song.lyricsSynced ?? null,
-            chords: song.chords ?? null
-        }));
-        await set(DB_KEY_META, metaFormat);
+        await set(DB_KEY_META, list.map(toSavedSong));
     };
 
     const updatePlaylistAndSave = (newList: Song[]) => {
@@ -405,13 +357,15 @@ export function useAudioEngine(userId?: string) {
             Tone.setContext(ctx);
             setIsReady(true);
 
-            // Try Restore
-            const savedMeta = await get<SavedSong[]>(DB_KEY_META);
+            // Try Restore. Registro v1 (antes da Parte 1) migra pra v2 aqui; o
+            // primeiro save depois grava v2 com a mesma ordem, nome e papel.
+            const storedMeta = await get<SavedSong[]>(DB_KEY_META);
+            const savedMeta = Array.isArray(storedMeta) ? storedMeta.map(migrateSavedSong) : [];
             // Map legado (repertórios gravados antes da migração por-stem). Pode
             // não existir mais; os arquivos novos vivem em chaves por-stem.
             const savedFiles = await get<Map<string, File>>(DB_KEY_FILES);
 
-            if (savedMeta && savedMeta.length > 0) {
+            if (savedMeta.length > 0) {
                 setIsRestoring(true);
 
                 const restoreSongs = async (metaSong: SavedSong): Promise<Song | null> => {
@@ -439,6 +393,8 @@ export function useAudioEngine(userId?: string) {
                             return {
                                 id: metaCh.id,
                                 name: metaCh.name,
+                                customName: metaCh.customName,
+                                role: metaCh.role,
                                 buffer: audioBuffer,
                                 srcId: metaCh.srcId,
                                 srcIdx: metaCh.srcIdx,
@@ -457,10 +413,14 @@ export function useAudioEngine(userId?: string) {
                         }
                     });
 
-                    const channels = (await Promise.all(channelPromises)).filter((c): c is Channel => c !== null);
-                    if (channels.length === 0) return null;
+                    const decoded = (await Promise.all(channelPromises)).filter((c): c is Channel => c !== null);
+                    if (decoded.length === 0) return null;
+                    // Ordem automática volta na ordem padrão; manual mantém a do usuário.
+                    const channels = arrangeChannels(decoded, metaSong.channelOrder);
 
-                    const mainCh = pickMainChannel(channels);
+                    // O tom é detectado na ordem salva, como antes: a ordem padrão
+                    // põe a bateria na frente, que é ruim pra achar o tom.
+                    const mainCh = pickMainChannel(decoded);
 
                     let originalKey = metaSong.originalKey || null;
                     if (!originalKey && mainCh) originalKey = detectKey(mainCh.buffer);
@@ -485,8 +445,10 @@ export function useAudioEngine(userId?: string) {
 
                     return {
                         id: metaSong.id,
+                        sourceId: metaSong.sourceId,
                         name: metaSong.name,
                         coverImage,
+                        channelOrder: metaSong.channelOrder,
                         duration: restoredDuration,
                         pitch: metaSong.pitch || 0,
                         originalKey,
@@ -986,8 +948,11 @@ export function useAudioEngine(userId?: string) {
         const existingMeta = await get<SavedSong[]>(DB_KEY_META) || [];
         const preliminarySaved: SavedSong = {
             id: newSongId,
+            sourceId: meta?.sourceId,
             name: songName,
             coverImage,
+            channelOrder: 'auto',
+            schemaVersion: REPERTOIRE_SCHEMA_VERSION,
             duration: 0,
             channels: prepared.map((p) => ({
                 id: p.uuid, name: p.name, volume: 1, muted: false, soloed: false, pan: p.pan, bus: p.bus,
@@ -1106,12 +1071,14 @@ export function useAudioEngine(userId?: string) {
 
         const bpm = overrideBpm !== undefined ? overrideBpm : undefined;
 
+        // Música nova entra na ordem padrão (automática) até o usuário arrastar.
         const newSong: Song = {
             id: newSongId,
             sourceId: meta?.sourceId,
             name: songName,
             coverImage: coverImage,
-            channels: newChannels,
+            channels: arrangeChannels(newChannels, 'auto'),
+            channelOrder: 'auto',
             duration: maxDuration,
             pitch: 0,
             originalKey,
@@ -1186,6 +1153,7 @@ export function useAudioEngine(userId?: string) {
                 name: `Metrônomo ${bpm} BPM`,
                 coverImage: '',
                 channels: [newChannel],
+                channelOrder: 'auto',
                 duration: 36000, // 10 horas de duração para simular "infinito"
                 pitch: 0,
                 originalKey: null,
@@ -1259,7 +1227,8 @@ export function useAudioEngine(userId?: string) {
 
             const newPlaylist = [...playlist];
             const song = { ...newPlaylist[activeSongIndex] };
-            song.channels = [...song.channels, newChannel];
+            // Ordem automática encaixa o canal novo na ordem padrão; manual põe no fim.
+            song.channels = arrangeChannels([...song.channels, newChannel], song.channelOrder);
 
             if (audioBuffer.duration > song.duration) {
                 song.duration = audioBuffer.duration;
@@ -1574,7 +1543,47 @@ export function useAudioEngine(userId?: string) {
         const newPlaylist = [...playlist];
         const song = { ...newPlaylist[activeSongIndex] };
         song.channels = newOrder;
+        // Arrastar fixa a ordem do usuário: manual vence a ordem padrão.
+        song.channelOrder = 'manual';
         newPlaylist[activeSongIndex] = song;
+        updatePlaylistAndSave(newPlaylist);
+    };
+
+    // EDITAR CANAIS: nome e papel escolhidos pelo usuário. Ficam só no repertório
+    // do usuário (IndexedDB), nunca na nuvem nem no cache offline compartilhado; o
+    // nome original do arquivo (name) nunca muda.
+    const setChannelMeta = (channelId: string, patch: ChannelMetaPatch) => {
+        const song = playlist[activeSongIndex];
+        if (!song) return;
+        const { channels: next, before, after, roleChanged } = applyChannelMetaToList(song.channels, channelId, patch, song.channelOrder);
+        if (!before || !after) return;
+
+        const ctx = audioCtxRef.current;
+        if (roleChanged) {
+            // O papel decide o lado do pan automático (after já é cópia nova).
+            if (settings.autoPan) {
+                const { pan, bus } = autoPanFor(after, true);
+                after.pan = pan;
+                after.bus = bus;
+                if (ctx) after.pannerNode.pan.setTargetAtTime(pan, ctx.currentTime, 0.05);
+            }
+            // E quem continua tocando com Solo ligado: reaplica o ganho em todos, como o toggleSolo.
+            next.forEach(ch => {
+                if (ch.gainNode && ctx) {
+                    ch.gainNode.gain.cancelScheduledValues(ctx.currentTime);
+                    ch.gainNode.gain.setValueAtTime(channelGain(ch, next), ctx.currentTime);
+                }
+            });
+        }
+
+        // Click e Guia ficam fora da troca de tom. Com tom diferente de 0, entrar ou
+        // sair dela solta o worklet (parado) ou reinicia curto (tocando, efeito abaixo).
+        const action = pitchChangeAction(before, after, { isPlaying, pitch: currentPitchRef.current });
+        if (action === 'release') releasePitchNode(after.id);
+        else if (action === 'restart') restartAfterMetaRef.current = true;
+
+        const newPlaylist = [...playlist];
+        newPlaylist[activeSongIndex] = { ...song, channels: next };
         updatePlaylistAndSave(newPlaylist);
     };
 
@@ -1593,6 +1602,12 @@ export function useAudioEngine(userId?: string) {
         newPlaylist[activeSongIndex] = song;
         updatePlaylistAndSave(newPlaylist);
     }, [playlist, activeSongIndex, activeSong]);
+
+    // Posição do playhead tocando agora (mesma conta do updateTime), dentro da música.
+    const playheadNow = useCallback((ctx: AudioContext) => {
+        const elapsed = (ctx.currentTime - startTimeRef.current) * timeStretch + pausedAtRef.current;
+        return Math.min(Math.max(elapsed, 0), duration || elapsed);
+    }, [timeStretch, duration]);
 
     const changePitch = useCallback((newPitch: number) => {
         if (!activeSong) return;
@@ -1635,6 +1650,22 @@ export function useAudioEngine(userId?: string) {
         updatePlaylistAndSave(newPlaylist);
     }, [playlist, activeSongIndex, activeSong, isPlaying, duration, timeStretch, play, stopAllNodes]);
 
+    // Papel trocado tocando com tom diferente de 0 (setChannelMeta): o canal entra
+    // ou sai da troca de tom, o que muda o roteamento. O reinício roda aqui, depois
+    // do render, porque o play precisa enxergar a lista nova de canais; chamado
+    // dentro do setChannelMeta, ele tocaria a lista antiga.
+    useEffect(() => {
+        if (!restartAfterMetaRef.current) return;
+        restartAfterMetaRef.current = false;
+        const ctx = audioCtxRef.current;
+        if (!isPlaying || !ctx) return;
+        pausedAtRef.current = playheadNow(ctx);
+        stopAllNodes();
+        // Canal que virou Click ou Guia toca sem a engine de tom: nenhum worklet sobrando.
+        channels.forEach(ch => { if (isPitchExempt(ch)) releasePitchNode(ch.id); });
+        void play();
+    }, [channels, isPlaying, play, stopAllNodes, playheadNow]);
+
     // Clear Session
     const clearSession = async () => {
         await set(DB_KEY_META, []);
@@ -1674,21 +1705,8 @@ export function useAudioEngine(userId?: string) {
         // Map legado como fallback; arquivos novos vêm das chaves por-stem.
         const legacyFilesDb = await get<Map<string, File>>(DB_KEY_FILES) || new Map<string, File>();
 
-        const manifest = playlist.map(song => ({
-            id: song.id,
-            name: song.name,
-            coverImage: song.coverImage,
-            duration: song.duration,
-            channels: song.channels.map(ch => ({
-                id: ch.id,
-                name: ch.name,
-                volume: ch.volume,
-                muted: ch.muted,
-                soloed: ch.soloed,
-                pan: ch.pan,
-                bus: ch.bus
-            }))
-        }));
+        // Ordem, nome e papel do usuário vão junto (repertoireSchema.ts).
+        const manifest = playlist.map(toManifestSong);
 
         zip.file('manifest.json', JSON.stringify({ version: 5, songs: manifest }, null, 2));
 
@@ -1740,7 +1758,9 @@ export function useAudioEngine(userId?: string) {
             const data = JSON.parse(manifestText);
             if (!data.songs || !Array.isArray(data.songs)) return;
 
-            const importedMeta: SavedSong[] = data.songs;
+            // Manifest de ZIP antigo não tem channelOrder: a ordem do arquivo é a que
+            // o usuário deixou, então volta manual em vez de virar a ordem padrão.
+            const importedMeta: SavedSong[] = (data.songs as SavedSong[]).map(migrateManifestSong);
 
             // Limpa o repertório anterior (Map legado + chaves por-stem órfãs)
             // antes de importar o novo, pra não deixar stems velhos no disco.
@@ -1932,6 +1952,7 @@ export function useAudioEngine(userId?: string) {
         updatePan,
         removeChannel,
         reorderChannels,
+        setChannelMeta,
         createEndlessMetronomeSong,
 
         // Pré-contagem
