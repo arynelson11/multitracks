@@ -11,8 +11,9 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 // Sem altura mínima aqui: ela vem do tamanho, pra variação não disputar com a base.
+// shrink-0: o min-w-ps-touch troca o piso automático do item flex e, sem ele, o texto vaza numa linha apertada.
 const BASE =
-  'inline-flex items-center justify-center gap-2 w-auto min-w-ps-touch px-ps-pad-x rounded-ps-lg font-ps-sans text-ps-sm font-bold tracking-[0.1em] whitespace-nowrap select-none transition-[background-color,box-shadow,color,transform] duration-150 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or disabled:opacity-35 disabled:pointer-events-none'
+  'inline-flex shrink-0 items-center justify-center gap-2 w-auto min-w-ps-touch px-ps-pad-x rounded-ps-lg font-ps-sans text-ps-sm font-bold tracking-[0.1em] whitespace-nowrap select-none transition-[background-color,box-shadow,color,transform] duration-150 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or disabled:opacity-35 disabled:pointer-events-none'
 
 const SIZES: Record<NonNullable<ButtonProps['size']>, string> = {
   md: 'min-h-ps-touch',

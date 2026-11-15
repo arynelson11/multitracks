@@ -19,8 +19,9 @@ export interface SegmentedProps<T extends string> {
 const GROUP = 'inline-flex p-[3px] gap-0.5 rounded-ps-lg bg-ps-s1 inset-ring inset-ring-ps-line'
 
 // A cor do texto sai do estado (selecionada x não), pra não disputar com a base.
+// shrink-0: o min-w-[62px] troca o piso automático do item flex e, sem ele, o texto vaza num grupo apertado.
 const OPTION =
-  'min-w-[62px] min-h-ps-touch px-3 rounded-[9px] text-ps-sm font-extrabold tracking-[0.1em] whitespace-nowrap'
+  'shrink-0 min-w-[62px] min-h-ps-touch px-3 rounded-[9px] text-ps-sm font-extrabold tracking-[0.1em] whitespace-nowrap'
 const OPTION_IDLE = 'text-ps-mut hover:text-ps-bone'
 const OPTION_SELECTED = 'bg-ps-s3 text-ps-bone inset-ring inset-ring-ps-line-2'
 

@@ -130,3 +130,14 @@ describe('variação substitui a base (sem par de utilidades conflitantes)', () 
     expect(pop).not.toContain('rounded-ps-2xl')
   })
 })
+
+describe('texto nunca vaza da peça', () => {
+  it('Button, Chip e opção do Segmented não encolhem abaixo do texto numa linha flex apertada', () => {
+    // min-w-ps-touch troca o piso automático (min-width: auto) do item flex; sem shrink-0 o texto nowrap vaza.
+    const opts = [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }]
+    render(<><Button>Salvar alterações</Button><Chip>+1</Chip><Segmented aria-label="Teste" options={opts} value="a" onChange={() => {}} /></>)
+    expect(classes(screen.getByRole('button', { name: 'Salvar alterações' }))).toContain('shrink-0')
+    expect(classes(screen.getByRole('button', { name: '+1' }))).toContain('shrink-0')
+    for (const r of screen.getAllByRole('radio')) expect(classes(r)).toContain('shrink-0')
+  })
+})
