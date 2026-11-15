@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./styles/ps-tokens.css";
 
 /* ── Layout por TAMANHO de tela (não por tipo de tela) ─────────────────
    O app decidia o layout por "tela de toque" (pointer-coarse): qualquer iPad,
