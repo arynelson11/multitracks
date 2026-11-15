@@ -260,3 +260,43 @@ describe('bateria: compostos, plurais e camelCase', () => {
     expect(sortChannelsByDefault(mk(['BASS', 'BASS DRUM'])).map((c) => c.name)).toEqual(['BASS DRUM', 'BASS'])
   })
 })
+
+// Rodada de correção 3 (Ruling do coordenador).
+describe('BEAT e TEMPO só são Click com o resto em número ou andamento', () => {
+  it.each([['Beat'], ['Tempo'], ['Beat 01'], ['Tempo_120bpm']])('%s é Click', (raw) => {
+    expect(recognizeChannel(raw)).toEqual({ label: 'Click', family: 'click' })
+    expect(roleFromName(raw)).toBe('click')
+  })
+  it.each([
+    ['Beat Loop', 'Beat Loop', 'desconhecido'], ['Tempo FX', 'Tempo FX', 'desconhecido'],
+    ['Drum Beat', 'Bateria', 'bateria'], ['Ambient Beat Pad', 'Pad Ambiente', 'pad'],
+  ])('%s não é Click: vira %s (%s), papel Normal', (raw, label, family) => {
+    expect(recognizeChannel(raw)).toEqual({ label, family })
+    expect(roleFromName(raw)).toBe('normal')
+    expect(buildChannelLabels([{ id: '1', name: raw }])[0]).toMatchObject({ label, family, role: 'normal' })
+  })
+})
+
+describe('overhead, bumbo no plural, CLICKTRACK e TeCL', () => {
+  it.each([['OverHead'], ['OverHeads'], ['OVERHEAD'], ['Overheads']])('%s é a peça Overhead da bateria', (raw) => {
+    expect(recognizeChannel(raw)).toEqual({ label: 'Overhead', family: 'bateria' })
+  })
+  it('overhead em camelCase vence o genérico da bateria', () => {
+    expect(recognizeChannel('Drums OverHead L')).toEqual({ label: 'Overhead L', family: 'bateria' })
+  })
+  it.each([['BASS DRUMS'], ['BassDrums'], ['Bass Drums']])('%s é Bumbo da bateria', (raw) => {
+    expect(recognizeChannel(raw)).toEqual({ label: 'Bumbo', family: 'bateria' })
+  })
+  it('BASS sozinho continua Baixo', () => {
+    expect(recognizeChannel('BASS')).toEqual({ label: 'Baixo', family: 'baixo' })
+    expect(recognizeChannel('BASS GTR')).toEqual({ label: 'Baixo', family: 'baixo' })
+  })
+  it.each([['CLICKTRACK'], ['Clicktrack'], ['ClickTrack']])('%s é Click', (raw) => {
+    expect(recognizeChannel(raw)).toEqual({ label: 'Click', family: 'click' })
+    expect(roleFromName(raw)).toBe('click')
+  })
+  it('TeCL sozinho volta a Teclado; Piano/TeCL continua Piano', () => {
+    expect(recognizeChannel('TeCL')).toEqual({ label: 'Teclado', family: 'teclado' })
+    expect(recognizeChannel('Piano/TeCL')).toEqual({ label: 'Piano', family: 'piano' })
+  })
+})

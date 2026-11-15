@@ -61,7 +61,8 @@ const UNRECOGNIZED_LABEL_MAX = 24
 interface FamilyRule {
   family: KnownFamily
   words: ReadonlySet<string>
-  // Palavras fracas: só decidem a família quando nenhuma palavra de família aparece no nome.
+  // Palavras fracas: só decidem a família quando o resto do nome é número ou marca
+  // de andamento ("Beat 01", "Tempo_120bpm"). "Beat Loop" não é Click.
   weakWords: ReadonlySet<string>
   sequences: readonly (readonly string[])[]
   // Peças com rótulo próprio dentro da família (só a bateria tem).
@@ -86,8 +87,8 @@ const rule = (
 
 // Ordem de prioridade: vence a primeira família que tiver alguma palavra no nome.
 const FAMILY_RULES: readonly FamilyRule[] = [
-  // BEAT e TEMPO são fracas: "Ambient Beat Pad" é Pad, mas "Beat" sozinho é Click.
-  rule('click', ['CLICK', 'CLICKS', 'CLIQUE', 'CLK', 'METRO', 'METRONOMO', 'METRONOME', 'MTR'], {
+  // BEAT e TEMPO são fracas: "Beat" e "Tempo 120" são Click; "Ambient Beat Pad" é Pad.
+  rule('click', ['CLICK', 'CLICKS', 'CLICKTRACK', 'CLIQUE', 'CLK', 'METRO', 'METRONOMO', 'METRONOME', 'MTR'], {
     weakWords: ['TEMPO', 'BEAT'],
   }),
   rule('guia', ['GUIA', 'GUIAS', 'GUIDE', 'GUIDES', 'CUE', 'CUES']),
@@ -155,10 +156,15 @@ function stripFileName(raw: string): string {
 // Sigla toda em maiúscula ("GTR", "BVS") não tem virada e não quebra.
 const CAMEL_CASE_TURN = /(\p{Ll})(\p{Lu})/gu
 
-// Compostos que viram um token só antes do casamento, porque mudam a família:
-// "BASS DRUM" é o bumbo da bateria, não o baixo.
+// Compostos que viram um token só antes do casamento: "BASS DRUM(S)" é o bumbo da
+// bateria, não o baixo; e palavras de família que o corte camelCase separa
+// ("OverHead", "TeCL") voltam a ser uma palavra só.
 const COMPOUNDS: readonly { parts: readonly string[]; token: string }[] = [
   { parts: ['BASS', 'DRUM'], token: 'BASSDRUM' },
+  { parts: ['BASS', 'DRUMS'], token: 'BASSDRUM' },
+  { parts: ['OVER', 'HEAD'], token: 'OVERHEAD' },
+  { parts: ['OVER', 'HEADS'], token: 'OVERHEADS' },
+  { parts: ['TE', 'CL'], token: 'TECL' },
 ]
 
 function mergeCompounds(tokens: string[]): string[] {
@@ -183,9 +189,24 @@ function tokenize(cleaned: string): string[] {
   return mergeCompounds(tokens)
 }
 
-// Índices dos tokens que casaram a família (palavra inteira ou sequência de palavras).
-function familyHits(tokens: readonly string[], familyRule: FamilyRule): Set<number> {
+// Marca de andamento: número ("01", "120") ou BPM ("120bpm" vira 120 e BPM).
+const TEMPO_MARKS: ReadonlySet<string> = new Set(['BPM'])
+const isTempoMark = (token: string) => /^\p{N}+$/u.test(token) || TEMPO_MARKS.has(token)
+
+// Palavra fraca só conta quando todo o resto do nome é marca de andamento.
+function weakHits(tokens: readonly string[], familyRule: FamilyRule): Set<number> {
   const hits = new Set<number>()
+  tokens.forEach((token, i) => {
+    if (familyRule.weakWords.has(token)) hits.add(i)
+  })
+  if (hits.size === 0 || !tokens.every((token, i) => hits.has(i) || isTempoMark(token))) return new Set()
+  return hits
+}
+
+// Índices dos tokens que casaram a família (palavra inteira, sequência de palavras
+// ou palavra fraca com o resto em número/andamento).
+function familyHits(tokens: readonly string[], familyRule: FamilyRule): Set<number> {
+  const hits = weakHits(tokens, familyRule)
   tokens.forEach((token, i) => {
     if (familyRule.words.has(token) || familyRule.pieces?.has(token)) hits.add(i)
   })
@@ -199,24 +220,14 @@ function familyHits(tokens: readonly string[], familyRule: FamilyRule): Set<numb
   return hits
 }
 
-function weakHits(tokens: readonly string[], familyRule: FamilyRule): Set<number> {
-  const hits = new Set<number>()
-  tokens.forEach((token, i) => {
-    if (familyRule.weakWords.has(token)) hits.add(i)
-  })
-  return hits
-}
-
-// 1ª passada: palavras de família, na ordem de prioridade. 2ª passada (só se nenhuma
-// família apareceu): palavras fracas, como BEAT e TEMPO do Click.
+// Vence a primeira família, na ordem de prioridade, que casar algum token. Com a
+// palavra fraca exigindo o resto em número/andamento, ela nunca disputa com outra família.
 function matchFamily(raw: string, ignoreRoleFamilies: boolean) {
   const tokens = tokenize(stripFileName(raw))
-  const candidates = FAMILY_RULES.filter((familyRule) => !(ignoreRoleFamilies && ROLE_FAMILIES.has(familyRule.family)))
-  for (const pass of [familyHits, weakHits]) {
-    for (const familyRule of candidates) {
-      const hits = pass(tokens, familyRule)
-      if (hits.size > 0) return { familyRule, tokens, hits }
-    }
+  for (const familyRule of FAMILY_RULES) {
+    if (ignoreRoleFamilies && ROLE_FAMILIES.has(familyRule.family)) continue
+    const hits = familyHits(tokens, familyRule)
+    if (hits.size > 0) return { familyRule, tokens, hits }
   }
   return undefined
 }

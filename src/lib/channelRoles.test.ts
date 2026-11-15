@@ -124,6 +124,14 @@ describe('bordas do patch e da lista', () => {
     expect(all.map((ch) => channelGain(ch, all))).toEqual([0, 0.8, 0.8])
     expect(findClickChannel([pad, { id: 't', name: 'Tempo' }])?.id).toBe('t')
   })
+  it('Beat Loop é Normal: troca de tom, PA e cala no Solo; Tempo_120bpm segue tocando (rodada de correção 3)', () => {
+    const loop = { id: 'l', name: 'Beat Loop' }
+    expect([isPitchExempt(loop), isSoloSafe(loop)]).toEqual([false, false])
+    expect(autoPanFor(loop, true)).toEqual({ pan: 1, bus: '2' })
+    const all = [mix('l', 'Beat Loop'), mix('t', 'Tempo_120bpm'), mix('b', 'BASS', { soloed: true })]
+    expect(all.map((ch) => channelGain(ch, all))).toEqual([0, 0.8, 0.8])
+    expect(autoPanFor({ id: 't', name: 'Tempo_120bpm' }, true)).toEqual({ pan: -1, bus: '1' })
+  })
   it('ClickTrack, VozGuia e Guias seguem tocando no Solo (rodada de correção 2)', () => {
     const all = [mix('c', 'ClickTrack'), mix('v', 'VozGuia'), mix('g', 'Guias'), mix('d', 'DRUMS'), mix('b', 'BASS', { soloed: true })]
     expect(all.map((ch) => channelGain(ch, all))).toEqual([0.8, 0.8, 0.8, 0, 0.8])
