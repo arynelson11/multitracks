@@ -4,6 +4,7 @@ import { analyzeBufferAndGenerateClick, generateManualClickTrackFromSample } fro
 import { detectBeatGrid, formatBpm } from '../lib/beatGrid';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
 import type { ClickTrackType, ClickSubdivision } from '../lib/clickLibrary';
+import { pickTempoSourceChannel } from '../lib/channelRoles';
 import type { Channel } from '../types';
 
 export type TimeSignature = '3/4' | '4/4' | '5/4' | '6/8' | '7/8' | '12/8';
@@ -148,22 +149,8 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
   const handleAIGenerate = async () => {
     if (!playlistCurrentSong) return;
 
-    // Prefere Bateria → Baixo → qualquer canal que não seja click/guia
-    let targetChannel: Channel | undefined = playlistCurrentSong.channels.find(c =>
-      c.name.toLowerCase().includes('drum') || c.name.toLowerCase().includes('bateria')
-    );
-    if (!targetChannel) {
-      targetChannel = playlistCurrentSong.channels.find(c =>
-        c.name.toLowerCase().includes('bass') || c.name.toLowerCase().includes('baixo')
-      );
-    }
-    if (!targetChannel) {
-      targetChannel = playlistCurrentSong.channels.find(c => {
-        const n = c.name.toLowerCase();
-        return !n.includes('click') && !n.includes('metronomo') && !n.includes('guia') && !n.includes('guide');
-      });
-    }
-    if (!targetChannel) targetChannel = playlistCurrentSong.channels[0];
+    // Regra central: bateria, depois baixo, depois o primeiro canal normal (fora Click e Guia), senão o primeiro.
+    const targetChannel = pickTempoSourceChannel(playlistCurrentSong.channels);
 
     if (!targetChannel?.buffer) {
       alert('Nenhuma faixa disponível para análise.');
