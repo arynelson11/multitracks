@@ -10,11 +10,11 @@ interface ChannelTrashButtonProps {
 }
 
 // Lixeira do EDITAR CANAIS. Apagar o canal não tem volta, então pede segundo toque:
-// armada, fica âmbar (alerta) com "Apagar?". Largura pelo texto, alvo de 44px.
+// armada, fica no âmbar do token de alerta (ps-alert) com "Apagar?". Largura pelo texto, alvo de 44px.
 const BASE =
   'inline-flex shrink-0 items-center justify-center gap-1 min-h-ps-touch min-w-ps-touch rounded-ps-pill font-ps-sans text-ps-sm font-bold whitespace-nowrap select-none cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
 const IDLE = 'bg-accent-red/20 text-accent-red hover:bg-accent-red/40'
-const ARMED = 'px-2 bg-[#f59e0b] text-ps-ink'
+const ARMED = 'px-2 bg-ps-alert text-ps-ink'
 
 export function ChannelTrashButton({ channelLabel, armed, onPress }: ChannelTrashButtonProps) {
   const label = armed ? `Toque de novo para apagar o canal ${channelLabel}` : `Apagar o canal ${channelLabel}`

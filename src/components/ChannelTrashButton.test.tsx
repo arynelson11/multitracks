@@ -78,12 +78,14 @@ describe('lixeira do canal pede segundo toque', () => {
     fireEvent.click(trashOf('Guitarra'))
     expect(removeChannel).not.toHaveBeenCalled()
   })
-  it('alvo de toque de 44px e texto que acompanha o padding, sem largura fixa', () => {
+  it('alvo de toque de 44px, texto que acompanha o padding, sem largura fixa, âmbar de alerta', () => {
     setup()
     fireEvent.click(trashOf('Guitarra'))
     const classes = trashOf('Guitarra').className.split(/\s+/)
     expect(classes).toEqual(expect.arrayContaining(['min-h-ps-touch', 'min-w-ps-touch', 'whitespace-nowrap']))
     expect(classes.some((c) => /^w-\d|^w-\[/.test(c))).toBe(false)
-    expect(trashOf('Guitarra').className).toContain('#f59e0b')
+    // Âmbar do token de alerta (ps-alert), não o #f59e0b da família Guia e da seção Pré.
+    expect(classes).toContain('bg-ps-alert')
+    expect(trashOf('Guitarra').className).not.toContain('#f59e0b')
   })
 })
