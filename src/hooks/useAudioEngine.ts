@@ -7,7 +7,7 @@ import type { Channel, Song, Marker } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { detectKey, generateEndlessClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { loadClickSelection } from '../lib/clickLibrary';
-import { isClickOrGuideName, wantsFormantCompensation } from '../lib/pitchRules';
+import { isClickOrGuideName, sanitizeSemitones, wantsFormantCompensation } from '../lib/pitchRules';
 import { getCachedStem, getCachedStemNames, isSongCached } from '../lib/offlineCache';
 
 // Engine de tom: signalsmith-stretch (MIT). O worklet e o WASM são gerados
@@ -383,7 +383,7 @@ export function useAudioEngine(userId?: string) {
 
     // Sync pitch ref whenever the active song or its pitch changes
     useEffect(() => {
-        currentPitchRef.current = activeSong?.pitch ?? 0;
+        currentPitchRef.current = sanitizeSemitones(activeSong?.pitch ?? 0);
     }, [activeSong?.pitch, activeSongIndex]);
 
     // Initialize engine
@@ -1619,8 +1619,9 @@ export function useAudioEngine(userId?: string) {
     const changePitch = useCallback((newPitch: number) => {
         if (!activeSong) return;
 
-        // Clamp to -12 / +12 Semitones
-        const clampedPitch = Math.max(-12, Math.min(12, newPitch));
+        // Entre -12 e +12; NaN/infinito (tom não reconhecido, comando remoto
+        // inválido) vira 0: NaN no worklet zerava a saída inteira.
+        const clampedPitch = sanitizeSemitones(newPitch);
         const prevPitch = currentPitchRef.current;
         if (prevPitch === clampedPitch) return;
 

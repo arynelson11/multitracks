@@ -19,7 +19,8 @@ const check = (item, label, got, want) => {
   total++;
   const ok = Object.is(got, want);
   if (!ok) fails++;
-  console.log(`  ${ok ? 'PASS' : 'FAIL'}  item ${item}  ${label}  ->  ${JSON.stringify(got)}${ok ? '' : ` (esperado ${JSON.stringify(want)})`}`);
+  const show = (v) => (typeof v === 'number' && !Number.isFinite(v) ? String(v) : v === undefined ? 'undefined' : JSON.stringify(v));
+  console.log(`  ${ok ? 'PASS' : 'FAIL'}  item ${item}  ${label}  ->  ${show(got)}${ok ? '' : ` (esperado ${show(want)})`}`);
 };
 const need = (fn) => {
   if (typeof R[fn] === 'function') return R[fn];
@@ -44,6 +45,29 @@ if (formant) {
     check(5, `"${n}" com formantes`, formant(n), true);
   for (const n of ['Bateria', 'Baixo', 'Teclado', 'Guitarra', 'Violão', 'Pad', 'Synth', 'Strings', 'Piano', 'Click', 'Metrônomo', 'Voz Guia'])
     check(5, `"${n}" sem formantes`, formant(n), false);
+}
+
+console.log('\n== item 6: tom em qualquer formato, nunca NaN ==');
+const k2s = need('keyToSemitone');
+if (k2s) {
+  const want = { C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, F: 5, 'F#': 6, Gb: 6, G: 7, 'G#': 8, Ab: 8, A: 9, 'A#': 10, Bb: 10, B: 11,
+    c: 0, bb: 10, 'f#': 6, Am: 9, 'F#m': 6, Ebm: 3, 'C#m': 1, 'C♯': 1, 'B♭': 10, ' G ': 7, Cb: 11, 'E#': 5, 'B#': 0 };
+  for (const [k, v] of Object.entries(want)) check(6, `tom "${k}"`, k2s(k), v);
+  for (const k of ['Xyz', 'H', 'Do', '', '#', 'Cm7b5x']) check(6, `tom "${k}" não reconhecido`, k2s(k), null);
+}
+const between = need('semitonesBetweenKeys');
+if (between) {
+  const cases = [['C', 'D', 2], ['C', 'G', -5], ['A', 'C', 3], ['Bb', 'C', 2], ['Db', 'Eb', 2], ['Am', 'C', 3], ['F#m', 'A', 3],
+    ['c', 'd', 2], ['bb', 'c', 2], ['B♭', 'C', 2], ['Eb', 'A', 6], ['G', 'Db', -6], ['G', 'C#', -6], ['Xyz', 'C', 0], ['', 'C', 0], [null, 'C', 0], ['C', 'Xyz', 0]];
+  for (const [a, b, v] of cases) check(6, `de "${a}" para "${b}"`, between(a, b), v);
+  const odd = [null, undefined, '', 'Xyz', 'H', 'Bb', 'Am', 'c#', 'B♭', '123'];
+  let finite = true;
+  for (const a of odd) for (const b of ['C', 'Bb', 'F#', 'Xyz', null]) if (!Number.isFinite(between(a, b))) finite = false;
+  check(6, 'nenhuma combinação de tons gera NaN', finite, true);
+}
+const sane = need('sanitizeSemitones');
+if (sane) {
+  for (const [v, w] of [[NaN, 0], [Infinity, 0], [-Infinity, 0], [15, 12], [-15, -12], [3, 3], [-5, -5], [0, 0]]) check(6, `semitons ${v} pro motor`, sane(v), w);
 }
 
 console.log(`\nresumo: ${total} verificações, ${fails} falhas`);

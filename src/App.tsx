@@ -23,6 +23,7 @@ import { WhatsNewModal } from './components/WhatsNewModal'
 import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/SectionBar'
 import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections } from './lib/plans'
 import { isAdminEmail } from './lib/admin'
+import { keyToSemitone, semitonesBetweenKeys } from './lib/pitchRules'
 import { InstallAppBanner } from './components/InstallAppBanner'
 import { AUDIO_FILE_ACCEPT } from './lib/uploadContentType'
 import { useDesktopUpdate } from './hooks/useDesktopUpdate'
@@ -494,12 +495,15 @@ export default function App() {
   }
 
   const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-  const KEY_TO_SEMITONE: Record<string, number> = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 }
 
   const activePitch = playlist[activeSongIndex]?.pitch || 0
   const activeOriginalKey = playlist[activeSongIndex]?.originalKey || null
-  const currentKeyName = activeOriginalKey
-    ? KEYS[((KEY_TO_SEMITONE[activeOriginalKey] + activePitch) % 12 + 12) % 12]
+  // Tom original em qualquer grafia (Bb, Am, f#...). Não reconhecido conta como
+  // desconhecido: o usuário define manualmente e nada é transposto (nunca NaN).
+  const originalKeyIndex = keyToSemitone(activeOriginalKey)
+  const hasOriginalKey = originalKeyIndex !== null
+  const currentKeyName = originalKeyIndex !== null
+    ? KEYS[((originalKeyIndex + activePitch) % 12 + 12) % 12]
     : null
 
   // Drag-and-drop state
@@ -833,18 +837,16 @@ export default function App() {
                   <div className="fixed inset-0 z-40" onClick={() => setIsKeyPickerOpen(false)} />
                   <div className="absolute top-full mt-1 right-0 daw-panel rounded-lg z-50 p-3 w-48">
                     <p className="text-[10px] text-text-muted mb-2 font-mono">
-                      {activeOriginalKey ? 'Selecionar tom:' : 'Tom original desconhecido. Defina manualmente:'}
+                      {hasOriginalKey ? 'Selecionar tom:' : 'Tom original desconhecido. Defina manualmente:'}
                     </p>
                     <div className="grid grid-cols-4 gap-1">
                       {KEYS.map(key => {
                         const isCurrent = key === currentKeyName
-                        const isOriginal = key === activeOriginalKey && !isCurrent
+                        const isOriginal = KEYS.indexOf(key) === originalKeyIndex && !isCurrent
                         return (
                           <button key={key} onClick={() => {
-                            if (activeOriginalKey) {
-                              const diff = KEY_TO_SEMITONE[key] - KEY_TO_SEMITONE[activeOriginalKey]
-                              const semitones = diff > 6 ? diff - 12 : diff < -6 ? diff + 12 : diff
-                              changePitch(semitones)
+                            if (hasOriginalKey) {
+                              changePitch(semitonesBetweenKeys(activeOriginalKey, key))
                             } else {
                               setOriginalKey(key)
                               changePitch(0)
@@ -2163,18 +2165,16 @@ export default function App() {
               {mobileDrawerView === 'tom' && (
                 <div className="p-2">
                   <p className="text-[10px] text-text-muted mb-3 font-mono">
-                    {activeOriginalKey ? 'Selecionar tom:' : 'Tom original desconhecido. Defina manualmente:'}
+                    {hasOriginalKey ? 'Selecionar tom:' : 'Tom original desconhecido. Defina manualmente:'}
                   </p>
                   <div className="grid grid-cols-4 gap-1.5">
                     {KEYS.map(key => {
                       const isCurrent = key === currentKeyName
-                      const isOriginal = key === activeOriginalKey && !isCurrent
+                      const isOriginal = KEYS.indexOf(key) === originalKeyIndex && !isCurrent
                       return (
                         <button key={key} onClick={() => {
-                          if (activeOriginalKey) {
-                            const diff = KEY_TO_SEMITONE[key] - KEY_TO_SEMITONE[activeOriginalKey]
-                            const semitones = diff > 6 ? diff - 12 : diff < -6 ? diff + 12 : diff
-                            changePitch(semitones)
+                          if (hasOriginalKey) {
+                            changePitch(semitonesBetweenKeys(activeOriginalKey, key))
                           } else {
                             setOriginalKey(key)
                             changePitch(0)
