@@ -176,6 +176,13 @@ export function useAudioEngine(userId?: string) {
     // true entre o play() parar as fontes e agendar as novas: nada está tocando,
     // a posição é pausedAtRef (startTimeRef ainda é a do play anterior).
     const playPendingRef = useRef(false);
+    // Latência do worklet no modo ao vivo, informada pelo pacote (~0,120 s). Em
+    // modo ao vivo ele NÃO compensa: a faixa transposta sai esse tanto depois.
+    const pitchLatencyRef = useRef<number | null>(null);
+    // Atraso igual à latência para quem NÃO passa pelo worklet (click, guia, ou
+    // faixa cujo worklet falhou) quando a música está transposta: assim sai
+    // alinhado com os instrumentos. Um DelayNode por canal, criado uma vez.
+    const pitchDelaysRef = useRef(new Map<string, { delay: DelayNode; panner: StereoPannerNode }>());
 
     const createPitchNode = async (ctx: AudioContext): Promise<SignalsmithStretchNode | null> => {
         try {
@@ -243,9 +250,15 @@ export function useAudioEngine(userId?: string) {
         pitchSlotsRef.current.forEach(stopPitchNode);
     };
 
-    // Canal saiu de cena: para, desliga e devolve o worklet pra reserva.
+    // Canal saiu de cena: para, desliga e devolve o worklet pra reserva (e solta
+    // o atraso de compensação, se tiver).
     const releasePitchNode = (channelId: string) => {
         pitchPendingRef.current.delete(channelId);
+        const comp = pitchDelaysRef.current.get(channelId);
+        if (comp) {
+            comp.delay.disconnect();
+            pitchDelaysRef.current.delete(channelId);
+        }
         const slot = pitchSlotsRef.current.get(channelId);
         if (!slot) return;
         pitchSlotsRef.current.delete(channelId);
@@ -255,8 +268,25 @@ export function useAudioEngine(userId?: string) {
 
     const releasePitchNodesExcept = (keep: Channel[]) => {
         const ids = new Set(keep.map(c => c.id));
-        const known = [...pitchSlotsRef.current.keys(), ...pitchPendingRef.current.keys()];
+        const known = [...pitchSlotsRef.current.keys(), ...pitchPendingRef.current.keys(), ...pitchDelaysRef.current.keys()];
         known.forEach(id => { if (!ids.has(id)) releasePitchNode(id); });
+    };
+
+    // Atraso de compensação do canal (criado na 1ª vez, depois reaproveitado).
+    const getLatencyDelay = (ctx: AudioContext, ch: Channel, seconds: number): DelayNode => {
+        let comp = pitchDelaysRef.current.get(ch.id);
+        if (!comp) {
+            const delay = ctx.createDelay(1);
+            delay.connect(ch.pannerNode);
+            comp = { delay, panner: ch.pannerNode };
+            pitchDelaysRef.current.set(ch.id, comp);
+        } else if (comp.panner !== ch.pannerNode) {
+            comp.delay.disconnect();
+            comp.delay.connect(ch.pannerNode);
+            comp.panner = ch.pannerNode;
+        }
+        comp.delay.delayTime.value = seconds;
+        return comp.delay;
     };
 
     // Aplica o tom numa faixa que está tocando pelo worklet.
@@ -550,13 +580,30 @@ export function useAudioEngine(userId?: string) {
             // Outro play() (troca de tom, seek, pausa) começou enquanto o worklet
             // nascia: este desiste. Sem isso as duas levas de fontes tocavam juntas.
             if (gen !== playGenRef.current) return;
+            // Latência real do nó, perguntada uma vez ao pacote (é fixa).
+            if (pitchLatencyRef.current === null) {
+                const anySlot = channels.map(ch => pitchSlotsRef.current.get(ch.id)).find(Boolean);
+                if (anySlot) {
+                    try {
+                        const seconds = await anySlot.node.latency();
+                        if (Number.isFinite(seconds) && seconds > 0 && seconds < 1) pitchLatencyRef.current = seconds;
+                    } catch (e) {
+                        console.error('Não consegui ler a latência do worklet de tom', e);
+                    }
+                    if (gen !== playGenRef.current) return;
+                }
+            }
         }
         // Lido de novo: o tom pode ter mudado (entre dois tons != 0) durante a espera.
         const playPitch = currentPitchRef.current;
         // Um instante só pra todas as faixas. Com start(0) ("assim que der"), se
         // o laço cruzava um bloco de áudio (2,67 ms) parte das faixas começava um
-        // ou dois blocos depois (medido: 10 de 52 reinícios, até 5,3 ms).
+        // ou dois blocos depois (medido: 7 a 10 de 52 reinícios, até 5,3 ms).
         const when = ctx.currentTime + START_LEAD_S;
+        // Com tom != 0 as faixas transpostas saem com a latência do worklet; quem
+        // não passa por ele (click, guia) atrasa o mesmo tanto. Tom 0: sem atraso.
+        const viaPitch = (ch: Channel) => playPitch !== 0 && !isClickOrGuideName(ch.name) && pitchSlotsRef.current.has(ch.id);
+        const compensation = channels.some(viaPitch) ? pitchLatencyRef.current : null;
 
         for (const ch of channels) {
             const source = ctx.createBufferSource();
@@ -582,14 +629,16 @@ export function useAudioEngine(userId?: string) {
             // muitos canais). O worklet só nasce, sob demanda, quando a música
             // está transposta e a faixa não é click/guia.
             source.playbackRate.value = 1.0;
-            const wantPitch = playPitch !== 0 && !isClickOrGuideName(ch.name);
-            const slot = wantPitch ? pitchSlotsRef.current.get(ch.id) : undefined;
+            const slot = viaPitch(ch) ? pitchSlotsRef.current.get(ch.id) : undefined;
             if (slot) {
                 startPitchNode(slot);
                 applyPitchToChannel(ch, playPitch);
                 source.connect(slot.node);
+            } else if (compensation) {
+                // Click/guia (ou worklet que falhou) com a música transposta: mesmo atraso.
+                source.connect(getLatencyDelay(ctx, ch, compensation));
             } else {
-                // Tom 0, click/guia, ou worklet que falhou: direto, nunca em silêncio.
+                // Tom 0: direto, sem worklet e sem atraso.
                 source.connect(ch.pannerNode);
             }
 

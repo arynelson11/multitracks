@@ -141,6 +141,18 @@ export function analyze(key, R) {
     });
   }
 
+  // ---------- item 3: rota de quem não passa pelo worklet ----------
+  if (seq === 'S1' || seq === 'S2') {
+    const bad = [];
+    for (const s of R.snaps.filter(isPlayingSnap)) {
+      for (const a of s.sourcesAlive.filter((x) => exempt.has(x.ch) && !x.route.includes('worklet'))) {
+        const want = s.pitch !== 0 ? 'delay' : 'panner';
+        if (a.route !== want) bad.push(`[${s.label}] ${a.ch}: ${a.route} (esperado ${want})`);
+      }
+    }
+    add(3, 'click/guia: com atraso no tom != 0 e direto (sem atraso) no tom 0', bad.length === 0, bad.length ? bad.slice(0, 4).join('; ') : 'ok');
+  }
+
   // ---------- item 4: click/guia fora do caminho do tom ----------
   if (seq === 'S1' || seq === 'S2') {
     const viaWorklet = new Set();

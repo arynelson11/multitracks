@@ -27,7 +27,8 @@ declare module 'signalsmith-stretch' {
         setFormantBase(baseRelativeToNyquist: number): void;
         addBuffers(buffers: Float32Array[]): Promise<number>;
         dropBuffers(toSeconds?: number): void;
-        latency(): number;
+        // Latência no modo ao vivo, em segundos (o pacote não compensa nesse modo).
+        latency(): Promise<number>;
     }
 
     export default function SignalsmithStretch(
