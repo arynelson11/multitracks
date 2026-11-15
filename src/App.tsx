@@ -60,7 +60,7 @@ import { LyricsEditor } from './components/LyricsEditor'
 import { useNetworkStatus } from './hooks/useNetworkStatus'
 import { useLiveSync } from './hooks/useLiveSync'
 import { buildChannelLabels, FAMILY_COLOR, type ChannelLabel } from './lib/channelNames'
-import { channelGain, isSilencedBySolo, pickMainChannel } from './lib/channelRoles'
+import { channelFaderFill, channelGain, isSilencedBySolo, pickMainChannel } from './lib/channelRoles'
 import { ChannelEditPanel } from './components/ChannelEditPanel'
 import { ChannelTrashButton } from './components/ChannelTrashButton'
 import { useTwoTapConfirm } from './hooks/useTwoTapConfirm'
@@ -1615,9 +1615,7 @@ export default function App() {
                     <div className="logic-fader-track h-full w-3 sm:w-4 relative pointer-events-none">
                       <div className="logic-fader-fill" style={{ 
                         height: `${(ch.volume / 1.2) * 100}%`, 
-                        background: isMutedByOther
-                          ? 'linear-gradient(to top, rgba(239,68,68,0.4), rgba(239,68,68,0.1))'
-                          : `linear-gradient(to top, ${chColor}66, ${chColor}15)`
+                        background: channelFaderFill(chColor, isMutedByOther)
                       }}></div>
                     </div>
                     <div className="logic-fader-knob absolute pointer-events-none transition-all duration-75 z-20" style={{ bottom: `calc(${(ch.volume / 1.2) * 100}% - var(--knob-half, 26px))` }}>

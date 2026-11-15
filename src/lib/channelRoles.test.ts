@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
-  CUSTOM_NAME_MAX, applyChannelMetaPatch, applyChannelMetaToList, autoPanFor, channelGain, findClickChannel, isPitchExempt,
-  isSilencedBySolo, isSoloSafe, pickMainChannel, pickTempoSourceChannel, pitchChangeAction,
+  CUSTOM_NAME_MAX, applyChannelMetaPatch, applyChannelMetaToList, autoPanFor, channelFaderFill, channelGain, findClickChannel,
+  isPitchExempt, isSilencedBySolo, isSoloSafe, pickMainChannel, pickTempoSourceChannel, pitchChangeAction,
 } from './channelRoles'
-import { recognizeChannel, type ChannelIdentity } from './channelNames'
+import { FAMILY_COLOR, buildChannelLabels, recognizeChannel, type ChannelIdentity } from './channelNames'
 
 const mix = (id: string, name: string, extra: object = {}) => ({ id, name, volume: 0.8, muted: false, soloed: false, ...extra })
 
@@ -141,5 +141,27 @@ describe('bordas do patch e da lista', () => {
     expect([findClickChannel([]), pickMainChannel([]), pickTempoSourceChannel([])]).toEqual([undefined, undefined, undefined])
     expect(pickTempoSourceChannel([{ id: 'p', name: 'Pad' }, { id: 'b', name: 'BASS' }])?.id).toBe('b')
     expect(pickTempoSourceChannel([{ id: 'c', name: 'CLICK' }, { id: 'g', name: 'GUIA' }])?.id).toBe('c')
+  })
+})
+
+// Revisão final (I3): o vermelho é a cor da família Bateria; não pode dizer "calado" também.
+describe('fader do canal calado', () => {
+  it('com Solo em outro canal, Bateria calada e Bateria tocando têm preenchimentos diferentes; calado nunca é vermelho', () => {
+    const all = [mix('k', 'KICK', { soloed: true }), mix('s', 'SNARE'), mix('h', 'HH', { soloed: true, muted: true })]
+    const colors = new Map(buildChannelLabels(all).map((l) => [l.id, l.color]))
+    // Mesma conta do mixer no App: M ligado ou calado pelo Solo de outro canal.
+    const fill = (ch: (typeof all)[number]) => channelFaderFill(colors.get(ch.id)!, ch.muted || isSilencedBySolo(ch, all))
+    const [playing, silencedBySolo, muted] = all.map(fill)
+    expect([...colors.values()]).toEqual([FAMILY_COLOR.bateria, FAMILY_COLOR.bateria, FAMILY_COLOR.bateria])
+    expect(playing).toContain(FAMILY_COLOR.bateria)
+    expect(silencedBySolo).not.toBe(playing)
+    for (const silenced of [silencedBySolo, muted]) {
+      expect(silenced).toBe('linear-gradient(to top, rgba(255,255,255,0.12), rgba(255,255,255,0.04))')
+      expect(silenced.replace(/\s/g, '')).not.toContain('239,68,68')
+      expect(silenced.toLowerCase()).not.toContain(FAMILY_COLOR.bateria.toLowerCase())
+    }
+  })
+  it('a cor da família Bateria não muda', () => {
+    expect(FAMILY_COLOR.bateria).toBe('#ef4444')
   })
 })

@@ -40,6 +40,15 @@ export function isSilencedBySolo<T extends ChannelIdentity & MixState>(ch: T, al
   return !ch.soloed && all.some((other) => other.soloed) && !isSoloSafe(ch)
 }
 
+// Preenchimento do fader do mixer. `silenced`: M ligado ou calado pelo Solo de outro canal.
+// Calado fica cinza neutro, nunca vermelho: o vermelho é a cor da família Bateria, e o M
+// aceso já marca o mute.
+export function channelFaderFill(color: string, silenced: boolean): string {
+  return silenced
+    ? 'linear-gradient(to top, rgba(255,255,255,0.12), rgba(255,255,255,0.04))'
+    : `linear-gradient(to top, ${color}66, ${color}15)`
+}
+
 // O M continua valendo pra todos, inclusive Click e Guia.
 export function channelGain<T extends ChannelIdentity & MixState>(ch: T, all: readonly T[]): number {
   if (ch.muted || isSilencedBySolo(ch, all)) return 0
