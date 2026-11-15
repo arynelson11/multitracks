@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
-import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut, Shield, Home, Disc, Repeat, Square, Menu, Server } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Pencil, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut, Shield, Home, Disc, Repeat, Square, Menu, Server } from 'lucide-react'
 const AdminApp = lazy(() => import('./admin/AdminApp'))
 import { BrandLogo } from './components/BrandLogo'
 import { PlayMark } from './components/brand/PlayMark'
@@ -61,6 +61,8 @@ import { useNetworkStatus } from './hooks/useNetworkStatus'
 import { useLiveSync } from './hooks/useLiveSync'
 import { buildChannelLabels, FAMILY_COLOR, type ChannelLabel } from './lib/channelNames'
 import { channelGain, isSilencedBySolo, pickMainChannel } from './lib/channelRoles'
+import { ChannelEditPanel } from './components/ChannelEditPanel'
+import { Button } from './components/ui'
 
 export default function App() {
   const { user, loading, signOut, userPlan } = useAuth()
@@ -77,7 +79,7 @@ export default function App() {
     playbackMode, setPlaybackMode,
     activeLoop, pendingJump, armLoop, cancelLoop, armJump, cancelJump,
     addChannelToActiveSong,
-    updatePan, removeChannel, reorderChannels,
+    updatePan, removeChannel, reorderChannels, setChannelMeta,
     precountEnabled, precountBeats, isCountingIn,
     setPrecountBeats, togglePrecountEnabled, playWithPrecount, cancelCountIn,
     createEndlessMetronomeSong,
@@ -181,6 +183,22 @@ export default function App() {
     () => new Map(buildChannelLabels(channels).map((l) => [l.id, l])),
     [channels],
   )
+
+  // EDITAR CANAIS: canal com o painel "Editar canal" aberto, preso à música em que abriu.
+  const [editing, setEditing] = useState<{ channelId: string; songIndex: number } | null>(null)
+  const editingChannel = editing?.songIndex === activeSongIndex
+    ? channels.find((c) => c.id === editing.channelId)
+    : undefined
+  // Trocou de música ou o canal saiu dela: fecha. Ajuste no render, sem efeito.
+  if (editing && !editingChannel) setEditing(null)
+  // Placeholder do nome no painel: o rótulo que aparece se o usuário apagar o nome,
+  // calculado como se aquele canal não tivesse nome do usuário (volta numerado, ex. "Guitarra 1").
+  const editingAutoLabel = useMemo(() => {
+    if (!editingChannel) return ''
+    const withoutCustomName = channels.map(({ id, name, customName, role, srcIdx }) =>
+      ({ id, name, role, srcIdx, customName: id === editingChannel.id ? undefined : customName }))
+    return buildChannelLabels(withoutCustomName).find((l) => l.id === editingChannel.id)?.autoLabel ?? editingChannel.name
+  }, [channels, editingChannel])
 
   const { isFollowerMode, isConnected, followerState, sendCommand } = useLiveSync({
     isPlaying,
@@ -1619,6 +1637,18 @@ export default function App() {
                   <div className="channel-edit-overlay">
                     <GripVertical size={16} className="text-text-muted/60 mb-1" />
                     <span className="text-[7px] font-mono text-text-muted/50 uppercase tracking-wider">Arrastar</span>
+                    <Button
+                      icon={<Pencil size={16} />}
+                      aria-label="Renomear e escolher papel"
+                      title="Renomear e escolher papel"
+                      onClick={(e) => { e.stopPropagation(); setEditing({ channelId: ch.id, songIndex: activeSongIndex }) }}
+                      className="mt-2"
+                    />
+                    {chLabel && chLabel.role !== 'normal' && (
+                      <span className="max-w-full px-1 text-center font-ps-sans text-ps-sm font-semibold text-ps-bone break-words">
+                        Papel: {chLabel.role === 'click' ? 'Click' : 'Guia'}
+                      </span>
+                    )}
                     <button onClick={(e) => { e.stopPropagation(); removeChannel(ch.id) }}
                       className="mt-2 w-7 h-7 rounded-full bg-accent-red/20 flex items-center justify-center hover:bg-accent-red/40 transition-colors cursor-pointer">
                       <Trash2 size={12} className="text-accent-red" />
@@ -1897,6 +1927,18 @@ export default function App() {
           </div>
         </section>
       </main>
+
+      {/* Editar canal (EDITAR CANAIS > lápis). Fica aqui, fora do mixer: a sobreposição do
+          canal tem backdrop-filter, que prenderia o `fixed` do painel dentro da faixa. */}
+      {editingChannel && (
+        <ChannelEditPanel
+          key={editingChannel.id}
+          channel={editingChannel}
+          autoLabel={editingAutoLabel}
+          onSave={(value) => { setChannelMeta(editingChannel.id, value); setEditing(null) }}
+          onClose={() => setEditing(null)}
+        />
+      )}
 
       {/* Settings Modal */}
       <SettingsModal
