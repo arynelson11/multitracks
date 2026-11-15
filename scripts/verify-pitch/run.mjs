@@ -27,6 +27,8 @@ export const SCENARIOS = {
   SPREAD22: { query: 'seq=SPREAD&n=22&order=A', timeout: 120 },
   // 50 reinícios (seek) com 24 canais: conta quantos separam as faixas.
   SEEKS: { query: 'seq=SEEKS&n=22&order=A', timeout: 120 },
+  // Nível de faixa mono e estéreo (pan total e centro), tom 0 x transposto.
+  LEVELS: { query: 'seq=LEVELS&order=A', timeout: 90 },
   // Tom inválido (NaN) chegando no motor.
   NAN: { query: 'seq=NAN&n=4&order=A', timeout: 90 },
   // Click do Separador: "Metrônomo" com acento, gravado depois dos stems.

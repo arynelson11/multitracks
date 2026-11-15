@@ -25,6 +25,7 @@ transposto no R. Sai com código 1 se algum critério falhar. JSON em
 | `S2` | trocas rápidas (80 ms): +2/0, +3/0/+3, 0 |
 | `SPREAD` / `SPREAD22` | 1ª e última faixa com o mesmo click em L e R (8 ou 22 instrumentos): diferença de início entre faixas |
 | `SEEKS` | 52 reinícios (seek) com 24 canais, no tom 0 e no +2: quantos separam as faixas |
+| `LEVELS` | nível de faixa mono e estéreo (pan total e centro) no tom 0 e transposto, com controle do erro do vocoder |
 | `NAN` | tom inválido (NaN) chegando no motor |
 | `METRONOMO` | click "Metrônomo" (com acento) gravado depois dos stems, como o Separador faz |
 

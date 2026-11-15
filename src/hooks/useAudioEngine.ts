@@ -26,6 +26,17 @@ import { REPERTOIRE_SCHEMA_VERSION, migrateManifestSong, migrateSavedSong, toMan
 // syncedTrackPlayer). 40 ms é imperceptível ao apertar play.
 const START_LEAD_S = 0.04;
 
+// Faixa mono: o panner trabalha com 1 canal. A saída do worklet de tom é
+// estéreo (L = R) e, com o panner no padrão, o StereoPanner passava a tratar a
+// faixa como estéreo: ela subia +5,8 dB em pan total e +2,8 dB no centro ao
+// transpor (medido). Em 1 canal a média de L e R é a própria faixa. Estéreo
+// não muda.
+const setupPannerForBuffer = (panner: StereoPannerNode, buffer: AudioBuffer) => {
+    if (buffer.numberOfChannels !== 1) return;
+    panner.channelCountMode = 'explicit';
+    panner.channelCount = 1;
+};
+
 export function useAudioEngine(userId?: string) {
     const DB_KEY_META = userId ? `mt_meta_playlist_${userId}` : 'mt_meta_playlist';
     const DB_KEY_FILES = userId ? `mt_files_${userId}` : 'mt_files';
@@ -379,6 +390,7 @@ export function useAudioEngine(userId?: string) {
                             const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
 
                             const panner = ctx.createStereoPanner();
+                            setupPannerForBuffer(panner, audioBuffer);
                             const gain = ctx.createGain();
 
                             panner.pan.value = metaCh.pan;
@@ -1002,6 +1014,7 @@ export function useAudioEngine(userId?: string) {
                 }
 
                 const panner = audioCtxRef.current.createStereoPanner();
+                setupPannerForBuffer(panner, audioBuffer);
                 const gain = audioCtxRef.current.createGain();
 
                 panner.pan.value = p.pan;
@@ -1116,6 +1129,7 @@ export function useAudioEngine(userId?: string) {
             const audioBuffer = await audioCtxRef.current.decodeAudioData(arrayBuffer);
 
             const panner = audioCtxRef.current.createStereoPanner();
+            setupPannerForBuffer(panner, audioBuffer);
             const gain = audioCtxRef.current.createGain();
 
             // O loop é Click pela regra central: com pan automático vai pra L (-1, bus 1); sem, centro.
@@ -1184,6 +1198,7 @@ export function useAudioEngine(userId?: string) {
             const audioBuffer = await audioCtxRef.current.decodeAudioData(arrayBuffer);
 
             const panner = audioCtxRef.current.createStereoPanner();
+            setupPannerForBuffer(panner, audioBuffer);
             const gain = audioCtxRef.current.createGain();
 
             // Regra central: com pan automático, Click e Guia à esquerda (bus 1) e o resto à direita (bus 2).

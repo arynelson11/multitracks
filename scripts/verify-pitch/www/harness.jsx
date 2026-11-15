@@ -51,15 +51,22 @@ function harmonic(dur, f0, nh, amp) {
   }
   return x;
 }
-function wavFile(name, x) {
-  const buf = new ArrayBuffer(44 + x.length * 2);
+// WAV 16 bits; com `x2`, estéreo (L = x, R = x2).
+function wavFile(name, x, x2) {
+  const nch = x2 ? 2 : 1;
+  const bytes = x.length * 2 * nch;
+  const buf = new ArrayBuffer(44 + bytes);
   const v = new DataView(buf);
   const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
-  str(0, 'RIFF'); v.setUint32(4, 36 + x.length * 2, true); str(8, 'WAVE');
-  str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-  v.setUint32(24, SR, true); v.setUint32(28, SR * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
-  str(36, 'data'); v.setUint32(40, x.length * 2, true);
-  for (let i = 0; i < x.length; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, x[i])) * 32767, true);
+  str(0, 'RIFF'); v.setUint32(4, 36 + bytes, true); str(8, 'WAVE');
+  str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, nch, true);
+  v.setUint32(24, SR, true); v.setUint32(28, SR * 2 * nch, true); v.setUint16(32, 2 * nch, true); v.setUint16(34, 16, true);
+  str(36, 'data'); v.setUint32(40, bytes, true);
+  const q16 = (a) => Math.max(-1, Math.min(1, a)) * 32767;
+  for (let i = 0; i < x.length; i++) {
+    v.setInt16(44 + i * 2 * nch, q16(x[i]), true);
+    if (x2) v.setInt16(44 + i * 4 + 2, q16(x2[i]), true);
+  }
   return new File([buf], name + '.wav', { type: 'audio/wav' });
 }
 
@@ -81,11 +88,23 @@ async function main() {
   await E().initEngine();
   await waitFor(() => E().isReady, 10000, 'engine pronta');
   // ---- faixas ----
-  const instr = INSTRUMENTS.slice(0, N);
+  // LEVELS: faixas de tom contínuo, mono e estéreo, em pan total e no centro.
+  // 'Controle C': estéreo com L = R = a mesma senoide das faixas mono, no centro.
+  // O caminho dele não muda entre tom 0 e transposto, então a diferença dele é
+  // só o erro do phase vocoder naquela frequência.
+  const LEVEL_TRACKS = { 'Mono R': [1, 1], 'Mono C': [1, 0], 'Estereo R': [2, 1], 'Estereo C': [2, 0], 'Controle C': [2, 0] };
+  const instr = SEQ === 'LEVELS' ? Object.keys(LEVEL_TRACKS) : INSTRUMENTS.slice(0, N);
   const measure = (SEQ === 'SPREAD' || SEQ === 'SEEKS') ? 'both' : (ORDER === 'A' ? 'last' : 'first');
   const clk = clickTrain(DUR, 0.5, 0.25);
   const files = [];
   const instrFiles = instr.map((name, i) => {
+    if (SEQ === 'LEVELS') {
+      // Senoide pura de 440 Hz: o phase vocoder perde 0 a 0,3 dB conforme a
+      // frequência e isso mascararia o efeito do panner (o controle mede).
+      const sine = harmonic(DUR, 440, 1, 0.1);
+      if (name === 'Controle C') return wavFile(name, sine, sine);
+      return LEVEL_TRACKS[name][0] === 2 ? wavFile(name, sine, harmonic(DUR, 660, 1, 0.07)) : wavFile(name, sine);
+    }
     const isMeasured = (measure === 'last' && i === N - 1) || (measure === 'first' && i === 0) || (measure === 'both' && (i === 0 || i === N - 1));
     return wavFile(name, isMeasured ? clk : harmonic(DUR, 97 + 11 * i, 4, 0.002));
   });
@@ -120,10 +139,12 @@ async function main() {
 
   // Pan na carga (autoPan): o click deve ir pro L como qualquer click.
   const pansAtLoad = Object.fromEntries(E().channels.map((c) => [c.name, c.pannerNode.pan.value]));
+  const pannerCfg = Object.fromEntries(E().channels.map((c) => [c.name, { canais: c.buffer.numberOfChannels, count: c.pannerNode.channelCount, mode: c.pannerNode.channelCountMode }]));
   // Lados fixos pra medir, independente da regra de nomes: click/guia no L,
   // instrumentos no R. SPREAD: 1º instrumento no L e click mudo, então
   // R − L = diferença de início entre a 1ª e a última faixa.
   for (const c of E().channels) c.pannerNode.pan.value = (c.name === CLICK || c.name === 'Voz Guia') ? -1 : 1;
+  if (SEQ === 'LEVELS') for (const c of E().channels) if (LEVEL_TRACKS[c.name]) c.pannerNode.pan.value = LEVEL_TRACKS[c.name][1];
   if (SEQ === 'SPREAD' || SEQ === 'SEEKS') {
     const chs = E().channels;
     chs.find((c) => c.name === instr[0]).pannerNode.pan.value = -1;
@@ -131,15 +152,32 @@ async function main() {
   }
   await sleep(500);
 
-  // Medidor por canal (depois do gain): nível de cada faixa nos snapshots.
-  const meters = new Map(E().channels.map((c) => {
-    const a = ctx.createAnalyser(); a.fftSize = 4096; c.gainNode.connect(a); return [c.name, a];
-  }));
-  const meterDb = () => Object.fromEntries([...meters].map(([n, a]) => {
-    const d = new Float32Array(a.fftSize); a.getFloatTimeDomainData(d);
-    let acc = 0; for (const v of d) acc += v * v;
-    return [n, +(10 * Math.log10(acc / d.length + 1e-18)).toFixed(1)];
-  }));
+  // Medidor por canal (depois do gain, L e R separados), criado na 1ª vez que
+  // o canal aparece num snapshot. Nível = potência L + R, média de várias leituras.
+  const meters = new WeakMap();
+  const meterOf = (c) => {
+    let m = meters.get(c.gainNode);
+    if (!m) {
+      const sp = ctx.createChannelSplitter(2);
+      const aL = ctx.createAnalyser(), aR = ctx.createAnalyser();
+      aL.fftSize = aR.fftSize = 4096;
+      c.gainNode.connect(sp); sp.connect(aL, 0); sp.connect(aR, 1);
+      m = { aL, aR, acc: [0, 0], n: 0 };
+      meters.set(c.gainNode, m);
+    }
+    return m;
+  };
+  const power = (a) => { const d = new Float32Array(a.fftSize); a.getFloatTimeDomainData(d); let acc = 0; for (const v of d) acc += v * v; return acc / d.length; };
+  const readLevels = async (chs, reads = 8) => {
+    const ms = chs.map((c) => meterOf(c));
+    ms.forEach((m) => { m.acc = [0, 0]; m.n = 0; });
+    for (let k = 0; k < reads; k++) {
+      ms.forEach((m) => { m.acc[0] += power(m.aL); m.acc[1] += power(m.aR); m.n++; });
+      await sleep(60);
+    }
+    const db = (x) => +(10 * Math.log10(x + 1e-18)).toFixed(2);
+    return Object.fromEntries(chs.map((c, i) => { const m = ms[i]; const L = m.acc[0] / m.n, R = m.acc[1] / m.n; return [c.name, { L: db(L), R: db(R), total: db(L + R) }]; }));
+  };
   // ---- snapshot ----
   const snaps = [];
   const dbg = (node) => Promise.race([node.debug ? node.debug() : Promise.resolve(null), sleep(1500).then(() => null)]);
@@ -147,6 +185,7 @@ async function main() {
     const t = now(), c = ctx.currentTime;
     const chs = E().channels;
     const pannerName = new Map(chs.map((ch) => [ch.pannerNode, ch.name]));
+    chs.forEach((ch) => meterOf(ch));
     const d1 = await Promise.all(worklets.map((w) => dbg(w.node)));
     await sleep(400);
     const d2 = await Promise.all(worklets.map((w) => dbg(w.node)));
@@ -161,6 +200,7 @@ async function main() {
         formant: b.seg.formantCompensation, bufTotal: b.bufBlocks, liveTotal: b.liveBlocks,
       };
     });
+    const levels = await readLevels(chs);
     const referenced = new Set(chs.map((ch) => ch.sourceNode).filter(Boolean));
     const bufName = new Map(chs.map((ch) => [ch.buffer, ch.name]));
     const alive = sources.filter((r) => r.started && !r.stopped && !r.ended);
@@ -169,7 +209,8 @@ async function main() {
     const snap = {
       label, t, ctxTime: +c.toFixed(3), pitch: E().playlist[E().activeSongIndex]?.pitch ?? null,
       isPlaying: E().isPlaying, position: +E().currentTime.toFixed(3),
-      worklets: wl, sourcesAlive: aliveInfo, levels: meterDb(),
+      worklets: wl, sourcesAlive: aliveInfo, levels,
+      expect: { channels: chs.length, transposable: chs.filter((ch) => ch.name !== CLICK && ch.name !== 'Voz Guia').length },
       masterInputs: [...(inbound.get(master) || [])].map((n) => pannerName.get(n) || chs.find((c) => c.gainNode === n)?.name || n.constructor.name),
     };
     snaps.push(snap);
@@ -196,6 +237,8 @@ async function main() {
     SPREAD: [[0, play], [3, snap('tom 0')], [4, pitch(2)], [9, snap('apos +2')], [10, pause], [11, snap('fim (pausado)')]],
     // Muitos reinícios (seek) no tom 0 e no +2: conta quantos separam as faixas.
     SEEKS: [[0, play], ...seeks(1, 25, 3), [14, pitch(2)], ...seeks(16, 25, 12), [29, snap('apos seeks no +2')], [30, pause], [31, snap('fim (pausado)')]],
+    // Nível de faixa mono e estéreo, pan total e centro, no tom 0 e transposto.
+    LEVELS: [[0, play], [3, snap('tom 0')], [4, pitch(2)], [8, snap('apos +2')], [9, pitch(0)], [12, snap('apos volta 0')], [13, pause], [14, snap('fim (pausado)')]],
     NAN: [[0, play], [3, pitch(NaN)], [7, snap('apos tom NaN')], [8, pitch(2)], [12, snap('apos +2')], [13, pause], [14, snap('fim (pausado)')]],
   }[SEQ];
   for (const [s, fn] of steps) await at(s, fn);
@@ -214,7 +257,7 @@ async function main() {
     eff: +r.eff.toFixed(5), tStart: r.tStart, ctxAtStop: r.ctxAtStop !== undefined ? +r.ctxAtStop.toFixed(5) : null,
   }));
   const res = {
-    cfg: { SEQ, N, ORDER, CLICK, measure, DUR, sampleRate: ctx.sampleRate, pansAtLoad, voice: [...VOICE].filter((v) => instr.includes(v)), instruments: instr, channels: chNames },
+    cfg: { SEQ, N, ORDER, CLICK, measure, DUR, sampleRate: ctx.sampleRate, pansAtLoad, pannerCfg, voice: [...VOICE].filter((v) => instr.includes(v)), instruments: instr, channels: chNames },
     events, snaps, rRelLms: pairs,
     rms: rms.map((r) => [r[0], +(20 * Math.log10(r[1] + 1e-9)).toFixed(1), +(20 * Math.log10(r[2] + 1e-9)).toFixed(1), r[3]]),
     sources: srcRecs, workletsCreated: worklets.map((w) => w.createdAt),

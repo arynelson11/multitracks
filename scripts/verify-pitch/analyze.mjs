@@ -10,6 +10,7 @@ const START_EPS_MS = 0.01; // início agendado entre faixas do mesmo play
 const JUMP_S = 0.02;       // salto de posição ao reiniciar
 const CLOCK_MIN = 0.95;    // relógio de áudio / relógio de parede
 const LEVEL_DB = -40;      // pico de RMS (janelas de 50 ms) antes de cada snapshot
+const LEVEL_MATCH_DB = 0.1; // LEVELS: nível transposto x tom 0, por faixa
 
 const fmt = (x, d = 2) => (x === null || x === undefined || Number.isNaN(x) ? String(x) : (+x).toFixed(d));
 
@@ -49,10 +50,12 @@ export function analyze(key, R) {
       const src = srcInfo(s);
       const tag = `[${s.label}] tom ${s.pitch}`;
       const wDetail = `existentes ${w.existing}, ativos ${w.active} (com fonte ${w.inUse}, sem fonte ${w.leaking})${w.dupCh.length ? ', duplicados ' + w.dupCh.join(' ') : ''}`;
-      const expActive = isPlayingSnap(s) && s.pitch !== 0 ? instruments.length : 0;
+      const expT = s.expect ? s.expect.transposable : instruments.length;
+      const maxT = cfg.maxTransposable || instruments.length;
+      const expActive = isPlayingSnap(s) && s.pitch !== 0 ? expT : 0;
       add(1, `${tag}: worklets ativos = ${expActive}`, w.active === expActive && w.inUse === expActive && w.leaking === 0 && w.noDebug === 0, wDetail);
-      add(1, `${tag}: no máx. 1 worklet por canal e existentes <= ${instruments.length}`, w.dupCh.length === 0 && w.existing <= instruments.length, wDetail);
-      const expAlive = isPlayingSnap(s) ? nChannels : 0;
+      add(1, `${tag}: no máx. 1 worklet por canal e existentes <= ${maxT}`, w.dupCh.length === 0 && w.existing <= maxT, wDetail);
+      const expAlive = isPlayingSnap(s) ? (s.expect ? s.expect.channels : nChannels) : 0;
       add(1, `${tag}: fontes vivas = ${expAlive}, sem órfãs/duplicadas`, src.alive === expAlive && src.dup.length === 0 && src.orphans.length === 0,
         `vivas ${src.alive}${src.dup.length ? ', duplicadas ' + src.dup.join(' ') : ''}${src.orphans.length ? ', órfãs ' + src.orphans.length : ''}`);
     }
@@ -110,8 +113,34 @@ export function analyze(key, R) {
   }
   if (jumps.length && seq !== 'SEEKS') add(1, `posição contínua ao reiniciar (|salto| <= ${JUMP_S} s)`, jumps.every((j) => Math.abs(j) <= JUMP_S), `saltos s: ${jumps.map((j) => fmt(j, 3)).join(', ')}`);
 
+  // ---------- rodada 1, item 1: nível mono/estéreo transposto x tom 0 ----------
+  if (seq === 'LEVELS') {
+    const base = R.snaps.find((x) => x.label === 'tom 0');
+    for (const other of R.snaps.filter((x) => isPlayingSnap(x) && x !== base)) {
+      const ctl = other.levels['Controle C'] && base.levels['Controle C'] ? other.levels['Controle C'].total - base.levels['Controle C'].total : null;
+      if (ctl !== null) checks.push({ item: 'R1-1', scenario: key, name: `[${other.label}] controle (erro do vocoder em 440 Hz)`, pass: true, info: true, detail: `dif ${fmt(ctl)} dB` });
+      for (const name of ['Mono R', 'Mono C', 'Estereo R', 'Estereo C']) {
+        const a = base.levels[name], b = other.levels[name];
+        const d = b.total - a.total;
+        const detail = `tom 0 ${fmt(a.total)} dB (L ${fmt(a.L)} R ${fmt(a.R)}), agora ${fmt(b.total)} dB (L ${fmt(b.L)} R ${fmt(b.R)}), dif ${fmt(d)} dB`;
+        // Estéreo: o critério é não mudar com a correção (compara-se entre execuções);
+        // a diferença que sobra é do próprio phase vocoder naquele tom.
+        if (name.startsWith('Estereo')) checks.push({ item: 'R1-1', scenario: key, name: `[${other.label}] ${name}: nível transposto x tom 0`, pass: true, info: true, detail });
+        else {
+          add('R1-1', `[${other.label}] ${name}: nível igual ao do tom 0 (|dif| <= ${LEVEL_MATCH_DB} dB)`, Math.abs(d) <= LEVEL_MATCH_DB, detail);
+          if (ctl !== null) add('R1-1', `[${other.label}] ${name}: efeito do panner (dif - controle) <= 0.05 dB`, Math.abs(d - ctl) <= 0.05, `dif ${fmt(d)} - controle ${fmt(ctl)} = ${fmt(d - ctl)} dB`);
+        }
+      }
+    }
+    if (cfg.pannerCfg) {
+      const wrong = Object.entries(cfg.pannerCfg).filter(([, p]) => (p.canais === 1 ? !(p.count === 1 && p.mode === 'explicit') : !(p.count === 2 && p.mode !== 'explicit')));
+      add('R1-1', 'panner: faixa mono em 1 canal (explicit); estéreo sem mudança', wrong.length === 0,
+        wrong.length ? wrong.map(([n, p]) => `${n}: ${p.canais} canal(is), panner ${p.count}/${p.mode}`).join('; ') : 'ok');
+    }
+  }
+
   // ---------- item 3: alinhamento (R − L) por trecho ----------
-  if (seq !== 'NAN') {
+  if (seq !== 'NAN' && seq !== 'LEVELS') {
     const bounds = changes.map((c) => ({ ctx: c.ctx, pitch: c.to }));
     const segs = [{ from: 0, pitch: 0 }, ...bounds.map((b) => ({ from: b.ctx, pitch: b.pitch }))];
     const pauseEv = R.events.find((e) => e.type === 'pause');
