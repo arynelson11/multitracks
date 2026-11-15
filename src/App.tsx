@@ -62,6 +62,8 @@ import { useLiveSync } from './hooks/useLiveSync'
 import { buildChannelLabels, FAMILY_COLOR, type ChannelLabel } from './lib/channelNames'
 import { channelGain, isSilencedBySolo, pickMainChannel } from './lib/channelRoles'
 import { ChannelEditPanel } from './components/ChannelEditPanel'
+import { ChannelTrashButton } from './components/ChannelTrashButton'
+import { useTwoTapConfirm } from './hooks/useTwoTapConfirm'
 import { Button } from './components/ui'
 
 export default function App() {
@@ -183,6 +185,9 @@ export default function App() {
     () => new Map(buildChannelLabels(channels).map((l) => [l.id, l])),
     [channels],
   )
+
+  // EDITAR CANAIS: lixeira com dois toques (o primeiro arma, o segundo em até 3 s apaga).
+  const channelTrash = useTwoTapConfirm(removeChannel)
 
   // EDITAR CANAIS: canal com o painel "Editar canal" aberto, preso à música em que abriu.
   const [editing, setEditing] = useState<{ channelId: string; songIndex: number } | null>(null)
@@ -1532,7 +1537,7 @@ export default function App() {
             {channels.length > 0 && (
               <div className="flex items-center justify-between px-3 sm:px-4 py-1.5 short:py-0.5 border-b border-border bg-[#141416] shrink-0">
                 <span className="text-[9px] font-mono font-bold text-text-muted/40 uppercase tracking-[0.2em]">MIXER • {channels.length} CANAIS</span>
-                <button onClick={() => setIsChannelEditMode(!isChannelEditMode)}
+                <button onClick={() => { setIsChannelEditMode(!isChannelEditMode); channelTrash.disarm() }}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider transition-all active:scale-95 border cursor-pointer ${isChannelEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border hover:bg-white/5'}`}>
                   {isChannelEditMode ? <Check size={10} /> : <Move size={10} />}
                   {isChannelEditMode ? 'PRONTO' : 'EDITAR CANAIS'}
@@ -1635,7 +1640,8 @@ export default function App() {
                 {/* Channel Edit Overlay */}
                 {isChannelEditMode && (
                   <div className="channel-edit-overlay">
-                    <GripVertical size={16} className="text-text-muted/60 mb-1" />
+                    {/* mt-auto aqui e na lixeira: alça e lápis no meio do espaço acima da lixeira, que fica no pé */}
+                    <GripVertical size={16} className="text-text-muted/60 mb-1 mt-auto" />
                     <span className="text-[7px] font-mono text-text-muted/50 uppercase tracking-wider">Arrastar</span>
                     <Button
                       icon={<Pencil size={16} />}
@@ -1649,10 +1655,11 @@ export default function App() {
                         Papel: {chLabel.role === 'click' ? 'Click' : 'Guia'}
                       </span>
                     )}
-                    <button onClick={(e) => { e.stopPropagation(); removeChannel(ch.id) }}
-                      className="mt-2 w-7 h-7 rounded-full bg-accent-red/20 flex items-center justify-center hover:bg-accent-red/40 transition-colors cursor-pointer">
-                      <Trash2 size={12} className="text-accent-red" />
-                    </button>
+                    {/* Pé da sobreposição, longe do lápis: 6px do gap + 18px = pelo menos 24px. */}
+                    <div className="mt-auto flex justify-center pt-[18px] pb-2">
+                      <ChannelTrashButton channelLabel={chName} armed={channelTrash.armedId === ch.id}
+                        onPress={() => channelTrash.press(ch.id)} />
+                    </div>
                   </div>
                 )}
               </div>
