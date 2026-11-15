@@ -300,3 +300,28 @@ describe('overhead, bumbo no plural, CLICKTRACK e TeCL', () => {
     expect(recognizeChannel('Piano/TeCL')).toEqual({ label: 'Piano', family: 'piano' })
   })
 })
+
+// Revisão final (C1): o detector antigo (includes click/metronomo/guia/guide) pegava
+// estes nomes. O novo nunca pode ser mais estreito, senão a guia ou o click vão pra PA.
+describe('compatibilidade com o detector antigo: o antigo pegava, o novo tem que pegar', () => {
+  it.each([
+    ['vozguia', 'guide', 'guia', 'Guia'], ['VOZGUIA', 'guide', 'guia', 'Guia'],
+    ['voiceguide', 'guide', 'guia', 'Guia'], ['guidevocal', 'guide', 'guia', 'Guia'],
+    ['GUIDEVOX', 'guide', 'guia', 'Guia'], ['clickguia', 'click', 'click', 'Click'],
+    ['clicktrk', 'click', 'click', 'Click'], ['LGuia', 'guide', 'guia', 'Guia'],
+    ['Metrônomo', 'click', 'click', 'Click'], ['vozguia bass', 'guide', 'guia', 'Guia'],
+  ])('%s: papel %s, família %s, rótulo %s', (name, role, family, label) => {
+    const ch = { id: '1', name }
+    expect(roleFromName(name)).toBe(role)
+    expect([resolveChannelRole(ch), channelFamily(ch)]).toEqual([role, family])
+    expect(buildChannelLabels([ch])[0]).toMatchObject({ label, role, family, color: FAMILY_COLOR[family as 'click' | 'guia'] })
+  })
+  it('duplicados entram na mesma numeração das outras famílias', () => {
+    expect(labels(['VOZGUIA', 'Voz Guia', 'clicktrk', 'CLICK'])).toEqual(['Guia 2', 'Guia 1', 'Click 2', 'Click 1'])
+  })
+  it('papel manual vence: vozguia com papel Normal continua Normal', () => {
+    const ch = { id: '1', name: 'vozguia', role: 'normal' as const }
+    expect([resolveChannelRole(ch), channelFamily(ch)]).toEqual(['normal', 'desconhecido'])
+    expect(buildChannelLabels([ch])[0]).toMatchObject({ label: 'Vozguia', role: 'normal' })
+  })
+})

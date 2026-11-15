@@ -300,7 +300,25 @@ export function recognizeChannel(raw: string, opts: { ignoreRoleFamilies?: boole
   return { family: familyRule.family, label: [base, ...extra].join(' ') }
 }
 
+// Detector antigo (produção até a v1.4.9): `includes` de click, metronomo, guia ou guide.
+// O papel automático nunca é mais estreito que ele, senão a guia ou o click de uma
+// música já salva vão pra PA. Vale no nome sem acento, em caixa alta e sem nada além
+// de A-Z e 0-9, mesmo que outra palavra case outra família ("vozguia bass" é Guia).
+// BEAT e TEMPO não entram aqui: seguem as regras de palavra fraca.
+const LEGACY_CLICK = /CLICK|METRONOM/
+const LEGACY_GUIDE = /GUIA|GUIDE/
+
+function legacyRoleFromName(raw: string): ChannelRole | undefined {
+  const compact = stripFileName(raw).normalize('NFD').replace(/\p{M}/gu, '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+  if (LEGACY_CLICK.test(compact)) return 'click'
+  if (LEGACY_GUIDE.test(compact)) return 'guide'
+  return undefined
+}
+
+// Papel automático pelo nome. O papel manual (`role`) é decidido antes, em resolveChannelRole.
 export function roleFromName(raw: string): ChannelRole {
+  const legacy = legacyRoleFromName(raw)
+  if (legacy) return legacy
   const family = matchFamily(raw, false)?.familyRule.family
   if (family === 'click') return 'click'
   if (family === 'guia') return 'guide'
