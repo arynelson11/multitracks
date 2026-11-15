@@ -46,6 +46,11 @@ interface SavedSong {
     chords?: string | null;
 }
 
+// Folga entre o play e o som sair: todas as faixas são agendadas pro MESMO
+// instante `when`, um pouco à frente do relógio (mesmo padrão do
+// syncedTrackPlayer). 40 ms é imperceptível ao apertar play.
+const START_LEAD_S = 0.04;
+
 export function useAudioEngine(userId?: string) {
     const DB_KEY_META = userId ? `mt_meta_playlist_${userId}` : 'mt_meta_playlist';
     const DB_KEY_FILES = userId ? `mt_files_${userId}` : 'mt_files';
@@ -266,7 +271,8 @@ export function useAudioEngine(userId?: string) {
     // o tempo do play anterior e a música pulava segundos pra frente.
     const getPlaybackPosition = (ctx: BaseAudioContext): number => {
         if (playPendingRef.current) return pausedAtRef.current;
-        return (ctx.currentTime - startTimeRef.current) * timeStretch + pausedAtRef.current;
+        // Antes do `when` agendado a música ainda não andou (não volta pra trás).
+        return Math.max(0, ctx.currentTime - startTimeRef.current) * timeStretch + pausedAtRef.current;
     };
 
     // Core persistence
@@ -547,6 +553,10 @@ export function useAudioEngine(userId?: string) {
         }
         // Lido de novo: o tom pode ter mudado (entre dois tons != 0) durante a espera.
         const playPitch = currentPitchRef.current;
+        // Um instante só pra todas as faixas. Com start(0) ("assim que der"), se
+        // o laço cruzava um bloco de áudio (2,67 ms) parte das faixas começava um
+        // ou dois blocos depois (medido: 10 de 52 reinícios, até 5,3 ms).
+        const when = ctx.currentTime + START_LEAD_S;
 
         for (const ch of channels) {
             const source = ctx.createBufferSource();
@@ -583,13 +593,13 @@ export function useAudioEngine(userId?: string) {
                 source.connect(ch.pannerNode);
             }
 
-            source.start(0, pausedAtRef.current);
+            source.start(when, pausedAtRef.current);
             ch.sourceNode = source;
             liveSourcesRef.current.add(source);
             source.onended = () => { liveSourcesRef.current.delete(source); };
         }
 
-        startTimeRef.current = ctx.currentTime;
+        startTimeRef.current = when;
         playPendingRef.current = false;
         setIsPlaying(true);
     }, [channels, stopAllNodes, masterVolume]);
@@ -603,7 +613,7 @@ export function useAudioEngine(userId?: string) {
         playGenRef.current++;
         playPendingRef.current = false;
         stopAllNodes();
-        if (!wasPending) pausedAtRef.current += ctx.currentTime - startTimeRef.current;
+        if (!wasPending) pausedAtRef.current += Math.max(0, ctx.currentTime - startTimeRef.current);
         setIsPlaying(false);
 
         if (autoNextTimeoutRef.current) {

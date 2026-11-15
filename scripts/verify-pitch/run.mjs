@@ -23,6 +23,10 @@ export const SCENARIOS = {
   S2: { query: 'seq=S2&n=22&order=A', timeout: 120 },
   // Duas faixas de instrumento com o mesmo trem de clicks em L e R: mede o início de cada uma.
   SPREAD: { query: 'seq=SPREAD&n=8&order=A', timeout: 90 },
+  // Igual, com 24 canais (laço de start() mais longo).
+  SPREAD22: { query: 'seq=SPREAD&n=22&order=A', timeout: 120 },
+  // 50 reinícios (seek) com 24 canais: conta quantos separam as faixas.
+  SEEKS: { query: 'seq=SEEKS&n=22&order=A', timeout: 120 },
   // Tom inválido (NaN) chegando no motor.
   NAN: { query: 'seq=NAN&n=4&order=A', timeout: 90 },
   // Click do Separador: "Metrônomo" com acento, gravado depois dos stems.

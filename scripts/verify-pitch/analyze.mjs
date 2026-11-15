@@ -17,6 +17,7 @@ export function analyze(key, R) {
   const checks = [];
   const add = (item, name, pass, detail) => checks.push({ item, scenario: key, name, pass: !!pass, detail });
   const cfg = R.cfg;
+  const seq = cfg.SEQ;
   const exempt = new Set([cfg.CLICK, 'Voz Guia']);
   const instruments = cfg.instruments;
   const nChannels = cfg.channels.length;
@@ -42,7 +43,7 @@ export function analyze(key, R) {
     return { alive: s.sourcesAlive.length, dup, orphans };
   };
   const isPlayingSnap = (s) => !s.label.startsWith('fim');
-  if (key !== 'NAN') {
+  if (seq !== 'NAN') {
     for (const s of R.snaps) {
       const w = wlInfo(s);
       const src = srcInfo(s);
@@ -69,10 +70,10 @@ export function analyze(key, R) {
     const mL = win.length ? Math.max(...win.map((r) => r[1])) : -999;
     const mR = win.length ? Math.max(...win.map((r) => r[2])) : -999;
     const nan = win.reduce((a, r) => a + (r[3] || 0), 0);
-    add(key === 'NAN' ? 6 : 1, `[${s.label}] saída com som (pico L e R > ${LEVEL_DB} dB) e sem NaN`, mL > LEVEL_DB && mR > LEVEL_DB && nan === 0,
+    add(seq === 'NAN' ? 6 : 1, `[${s.label}] saída com som (pico L e R > ${LEVEL_DB} dB) e sem NaN`, mL > LEVEL_DB && mR > LEVEL_DB && nan === 0,
       `pico L ${fmt(mL, 1)} dB, R ${fmt(mR, 1)} dB, amostras NaN ${nan}`);
   }
-  if (key === 'NAN') {
+  if (seq === 'NAN') {
     add(6, 'nenhuma amostra NaN na saída durante todo o teste', nanTotal === 0, `amostras NaN ${nanTotal}`);
     const sem = R.snaps.flatMap((s) => s.worklets.map((w) => w.semitones));
     add(6, 'nenhum worklet com semitons NaN', !sem.some((v) => v === null || Number.isNaN(v)), `semitons vistos: ${[...new Set(sem.map(String))].join(', ') || 'nenhum worklet'}`);
@@ -83,12 +84,19 @@ export function analyze(key, R) {
   const groups = [];
   for (const r of recs) {
     const g = groups[groups.length - 1];
-    if (g && Math.abs(r.offset - g[0].offset) < 1e-6 && r.tStart - g[0].tStart < 50) g.push(r); else groups.push([r]);
+    // Mesmo play: mesmo offset e, com `when` agendado, o mesmo `when`; com start(0), chamadas próximas.
+    const same = g && Math.abs(r.offset - g[0].offset) < 1e-6
+      && (r.when > 0 || g[0].when > 0 ? Math.abs(r.when - g[0].when) < 1e-9 : r.tStart - g[0].tStart < 100);
+    if (same) g.push(r); else groups.push([r]);
   }
   const spreads = groups.map((g) => (Math.max(...g.map((r) => r.eff)) - Math.min(...g.map((r) => r.eff))) * 1000);
   const sizes = groups.map((g) => g.length);
-  add(2, `todas as fontes de cada play no mesmo instante (<= ${START_EPS_MS} ms)`, spreads.every((x) => x <= START_EPS_MS) && sizes.every((n) => n === nChannels),
-    `plays ${groups.length}; espalhamento ms: ${spreads.map((x) => fmt(x, 3)).join(', ')}; faixas por play: ${sizes.join(', ')}`);
+  const split = spreads.filter((x) => x > START_EPS_MS);
+  const sizesBad = sizes.filter((n) => n !== nChannels);
+  add(2, `todas as fontes de cada play no mesmo instante (<= ${START_EPS_MS} ms)`, split.length === 0 && sizesBad.length === 0,
+    groups.length > 8
+      ? `plays ${groups.length}; com faixas separadas ${split.length} (até ${fmt(Math.max(0, ...spreads), 3)} ms)${sizesBad.length ? '; faixas por play fora do esperado: ' + sizesBad.join(', ') : ''}`
+      : `plays ${groups.length}; espalhamento ms: ${spreads.map((x) => fmt(x, 3)).join(', ')}; faixas por play: ${sizes.join(', ')}`);
   // salto de posição ao reiniciar (corrida na troca rápida)
   const jumps = [];
   for (let i = 1; i < groups.length; i++) {
@@ -100,10 +108,10 @@ export function analyze(key, R) {
     const expected = prev[0].offset + Math.max(0, stopAt - playedFrom);
     jumps.push(cur[0].offset - expected);
   }
-  if (jumps.length) add(1, `posição contínua ao reiniciar (|salto| <= ${JUMP_S} s)`, jumps.every((j) => Math.abs(j) <= JUMP_S), `saltos s: ${jumps.map((j) => fmt(j, 3)).join(', ')}`);
+  if (jumps.length && seq !== 'SEEKS') add(1, `posição contínua ao reiniciar (|salto| <= ${JUMP_S} s)`, jumps.every((j) => Math.abs(j) <= JUMP_S), `saltos s: ${jumps.map((j) => fmt(j, 3)).join(', ')}`);
 
   // ---------- item 3: alinhamento (R − L) por trecho ----------
-  if (key !== 'NAN') {
+  if (seq !== 'NAN') {
     const bounds = changes.map((c) => ({ ctx: c.ctx, pitch: c.to }));
     const segs = [{ from: 0, pitch: 0 }, ...bounds.map((b) => ({ from: b.ctx, pitch: b.pitch }))];
     const pauseEv = R.events.find((e) => e.type === 'pause');
@@ -111,17 +119,21 @@ export function analyze(key, R) {
     segs.forEach((s, i) => {
       const to = i + 1 < segs.length ? segs[i + 1].from : endCtx;
       if (to - s.from < 1.2) return; // trecho curto da troca rápida
-      const vals = R.rRelLms.filter((p) => p[0] >= s.from + 0.8 && p[0] < to).map((p) => p[1]);
-      if (!vals.length) { add(key === 'SPREAD' ? 2 : 3, `trecho tom ${s.pitch} desde ${fmt(s.from, 1)} s: alinhamento`, false, 'sem pares de onset'); return; }
+      // SEEKS: fora os 300 ms depois de cada reinício (o click cortado pelo stop
+      // sai diferente em cada phase vocoder); o instante agendado é checado acima.
+      const seekCtx = R.events.filter((e) => e.type === 'seekTo').map((e) => e.ctx);
+      const settled = (t) => !seekCtx.some((c) => t >= c && t < c + 0.3);
+      const vals = R.rRelLms.filter((p) => p[0] >= s.from + 0.8 && p[0] < to && settled(p[0])).map((p) => p[1]);
+      if (!vals.length) { add(seq === 'SPREAD' ? 2 : 3, `trecho tom ${s.pitch} desde ${fmt(s.from, 1)} s: alinhamento`, false, 'sem pares de onset'); return; }
       const sorted = vals.slice().sort((a, b) => a - b);
       const med = sorted[Math.floor(sorted.length / 2)];
       const worst = Math.max(...vals.map(Math.abs));
       const pk = R.rms.filter((r) => r[0] >= s.from + 0.8 && r[0] < to);
       if (pk.length) checks.push({ item: 0, scenario: key, name: `nível no trecho tom ${s.pitch} desde ${fmt(s.from, 1)} s`, pass: true, info: true,
         detail: `pico L ${fmt(Math.max(...pk.map((r) => r[1])), 1)} dB, pico R ${fmt(Math.max(...pk.map((r) => r[2])), 1)} dB` });
-      if (key === 'SPREAD') {
+      if (seq === 'SPREAD' || seq === 'SEEKS') {
         add(2, `trecho tom ${s.pitch}: 1ª e última faixa começam juntas (|R−L| <= ${SPREAD_MS} ms)`, worst <= SPREAD_MS,
-          `n ${vals.length}, mediana ${fmt(med)} ms, pior ${fmt(worst)} ms`);
+          `n ${vals.length}, mediana ${fmt(med)} ms, pior ${fmt(worst)} ms, pares fora ${vals.filter((v) => Math.abs(v) > SPREAD_MS).length}`);
       } else {
         add(3, `trecho tom ${s.pitch} desde ${fmt(s.from, 1)} s: click x instrumento (|R−L| <= ${ALIGN_MS} ms)`, worst <= ALIGN_MS,
           `n ${vals.length}, mediana ${fmt(med)} ms, pior ${fmt(worst)} ms`);
@@ -130,7 +142,7 @@ export function analyze(key, R) {
   }
 
   // ---------- item 4: click/guia fora do caminho do tom ----------
-  if (key !== 'NAN' && key !== 'SPREAD') {
+  if (seq === 'S1' || seq === 'S2') {
     const viaWorklet = new Set();
     for (const s of R.snaps) {
       s.sourcesAlive.filter((a) => exempt.has(a.ch) && a.route.includes('worklet')).forEach((a) => viaWorklet.add(a.ch));
@@ -142,7 +154,7 @@ export function analyze(key, R) {
   }
 
   // ---------- item 5: formantes só em voz ----------
-  if (key === 'S1' || key === 'METRONOMO') {
+  if (seq === 'S1') {
     const wrong = new Set();
     let seen = 0;
     for (const s of R.snaps.filter((x) => isPlayingSnap(x) && x.pitch !== 0)) {

@@ -82,7 +82,7 @@ async function main() {
   await waitFor(() => E().isReady, 10000, 'engine pronta');
   // ---- faixas ----
   const instr = INSTRUMENTS.slice(0, N);
-  const measure = SEQ === 'SPREAD' ? 'both' : (ORDER === 'A' ? 'last' : 'first');
+  const measure = (SEQ === 'SPREAD' || SEQ === 'SEEKS') ? 'both' : (ORDER === 'A' ? 'last' : 'first');
   const clk = clickTrain(DUR, 0.5, 0.25);
   const files = [];
   const instrFiles = instr.map((name, i) => {
@@ -124,7 +124,7 @@ async function main() {
   // instrumentos no R. SPREAD: 1º instrumento no L e click mudo, então
   // R − L = diferença de início entre a 1ª e a última faixa.
   for (const c of E().channels) c.pannerNode.pan.value = (c.name === CLICK || c.name === 'Voz Guia') ? -1 : 1;
-  if (SEQ === 'SPREAD') {
+  if (SEQ === 'SPREAD' || SEQ === 'SEEKS') {
     const chs = E().channels;
     chs.find((c) => c.name === instr[0]).pannerNode.pan.value = -1;
     E().toggleMute(chs.find((c) => c.name === CLICK).id);
@@ -158,7 +158,7 @@ async function main() {
         id: w.id, targets,
         live: b.liveBlocks - a.liveBlocks, buf: b.bufBlocks - a.bufBlocks, idle: b.idleBlocks - a.idleBlocks,
         nan: b.nanBlocks - a.nanBlocks, active: b.seg.active, semitones: b.seg.semitones,
-        formant: b.seg.formantCompensation,
+        formant: b.seg.formantCompensation, bufTotal: b.bufBlocks, liveTotal: b.liveBlocks,
       };
     });
     const referenced = new Set(chs.map((ch) => ch.sourceNode).filter(Boolean));
@@ -183,6 +183,8 @@ async function main() {
   const play = () => { ev('play'); return E().play(); };
   const pause = () => { ev('pause'); E().pause(); };
   const snap = (l) => () => snapshot(l);
+  const seek = (t) => () => { ev('seekTo', { to: t }); E().seekTo(t); };
+  const seeks = (t0, n, pos0) => Array.from({ length: n }, (_, k) => [t0 + k * 0.5, seek(pos0 + k * 0.3)]);
 
   const steps = {
     S1: [[0, play], [3, pitch(2)], [7, snap('apos +2')], [9, pitch(0)], [13, snap('apos volta 0')],
@@ -192,6 +194,8 @@ async function main() {
       [8, pitch(3)], [8.08, pitch(0)], [8.16, pitch(3)], [12, snap('apos +3/0/+3 rapido')],
       [14, pitch(0)], [17, snap('apos volta 0')], [18, pause], [19, snap('fim (pausado)')]],
     SPREAD: [[0, play], [3, snap('tom 0')], [4, pitch(2)], [9, snap('apos +2')], [10, pause], [11, snap('fim (pausado)')]],
+    // Muitos reinícios (seek) no tom 0 e no +2: conta quantos separam as faixas.
+    SEEKS: [[0, play], ...seeks(1, 25, 3), [14, pitch(2)], ...seeks(16, 25, 12), [29, snap('apos seeks no +2')], [30, pause], [31, snap('fim (pausado)')]],
     NAN: [[0, play], [3, pitch(NaN)], [7, snap('apos tom NaN')], [8, pitch(2)], [12, snap('apos +2')], [13, pause], [14, snap('fim (pausado)')]],
   }[SEQ];
   for (const [s, fn] of steps) await at(s, fn);
