@@ -60,7 +60,7 @@ import { LyricsEditor } from './components/LyricsEditor'
 import { useNetworkStatus } from './hooks/useNetworkStatus'
 import { useLiveSync } from './hooks/useLiveSync'
 import { buildChannelLabels, FAMILY_COLOR, type ChannelLabel } from './lib/channelNames'
-import { channelFaderFill, channelGain, isSilencedBySolo, pickMainChannel } from './lib/channelRoles'
+import { channelFaderFill, channelGain, isSilencedBySolo, pickWaveformChannel } from './lib/channelRoles'
 import { ChannelEditPanel } from './components/ChannelEditPanel'
 import { ChannelTrashButton } from './components/ChannelTrashButton'
 import { useTwoTapConfirm } from './hooks/useTwoTapConfirm'
@@ -185,6 +185,8 @@ export default function App() {
     () => new Map(buildChannelLabels(channels).map((l) => [l.id, l])),
     [channels],
   )
+  // Onda do SectionBar: primeiro instrumento harmônico, não a bateria. Só recalcula quando os canais mudam.
+  const sectionWaveBuffer = useMemo(() => (pickWaveformChannel(channels) ?? channels[0])?.buffer || null, [channels])
 
   // EDITAR CANAIS: lixeira com dois toques (o primeiro arma, o segundo em até 3 s apaga).
   const channelTrash = useTwoTapConfirm(removeChannel)
@@ -1373,7 +1375,7 @@ export default function App() {
                 currentMarkerId={currentMarker?.id || null}
                 currentTime={currentTime}
                 duration={duration}
-                waveBuffer={(pickMainChannel(channels) ?? channels[0])?.buffer || null}
+                waveBuffer={sectionWaveBuffer}
                 bpm={playlist[activeSongIndex].bpm}
                 activeLoop={activeLoop}
                 pendingJump={pendingJump}

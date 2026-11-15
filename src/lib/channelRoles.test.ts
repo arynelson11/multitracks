@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   CUSTOM_NAME_MAX, applyChannelMetaPatch, applyChannelMetaToList, autoPanFor, channelFaderFill, channelGain, findClickChannel,
-  isPitchExempt, isSilencedBySolo, isSoloSafe, pickMainChannel, pickTempoSourceChannel, pitchChangeAction,
+  isPitchExempt, isSilencedBySolo, isSoloSafe, pickMainChannel, pickTempoSourceChannel, pickWaveformChannel, pitchChangeAction,
 } from './channelRoles'
-import { FAMILY_COLOR, buildChannelLabels, recognizeChannel, type ChannelIdentity } from './channelNames'
+import { FAMILY_COLOR, buildChannelLabels, recognizeChannel, sortChannelsByDefault, type ChannelIdentity } from './channelNames'
 
 const mix = (id: string, name: string, extra: object = {}) => ({ id, name, volume: 0.8, muted: false, soloed: false, ...extra })
 
@@ -163,5 +163,27 @@ describe('fader do canal calado', () => {
   })
   it('a cor da família Bateria não muda', () => {
     expect(FAMILY_COLOR.bateria).toBe('#ef4444')
+  })
+})
+
+// Revisão final (N3): a ordem padrão põe a bateria como primeiro Normal; a onda não usa ela.
+describe('canal da onda do SectionBar', () => {
+  it('prefere o primeiro Normal que não seja bateria nem percussão', () => {
+    const list = sortChannelsByDefault([{ id: 'v', name: 'Vocal' }, { id: 'b', name: 'BASS' }, { id: 'k', name: 'KICK' },
+      { id: 'p', name: 'SHAKER' }, { id: 'd', name: 'DRUMS' }, { id: 'c', name: 'CLICK' }, { id: 'g', name: 'Voz Guia' }])
+    expect(list.map((c) => c.id)).toEqual(['c', 'g', 'k', 'd', 'p', 'b', 'v'])
+    expect(pickWaveformChannel(list)?.id).toBe('b')
+  })
+  it('vale a família resolvida: nome do usuário e papel manual contam', () => {
+    expect(pickWaveformChannel([{ id: 'd', name: 'DRUMS' }, { id: 't', name: 'Track 9', customName: 'Violão do Zé' }])?.id).toBe('t')
+    expect(pickWaveformChannel([{ id: 'g', name: 'GTR', role: 'guide' }, { id: 'a', name: 'AG' }])?.id).toBe('a')
+  })
+  it('só bateria e percussão: o primeiro Normal; só Click e Guia: nenhum (o App cai no primeiro canal)', () => {
+    expect(pickWaveformChannel([{ id: 'c', name: 'CLICK' }, { id: 'p', name: 'PERC' }, { id: 'd', name: 'DRUMS' }])?.id).toBe('p')
+    expect(pickWaveformChannel([{ id: 'c', name: 'CLICK' }, { id: 'g', name: 'GUIA' }])).toBeUndefined()
+    expect(pickWaveformChannel([])).toBeUndefined()
+  })
+  it('pickMainChannel não muda pros outros chamadores (tom e tempo)', () => {
+    expect(pickMainChannel([{ id: 'c', name: 'CLICK' }, { id: 'd', name: 'DRUMS' }, { id: 'b', name: 'BASS' }])?.id).toBe('d')
   })
 })

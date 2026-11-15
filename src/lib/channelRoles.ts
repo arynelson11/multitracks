@@ -3,7 +3,7 @@
 // a edição de nome e papel sem mutar nada. Puro: sem React, sem IndexedDB, sem Web Audio.
 // Importa de channelNames.ts; channelNames.ts nunca importa daqui.
 import type { ChannelOrderMode, ChannelRole } from '../types'
-import { arrangeChannels, channelFamily, resolveChannelRole, type ChannelIdentity } from './channelNames'
+import { arrangeChannels, channelFamily, resolveChannelRole, type ChannelFamily, type ChannelIdentity } from './channelNames'
 
 export interface AutoPanRouting {
   pan: -1 | 0 | 1
@@ -73,6 +73,15 @@ export function findClickChannel<T extends ChannelIdentity>(channels: readonly T
 // Canal de referência pra onda do SectionBar e pra detecção de tom.
 export function pickMainChannel<T extends ChannelIdentity>(channels: readonly T[]): T | undefined {
   return channels.find((ch) => resolveChannelRole(ch) === 'normal')
+}
+
+// Onda do SectionBar: instrumento harmônico marca melhor as seções que a bateria (cheia
+// de picos), que a ordem padrão põe como primeiro Normal. Primeiro Normal que não seja
+// bateria nem percussão; senão o primeiro Normal. Tom e tempo seguem com pickMainChannel.
+const PERCUSSIVE_FAMILIES: ReadonlySet<ChannelFamily> = new Set(['bateria', 'percussao'])
+export function pickWaveformChannel<T extends ChannelIdentity>(channels: readonly T[]): T | undefined {
+  return channels.find((ch) => resolveChannelRole(ch) === 'normal' && !PERCUSSIVE_FAMILIES.has(channelFamily(ch)))
+    ?? pickMainChannel(channels)
 }
 
 // Fonte do tempo: bateria, depois baixo, depois o primeiro normal, depois o primeiro.
