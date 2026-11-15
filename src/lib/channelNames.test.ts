@@ -106,6 +106,10 @@ describe('limpeza do nome do arquivo', () => {
   ])('%s vira %s', (raw, label) => {
     expect(recognizeChannel(raw)).toEqual({ label, family: 'desconhecido' })
   })
+  it('nome do Mac em NFD e cópia encadeada também saem', () => {
+    expect(recognizeChannel('Stage cópia.wav')).toEqual({ label: 'Stage', family: 'desconhecido' })
+    expect(recognizeChannel('stage copy (1).wav')).toEqual({ label: 'Stage', family: 'desconhecido' })
+  })
   it('a limpeza vale antes do reconhecimento', () => {
     expect(recognizeChannel('Bass (1).wav')).toEqual({ label: 'Baixo', family: 'baixo' })
     expect(recognizeChannel('GTR cópia 2.mp3')).toEqual({ label: 'Guitarra', family: 'guitarra' })
@@ -122,8 +126,33 @@ describe('nome não reconhecido longo (Ruling 6)', () => {
   it('nome com exatamente 24 caracteres fica inteiro', () => {
     expect(recognizeChannel('Sequencia_Especial_Do_Ze').label).toBe('Sequencia Especial Do Ze')
   })
-  it('palavra única maior que 24 fica inteira: nunca corta no meio nem fica vazio', () => {
-    expect(recognizeChannel('BackgroundAtmosphereLayer01').label).toBe('BackgroundAtmosphereLayer01')
+  it('trecho único maior que 24, sem nenhuma quebra, fica inteiro: nunca corta no meio nem fica vazio', () => {
+    expect(recognizeChannel('BACKGROUNDATMOSPHERELAYER01').label).toBe('Backgroundatmospherelayer01')
+  })
+  it('hífen, ponto e camelCase também quebram palavra antes do limite (correção da revisão)', () => {
+    const cases = [
+      ['Sequencia-Especial-Abertura-Do-Culto.wav', 'Sequencia Especial'],
+      ['intro-especial-do-culto-de-domingo', 'Intro Especial Do Culto'],
+      ['Sequencia.Especial.Abertura.Do.Culto', 'Sequencia Especial'],
+      ['SequenciaEspecialAberturaDoCulto', 'Sequencia Especial'],
+      ['BackgroundAtmosphereLayer01', 'Background Atmosphere'],
+    ]
+    for (const [raw, label] of cases) {
+      expect(recognizeChannel(raw)).toEqual({ label, family: 'desconhecido' })
+      expect(label.length).toBeLessThanOrEqual(24)
+    }
+  })
+  it('sigla em caixa alta não é camelCase; nome curto com separador só troca por espaço', () => {
+    expect(recognizeChannel('STAGEMIX').label).toBe('Stagemix')
+    expect(recognizeChannel('Intro-Loop').label).toBe('Intro Loop')
+    expect(recognizeChannel('stage.mix').label).toBe('Stage Mix')
+    expect(recognizeChannel('Outros/Fx').label).toBe('Outros/Fx')
+  })
+  it('separadores e camelCase não mudam o reconhecimento das famílias', () => {
+    expect(recognizeChannel('GTR-SOLO')).toEqual({ label: 'Guitarra Solo', family: 'guitarra' })
+    expect(recognizeChannel('Piano/TeCL')).toEqual({ label: 'Piano', family: 'piano' })
+    expect(recognizeChannel('GTR1_1')).toEqual({ label: 'Guitarra', family: 'guitarra' })
+    expect(recognizeChannel('Click_IA_120bpm')).toEqual({ label: 'Click', family: 'click' })
   })
   it('o limite também vale no rótulo da lista e com papel Normal manual', () => {
     const [l] = buildChannelLabels([{ id: '1', name: 'CLICK SEQUENCIA ESPECIAL ABERTURA', role: 'normal' }])
@@ -137,7 +166,7 @@ describe('rótulo automático e ordem (item 10 do preflight)', () => {
       ['Teclado 1', 'Teclado 1', false], ['Teclado 2', 'Teclado 2', false]])
   })
   it('numeração não diferencia caixa', () => {
-    expect(labels(['TrackX', 'trackx'])).toEqual(['TrackX 1', 'Trackx 2'])
+    expect(labels(['DJ', 'dj'])).toEqual(['DJ 1', 'Dj 2'])
   })
   it('ordem usa a família resolvida: papel manual e nome do usuário contam', () => {
     const list: ChannelIdentity[] = [

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
-  applyChannelMetaPatch, applyChannelMetaToList, autoPanFor, channelGain, findClickChannel, isPitchExempt,
+  CUSTOM_NAME_MAX, applyChannelMetaPatch, applyChannelMetaToList, autoPanFor, channelGain, findClickChannel, isPitchExempt,
   isSilencedBySolo, isSoloSafe, pickMainChannel, pickTempoSourceChannel, pitchChangeAction,
 } from './channelRoles'
-import type { ChannelIdentity } from './channelNames'
+import { recognizeChannel, type ChannelIdentity } from './channelNames'
 
 const mix = (id: string, name: string, extra: object = {}) => ({ id, name, volume: 0.8, muted: false, soloed: false, ...extra })
 
@@ -81,6 +81,15 @@ describe('bordas do patch e da lista', () => {
   it('corta em 24 e não deixa espaço sobrando no fim', () => {
     const ch: ChannelIdentity = { id: '1', name: 'GTR_1' }
     expect(applyChannelMetaPatch(ch, { customName: `${'a'.repeat(23)} bcd` }).customName).toBe('a'.repeat(23))
+  })
+  it('corte em 24 não parte emoji ao meio', () => {
+    const ch: ChannelIdentity = { id: '1', name: 'GTR_1' }
+    expect(applyChannelMetaPatch(ch, { customName: `${'a'.repeat(23)}🎸` }).customName).toBe('a'.repeat(23))
+  })
+  it('o rótulo de nome não reconhecido usa o mesmo limite do nome do usuário', () => {
+    for (const raw of ['SEQUENCIA ESPECIAL ABERTURA DO CULTO', 'Sequencia-Especial-Abertura-Do-Culto', 'SequenciaEspecialAberturaDoCulto']) {
+      expect(recognizeChannel(raw).label.length).toBeLessThanOrEqual(CUSTOM_NAME_MAX)
+    }
   })
   it('customName null volta ao automático; role define e undefined não mexe', () => {
     const ch = { id: '1', name: 'GTR_1', customName: 'Velho', role: 'click' as const }

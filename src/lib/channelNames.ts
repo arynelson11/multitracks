@@ -214,9 +214,21 @@ function fitWholeWords(words: readonly string[], max: number): string {
   return out
 }
 
-// Rótulo de nome não reconhecido: "MASTER_1" vira Master, "Track 5" continua Track 5.
+// Quebras de palavra do rótulo, além do espaço: `_`, `-`, `.` e a virada de
+// minúscula pra maiúscula (camelCase). Sigla toda em maiúscula não quebra;
+// `/` fica como está ("Outros/Fx").
+const LABEL_SEPARATOR = /[_.-]/g
+const CAMEL_CASE_TURN = /(\p{Ll})(\p{Lu})/gu
+
+// Rótulo de nome não reconhecido: "MASTER_1" vira Master, "Track 5" continua Track 5,
+// "Intro-Loop" e "IntroLoop" viram Intro Loop.
 export function cleanChannelName(raw: string): string {
-  const words = stripFileName(raw).replace(/_/g, ' ').split(/\s+/).filter(Boolean).map(capitalizeWord)
+  const words = stripFileName(raw)
+    .replace(LABEL_SEPARATOR, ' ')
+    .replace(CAMEL_CASE_TURN, '$1 $2')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(capitalizeWord)
   return fitWholeWords(words, UNRECOGNIZED_LABEL_MAX) || 'Canal'
 }
 
