@@ -11,6 +11,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.14',
+    date: '2026-11-15',
+    title: 'Troca de tom corrigida',
+    items: [
+      'Trocar o tom não atrasa mais o click: click, guia e instrumentos continuam juntos no tempo.',
+      'Voltar pro tom original devolve o som normal, e trocar de novo não deixa mais tudo mudo.',
+      'Instrumentos transpostos com mais definição: a correção de voz agora só age nas faixas de voz.',
+      'Tom escrito como Bb, Eb, Am ou F#m é reconhecido. Click chamado Metrônomo, com acento, fica fora da troca de tom.',
+    ],
+  },
+  {
     version: '1.4.11',
     date: '2026-11-09',
     title: 'Playback Studio no celular e no tablet',
