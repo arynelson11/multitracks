@@ -31,3 +31,12 @@ Critérios por item: worklets ativos (0 no tom 0, 1 por canal transposto), nenhu
 duplicado, fontes sem órfãs, relógio de áudio em tempo real, posição contínua,
 todas as faixas no mesmo instante, click x instrumento em ±2 ms, click/guia fora
 do worklet, formantes só em voz, saída sem NaN e com som.
+
+## Regras puras (Node)
+
+```bash
+node scripts/verify-pitch/unit.mjs
+```
+
+Testa `src/lib/pitchRules.ts` (transpilado com o esbuild): reconhecimento de
+click/guia por nome sem acento e sem caixa.

@@ -7,6 +7,7 @@ import type { Channel, Song, Marker } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { detectKey, generateEndlessClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { loadClickSelection } from '../lib/clickLibrary';
+import { isClickOrGuideName } from '../lib/pitchRules';
 import { getCachedStem, getCachedStemNames, isSongCached } from '../lib/offlineCache';
 
 // Engine de tom: signalsmith-stretch (MIT). O worklet e o WASM são gerados
@@ -136,12 +137,6 @@ export function useAudioEngine(userId?: string) {
 
     const activeSong = playlist[activeSongIndex];
     const channels = activeSong?.channels || [];
-
-    // Click/voz-guia nunca transpõem (ficam em 0 semitons).
-    const isClickOrGuideName = (name: string): boolean => {
-        const n = name.toLowerCase();
-        return n.includes('click') || n.includes('metronomo') || n.includes('guia') || n.includes('guide');
-    };
 
     // === Engine de tom (signalsmith): um worklet por canal, reaproveitado ===
     // O nó do pacote NÃO pode ser destruído: não existe close() e o process()
@@ -365,8 +360,7 @@ export function useAudioEngine(userId?: string) {
             const newList = [...prev];
             const updatedSong = { ...newList[activeSongIndex] };
             updatedSong.channels = updatedSong.channels.map(ch => {
-                const fileNameLower = ch.name.toLowerCase();
-                const isClickOrGuide = fileNameLower.includes('click') || fileNameLower.includes('metronomo') || fileNameLower.includes('guia') || fileNameLower.includes('guide');
+                const isClickOrGuide = isClickOrGuideName(ch.name);
 
                 let newPan = ch.pan;
                 if (settings.autoPan) {
@@ -463,10 +457,7 @@ export function useAudioEngine(userId?: string) {
                     const channels = (await Promise.all(channelPromises)).filter((c): c is Channel => c !== null);
                     if (channels.length === 0) return null;
 
-                    const mainCh = channels.find(ch => {
-                        const n = ch.name.toLowerCase();
-                        return !n.includes('click') && !n.includes('metronomo') && !n.includes('guia') && !n.includes('guide');
-                    });
+                    const mainCh = channels.find(ch => !isClickOrGuideName(ch.name));
 
                     let originalKey = metaSong.originalKey || null;
                     if (!originalKey && mainCh) originalKey = detectKey(mainCh.buffer);
@@ -934,10 +925,9 @@ export function useAudioEngine(userId?: string) {
         // decodificado. Mesma regra de antes (click/guia à esquerda, resto à
         // direita), extraída pra rodar ANTES do decode.
         const routingFor = (fileName: string): { pan: number; bus: '1' | '2' | '1/2' } => {
-            const n = fileName.toLowerCase();
             let pan = 0;
             if (settings.autoPan) {
-                pan = (n.includes('click') || n.includes('metronomo') || n.includes('guia') || n.includes('guide')) ? -1 : 1;
+                pan = isClickOrGuideName(fileName) ? -1 : 1;
             }
             const bus: '1' | '2' | '1/2' = pan === -1 ? '1' : pan === 1 ? '2' : '1/2';
             return { pan, bus };
@@ -1115,10 +1105,7 @@ export function useAudioEngine(userId?: string) {
             if (ch.buffer.duration > maxDuration) maxDuration = ch.buffer.duration;
         });
 
-        const mainChannel = newChannels.find(ch => {
-            const n = ch.name.toLowerCase();
-            return !n.includes('click') && !n.includes('metronomo') && !n.includes('guia') && !n.includes('guide');
-        });
+        const mainChannel = newChannels.find(ch => !isClickOrGuideName(ch.name));
         const originalKey = overrideOriginalKey !== undefined
             ? overrideOriginalKey
             : (mainChannel ? detectKey(mainChannel.buffer) : null);
@@ -1235,9 +1222,8 @@ export function useAudioEngine(userId?: string) {
             const panner = audioCtxRef.current.createStereoPanner();
             const gain = audioCtxRef.current.createGain();
 
-            const fileNameLower = file.name.toLowerCase();
             let panValue = 0;
-            if (settings.autoPan && (fileNameLower.includes('click') || fileNameLower.includes('metronomo') || fileNameLower.includes('guia') || fileNameLower.includes('guide'))) {
+            if (settings.autoPan && isClickOrGuideName(file.name)) {
                 panValue = -1;
             } else if (settings.autoPan) {
                 panValue = 1;
