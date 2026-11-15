@@ -325,3 +325,15 @@ describe('compatibilidade com o detector antigo: o antigo pegava, o novo tem que
     expect(buildChannelLabels([ch])[0]).toMatchObject({ label: 'Vozguia', role: 'normal' })
   })
 })
+
+// Revisão final (N1): canal sem nome (ZIP, repertório ou stem com jsonb estragado) não pode derrubar a tela.
+describe('nome ausente', () => {
+  it.each([[undefined], [null]])('name %s: rótulo e família não lançam e o rótulo cai em "Canal"', (missing) => {
+    const ch = { id: 'x', name: missing as unknown as string }
+    expect(() => channelFamily(ch)).not.toThrow()
+    expect(channelFamily(ch)).toBe('desconhecido')
+    expect(() => buildChannelLabels([ch])).not.toThrow()
+    expect(buildChannelLabels([ch, { id: 'y', name: 'GTR' }]).map((l) => l.label)).toEqual(['Canal', 'Guitarra'])
+    expect(resolveChannelRole(ch)).toBe('normal')
+  })
+})

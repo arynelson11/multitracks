@@ -143,8 +143,10 @@ const COPY_SUFFIX = /(?:[\s_-]*\(\s*(?:copy|cópia)(?:[\s_-]*\d+)?\s*\)|(?:^|[\s
 const EXPORT_SUFFIX = /[_-]\d{1,3}$/
 
 // Passo 1 da limpeza: extensão, sufixo de cópia e um sufixo de exportação.
+// Nome ausente (ZIP, repertório ou stem vindo sem `name`) vira vazio e o rótulo cai em "Canal".
 function stripFileName(raw: string): string {
-  let name = raw.normalize('NFC').trim().replace(AUDIO_EXTENSION, '').trim()
+  const text = typeof raw === 'string' ? raw : ''
+  let name = text.normalize('NFC').trim().replace(AUDIO_EXTENSION, '').trim()
   for (let previous = ''; previous !== name;) {
     previous = name
     name = name.replace(COPY_SUFFIX, '').trim()
