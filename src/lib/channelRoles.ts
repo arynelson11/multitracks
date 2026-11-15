@@ -84,8 +84,8 @@ export function pickTempoSourceChannel<T extends ChannelIdentity>(channels: read
 }
 
 // Espaços colapsados, trim, no máximo CUSTOM_NAME_MAX, sem espaço sobrando no fim
-// e sem partir um emoji (par de surrogates) ao meio.
-function normalizeCustomName(raw: string): string {
+// e sem partir um emoji (par de surrogates) ao meio. Vale no EDITAR CANAIS e no ZIP importado.
+export function normalizeCustomName(raw: string): string {
   let name = raw.replace(/\s+/g, ' ').trim().slice(0, CUSTOM_NAME_MAX)
   if (/[\uD800-\uDBFF]$/.test(name)) name = name.slice(0, -1)
   return name.trimEnd()

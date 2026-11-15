@@ -1,4 +1,5 @@
 import type { Channel, ChannelOrderMode, ChannelRole, Marker, Song } from '../types'
+import { normalizeCustomName } from './channelRoles'
 
 // Formato do repertório do usuário salvo no aparelho (IndexedDB, chave
 // mt_meta_playlist_<userId>) e do manifest.json do ZIP de repertório.
@@ -109,12 +110,26 @@ export function migrateSavedSong(saved: SavedSong): SavedSong {
   }
 }
 
+const CHANNEL_ROLES: ReadonlySet<unknown> = new Set<ChannelRole>(['click', 'guide', 'normal'])
+
+// O ZIP pode vir de outra igreja, de outra versão ou mexido à mão: papel desconhecido
+// é descartado (o canal fica no automático) e o nome passa pela mesma regra do EDITAR CANAIS.
+function sanitizeManifestChannel(ch: SavedChannel): SavedChannel {
+  const { customName, role, ...rest } = ch
+  const out: SavedChannel = rest
+  const name = typeof customName === 'string' ? normalizeCustomName(customName) : ''
+  if (name) out.customName = name
+  if (CHANNEL_ROLES.has(role)) out.role = role
+  return out
+}
+
 // Música lida do manifest.json de um ZIP importado. O manifest da versão antiga
 // não tem channelOrder nem srcIdx: a ordem do arquivo é a que o usuário deixou,
 // então ela fica manual em vez de virar a ordem padrão. Idempotente.
 export function migrateManifestSong(entry: SavedSong): SavedSong {
   return {
     ...entry,
+    channels: Array.isArray(entry.channels) ? entry.channels.map(sanitizeManifestChannel) : entry.channels,
     channelOrder: entry.channelOrder ?? 'manual',
     schemaVersion: REPERTOIRE_SCHEMA_VERSION,
   }

@@ -8,6 +8,8 @@ import {
   type SavedSong,
   type SongLike,
 } from './repertoireSchema'
+import { CUSTOM_NAME_MAX, applyChannelMetaPatch } from './channelRoles'
+import { resolveChannelRole, type ChannelIdentity } from './channelNames'
 
 const v1: SavedSong = {
   id: 's1', name: 'Ministério - Grande és Tu', bpm: 72, coverImage: 'data:image/png;base64,AAA', duration: 312.5,
@@ -77,5 +79,34 @@ describe('repertório v2', () => {
     expect(Object.keys(m).sort()).toEqual(['channelOrder', 'channels', 'coverImage', 'duration', 'id', 'name'])
     expect(m.channels[0]).toMatchObject({ id: 'a', name: 'CLICK 13', role: 'normal', bus: '1' })
     expect('srcIdx' in m.channels[0]).toBe(false)
+  })
+})
+
+// Revisão final (N2): ZIP compartilhado entre igrejas (ou mexido à mão) não traz papel
+// desconhecido nem nome maior que o do EDITAR CANAIS.
+describe('ZIP importado: papel e nome validados', () => {
+  const withMeta = (meta: object[]): SavedSong => ({
+    ...manifestAntigo, channelOrder: 'manual', channels: manifestAntigo.channels.map((c, i) => ({ ...c, ...meta[i] })),
+  })
+  it('papel desconhecido é descartado e o canal fica no automático', () => {
+    const [ch] = migrateManifestSong(withMeta([{ role: 'foo' }])).channels
+    expect('role' in ch).toBe(false)
+    expect(resolveChannelRole(ch)).toBe('click')
+  })
+  it('nome de 200 caracteres sai com no máximo 24, pela mesma regra do EDITAR CANAIS', () => {
+    const [ch] = migrateManifestSong(withMeta([{ customName: 'A'.repeat(200) }])).channels
+    expect(ch.customName?.length).toBeLessThanOrEqual(CUSTOM_NAME_MAX)
+    expect(ch.customName).toBe(applyChannelMetaPatch<ChannelIdentity>({ id: 'a', name: 'x' }, { customName: 'A'.repeat(200) }).customName)
+  })
+  it('nome vazio ou que não é texto vira automático', () => {
+    const channels = migrateManifestSong(withMeta([{ customName: '   ' }, { customName: 42 }])).channels
+    expect(channels.slice(0, 2).map((c) => 'customName' in c)).toEqual([false, false])
+  })
+  it('valores válidos passam intactos e a migração continua idempotente', () => {
+    const entry = withMeta([{ role: 'normal', customName: 'Click do Zé' }, { role: 'guide' }, { role: 'click', customName: 'Baixo do Zé' }])
+    const importado = migrateManifestSong(entry)
+    expect(importado.channels).toEqual(entry.channels)
+    expect(migrateManifestSong(importado)).toEqual(importado)
+    expect(migrateSavedSong(importado)).toEqual(importado)
   })
 })
