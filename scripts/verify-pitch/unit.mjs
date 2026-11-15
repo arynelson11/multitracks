@@ -37,5 +37,14 @@ if (isClick) {
     check(4, `"${n}" não é click/guia`, isClick(n), false);
 }
 
+console.log('\n== item 5: formantes só em voz ==');
+const formant = need('wantsFormantCompensation');
+if (formant) {
+  for (const n of ['Vocal', 'VOCAL 1', 'Voz', 'Voz 2', 'Vox', 'Lead Vocal', 'Backing', 'Backing Vocals', 'Coro', 'Coral', 'Choir', 'BV', 'bv alto'])
+    check(5, `"${n}" com formantes`, formant(n), true);
+  for (const n of ['Bateria', 'Baixo', 'Teclado', 'Guitarra', 'Violão', 'Pad', 'Synth', 'Strings', 'Piano', 'Click', 'Metrônomo', 'Voz Guia'])
+    check(5, `"${n}" sem formantes`, formant(n), false);
+}
+
 console.log(`\nresumo: ${total} verificações, ${fails} falhas`);
 process.exit(fails ? 1 : 0);

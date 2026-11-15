@@ -39,4 +39,4 @@ node scripts/verify-pitch/unit.mjs
 ```
 
 Testa `src/lib/pitchRules.ts` (transpilado com o esbuild): reconhecimento de
-click/guia por nome sem acento e sem caixa.
+click/guia por nome sem acento e sem caixa e decisão de formantes (só voz).

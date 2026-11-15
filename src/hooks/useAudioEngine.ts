@@ -7,7 +7,7 @@ import type { Channel, Song, Marker } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { detectKey, generateEndlessClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { loadClickSelection } from '../lib/clickLibrary';
-import { isClickOrGuideName } from '../lib/pitchRules';
+import { isClickOrGuideName, wantsFormantCompensation } from '../lib/pitchRules';
 import { getCachedStem, getCachedStemNames, isSongCached } from '../lib/offlineCache';
 
 // Engine de tom: signalsmith-stretch (MIT). O worklet e o WASM são gerados
@@ -284,11 +284,11 @@ export function useAudioEngine(userId?: string) {
         return comp.delay;
     };
 
-    // Aplica o tom numa faixa que está tocando pelo worklet.
+    // Aplica o tom numa faixa que está tocando pelo worklet. Formantes só em voz.
     const applyPitchToChannel = (ch: Channel, semitones: number) => {
         const slot = pitchSlotsRef.current.get(ch.id);
         if (!slot || !slot.active) return;
-        void slot.node.schedule({ semitones, formantCompensation: true, formantBaseHz: 0 });
+        void slot.node.schedule({ semitones, formantCompensation: wantsFormantCompensation(ch.name), formantBaseHz: 0 });
     };
 
     // Posição atual da música. Com um play() pendente nada está tocando: a
