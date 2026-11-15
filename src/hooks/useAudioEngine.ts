@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { get, set, del, keys } from 'idb-keyval';
 import JSZip from 'jszip';
 import * as Tone from 'tone';
-import SignalsmithStretch from 'signalsmith-stretch';
+import SignalsmithStretch, { type SignalsmithStretchNode } from 'signalsmith-stretch';
 import type { Channel, Song, Marker } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { detectKey, generateEndlessClickTrackFromSample } from '../lib/AudioAnalyzer';
@@ -138,35 +138,135 @@ export function useAudioEngine(userId?: string) {
         return n.includes('click') || n.includes('metronomo') || n.includes('guia') || n.includes('guide');
     };
 
-    // Cria a engine de tom (worklet+WASM) e pré-conecta ao panner. IMPORTANTE: ela
-    // NÃO fica mais sempre na cadeia. Cada instância é um phase-vocoder com FFT
-    // (formantes) que roda DSP pesado por quadro mesmo no tom 0; com muitas faixas
-    // (ex.: 24 canais) isso satura a thread de áudio e zera o som SEM lançar erro.
-    // Por isso agora é criada sob demanda só quando a música está transposta (ver
-    // o bypass no play). Se o worklet falhar, retorna null e a faixa toca sem
-    // transpose — áudio nunca fica refém do efeito de tom.
-    const setupPitchNode = async (ctx: AudioContext, panner: StereoPannerNode): Promise<any> => {
+    // === Engine de tom (signalsmith): um worklet por canal, reaproveitado ===
+    // O nó do pacote NÃO pode ser destruído: não existe close() e o process()
+    // dele sempre devolve true, então o navegador segue rodando o DSP até o
+    // AudioContext fechar, mesmo depois do disconnect() (medido: 375 chamadas/s
+    // e 43 a 55 ms de CPU por segundo, cada). A v1.4.9 criava worklets novos a
+    // cada ida ao tom != 0 e só desconectava os velhos: eles se acumulavam e
+    // saturavam a thread de áudio (som que não volta ao normal no tom 0 e, na
+    // troca seguinte, tudo mudo). Regras agora:
+    //   - no máximo UM worklet por canal (pitchSlotsRef, pelo id do canal),
+    //     criado só quando a música é transposta e nunca duplicado;
+    //   - parado com stop() (API do pacote, o DSP para de processar) e desligado
+    //     do panner sempre que nenhuma fonte toca por ele: tom 0, pausa, seek,
+    //     troca de música. Desligar importa: a saída dele é estéreo e, ligada,
+    //     faz o StereoPanner tratar a faixa mono como estéreo (+6 dB em pan
+    //     total, medido), mesmo com o worklet parado e mudo;
+    //   - canal que sai de cena (música trocada ou removida, canal removido)
+    //     devolve o worklet pra reserva (pitchPoolRef) e o próximo canal que
+    //     precisar reaproveita em vez de criar outro.
+    // Se o worklet falhar, a faixa toca sem transpose: áudio nunca fica refém do tom.
+    type PitchSlot = { node: SignalsmithStretchNode; panner: StereoPannerNode; active: boolean };
+    const pitchSlotsRef = useRef(new Map<string, PitchSlot>());
+    const pitchPendingRef = useRef(new Map<string, { token: object; promise: Promise<PitchSlot | null> }>());
+    const pitchPoolRef = useRef<SignalsmithStretchNode[]>([]);
+    // Fontes tocando agora, fora do estado do React: stopAllNodes para todas.
+    // Se o repertório for copiado (ex.: volume mexido) enquanto um play() espera
+    // o worklet nascer, a cópia não teria a referência e a fonte ficaria órfã.
+    const liveSourcesRef = useRef(new Set<AudioBufferSourceNode>());
+    // Cada play() pega um número. Se outro play() (troca de tom, seek...) começar
+    // enquanto este espera o worklet nascer, o antigo desiste sem agendar nada.
+    const playGenRef = useRef(0);
+    // true entre o play() parar as fontes e agendar as novas: nada está tocando,
+    // a posição é pausedAtRef (startTimeRef ainda é a do play anterior).
+    const playPendingRef = useRef(false);
+
+    const createPitchNode = async (ctx: AudioContext): Promise<SignalsmithStretchNode | null> => {
         try {
-            const node = await SignalsmithStretch(ctx, { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
-            node.connect(panner);
-            node.start();
-            node.schedule({ semitones: 0, formantCompensation: true, formantBaseHz: 0 });
-            return node;
+            // Nasce parado (inativo); só processa depois do start() no play().
+            return await SignalsmithStretch(ctx, { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
         } catch (e) {
-            console.error('setupPitchNode falhou; faixa tocará sem transpose', e);
+            console.error('Worklet de tom falhou; faixa tocará sem transpose', e);
             return null;
         }
     };
 
-    // Aplica o tom numa faixa (preservando formantes; click/guia ficam neutros).
+    // Garante o worklet do canal: o que ele já tem, o que está nascendo pra ele,
+    // um da reserva ou, só em último caso, um novo.
+    const ensurePitchSlot = (ctx: AudioContext, ch: Channel): Promise<PitchSlot | null> => {
+        const slots = pitchSlotsRef.current;
+        const current = slots.get(ch.id);
+        if (current) {
+            current.panner = ch.pannerNode;
+            return Promise.resolve(current);
+        }
+        const pending = pitchPendingRef.current.get(ch.id);
+        if (pending) return pending.promise;
+        const pooled = pitchPoolRef.current.pop();
+        if (pooled) {
+            const slot: PitchSlot = { node: pooled, panner: ch.pannerNode, active: false };
+            slots.set(ch.id, slot);
+            return Promise.resolve(slot);
+        }
+        const token = {};
+        const promise = (async () => {
+            const node = await createPitchNode(ctx);
+            const stillWanted = pitchPendingRef.current.get(ch.id)?.token === token;
+            if (stillWanted) pitchPendingRef.current.delete(ch.id);
+            if (!node) return null;
+            if (!stillWanted) {
+                // Canal liberado enquanto o worklet nascia: vai direto pra reserva.
+                pitchPoolRef.current.push(node);
+                return null;
+            }
+            const slot: PitchSlot = { node, panner: ch.pannerNode, active: false };
+            slots.set(ch.id, slot);
+            return slot;
+        })();
+        pitchPendingRef.current.set(ch.id, { token, promise });
+        return promise;
+    };
+
+    // Liga o worklet no panner do canal e põe o DSP pra rodar.
+    const startPitchNode = (slot: PitchSlot) => {
+        if (slot.active) return;
+        slot.node.connect(slot.panner);
+        void slot.node.start();
+        slot.active = true;
+    };
+
+    // Para o DSP e desliga do panner. Fica reservado pro mesmo canal.
+    const stopPitchNode = (slot: PitchSlot) => {
+        if (!slot.active) return;
+        void slot.node.stop();
+        slot.node.disconnect();
+        slot.active = false;
+    };
+
+    const stopPitchNodes = () => {
+        pitchSlotsRef.current.forEach(stopPitchNode);
+    };
+
+    // Canal saiu de cena: para, desliga e devolve o worklet pra reserva.
+    const releasePitchNode = (channelId: string) => {
+        pitchPendingRef.current.delete(channelId);
+        const slot = pitchSlotsRef.current.get(channelId);
+        if (!slot) return;
+        pitchSlotsRef.current.delete(channelId);
+        stopPitchNode(slot);
+        pitchPoolRef.current.push(slot.node);
+    };
+
+    const releasePitchNodesExcept = (keep: Channel[]) => {
+        const ids = new Set(keep.map(c => c.id));
+        const known = [...pitchSlotsRef.current.keys(), ...pitchPendingRef.current.keys()];
+        known.forEach(id => { if (!ids.has(id)) releasePitchNode(id); });
+    };
+
+    // Aplica o tom numa faixa que está tocando pelo worklet.
     const applyPitchToChannel = (ch: Channel, semitones: number) => {
-        if (!ch.pitchShiftNode || typeof ch.pitchShiftNode.schedule !== 'function') return;
-        const isClickOrGuide = isClickOrGuideName(ch.name);
-        ch.pitchShiftNode.schedule({
-            semitones: isClickOrGuide ? 0 : semitones,
-            formantCompensation: !isClickOrGuide,
-            formantBaseHz: 0,
-        });
+        const slot = pitchSlotsRef.current.get(ch.id);
+        if (!slot || !slot.active) return;
+        void slot.node.schedule({ semitones, formantCompensation: true, formantBaseHz: 0 });
+    };
+
+    // Posição atual da música. Com um play() pendente nada está tocando: a
+    // posição é a de onde ele vai retomar. Sem isso, a troca rápida de tom somava
+    // o tempo do play anterior e a música pulava segundos pra frente.
+    const getPlaybackPosition = (ctx: BaseAudioContext): number => {
+        if (playPendingRef.current) return pausedAtRef.current;
+        return (ctx.currentTime - startTimeRef.current) * timeStretch + pausedAtRef.current;
     };
 
     // Core persistence
@@ -311,7 +411,6 @@ export function useAudioEngine(userId?: string) {
                                 srcIdx: metaCh.srcIdx,
                                 gainNode: gain,
                                 pannerNode: panner,
-                                pitchShiftNode: null,
                                 sourceNode: null,
                                 volume: metaCh.volume,
                                 muted: metaCh.muted,
@@ -390,14 +489,22 @@ export function useAudioEngine(userId?: string) {
                 ch.sourceNode.disconnect();
                 ch.sourceNode = null;
             }
-            // Não desconectar a engine de tom aqui: ela fica sempre na cadeia,
-            // persistente por canal (só a fonte é parada/recriada a cada play).
         });
+        liveSourcesRef.current.forEach(src => {
+            try { src.stop(); } catch { /* já parada */ }
+            src.disconnect();
+        });
+        liveSourcesRef.current.clear();
+        // Sem fonte, o worklet ativo seguiria rodando o DSP à toa (mais caro que
+        // tocando): para todos. O play() religa os que vai usar.
+        stopPitchNodes();
     }, [channels]);
 
     const play = useCallback(async () => {
         const ctx = audioCtxRef.current;
         if (!ctx || channels.length === 0) return;
+        const gen = ++playGenRef.current;
+        playPendingRef.current = true;
 
         // iOS / Safari: must await resume before scheduling sources.
         // Otherwise sources are scheduled while ctx.currentTime is frozen,
@@ -405,6 +512,7 @@ export function useAudioEngine(userId?: string) {
         if (ctx.state === 'suspended') {
             try { await ctx.resume(); } catch (e) { console.error('Failed to resume AudioContext', e); }
         }
+        if (gen !== playGenRef.current) return;
 
         // Reset master gain in case a previous fade-out left it near zero.
         if (masterGainRef.current) {
@@ -422,17 +530,23 @@ export function useAudioEngine(userId?: string) {
 
         const anySoloed = channels.some(c => c.soloed);
 
+        // Worklets de canais que não são desta música (música trocada) voltam pra reserva.
+        releasePitchNodesExcept(channels);
+
         // Prepara ANTES os nós de tom que faltam (é assíncrono). Antes o await ficava
         // dentro do laço de start(): na 1ª vez tocando transposto, cada faixa começava
         // depois da anterior (dezenas de ms) e o click saía fora do resto da banda.
         // Agora todos os start() rodam no mesmo tick, então começam juntos.
         if (currentPitchRef.current !== 0) {
-            for (const ch of channels) {
-                if (!ch.pitchShiftNode && !isClickOrGuideName(ch.name)) {
-                    ch.pitchShiftNode = await setupPitchNode(ctx, ch.pannerNode);
-                }
-            }
+            await Promise.all(channels
+                .filter(ch => !isClickOrGuideName(ch.name))
+                .map(ch => ensurePitchSlot(ctx, ch)));
+            // Outro play() (troca de tom, seek, pausa) começou enquanto o worklet
+            // nascia: este desiste. Sem isso as duas levas de fontes tocavam juntas.
+            if (gen !== playGenRef.current) return;
         }
+        // Lido de novo: o tom pode ter mudado (entre dois tons != 0) durante a espera.
+        const playPitch = currentPitchRef.current;
 
         for (const ch of channels) {
             const source = ctx.createBufferSource();
@@ -458,24 +572,25 @@ export function useAudioEngine(userId?: string) {
             // muitos canais). O worklet só nasce, sob demanda, quando a música
             // está transposta e a faixa não é click/guia.
             source.playbackRate.value = 1.0;
-            const wantPitch = currentPitchRef.current !== 0 && !isClickOrGuideName(ch.name);
-            if (wantPitch) {
-                if (ch.pitchShiftNode) {
-                    applyPitchToChannel(ch, currentPitchRef.current);
-                    source.connect(ch.pitchShiftNode);
-                } else {
-                    // Worklet falhou: toca sem transpose, nunca em silêncio.
-                    source.connect(ch.pannerNode);
-                }
+            const wantPitch = playPitch !== 0 && !isClickOrGuideName(ch.name);
+            const slot = wantPitch ? pitchSlotsRef.current.get(ch.id) : undefined;
+            if (slot) {
+                startPitchNode(slot);
+                applyPitchToChannel(ch, playPitch);
+                source.connect(slot.node);
             } else {
+                // Tom 0, click/guia, ou worklet que falhou: direto, nunca em silêncio.
                 source.connect(ch.pannerNode);
             }
 
             source.start(0, pausedAtRef.current);
             ch.sourceNode = source;
+            liveSourcesRef.current.add(source);
+            source.onended = () => { liveSourcesRef.current.delete(source); };
         }
 
         startTimeRef.current = ctx.currentTime;
+        playPendingRef.current = false;
         setIsPlaying(true);
     }, [channels, stopAllNodes, masterVolume]);
 
@@ -483,8 +598,12 @@ export function useAudioEngine(userId?: string) {
         const ctx = audioCtxRef.current;
         if (!ctx || !isPlaying) return;
 
+        // Cancela um play() que ainda espera o worklet nascer.
+        const wasPending = playPendingRef.current;
+        playGenRef.current++;
+        playPendingRef.current = false;
         stopAllNodes();
-        pausedAtRef.current += ctx.currentTime - startTimeRef.current;
+        if (!wasPending) pausedAtRef.current += ctx.currentTime - startTimeRef.current;
         setIsPlaying(false);
 
         if (autoNextTimeoutRef.current) {
@@ -622,7 +741,7 @@ export function useAudioEngine(userId?: string) {
     // Update time loop
     const updateTime = useCallback(() => {
         if (!audioCtxRef.current || !isPlaying) return;
-        const elapsed = (audioCtxRef.current.currentTime - startTimeRef.current) * timeStretch + pausedAtRef.current;
+        const elapsed = getPlaybackPosition(audioCtxRef.current);
 
         // Active Marker tracking
         if (playlist[activeSongIndex]?.markers) {
@@ -907,7 +1026,6 @@ export function useAudioEngine(userId?: string) {
                     srcIdx: cacheSrcId ? p.idx : undefined,
                     gainNode: gain,
                     pannerNode: panner,
-                    pitchShiftNode: null,
                     sourceNode: null,
                     volume: 1,
                     muted: false,
@@ -1014,7 +1132,6 @@ export function useAudioEngine(userId?: string) {
                 file: file,
                 gainNode: gain,
                 pannerNode: panner,
-                pitchShiftNode: null,
                 sourceNode: null,
                 volume: 1,
                 muted: false,
@@ -1095,7 +1212,6 @@ export function useAudioEngine(userId?: string) {
                 file: file,
                 gainNode: gain,
                 pannerNode: panner,
-                pitchShiftNode: null,
                 sourceNode: null,
                 volume: 1,
                 muted: false,
@@ -1259,10 +1375,9 @@ export function useAudioEngine(userId?: string) {
     const removeSongFromPlaylist = (songId: string) => {
         const currentActiveId = playlist[activeSongIndex]?.id;
         const removedIndex = playlist.findIndex(s => s.id === songId);
-        // Fecha as engines de tom da música removida (libera os worklets WASM).
-        playlist.find(s => s.id === songId)?.channels.forEach(ch => {
-            try { ch.pitchShiftNode?.close?.(); } catch { /* engine já encerrada */ }
-        });
+        // Para e devolve pra reserva os worklets de tom da música removida
+        // (close() não existe no pacote; sem isso eles seguiam rodando).
+        playlist.find(s => s.id === songId)?.channels.forEach(ch => releasePitchNode(ch.id));
         const newPlaylist = playlist.filter(s => s.id !== songId);
 
         updatePlaylistAndSave(newPlaylist);
@@ -1413,8 +1528,9 @@ export function useAudioEngine(userId?: string) {
             if (ch.sourceNode) {
                 try { ch.sourceNode.stop(); } catch (_) {}
                 ch.sourceNode.disconnect();
+                liveSourcesRef.current.delete(ch.sourceNode);
             }
-            try { ch.pitchShiftNode?.close?.(); } catch { /* engine já encerrada */ }
+            releasePitchNode(ch.id);
             ch.gainNode.disconnect();
             ch.pannerNode.disconnect();
         }
@@ -1478,19 +1594,12 @@ export function useAudioEngine(userId?: string) {
 
         if (isPlaying && ctx) {
             if (crossesBypass) {
-                const elapsed = (ctx.currentTime - startTimeRef.current) * timeStretch + pausedAtRef.current;
+                const elapsed = getPlaybackPosition(ctx);
                 pausedAtRef.current = Math.min(Math.max(elapsed, 0), duration || elapsed);
+                // Para fontes e worklets. Voltando ao tom 0 os worklets ficam
+                // parados (stop(), sem DSP) e ligados ao canal: a próxima troca
+                // reaproveita em vez de criar outro.
                 stopAllNodes();
-                // Voltando ao tom 0: solta os worklets pra liberar CPU/WASM — senão
-                // seguiriam rodando o DSP à toa, presos ao panner.
-                if (clampedPitch === 0) {
-                    song.channels.forEach(ch => {
-                        if (ch.pitchShiftNode) {
-                            try { ch.pitchShiftNode.disconnect(); ch.pitchShiftNode.close?.(); } catch { /* já encerrado */ }
-                            ch.pitchShiftNode = null;
-                        }
-                    });
-                }
                 void play();
             } else if (clampedPitch !== 0) {
                 song.channels.forEach(ch => applyPitchToChannel(ch, clampedPitch));

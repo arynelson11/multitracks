@@ -1,5 +1,5 @@
 declare module 'signalsmith-stretch' {
-    interface SignalsmithStretchScheduleOptions {
+    export interface SignalsmithStretchScheduleOptions {
         output?: number;
         active?: boolean;
         input?: number;
@@ -13,10 +13,13 @@ declare module 'signalsmith-stretch' {
         loopEnd?: number;
     }
 
-    interface SignalsmithStretchNode extends AudioNode {
-        start(when?: number, offset?: number): void;
-        stop(when?: number): void;
-        schedule(opts: SignalsmithStretchScheduleOptions): void;
+    // Os métodos extras viram mensagens pro worklet (assíncronos). NÃO existe
+    // close(): o nó não pode ser destruído e o process() dele roda até o
+    // AudioContext fechar. Pra parar o DSP, use stop() e reaproveite o nó.
+    export interface SignalsmithStretchNode extends AudioNode {
+        start(when?: number, offset?: number): Promise<unknown>;
+        stop(when?: number): Promise<unknown>;
+        schedule(opts: SignalsmithStretchScheduleOptions): Promise<unknown>;
         setTransposeSemitones(semitones: number, tonalityHz?: number): void;
         setTransposeFactor(factor: number, tonalityHz?: number): void;
         setFormantSemitones(semitones: number): void;
@@ -25,7 +28,6 @@ declare module 'signalsmith-stretch' {
         addBuffers(buffers: Float32Array[]): Promise<number>;
         dropBuffers(toSeconds?: number): void;
         latency(): number;
-        close(): void;
     }
 
     export default function SignalsmithStretch(
