@@ -58,9 +58,18 @@ describe('ChannelEditPanel', () => {
     setup()
     expect(screen.getByText('Canal da música: vai pra PA no pan automático e acompanha a troca de tom.')).toBeTruthy()
     fireEvent.click(screen.getByRole('radio', { name: 'Click' }))
-    expect(screen.getByText('Canal do click: vai pro ouvido da banda no pan automático, não muda com a troca de tom e continua tocando no Solo.')).toBeTruthy()
+    expect(screen.getByText('Canal do click: vai pro ouvido da banda no pan automático e não muda com a troca de tom. Continua tocando mesmo quando outro canal está em Solo.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('radio', { name: 'Guia' }))
+    expect(screen.getByText('Canal da voz guia: vai pro ouvido da banda no pan automático e não muda com a troca de tom. Continua tocando mesmo quando outro canal está em Solo.')).toBeTruthy()
     expect(screen.getByText('Vale só pro seu repertório. A música da biblioteca não muda.')).toBeTruthy()
     expect(document.body.textContent).not.toContain('\u2014')
+  })
+
+  it('campo de nome com 16px, pra o iPhone e o iPad não darem zoom ao focar', () => {
+    setup()
+    // text-ps-md vale 16px (fixado em src/styles/ps-tokens.test.ts); text-ps-base (13px) faria o Safari ampliar a tela.
+    expect(nameInput().className).toContain('text-ps-md')
+    expect(nameInput().className).not.toContain('text-ps-base')
   })
 
   // Comportamento de diálogo modal (aria-modal): foco, Tab preso e teclas que não vazam pro palco.

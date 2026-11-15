@@ -26,14 +26,15 @@ const ROLE_OPTIONS: SegmentedOption<ChannelRole>[] = [
 
 const ROLE_HELP: Record<ChannelRole, string> = {
   click:
-    'Canal do click: vai pro ouvido da banda no pan automático, não muda com a troca de tom e continua tocando no Solo.',
+    'Canal do click: vai pro ouvido da banda no pan automático e não muda com a troca de tom. Continua tocando mesmo quando outro canal está em Solo.',
   guide:
-    'Canal da voz guia: vai pro ouvido da banda no pan automático, não muda com a troca de tom e continua tocando no Solo.',
+    'Canal da voz guia: vai pro ouvido da banda no pan automático e não muda com a troca de tom. Continua tocando mesmo quando outro canal está em Solo.',
   normal: 'Canal da música: vai pra PA no pan automático e acompanha a troca de tom.',
 }
 
+// 16px (text-ps-md): abaixo disso o Safari do iPhone e do iPad amplia a tela ao focar o campo.
 const INPUT =
-  'w-full min-h-ps-touch px-3 rounded-ps-md bg-ps-s2 text-ps-bone text-ps-base inset-ring inset-ring-ps-line focus:inset-ring-ps-or-line outline-none placeholder:text-ps-mut'
+  'w-full min-h-ps-touch px-3 rounded-ps-md bg-ps-s2 text-ps-bone text-ps-md inset-ring inset-ring-ps-line focus:inset-ring-ps-or-line outline-none placeholder:text-ps-mut'
 
 // Linha de texto + botão: quebra em vez de estourar, e já reserva a altura do botão
 // pra nada pular quando ele aparece ou some.
