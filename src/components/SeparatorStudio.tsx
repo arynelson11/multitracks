@@ -16,6 +16,7 @@ import { useSeparationLibrary, type SavedSeparation } from '../hooks/useSeparati
 import { audioBlobToMp3Blob } from '../lib/audioExport';
 import { GuidedTour, type TourStep } from './GuidedTour';
 import { isAdminEmail } from '../lib/admin';
+import { channelFamily, resolveChannelRole } from '../lib/channelNames';
 
 const SEP_TOUR_STEPS: TourStep[] = [
   { title: 'Separação de Faixas', body: 'Aqui você transforma qualquer música em faixas separadas (vocal, bateria, baixo, instrumentos) usando IA. Veja como funciona.' },
@@ -487,11 +488,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       // Preferimos a faixa de VOCAIS como fonte: em louvor a entrada/saída e a
       // intensidade do vocal demarcam as seções com muito mais clareza do que a
       // energia do mix completo (onde a bateria domina e borra os limites).
-      const vocalStem = stems.find(s => {
-        const n = (s.name || '').toLowerCase();
-        return n.includes('vocal') || n.includes('voz') || n.includes('voc');
-      });
-      const fallbackStem = stems.find(s => !['click', 'metronome', 'voiceguide'].includes(s.id));
+      // O nome passa pela regra central: a Voz Guia é da família Guia, não Vocal.
+      const vocalStem = stems.find(s => channelFamily({ id: s.id, name: s.name }) === 'vocal');
+      const fallbackStem = stems.find(s => !['click', 'metronome', 'voiceguide'].includes(s.id)
+        && resolveChannelRole({ id: s.id, name: s.name }) === 'normal');
       const sourceStem = vocalStem || fallbackStem;
 
       if (sourceStem) {
@@ -1322,9 +1322,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
   // Faixa usada pra medir a grade: bateria é a referência; sem ela, instrumental/baixo.
   const pickGridSource = (): StemData | undefined => {
-    const notGenerated = (s: StemData) => !['metronome', 'click', 'voiceguide', 'vocals'].includes(s.id);
+    const notGenerated = (s: StemData) => !['metronome', 'click', 'voiceguide', 'vocals'].includes(s.id)
+      && resolveChannelRole({ id: s.id, name: s.name }) === 'normal';
     return stems.find(s => s.id === 'drums')
-      || stems.find(s => /bateria|drum/i.test(s.name))
+      || stems.find(s => channelFamily({ id: s.id, name: s.name }) === 'bateria')
       || stems.find(s => s.id === 'no_vocals')
       || stems.find(s => s.id === 'bass')
       || stems.find(notGenerated);
