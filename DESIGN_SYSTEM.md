@@ -2,6 +2,7 @@
 
 > **Versão:** 1.0
 > **Data:** 2026-05-20
+> **Atualizado:** 2026-11-15 (seções 1.7 e 2.6: linguagem nova da Parte 1 do palco, ainda não publicada)
 > **Pareado com:** `PLAYBACK_STUDIO_BRAND_BOOK.md` (estratégia + briefing pros designers)
 > **Este documento:** referência operacional pareando código existente com vocabulário atomic design (Brad Frost). Lê este se você vai TOCAR o código.
 
@@ -14,6 +15,8 @@
 - **Audit de consistência:** os mapas atom/molecule/organism abaixo são o checklist.
 
 **Arquitetura dual da marca:** este sistema cobre **marketing** (landing/auth/onboarding) sob paleta laranja+dark. O **produto interno** (mixer/editor/separator) mantém DAW dark gold (`--color-primary: #d4a843`) — propositalmente diferente. Não unificar.
+
+**Linguagem nova do palco (desde a Parte 1, 2026-11-15):** telas novas do produto usam os tokens `ps-*` (seção 1.7) e as peças base de `src/components/ui/` (seção 2.6). O dourado do DAW continua só nas telas atuais, até elas migrarem na Parte 3.
 
 ---
 
@@ -91,6 +94,55 @@ Definidos em `src/index.css` no bloco `@theme` — consumidos via Tailwind v4 (`
 | `--font-handwriting` | Caveat (placeholder) | `font-handwriting` | Visual Hammer "domingo." — substituir por SVG custom |
 
 **Escala:** Tailwind defaults (`text-xs` 12px → `text-5xl` 48px). Headlines de marketing usam `text-[clamp(...)]` inline pra responsividade fluida (ver `LandingPage.tsx`).
+
+### 1.7 Linguagem nova (palco v5): tokens `ps-*`
+
+> Entrou na Parte 1 do palco novo (2026-11-15, ainda não publicada). Por enquanto só o painel "Editar canal" e o lápis do EDITAR CANAIS usam; as Partes 2 e 3 migram o palco e as outras telas.
+
+**Onde:** `src/styles/ps-tokens.css`, num bloco `@theme static` (o `static` faz o Tailwind emitir todas as variáveis, mesmo as que só aparecem via `var()` em style inline). O `src/index.css` importa esse arquivo logo depois de `@import "tailwindcss";`. Valores tirados do mockup v5 (`.superpowers/brainstorm/14859-1794743390/content/palco-desktop-v5.html`). Teste: `src/styles/ps-tokens.test.ts`.
+
+| Grupo | Token | Valor |
+|---|---|---|
+| Fundo e superfícies `--color-ps-*` | `ink` / `ink-0` / `s1` / `s2` / `s3` | `#121214` / `#0b0b0d` / `#17171a` / `#1f1f23` / `#2b2b31` |
+| | `raised` / `pop` / `well` | `#1b1b1f` / `#1d1d22` / `#151518` |
+| Linhas | `line` / `line-2` / `line-3` | `rgba(255,255,255,.07)` / `rgba(255,255,255,.15)` / `rgba(255,255,255,.28)` |
+| Texto | `bone` / `mut` / `dim` | `#E8E8EC` / `#9d9da8` / `#686872` |
+| Laranja (ligado) | `or` / `or-soft` / `or-line` / `on-or` | `#FF6B35` / `rgba(255,107,53,.12)` / `rgba(255,107,53,.55)` / `#1a0b04` |
+| Musgo | `moss` / `moss-hi` | `#5B6B47` / `#a9c47f` |
+| Armado e alerta | `arm` / `alert` / `alert-soft` / `alert-line` | `#F5F5F7` / `#fbbf24` / `rgba(251,191,36,.12)` / `rgba(251,191,36,.5)` |
+| Mixer | `mute` / `solo` | `#ef4444` / `#facc15` |
+| Seções | `sec-intro` / `sec-verso` / `sec-pre` / `sec-refrao` / `sec-ponte` / `sec-final` | `#3b82f6` / `#10b981` / `#f59e0b` / `#FF6B35` / `#8b5cf6` / `#ec4899` |
+| Raios `--radius-ps-*` | `xs` / `sm` / `md` / `lg` / `xl` / `2xl` / `pill` | `6px` / `8px` / `10px` / `12px` / `14px` / `16px` / `999px` |
+| Espaços `--spacing-ps-*` | `gutter` / `gap` / `pad-x` / `touch` | `16px` / `8px` / `12px` / `44px` |
+| Texto `--text-ps-*` | `micro` / `label` / `sm` / `base` / `md` / `lg` | `10px` / `10.5px` / `11px` / `13px` / `16px` / `21px` |
+| Fontes | `--font-ps-sans` | `'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif` |
+| | `--font-ps-mono` | `'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace` |
+| Sombra | `--shadow-ps-pop` | `0 20px 50px rgba(0,0,0,.65)` |
+| Animação | `--animate-ps-blink` | `ps-blink 1.4s ease-in-out infinite` (opacidade de 1 a .35 e de volta) |
+
+**Classes geradas:** `bg-ps-<cor>`, `text-ps-<cor>` e `inset-ring-ps-<cor>` pra cada cor da tabela; `rounded-ps-{xs,sm,md,lg,xl,2xl,pill}`; `text-ps-{micro,label,sm,base,md,lg}`; `px-ps-gutter`, `gap-ps-gap`, `px-ps-pad-x`, `min-h-ps-touch`, `min-w-ps-touch`; `font-ps-sans`, `font-ps-mono`; `shadow-ps-pop`; `animate-ps-blink`. Utilities próprias: `ps-num` (fonte mono com `tabular-nums`: números de largura fixa) e `ps-label` (rótulo pequeno em caixa alta: 10.5px, peso 700, espaçamento .14em, cor `mut`, sem quebra de linha).
+
+**Fontes:** `font-ps-sans` e `font-ps-mono` usam as versões variáveis empacotadas no app (`@fontsource-variable/inter` e `@fontsource-variable/jetbrains-mono`, importadas em `src/main.tsx` antes do `index.css`), então funcionam offline no desktop. O `--font-sans` e o `--font-mono` antigos (seção 1.6) continuam vindo do Google Fonts.
+
+**Código de cores com um significado só** (vale pra toda tela nova):
+
+| Cor | Token | Significa |
+|---|---|---|
+| Laranja | `ps-or`, `ps-or-soft`, `ps-or-line` | Ligado (Button `on`, Chip `on`, Led `on`). O laranja cheio do Button `primary` marca a ação principal de um painel (ex.: Salvar), e o anel de foco também é laranja. |
+| Branco | `ps-arm` | Armado (Button `armed`, Led `armed`) |
+| Cor da seção | `ps-sec-*` | Seção da música (Intro, Verso, Pré, Refrão, Ponte, Final) |
+| Âmbar | `ps-alert`, `ps-alert-soft`, `ps-alert-line` | Alerta (Button `alert`, Led `alert` piscando) |
+| Musgo claro | `ps-moss-hi` | Ao vivo (Led `live` piscando) |
+| Vermelho e amarelo | `ps-mute`, `ps-solo` | Mute e Solo do mixer |
+
+Neutros (`ink`, `s1` a `s3`, `raised`, `pop`, `well`, `line*`, `bone`, `mut`, `dim`) não carregam significado: são fundo, superfície, borda e texto.
+
+**Exceção registrada, cores de família do canal:** `FAMILY_COLOR` em `src/lib/channelNames.ts` pinta a faixa de cada canal no mixer (Click `#FF6B35`, Guia `#f59e0b`, Bateria `#ef4444`, Percussão `#f97316`, Baixo `#22c55e`, Synth Bass `#16a34a`, Violão `#ec4899`, Guitarra `#f43f5e`, Teclado `#8b5cf6`, Piano `#a855f7`, Pad `#6366f1`, Ambiência `#818cf8`, Vocal `#06b6d4`, Backing `#0ea5e9`, não reconhecido `#9d9da8`). Essas cores identificam o instrumento e não são código de estado. Algumas repetem cores de estado ou de seção (Click no laranja, Bateria no vermelho do Mute, Guia, Violão e Teclado nas cores de Pré, Final e Ponte). Vieram do mockup v5 aprovado e ficam assim na Parte 1; a paleta de famílias deve ser revista com o design antes da Parte 2, que põe seção e canal na mesma tela.
+
+**Regras:**
+- **Token novo nunca sobrescreve token antigo.** Todo token novo leva o prefixo `ps-` e mora em `src/styles/ps-tokens.css`; o `src/index.css` não declara nenhum `ps-`. As 38 declarações antigas do `@theme` de `src/index.css` ficam idênticas, e o teste `ps-tokens.test.ts` trava isso. É o que garante que as telas atuais não mudam até a Parte 3.
+- **O `primary` dourado (`--color-primary: #d4a843`) não entra em tela nova.** Ele continua só nas telas atuais do DAW (seção 1.5). Em tela nova, "ligado" e ação principal são laranja (`ps-or`).
+- Classe sempre escrita inteira no código (string literal), nunca montada por interpolação, senão o Tailwind não gera o CSS.
 
 ---
 
@@ -215,6 +267,8 @@ class="text-laranja hover:underline cursor-pointer font-medium"
 
 **Próximo passo (Fase B):** abstrair em `<Button variant="primary|secondary|link|pill" />` quando houver 5+ duplicações reais.
 
+> Os padrões acima são do marketing. Na linguagem nova do produto já existe um `<Button>` de verdade, em `src/components/ui/` (seção 2.6).
+
 ### 2.5 Icons — Lucide React
 
 Stack: [`lucide-react`](https://lucide.dev/) — line-art consistente com a marca (Brand Book §4.6).
@@ -224,6 +278,92 @@ Stack: [`lucide-react`](https://lucide.dev/) — line-art consistente com a marc
 - Cor herdada via `text-*` ou explícita via prop `className="text-laranja"`
 - Stroke padrão (não usar fill colorido em ícones grandes)
 - Para ações: par sempre com texto (não ícone sozinho exceto em UI denso DAW)
+
+### 2.6 Peças base (`src/components/ui/`)
+
+> Linguagem nova (tokens `ps-*`, seção 1.7), da Parte 1 do palco (2026-11-15, ainda não publicada). Primeiro uso: o painel "Editar canal" (`src/components/ChannelEditPanel.tsx`) e o lápis de cada canal no EDITAR CANAIS (`src/App.tsx`). Teste: `src/components/ui/ui.test.tsx`.
+
+Telas importam sempre do barril:
+
+```tsx
+import { Button, Chip, Segmented, Panel, Led, cx } from './components/ui'
+```
+
+#### `<Button>`
+
+```tsx
+<Button tone="primary" onClick={salvar}>Salvar</Button>
+<Button tone="ghost" onClick={fechar}>Cancelar</Button>
+<Button icon={<Pencil size={16} />} aria-label="Renomear e escolher papel" />
+```
+
+**Props** (aceita também todos os atributos de `<button>`):
+- `tone`: `default` (superfície `s1` com linha) | `on` (ligado: laranja suave, texto laranja) | `armed` (armado: anel branco de 2px) | `alert` (alerta: âmbar) | `primary` (ação principal: laranja cheio, texto `on-or`) | `ghost` (transparente, texto `mut`). Default `default`.
+- `size`: `md` (altura mínima 44px) | `lg` (altura mínima 56px). Default `md`.
+- `pressed`: vira `aria-pressed` (botão de liga e desliga). Use esta prop; um `aria-pressed` passado direto é sobrescrito.
+- `icon`: sai antes do texto, escondido do leitor de tela. Botão só com ícone precisa de `aria-label` (o tipo não obriga, a regra sim).
+- `type` padrão `"button"`, pra nunca enviar formulário sem querer.
+- Estados: anel de foco laranja, `disabled` com 35% de opacidade e sem clique, encolhe de leve ao apertar.
+
+#### `<Chip>`
+
+```tsx
+<Chip on={ligado} onClick={alternar}>+1</Chip>
+```
+
+- `on`: ligado (laranja suave, texto laranja). Desligado: superfície `s2` com linha.
+- `small`: texto de 11px em extrabold com espaçamento (o normal é 13px em bold).
+- No mínimo 44x44px, números tabulares, `type="button"` padrão.
+
+#### `<Segmented>`
+
+```tsx
+<Segmented
+  aria-label="Papel do canal"
+  options={[{ value: 'click', label: 'Click' }, { value: 'guide', label: 'Guia' }, { value: 'normal', label: 'Normal' }]}
+  value={papel}
+  onChange={setPapel}
+/>
+```
+
+- `options`: lista de `{ value, label, disabled? }`; `value`: o selecionado ou `null`; `onChange(value)`; `aria-label` obrigatório; `className` opcional.
+- É um `radiogroup`: cada opção tem `role="radio"` e `aria-checked`. Só a selecionada entra no Tab (sem seleção, a primeira habilitada). Setas andam com volta, pulando as desabilitadas; Home e End vão pra primeira e pra última habilitada; cada movimento já seleciona.
+- Opção com no mínimo 62px de largura e 44px de altura. Selecionada: superfície `s3` com anel `line-2`; as outras ficam em `mut`.
+
+#### `<Panel>`
+
+```tsx
+<Panel variant="pop" role="dialog" aria-modal="true" aria-labelledby="titulo" className="w-full max-w-[420px] p-5">
+  ...
+</Panel>
+```
+
+- `variant`: `flat` (superfície `s1`, raio 16px) | `raised` (superfície `raised`, raio 16px) | `pop` (painel flutuante: superfície `pop`, raio 14px, anel `line-2` e sombra `ps-pop`). Default `flat`.
+- Sem padding próprio: quem usa passa. Repassa todos os atributos de `<div>` (`role`, `aria-*`, `data-*`).
+
+#### `<Led>`
+
+```tsx
+<Led state="on" size="sm" />
+```
+
+- `state`: `off` (superfície `s3`) | `on` (laranja com brilho) | `live` (musgo claro piscando) | `alert` (âmbar piscando) | `armed` (branco com brilho).
+- `size`: `sm` (6px) | `md` (8px). Default `md`.
+- `label`: sem ele o Led é só decoração (escondido do leitor de tela); com ele vira imagem com nome (`role="img"` e `aria-label`). O piscar para quando o sistema está com "reduzir movimento".
+
+#### `cx(...partes)`
+
+Junta as classes verdadeiras com espaço. Não resolve conflito entre utilidades: quem chama não passa utilidade oposta.
+
+**Regras das peças:**
+- **Largura acompanha o texto:** padding (`px-ps-pad-x`), `w-auto` e `whitespace-nowrap`. Nunca largura fixa (`w-`) com texto dentro.
+- **Alvo de toque de 44px:** `min-h-ps-touch` e `min-w-ps-touch` no Button `md`, no Chip e na opção do Segmented.
+- **Nunca encolhe abaixo do texto:** Button, Chip e opção do Segmented têm `shrink-0`, então numa linha apertada a peça mantém o tamanho em vez de deixar o texto vazar. Numa linha com várias peças, use `flex-wrap` no contêiner (sem ele a linha estoura). Não passe `flex-1` pra Button ou Chip.
+- **Variação substitui a base:** o atributo que muda (fundo, texto, anel, altura, raio) fica só na variação, nunca duas utilidades opostas no mesmo elemento (o projeto não usa `tailwind-merge`). O `className` extra entra no fim e não deve trazer utilidade oposta à da peça.
+- **Classes literais:** todas as classes das peças são strings inteiras no código, nunca montadas por interpolação.
+- Código de cores da seção 1.7: laranja pra ligado e ação principal, branco pra armado, âmbar pra alerta.
+
+**Limites conhecidos (resolver quando uma tela precisar):** Chip e Segmented ainda não têm o anel de foco laranja do Button; Chip não tem visual de desabilitado; a opção desabilitada do Segmented não tem estilo próprio; o Segmented chama `onChange` de novo quando se clica na opção já selecionada.
 
 ---
 

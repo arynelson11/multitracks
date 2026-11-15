@@ -85,6 +85,8 @@ Confirmado no código (2026-07-08):
 - **IA de separação:** Replicate (htdemucs).
 - **Pagamento:** **Asaas** (BRL, checkout hospedado, cartão, assinatura recorrente). Migrou do AbacatePay. Preço é definido no backend (`api/checkout.ts`), não em painel.
 - **Deploy:** Vercel (web) + Electron builder (desktop Mac/Windows). Toda atualização sai junto para web e desktop.
+- **Testes:** Vitest + Testing Library (jsdom), `npm test`. Tipos do app e dos testes com `npm run typecheck`. (Entrou na Parte 1 do palco novo, ainda não publicada.)
+- **Fontes:** Inter e JetBrains Mono empacotadas no app (`@fontsource-variable`, funcionam offline no desktop). Por enquanto só as peças novas usam (`font-ps-sans` e `font-ps-mono`); as telas atuais seguem com as fontes do Google Fonts até a Parte 3. (Parte 1, ainda não publicada.)
 
 ## 5. Telas e features visíveis (material de referência para conteúdo)
 
@@ -98,12 +100,62 @@ Confirmado por prints do produto em produção (2026-07-08):
 **Tela ao vivo / repertório (o palco):**
 - Barra superior: Repertórios, Faixas, Biblioteca, Metrônomo, Tom (transpose), Pré-contagem, Editar, Admin, Config, Início. Indicador "ONLINE".
 - Repertório com as músicas em cards (capa, tom, BPM, duração).
-- **Mixer multicanal de verdade** (no exemplo, 24 canais: BASS, guitarras EG, KEYS, ARP, CLICK, DRUMS, pads etc.), cada canal com fader, pan, volume e botões Mute/Solo.
+- **Mixer multicanal de verdade** (no exemplo, 24 canais: BASS, guitarras EG, KEYS, ARP, CLICK, DRUMS, pads etc.), cada canal com fader, pan, volume e botões Mute/Solo. Os canais aparecem com nomes organizados automaticamente (Click, Guia, Bateria, Baixo, Violão Base, Guitarra Solo, Teclado 1...), cor por família e ordem padrão; EDITAR CANAIS renomeia, escolhe o papel (Click / Guia / Normal), reordena e remove. Click e Guia continuam tocando quando outro canal está em Solo. (Nomes organizados, cores, ordem padrão, renomear, papel e Click/Guia no Solo chegam na versão da Parte 1, ainda não publicada.)
 - **Reprodutor de Pads:** abas Pads / Samples / Loops, pads na nuvem e grid cromático (C a B) com volume.
 - Marcação de **Seções** ao vivo ("marcar Refrão/Verso e repetir trechos ao vivo"), Editor avançado, Letra/Cifra (teleprompter), Anotações.
 - Transport ao vivo: Auto / Parar / Fade, com anterior / play / próxima.
 
 ## 6. Histórico de mudanças (para saber o que foi feito sem rodar tudo)
+
+### 2026-11-15: Parte 1 do palco novo: linguagem nova + canais organizados (NÃO publicado ainda, branch feat/palco-parte1-linguagem-canais)
+
+**O que é:** a primeira parte do redesenho do palco (spec `docs/superpowers/specs/2026-11-15-palco-ao-vivo-design.md`, plano `docs/superpowers/plans/2026-11-15-parte1-linguagem-canais.md`). Entrega a base da linguagem visual nova sem mudar a cara das telas atuais e organiza os canais do mixer com uma regra central única. Commits `a2c4631` a `f549c6c` mais este de docs, sobre a base `b8d0871` (que já traz o click sincronizado de 2026-11-09, também não publicado). Nada foi pra produção: o lançamento é web + desktop juntos, pelo @devops, depois do QA do dono. Ao publicar, o @devops tira o "ainda não publicada" das seções 4 e 5 e põe a versão no título desta entrada.
+
+**Linguagem nova (só a base, nenhuma tela nova ainda):** tokens `ps-*` em `src/styles/ps-tokens.css` (cores, raios, espaços, tamanhos de texto, fontes, sombra e piscar, tirados do mockup v5), importado logo depois do Tailwind em `src/index.css`. Os tokens antigos ficaram intactos (inclusive o dourado `--color-primary: #d4a843`) e um teste trava isso, então as telas atuais ficam iguais até a Parte 3. Peças base em `src/components/ui/`: Button, Chip, Segmented, Panel e Led, com alvo de toque de 44px, largura que acompanha o texto e código de cores com um significado só (laranja ligado, branco armado, âmbar alerta). Detalhe em `DESIGN_SYSTEM.md`, seções 1.7 e 2.6. Fontes Inter e JetBrains Mono empacotadas (`@fontsource-variable`), funcionando offline no desktop; por enquanto só as peças novas usam. O projeto passou a ter testes automatizados (Vitest + Testing Library, `npm test` e `npm run typecheck`): 228 testes passando no fim da Parte 1.
+
+**Regra central de canais** (`src/lib/channelNames.ts` e `src/lib/channelRoles.ts`, módulos puros e testados). Todo lugar que antes adivinhava por pedaço do nome agora usa essa regra:
+
+- Reconhecimento por palavra inteira, nunca por pedaço (antes `ag` acertava "stage" e `eg` acertava "legato"), em português, inglês e siglas de multitrack (GTR, EG, AG, BV, KEYS, PNO, BX, CLK, MTR...). Entende camelCase (`ClickTrack`, `VozGuia`, `LeadVox`, `AcousticGtr`), plurais (`Guias`, `Clicks`, `Cues`) e compostos: `Bass Drum` e `BASS DRUMS` são o bumbo da bateria (não o baixo), `OverHead` é Overhead, `ClickTrack` é Click. Sigla toda em maiúscula não é quebrada.
+- BEAT e TEMPO só viram Click quando o resto do nome é número ou BPM (`Beat`, `Tempo`, `Tempo_120bpm`). `Beat Loop`, `Tempo FX`, `Drum Beat` e `Ambient Beat Pad` ficam canais normais.
+- Rótulo = família traduzida (Click, Guia, Bateria, Percussão, Baixo, Synth Bass, Violão, Guitarra, Teclado, Piano, Pad, Ambiência, Vocal, Backing) mais até 2 complementos do dicionário (Base, Dedilhado, Arpejo, Solo, Ambiente, Reverso, Loop, FX, Dobra, L, R). Peças da bateria têm rótulo próprio (Bumbo, Caixa, Chimbal, Overhead, Tons). Palavra fora do dicionário sai do nome (`PIANO DELAY` vira Piano), pra nunca mostrar lixo.
+- Limpeza do nome do arquivo: tira extensão de áudio, sufixo de cópia (`copy`, `cópia`, `(1)`) e um sufixo de exportação (`DRUMS_1` vira Bateria).
+- Nome não reconhecido: aparece limpo e capitalizado, com até 24 caracteres cortados em palavra inteira (hífen, ponto e camelCase também separam palavra). Um trecho único maior que 24 fica inteiro, nunca cortado no meio. Nome vazio vira "Canal".
+- Numeração: instrumento repetido ganha número refeito pelo app (`KEY 1_1`, `KEY 2_1` viram Teclado 1, Teclado 2) pela ordem natural do nome original, então o número fica preso ao canal e não muda ao arrastar.
+- Cor por família e ordem padrão: Click, Guia, Bateria, Percussão, Baixo, Synth Bass, Violão, Guitarra, Teclado, Piano, Pad e Ambiência, Vocal, Backing e, por último, os não reconhecidos.
+
+**Papel do canal (Click / Guia / Normal), com o manual vencendo o automático:** o automático vem do nome original e, se o original não for Click nem Guia, do nome dado pelo usuário (renomear o Click pra "Pulso" não tira o papel). O papel decide três coisas: pan automático (Click e Guia vão pro ouvido, Normal vai pra PA), troca de tom (Click e Guia ficam fora) e Solo (Click e Guia continuam tocando quando outro canal está em Solo; o M deles funciona normal). O nome original do arquivo (`Channel.name`) nunca é sobrescrito; o nome organizado é só exibição.
+
+**Onde aparece:** mixer do palco (nome inteiro, sem o corte de 8 letras e sem caixa alta, com o nome do arquivo no balão do mouse e a cor da família na faixa); VU do Principal seguindo o ganho real de cada canal; onda do SectionBar pelo primeiro canal Normal (não mais o Click); aba Buses das Configurações; celular no Modo Ao Vivo, que recebe o nome organizado. O Metrônomo ("Analisando faixa") escolhe a bateria e, sem bateria, o baixo. No Separador, a detecção de seções acha o vocal pela família (não pega mais a Voz Guia como vocal) e a grade do click sincronizado acha a bateria pela família; as checagens por id interno (`metronome`, `click`, `voiceguide`) continuam.
+
+**EDITAR CANAIS:** cada canal ganhou um lápis (44px) que abre o painel "Editar canal" (`src/components/ChannelEditPanel.tsx`): campo Nome (até 24 caracteres, fonte de 16px pra o iPhone e o iPad não darem zoom, com o nome automático de placeholder), "Arquivo: <nome original>", botão "Usar nome automático", seletor de papel Click / Guia / Normal com o selo "Automático" ou o botão "Usar papel automático", e o aviso "Vale só pro seu repertório. A música da biblioteca não muda." O texto de ajuda de Click e Guia termina com "Continua tocando mesmo quando outro canal está em Solo." Na sobreposição de edição, Click e Guia mostram "Papel: Click" ou "Papel: Guia". Com o painel aberto, Espaço, setas e teclas de seção não controlam o palco (de propósito); se a música trocar, o painel fecha sozinho. Trocar o papel com a música tocando e tom diferente de 0 reinicia da mesma posição, sem worklet sobrando (coberto por teste com áudio simulado; a conferência de ouvido está no QA do dono). Arrastar e a lixeira continuam como antes; arrastar marca a ordem da música como manual.
+
+**Repertório v2 com migração** (`src/lib/repertoireSchema.ts`, `schemaVersion: 2`): nome do usuário, papel e ordem (`channelOrder`: automática ou manual) ficam só no repertório do usuário no aparelho (IndexedDB `mt_meta_playlist_<userId>`), nunca na nuvem (`songs`, `stems`, `api/*`) nem no cache offline compartilhado. Outra conta que baixar a mesma música vê os nomes automáticos; se a música sair do repertório e for baixada de novo, volta ao automático. Repertório salvo antes da atualização abre sem perder música, volume, mute, pan, marcadores, letra nem tom. A ordem antiga só é tratada como manual quando dá pra provar (canais vindos do cache com `srcIdx` fora de ordem); no resto vale a ordem padrão. ZIP de repertório: o manifest novo leva ordem, nome e papel; ZIP exportado pela versão antiga (sem ordem) importa como ordem manual, preservando a ordem do arquivo. `sourceId` passa a ser salvo (antes se perdia ao reabrir o app).
+
+**Efeito em músicas já salvas:** nomes que o detector antigo não pegava, como `Metrônomo` (com acento), `Metronome`, `CUE`, `CLK` e `MTR`, passam a ser Click ou Guia: vão pro ouvido no pan automático, ficam fora da troca de tom e tocam no Solo. Antes, o Solo calava também o Click e a Guia.
+
+**Dois defeitos antigos corrigidos:** mexer no fader ou desmutar um canal enquanto outro estava em Solo fazia o som dele vazar (o ganho ignorava o Solo). Agora fader, M, S, play e restauração passam pela mesma conta de ganho (`channelGain`).
+
+**Limites conhecidos (registrados na revisão, não bloqueiam):** a lixeira da sobreposição de edição continua com 28px e apaga na hora, agora perto do lápis (triagem na revisão final); o rótulo reconhecido mais longo (28 caracteres, ex. "Percussão Dedilhado Ambiente") pode ocupar 3 linhas no mixer estreito, aceito até o redesenho do mixer na Parte 2; o celular no Modo Ao Vivo ainda corta nome longo com reticências (fica pro redesenho do celular); algumas cores de família repetem cores de estado ou seção (Click laranja, Bateria no vermelho do mute, Guia, Violão e Teclado nas cores de Pré, Final e Ponte), exceção registrada pra revisar com o design antes da Parte 2; o placeholder do painel não acompanha um papel trocado dentro do próprio painel; a aba Buses segue em caixa alta (estilo antigo); ZIP de repertório nunca levou tom, marcadores, letra nem cifra (já era assim); as fontes empacotadas deixam o app desktop cerca de 2,1 MB maior.
+
+**QA do dono antes de publicar:** palco, Separador, Biblioteca e Configurações com a mesma aparência de antes; fontes carregando no desktop empacotado; repertório antigo real reaberto (offline e no desktop); renomear e trocar papel no EDITAR CANAIS, inclusive tocando em tom +2 numa música de 24 canais, no navegador e no desktop; digitar no painel pelo iPhone/iPad.
+
+**As 15 decisões do plano, pro dono conferir** (com o ajuste feito na execução, quando houve):
+
+1. Tokens novos com prefixo `ps-` num arquivo próprio, sem tocar nos antigos: as telas atuais ficam iguais até a Parte 3.
+2. Fontes Inter e JetBrains Mono empacotadas no app (antes vinham só do Google Fonts e sumiam no desktop offline). Só as peças novas usam; o `font-sans` antigo continua igual.
+3. Chip e seletor segmentado com alvo de 44px (o mockup tinha chip de 42px e segmento de 38px; a regra de 44px do spec venceu).
+4. Reconhecimento por palavra inteira, não por pedaço. Na execução entraram também camelCase, plurais e compostos, e BEAT/TEMPO só contam como Click com número ou BPM.
+5. Complemento só com palavras do dicionário; palavra desconhecida sai do nome (`PIANO DELAY` vira Piano).
+6. Número de instrumento repetido refeito pelo app pela ordem natural do nome original, não pela posição.
+7. Papel automático vem do nome original e, se ele não for Click/Guia, do nome do usuário. Renomear o Click pra "Pulso" não tira o papel de Click.
+8. Cores de família do mockup; as duas que faltavam: Ambiência `#818cf8` e não reconhecido `#9d9da8`.
+9. Repertório antigo: ordem manual só quando dá pra provar; no resto, ordem padrão (quem arrumou na mão uma música importada do computador vê a ordem padrão uma vez e pode arrastar de novo). Ajuste: ZIP da versão antiga importa como ordem manual.
+10. Nome e papel ficam no repertório do usuário (o que fica offline naquele aparelho e conta). Música removida do repertório e baixada de novo volta ao automático.
+11. Nome personalizado com no máximo 24 caracteres; no mixer o nome aparece inteiro, sem caixa alta e sem o corte de 8 letras. Ajuste: nada é escondido com reticências, então um rótulo reconhecido muito longo pode passar de 2 linhas no mixer estreito; o rótulo automático de nome não reconhecido também ficou limitado a 24.
+12. No Separador, as checagens por id interno (`metronome`, `click`, `voiceguide`) ficam; só os achados por nome passam pela regra central.
+13. "A música já tem click" ganhou o helper `findClickChannel` (testado), mas quem usa é a Parte 2.
+14. Sem botão "voltar à ordem automática" nesta parte.
+15. Corrigido junto: `sourceId` salvo no repertório e o vazamento de som do fader e do desmutar com Solo ligado.
 
 ### 2026-11-15: Troca de tom corrigida no player principal [v1.4.14]
 Relato dos assinantes no culto: ao trocar o tom o click atrasava, os instrumentos embolavam, o som não voltava ao normal no tom original e, na segunda troca, ficava tudo mudo. Causa provada com medição (investigação em `.superpowers/sdd/pitch-investigacao.md`) e corrigida em `src/hooks/useAudioEngine.ts`, uma causa por commit (branch `fix/tom-v1.4.10`, reaplicada sobre a v1.4.13 como `release-v1.4.14`):
