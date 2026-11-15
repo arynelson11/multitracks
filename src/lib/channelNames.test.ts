@@ -319,6 +319,15 @@ describe('compatibilidade com o detector antigo: o antigo pegava, o novo tem que
   it('duplicados entram na mesma numeração das outras famílias', () => {
     expect(labels(['VOZGUIA', 'Voz Guia', 'clicktrk', 'CLICK'])).toEqual(['Guia 2', 'Guia 1', 'Click 2', 'Click 1'])
   })
+  // Ajuste do coordenador: quando a palavra já reconhece Click ou Guia, é ela que decide
+  // entre os dois; o teste antigo só promove a Click/Guia o que ficaria com outro papel.
+  it.each([
+    ['MTR Guia', 'click', 'Click'], ['CLK Guide', 'click', 'Click'], ['Metro Guia', 'click', 'Click'],
+    ['Clique Guia', 'click', 'Click'], ['CUE clicktrk', 'guide', 'Guia'],
+  ])('%s: a palavra decide entre Click e Guia (papel %s)', (name, role, label) => {
+    expect(roleFromName(name)).toBe(role)
+    expect(buildChannelLabels([{ id: '1', name }])[0]).toMatchObject({ label, role })
+  })
   it('papel manual vence: vozguia com papel Normal continua Normal', () => {
     const ch = { id: '1', name: 'vozguia', role: 'normal' as const }
     expect([resolveChannelRole(ch), channelFamily(ch)]).toEqual(['normal', 'desconhecido'])

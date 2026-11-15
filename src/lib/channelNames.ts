@@ -306,7 +306,8 @@ export function recognizeChannel(raw: string, opts: { ignoreRoleFamilies?: boole
 // O papel automático nunca é mais estreito que ele, senão a guia ou o click de uma
 // música já salva vão pra PA. Vale no nome sem acento, em caixa alta e sem nada além
 // de A-Z e 0-9, mesmo que outra palavra case outra família ("vozguia bass" é Guia).
-// BEAT e TEMPO não entram aqui: seguem as regras de palavra fraca.
+// Só promove: quando a palavra já reconhece Click ou Guia, ela decide entre os dois
+// ("MTR Guia" é Click). BEAT e TEMPO não entram aqui: seguem as regras de palavra fraca.
 const LEGACY_CLICK = /CLICK|METRONOM/
 const LEGACY_GUIDE = /GUIA|GUIDE/
 
@@ -319,12 +320,10 @@ function legacyRoleFromName(raw: string): ChannelRole | undefined {
 
 // Papel automático pelo nome. O papel manual (`role`) é decidido antes, em resolveChannelRole.
 export function roleFromName(raw: string): ChannelRole {
-  const legacy = legacyRoleFromName(raw)
-  if (legacy) return legacy
   const family = matchFamily(raw, false)?.familyRule.family
   if (family === 'click') return 'click'
   if (family === 'guia') return 'guide'
-  return 'normal'
+  return legacyRoleFromName(raw) ?? 'normal'
 }
 
 function hasCustomName(ch: ChannelIdentity): ch is ChannelIdentity & { customName: string } {
