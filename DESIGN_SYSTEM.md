@@ -16,7 +16,7 @@
 
 **Arquitetura dual da marca:** este sistema cobre **marketing** (landing/auth/onboarding) sob paleta laranja+dark. O **produto interno** (mixer/editor/separator) mantém DAW dark gold (`--color-primary: #d4a843`) — propositalmente diferente. Não unificar.
 
-**Linguagem nova do palco (desde a Parte 1, 2026-11-15):** telas novas do produto usam os tokens `ps-*` (seção 1.7) e as peças base de `src/components/ui/` (seção 2.6). O dourado do DAW continua só nas telas atuais, até elas migrarem na Parte 3.
+**Linguagem nova do palco (desde a Parte 1, 2026-11-15, ainda não publicada):** substitui o "Não unificar" do parágrafo acima e do título da seção 1.5 pra tudo que é tela nova do produto. Telas novas do produto usam os tokens `ps-*` (seção 1.7) e as peças base de `src/components/ui/` (seção 2.6). O dourado do DAW continua só nas telas atuais, até elas migrarem na Parte 3.
 
 ---
 
@@ -97,7 +97,7 @@ Definidos em `src/index.css` no bloco `@theme` — consumidos via Tailwind v4 (`
 
 ### 1.7 Linguagem nova (palco v5): tokens `ps-*`
 
-> Entrou na Parte 1 do palco novo (2026-11-15, ainda não publicada). Por enquanto só o painel "Editar canal" e o lápis do EDITAR CANAIS usam; as Partes 2 e 3 migram o palco e as outras telas.
+> Entrou na Parte 1 do palco novo (2026-11-15, ainda não publicada). Por enquanto só o painel "Editar canal", o lápis e a lixeira do EDITAR CANAIS usam; as Partes 2 e 3 migram o palco e as outras telas.
 
 **Onde:** `src/styles/ps-tokens.css`, num bloco `@theme static` (o `static` faz o Tailwind emitir todas as variáveis, mesmo as que só aparecem via `var()` em style inline). O `src/index.css` importa esse arquivo logo depois de `@import "tailwindcss";`. Valores tirados do mockup v5 (`.superpowers/brainstorm/14859-1794743390/content/palco-desktop-v5.html`). Teste: `src/styles/ps-tokens.test.ts`.
 
@@ -138,6 +138,10 @@ Definidos em `src/index.css` no bloco `@theme` — consumidos via Tailwind v4 (`
 Neutros (`ink`, `s1` a `s3`, `raised`, `pop`, `well`, `line*`, `bone`, `mut`, `dim`) não carregam significado: são fundo, superfície, borda e texto.
 
 **Exceção registrada, cores de família do canal:** `FAMILY_COLOR` em `src/lib/channelNames.ts` pinta a faixa de cada canal no mixer (Click `#FF6B35`, Guia `#f59e0b`, Bateria `#ef4444`, Percussão `#f97316`, Baixo `#22c55e`, Synth Bass `#16a34a`, Violão `#ec4899`, Guitarra `#f43f5e`, Teclado `#8b5cf6`, Piano `#a855f7`, Pad `#6366f1`, Ambiência `#818cf8`, Vocal `#06b6d4`, Backing `#0ea5e9`, não reconhecido `#9d9da8`). Essas cores identificam o instrumento e não são código de estado. Algumas repetem cores de estado ou de seção (Click no laranja, Bateria no vermelho do Mute, Guia, Violão e Teclado nas cores de Pré, Final e Ponte). Vieram do mockup v5 aprovado e ficam assim na Parte 1; a paleta de famílias deve ser revista com o design antes da Parte 2, que põe seção e canal na mesma tela.
+
+**Mixer atual (Parte 1, revisão final):**
+- **Fader de canal calado** (M ligado ou calado pelo Solo de outro canal): preenchimento cinza neutro, `rgba(255,255,255,0.12)` a `rgba(255,255,255,0.04)`, nunca vermelho, pra bateria calada não parecer bateria tocando. O M aceso continua marcando o mute. Canal tocando usa a cor da família. Regra em `channelFaderFill` (`src/lib/channelRoles.ts`).
+- **Lixeira de dois toques** no EDITAR CANAIS (`src/components/ChannelTrashButton.tsx` com o hook `src/hooks/useTwoTapConfirm.ts`): no pé da sobreposição do canal, a pelo menos 24px do lápis, alvo de 44px. O primeiro toque arma: âmbar `#f59e0b` (valor fixado na revisão final; o token `ps-alert` é `#fbbf24`) com o texto "Apagar?" e `aria-label` "Toque de novo para apagar o canal <rótulo>". O segundo toque em até 3 segundos apaga. Desarma sozinha no fim dos 3 segundos, com Esc, ao armar a lixeira de outro canal ou ao sair do EDITAR CANAIS. Armada, a largura acompanha o texto (padding e `whitespace-nowrap`) e cabe na coluna mais estreita do mixer (96px).
 
 **Regras:**
 - **Token novo nunca sobrescreve token antigo.** Todo token novo leva o prefixo `ps-` e mora em `src/styles/ps-tokens.css`; o `src/index.css` não declara nenhum `ps-`. As 38 declarações antigas do `@theme` de `src/index.css` ficam idênticas, e o teste `ps-tokens.test.ts` trava isso. É o que garante que as telas atuais não mudam até a Parte 3.
@@ -281,7 +285,7 @@ Stack: [`lucide-react`](https://lucide.dev/) — line-art consistente com a marc
 
 ### 2.6 Peças base (`src/components/ui/`)
 
-> Linguagem nova (tokens `ps-*`, seção 1.7), da Parte 1 do palco (2026-11-15, ainda não publicada). Primeiro uso: o painel "Editar canal" (`src/components/ChannelEditPanel.tsx`) e o lápis de cada canal no EDITAR CANAIS (`src/App.tsx`). Teste: `src/components/ui/ui.test.tsx`.
+> Linguagem nova (tokens `ps-*`, seção 1.7), da Parte 1 do palco (2026-11-15, ainda não publicada). Primeiro uso: o painel "Editar canal" (`src/components/ChannelEditPanel.tsx`) e o lápis de cada canal no EDITAR CANAIS (`src/App.tsx`). A lixeira do EDITAR CANAIS usa os mesmos tokens, mas é botão próprio (seção 1.7, "Mixer atual"). Teste: `src/components/ui/ui.test.tsx`.
 
 Telas importam sempre do barril:
 
@@ -356,8 +360,8 @@ import { Button, Chip, Segmented, Panel, Led, cx } from './components/ui'
 Junta as classes verdadeiras com espaço. Não resolve conflito entre utilidades: quem chama não passa utilidade oposta.
 
 **Regras das peças:**
-- **Largura acompanha o texto:** padding (`px-ps-pad-x`), `w-auto` e `whitespace-nowrap`. Nunca largura fixa (`w-`) com texto dentro.
-- **Alvo de toque de 44px:** `min-h-ps-touch` e `min-w-ps-touch` no Button `md`, no Chip e na opção do Segmented.
+- **Largura acompanha o texto:** padding e `whitespace-nowrap`, nunca largura fixa (`w-`) com texto dentro. O padding muda por peça: Button usa `px-ps-pad-x` e `w-auto`; Chip usa `px-2.5`; a opção do Segmented usa `px-3`.
+- **Alvo de toque de 44px:** `min-h-ps-touch` no Button `md`, no Chip e na opção do Segmented. Na largura, Button e Chip usam `min-w-ps-touch`; a opção do Segmented usa `min-w-[62px]`.
 - **Nunca encolhe abaixo do texto:** Button, Chip e opção do Segmented têm `shrink-0`, então numa linha apertada a peça mantém o tamanho em vez de deixar o texto vazar. Numa linha com várias peças, use `flex-wrap` no contêiner (sem ele a linha estoura). Não passe `flex-1` pra Button ou Chip.
 - **Variação substitui a base:** o atributo que muda (fundo, texto, anel, altura, raio) fica só na variação, nunca duas utilidades opostas no mesmo elemento (o projeto não usa `tailwind-merge`). O `className` extra entra no fim e não deve trazer utilidade oposta à da peça.
 - **Classes literais:** todas as classes das peças são strings inteiras no código, nunca montadas por interpolação.
