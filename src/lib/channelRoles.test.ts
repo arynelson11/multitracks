@@ -116,6 +116,19 @@ describe('bordas do patch e da lista', () => {
     const all = [mix('d', 'DRUMS'), mix('b', 'BASS')]
     expect(all.map((ch) => isSilencedBySolo(ch, all))).toEqual([false, false])
   })
+  it('Ambient Beat Pad é Normal: entra na troca de tom, vai pro PA e cala no Solo (rodada de correção 2)', () => {
+    const pad = { id: 'p', name: 'Ambient Beat Pad' }
+    expect([isPitchExempt(pad), isSoloSafe(pad)]).toEqual([false, false])
+    expect(autoPanFor(pad, true)).toEqual({ pan: 1, bus: '2' })
+    const all = [mix('p', 'Ambient Beat Pad'), mix('t', 'Tempo'), mix('b', 'BASS', { soloed: true })]
+    expect(all.map((ch) => channelGain(ch, all))).toEqual([0, 0.8, 0.8])
+    expect(findClickChannel([pad, { id: 't', name: 'Tempo' }])?.id).toBe('t')
+  })
+  it('ClickTrack, VozGuia e Guias seguem tocando no Solo (rodada de correção 2)', () => {
+    const all = [mix('c', 'ClickTrack'), mix('v', 'VozGuia'), mix('g', 'Guias'), mix('d', 'DRUMS'), mix('b', 'BASS', { soloed: true })]
+    expect(all.map((ch) => channelGain(ch, all))).toEqual([0.8, 0.8, 0.8, 0, 0.8])
+    expect([isPitchExempt({ id: '1', name: 'ClickTrack' }), isPitchExempt({ id: '2', name: 'VozGuia' })]).toEqual([true, true])
+  })
   it('achadores com lista vazia e fonte de tempo pelo baixo', () => {
     expect([findClickChannel([]), pickMainChannel([]), pickTempoSourceChannel([])]).toEqual([undefined, undefined, undefined])
     expect(pickTempoSourceChannel([{ id: 'p', name: 'Pad' }, { id: 'b', name: 'BASS' }])?.id).toBe('b')

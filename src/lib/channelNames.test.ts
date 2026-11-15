@@ -185,3 +185,78 @@ describe('rótulo automático e ordem (item 10 do preflight)', () => {
     expect(recognizeChannel('CLICK SOLO L')).toEqual({ label: 'Click', family: 'click' })
   })
 })
+
+// Rodada de correção 2 (Ruling do coordenador): o reconhecimento decide roteamento, tom e Solo.
+describe('BEAT e TEMPO são palavras fracas de Click', () => {
+  it('Ambient Beat Pad é Pad, papel Normal', () => {
+    expect(recognizeChannel('Ambient Beat Pad')).toEqual({ label: 'Pad Ambiente', family: 'pad' })
+    expect(roleFromName('Ambient Beat Pad')).toBe('normal')
+    const ch = { id: '1', name: 'Ambient Beat Pad' }
+    expect([resolveChannelRole(ch), channelFamily(ch)]).toEqual(['normal', 'pad'])
+    expect(buildChannelLabels([ch])[0]).toMatchObject({ label: 'Pad Ambiente', family: 'pad', role: 'normal' })
+  })
+  it('com outra família no nome, a família vem do resto', () => {
+    expect(recognizeChannel('Beat Amb')).toEqual({ label: 'Ambiência', family: 'ambiencia' })
+    expect(recognizeChannel('BEAT DRUMS')).toEqual({ label: 'Bateria', family: 'bateria' })
+    expect(recognizeChannel('Tempo Guia')).toEqual({ label: 'Guia', family: 'guia' })
+    expect([roleFromName('Beat Amb'), roleFromName('BEAT DRUMS'), roleFromName('Tempo Guia')]).toEqual(['normal', 'normal', 'guide'])
+  })
+  it('sozinhas (ou sem outra família) continuam Click', () => {
+    expect(recognizeChannel('Tempo')).toEqual({ label: 'Click', family: 'click' })
+    expect(recognizeChannel('Beat')).toEqual({ label: 'Click', family: 'click' })
+    expect(recognizeChannel('Tempo 120')).toEqual({ label: 'Click', family: 'click' })
+    expect([roleFromName('Tempo'), roleFromName('Beat')]).toEqual(['click', 'click'])
+  })
+  it('CLICK, CLK, METRO, METRONOMO e MTR continuam fortes mesmo com outras palavras', () => {
+    expect(['CLICK PAD', 'CLK BASS', 'METRO AMB', 'Metrônomo Drums', 'MTR GTR'].map((n) => recognizeChannel(n).family))
+      .toEqual(['click', 'click', 'click', 'click', 'click'])
+  })
+  it('sem papel de Click, o nome com palavra fraca entra na família pelo resto quando o papel é Normal manual', () => {
+    expect(channelFamily({ id: '1', name: 'Tempo Pad', role: 'normal' })).toBe('pad')
+  })
+})
+
+describe('camelCase no reconhecimento', () => {
+  it.each([
+    ['ClickTrack', 'Click', 'click', 'click'], ['VozGuia', 'Guia', 'guia', 'guide'], ['LeadVox', 'Vocal', 'vocal', 'normal'],
+    ['AcousticGtr', 'Violão', 'violao', 'normal'], ['GtrSolo', 'Guitarra Solo', 'guitarra', 'normal'],
+  ])('%s vira %s (%s, papel %s)', (raw, label, family, role) => {
+    expect(recognizeChannel(raw)).toEqual({ label, family })
+    expect(roleFromName(raw)).toBe(role)
+  })
+  it('siglas em caixa alta não quebram', () => {
+    expect(recognizeChannel('GTR1_1')).toEqual({ label: 'Guitarra', family: 'guitarra' })
+    expect(recognizeChannel('GTR-SOLO')).toEqual({ label: 'Guitarra Solo', family: 'guitarra' })
+    expect(recognizeChannel('Click_IA_120bpm')).toEqual({ label: 'Click', family: 'click' })
+    expect(recognizeChannel('BVS')).toEqual({ label: 'Backing', family: 'backing' })
+    expect(recognizeChannel('SUBBASS')).toEqual({ label: 'Synth Bass', family: 'synthBass' })
+  })
+})
+
+describe('plurais de Click e Guia', () => {
+  it.each([['GUIAS', 'Guia', 'guia', 'guide'], ['CLICKS', 'Click', 'click', 'click'], ['CUES', 'Guia', 'guia', 'guide'],
+    ['Guias', 'Guia', 'guia', 'guide'], ['Clicks 2', 'Click', 'click', 'click']])('%s vira %s (%s)', (raw, label, family, role) => {
+    expect(recognizeChannel(raw)).toEqual({ label, family })
+    expect(roleFromName(raw)).toBe(role)
+  })
+})
+
+// Acréscimo da rodada de correção 2 (revisão da T7).
+describe('bateria: compostos, plurais e camelCase', () => {
+  it('Drum Beat é Bateria, papel Normal', () => {
+    expect(recognizeChannel('Drum Beat')).toEqual({ label: 'Bateria', family: 'bateria' })
+    expect(roleFromName('Drum Beat')).toBe('normal')
+  })
+  it.each([
+    ['DrumLoop', 'Bateria Loop'], ['Drumset', 'Bateria'], ['DRUMSET', 'Bateria'], ['DRUMKIT', 'Bateria'],
+    ['Baterias', 'Bateria'], ['BASS DRUM', 'Bumbo'], ['BASSDRUM', 'Bumbo'], ['Bass Drum', 'Bumbo'], ['BassDrum', 'Bumbo'],
+  ])('%s vira %s (bateria)', (raw, label) => {
+    expect(recognizeChannel(raw)).toEqual({ label, family: 'bateria' })
+    expect(roleFromName(raw)).toBe('normal')
+  })
+  it('BASS sozinho continua Baixo; o bumbo não muda o baixo do lado', () => {
+    expect(recognizeChannel('BASS_1')).toEqual({ label: 'Baixo', family: 'baixo' })
+    expect(recognizeChannel('BASS DI')).toEqual({ label: 'Baixo', family: 'baixo' })
+    expect(sortChannelsByDefault(mk(['BASS', 'BASS DRUM'])).map((c) => c.name)).toEqual(['BASS DRUM', 'BASS'])
+  })
+})

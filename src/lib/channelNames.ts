@@ -61,6 +61,8 @@ const UNRECOGNIZED_LABEL_MAX = 24
 interface FamilyRule {
   family: KnownFamily
   words: ReadonlySet<string>
+  // Palavras fracas: só decidem a família quando nenhuma palavra de família aparece no nome.
+  weakWords: ReadonlySet<string>
   sequences: readonly (readonly string[])[]
   // Peças com rótulo próprio dentro da família (só a bateria tem).
   pieces?: ReadonlyMap<string, string>
@@ -69,18 +71,26 @@ interface FamilyRule {
 const rule = (
   family: KnownFamily,
   words: readonly string[],
-  extra: { sequences?: readonly (readonly string[])[]; pieces?: Record<string, string> } = {},
+  extra: {
+    weakWords?: readonly string[]
+    sequences?: readonly (readonly string[])[]
+    pieces?: Record<string, string>
+  } = {},
 ): FamilyRule => ({
   family,
   words: new Set(words),
+  weakWords: new Set(extra.weakWords ?? []),
   sequences: extra.sequences ?? [],
   pieces: extra.pieces ? new Map(Object.entries(extra.pieces)) : undefined,
 })
 
 // Ordem de prioridade: vence a primeira família que tiver alguma palavra no nome.
 const FAMILY_RULES: readonly FamilyRule[] = [
-  rule('click', ['CLICK', 'CLIQUE', 'CLK', 'METRO', 'METRONOMO', 'METRONOME', 'MTR', 'TEMPO', 'BEAT']),
-  rule('guia', ['GUIA', 'GUIDE', 'GUIDES', 'CUE', 'CUES']),
+  // BEAT e TEMPO são fracas: "Ambient Beat Pad" é Pad, mas "Beat" sozinho é Click.
+  rule('click', ['CLICK', 'CLICKS', 'CLIQUE', 'CLK', 'METRO', 'METRONOMO', 'METRONOME', 'MTR'], {
+    weakWords: ['TEMPO', 'BEAT'],
+  }),
+  rule('guia', ['GUIA', 'GUIAS', 'GUIDE', 'GUIDES', 'CUE', 'CUES']),
   rule('backing', ['BV', 'BVS', 'BGV', 'BGVS', 'BACKING', 'BACKINGS', 'CORO', 'CHOIR'], {
     sequences: [['BACK', 'VOCAL'], ['BACK', 'VOX']],
   }),
@@ -96,9 +106,9 @@ const FAMILY_RULES: readonly FamilyRule[] = [
   rule('pad', ['PAD', 'PADS']),
   rule('teclado', ['KEY', 'KEYS', 'KEYBOARD', 'KEYBOARDS', 'TECLADO', 'TECLADOS', 'TECL', 'TEC', 'SYNTH',
     'SYNTHS', 'SYN', 'ORGAN', 'ORGAO', 'RHODES', 'WURLI', 'EP']),
-  rule('bateria', ['DRUMS', 'DRUM', 'DRM', 'BATERIA', 'BAT', 'KIT'], {
+  rule('bateria', ['DRUMS', 'DRUM', 'DRM', 'BATERIA', 'BATERIAS', 'BAT', 'KIT', 'DRUMSET', 'DRUMKIT'], {
     pieces: {
-      KICK: 'Bumbo', SNARE: 'Caixa', HAT: 'Chimbal', HIHAT: 'Chimbal', HH: 'Chimbal',
+      KICK: 'Bumbo', BASSDRUM: 'Bumbo', SNARE: 'Caixa', HAT: 'Chimbal', HIHAT: 'Chimbal', HH: 'Chimbal',
       OH: 'Overhead', OVERHEAD: 'Overhead', OVERHEADS: 'Overhead', TOMS: 'Tons',
     },
   }),
@@ -141,9 +151,36 @@ function stripFileName(raw: string): string {
   return name.replace(EXPORT_SUFFIX, '').trim()
 }
 
-// Sem acento, caixa alta, letras separadas de números ("GTR1" vira GTR e 1).
+// Virada de minúscula pra maiúscula (camelCase): "ClickTrack" quebra em Click e Track.
+// Sigla toda em maiúscula ("GTR", "BVS") não tem virada e não quebra.
+const CAMEL_CASE_TURN = /(\p{Ll})(\p{Lu})/gu
+
+// Compostos que viram um token só antes do casamento, porque mudam a família:
+// "BASS DRUM" é o bumbo da bateria, não o baixo.
+const COMPOUNDS: readonly { parts: readonly string[]; token: string }[] = [
+  { parts: ['BASS', 'DRUM'], token: 'BASSDRUM' },
+]
+
+function mergeCompounds(tokens: string[]): string[] {
+  const out: string[] = []
+  for (let i = 0; i < tokens.length;) {
+    const compound = COMPOUNDS.find(({ parts }) => parts.every((part, k) => tokens[i + k] === part))
+    if (compound) {
+      out.push(compound.token)
+      i += compound.parts.length
+    } else {
+      out.push(tokens[i])
+      i += 1
+    }
+  }
+  return out
+}
+
+// camelCase quebrado, sem acento, caixa alta, letras separadas de números ("GTR1" vira GTR e 1).
 function tokenize(cleaned: string): string[] {
-  return cleaned.normalize('NFD').replace(/\p{M}/gu, '').toUpperCase().match(/\p{L}+|\p{N}+/gu) ?? []
+  const tokens = cleaned.replace(CAMEL_CASE_TURN, '$1 $2').normalize('NFD').replace(/\p{M}/gu, '')
+    .toUpperCase().match(/\p{L}+|\p{N}+/gu) ?? []
+  return mergeCompounds(tokens)
 }
 
 // Índices dos tokens que casaram a família (palavra inteira ou sequência de palavras).
@@ -162,12 +199,24 @@ function familyHits(tokens: readonly string[], familyRule: FamilyRule): Set<numb
   return hits
 }
 
+function weakHits(tokens: readonly string[], familyRule: FamilyRule): Set<number> {
+  const hits = new Set<number>()
+  tokens.forEach((token, i) => {
+    if (familyRule.weakWords.has(token)) hits.add(i)
+  })
+  return hits
+}
+
+// 1ª passada: palavras de família, na ordem de prioridade. 2ª passada (só se nenhuma
+// família apareceu): palavras fracas, como BEAT e TEMPO do Click.
 function matchFamily(raw: string, ignoreRoleFamilies: boolean) {
   const tokens = tokenize(stripFileName(raw))
-  for (const familyRule of FAMILY_RULES) {
-    if (ignoreRoleFamilies && ROLE_FAMILIES.has(familyRule.family)) continue
-    const hits = familyHits(tokens, familyRule)
-    if (hits.size > 0) return { familyRule, tokens, hits }
+  const candidates = FAMILY_RULES.filter((familyRule) => !(ignoreRoleFamilies && ROLE_FAMILIES.has(familyRule.family)))
+  for (const pass of [familyHits, weakHits]) {
+    for (const familyRule of candidates) {
+      const hits = pass(tokens, familyRule)
+      if (hits.size > 0) return { familyRule, tokens, hits }
+    }
   }
   return undefined
 }
@@ -214,11 +263,9 @@ function fitWholeWords(words: readonly string[], max: number): string {
   return out
 }
 
-// Quebras de palavra do rótulo, além do espaço: `_`, `-`, `.` e a virada de
-// minúscula pra maiúscula (camelCase). Sigla toda em maiúscula não quebra;
-// `/` fica como está ("Outros/Fx").
+// Quebras de palavra do rótulo, além do espaço: `_`, `-`, `.` e a virada camelCase
+// (CAMEL_CASE_TURN). Sigla toda em maiúscula não quebra; `/` fica como está ("Outros/Fx").
 const LABEL_SEPARATOR = /[_.-]/g
-const CAMEL_CASE_TURN = /(\p{Ll})(\p{Lu})/gu
 
 // Rótulo de nome não reconhecido: "MASTER_1" vira Master, "Track 5" continua Track 5,
 // "Intro-Loop" e "IntroLoop" viram Intro Loop.
