@@ -1,8 +1,9 @@
 import { X, MonitorSpeaker, RefreshCcw, Download } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../hooks/useAuth';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { Channel } from '../types';
+import { buildChannelLabels } from '../lib/channelNames';
 import { PricingModal } from './PricingModal';
 import { supabase } from '../lib/supabase';
 import { planDisplayName, isPaidPlan, maxSeparationsPerMonth } from '../lib/plans';
@@ -43,6 +44,14 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
     }, [user]);
 
     const isAdmin = isAdminEmail(user?.email);
+
+    // Nome organizado de cada canal, só pra exibição (o original segue em ch.name).
+    // Fechado, não calcula: os canais mudam a cada mexida no mixer.
+    const labelById = useMemo(() => {
+        const map = new Map<string, string>();
+        if (isOpen) for (const l of buildChannelLabels(channels)) map.set(l.id, l.label);
+        return map;
+    }, [isOpen, channels]);
 
     if (!isOpen) return null;
 
@@ -192,10 +201,10 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                                 <>
                             <p className="text-text-muted text-[10px] mb-4 font-mono">Define para qual bus estéreo cada canal é roteado. Bus 1 = L, Bus 2 = R, 1/2 = Estéreo.</p>
                                     {channels.map(ch => (
-                                        <div key={ch.id} className="flex items-center justify-between py-2.5 border-b border-border last:border-b-0">
-                                            <span className="text-white font-bold text-xs font-mono uppercase tracking-wider">{ch.name}</span>
+                                        <div key={ch.id} className="flex items-center justify-between gap-3 py-2.5 border-b border-border last:border-b-0">
+                                            <span title={ch.name} className="min-w-0 break-words text-white font-bold text-xs font-mono uppercase tracking-wider">{labelById.get(ch.id) ?? ch.name}</span>
                                             <select
-                                                className="daw-input text-white text-[10px] font-bold py-1 px-2 rounded-md cursor-pointer font-mono"
+                                                className="daw-input shrink-0 text-white text-[10px] font-bold py-1 px-2 rounded-md cursor-pointer font-mono"
                                                 value={ch.bus}
                                                 onChange={(e) => onSetChannelBus(ch.id, e.target.value as '1' | '2' | '1/2')}
                                             >
