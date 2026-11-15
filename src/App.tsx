@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback, lazy, Suspense } from 'react'
+import { useRef, useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
 import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut, Shield, Home, Disc, Repeat, Square, Menu, Server } from 'lucide-react'
 const AdminApp = lazy(() => import('./admin/AdminApp'))
 import { BrandLogo } from './components/BrandLogo'
@@ -59,6 +59,8 @@ import { supabase, updateSongMarkers as saveMkToCloud, fetchSongs as fetchCloudS
 import { LyricsEditor } from './components/LyricsEditor'
 import { useNetworkStatus } from './hooks/useNetworkStatus'
 import { useLiveSync } from './hooks/useLiveSync'
+import { buildChannelLabels, FAMILY_COLOR, type ChannelLabel } from './lib/channelNames'
+import { channelGain, isSilencedBySolo, pickMainChannel } from './lib/channelRoles'
 
 export default function App() {
   const { user, loading, signOut, userPlan } = useAuth()
@@ -174,6 +176,12 @@ export default function App() {
     ? { name: _next.name, originalKey: _next.originalKey ?? null, pitch: _next.pitch ?? 0, bpm: _next.bpm ?? null }
     : null
 
+  // Rótulo organizado e cor de cada canal pela regra central. O nome original segue em `ch.name`.
+  const channelLabels: Map<string, ChannelLabel> = useMemo(
+    () => new Map(buildChannelLabels(channels).map((l) => [l.id, l])),
+    [channels],
+  )
+
   const { isFollowerMode, isConnected, followerState, sendCommand } = useLiveSync({
     isPlaying,
     currentTime,
@@ -188,7 +196,8 @@ export default function App() {
     approvedIps,
     setlist: playlist.map((s) => s.name),
     activeIndex: activeSongIndex,
-    channels: channels.map((c) => ({ id: c.id, name: c.name, volume: c.volume, muted: c.muted, soloed: c.soloed })),
+    // O celular da banda vê o mesmo nome organizado do mixer.
+    channels: channels.map((c) => ({ id: c.id, name: channelLabels.get(c.id)?.label ?? c.name, volume: c.volume, muted: c.muted, soloed: c.soloed })),
     activePad: activeNote,
     padVolume,
     pitch: playlist[activeSongIndex]?.pitch || 0,
@@ -376,18 +385,6 @@ export default function App() {
   const analysersRef = useRef<Record<string, AnalyserNode>>({})
   const vuAnimRef = useRef<number>(0)
 
-  // ── Instrument group classification ──
-  const getChannelGroup = useCallback((name: string): { group: string; color: string; order: number } => {
-    const n = name.toLowerCase()
-    if (n.includes('click') || n.includes('metronom') || n.includes('metro')) return { group: 'Click', color: '#94a3b8', order: 0 }
-    if (n.includes('vocal') || n.includes('voz') || n.includes('guia') || n.includes('guide') || n.includes('voc')) return { group: 'Vocais', color: '#06b6d4', order: 1 }
-    if (n.includes('drum') || n.includes('bater') || n.includes('perc') || n.includes('kick') || n.includes('snare') || n.includes('hat')) return { group: 'Bateria', color: '#f59e0b', order: 2 }
-    if (n.includes('bass') || n.includes('baixo') || n.includes('sub')) return { group: 'Baixo', color: '#10b981', order: 3 }
-    if (n.includes('eg') || n.includes('guitar') || n.includes('guit') || n.includes('ag') || n.includes('violao') || n.includes('violão')) return { group: 'Guitarra', color: '#ef4444', order: 4 }
-    if (n.includes('piano') || n.includes('synth') || n.includes('pad') || n.includes('keys') || n.includes('tecl') || n.includes('organ') || n.includes('rhodes')) return { group: 'Teclado', color: '#8b5cf6', order: 5 }
-    return { group: 'Outros', color: '#ec4899', order: 6 }
-  }, [])
-
   // ── VU Meter animation loop ──
   useEffect(() => {
     if (!isPlaying || channels.length === 0) {
@@ -409,6 +406,10 @@ export default function App() {
       }
     })
 
+    // Ganho de cada canal pela mesma regra do motor (M, Solo, Click e Guia fora do Solo).
+    // Calculado uma vez por mudança nos canais, não a cada quadro.
+    const gainById = new Map(channels.map((ch) => [ch.id, channelGain(ch, channels)]))
+
     const updateVU = () => {
       const levels: Record<string, number> = {}
       let masterPeak = 0
@@ -425,9 +426,7 @@ export default function App() {
         }
         levels[ch.id] = chLevel
 
-        if (!ch.muted && (!channels.some(c => c.soloed) || ch.soloed)) {
-          masterPeak = Math.max(masterPeak, chLevel * ch.volume)
-        }
+        masterPeak = Math.max(masterPeak, chLevel * (gainById.get(ch.id) ?? 0))
       })
       
       levels['master'] = masterPeak * masterVolume
@@ -1351,7 +1350,7 @@ export default function App() {
                 currentMarkerId={currentMarker?.id || null}
                 currentTime={currentTime}
                 duration={duration}
-                waveBuffer={(channels.find(c => { const n = c.name.toLowerCase(); return !n.includes('click') && !n.includes('metronomo') && !n.includes('guia') && !n.includes('guide'); }) || channels[0])?.buffer || null}
+                waveBuffer={(pickMainChannel(channels) ?? channels[0])?.buffer || null}
                 bpm={playlist[activeSongIndex].bpm}
                 activeLoop={activeLoop}
                 pendingJump={pendingJump}
@@ -1528,8 +1527,11 @@ export default function App() {
               onMouseDown={onMixerMouseDown} onMouseMove={onMixerMouseMove} onMouseUp={onMixerMouseUp} onMouseLeave={onMixerMouseUp}>
 
             {channels.map((ch, idx) => {
-              const grp = getChannelGroup(ch.name)
-              const isMutedByOther = (channels.some(c => c.soloed) && !ch.soloed) || ch.muted
+              const chLabel = channelLabels.get(ch.id)
+              const chColor = chLabel?.color ?? FAMILY_COLOR.desconhecido
+              const chName = chLabel?.label ?? ch.name
+              // Click e Guia continuam tocando com Solo em outro canal; o M vale pra todos.
+              const isMutedByOther = ch.muted || isSilencedBySolo(ch, channels)
               return (
               <div key={ch.id}
                 draggable={isChannelEditMode}
@@ -1539,16 +1541,16 @@ export default function App() {
                 onDragEnd={onChDragEnd}
                 className={`channel-strip [width:var(--strip-w,6rem)] snap-start h-full min-h-0 rounded-md flex flex-col items-center p-1.5 sm:p-2 pt-1 flex-shrink-0 relative overflow-hidden ${isChannelEditMode ? 'cursor-grab active:cursor-grabbing' : ''} ${isChannelEditMode && chDragOverIdx === idx ? 'border-primary border-2' : ''} ${isChannelEditMode && chDragIdx === idx ? 'opacity-40' : ''}`}>
                 {/* Group color strip */}
-                <div className="channel-group-strip" style={{ backgroundColor: grp.color }}></div>
+                <div className="channel-group-strip" style={{ backgroundColor: chColor }}></div>
 
                 {/* Active glow */}
                 {(isPlaying && ch.volume > 0 && !isMutedByOther) && (
-                  <div className="absolute inset-0 rounded-md pointer-events-none" style={{ border: `1px solid ${grp.color}15` }}></div>
+                  <div className="absolute inset-0 rounded-md pointer-events-none" style={{ border: `1px solid ${chColor}15` }}></div>
                 )}
 
-                {/* Channel Label */}
-                <div className="font-bold text-[8px] sm:text-[9px] tracking-[0.08em] truncate w-full text-center mb-1.5 short:mb-0.5 uppercase font-mono mt-1 short:mt-0.5" style={{ color: grp.color }} title={ch.name}>
-                  {ch.name.length > 8 ? ch.name.substring(0, 8) + '..' : ch.name}
+                {/* Nome do canal: sempre inteiro, quebra linha (até trecho único sem espaço) em vez de cortar */}
+                <div className="w-full text-center text-[9px] sm:text-[10px] font-semibold leading-[11px] min-h-[22px] wrap-anywhere mt-1 mb-1.5 short:mt-0.5 short:mb-0.5" style={{ color: chColor }} title={`${chName} (arquivo: ${ch.name})`}>
+                  {chName}
                 </div>
 
                 {/* Pan Knob container */}
@@ -1592,7 +1594,7 @@ export default function App() {
                         height: `${(ch.volume / 1.2) * 100}%`, 
                         background: isMutedByOther
                           ? 'linear-gradient(to top, rgba(239,68,68,0.4), rgba(239,68,68,0.1))'
-                          : `linear-gradient(to top, ${grp.color}66, ${grp.color}15)`
+                          : `linear-gradient(to top, ${chColor}66, ${chColor}15)`
                       }}></div>
                     </div>
                     <div className="logic-fader-knob absolute pointer-events-none transition-all duration-75 z-20" style={{ bottom: `calc(${(ch.volume / 1.2) * 100}% - var(--knob-half, 26px))` }}>
