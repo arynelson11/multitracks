@@ -1,6 +1,20 @@
+// Papel do canal no palco. Click e Guia continuam tocando com outro canal em
+// Solo e ficam fora da troca de tom. Campo ausente no canal quer dizer
+// automático (o papel vem do nome do arquivo).
+export type ChannelRole = 'click' | 'guide' | 'normal'
+
+// Ordem dos canais da música. 'auto' segue a ordem padrão por família;
+// 'manual' mantém a ordem que o usuário arrumou. Campo ausente quer dizer automático.
+export type ChannelOrderMode = 'auto' | 'manual'
+
 export interface Channel {
     id: string;
+    // Nome original do arquivo. Nunca é sobrescrito: o nome organizado é só exibição.
     name: string;
+    // Nome escolhido pelo usuário. Ausente quer dizer nome automático.
+    customName?: string;
+    // Papel escolhido pelo usuário. Ausente quer dizer papel automático.
+    role?: ChannelRole;
     buffer: AudioBuffer;
     file?: File;
     // Para músicas baixadas da nuvem: ponteiro pro stem no cache offline
@@ -27,6 +41,8 @@ export interface Song {
     name: string;
     coverImage?: string;
     channels: Channel[];
+    // Modo de ordem dos canais. Ausente quer dizer automático.
+    channelOrder?: ChannelOrderMode;
     duration: number;
     pitch?: number;
     originalKey?: string | null;
