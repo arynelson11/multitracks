@@ -177,7 +177,8 @@ const FPS = 200;
 /** Período da grade: 0,5 s (100 quadros, 120 BPM). */
 const PERIODO = 0.5;
 const TEMPOS = 64;
-const QUADROS = TEMPOS * PERIODO * FPS + 10;
+// Termina antes do tempo 64: todo tempo do compasso entra o mesmo número de vezes.
+const QUADROS = TEMPOS * PERIODO * FPS - 5;
 
 /**
  * Onset com um ataque em cada tempo `k` da grade (contado de 0,000) e o peso que
@@ -256,6 +257,30 @@ describe('chooseDownbeat: a ordem dos votos', () => {
       for (let d = 8; d <= 18; d++) lento[x + d] = 1;
     }
     expect(chooseDownbeat(bumboNo3, PERIODO, 0, 4, { harmony: [bandas({ full: lento })] })).toBe(0);
+  });
+
+  // A música do relatório com projeto do Ableton: um teclado de ataque rápido no 1, com
+  // notas logo depois dos outros tempos. Lido só na janela depois do tempo, ele ficava
+  // plano, não votava, e o desempate por onde a bateria começa errava.
+  it('teclado de ataque rápido no 1 vota mesmo com notas logo depois dos outros tempos (a janela não achata)', () => {
+    const entraNo3 = bandas({ full: onset(porTempo([1, 1, 1, 1], 6)), kick: onset(porTempo([1, 0, 1, 0], 4)) });
+    const teclado = onset(porTempo([1.34, 0.88, 0.91, 0.87]));
+    // Nota de 2 quadros a 60 ms de cada tempo (a janela lê entre quadros).
+    for (let k = 0; k < TEMPOS; k++) teclado.fill(1.2, k * PERIODO * FPS + 12, k * PERIODO * FPS + 14);
+    expect(chooseDownbeat(entraNo3, PERIODO, 0, 4)).toBe(2);
+    expect(chooseDownbeat(entraNo3, PERIODO, 0, 4, { harmony: [bandas({ full: teclado })] })).toBe(0);
+  });
+
+  // A música do relatório sem projeto: baixo e harmonia sem marcar o compasso e o
+  // bumbo mais forte no 1 com folga, mas a menos de 25% de outros dois tempos; a
+  // bateria entra no 2. Com baixo e harmonia presentes, o bumbo que lidera decide.
+  it('baixo e harmonia que não marcam o compasso: o bumbo que lidera com folga decide, não onde a bateria começa', () => {
+    const entraNo2 = bandas({ full: onset(porTempo([1, 1, 1, 1], 1)), kick: onset(porTempo([1.3, 1.06, 1, 0.74], 1)) });
+    const baixoPlano = bandas({ full: onset(porTempo([0.98, 1.02, 1, 1])) });
+    const padPlano = bandas({ full: onset(porTempo([1.03, 0.97, 1, 1])) });
+    expect(chooseDownbeat(entraNo2, PERIODO, 0, 4, { bass: baixoPlano, harmony: [padPlano] })).toBe(0);
+    // Só com a bateria (o Separador e o Metrônomo de hoje) fica o desempate de antes.
+    expect(chooseDownbeat(entraNo2, PERIODO, 0, 4)).toBe(1);
   });
 
   it('voto plano (desvio de até 0,2) não vota e o desempate por onde a bateria começa continua', () => {
