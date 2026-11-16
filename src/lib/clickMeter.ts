@@ -14,22 +14,27 @@
 //    cruzamentos por zero (acento mais agudo, `bright`). Cada traço é dividido em 2 grupos
 //    (2-médias) com o limiar no meio das médias. Médias a menos de 10% uma da outra quer
 //    dizer ataques iguais: o traço não marca acento.
-// 4. Compasso: pra m em 3, 4, 5, 6, 7 e 12, nessa ordem, e pra cada traço que marca acento,
+// 4. Compasso: pra m em 3, 4, 5, 6, 7, 8 e 12, nessa ordem, e pra cada traço que marca acento,
 //    vale o primeiro m com exatamente uma fase com pelo menos 80% de acentuados, todas as
-//    outras com no máximo 20%, e pelo menos 4 ataques (4 compassos) nessa fase.
-//
-// Compasso composto (6/8 e 12/8): a grade sai sempre em colcheias, que é o pulso do 6/8 no
-// palco (6 pulsos por compasso, contagem de 3 em 3). Ver compoundReading.
+//    outras com no máximo 20%, e pelo menos 4 ataques (4 compassos) nessa fase. A mesma regra
+//    com m = 2 mostra o acento em cada tempo de um click em colcheias.
+// 5. Tempo e subdivisão (ver interpret): o BPM sai em TEMPOS (semínima no simples, semínima
+//    pontuada no 6/8 e no 12/8) e `subdivision` diz quantos pulsos do click cabem num tempo.
+//    O compasso e o BPM salvos da música desempatam quando o acento deixa duas leituras.
 import { isCompound, pulsesPerBar as signaturePulses, type TimeSignature } from './stageContracts'
 
 export interface ClickAnalysis {
-  /** Pulsos do click por minuto, com decimais. */
+  /** Tempos por minuto, com decimais: semínima no compasso simples, semínima pontuada no composto. */
   bpm: number
-  /** Primeiro pulso da grade, em segundos do arquivo (na reta ajustada). */
+  /** Pulsos do click por tempo: 1 (o click toca o tempo), 2 (colcheias no simples) ou 3 (colcheias no composto). */
+  subdivision: 1 | 2 | 3
+  /** O tempo é a semínima pontuada (leitura em 6/8 ou 12/8). */
+  compound: boolean
+  /** Primeiro tempo da grade, em segundos do arquivo (na reta ajustada): o pulso do click que cai num tempo. */
   firstPulse: number
   /**
-   * Pulsos por compasso lidos no acento: 3, 4, 5, 6, 7 ou 12. Nulo sem acento que feche um
-   * compasso. Com compasso composto conhecido, conta em colcheias (6 ou 12).
+   * Compasso lido no acento, no número de pulsos do `TimeSignature` (3, 4, 5, 6, 7 ou 12, que
+   * são 3/4, 4/4, 5/4, 6/8, 7/8 e 12/8). Nulo sem acento que feche um compasso.
    */
   pulsesPerBar: number | null
   /** Primeiro "1" em segundos do arquivo (na reta ajustada). Nulo junto com `pulsesPerBar`. */
@@ -70,12 +75,19 @@ const DOWNBEAT_MIN_SHARE = 0.8
 const OTHER_MAX_SHARE = 0.2
 /** Ataques mínimos na fase do "1" (compassos inteiros vistos). */
 const MIN_BARS = 4
-/** Pulsos por compasso tentados, nessa ordem (3 antes de 6 e 12; 4 antes de 12). */
-const BAR_CANDIDATES = [3, 4, 5, 6, 7, 12] as const
+/** Pulsos por compasso tentados, nessa ordem (3 antes de 6 e 12; 4 antes de 8 e 12). */
+const BAR_CANDIDATES = [3, 4, 5, 6, 7, 8, 12] as const
 /**
- * Com 6/8 ou 12/8 conhecido e nenhum acento que diga a unidade do click: pulso mais lento
- * que isto é semínima pontuada (como colcheia daria uma pontuada abaixo de 33 por minuto);
- * a partir disto é colcheia (como pontuada daria colcheias acima de 300 por minuto).
+ * Acento a cada 2 ou a cada 8 pulsos só vira colcheia (subdivisão 2) com o pulso a partir
+ * disto: colcheia mais lenta daria semínima abaixo de 50 por minuto.
+ */
+const MIN_SUBDIVIDED_PULSE_BPM = 100
+/** O BPM salvo da música desempata quando bate com pulsos / 1, 2 ou 3 até esta fração. */
+const KNOWN_BPM_TOLERANCE = 0.03
+/**
+ * Com 6/8 ou 12/8 conhecido: pulso mais lento que isto é semínima pontuada (como colcheia
+ * daria uma pontuada abaixo de 33 por minuto); a partir disto é colcheia (como pontuada daria
+ * colcheias acima de 300 por minuto).
  */
 const DOTTED_PULSE_MAX_BPM = 100
 
@@ -87,6 +99,8 @@ interface MeterReading {
   m: number
   phase: number
   trait: AccentTrait
+  /** O 6 saiu do acento a cada 3 com o 1 mais forte que o 4 (prova de 6/8 em colcheias). */
+  compoundEvidence: boolean
 }
 
 /** Ataque que caiu na grade: amostra onde começa e índice do pulso. */
@@ -308,59 +322,127 @@ function readMeter(grid: GridOnset[], traits: Record<AccentTrait, number[]>, mar
       if (phase === null) continue
       if (m === 3) {
         const half = compoundHalf(grid, traits[trait], phase)
-        if (half !== null) return { m: 6, phase: phase + 3 * half, trait }
+        if (half !== null) return { m: 6, phase: phase + 3 * half, trait, compoundEvidence: true }
       }
-      return { m, phase, trait }
+      return { m, phase, trait, compoundEvidence: false }
     }
   }
   return null
 }
 
-/** Acento a cada 2 pulsos (o compasso de 2 semínimas pontuadas do 6/8). */
+/** Acento a cada 2 pulsos: os tempos de um click em colcheias (ou o compasso de 2 pontuadas do 6/8). */
 function readTwoPulseBar(grid: GridOnset[], marks: TraitMarks): MeterReading | null {
   for (const [trait, traitMarks] of marks) {
     if (!traitMarks) continue
     const phase = downbeatPhase(grid, traitMarks, 2)
-    if (phase !== null) return { m: 2, phase, trait }
+    if (phase !== null) return { m: 2, phase, trait, compoundEvidence: false }
   }
   return null
 }
 
-/**
- * Com 6/8 ou 12/8 conhecido (salvo ou escolhido no EDITAR), a leitura sai em colcheias:
- * - click em colcheias: o acento fecha o compasso, a metade ou um quarto dele (de 3 em 3
- *   colcheias); o compasso é o conhecido (6 ou 12 pulsos) e o "1" é o primeiro acentuado
- *   (com o 1 e o 4 iguais, ele pode cair no 4);
- * - click em semínima pontuada (pulso abaixo de DOTTED_PULSE_MAX_BPM): o acento fecha 2
- *   pulsos (6/8) ou 4 (12/8); o BPM vira colcheia (x3) e o "1" é o pulso acentuado; sem
- *   acento que feche o compasso, o BPM vira colcheia e o "1" fica nulo;
- * - pulso a partir de DOTTED_PULSE_MAX_BPM sem acento de colcheia: fica como está, sem "1".
- */
-function compoundReading(
-  base: ClickAnalysis, grid: GridOnset[], marks: TraitMarks, meter: MeterReading | null,
-  signature: TimeSignature, downbeatTime: (r: MeterReading) => number,
-): ClickAnalysis {
-  const eighths = signaturePulses(signature)
-  const dotted = eighths / 3
-  const asDotted = { ...base, bpm: base.bpm * 3 }
-  if (meter && meter.m % 3 === 0 && eighths % meter.m === 0) {
-    return { ...base, pulsesPerBar: eighths, firstDownbeat: downbeatTime(meter), accent: meter.trait }
+/** Leitura final: subdivisão, tempo simples ou composto, compasso e de onde vem o "1". */
+interface Interpretation {
+  subdivision: 1 | 2 | 3
+  compound: boolean
+  /** Compasso no número de pulsos do `TimeSignature`, ou nulo. */
+  meter: number | null
+  /** Acento que dá o "1" (fase nos pulsos do click), ou nulo. */
+  downbeat: MeterReading | null
+  /** Pulso do click (índice mod subdivisão) que cai no tempo. */
+  beatPhase: number
+}
+
+/** 1, 2 ou 3 quando o BPM salvo bate com pulsos / esse número; nulo sem BPM salvo ou sem bater. */
+function knownRatio(pulseBpm: number, knownBpm: number | null | undefined): 1 | 2 | 3 | null {
+  if (typeof knownBpm !== 'number' || !Number.isFinite(knownBpm) || knownBpm <= 0) return null
+  for (const k of [1, 2, 3] as const) {
+    if (Math.abs(pulseBpm / k - knownBpm) <= KNOWN_BPM_TOLERANCE * knownBpm) return k
   }
-  // Pontuada a 100 por minuto ou mais daria colcheias acima de 300: aí é colcheia, com o
-  // acento marcando outra coisa (um 4/4 em colcheias com o compasso salvo errado, por exemplo).
-  if (base.bpm >= DOTTED_PULSE_MAX_BPM) return base
-  const dottedMeter = meter?.m === dotted ? meter : dotted === 2 ? readTwoPulseBar(grid, marks) : null
-  if (dottedMeter) return { ...asDotted, pulsesPerBar: eighths, firstDownbeat: downbeatTime(dottedMeter), accent: dottedMeter.trait }
-  return asDotted
+  return null
+}
+
+function interpretation(subdivision: 1 | 2 | 3, compound: boolean, meter: number | null, downbeat: MeterReading | null, beat: MeterReading | null = downbeat): Interpretation {
+  return { subdivision, compound, meter, downbeat, beatPhase: beat ? beat.phase % subdivision : 0 }
 }
 
 /**
- * Lê BPM (com decimais), primeiro pulso e compasso na faixa de click.
- * `knownSignature` é o compasso que a música já tem (salvo ou escolhido no EDITAR): só o
- * composto (6/8, 12/8) muda a leitura, pra grade sair em colcheias mesmo com o click em
- * semínima pontuada. Nulo com menos de 4 s, menos de 8 ataques ou sem pulso regular.
+ * Com 6/8 ou 12/8 conhecido (salvo ou escolhido no EDITAR), o andamento diz a unidade do click:
+ * - pulso a partir de DOTTED_PULSE_MAX_BPM: colcheias (subdivisão 3); o acento de 3 em 3, de
+ *   6 em 6 ou de 12 em 12 colcheias dá o compasso e o "1" (com o 1 e o 4 iguais, o "1" pode
+ *   cair no 4);
+ * - pulso mais lento: semínima pontuada (subdivisão 1); o acento fechando 2 pulsos (6/8) ou 4
+ *   (12/8) dá o compasso e o "1".
+ * Sem acento que feche o compasso, o compasso fica nulo (o salvo vale na grade).
  */
-export function analyzeClickTrack(samples: Float32Array, sampleRate: number, knownSignature?: TimeSignature | null): ClickAnalysis | null {
+function compoundFrame(pulseBpm: number, bar: MeterReading | null, two: MeterReading | null, eighths: number): Interpretation {
+  if (pulseBpm >= DOTTED_PULSE_MAX_BPM) {
+    const fits = bar !== null && bar.m % 3 === 0 && eighths % bar.m === 0
+    return interpretation(3, true, fits ? eighths : null, fits ? bar : null)
+  }
+  const dotted = eighths / 3
+  const dottedBar = bar?.m === dotted ? bar : dotted === 2 ? two : null
+  return interpretation(1, true, dottedBar ? eighths : null, dottedBar)
+}
+
+/** Acento que fecha um compasso de `bar.m` pulsos, sem compasso conhecido que decida. */
+function fromBar(pulseBpm: number, bar: MeterReading, two: MeterReading | null, k: 1 | 2 | 3 | null): Interpretation {
+  switch (bar.m) {
+    case 6:
+      // 6/8 em colcheias, 3/4 em colcheias ou 3/4 com acento de 2 em 2 compassos.
+      if (bar.compoundEvidence || k === 3) return interpretation(3, true, 6, bar)
+      if (k === 2 || two) return interpretation(2, false, 3, bar)
+      if (k === 1) return interpretation(1, false, 3, bar)
+      return interpretation(3, true, 6, bar)
+    case 8: {
+      // 4/4 em colcheias, ou 4/4 com acento de 2 em 2 compassos (BPM salvo igual aos pulsos).
+      const s = k === 1 || k === 2 ? k : two || pulseBpm >= MIN_SUBDIVIDED_PULSE_BPM ? 2 : 1
+      return interpretation(s, false, 4, bar)
+    }
+    case 12:
+      return interpretation(3, true, 12, bar)
+    default:
+      return interpretation(1, false, bar.m, bar)
+  }
+}
+
+/**
+ * Etapa 5. Ordem: compasso composto conhecido (compoundFrame); compasso simples conhecido com
+ * o acento fechando 1, 2 ou 3 pulsos por tempo; o acento sozinho (fromBar), com o BPM salvo
+ * desempatando; sem acento de compasso, o acento a cada 2 pulsos (colcheias com cada tempo
+ * acentuado) e o BPM salvo dizem a subdivisão.
+ */
+function interpret(
+  pulseBpm: number, bar: MeterReading | null, two: MeterReading | null,
+  knownSignature: TimeSignature | null | undefined, knownBpm: number | null | undefined,
+): Interpretation {
+  if (knownSignature && isCompound(knownSignature)) return compoundFrame(pulseBpm, bar, two, signaturePulses(knownSignature))
+  const k = knownRatio(pulseBpm, knownBpm)
+  if (bar) {
+    const beats = knownSignature ? signaturePulses(knownSignature) : null
+    if (beats !== null && bar.m % beats === 0 && bar.m / beats <= 3) {
+      const ratio = bar.m / beats
+      const s = k !== null && bar.m % (k * beats) === 0 ? k : ratio
+      return interpretation(s as 1 | 2 | 3, false, beats, bar)
+    }
+    return fromBar(pulseBpm, bar, two, k)
+  }
+  if (two) {
+    const s = k === 1 || k === 2 ? k : pulseBpm >= MIN_SUBDIVIDED_PULSE_BPM ? 2 : 1
+    return interpretation(s, false, null, null, two)
+  }
+  const s = k ?? 1
+  return interpretation(s, s === 3, null, null)
+}
+
+/**
+ * Lê BPM (em tempos, com decimais), subdivisão, primeiro tempo e compasso na faixa de click.
+ * `knownSignature` e `knownBpm` são o compasso e o BPM que a música já tem (salvos ou
+ * escolhidos no EDITAR); só desempatam leituras que o acento sozinho não decide. Nulo com
+ * menos de 4 s, menos de 8 ataques ou sem pulso regular.
+ */
+export function analyzeClickTrack(
+  samples: Float32Array, sampleRate: number, knownSignature?: TimeSignature | null, knownBpm?: number | null,
+): ClickAnalysis | null {
   if (!(sampleRate > 0) || samples.length < MIN_SECONDS * sampleRate) return null
   const detected = detectOnsets(samples, sampleRate)
   if (detected.length < MIN_ONSETS) return null
@@ -369,22 +451,21 @@ export function analyzeClickTrack(samples: Float32Array, sampleRate: number, kno
   const { grid, period, phase } = fit
   if (grid.length < MIN_ONSETS || grid.length < MIN_ON_GRID_SHARE * detected.length) return null
   const timeOf = (index: number) => (phase + period * index) / sampleRate
-  const result: ClickAnalysis = {
-    bpm: (60 * sampleRate) / period,
-    firstPulse: timeOf(grid[0].index),
-    pulsesPerBar: null,
-    firstDownbeat: null,
-    onsets: grid.length,
-    accent: null,
-  }
   const traits = onsetTraits(samples, grid, sampleRate)
   const marks: TraitMarks = [['loud', accentMarks(traits.loud)], ['bright', accentMarks(traits.bright)]]
-  const meter = readMeter(grid, traits, marks)
+  const pulseBpm = (60 * sampleRate) / period
+  const it = interpret(pulseBpm, readMeter(grid, traits, marks), readTwoPulseBar(grid, marks), knownSignature, knownBpm)
   // "1" = tempo (na reta) do primeiro ataque com índice ≡ fase (mod m).
-  const downbeatTime = (r: MeterReading) => timeOf(grid.find((o) => o.index % r.m === r.phase)!.index)
-  if (knownSignature && isCompound(knownSignature)) {
-    return compoundReading(result, grid, marks, meter, knownSignature, downbeatTime)
+  const downbeat = it.downbeat
+  const firstDownbeat = downbeat ? timeOf(grid.find((o) => o.index % downbeat.m === downbeat.phase)!.index) : null
+  return {
+    bpm: pulseBpm / it.subdivision,
+    subdivision: it.subdivision,
+    compound: it.compound,
+    firstPulse: timeOf(it.beatPhase),
+    pulsesPerBar: it.meter,
+    firstDownbeat,
+    onsets: grid.length,
+    accent: downbeat?.trait ?? null,
   }
-  if (!meter) return result
-  return { ...result, pulsesPerBar: meter.m, firstDownbeat: downbeatTime(meter), accent: meter.trait }
 }
