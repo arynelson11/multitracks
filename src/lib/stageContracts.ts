@@ -80,7 +80,7 @@ export type GridWarning = 'sem-grade' | 'sem-click-lido' | 'compasso-assumido'
 export const GRID_WARNING_TEXT: Record<GridWarning, { label: string; title: string }> = {
   'sem-grade': { label: 'SEM GRADE', title: 'Sem click e sem BPM salvo: o pulo cai na marca da seção, sem contagem.' },
   'sem-click-lido': { label: 'SEM CLICK LIDO', title: 'A contagem usa o BPM salvo da música. Confira o canal de click.' },
-  'compasso-assumido': { label: '4/4 ASSUMIDO', title: 'O click não tem acento no 1. Confira o compasso no EDITAR.' },
+  'compasso-assumido': { label: 'COMPASSO ASSUMIDO', title: 'O click não tem acento no 1. Confira o compasso no EDITAR.' },
 }
 
 // ---------- Intenção armada e linha do tempo ----------

@@ -66,8 +66,9 @@ describe('grade', () => {
     expect(gridHasPhase({ ...grid, source: 'bpm' })).toBe(false)
   })
   it('avisos da grade curtos e sem travessão', () => {
+    // 17 = "COMPASSO ASSUMIDO" (Ruling T3-label vence o limite de 16 do plano da T1).
     for (const w of Object.values(GRID_WARNING_TEXT)) {
-      expect(w.label.length).toBeLessThanOrEqual(16)
+      expect(w.label.length).toBeLessThanOrEqual(17)
       expect(w.label + w.title).not.toContain(TRAVESSAO)
     }
   })
@@ -75,7 +76,7 @@ describe('grade', () => {
     expect(GRID_WARNING_TEXT).toEqual({
       'sem-grade': { label: 'SEM GRADE', title: 'Sem click e sem BPM salvo: o pulo cai na marca da seção, sem contagem.' },
       'sem-click-lido': { label: 'SEM CLICK LIDO', title: 'A contagem usa o BPM salvo da música. Confira o canal de click.' },
-      'compasso-assumido': { label: '4/4 ASSUMIDO', title: 'O click não tem acento no 1. Confira o compasso no EDITAR.' },
+      'compasso-assumido': { label: 'COMPASSO ASSUMIDO', title: 'O click não tem acento no 1. Confira o compasso no EDITAR.' },
     })
   })
 })

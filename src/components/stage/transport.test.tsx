@@ -156,7 +156,7 @@ describe('aviso PRÓXIMA', () => {
     expect(desc!.textContent).toBe(GRID_WARNING_TEXT['sem-click-lido'].title)
     cleanup()
     renderPill({ gridWarning: 'compasso-assumido' })
-    expect(screen.getByText('4/4 ASSUMIDO').getAttribute('title')).toBe(GRID_WARNING_TEXT['compasso-assumido'].title)
+    expect(screen.getByText('COMPASSO ASSUMIDO').getAttribute('title')).toBe(GRID_WARNING_TEXT['compasso-assumido'].title)
     // Sem grade nenhuma o texto de espera já diz "no fim da seção": sem linha extra.
     cleanup()
     renderPill({ gridWarning: 'sem-grade', transition: { ...T, hasGrid: false, countTimes: [], countLabels: [], countTotal: 0 } })
