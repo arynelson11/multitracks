@@ -6,8 +6,8 @@ import { TWO_TAP_MIN_GAP_MS, TWO_TAP_WINDOW_MS, useTwoTapConfirm } from '../hook
 
 // Mesma ligação do mixer no App: um estado só pra todas as lixeiras da música.
 const CHANNELS = [{ id: 'a', label: 'Guitarra' }, { id: 'b', label: 'Baixo' }]
-function Mixer({ removeChannel }: { removeChannel: (id: string) => void }) {
-  const trash = useTwoTapConfirm(removeChannel)
+function Mixer({ removeChannel, songId = 's1' }: { removeChannel: (id: string) => void; songId?: string }) {
+  const trash = useTwoTapConfirm(removeChannel, { resetKey: songId })
   return (
     <>
       {CHANNELS.map((ch) => (
@@ -100,6 +100,22 @@ describe('lixeira do canal pede segundo toque', () => {
     expect([isArmed('Guitarra'), isArmed('Baixo')]).toEqual([false, true])
     fireEvent.click(trashOf('Guitarra'))
     expect(removeChannel).not.toHaveBeenCalled()
+  })
+  // Junção (R5): trocar de música desarma. Voltar pra música em menos de 3 s não
+  // encontra a lixeira ainda armada.
+  it('trocar de música desarma, e voltar logo não acha a lixeira armada', () => {
+    const removeChannel = vi.fn()
+    const { rerender } = render(<Mixer removeChannel={removeChannel} songId="s1" />)
+    fireEvent.click(trashOf('Guitarra'))
+    expect(isArmed('Guitarra')).toBe(true)
+    rerender(<Mixer removeChannel={removeChannel} songId="s2" />)
+    expect(isArmed('Guitarra')).toBe(false)
+    rerender(<Mixer removeChannel={removeChannel} songId="s1" />)
+    expect(isArmed('Guitarra')).toBe(false)
+    act(() => { vi.advanceTimersByTime(TWO_TAP_MIN_GAP_MS) })
+    fireEvent.click(trashOf('Guitarra'))
+    expect(removeChannel).not.toHaveBeenCalled()
+    expect(isArmed('Guitarra')).toBe(true)
   })
   it('Esc desarma', () => {
     const removeChannel = setup()

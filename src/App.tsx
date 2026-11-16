@@ -189,7 +189,8 @@ export default function App() {
   const sectionWaveBuffer = useMemo(() => (pickWaveformChannel(channels) ?? channels[0])?.buffer || null, [channels])
 
   // EDITAR CANAIS: lixeira com dois toques (o primeiro arma, o segundo em até 3 s apaga).
-  const channelTrash = useTwoTapConfirm(removeChannel)
+  // Trocar de música desarma (resetKey é a música ativa).
+  const channelTrash = useTwoTapConfirm(removeChannel, { resetKey: playlist[activeSongIndex]?.id })
 
   // EDITAR CANAIS: canal com o painel "Editar canal" aberto, preso à música em que abriu.
   const [editing, setEditing] = useState<{ channelId: string; songIndex: number } | null>(null)
