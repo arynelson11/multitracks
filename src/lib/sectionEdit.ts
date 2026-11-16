@@ -3,7 +3,7 @@
 // recebida nem as marcas dela. As operações são por `markerId` (a T29 traduz o índice do
 // bloco na tela com `markerIdForSpan`).
 import type { Marker } from '../types'
-import { colorForSection, normalizeSectionName } from './sectionTypes'
+import { colorForSection, defaultSectionName, normalizeSectionName } from './sectionTypes'
 import { barSeconds, markerIdForSpan, sanitizeGrid, sectionSpans, snapToBar } from './songGrid'
 import { gridHasPhase, type SongGrid } from './stageContracts'
 
@@ -37,11 +37,13 @@ function phaseGrid(grid: SongGrid | null): SongGrid | null {
 }
 
 /**
- * Marca uma seção em `time` (a posição ouvida), já encaixada na barra (`snapToBar`). Se já há
- * uma marca a menos de meio compasso (sem fase, 0,5 s), troca o nome e a cor dela (a mais perto)
- * em vez de criar outra; o tempo e o resto dela ficam. Nome limitado a 14 caracteres
- * (`normalizeSectionName`) e cor pelo tipo (`colorForSection`). Nome vazio ou tempo que não é
- * número não criam nada.
+ * Marca uma seção em `time` (a posição ouvida), já encaixada na barra (`snapToBar`), com nome
+ * limitado a 14 caracteres (`normalizeSectionName`) e cor pelo tipo (`colorForSection`). Se já
+ * há uma marca a menos de meio compasso (sem fase, 0,5 s), muda a mais perto em vez de criar
+ * outra; o tempo, o id e a letra dela ficam. MARCAR (`label` é um tipo) muda o TIPO dela: a cor
+ * vira a do tipo; o nome só acompanha quando ainda é o nome padrão de um tipo ("Verso 2" vira
+ * "Refrão 2"), e nome próprio fica como está (Ruling T16-nome-proprio). `label` que não é tipo
+ * é um nome dado por quem chamou e troca o nome. Nome vazio ou tempo que não é número não criam nada.
  */
 export function addSectionAt(markers: readonly Marker[], time: number, label: string, grid: SongGrid | null, newId: () => string): Marker[] {
   const name = normalizeSectionName(label)
@@ -57,9 +59,22 @@ export function addSectionAt(markers: readonly Marker[], time: number, label: st
   const color = colorForSection(name)
   if (hit) {
     const target = hit
-    return byTime(markers.map((m) => (m === target ? { ...m, label: name, color } : m)))
+    const relabeled = renamedForType(target.label, name)
+    return byTime(markers.map((m) => (m === target ? { ...m, label: relabeled, color } : m)))
   }
   return byTime([...markers, { id: newId(), time: t, label: name, color }])
+}
+
+/**
+ * Nome da seção que muda pro tipo `name`: nome padrão vira o padrão do tipo novo, com o mesmo
+ * número; nome próprio fica. Se `name` não é um tipo, é o nome novo.
+ */
+function renamedForType(old: string, name: string): string {
+  const type = defaultSectionName(name)
+  if (!type || type.number !== null) return name
+  const before = typeof old === 'string' ? defaultSectionName(old) : null
+  if (!before) return typeof old === 'string' ? old : name
+  return normalizeSectionName(before.number === null ? type.type : `${type.type} ${before.number}`)
 }
 
 /**

@@ -38,3 +38,17 @@ export function normalizeSectionName(raw: string): string {
   if (/[\uD800-\uDBFF]$/.test(name)) name = name.slice(0, -1)
   return name.trimEnd()
 }
+
+const DEFAULT_NAME = new RegExp(`^(${SECTION_SHORTCUTS.map((s) => s.name).join('|')})(?: (\\d+))?$`, 'iu')
+
+/**
+ * Nome padrão de um tipo ("Verso", "refrão 2"): o tipo, escrito como no atalho, e o número que
+ * vem depois (ou nulo). Nome próprio ("Ministração da Palavra", "Pré-refrão 1") dá nulo. Caixa,
+ * espaços e acento decomposto não contam (Ruling T16-nome-proprio).
+ */
+export function defaultSectionName(label: string): { type: string; number: string | null } | null {
+  const m = DEFAULT_NAME.exec(label.normalize('NFC').replace(/\s+/g, ' ').trim())
+  if (!m) return null
+  const type = SECTION_SHORTCUTS.find((s) => s.name.toLowerCase() === m[1].toLowerCase())?.name
+  return type ? { type, number: m[2] ?? null } : null
+}

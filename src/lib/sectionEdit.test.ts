@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Marker } from '../types'
 import { FAMILY_COLOR } from './channelNames'
 import { addSectionAt, nudgeSection, removeSection } from './sectionEdit'
-import { SECTION_NAME_MAX, SECTION_SHORTCUTS, colorForSection, normalizeSectionName } from './sectionTypes'
+import { SECTION_NAME_MAX, SECTION_SHORTCUTS, colorForSection, defaultSectionName, normalizeSectionName } from './sectionTypes'
 import { barSeconds, markerIdForSpan, sectionSpans } from './songGrid'
 import * as fromSectionBar from '../components/SectionBar'
 import type { SongGrid } from './stageContracts'
@@ -56,6 +56,11 @@ describe('sectionTypes', () => {
     expect(normalizeSectionName('Ponte da cruz aberta')).toBe('Ponte da cruz')
     expect(normalizeSectionName('Abertura gera\u{1F525}l')).toBe('Abertura gera')
     expect(normalizeSectionName('   ')).toBe('')
+    expect(defaultSectionName('Verso')).toEqual({ type: 'Verso', number: null })
+    expect(defaultSectionName(' refrão  2 ')).toEqual({ type: 'Refrão', number: '2' })
+    expect(defaultSectionName('Pré-refrão 1')).toBeNull()
+    expect(defaultSectionName('Ministração')).toBeNull()
+    expect(defaultSectionName('Verso2')).toBeNull()
     // Acento decomposto (NFD, comum em nome vindo do Mac) conta como uma letra só.
     expect(normalizeSectionName('Pre\u0301-refra\u0303o final 2')).toBe('Pré-refrão fin')
   })
@@ -76,6 +81,32 @@ describe('addSectionAt', () => {
     // Com duas por perto, troca a mais perto.
     const duas = freeze([mk('a', 8), mk('b', 8.6, 'Pré')])
     expect(addSectionAt(duas, 8.7, 'Ponte', semFase, () => 'n').map((m) => [m.id, m.label])).toEqual([['a', 'Verso'], ['b', 'Ponte']])
+  })
+
+  it('MARCAR perto de seção com nome próprio troca o tipo e mantém o nome (Ruling T16-nome-proprio)', () => {
+    const ministracao: Marker = { id: 'a', time: 8, label: 'Ministração da Palavra', color: VERSO, lyrics: 'letra' }
+    expect(addSectionAt(freeze([ministracao]), 8.4, 'Refrão', grid, () => 'n'))
+      .toEqual([{ id: 'a', time: 8, label: 'Ministração da Palavra', color: REFRAO, lyrics: 'letra' }])
+    // Nome que parece tipo mas não é o nome padrão de nenhum também é próprio.
+    expect(addSectionAt(freeze([mk('a', 8, 'Pré-refrão 1', '#f59e0b')]), 8.4, 'Ponte', grid, () => 'n'))
+      .toEqual([{ id: 'a', time: 8, label: 'Pré-refrão 1', color: '#8b5cf6' }])
+    expect(addSectionAt(freeze([mk('a', 8, 'Coro', '#123456')]), 8.4, 'Final', grid, () => 'n'))
+      .toEqual([{ id: 'a', time: 8, label: 'Coro', color: '#ec4899' }])
+  })
+
+  it('nome padrão acompanha o tipo novo, com o número que tinha', () => {
+    const marca = (label: string, tipo: string) => addSectionAt(freeze([mk('a', 8, label)]), 8.4, tipo, grid, () => 'n')[0]
+    expect(marca('Verso', 'Refrão')).toEqual({ id: 'a', time: 8, label: 'Refrão', color: REFRAO })
+    expect(marca('Verso 2', 'Refrão')).toEqual({ id: 'a', time: 8, label: 'Refrão 2', color: REFRAO })
+    // Caixa, espaços e acento decomposto do nome antigo não impedem de reconhecer o padrão.
+    expect(marca('  refrão   3 ', 'Final')).toEqual({ id: 'a', time: 8, label: 'Final 3', color: '#ec4899' })
+    expect(marca('PRE\u0301 12', 'Intro')).toEqual({ id: 'a', time: 8, label: 'Intro 12', color: '#3b82f6' })
+    expect(marca('Intro', 'Intro')).toEqual({ id: 'a', time: 8, label: 'Intro', color: '#3b82f6' })
+  })
+
+  it('nome dado pelo chamador (não é um tipo) continua trocando o nome', () => {
+    expect(addSectionAt(freeze([mk('a', 8, 'Ministração da Palavra')]), 8.4, 'Oferta', grid, () => 'n'))
+      .toEqual([{ id: 'a', time: 8, label: 'Oferta', color: '#FF6B35' }])
   })
 
   it('sem fase não encaixa e a vizinhança é de 0,5 s', () => {
