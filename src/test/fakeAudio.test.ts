@@ -1,0 +1,276 @@
+import { describe, expect, it, vi } from 'vitest'
+import { FakeAudioBuffer, connectedTo, createFakeAudioContext, nodesOf, reaches, valueAt } from './fakeAudio'
+
+const domError = (name: string) => expect.objectContaining({ name })
+
+describe('AudioParam falso', () => {
+  it('grava start, stop e rampas e calcula valueAt', () => {
+    const ctx = createFakeAudioContext(); const g = ctx.createGain()
+    g.gain.setValueAtTime(1, 2); g.gain.linearRampToValueAtTime(0, 2.01)
+    expect(valueAt(g.gain, 2.005)).toBeCloseTo(0.5, 5)
+    const s = ctx.createBufferSource(); s.start(3, 1.5); s.stop(4)
+    expect(s.starts).toEqual([{ when: 3, offset: 1.5 }]); expect(s.stops).toEqual([4])
+  })
+  it('grava os eventos na ordem, com o tipo de cada um', () => {
+    const ctx = createFakeAudioContext(); const p = ctx.createGain().gain
+    p.setValueAtTime(0, 1).linearRampToValueAtTime(1, 2).exponentialRampToValueAtTime(0.5, 3)
+    p.setTargetAtTime(0, 4, 0.1); p.cancelScheduledValues(5)
+    expect(p.events).toEqual([
+      { kind: 'set', value: 0, time: 1 }, { kind: 'linear', value: 1, time: 2 }, { kind: 'exp', value: 0.5, time: 3 },
+      { kind: 'target', value: 0, time: 4, timeConstant: 0.1 }, { kind: 'cancel', time: 5 },
+    ])
+  })
+  it('valueAt: antes de tudo vale o padrão; set, linear e exp pelo tempo', () => {
+    const ctx = createFakeAudioContext(); const p = ctx.createGain().gain
+    p.setValueAtTime(0.2, 1); p.linearRampToValueAtTime(1, 2); p.exponentialRampToValueAtTime(0.25, 4)
+    expect(valueAt(p, 0.5)).toBe(1)
+    expect(valueAt(p, 1)).toBe(0.2)
+    expect(valueAt(p, 1.5)).toBeCloseTo(0.6, 10)
+    expect(valueAt(p, 2)).toBe(1)
+    expect(valueAt(p, 3)).toBeCloseTo(0.5, 10)
+    expect(valueAt(p, 4)).toBe(0.25)
+    expect(valueAt(p, 99)).toBe(0.25)
+  })
+  it('valueAt: alvo exponencial e constante de tempo zero', () => {
+    const ctx = createFakeAudioContext(); const p = ctx.createGain().gain
+    p.setValueAtTime(1, 0); p.setTargetAtTime(0, 1, 0.5)
+    expect(valueAt(p, 1)).toBe(1)
+    expect(valueAt(p, 1.5)).toBeCloseTo(Math.exp(-1), 10)
+    p.setValueAtTime(0.7, 3)
+    expect(valueAt(p, 3)).toBe(0.7)
+    const q = ctx.createGain().gain
+    q.setTargetAtTime(0.3, 2, 0)
+    expect(valueAt(q, 1.9)).toBe(1); expect(valueAt(q, 2)).toBe(0.3)
+  })
+  it('valueAt: exp com sinais trocados segura o valor até o fim', () => {
+    const ctx = createFakeAudioContext(); const p = ctx.createStereoPanner().pan
+    p.setValueAtTime(-1, 0); p.exponentialRampToValueAtTime(1, 2)
+    expect(valueAt(p, 1)).toBe(-1); expect(valueAt(p, 2)).toBe(1)
+  })
+  it('valueAt: cancel tira os eventos dali pra frente, inclusive a rampa que cruza o instante', () => {
+    const ctx = createFakeAudioContext(); const p = ctx.createGain().gain
+    p.setValueAtTime(1, 2); p.linearRampToValueAtTime(0, 4)
+    p.cancelScheduledValues(3)
+    expect(valueAt(p, 3.5)).toBe(1)
+    p.linearRampToValueAtTime(0.5, 5)
+    expect(valueAt(p, 3.5)).toBeCloseTo(0.75, 10)
+  })
+  it('valueAt: cancelAndHold segura o valor do meio da rampa', () => {
+    const ctx = createFakeAudioContext(); const p = ctx.createGain().gain
+    p.setValueAtTime(1, 2); p.linearRampToValueAtTime(0, 4)
+    p.cancelAndHoldAtTime(3)
+    expect(valueAt(p, 2.5)).toBeCloseTo(0.75, 10)
+    expect(valueAt(p, 3)).toBeCloseTo(0.5, 10)
+    expect(valueAt(p, 10)).toBeCloseTo(0.5, 10)
+    expect(p.events.slice(-2)).toEqual([{ kind: 'cancel', time: 3 }, { kind: 'linear', value: 0.5, time: 3 }])
+  })
+  it('rampa sem evento antes começa no instante em que foi pedida', () => {
+    const ctx = createFakeAudioContext(); const p = ctx.createGain().gain
+    ctx.currentTime = 10
+    p.linearRampToValueAtTime(0, 12)
+    expect(valueAt(p, 9)).toBe(1); expect(valueAt(p, 11)).toBeCloseTo(0.5, 10)
+  })
+  it('value lê a automação no currentTime e escrever vale como set no currentTime', () => {
+    const ctx = createFakeAudioContext(); const g = ctx.createGain()
+    g.gain.setValueAtTime(1, 2); g.gain.linearRampToValueAtTime(0, 3)
+    ctx.currentTime = 2.5
+    expect(g.gain.value).toBeCloseTo(0.5, 10)
+    const osc = ctx.createOscillator()
+    expect(osc.frequency.value).toBe(440)
+    osc.frequency.value = 1319
+    expect(osc.frequency.value).toBe(1319)
+    expect(osc.frequency.events).toEqual([{ kind: 'set', value: 1319, time: 2.5 }])
+  })
+  it('valores inválidos lançam como no navegador', () => {
+    const ctx = createFakeAudioContext(); const p = ctx.createGain().gain
+    expect(() => p.setValueAtTime(Number.NaN, 1)).toThrow(TypeError)
+    expect(() => p.setValueAtTime(1, Number.POSITIVE_INFINITY)).toThrow(TypeError)
+    expect(() => p.linearRampToValueAtTime(1, -1)).toThrow(RangeError)
+    expect(() => p.exponentialRampToValueAtTime(0, 1)).toThrow(RangeError)
+    expect(() => p.setTargetAtTime(0, 1, -0.1)).toThrow(RangeError)
+    expect(() => { p.value = Number.NaN }).toThrow(TypeError)
+    expect(p.events).toEqual([])
+  })
+  it('valueAt recusa parâmetro que não é do contexto falso', () => {
+    expect(() => valueAt({ value: 1 } as unknown as AudioParam, 0)).toThrow(TypeError)
+  })
+})
+
+describe('fontes', () => {
+  it('buffer source grava início, offset, duração e paradas; dois starts lançam', () => {
+    const ctx = createFakeAudioContext(); const s = ctx.createBufferSource()
+    expect(() => s.stop(1)).toThrow(domError('InvalidStateError'))
+    s.start(2, 0.5, 3); s.stop(9); s.stop(8)
+    expect(s.starts).toEqual([{ when: 2, offset: 0.5, duration: 3 }]); expect(s.stops).toEqual([9, 8])
+    expect(() => s.start(4)).toThrow(domError('InvalidStateError'))
+    expect(() => ctx.createBufferSource().start(-1)).toThrow(RangeError)
+  })
+  it('oscilador grava início sem offset e o fim avisa quem ouve', () => {
+    const ctx = createFakeAudioContext(); const o = ctx.createOscillator()
+    const onended = vi.fn(); const listener = vi.fn()
+    o.onended = onended; o.addEventListener('ended', listener)
+    o.start(); o.stop(0.2)
+    expect(o.starts).toEqual([{ when: 0 }]); expect(o.stops).toEqual([0.2])
+    o.dispatchEvent(new Event('ended'))
+    expect(onended).toHaveBeenCalledTimes(1); expect(listener).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('ligações', () => {
+  it('created guarda todo nó na ordem e nodesOf filtra pelo tipo', () => {
+    const ctx = createFakeAudioContext()
+    ctx.createGain(); ctx.createBufferSource(); ctx.createOscillator(); ctx.createBiquadFilter(); ctx.createDelay(2)
+    ctx.createStereoPanner(); ctx.createChannelMerger(4); ctx.createChannelSplitter(2); ctx.createAnalyser()
+    ctx.createBuffer(1, 10, 48000)
+    expect(ctx.created.map((c) => c.kind)).toEqual([
+      'GainNode', 'AudioBufferSourceNode', 'OscillatorNode', 'BiquadFilterNode', 'DelayNode',
+      'StereoPannerNode', 'ChannelMergerNode', 'ChannelSplitterNode', 'AnalyserNode',
+    ])
+    const [osc] = nodesOf(ctx, 'OscillatorNode')
+    expect(osc.frequency.value).toBe(440)
+    expect(nodesOf(ctx, 'AudioWorkletNode')).toEqual([])
+    expect(nodesOf(ctx, 'ChannelMergerNode')[0].numberOfInputs).toBe(4)
+    expect(nodesOf(ctx, 'ChannelSplitterNode')[0].numberOfOutputs).toBe(2)
+    expect(nodesOf(ctx, 'DelayNode')[0].maxDelayTime).toBe(2)
+  })
+  it('connect grava saída e entrada, ignora repetida e valida os índices', () => {
+    const ctx = createFakeAudioContext(); const a = ctx.createGain(); const m = ctx.createChannelMerger(2)
+    expect(a.connect(m, 0, 1)).toBe(m)
+    a.connect(m, 0, 1)
+    expect(a.connections).toEqual([{ to: m, output: 0, input: 1 }])
+    expect(() => a.connect(m, 0, 2)).toThrow(domError('IndexSizeError'))
+    expect(() => a.connect(m, 1, 0)).toThrow(domError('IndexSizeError'))
+    expect(() => ctx.createGain().connect(ctx.createBufferSource())).toThrow(domError('IndexSizeError'))
+    expect(() => ctx.destination.connect(a)).toThrow(domError('IndexSizeError'))
+    expect(() => a.connect(createFakeAudioContext().createGain())).toThrow(domError('InvalidAccessError'))
+  })
+  it('disconnect: tudo, por saída, por alvo e alvo que não estava ligado lança', () => {
+    const ctx = createFakeAudioContext(); const sp = ctx.createChannelSplitter(2)
+    const x = ctx.createGain(); const y = ctx.createGain()
+    sp.connect(x, 0); sp.connect(x, 1); sp.connect(y, 1)
+    sp.disconnect(x, 1)
+    expect(sp.connections).toEqual([{ to: x, output: 0, input: 0 }, { to: y, output: 1, input: 0 }])
+    sp.disconnect(1)
+    expect(sp.connections).toEqual([{ to: x, output: 0, input: 0 }])
+    expect(() => sp.disconnect(y)).toThrow(domError('InvalidAccessError'))
+    sp.disconnect()
+    expect(sp.connections).toEqual([])
+  })
+  it('connectedTo olha só a ligação direta, com a entrada se pedida', () => {
+    const ctx = createFakeAudioContext(); const a = ctx.createGain(); const m = ctx.createChannelMerger(2)
+    a.connect(m, 0, 1)
+    expect(connectedTo(a, m)).toBe(true); expect(connectedTo(a, m, 1)).toBe(true); expect(connectedTo(a, m, 0)).toBe(false)
+    const lfo = ctx.createOscillator(); lfo.connect(a.gain)
+    expect(connectedTo(lfo, a.gain)).toBe(true)
+  })
+  it('reaches acha caminho com nó no meio e respeita a entrada do merger', () => {
+    const ctx = createFakeAudioContext(); const a = ctx.createGain(), mid = ctx.createGain(), m = ctx.createChannelMerger(2)
+    a.connect(mid); mid.connect(m, 0, 1)
+    expect(connectedTo(a, m)).toBe(false); expect(reaches(a, m, 1)).toBe(true); expect(reaches(a, m, 0)).toBe(false)
+  })
+  it('reaches respeita a saída do splitter: só o lado esquerdo vai pra saída própria', () => {
+    const ctx = createFakeAudioContext({ maxChannelCount: 8 })
+    const vs = ctx.createGain(); const click = ctx.createGain(); const m = ctx.createChannelMerger(4)
+    const vsSplit = ctx.createChannelSplitter(2); const clickSplit = ctx.createChannelSplitter(2)
+    vs.connect(vsSplit); vsSplit.connect(m, 0, 0); vsSplit.connect(m, 1, 1)
+    click.connect(clickSplit); clickSplit.connect(m, 0, 2)
+    m.connect(ctx.destination)
+    expect(reaches(click, m, 0)).toBe(false); expect(reaches(click, m, 1)).toBe(false); expect(reaches(click, m, 2)).toBe(true)
+    expect(reaches(vs, m, 2)).toBe(false); expect(reaches(vs, m, 1)).toBe(true)
+    expect(reaches(click, ctx.destination)).toBe(true)
+  })
+  it('reaches segue o canal do merger até o splitter seguinte', () => {
+    const ctx = createFakeAudioContext(); const a = ctx.createGain(); const m = ctx.createChannelMerger(4); const sp = ctx.createChannelSplitter(4)
+    const left = ctx.createGain(); const third = ctx.createGain()
+    a.connect(m, 0, 2); m.connect(sp); sp.connect(left, 0); sp.connect(third, 2)
+    expect(reaches(a, third)).toBe(true); expect(reaches(a, left)).toBe(false)
+    // Um nó comum no meio pode misturar os canais: daí pra frente vale qualquer saída.
+    const sp2 = ctx.createChannelSplitter(4); const mix = ctx.createGain(); const left2 = ctx.createGain()
+    m.connect(mix); mix.connect(sp2); sp2.connect(left2, 0)
+    expect(reaches(a, left2)).toBe(true)
+  })
+  it('reaches entra por AudioParam, segue objeto com connections e não trava em ciclo', () => {
+    const ctx = createFakeAudioContext(); const bus = ctx.createGain(); const vca = ctx.createGain(); const out = ctx.createGain()
+    vca.connect(out); bus.connect(vca.gain)
+    expect(reaches(bus, out)).toBe(true)
+    const worklet = { connections: [] as { to: unknown; output: number; input: number }[] }
+    const src = ctx.createBufferSource(); src.connect(worklet as unknown as AudioNode)
+    worklet.connections.push({ to: out, output: 0, input: 0 })
+    expect(reaches(src, out)).toBe(true)
+    const d = ctx.createDelay(); const fb = ctx.createGain(); d.connect(fb); fb.connect(d)
+    expect(reaches(d, out)).toBe(false); expect(reaches(d, d)).toBe(true)
+  })
+})
+
+describe('contexto', () => {
+  it('relógio gravável, latência e estado com aviso de mudança', async () => {
+    const ctx = createFakeAudioContext({ sampleRate: 44100, outputLatency: 0.02 })
+    expect([ctx.currentTime, ctx.sampleRate, ctx.outputLatency, ctx.state]).toEqual([0, 44100, 0.02, 'running'])
+    ctx.currentTime = 12.5
+    expect(ctx.currentTime).toBe(12.5)
+    const changes: string[] = []
+    ctx.addEventListener('statechange', () => changes.push(ctx.state))
+    await ctx.suspend(); await ctx.resume(); await ctx.close()
+    expect(changes).toEqual(['suspended', 'running', 'closed'])
+    await expect(ctx.resume()).rejects.toMatchObject({ name: 'InvalidStateError' })
+  })
+  it('setSinkId troca os canais do destino e avisa', async () => {
+    const ctx = createFakeAudioContext({ maxChannelCount: 2, sinks: { placa: 8 } })
+    const listener = vi.fn(); ctx.addEventListener('sinkchange', listener)
+    expect(ctx.destination.maxChannelCount).toBe(2)
+    await ctx.setSinkId('placa')
+    expect(ctx.sinkId).toBe('placa'); expect(ctx.destination.maxChannelCount).toBe(8); expect(listener).toHaveBeenCalledTimes(1)
+    ctx.destination.channelCount = 8
+    await ctx.setSinkId('placa')
+    expect(listener).toHaveBeenCalledTimes(1)
+    await ctx.setSinkId('')
+    expect(ctx.destination.maxChannelCount).toBe(2); expect(ctx.destination.channelCount).toBe(2); expect(listener).toHaveBeenCalledTimes(2)
+    ctx.removeEventListener('sinkchange', listener)
+    await ctx.setSinkId('placa')
+    expect(listener).toHaveBeenCalledTimes(2)
+  })
+  it('destino com os campos de canal e limite do aparelho', () => {
+    const ctx = createFakeAudioContext({ maxChannelCount: 4 })
+    const d = ctx.destination
+    expect([d.kind, d.channelCount, d.channelCountMode, d.channelInterpretation, d.maxChannelCount]).toEqual(['AudioDestinationNode', 2, 'explicit', 'speakers', 4])
+    d.channelCount = 4; d.channelInterpretation = 'discrete'
+    expect([d.channelCount, d.channelInterpretation]).toEqual([4, 'discrete'])
+    expect(() => { d.channelCount = 5 }).toThrow(domError('IndexSizeError'))
+    expect(() => { d.channelCount = 0 }).toThrow(domError('NotSupportedError'))
+  })
+  it('decodeAudioData devolve buffer falso; o teste pode decidir o conteúdo', async () => {
+    const ctx = createFakeAudioContext()
+    const buf = await ctx.decodeAudioData(new ArrayBuffer(8))
+    expect([buf.duration, buf.numberOfChannels, buf.sampleRate, buf.length]).toEqual([300, 2, 48000, 300 * 48000])
+    expect(() => buf.getChannelData(2)).toThrow(domError('IndexSizeError'))
+    const custom = createFakeAudioContext({ decode: (data) => new FakeAudioBuffer(1, data.byteLength, 1000) })
+    const short = await custom.decodeAudioData(new ArrayBuffer(500))
+    expect([short.duration, short.numberOfChannels]).toEqual([0.5, 1])
+    expect(short.getChannelData(0)).toHaveLength(500)
+    expect(short.getChannelData(0)).toBe(short.getChannelData(0))
+    const ok = vi.fn()
+    await custom.decodeAudioData(new ArrayBuffer(10), ok)
+    expect(ok).toHaveBeenCalledWith(expect.objectContaining({ length: 10 }))
+  })
+  it('createBuffer com dados graváveis e audioWorklet que guarda os módulos', async () => {
+    const ctx = createFakeAudioContext()
+    const b = ctx.createBuffer(2, 4, 8000)
+    b.getChannelData(0).set([1, 2, 3, 4])
+    expect([...b.getChannelData(0)]).toEqual([1, 2, 3, 4]); expect(b.duration).toBe(0.0005)
+    expect(() => ctx.createBuffer(0, 4, 8000)).toThrow(domError('NotSupportedError'))
+    await ctx.audioWorklet.addModule('blob:tom')
+    expect(ctx.audioWorklet.modules).toEqual(['blob:tom'])
+  })
+  it('cada nó conhece o contexto e os padrões do navegador', () => {
+    const ctx = createFakeAudioContext()
+    const an = ctx.createAnalyser(); an.fftSize = 256
+    expect(an.context).toBe(ctx); expect(an.frequencyBinCount).toBe(128)
+    const data = new Uint8Array(4); an.getByteFrequencyData(data); expect([...data]).toEqual([0, 0, 0, 0])
+    const f = ctx.createBiquadFilter()
+    expect([f.type, f.frequency.value, f.Q.value]).toEqual(['lowpass', 350, 1])
+    const pan = ctx.createStereoPanner()
+    expect([pan.pan.value, pan.channelCount, pan.channelCountMode]).toEqual([0, 2, 'clamped-max'])
+    const src = ctx.createBufferSource()
+    expect([src.buffer, src.loop, src.playbackRate.value]).toEqual([null, false, 1])
+  })
+})
