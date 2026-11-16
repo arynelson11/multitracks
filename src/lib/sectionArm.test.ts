@@ -57,6 +57,10 @@ describe('stepSection', () => {
     ['parado leva pro início da seguinte', null, 1, parado, seek(2)],
     ['parado parte do armado e desarma', i(3, 1), 1, parado, seek(4)],
     ['parado preso no fim: nada muda', null, 1, { ...parado, current: 5 }, armed(null)],
+    ['alvo armado fora da lista (seções removidas): pra frente parte da atual', i(7, 1), 1, {}, armed(i(2, 1))],
+    ['alvo armado fora da lista: pra trás parte da atual', i(7, 'infinite'), -1, {}, armed(i(0, 1))],
+    ['alvo armado negativo: parte da atual', i(-1, 2), 1, {}, armed(i(2, 1))],
+    ['parado, alvo armado fora da lista: parte da atual', i(9, 2), 1, parado, seek(2)],
     ['Livre pede upgrade', null, 1, { gates: livre }, upgrade(null)],
     ['sem seções nada muda, nem no Livre', null, 1, { sectionCount: 0, gates: livre }, armed(null)],
   ]

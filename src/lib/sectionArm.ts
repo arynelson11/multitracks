@@ -46,13 +46,13 @@ export function tapSection(intent: ArmIntent | null, index: number, c: ArmContex
 }
 
 /**
- * Seta de seção: anda um a partir do alvo armado (ou da atual), presa na lista. Presa na
- * ponta, nada muda (nunca cancela a armada). Tocando arma com 1 passagem; parado leva pro
- * início e desarma.
+ * Seta de seção: anda um a partir do alvo armado (ou da atual), presa na lista. Alvo armado
+ * fora da lista (seções removidas no EDITAR) não conta: parte da atual. Presa na ponta, nada
+ * muda (nunca cancela a armada). Tocando arma com 1 passagem; parado leva pro início e desarma.
  */
 export function stepSection(intent: ArmIntent | null, dir: -1 | 1, c: ArmContext): ArmResult {
   if (c.sectionCount < 1) return withIntent(intent)
-  const from = intent !== null ? intent.target : c.current
+  const from = intent !== null && inList(intent.target, c) ? intent.target : c.current
   const target = Math.min(c.sectionCount - 1, Math.max(0, from + dir))
   if (target === from) return withIntent(intent)
   if (!c.gates.sections) return askUpgrade(intent)
