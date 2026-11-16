@@ -1,10 +1,11 @@
-import { X, MonitorSpeaker, RefreshCcw, Download } from 'lucide-react';
+import { X, Download } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../hooks/useAuth';
 import { useState, useEffect, useMemo } from 'react';
 import type { Channel } from '../types';
 import { buildChannelLabels } from '../lib/channelNames';
 import { PricingModal } from './PricingModal';
+import { AudioOutputSelect } from './AudioOutputSelect';
 import { supabase } from '../lib/supabase';
 import { planDisplayName, isPaidPlan, maxSeparationsPerMonth } from '../lib/plans';
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark';
@@ -27,7 +28,7 @@ interface SettingsModalProps {
 type Tab = 'Perfil' | 'Geral' | 'Buses' | 'Novidades' | 'Assinatura' | 'Sobre';
 
 export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin, onReplayTour, desktopUpdate, onInstallUpdate }: SettingsModalProps) {
-    const { settings, updateSetting, availableAudioDevices, refreshAudioDevices } = useSettings();
+    const { settings, updateSetting } = useSettings();
     const { user, updateProfile, updatePassword, signOutEverywhere, deleteAccount } = useAuth();
     const [activeTab, setActiveTab] = useState<Tab>('Perfil');
     const [isPricingOpen, setIsPricingOpen] = useState(false);
@@ -44,12 +45,6 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
     }, [user]);
 
     const isAdmin = isAdminEmail(user?.email);
-
-    // A lista de saídas de áudio (e o pedido de microfone que o navegador exige pra
-    // mostrar o nome delas) só acontece quando a aba Geral, onde fica o seletor, abre.
-    useEffect(() => {
-        if (isOpen && activeTab === 'Geral') void refreshAudioDevices();
-    }, [isOpen, activeTab, refreshAudioDevices]);
 
     // Nome organizado de cada canal, só pra exibição (o original segue em ch.name).
     // Fechado, não calcula: os canais mudam a cada mexida no mixer.
@@ -136,34 +131,8 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
 
                             <hr className="border-border" />
 
-                            {/* Audio Device */}
-                            <div className="flex items-center justify-between">
-                                <div className="flex-1 pr-4">
-                                    <h3 className="text-white text-sm font-bold flex items-center gap-2">
-                                        Dispositivo de Áudio
-                                        <button onClick={refreshAudioDevices} aria-label="Atualizar a lista de dispositivos" title="Atualizar a lista de dispositivos" className="opacity-40 hover:opacity-100 transition-all active:scale-90 cursor-pointer"><RefreshCcw size={12} /></button>
-                                    </h3>
-                                    <p className="text-text-muted text-[10px] font-mono">Selecionar dispositivo de saída principal</p>
-                                    <p className="text-text-muted/60 text-[9px] font-mono mt-0.5">Pra mostrar o nome das saídas, o navegador pede acesso ao microfone. Nada é gravado.</p>
-                                </div>
-                                <div className="shrink-0 flex items-center justify-end">
-                                    <div className="relative">
-                                        <select
-                                            className="appearance-none daw-input hover:bg-white/5 text-white text-[10px] font-bold py-2 pl-3 pr-8 rounded-md cursor-pointer max-w-[200px] truncate font-mono"
-                                            value={settings.audioDeviceId}
-                                            onChange={(e) => updateSetting('audioDeviceId', e.target.value)}
-                                        >
-                                            <option value="default" className="bg-[#1c1c1e] text-white">Padrão do Sistema</option>
-                                            {availableAudioDevices.filter(d => d.deviceId !== 'default' && d.deviceId !== 'communications').map(device => (
-                                                <option key={device.deviceId} value={device.deviceId} className="bg-[#1c1c1e] text-white">
-                                                    {device.label || `Dispositivo (${device.deviceId.substring(0, 5)}...)`}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <MonitorSpeaker size={16} className="absolute right-3 top-2.5 opacity-50 pointer-events-none" />
-                                    </div>
-                                </div>
-                            </div>
+                            {/* Audio Device (lista e pedido de microfone só aqui, com a aba Geral aberta) */}
+                            <AudioOutputSelect />
 
                             <hr className="border-border" />
 

@@ -1,9 +1,12 @@
 // Lista as saídas de áudio do aparelho (pro seletor de dispositivo nas Configurações).
 //
 // O navegador só mostra o NOME das saídas depois que o site recebe acesso ao microfone.
-// Por isso o pedido de microfone só acontece aqui, com askLabels, e só quando falta nome:
-// quem chama com askLabels é a tela de Configurações (só existe depois do login). A carga
-// do site, a landing e a troca de aparelho (devicechange) listam sem pedir nada.
+// Por isso o pedido de microfone só acontece aqui, e só quando as três coisas valem:
+// alguém pediu a lista (askLabels, só a aba Geral das Configurações, depois do login), o
+// navegador consegue trocar a saída (canPickOutput: AudioContext com setSinkId, ou seja
+// Chrome, Edge e o app desktop) e existe saída sem nome. iPhone, iPad, Safari e Firefox não
+// trocam a saída, então nunca pedem (no iOS, abrir o microfone com música tocando mexe na
+// sessão de áudio). A carga do site, a landing e a troca de aparelho listam sem pedir nada.
 
 export interface MediaDevicesLike {
   enumerateDevices(): Promise<MediaDeviceInfo[]>
@@ -12,14 +15,18 @@ export interface MediaDevicesLike {
 
 const outputsOf = (devices: MediaDeviceInfo[]) => devices.filter(d => d.kind === 'audiooutput')
 
+// O navegador deixa escolher a saída de áudio do app? (o motor usa AudioContext.setSinkId)
+export function canPickAudioOutput(): boolean {
+  return typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype
+}
+
 export async function listAudioOutputs(
   mediaDevices: MediaDevicesLike | undefined,
-  { askLabels }: { askLabels: boolean },
+  { askLabels, canPickOutput }: { askLabels: boolean; canPickOutput: boolean },
 ): Promise<MediaDeviceInfo[]> {
   if (!mediaDevices?.enumerateDevices) return []
   let outputs = outputsOf(await mediaDevices.enumerateDevices())
-  const missingLabels = outputs.length === 0 || outputs.some(d => !d.label)
-  if (askLabels && missingLabels && mediaDevices.getUserMedia) {
+  if (askLabels && canPickOutput && outputs.some(d => !d.label) && mediaDevices.getUserMedia) {
     try {
       const stream = await mediaDevices.getUserMedia({ audio: true })
       stream.getTracks().forEach(track => track.stop())
