@@ -14,6 +14,8 @@ export type FakeDbOptions = {
   tables?: Record<string, Row[]>
   primaryKeys?: Record<string, string>
   rpc?: Record<string, RpcHandler>
+  // valores padrão de coluna (o "default" do banco de verdade)
+  defaults?: Record<string, () => Row>
 }
 
 export type FakeDb = {
@@ -21,6 +23,7 @@ export type FakeDb = {
   rpcCalls: { name: string; args: Record<string, unknown> }[]
   writes: { table: string; op: 'insert' | 'upsert' | 'update' | 'delete'; payload: unknown }[]
   failTable: (table: string, error: DbError) => void
+  clearFailure: (table: string) => void
   setRpc: (name: string, handler: RpcHandler) => RpcHandler | undefined
   from: (table: string) => QueryBuilder
   rpc: (name: string, args?: Record<string, unknown>) => Promise<DbResult>
@@ -112,7 +115,7 @@ class QueryBuilder implements PromiseLike<DbResult> {
       for (const item of list) {
         if (rows.some((r) => r[pk] === item[pk])) return { data: null, error: { message: 'duplicate key value violates unique constraint', code: '23505' } }
       }
-      for (const item of list) rows.push({ ...item })
+      for (const item of list) rows.push({ ...(this.db.defaults[this.table]?.() ?? {}), ...item })
       this.db.writes.push({ table: this.table, op: 'insert', payload: this.payload })
       return { data: this.returning ? list : null, error: null }
     }
@@ -154,14 +157,17 @@ class FakeDbImpl implements FakeDb {
   rpcCalls: { name: string; args: Record<string, unknown> }[] = []
   writes: { table: string; op: 'insert' | 'upsert' | 'update' | 'delete'; payload: unknown }[] = []
   failures = new Map<string, DbError>()
+  defaults: Record<string, () => Row>
 
   constructor(opts: FakeDbOptions) {
+    this.defaults = opts.defaults ?? {}
     this.tables = structuredClone(opts.tables ?? {})
     this.primaryKeys = { ...DEFAULT_PKS, ...(opts.primaryKeys ?? {}) }
     this.rpcHandlers = opts.rpc ?? {}
   }
 
   failTable(table: string, error: DbError): void { this.failures.set(table, error) }
+  clearFailure(table: string): void { this.failures.delete(table) }
 
   // Troca o RPC falso e devolve o anterior (pra simular falha e depois voltar).
   setRpc(name: string, handler: RpcHandler): RpcHandler | undefined {

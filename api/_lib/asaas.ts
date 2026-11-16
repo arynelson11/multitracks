@@ -96,6 +96,7 @@ export type AsaasPayment = {
   originalValue?: number | null
   interestValue?: number | null
   billingType?: string | null
+  invoiceUrl?: string | null
   deleted?: boolean
 }
 
@@ -156,6 +157,33 @@ export async function inactivateSubscription(api: AsaasApi, subscriptionId: stri
     if (e instanceof AsaasError && e.kind === 'not_found') return 'already_gone'
     throw e
   }
+}
+
+// Remove uma cobrança (DELETE /payments/{id}, docs "Excluir cobrança"). Não é
+// estorno: só tira do ar uma cobrança que ainda não foi paga. 404 = já saiu.
+export async function deletePayment(api: AsaasApi, paymentId: string): Promise<void> {
+  try {
+    await api.del(`/payments/${encodeURIComponent(paymentId)}`)
+  } catch (e) {
+    if (e instanceof AsaasError && e.kind === 'not_found') return
+    throw e
+  }
+}
+
+// Depois de inativar: a assinatura não gera cobrança nova, mas a da renovação
+// seguinte pode já ter sido gerada (o Asaas cria 40 dias antes) e seria cobrada
+// no cartão. Remove as cobranças em aberto que ainda vão vencer; a vencida fica
+// (continua pagável pelo link do e-mail).
+export async function removeFuturePendingCharges(api: AsaasApi, subscriptionId: string, todayBrt: string): Promise<number> {
+  const payments = await listSubscriptionPayments(api, subscriptionId)
+  let n = 0
+  for (const p of payments) {
+    const due = typeof p.dueDate === 'string' ? p.dueDate.slice(0, 10) : ''
+    if (p.deleted || p.status !== 'PENDING' || !due || due <= todayBrt) continue
+    await deletePayment(api, p.id)
+    n++
+  }
+  return n
 }
 
 // Estorno integral da cobrança (POST /payments/{id}/refund sem valor = total).

@@ -45,6 +45,7 @@ export function subRow(over: Partial<Row> & { id: string; user_id: string | null
     asaas_customer_id: null, status: 'active', paid_until: null, access_until: null, cancel_source: null,
     asaas_stopped_at: null, asaas_stop_kind: null, needs_admin_review: false, admin_note: null,
     started_at: '2026-11-01T12:00:00Z', created_at: '2026-11-01T12:00:00Z', last_paid_due_date: null, next_due_date: null,
+    first_paid_at: null, checkout_created_at: null, switch_confirmed: false,
     ...over,
   }
 }
@@ -88,6 +89,7 @@ export function createBillingDb(tables: Record<string, Row[]> = {}, now: () => D
   const db: FakeDb = createFakeDb({
     tables: { profiles: [], billing_subscriptions: [], pending_checkouts: [], payments: [], billing_payments: [], asaas_webhook_events: [], billing_pending_actions: [], ...tables },
     primaryKeys: { billing_pending_actions: 'id' },
+    defaults: { asaas_webhook_events: () => ({ received_at: iso(), attempts: 0 }) },
     rpc: {
       billing_upsert_subscription: (a) => {
         const existing = sub(a.p_id)
@@ -97,6 +99,10 @@ export function createBillingDb(tables: Record<string, Row[]> = {}, now: () => D
         if (existing) {
           existing.asaas_subscription_id ??= a.p_subscription_id ?? null
           existing.asaas_customer_id ??= a.p_customer_id ?? null
+          if (a.p_first_paid_at && (!existing.first_paid_at || String(a.p_first_paid_at) < String(existing.first_paid_at))) existing.first_paid_at = a.p_first_paid_at
+          existing.checkout_created_at ??= a.p_checkout_created_at ?? null
+          if (a.p_switch_confirmed) existing.switch_confirmed = true
+          if (a.p_started_at && String(a.p_started_at) < String(existing.started_at)) existing.started_at = a.p_started_at
           if (due && (!existing.last_paid_due_date || due > String(existing.last_paid_due_date))) { existing.last_paid_due_date = due; existing.paid_until = periodEnd(due, existing.cycle as string) }
         } else {
           subs().push(subRow({
@@ -104,6 +110,7 @@ export function createBillingDb(tables: Record<string, Row[]> = {}, now: () => D
             asaas_subscription_id: a.p_subscription_id ?? null, asaas_customer_id: a.p_customer_id ?? null,
             last_paid_due_date: due, paid_until: due ? periodEnd(due, a.p_cycle as string) : null,
             started_at: (a.p_started_at as string | null) ?? iso(), created_at: iso(),
+            first_paid_at: a.p_first_paid_at ?? null, checkout_created_at: a.p_checkout_created_at ?? null, switch_confirmed: !!a.p_switch_confirmed,
           }))
         }
         if (a.p_activate) sync(a.p_user_id)
@@ -161,9 +168,10 @@ export function createBillingDb(tables: Record<string, Row[]> = {}, now: () => D
         if (r.last_paid_due_date && due <= String(r.last_paid_due_date)) return { result: 'already_counted' }
         const end = periodEnd(due, r.cycle as string)
         Object.assign(r, { last_paid_due_date: due, paid_until: end })
+        r.first_paid_at ??= a.p_paid_on ? `${a.p_paid_on}T15:00:00.000Z` : iso()
         if (r.status === 'active') { sync(r.user_id); return { result: 'extended', paid_until: end } }
         if (r.cancel_source === 'unpaid') {
-          if (a.p_paid_on && String(a.p_paid_on) <= due && !r.asaas_stopped_at) {
+          if (a.p_paid_on && String(a.p_paid_on) <= String(a.p_real_due ?? due) && !r.asaas_stopped_at) {
             Object.assign(r, { status: 'active', cancel_source: null, access_until: null })
             for (const x of db.tables.billing_pending_actions) if (x.subscription_ref === r.id && x.status === 'pending' && x.action === 'inactivate_subscription') x.status = 'canceled'
             sync(r.user_id)
@@ -186,6 +194,11 @@ export function createBillingDb(tables: Record<string, Row[]> = {}, now: () => D
       billing_undo_safety_cut: (a) => {
         const r = sub(a.p_id)
         if (!r || r.status !== 'canceled' || r.cancel_source !== 'unpaid' || r.asaas_stopped_at) return { result: 'not_applicable' }
+        if (subs().some((o) => o.user_id === r.user_id && o.id !== r.id && o.kind === 'asaas' && o.status === 'active')) {
+          r.needs_admin_review = true; r.admin_note = 'rede de seguranca: corte mantido'
+          return { result: 'refused_other_active' }
+        }
+        r.needs_admin_review = true; r.admin_note = 'rede de seguranca desfeita'
         Object.assign(r, { status: 'active', cancel_source: null, access_until: null, next_due_date: a.p_real_due })
         for (const x of db.tables.billing_pending_actions) if (x.subscription_ref === r.id && x.status === 'pending' && x.action === 'inactivate_subscription') x.status = 'canceled'
         sync(r.user_id)
@@ -216,7 +229,7 @@ export function createBillingDb(tables: Record<string, Row[]> = {}, now: () => D
           asaas_payment_id: a.p_payment_id, user_id: a.p_user_id, subscription_ref: a.p_ref, asaas_subscription_id: a.p_subscription_id,
           asaas_checkout_id: a.p_checkout_id, asaas_customer_id: a.p_customer_id, status: a.p_status, billing_type: a.p_billing_type,
           value: a.p_value, net_value: a.p_net_value, original_value: a.p_original_value, interest_value: a.p_interest_value,
-          due_date: a.p_due_date, payment_date: a.p_payment_date, confirmed_date: a.p_confirmed_date,
+          due_date: a.p_due_date, original_due_date: a.p_original_due_date ?? a.p_due_date, payment_date: a.p_payment_date, confirmed_date: a.p_confirmed_date,
           last_event: a.p_event, last_event_at: a.p_event_at, refunded_at: a.p_event === 'PAYMENT_REFUNDED' ? iso() : (ex?.refunded_at ?? null),
         }
         if (!ex) { rows.push(rec); return 'recorded' }

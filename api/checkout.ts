@@ -122,6 +122,7 @@ export default async function handler(req: any, res: any) {
         // switch_confirmed: a pessoa confirmou "Trocar de plano?" (sem proporcional).
         const { error: linkErr } = await db.from('pending_checkouts').insert({
           id: checkoutId, user_id: userId, plan_key: planKey, switch_confirmed: body.confirmedSwitch === true,
+          created_at: new Date().toISOString(), // decide entre planos diferentes pagos juntos
         });
         if (linkErr) {
           console.error('[checkout] failed to save pending_checkout:', linkErr.message);
