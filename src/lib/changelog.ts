@@ -11,6 +11,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.15',
+    date: '2026-11-16',
+    title: 'Canais organizados e linguagem visual nova',
+    items: [
+      'Os canais agora aparecem com nomes organizados (Click, Guia, Bateria, Baixo, Violão, Guitarra, Teclado...), na ordem padrão e com cor por família.',
+      'Se a ordem de alguma música mudou, é só arrastar de novo no EDITAR CANAIS: o app guarda a sua.',
+      'No EDITAR CANAIS, o lápis de cada canal deixa renomear e escolher o papel: Click, Guia ou Normal.',
+      'Click e Guia continuam tocando quando você aperta Solo em outro canal.',
+      'A lixeira do canal pede um segundo toque, pra não apagar sem querer no meio da música.',
+    ],
+  },
+  {
     version: '1.4.14',
     date: '2026-11-15',
     title: 'Troca de tom corrigida',

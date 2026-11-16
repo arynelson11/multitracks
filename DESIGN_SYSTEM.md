@@ -2,7 +2,7 @@
 
 > **Versão:** 1.0
 > **Data:** 2026-05-20
-> **Atualizado:** 2026-11-15 (seções 1.7 e 2.6: linguagem nova da Parte 1 do palco, ainda não publicada)
+> **Atualizado:** 2026-11-16 (seções 1.7 e 2.6: linguagem nova da Parte 1 do palco, publicada na v1.4.15)
 > **Pareado com:** `PLAYBACK_STUDIO_BRAND_BOOK.md` (estratégia + briefing pros designers)
 > **Este documento:** referência operacional pareando código existente com vocabulário atomic design (Brad Frost). Lê este se você vai TOCAR o código.
 
@@ -16,7 +16,7 @@
 
 **Arquitetura dual da marca:** este sistema cobre **marketing** (landing/auth/onboarding) sob paleta laranja+dark. O **produto interno** (mixer/editor/separator) mantém DAW dark gold (`--color-primary: #d4a843`) — propositalmente diferente. Não unificar.
 
-**Linguagem nova do palco (desde a Parte 1, 2026-11-15, ainda não publicada):** substitui o "Não unificar" do parágrafo acima e do título da seção 1.5 pra tudo que é tela nova do produto. Telas novas do produto usam os tokens `ps-*` (seção 1.7) e as peças base de `src/components/ui/` (seção 2.6). O dourado do DAW continua só nas telas atuais, até elas migrarem na Parte 3.
+**Linguagem nova do palco (desde a Parte 1, 2026-11-15, publicada na v1.4.15):** substitui o "Não unificar" do parágrafo acima e do título da seção 1.5 pra tudo que é tela nova do produto. Telas novas do produto usam os tokens `ps-*` (seção 1.7) e as peças base de `src/components/ui/` (seção 2.6). O dourado do DAW continua só nas telas atuais, até elas migrarem na Parte 3.
 
 ---
 
@@ -97,7 +97,7 @@ Definidos em `src/index.css` no bloco `@theme` — consumidos via Tailwind v4 (`
 
 ### 1.7 Linguagem nova (palco v5): tokens `ps-*`
 
-> Entrou na Parte 1 do palco novo (2026-11-15, ainda não publicada). Por enquanto só o painel "Editar canal", o lápis e a lixeira do EDITAR CANAIS usam; as Partes 2 e 3 migram o palco e as outras telas.
+> Entrou na Parte 1 do palco novo (2026-11-15, publicada na v1.4.15). Por enquanto só o painel "Editar canal", o lápis e a lixeira do EDITAR CANAIS usam; as Partes 2 e 3 migram o palco e as outras telas.
 
 **Onde:** `src/styles/ps-tokens.css`, num bloco `@theme static` (o `static` faz o Tailwind emitir todas as variáveis, mesmo as que só aparecem via `var()` em style inline). O `src/index.css` importa esse arquivo logo depois de `@import "tailwindcss";`. Valores tirados do mockup v5 (`.superpowers/brainstorm/14859-1794743390/content/palco-desktop-v5.html`). Teste: `src/styles/ps-tokens.test.ts`.
 
@@ -285,7 +285,7 @@ Stack: [`lucide-react`](https://lucide.dev/) — line-art consistente com a marc
 
 ### 2.6 Peças base (`src/components/ui/`)
 
-> Linguagem nova (tokens `ps-*`, seção 1.7), da Parte 1 do palco (2026-11-15, ainda não publicada). Primeiro uso: o painel "Editar canal" (`src/components/ChannelEditPanel.tsx`) e o lápis de cada canal no EDITAR CANAIS (`src/App.tsx`). A lixeira do EDITAR CANAIS usa os mesmos tokens, mas é botão próprio (seção 1.7, "Mixer atual"). Teste: `src/components/ui/ui.test.tsx`.
+> Linguagem nova (tokens `ps-*`, seção 1.7), da Parte 1 do palco (2026-11-15, publicada na v1.4.15). Primeiro uso: o painel "Editar canal" (`src/components/ChannelEditPanel.tsx`) e o lápis de cada canal no EDITAR CANAIS (`src/App.tsx`). A lixeira do EDITAR CANAIS usa os mesmos tokens, mas é botão próprio (seção 1.7, "Mixer atual"). Teste: `src/components/ui/ui.test.tsx`.
 
 Telas importam sempre do barril:
 
