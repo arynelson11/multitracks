@@ -8,9 +8,10 @@
 //   harmonia (peso 1, dividido entre elas), que caem no 1. Os dois são lidos no
 //   ponto do tempo, como o bumbo (ataque rápido de teclado, piano e violão fica
 //   inteiro). A harmonia também é lida numa janela depois do tempo
-//   (`HARMONY_WINDOW_S`) e só vota quando as duas leituras apontam o mesmo tempo:
-//   o acorde de pad, que sobe devagar, lido no ponto aponta outro tempo e não vota
-//   contra o 1. Só vota o perfil que se destaca (`MIN_VOTE_SPREAD`);
+//   (`HARMONY_WINDOW_S`): quando a janela sobe muito acima do ponto em algum tempo
+//   (`SLOW_ATTACK_LIFT`), o ataque é lento (pad) e o ponto cai no vale antes da
+//   subida; aí vale a janela, se ela aponta um tempo com folga, senão a faixa não
+//   vota. Só vota o perfil que se destaca (`MIN_VOTE_SPREAD`);
 // - depois o bumbo da faixa de pulso (peso 1), na banda abaixo de ~100 Hz com 2
 //   polos, onde a caixa vaza bem menos que na banda grave de 150 Hz de antes.
 // Os pesos multiplicam o desvio, e o desvio é do tamanho do destaque: bumbo só num
@@ -49,22 +50,24 @@ const KICK_WINDOW_S = 0.015;
 /**
  * A troca de acorde de um pad (ataque de ~250 ms) só sobe de 10 a 100 ms depois do
  * tempo. Lido no ponto, o acorde do pad do catálogo aponta outro tempo (o 1 fica
- * no vale do acorde anterior saindo). A harmonia é lida também no maior valor até
- * 50 ms depois do ponto e só vota quando as duas leituras concordam no tempo mais
- * forte, com folga na janela (`HARMONY_WINDOW_LEAD`) (Ruling M3-consistencia); aí
- * vale a do ponto, que não achata ataque rápido. Faixa sem nada no ponto (só
- * ataque lento) vale a da janela. Medido na rodada 2 da M3: de 30 a 60 ms dá o
- * mesmo nas multitracks reais; com 80 ms ou mais a janela achata o teclado de uma
- * música com acento e ela perde o 1.
+ * no vale do acorde anterior saindo). Por isso a harmonia também é lida no maior
+ * valor até 50 ms depois do ponto (Ruling M3-consistencia, rodada 2 da M3).
  */
 const HARMONY_WINDOW_S = 0.05;
 
 /**
- * Na janela, o tempo mais forte precisa ficar 0,15 acima do segundo (o perfil tem
- * média 1). Sem folga, o pad do catálogo concordava por acaso (0,02 a 0,06 de
- * diferença na janela) e votava no tempo errado; o teclado real que vota certo fica
- * com 0,16 ou mais. De 0,05 a 0,15 dá o mesmo nas reais; 0,15 também segura o pad
- * que troca a cada 2 compassos.
+ * Ataque lento: em algum tempo o perfil da janela fica mais de 0,5 acima do perfil
+ * do ponto (os dois têm média 1). Medido na rodada 2 da M3: o pad do catálogo sobe
+ * de 0,88 a 1,05; nas multitracks reais nenhuma faixa de baixo ou harmonia passa de
+ * 0,53, então todas continuam lidas no ponto, como no e80c789 (ataque rápido
+ * inteiro); um drone sobe menos de 0,1.
+ */
+const SLOW_ATTACK_LIFT = 0.5;
+
+/**
+ * Faixa de ataque lento vota pela janela só quando, nela, o tempo mais forte fica
+ * 0,15 acima do segundo: no disco sintético o pad do catálogo aponta o tempo errado
+ * na janela com diferença menor que isso.
  */
 const HARMONY_WINDOW_LEAD = 0.15;
 
@@ -178,16 +181,17 @@ export function chooseDownbeat(b: OnsetBands, period: number, firstBeat: number,
   const all = Array.from({ length: beatsPerBar }, (_, m) => m);
   const score: number[] = new Array(beatsPerBar).fill(0);
 
-  // Harmonia: no ponto e na janela depois do tempo; vota a do ponto quando as duas
-  // apontam o mesmo tempo, com folga na janela (a da janela, se não há nada no ponto).
+  // Harmonia: no ponto e na janela depois do tempo. Ataque rápido vota pelo ponto;
+  // ataque lento (a janela sobe muito acima do ponto, ou não há nada no ponto) vota
+  // pela janela quando ela aponta um tempo com folga.
   const harmonyReads = (votes?.harmony ?? []).map(h => ({
     atPoint: profileOf(h, h.full),
     after: profileOf(h, h.full, { before: 0, after: Math.round(HARMONY_WINDOW_S * h.fps) }),
   }));
   const harmonyVote = ({ atPoint, after }: { atPoint: number[] | null; after: number[] | null }) => {
     if (!atPoint) return after;
-    if (!after || strongest(after) !== strongest(atPoint) || leadOf(after) < HARMONY_WINDOW_LEAD) return null;
-    return atPoint;
+    if (!after || Math.max(...after.map((v, m) => v - atPoint[m])) <= SLOW_ATTACK_LIFT) return atPoint;
+    return leadOf(after) >= HARMONY_WINDOW_LEAD ? after : null;
   };
 
   // Voto principal: o baixo pesa 1 e as faixas de harmonia que votam dividem 1 entre si.

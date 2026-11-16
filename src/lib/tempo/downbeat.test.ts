@@ -271,6 +271,16 @@ describe('chooseDownbeat: a ordem dos votos', () => {
     expect(chooseDownbeat(entraNo3, PERIODO, 0, 4, { harmony: [bandas({ full: teclado })] })).toBe(0);
   });
 
+  // Música com acento das multitracks reais, cortada em 120 e 240 s: o teclado tem
+  // ataque rápido no 1, mas uma nota logo depois do 3 faz a janela preferir o 3.
+  // Ataque rápido vale pelo ponto: a janela só manda quando sobe muito (ataque lento).
+  it('teclado de ataque rápido vota pelo ponto mesmo quando a janela depois do tempo prefere outro tempo', () => {
+    const entraNo3 = bandas({ full: onset(porTempo([1, 1, 1, 1], 6)), kick: onset(porTempo([1, 0, 1, 0], 4)) });
+    const teclado = onset(porTempo([1.26, 0.72, 1.15, 0.87]));
+    for (let k = 2; k < TEMPOS; k += 4) teclado.fill(1.4, k * PERIODO * FPS + 6, k * PERIODO * FPS + 8);
+    expect(chooseDownbeat(entraNo3, PERIODO, 0, 4, { harmony: [bandas({ full: teclado })] })).toBe(0);
+  });
+
   // A música do relatório sem projeto: baixo e harmonia sem marcar o compasso e o
   // bumbo mais forte no 1 com folga, mas a menos de 25% de outros dois tempos; a
   // bateria entra no 2. Com baixo e harmonia presentes, o bumbo que lidera decide.
