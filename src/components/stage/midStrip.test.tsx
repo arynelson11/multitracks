@@ -301,11 +301,18 @@ describe('célula da seção atual', () => {
     const { rerender } = render(<CurrentSectionCell {...secProps({ onArmRepeat })} />)
     fireEvent.click(btn('Mais vezes'))
     expect(onArmRepeat).not.toHaveBeenCalled()
+    rerender(<CurrentSectionCell {...secProps({ onArmRepeat, intent: { target: 1, plays: 5 } })} />)
+    // Armado na atual, o seletor mostra o N armado (a banda pode ter armado outro número).
+    expect(q('[data-repeat-count]').textContent).toBe('5x')
     rerender(<CurrentSectionCell {...secProps({ onArmRepeat, intent: { target: 1, plays: 2 } })} />)
+    expect(q('[data-repeat-count]').textContent).toBe('2x')
     expect(btn('REPETIR').dataset.armed).toBe('true')
     expect(btn('REPETIR').className).toContain('bg-ps-arm')
     fireEvent.click(btn('Mais vezes'))
     expect(onArmRepeat).toHaveBeenLastCalledWith(3)
+    // A casca devolve a intenção nova; o seletor acompanha.
+    rerender(<CurrentSectionCell {...secProps({ onArmRepeat, intent: { target: 1, plays: 3 } })} />)
+    expect(q('[data-repeat-count]').textContent).toBe('3x')
     fireEvent.click(btn('Menos vezes'))
     expect(onArmRepeat).toHaveBeenLastCalledWith(2)
     // Armado em outra seção (ou o loop da atual) não é o REPETIR: mudar N não arma nada.
@@ -498,6 +505,60 @@ describe('faixa do meio', () => {
     renderStrip({ view: { editMode: true }, onOpenMeter })
     fireEvent.click(btn(/Compasso/))
     expect(onOpenMeter).toHaveBeenCalledTimes(1)
+  })
+  it('o que não cabe desce um tamanho, nunca corta (régua falsa)', () => {
+    // Régua: linha de 20 px; nome de seção longo ocupa 3 linhas; a célula da música passa da altura;
+    // o botão do tom passa da largura. O resto cabe.
+    const real = window.getComputedStyle.bind(window)
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((el, p) => {
+      const cs = real(el, p)
+      return new Proxy(cs, { get: (t, k) => (k === 'lineHeight' ? '20px' : ((v) => (typeof v === 'function' ? v.bind(t) : v))(Reflect.get(t, k, t))) })
+    })
+    const long = (el: HTMLElement) => (el.textContent ?? '').length > 20
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.hasAttribute('data-section-name') && long(this) ? 60 : 20
+    })
+    // Célula da música com 168 px: título longo pede um degrau (small); com a próxima longa também, dois (smaller).
+    const rect = (top: number, height: number) => ({ top, bottom: top + height, height, left: 0, right: 100, width: 100, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const cell = this.closest('[data-cell="musica"]') as HTMLElement | null
+      if (!cell) return rect(20, 100)
+      if (cell === this) return rect(0, 168)
+      // Título de enfeite na capa: cabe na capa grande, não na de 64 px (a capa fica em 20..120).
+      if (this.parentElement?.hasAttribute('data-cover')) return cell.dataset.fit === 'smaller' ? rect(10, 120) : rect(25, 60)
+      const need = long(cell.querySelector('[data-song-title]') as HTMLElement) ? (long(cell.querySelector('[aria-label^="Próxima"] b') as HTMLElement) ? 2 : 1) : 0
+      const level = cell.dataset.fit === 'smaller' ? 2 : cell.dataset.fit === 'small' ? 1 : 0
+      return level < need ? rect(-10, 188) : rect(20, 100)
+    })
+    vi.spyOn(Element.prototype, 'scrollWidth', 'get').mockImplementation(function (this: Element) {
+      return this.hasAttribute('data-fit-width') && (this.textContent ?? '').includes('m') ? 180 : 150
+    })
+    vi.spyOn(Element.prototype, 'clientWidth', 'get').mockImplementation(() => 152)
+    const longView: Partial<StageView> = {
+      sections: [SECTIONS[0], { ...SECTIONS[1], label: 'Refrão Final Estendido de Novo' }, SECTIONS[2]],
+      song: { ...SONG, name: 'Quão Grande És Tu (Ao Vivo no Ministério)', originalKey: 'F#m' },
+    }
+    const a = makeActions()
+    const { rerender } = render(<MidStrip view={{ ...VIEW, ...longView }} actions={a} clock={clock} keyGridOpen={false} onKeyGridOpenChange={() => {}} onOpenMeter={() => {}} />)
+    expect(q('[data-section-name]').dataset.fit).toBe('small')
+    expect(q('[data-section-name]').className).toContain('data-[fit]:text-ps-md')
+    expect(q('[data-cell="musica"]').dataset.fit).toBe('small')
+    expect(q('[data-cover]').dataset.fit).toBeUndefined()
+    expect(q('[data-cell="tempo"]').dataset.fit).toBeUndefined()
+    expect(q('[data-fit-width]').dataset.fit).toBe('small')
+    // Voltou a caber: volta ao tamanho grande.
+    rerender(<MidStrip view={VIEW} actions={a} clock={clock} keyGridOpen={false} onKeyGridOpenChange={() => {}} onOpenMeter={() => {}} />)
+    expect(q('[data-section-name]').dataset.fit).toBeUndefined()
+    expect(q('[data-cell="musica"]').dataset.fit).toBeUndefined()
+    expect(q('[data-fit-width]').dataset.fit).toBeUndefined()
+    // Ainda não coube no primeiro degrau: o segundo diminui a capa.
+    rerender(<MidStrip view={{ ...VIEW, ...longView, song: { ...longView.song!, nextName: 'Te Louvarei Por Toda a Minha Vida' } }} actions={a} clock={clock} keyGridOpen={false} onKeyGridOpenChange={() => {}} onOpenMeter={() => {}} />)
+    expect(q('[data-cell="musica"]').dataset.fit).toBe('smaller')
+    expect(q('[data-cover]').className).toContain('group-data-[fit=smaller]/fit:size-16')
+    // Na capa pequena o título de enfeite não cabe: some (o título está escrito ao lado), nunca vaza.
+    expect(q('[data-cover]').dataset.fit).toBe('hide')
+    expect(q('[data-cover] > span').className).toContain('group-data-[fit=hide]/cover:invisible')
+    expect(q('[data-cover] > span').getAttribute('aria-hidden')).toBe('true')
   })
   it('tour guiado acha TOM e PADS', () => {
     renderStrip()

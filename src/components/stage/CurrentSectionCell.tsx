@@ -44,12 +44,12 @@ function repeatCap(maxRepeats: number): number {
   return Math.min(MAX_SHOWN, Math.floor(maxRepeats))
 }
 
-// v5 .cell. A célula é medida pela faixa (data-fit-height): se o nome quebrar a ponto de não caber na
-// altura, ele desce pra 16 px (nome de seção nunca é cortado, Ruling T8-4). @container: o ícone do
+// v5 .cell. A faixa mede o nome (data-fit-lines) e a célula (data-fit-height): passou de 2 linhas, ou
+// não coube na altura, o nome desce pra 16 px (nome de seção nunca é cortado, Ruling T8-4). @container: o ícone do
 // REPETIR só aparece quando a célula tem largura pra ele (a fileira de 44 px não cabe com ele em 1280).
 const CELL = 'group/fit @container relative flex min-w-0 flex-col justify-center gap-2 px-4 py-3'
 const NAME =
-  'text-[clamp(22px,3vh,30px)] leading-[1.05] font-extrabold tracking-[0.02em] break-words group-data-[fit=small]/fit:text-ps-md'
+  'text-[clamp(22px,3vh,30px)] leading-[1.05] font-extrabold tracking-[0.02em] break-words data-[fit]:text-ps-md group-data-[fit]/fit:text-ps-md'
 // v5 .chip.sm.rep: branco de armado (cheio) quando o REPETIR está armado na atual.
 const REPEAT =
   'inline-flex shrink-0 items-center justify-center gap-1.5 min-w-ps-touch min-h-ps-touch px-2.5 rounded-ps-md text-ps-sm font-extrabold tracking-[0.08em] whitespace-nowrap select-none transition-[background-color,box-shadow,color,transform] duration-150 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or disabled:opacity-35 disabled:pointer-events-none'
@@ -74,8 +74,9 @@ export function CurrentSectionCell({ sections, currentSection, intent, gates, cl
   const [chosen, setChosen] = useState(1)
   const section = sections.find((s) => s.index === currentSection) ?? null
   const cap = repeatCap(gates.maxRepeats)
-  const n = Math.min(Math.max(1, chosen), cap)
   const repeatArmed = section !== null && intent !== null && intent.target === section.index && intent.plays !== 'infinite'
+  // Armado na atual, o seletor mostra o N armado (desce a cada passagem); senão, a escolha pro próximo REPETIR.
+  const n = Math.min(Math.max(1, repeatArmed ? Number(intent.plays) || 1 : chosen), cap)
   const loopOn = section !== null && isSelfLoop(intent, section.index)
   const disabled = section === null
   const disabledHint = sections.length === 0 ? (gates.sections ? NO_SECTIONS : NO_SECTIONS_FREE) : BEFORE_FIRST
@@ -107,7 +108,7 @@ export function CurrentSectionCell({ sections, currentSection, intent, gates, cl
         <span className="ps-label leading-none">Seção atual</span>
         <span ref={barRef} data-section-bar="" className="ps-num text-ps-sm leading-none whitespace-nowrap text-ps-mut" />
       </div>
-      <strong data-section-name="" className={cx(NAME, !section && 'text-ps-dim')} style={section ? { color: section.color } : undefined}>
+      <strong data-section-name="" data-fit-lines="2" className={cx(NAME, !section && 'text-ps-dim')} style={section ? { color: section.color } : undefined}>
         {nameText}
       </strong>
       <div className="h-1 overflow-hidden rounded-[2px] bg-ps-s3">
@@ -126,7 +127,7 @@ export function CurrentSectionCell({ sections, currentSection, intent, gates, cl
           <button type="button" aria-label="Menos vezes" disabled={disabled || n <= 1} onClick={() => changeN(-1)} className={STEP}>
             <Icon name="minus" className="size-4" />
           </button>
-          <span data-repeat-count="" className="ps-num min-w-[30px] text-center text-ps-base font-bold">{n}x</span>
+          <span data-repeat-count="" className={cx('ps-num min-w-[30px] text-center text-ps-base font-bold', disabled && 'opacity-35')}>{n}x</span>
           <button type="button" aria-label="Mais vezes" disabled={disabled || n >= cap} onClick={() => changeN(1)} className={STEP}>
             <Icon name="plus" className="size-4" />
           </button>

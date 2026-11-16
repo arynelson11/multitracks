@@ -22,9 +22,9 @@ const CELL = 'relative flex min-w-0 flex-col justify-center gap-2 px-3 py-3'
 const KEY_BTN =
   'group/key flex min-h-14 w-full min-w-ps-touch items-center gap-2.5 rounded-ps-lg bg-ps-s2 py-1.5 pr-2.5 pl-3 text-left inset-ring inset-ring-ps-line transition-[box-shadow,transform] duration-150 hover:inset-ring-ps-line-3 aria-expanded:inset-ring-ps-line-3 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
 const CHIP_EXTRA = 'grow focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
-// v5 .kp-g button: 50 px de altura; a largura vem do texto (a coluna mais larga manda nas 6), com 4 px de folga.
+// v5 .kp-g button: 50 px de altura; a largura vem do texto (a coluna mais larga manda nas 6), com 6 px de folga.
 const GRID_KEY =
-  'flex min-h-[50px] min-w-ps-touch flex-col items-center justify-center gap-1 rounded-ps-md px-1 transition-[box-shadow,transform] duration-150 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or disabled:opacity-35 disabled:pointer-events-none'
+  'flex min-h-[50px] min-w-ps-touch flex-col items-center justify-center gap-1 rounded-ps-md px-1.5 transition-[box-shadow,transform] duration-150 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or disabled:opacity-35 disabled:pointer-events-none'
 const GRID_IDLE = 'bg-ps-s2 text-ps-bone inset-ring inset-ring-ps-line hover:inset-ring-ps-line-3'
 const GRID_CURRENT = 'bg-ps-or text-ps-on-or'
 
@@ -93,7 +93,7 @@ export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChan
         aria-label={current ? `Tom atual ${current}. Escolher o tom` : `${UNKNOWN}. Escolher o tom`}
         title="Escolher o tom (grade com os 12 tons)" onClick={() => onGridOpenChange(!gridOpen)} className={KEY_BTN}
       >
-        <span data-key-current="" className="shrink-0 text-[36px] leading-none font-extrabold tracking-[-0.02em] whitespace-nowrap group-data-[fit=small]/key:text-[30px]">
+        <span data-key-current="" className="shrink-0 text-[36px] leading-none font-extrabold tracking-[-0.02em] whitespace-nowrap group-data-[fit]/key:text-[30px]">
           {current ? <KeyName name={current} /> : '?'}
         </span>
         <span className="flex min-w-0 flex-col items-start gap-1">
@@ -106,7 +106,7 @@ export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChan
             </span>
           )}
         </span>
-        <Icon name="chd" className="ml-auto size-4 text-ps-mut group-data-[fit=small]/key:hidden" />
+        <Icon name="chd" className="ml-auto size-4 text-ps-mut group-data-[fit]/key:hidden" />
       </button>
       <div className="flex gap-1">
         <Chip aria-label="Descer meio tom" title="Desce meio tom" onClick={() => onChangePitch(sanitizeSemitones(pitch - 1))} className={cx('ps-num', CHIP_EXTRA)}>

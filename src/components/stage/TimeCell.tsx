@@ -19,12 +19,12 @@ const clockMMSS = (t: number): string => { const s = wholeSeconds(t); return `${
 /** "m:ss" da duração. */
 const clockMSS = (t: number): string => { const s = wholeSeconds(t); return `${Math.floor(s / 60)}:${pad2(s % 60)}` }
 
-// v5 .cell. A célula é medida pela faixa (data-fit-height): se não couber na altura, o tempo desce pra 30 px.
+// v5 .cell. A célula é medida pela faixa (data-fit-height): se não couber na altura útil, o tempo desce pra 30 px.
 const CELL = 'group/fit @container relative flex min-w-0 flex-col justify-center gap-2 px-4 py-3'
 // v5 .time: grande em mono. O tamanho acompanha a altura da tela (5vh, como no v5) e a largura da célula
 // (20cqw no lugar do 3,4vw do v5), pra "00:00 / 12:34" caber na coluna mais estreita sem encostar.
 const TIME =
-  'ps-num flex flex-wrap items-baseline gap-x-2 text-[clamp(30px,min(5vh,20cqw),54px)] leading-none font-bold tracking-[-0.03em] group-data-[fit=small]/fit:text-[30px]'
+  'ps-num flex flex-wrap items-baseline gap-x-2 text-[clamp(30px,min(5vh,20cqw),54px)] leading-none font-bold tracking-[-0.03em] group-data-[fit]/fit:text-[30px]'
 // Aviso da grade (âmbar): rótulo curto com o LED piscando; a explicação vai no title e pro leitor de tela.
 const WARNING =
   'inline-flex max-w-full items-center gap-[5px] self-start rounded-ps-sm bg-ps-alert-soft px-2 py-1 text-ps-micro leading-[1.2] font-extrabold tracking-[0.1em] text-ps-alert inset-ring inset-ring-ps-alert-line'
