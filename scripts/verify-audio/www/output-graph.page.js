@@ -206,7 +206,13 @@ async function switchCase(fromName, toName) {
 }
 
 async function switches() {
-  const pairs = [['stereo', 'split2L'], ['stereo', 'split2R'], ['split2L', 'split2R'], ['split2R', 'split2L'], ['split2L', 'multi8'], ['multi8', 'split2L'], ['multi8', 'split2R'], ['multi8', 'multi8b'], ['multi8b', 'multi8'], ['split2R', 'multi8b']]
+  const pairs = [
+    ['stereo', 'split2L'], ['stereo', 'split2R'], ['split2L', 'split2R'], ['split2R', 'split2L'], ['split2L', 'multi8'], ['multi8', 'split2L'],
+    ['multi8', 'split2R'], ['multi8', 'multi8b'], ['multi8b', 'multi8'], ['split2R', 'multi8b'],
+    // Tudo junto -> 4 ou mais e a queda de 3 canais (merger de 3) nos dois sentidos.
+    ['stereo', 'multi8'], ['stereo', 'multi8b'], ['stereo', 'multi3'], ['split2L', 'multi3'], ['split2R', 'multi3'], ['multi3', 'split2R'],
+    ['multi3', 'multi8'], ['multi8', 'multi3'], ['multi8b', 'multi3'],
+  ]
   const rows = []
   for (const [a, b] of pairs) rows.push(await switchCase(a, b))
   return rows
