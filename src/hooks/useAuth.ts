@@ -1,37 +1,42 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { apiUrl } from '../lib/api';
+import { effectivePlan, fetchPlanState } from '../lib/planState';
 import type { User, Session } from '@supabase/supabase-js';
 
 export function useAuth() {
     const [user, setUser] = useState<User | null>(null);
     const [session, setSession] = useState<Session | null>(null);
     const [loading, setLoading] = useState(true);
-    const [userPlan, setUserPlan] = useState<string>('free');
+    const [rawPlan, setRawPlan] = useState<string>('free');
+    // Depois de cancelada, a assinatura vale até esta data; daí em diante é Livre.
+    const [planExpiresAt, setPlanExpiresAt] = useState<string | null>(null);
+    const [expiryTick, setExpiryTick] = useState(0);
+
+    const fetchPlan = useCallback(async (userId: string) => {
+        const state = await fetchPlanState(userId);
+        if (!state) return; // erro de rede: mantém o que já tinha
+        setRawPlan(state.plan);
+        setPlanExpiresAt(state.planExpiresAt);
+    }, []);
+
+    // Se a data de fim chegar com o app aberto, reavalia sozinho.
+    useEffect(() => {
+        if (!planExpiresAt) return;
+        const ms = Date.parse(planExpiresAt) - Date.now();
+        if (!(ms > 0) || ms > 2_000_000_000) return;
+        const t = setTimeout(() => setExpiryTick(x => x + 1), ms + 1000);
+        return () => clearTimeout(t);
+    }, [planExpiresAt]);
+
+    void expiryTick; // só força o novo render quando a data de fim passa
+    const userPlan = effectivePlan(rawPlan, planExpiresAt);
 
     useEffect(() => {
         if (!supabase) {
             setLoading(false);
             return;
         }
-
-        const fetchPlan = async (userId: string) => {
-            try {
-                const { data } = await supabase!
-                    .from('profiles')
-                    .select('plan')
-                    .eq('id', userId)
-                    .single();
-                
-                if (data && data.plan) {
-                    setUserPlan(data.plan);
-                } else {
-                    setUserPlan('free');
-                }
-            } catch (err) {
-                console.error("Error fetching user plan:", err);
-            }
-        };
 
         // Get initial session
         supabase!.auth.getSession().then(({ data: { session } }) => {
@@ -51,13 +56,19 @@ export function useAuth() {
             if (session?.user) {
                 fetchPlan(session.user.id).finally(() => setLoading(false));
             } else {
-                setUserPlan('free');
+                setRawPlan('free');
+                setPlanExpiresAt(null);
                 setLoading(false);
             }
         });
 
         return () => subscription.unsubscribe();
-    }, []);
+    }, [fetchPlan]);
+
+    // Relê o plano (ex.: depois de cancelar a assinatura).
+    const refreshPlan = useCallback(async () => {
+        if (user) await fetchPlan(user.id);
+    }, [user, fetchPlan]);
 
     const signOut = async () => {
         await supabase!.auth.signOut();
@@ -106,6 +117,8 @@ export function useAuth() {
         session,
         loading,
         userPlan,
+        planExpiresAt,
+        refreshPlan,
         signOut,
         signOutEverywhere,
         updateProfile,

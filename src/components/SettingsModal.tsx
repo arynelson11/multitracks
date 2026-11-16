@@ -1,11 +1,10 @@
 import { X, MonitorSpeaker, RefreshCcw, Download } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../hooks/useAuth';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import type { Channel } from '../types';
 import { buildChannelLabels } from '../lib/channelNames';
 import { PricingModal } from './PricingModal';
-import { supabase } from '../lib/supabase';
 import { planDisplayName, isPaidPlan } from '../lib/plans';
 import { SeparationUsageMeter } from './SeparationUsageMeter';
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark';
@@ -29,20 +28,10 @@ type Tab = 'Perfil' | 'Geral' | 'Buses' | 'Novidades' | 'Assinatura' | 'Sobre';
 
 export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin, onReplayTour, desktopUpdate, onInstallUpdate }: SettingsModalProps) {
     const { settings, updateSetting, availableAudioDevices, refreshAudioDevices } = useSettings();
-    const { user, updateProfile, updatePassword, signOutEverywhere, deleteAccount } = useAuth();
+    // Plano efetivo (cancelado vale até a data de fim, depois é Livre).
+    const { user, userPlan, updateProfile, updatePassword, signOutEverywhere, deleteAccount } = useAuth();
     const [activeTab, setActiveTab] = useState<Tab>('Perfil');
     const [isPricingOpen, setIsPricingOpen] = useState(false);
-    const [userPlan, setUserPlan] = useState<string>('free');
-
-    useEffect(() => {
-        const fetchPlan = async () => {
-            if (user && supabase) {
-                const { data } = await supabase.from('profiles').select('plan').eq('id', user.id).single();
-                if (data) setUserPlan(data.plan || 'free');
-            }
-        };
-        fetchPlan();
-    }, [user]);
 
     const isAdmin = isAdminEmail(user?.email);
 

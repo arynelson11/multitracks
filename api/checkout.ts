@@ -3,18 +3,10 @@ import axios from 'axios';
 import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
 import { verifyUser } from './_lib/auth.js';
+import { PLAN_PRICING, isPlanKey } from './_lib/pricing.js';
+import { asaasBaseUrl } from './_lib/asaas.js';
 
-// ── Tabela de preços (fonte única) ──
-// O valor da assinatura é definido aqui, no backend, e enviado pro Asaas via
-// API. Assim o preço não depende de produto configurado em painel (era a dor
-// do AbacatePay). As chaves são os nomes internos usados em profiles.plan.
-// Anual: `value` é o total cobrado uma vez por ano (ciclo YEARLY).
-const PLAN_PRICING: Record<string, { value: number; cycle: 'MONTHLY' | 'YEARLY'; description: string }> = {
-  essencial_mensal: { value: 49.90, cycle: 'MONTHLY', description: 'Playback Studio Pro (mensal)' },
-  essencial_anual:  { value: 454.80, cycle: 'YEARLY',  description: 'Playback Studio Pro (anual)' },
-  pro_mensal:       { value: 119.90, cycle: 'MONTHLY', description: 'Playback Studio Studio (mensal)' },
-  pro_anual:        { value: 1078.80, cycle: 'YEARLY', description: 'Playback Studio Studio (anual)' },
-};
+// Preços: api/_lib/pricing.ts (fonte única, usada também pelo webhook).
 
 function parseBody(req: any): Record<string, any> {
   const raw = req?.body;
@@ -26,14 +18,6 @@ function parseBody(req: any): Record<string, any> {
   } catch {
     return {};
   }
-}
-
-// Base da API conforme o ambiente. Sandbox por padrão; produção só quando
-// ASAAS_ENV === 'production' (evita cobrar de verdade por engano em testes).
-function asaasBaseUrl(): string {
-  return process.env.ASAAS_ENV === 'production'
-    ? 'https://api.asaas.com/v3'
-    : 'https://api-sandbox.asaas.com/v3';
 }
 
 export default async function handler(req: any, res: any) {
@@ -51,10 +35,10 @@ export default async function handler(req: any, res: any) {
     const body = parseBody(req);
     const planKey = typeof body.planKey === 'string' ? body.planKey : '';
 
-    const plan = PLAN_PRICING[planKey];
-    if (!plan) {
+    if (!isPlanKey(planKey)) {
       return res.status(400).json({ error: 'Invalid planKey' });
     }
+    const plan = PLAN_PRICING[planKey];
 
     const apiKey = process.env.ASAAS_API_KEY;
     if (!apiKey) {

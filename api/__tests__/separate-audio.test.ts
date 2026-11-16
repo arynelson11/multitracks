@@ -119,6 +119,26 @@ describe('separate-audio: cota mensal', () => {
     expect(msg).not.toContain('—')
   })
 
+  it('plano cancelado que já passou da data conta como Livre (limite 5)', async () => {
+    vi.setSystemTime(new Date('2026-12-20T15:00:00Z'))
+    setup({ id: USER, plan: 'essencial_mensal', plan_expires_at: '2026-12-17T03:00:00Z', tokens_used: 5, tokens_period_start: '2026-12-01T03:00:00.000Z' })
+
+    const res = await separate()
+
+    expect(res.statusCode).toBe(402)
+    expect(db.rpcCalls[0]).toMatchObject({ name: 'consume_separation_token', args: { p_limit: 5 } })
+  })
+
+  it('plano cancelado ainda dentro da data mantém o limite pago (50)', async () => {
+    vi.setSystemTime(new Date('2026-12-10T15:00:00Z'))
+    setup({ id: USER, plan: 'essencial_mensal', plan_expires_at: '2026-12-17T03:00:00Z', tokens_used: 5, tokens_period_start: '2026-12-01T03:00:00.000Z' })
+
+    const res = await separate()
+
+    expect(res.statusCode).toBe(200)
+    expect(db.rpcCalls[0]).toMatchObject({ name: 'consume_separation_token', args: { p_limit: 50 } })
+  })
+
   it('o serviço de separação fora do ar devolve a separação gasta', async () => {
     vi.setSystemTime(new Date('2026-11-20T15:00:00Z'))
     setup({ id: USER, plan: 'free', tokens_used: 1, tokens_period_start: '2026-11-01T03:00:00.000Z' })

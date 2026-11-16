@@ -3,7 +3,7 @@ import Replicate from 'replicate';
 import { createClient } from '@supabase/supabase-js';
 import { verifyUser } from './_lib/auth.js';
 import { applyCors } from './_lib/cors.js';
-import { PAID_PLANS } from './_lib/plan.js';
+import { PAID_PLANS, getUserPlan } from './_lib/plan.js';
 
 const DEMUCS_VERSION = '25a173108cff36ef9f80f854c162d01df9e6528be175794b81158fa03836d953';
 
@@ -59,18 +59,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Admin não tem cota nem trava de faixas.
     if (!auth.isAdmin) {
-        const { data: profile, error: profErr } = await supabase
-            .from('profiles')
-            .select('plan')
-            .eq('id', auth.userId)
-            .maybeSingle();
-
-        if (profErr) {
-            console.error('[separate-audio] profile lookup failed:', profErr.message);
+        // Plano efetivo: cancelado vale até plan_expires_at, depois é Livre.
+        let plan: string;
+        try {
+            plan = await getUserPlan(supabase, auth.userId);
+        } catch (e) {
+            console.error('[separate-audio] profile lookup failed:', e instanceof Error ? e.message : 'erro');
             res.status(500).json({ error: 'Profile lookup failed' });
             return;
         }
-        const plan  = profile?.plan ?? 'free';
 
         // Trava de faixas por plano (server-side): Livre só separa em 2 faixas.
         // Impede burlar a trava client-side (plans.ts) mandando stemCount: 4/6.
