@@ -124,7 +124,7 @@ export function AuthPage({ }: AuthPageProps) {
                         Toda música, todo<br />domingo, na sua mão.
                     </h1>
                     <p className="text-warm-200 text-[15px] mb-12 leading-relaxed">
-                        Separe qualquer música em stems prontos. Pra sua equipe chegar pronta no próximo culto.
+                        Separe qualquer música em multitracks prontas. Pra sua equipe chegar pronta no próximo culto.
                     </p>
 
                     {/* Steps */}
