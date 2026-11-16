@@ -187,3 +187,26 @@ describe('canal da onda do SectionBar', () => {
     expect(pickMainChannel([{ id: 'c', name: 'CLICK' }, { id: 'd', name: 'DRUMS' }, { id: 'b', name: 'BASS' }])?.id).toBe('d')
   })
 })
+
+// Ajuste do tom, item 4: click "Metronome" (inglês) ou "Metronom" fica fora da troca de
+// tom e vai pro ouvido. Quem decide é a regra central (METRONOME por palavra inteira e
+// METRONOM no teste antigo do nome do arquivo); o motor não tem regra própria de nome.
+describe('Metronome é Click pela regra central (ajuste do tom, item 4)', () => {
+  it.each(['Metronome', 'METRONOME', 'metronome 120bpm', 'Metronome_Click', 'Metronom', 'metronom'])(
+    '%s: Click, fora do tom, no ouvido e tocando no Solo de outro canal',
+    (name) => {
+      const ch = mix('m', name)
+      const all = [ch, mix('b', 'BASS', { soloed: true })]
+      expect(isPitchExempt(ch)).toBe(true)
+      expect(isSoloSafe(ch)).toBe(true)
+      expect(autoPanFor(ch, true)).toEqual({ pan: -1, bus: '1' })
+      expect(channelGain(ch, all)).toBe(0.8)
+      expect(findClickChannel(all)?.id).toBe('m')
+    },
+  )
+  it('o papel manual vence: Metronome marcado Normal transpõe e vai pra PA', () => {
+    const ch = { id: 'm', name: 'Metronome', role: 'normal' as const }
+    expect(isPitchExempt(ch)).toBe(false)
+    expect(autoPanFor(ch, true)).toEqual({ pan: 1, bus: '2' })
+  })
+})

@@ -60,6 +60,11 @@ if (formant) {
   for (const n of ['Lead Guitar', 'Guitarra Lead', 'Lead Gtr', 'GTR Lead', 'Lead Guit', 'Synth Lead', 'Lead Synth', 'Lead Key', 'Lead Keys',
     'Keys Lead', 'Piano Lead', 'Lead Bass', 'Baixo Lead'])
     check('R1-7', `"${n}" sem formantes`, formant(n), false);
+  // Junção com a Parte 1: o motor passa o papel da regra central em `exempt`; a regra
+  // do item 7 continua valendo com ele (instrumento lead nunca, VOC e BGV só se Normal).
+  for (const [n, exempt, want] of [['Lead Guitar', false, false], ['Synth Lead', false, false], ['Lead', false, true],
+    ['VOC', false, true], ['BGV', false, true], ['VOC', true, false], ['BGV', true, false], ['Lead', true, false]])
+    check('R1-7', `"${n}" ${exempt ? 'Click/Guia' : 'Normal'} pela regra central`, formant(n, exempt), want);
 }
 
 console.log('\n== item 6: tom em qualquer formato, nunca NaN ==');

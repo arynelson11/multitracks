@@ -5,11 +5,13 @@
 export const normalizeChannelName = (name: string): string =>
     name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
-// Click/voz-guia nunca transpõem (ficam fora do worklet de tom). Ignora acento
-// e caixa: o click do Separador se chama "Metrônomo" e, sem isso, era
-// transposto e saía atrasado junto com os instrumentos. "metronom" cobre
-// metronomo, metrônomo, metronome e metronom. A mesma regra decide o lado do
-// autoPan (click no fone, banda no PA).
+// Teste antigo de click/voz-guia só pelo nome, sem acento e sem caixa ("metronom"
+// cobre metronomo, metrônomo, metronome e metronom). NÃO decide áudio: no motor,
+// quem fica fora do worklet de tom, o atraso de latência, o lado do pan
+// automático e o Solo saem da regra central de canais (isPitchExempt,
+// autoPanFor e channelGain em src/lib/channelRoles.ts, onde o papel manual vale
+// e "Metronome" já é Click). Aqui ele só é o padrão de `exempt` em
+// wantsFormantCompensation pra quem chama sem o papel (os testes em Node).
 export const isClickOrGuideName = (name: string): boolean => {
     const n = normalizeChannelName(name);
     return n.includes('click') || n.includes('metronom') || n.includes('guia') || n.includes('guide');
