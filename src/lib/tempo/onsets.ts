@@ -142,8 +142,12 @@ export function sampleAt(o: Float32Array, x: number): number {
   return i + 1 < o.length ? o[i] * (1 - f) + o[i + 1] * f : o[i];
 }
 
-/** Média da onset nos pontos phase + k*period, em quadros (a "afinação" da grade). */
+/**
+ * Média da onset nos pontos phase + k*period, em quadros (a "afinação" da grade).
+ * Período 0, negativo ou NaN dá 0 (a grade não anda e o laço não terminaria).
+ */
 export function combScore(o: Float32Array, period: number, phase: number): number {
+  if (!(period > 0)) return 0;
   let s = 0;
   let c = 0;
   for (let x = phase; x < o.length; x += period) {

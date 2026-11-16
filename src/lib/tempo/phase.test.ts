@@ -6,7 +6,7 @@ import { legacyDetectBeatGrid } from '../../test/legacyBeatGrid';
 import { TEMPO_CASES, caseBeatsPerBar, caseTracks, expectedBpm, firstBeatError, tempoCase, type TempoCase } from '../../test/tempoCases';
 import type { SynthSong } from '../../test/synthMusic';
 import { choosePhase } from './phase';
-import type { OnsetBands } from './onsets';
+import { combScore, type OnsetBands } from './onsets';
 
 const LENTO = 60_000;
 
@@ -116,5 +116,19 @@ describe('choosePhase', () => {
     expect(r.phase).toBe(20);
     expect(r.phase).toBeGreaterThanOrEqual(0);
     expect(r.phase).toBeLessThan(PERIODO);
+  });
+
+  // Período inválido (0, negativo ou NaN) não pode travar: `combScore` andava a
+  // grade com passo 0 ou pra trás e nunca saía do laço.
+  it('período NaN: fica a fase da busca, com risco, e combScore dá 0', () => {
+    const b = bandas(pulsos([[20, 1]]), pulsos([[20, 1]]));
+    expect(choosePhase(b, NaN, 10)).toEqual({ phase: 10, offbeatRisk: true });
+    expect(combScore(pulsos([[0, 1]]), NaN, 0)).toBe(0);
+  });
+
+  it.each([0, -5])('período %s: fica a fase da busca, com risco, e combScore dá 0 (sem laço infinito)', (periodo) => {
+    const b = bandas(pulsos([[20, 1]]), pulsos([[20, 1]]));
+    expect(choosePhase(b, periodo, 10)).toEqual({ phase: 10, offbeatRisk: true });
+    expect(combScore(pulsos([[0, 1]]), periodo, 0)).toBe(0);
   });
 });

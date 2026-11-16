@@ -31,10 +31,11 @@ function beatEvidence(b: OnsetBands, period: number, phase: number, kickMax: num
  * @param phase fase achada pela busca, em quadros de `b`, em [0, period)
  * @returns a fase do tempo, em quadros, em [0, period), e se há risco de a grade
  *   estar no contratempo: tempo e contratempo com menos de 15% de diferença, ou
- *   faixa sem bumbo nem caixa (baixo em colcheias, shaker), em que a fase da busca fica.
+ *   faixa sem bumbo nem caixa (shaker), em que a fase da busca fica. Período 0,
+ *   negativo ou NaN também fica com a fase da busca e avisa o risco.
  */
 export function choosePhase(b: OnsetBands, period: number, phase: number): { phase: number; offbeatRisk: boolean } {
-  if (!b.hasKick && !b.hasSnare) return { phase, offbeatRisk: true };
+  if (!(period > 0) || (!b.hasKick && !b.hasSnare)) return { phase, offbeatRisk: true };
   const kickMax = maxOf(b.kick);
   const snareMax = maxOf(b.snare);
   const half = (phase + period / 2) % period;
