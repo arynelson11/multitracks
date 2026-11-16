@@ -10,10 +10,11 @@
 // Todos com 60 s a 48 kHz (o relatório usou 300 s e o gridsweep, 120 s): o erro
 // de uma grade travada é constante, e 60 s deixam os testes rápidos.
 //
-// `positive`: o sintético tem pulso que a grade acha e segue, então o click pode
-// sair sozinho. `false`: não há pulso em que confiar (ruído, pad, voz, baixo só
-// de compasso, bateria afogada em chiado); a grade sai errada ou não quer dizer
-// nada, e o click não pode sair sozinho.
+// `positive`: o sintético tem pulso periódico de verdade, que a confiança deve
+// reconhecer. A confiança não mede acerto de fase nem de oitava: alguns positivos
+// ainda saem com a grade errada e estão marcados em `knownIssue`. `false`: não há
+// pulso em que confiar (ruído, pad, voz, baixo só de compasso, bateria afogada em
+// chiado); a grade sai errada ou não quer dizer nada, e o click não pode sair sozinho.
 //
 // `group`: `calibracao` calibra o corte de confiança (CONFIDENCE_CUT) e
 // `validacao` confere o corte em casos que não entraram na conta. Os positivos se
@@ -49,6 +50,8 @@ export interface TempoCase {
   pulseEvery?: number;
   /** Outros nomes do mesmo caso (o plano da M3 chama alguns por descrição). */
   aliases?: readonly string[];
+  /** Falha conhecida do detector neste caso (o que sai errado hoje e quem deve corrigir). */
+  knownIssue?: string;
 }
 
 // Música do relatório: Bateria, Baixo e Pad (o pacote padrão do harness), 60 s a
@@ -107,7 +110,8 @@ export const TEMPO_CASES: readonly TempoCase[] = [
   { id: 'e1', group: 'calibracao', positive: true, song: synth({ bpm: 96, firstBeat: 0.35, pattern: 'sync44' }),
     note: 'síncope forte (gospel/funk em semicolcheias, chimbal acentuado no "e"), 96 BPM: a busca cai no contratempo' },
   { id: 'e2', group: 'validacao', positive: true, song: synth({ bpm: 76, firstBeat: 0.5, pattern: 'offbeat44' }),
-    note: 'contratempo dominante (one drop), 76 BPM: caixa em todo "e", bumbo só no 3; a fase continua no contratempo' },
+    note: 'contratempo dominante (one drop), 76 BPM: caixa em todo "e", bumbo só no 3',
+    knownIssue: 'a grade fica no contratempo e sem aviso de risco: o ruído da caixa (todo "e") vence o bumbo (só no 3)' },
   { id: 'f1', group: 'calibracao', positive: true, song: synth({ bpm: 90, firstBeat: 0.3, pattern: 'waltz34' }), beatsPerBar: 3,
     note: 'valsa 3/4, 90 BPM, compasso pedido 3/4' },
   { id: 'f3', group: 'validacao', positive: true, song: synth({ bpm: 180, firstBeat: 0.3, pattern: 'sixeight' }), beatsPerBar: 6, pulseEvery: 3,
@@ -143,16 +147,19 @@ export const TEMPO_CASES: readonly TempoCase[] = [
   { id: 't_58', group: 'calibracao', positive: true, song: synth({ bpm: 58, firstBeat: 0.7 }),
     note: 'balada 58 BPM, chimbal em colcheias' },
   { id: 't_160', group: 'validacao', positive: true, song: synth({ bpm: 160, firstBeat: 0.7 }),
-    note: 'rápida 160 BPM: a grade ainda sai pela metade (80), a M4 corrige a oitava' },
+    note: 'rápida 160 BPM, chimbal em colcheias',
+    knownIssue: 'o BPM sai pela metade (80): a oitava é da M4' },
   { id: 't_176', group: 'calibracao', positive: true, song: synth({ bpm: 176, firstBeat: 0.7 }),
-    note: 'rápida 176 BPM: a grade ainda sai pela metade (88), a M4 corrige a oitava' },
+    note: 'rápida 176 BPM, chimbal em colcheias',
+    knownIssue: 'o BPM sai pela metade (88): a oitava é da M4' },
   { id: 'n_kicksplit', group: 'validacao', positive: true, song: synth({ bpm: 104, firstBeat: 0.55 }),
     note: 'pacote com a bateria numa faixa "KICK" (sem "drum"): o pulso é a bateria (o AUTO antigo caía no BASS)' },
   // ── Só baixo ou só shaker (cointoss.mjs e harness.mjs) ──
   { id: 'bass-colcheias', group: 'calibracao', positive: true, song: synth({ bpm: 104, firstBeat: 0.55 }), pulse: ['bass8'],
     note: 'só baixo em colcheias iguais (o BASS do pacote n_kicksplit), 104 BPM: tempo e contratempo empatam' },
   { id: 'loop-shaker', group: 'validacao', positive: true, song: synth({ bpm: 104, firstBeat: 0.55 }), pulse: ['shaker'],
-    note: 'só Loop de shaker em semicolcheias com acento no "e" (o n_loop do harness), 104 BPM: a busca cai no contratempo' },
+    note: 'só Loop de shaker em semicolcheias com acento no "e" (o n_loop do harness), 104 BPM',
+    knownIssue: 'a grade fica no contratempo (sem bumbo nem caixa não há como decidir); pelo menos avisa o risco' },
   // ── Kit separado ──
   { id: 'kit-separado', group: 'calibracao', positive: true, song: synth({ bpm: 96, firstBeat: 0.35, pattern: 'sync44', splitKit: true }), pulse: ['kick', 'snare', 'hihat'],
     note: 'o e1 em três faixas (KICK, SNARE, HIHAT): nenhuma peça sozinha acha o tempo, as três somadas acham' },

@@ -75,6 +75,32 @@ describe('tempo x contratempo nos casos do relatório', () => {
   }, LENTO);
 });
 
+// Falhas conhecidas (campo `knownIssue` do catálogo): o teste trava o que sai HOJE.
+// Quando uma tarefa seguinte corrigir um destes, o teste quebra de propósito e o
+// caso sai da lista (e o `knownIssue` do catálogo também).
+describe('falhas conhecidas do catálogo (comportamento de hoje)', () => {
+  it('a lista de falhas conhecidas é esta', () => {
+    expect(TEMPO_CASES.filter(c => c.knownIssue).map(c => c.id)).toEqual(['e2', 't_160', 't_176', 'loop-shaker']);
+  });
+
+  it.each([
+    { id: 'e2', risco: false },
+    { id: 'loop-shaker', risco: true },
+  ])('falha conhecida: $id sai no contratempo (aviso de risco: $risco)', ({ id, risco }) => {
+    const c = tempoCase(id);
+    const { song, grid } = detect(c);
+    const meioPeriodo = 30 / song.bpm;
+    expect(grid.bpm).toBeCloseTo(song.bpm, 1);
+    expect(Math.abs(Math.abs(firstBeatError(c, song, grid.firstBeat)) - meioPeriodo)).toBeLessThan(0.010);
+    expect(grid.offbeatRisk).toBe(risco);
+  });
+
+  it.each(['t_160', 't_176'])('falha conhecida: %s sai pela metade do BPM (a oitava é da M4)', (id) => {
+    const { song, grid } = detect(tempoCase(id));
+    expect(grid.bpm).toBeCloseTo(song.bpm / 2, 1);
+  });
+});
+
 // ── choosePhase com ataques montados à mão (sem áudio) ──
 
 const FPS = 200;
