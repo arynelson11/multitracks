@@ -235,6 +235,22 @@ describe('nunca muta a intenção recebida', () => {
       expect(a).toEqual(copy)
     }
   })
+  it('quando nada muda, devolve a mesma intenção (identidade)', () => {
+    const a = i(3, 2)
+    const last = i(5, 1)
+    const loop = i(2, 'infinite')
+    const sem = { gates: livre }
+    const semInfinito = { gates: { ...gates, infinite: false } }
+    const pairs: [ArmIntent | null, ArmIntent | null][] = [
+      [tapSection(a, 6, ctx()).intent, a], [tapSection(a, 1, ctx(sem)).intent, a], [tapSection(a, 1, ctx({ ...sem, ...parado })).intent, a],
+      [stepSection(last, 1, ctx()).intent, last], [stepSection(a, 1, ctx({ sectionCount: 0 })).intent, a], [stepSection(a, 1, ctx(sem)).intent, a],
+      [armAt(a, 4, 2, ctx(sem)).intent, a], [armAt(a, 4, 'infinite', ctx(semInfinito)).intent, a], [armAt(a, 9, 2, ctx()).intent, a],
+      [armRepeat(a, 2, ctx({ current: -1 })).intent, a], [armRepeat(a, 2, ctx(sem)).intent, a],
+      [toggleLoop(a, ctx({ current: 6 })).intent, a], [toggleLoop(a, ctx(sem)).intent, a], [toggleLoop(a, ctx(semInfinito)).intent, a],
+      [afterLanding(loop), loop],
+    ]
+    for (const [got, given] of pairs) expect(got).toBe(given)
+  })
   it('o que volta nunca é o mesmo objeto quando a intenção muda', () => {
     const a = i(1, 3)
     const r = armRepeat(a, 5, ctx()).intent
