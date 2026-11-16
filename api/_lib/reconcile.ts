@@ -4,6 +4,7 @@ import {
   getSubscription,
   listCustomerSubscriptions,
   listSubscriptionPayments,
+  type AsaasApi,
   type AsaasPayment,
 } from './asaas.js'
 import { BillingError, PAID_STATUSES, brtToday, toBrtDate, type BillingDeps } from './billing.js'
@@ -16,16 +17,21 @@ import { BillingError, PAID_STATUSES, brtToday, toBrtDate, type BillingDeps } fr
 // * Folga contra alarme falso: linha mexida nas últimas 2 h não é conferida;
 //   pendência ainda tentando há menos de 48 h explica o desencontro; pagamento
 //   do dia fica pra amanhã (a data do Asaas não tem hora).
-// * Corte de tempo próprio (45 s, dentro dos 60 s da função). A unidade de
+// * Corte de tempo próprio, dentro dos 60 s da função: nenhuma consulta ao
+//   Asaas começa depois de 40 s e cada uma tem teto de 5 s (o pior caso termina
+//   antes de 45 s, COB-PRE). Consulta que estoura o teto conta como erro do
+//   Asaas. Erro do Asaas numa unidade não a conta como conferida e deixa a
+//   conferência parcial, com marcação pro admin. A unidade de
 //   trabalho é o CLIENTE do Asaas (as assinaturas dele e a lista de assinaturas
 //   dele) e cada checkout antigo sem linha. Cada unidade tem um dia fixo numa volta
 //   de RECONCILE_EVERY_DAYS dias (pelo id): as do dia vêm primeiro (parte
 //   garantida) e, com o tempo que sobrar, as outras, começando num ponto
 //   diferente a cada dia. Assim cada cliente é conferido pelo menos a cada 7 dias.
-//   Conta: no pior caso 3 GET de 0,5 s por cliente, 1,5 s; 45 s cobrem uns 30
-//   clientes por dia, então a volta de 7 dias fecha até uns 210 clientes (menos,
+//   Conta: no pior caso 3 GET de 0,5 s por cliente, 1,5 s; 40 s cobrem uns 26
+//   clientes por dia, então a volta de 7 dias fecha até uns 180 clientes (menos,
 //   se o sorteio dos dias ficar desigual). Se a parte garantida do dia não couber,
-//   a conferência parcial vira marcação pro admin (caso admin_review do dia).
+//   ou se o Asaas der erro, a conferência parcial vira marcação pro admin (caso
+//   admin_review do dia).
 // * Notas sempre com o mesmo texto pro mesmo caso (billing_flag_review não repete).
 // Confere as assinaturas ativas e as encerradas que ainda têm acesso, que não
 // têm a parada confirmada ou que foram encerradas ou paradas nos últimos 45 dias.
@@ -40,7 +46,8 @@ import { BillingError, PAID_STATUSES, brtToday, toBrtDate, type BillingDeps } fr
 //   5. no banco: eventos esgotados e pendências com muitas tentativas (resumo).
 
 export const RECONCILE_CRON = '0 11 * * *'   // vercel.json (08:00 a 08:59 de Brasília, depois do job)
-export const RECONCILE_BUDGET_MS = 45_000
+export const RECONCILE_BUDGET_MS = 40_000          // nenhuma consulta começa depois disso
+export const RECONCILE_REQUEST_TIMEOUT_MS = 5_000  // teto de cada consulta ao Asaas
 export const RECONCILE_EVERY_DAYS = 7
 const RECENT_MS = 2 * 3600_000
 const PENDING_GRACE_MS = 48 * 3600_000
@@ -109,8 +116,30 @@ async function select<T>(q: PromiseLike<{ data: unknown; error: { message: strin
 
 type Unit = { key: string; customer: string | null; rows: Row[] } | { key: string; checkout: string; userId: string | null }
 
-export async function runReconcile(deps: BillingDeps, opts: { budgetMs?: number; clock?: () => number } = {}): Promise<ReconcileResult> {
-  const { db, asaas } = deps
+// O tempo acabou: nenhuma consulta nova ao Asaas.
+class BudgetCut extends Error {}
+
+// Asaas da conferência: só GET (escrever lança), sem começar consulta depois do
+// corte e com teto por consulta (estourar o teto vira erro do Asaas).
+function readOnlyAsaas(api: AsaasApi, canStart: () => boolean, timeoutMs: number): AsaasApi {
+  const forbid = () => Promise.reject(new Error('a conferencia nao escreve no Asaas'))
+  return {
+    get: <T>(path: string, params?: Record<string, string | number | boolean>): Promise<T> => {
+      if (!canStart()) return Promise.reject(new BudgetCut('corte de tempo'))
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const ceiling = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new AsaasError('unavailable', `Asaas sem resposta em ${timeoutMs} ms`)), timeoutMs)
+      })
+      return Promise.race([api.get<T>(path, params), ceiling]).finally(() => clearTimeout(timer))
+    },
+    post: forbid,
+    put: forbid,
+    del: forbid,
+  }
+}
+
+export async function runReconcile(deps: BillingDeps, opts: { budgetMs?: number; clock?: () => number; requestTimeoutMs?: number } = {}): Promise<ReconcileResult> {
+  const { db } = deps
   const clock = opts.clock ?? (() => Date.now())
   const started = clock()
   const budget = opts.budgetMs ?? RECONCILE_BUDGET_MS
@@ -138,6 +167,7 @@ export async function runReconcile(deps: BillingDeps, opts: { budgetMs?: number;
     out.reviews++
   }
   const overBudget = () => clock() - started > budget
+  const asaas = deps.asaas ? readOnlyAsaas(deps.asaas, () => !overBudget(), opts.requestTimeoutMs ?? RECONCILE_REQUEST_TIMEOUT_MS) : null
 
   // 5. Resumo do próprio banco (sem Asaas).
   const events = await select<{ id: string }>(db.from('asaas_webhook_events').select('id').eq('status', 'exhausted'), 'asaas_webhook_events')
@@ -169,9 +199,13 @@ export async function runReconcile(deps: BillingDeps, opts: { budgetMs?: number;
   }
   const units: Unit[] = [...byCustomer.entries()].map(([key, rs]) => ({ key, customer: rs[0].asaas_customer_id, rows: rs }))
   const legacy = await select<{ asaas_checkout_id: unknown; user_id: string | null }>(db.from('payments').select('asaas_checkout_id, user_id'), 'payments')
+  const legacyUser = new Map<string, string | null>()
   for (const p of legacy) {
     const checkout = typeof p.asaas_checkout_id === 'string' ? p.asaas_checkout_id : null
-    if (checkout && !rowsById.has(checkout)) units.push({ key: `checkout:${checkout}`, checkout, userId: p.user_id })
+    if (checkout && !rowsById.has(checkout)) {
+      units.push({ key: `checkout:${checkout}`, checkout, userId: p.user_id })
+      legacyUser.set(checkout, p.user_id)
+    }
   }
   units.sort((a, b) => (a.key < b.key ? -1 : 1))
   const todaySlot = dayNumber % RECONCILE_EVERY_DAYS
@@ -258,10 +292,13 @@ export async function runReconcile(deps: BillingDeps, opts: { budgetMs?: number;
       const ids = list.map((x) => x.sub).sort()
       for (const x of list) await flag(x.row.id, `conferencia: ${ids.length} assinaturas ATIVAS no Asaas pro mesmo cliente (${ids.join(', ')}): deixar so uma`)
     }
+    // a conta: a do checkout antigo dessa assinatura, se for de um (mesmo CPF,
+    // outra conta, COB-PRE d); senão a única conta do cliente; senão nenhuma
     const users = [...new Set(mine.map((r) => r.user_id).filter((u): u is string => !!u))]
     for (const s of active) {
       if (rowOf(s)) continue
-      await review(`asaas:${s.id}`, `conferencia: assinatura ${s.id} ATIVA no Asaas sem registro no app (cliente ${customer})`, users.length === 1 ? users[0] : null)
+      const userId = s.checkoutSession && legacyUser.has(s.checkoutSession) ? legacyUser.get(s.checkoutSession) ?? null : users.length === 1 ? users[0] : null
+      await review(`asaas:${s.id}`, `conferencia: assinatura ${s.id} ATIVA no Asaas sem registro no app (cliente ${customer})`, userId)
     }
   }
 
@@ -295,19 +332,27 @@ export async function runReconcile(deps: BillingDeps, opts: { budgetMs?: number;
         if (!cut && u.customer && !u.rows.some((r) => recent(r.updated_at))) await checkCustomer(u.customer, u.rows)
       }
     } catch (e) {
+      if (e instanceof BudgetCut) { stop(i); break }
       if (!(e instanceof AsaasError)) throw e
+      // não conta como conferida e a conferência fica parcial (COB-PRE b)
       out.asaasErrors++
+      out.partial = true
+      continue
     }
     if (cut) { stop(i); break }
     out.customers.checked++
     if (i < guaranteed.length) guaranteedDone++
   }
 
-  // Parcial na parte garantida: a volta de 7 dias não fecha. Vira marcação pro
-  // admin (um caso por dia), não só linha de log.
-  if (out.guaranteeMissed) {
+  // Parcial na parte garantida (a volta de 7 dias não fecha) ou com erro do
+  // Asaas: vira marcação pro admin (um caso por dia), não só linha de log.
+  if (out.guaranteeMissed || out.asaasErrors > 0) {
+    const why = [
+      out.guaranteeMissed ? `o tempo acabou com ${guaranteedDone} de ${guaranteed.length} clientes do dia conferidos` : null,
+      out.asaasErrors > 0 ? `${out.asaasErrors} erro${out.asaasErrors > 1 ? 's' : ''} do Asaas (unidade nao conferida)` : null,
+    ].filter(Boolean).join('; ')
     await review(`conferencia:parcial:${today}`,
-      `conferencia diaria parcial: o tempo acabou com ${guaranteedDone} de ${guaranteed.length} clientes do dia conferidos (${out.customers.checked} de ${units.length} no total); a volta de ${RECONCILE_EVERY_DAYS} dias nao fecha, ver o tempo da funcao ou dividir a conferencia`,
+      `conferencia diaria parcial: ${why} (${out.customers.checked} de ${units.length} conferidos); a volta de ${RECONCILE_EVERY_DAYS} dias pode nao fechar, ver o Asaas, o tempo da funcao ou dividir a conferencia`,
       null)
   }
   return out

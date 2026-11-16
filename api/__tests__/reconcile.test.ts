@@ -359,6 +359,57 @@ describe('rodízio quando o tempo não dá (COB-FINAL 6)', () => {
   })
 })
 
+describe('pré-lançamento da conferência (COB-PRE b, c e d)', () => {
+  it('(b) erro do Asaas numa unidade: não conta como conferida e a conferência parcial vira marcação pro admin', async () => {
+    db.tables.billing_subscriptions.push(row({ id: 'chk_1', user_id: USER_A, asaas_subscription_id: 'sub_1' }))
+    asaas = fakeAsaas({ subs: { sub_1: { id: 'sub_1', status: 'ACTIVE', checkoutSession: 'chk_1' } } })
+    asaas.get.mockRejectedValue(new AsaasError('unavailable', 'Asaas sem resposta (ECONNRESET)'))
+    const res = await reconcile()
+    expect(res.body).toMatchObject({ ok: true, reconcile: { partial: true, asaasErrors: 1, customers: { checked: 0 } } })
+    const mark = reviews().find((a) => String(a.subscription_ref).startsWith('conferencia:parcial:'))!
+    expect(mark).toMatchObject({ subscription_ref: 'conferencia:parcial:2026-11-16', auto_retry: false, user_id: null })
+    expect(String(mark.reason)).toContain('1 erro do Asaas')
+  })
+
+  it('(c) teto por requisição: um GET lento demais é abandonado no teto e a conferência segue e marca parcial', async () => {
+    const { runReconcile } = await import('../_lib/reconcile.js')
+    db.tables.billing_subscriptions.push(row({ id: 'chk_1', user_id: USER_A, asaas_subscription_id: 'sub_1' }))
+    const slow = fakeAsaas()
+    slow.get.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve({ id: 'sub_1', status: 'ACTIVE' }), 2_000)))
+    const t0 = performance.now()
+    const out = await runReconcile({ db: db as never, asaas: slow, now: () => new Date() }, { requestTimeoutMs: 50 })
+    expect(performance.now() - t0).toBeLessThan(1_000)
+    expect(out).toMatchObject({ partial: true, asaasErrors: 1 })
+    expect(reviews().some((a) => String(a.subscription_ref).startsWith('conferencia:parcial:'))).toBe(true)
+  })
+
+  it('(c) nenhuma consulta começa depois do corte: com GET lento em todas, termina antes de 45 s (a função tem 60 s)', async () => {
+    const { runReconcile, RECONCILE_BUDGET_MS, RECONCILE_REQUEST_TIMEOUT_MS } = await import('../_lib/reconcile.js')
+    expect(RECONCILE_BUDGET_MS + RECONCILE_REQUEST_TIMEOUT_MS).toBeLessThanOrEqual(45_000)
+    for (let i = 1; i <= 20; i++) db.tables.billing_subscriptions.push(row({ id: `chk_${i}`, user_id: USER_A, asaas_subscription_id: `sub_${i}`, asaas_customer_id: `cus_${i}` }))
+    let t = 0
+    const slow = fakeAsaas()
+    // cada GET leva quase o teto (4,9 s no relógio da conferência)
+    slow.get.mockImplementation(async (path: string) => { t += 4_900; return path.startsWith('/subscriptions/') ? { id: path.slice(15), status: 'ACTIVE' } : { data: [], hasMore: false } })
+    const out = await runReconcile({ db: db as never, asaas: slow, now: () => new Date() }, { clock: () => t })
+    expect(out.partial).toBe(true)
+    expect(t).toBeLessThan(45_000)
+    expect(slow.put).not.toHaveBeenCalled()
+    expect(slow.del).not.toHaveBeenCalled()
+  })
+
+  it('(d) assinatura de conta antiga sem linha (mesmo CPF) vai pro admin com a conta dela, não com a do cliente', async () => {
+    db.tables.billing_subscriptions.push(row({ id: 'chk_1', user_id: USER_A, asaas_subscription_id: 'sub_1' }))
+    db.tables.payments.push({ id: 'chk_old', user_id: USER_B, plan_key: 'essencial_mensal', asaas_checkout_id: 'chk_old' })
+    asaas = fakeAsaas({
+      subs: { sub_1: { id: 'sub_1', status: 'ACTIVE', customer: 'cus_1', checkoutSession: 'chk_1' } },
+      byCustomer: { cus_1: [{ id: 'sub_1', status: 'ACTIVE', checkoutSession: 'chk_1' }, { id: 'sub_old', status: 'ACTIVE', checkoutSession: 'chk_old' }] },
+    })
+    await reconcile()
+    expect(reviews()).toContainEqual(expect.objectContaining({ subscription_ref: 'asaas:sub_old', user_id: USER_B }))
+  })
+})
+
 describe('corte de tempo próprio', () => {
   it('para antes do limite e diz que ficou parcial', async () => {
     const { runReconcile } = await import('../_lib/reconcile.js')
