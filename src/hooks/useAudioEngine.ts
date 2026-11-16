@@ -325,6 +325,16 @@ export function useAudioEngine(userId?: string) {
         return Math.max(0, ctx.currentTime - startTimeRef.current) * timeStretch + pausedAtRef.current;
     };
 
+    // Cancela um play() que ainda espera o worklet nascer (1ª vez transposto,
+    // 50 a 300 ms). Quem troca de música sem passar pelo play() chama isto antes
+    // de trocar (só quando a música muda de fato):
+    // sem isso o play antigo terminava depois e tocava a música anterior (a
+    // closure dele tem os canais dela) com a tela já na outra.
+    const cancelPendingPlay = () => {
+        playGenRef.current++;
+        playPendingRef.current = false;
+    };
+
     // Core persistence. Grava o repertório v2: tudo o que já era salvo (mixagem,
     // tom, marcadores, letra, cifra) mais sourceId, nome e papel do usuário e a ordem.
     const saveStateToDB = async (list: Song[]) => {
@@ -746,6 +756,7 @@ export function useAudioEngine(userId?: string) {
 
     const executeNextSong = useCallback(() => {
         if (activeSongIndex >= playlist.length - 1) return;
+        cancelPendingPlay();
 
         stopAllNodes();
         pausedAtRef.current = 0;
@@ -783,10 +794,12 @@ export function useAudioEngine(userId?: string) {
     }, [activeSongIndex, playlist.length, isPlaying, executeNextSong]);
 
     const prevSong = useCallback(() => {
+        // Na 1ª música volta pro começo dela: um play pendente dela continua valendo.
         if (activeSongIndex <= 0) {
             skipBack();
             return;
         }
+        cancelPendingPlay();
 
         if (autoNextTimeoutRef.current) {
             clearTimeout(autoNextTimeoutRef.current);
@@ -1486,6 +1499,7 @@ export function useAudioEngine(userId?: string) {
     const jumpToSong = (index: number) => {
         if (index < 0 || index >= playlist.length) return;
         if (index === activeSongIndex) return;
+        cancelPendingPlay();
 
         if (autoNextTimeoutRef.current) {
             clearTimeout(autoNextTimeoutRef.current);

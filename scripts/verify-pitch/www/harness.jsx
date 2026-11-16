@@ -74,8 +74,9 @@ const INSTRUMENTS = ['Bateria', 'Baixo', 'Vocal', 'Teclado', 'Guitarra', 'Violao
   'Perc', 'Loop', 'Sax', 'Trompete', 'Orgao', 'Piano', 'Coro', 'Bells', 'FX', 'Contra', 'Tamborim', 'Shaker',
   'Viola', 'Cello', 'Flauta', 'Clarinete', 'Harpa', 'Marimba'];
 // Repertório com várias músicas (instrumentos por música, sem click e guia).
-// SONGS: 24, 10 e 30 canais.
-const SONG_SIZES = { SONGS: [22, 8, 28] }[SEQ] || [N];
+// SONGS: 24, 10 e 30 canais. PENDENTE: 8, 12 e 16 (cada troca precisa de
+// worklet novo, que nasce de forma assíncrona).
+const SONG_SIZES = { SONGS: [22, 8, 28], PENDENTE: [6, 10, 14] }[SEQ] || [N];
 const MULTI = SONG_SIZES.length > 1;
 const VOICE = new Set(['Vocal', 'Backing', 'Coro']);
 
@@ -263,6 +264,14 @@ async function main() {
   // Troca de música pelo repertório (índice atual) e remoção (ordem de carga).
   const jump = (i) => () => { ev('jumpToSong', { to: i }); E().jumpToSong(i); };
   const removeSong = (k) => () => { ev('removeSong', { song: k }); E().removeSongFromPlaylist(songIds[k]); };
+  // Parado: põe o tom, aperta play (a 1ª vez transposta espera o worklet nascer)
+  // e, na mesma hora, troca de música. A música do play pendente não pode tocar.
+  const pendingSwitch = (from, semis, kind) => () => {
+    ev('setPitch', { to: semis }); E().changePitch(semis);
+    ev('play', { pending: true }); E().play();
+    ev('pendingSwitch', { from, kind });
+    if (kind === 'jumpToSong') E().jumpToSong(2); else if (kind === 'prevSong') E().prevSong(); else E().nextSong();
+  };
   const loopOff = () => { ev('cancelLoop'); E().cancelLoop(); };
   const seeks = (t0, n, pos0) => Array.from({ length: n }, (_, k) => [t0 + k * 0.5, seek(pos0 + k * 0.3)]);
   const stallSeeks = (t0, n, pos0) => Array.from({ length: n }, (_, k) => [t0 + k * 1.0, seek(pos0 + k * 0.3, true)]);
@@ -289,6 +298,13 @@ async function main() {
     SONGS: [[0, play], [1, pitch(2)], [4, snap('A 24 canais +2')], [5, jump(1)], [6, pitch(3)], [9, snap('B 10 canais +3')],
       [10, jump(2)], [11, pitch(2)], [14.5, snap('C 30 canais +2')], [15.5, removeSong(1)], [17, snap('C depois de remover B')],
       [18, jump(0)], [21, snap('A de volta (+2)')], [22, pitch(0)], [25, snap('A tom 0')], [26, pause], [27, snap('fim (pausado)')]],
+    // Play transposto pendente e troca de música antes do worklet nascer, pelos 3
+    // caminhos: A + jumpToSong(C), C + prevSong (B) e B + nextSong (C). O botão
+    // de próxima sempre toca a música seguinte (comportamento de antes), então no
+    // fim C tem de estar tocando, e não B. Os pause() entre os casos deixam cada
+    // um começar parado mesmo no código antigo (onde o anterior ficava tocando).
+    PENDENTE: [[0.5, pendingSwitch(0, 2, 'jumpToSong')], [2.5, pause], [3, pendingSwitch(2, 3, 'prevSong')], [5.5, snap('fim das trocas (nada tocando)')],
+      [6.5, pause], [7, pendingSwitch(1, 4, 'nextSong')], [10.5, snap('C tocando (+3), pelo botão de próxima')], [11.5, pause], [12.5, snap('fim (pausado)')]],
     // Nível de faixa mono e estéreo, pan total e centro, no tom 0 e transposto.
     LEVELS: [[0, play], [3, snap('tom 0')], [4, pitch(2)], [8, snap('apos +2')], [9, pitch(0)], [12, snap('apos volta 0')], [13, pause], [14, snap('fim (pausado)')]],
     NAN: [[0, play], [3, pitch(NaN)], [7, snap('apos tom NaN')], [8, pitch(2)], [12, snap('apos +2')], [13, pause], [14, snap('fim (pausado)')]],

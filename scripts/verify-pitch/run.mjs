@@ -35,6 +35,8 @@ export const SCENARIOS = {
   STALL: { query: 'seq=STALL&n=8&order=A', timeout: 90 },
   // Repertório: A (24 canais) +2, B (10) +3, C (30) +2, remove B, A de volta e no tom 0.
   SONGS: { query: 'seq=SONGS&order=A&dur=30', timeout: 180 },
+  // Play transposto pendente + troca de música (jumpToSong, prevSong, nextSong) antes do worklet nascer.
+  PENDENTE: { query: 'seq=PENDENTE&order=A&dur=20', timeout: 120 },
   // Nível de faixa mono e estéreo (pan total e centro), tom 0 x transposto.
   LEVELS: { query: 'seq=LEVELS&order=A', timeout: 90 },
   // Tom inválido (NaN) chegando no motor.

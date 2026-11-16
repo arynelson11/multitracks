@@ -140,13 +140,26 @@ export function analyze(key, R) {
   }
   if (jumps.length && !['SEEKS', 'RESTART', 'LOOP', 'STALL'].includes(seq)) add(1, `posição contínua ao reiniciar (|salto| <= ${JUMP_S} s)`, jumps.every((j) => Math.abs(j) <= JUMP_S), `saltos s: ${jumps.map((j) => fmt(j, 3)).join(', ')}`);
 
-  // ---------- rodada 1, item 3: som em todas as faixas da música tocando ----------
-  if (seq === 'SONGS') {
+  // ---------- rodada 1, item 5: play pendente cancelado na troca de música ----------
+  if (seq === 'PENDENTE') {
+    const ends = R.events.filter((e) => e.type === 'pendingSwitch' || (e.type === 'play' && !e.pending));
+    for (const e of R.events.filter((x) => x.type === 'pendingSwitch')) {
+      const end = ends.find((x) => x.t > e.t);
+      const late = R.sources.filter((r) => r.song === e.from && r.tStart >= e.t && (!end || r.tStart < end.t));
+      add('R1-5', `play pendente da música ${'ABC'[e.from]} e ${e.kind} antes do worklet nascer: a música anterior não toca`, late.length === 0,
+        late.length ? `${late.length} fontes dela começaram depois da troca` : 'nenhuma fonte dela começou');
+    }
+    const quiet = R.snaps.find((x) => x.label.startsWith('fim das trocas'));
+    if (quiet) add('R1-5', 'depois das trocas: nada tocando', !quiet.isPlaying && quiet.sourcesAlive.length === 0, `isPlaying ${quiet.isPlaying}, fontes vivas ${quiet.sourcesAlive.length}`);
+  }
+
+  // ---------- rodada 1, itens 3 e 5: som em todas as faixas da música tocando ----------
+  if (seq === 'SONGS' || seq === 'PENDENTE') {
     for (const s of R.snaps.filter(isPlayingSnap)) {
       const lv = Object.entries(s.levels);
       const quiet = lv.filter(([, v]) => !(v.total > CH_LEVEL_DB));
       const low = lv.length ? Math.min(...lv.map(([, v]) => v.total)) : null;
-      add('R1-3', `[${s.label}] som em todas as ${lv.length} faixas (> ${CH_LEVEL_DB} dB)`, lv.length === s.expect.channels && quiet.length === 0,
+      add(seq === 'SONGS' ? 'R1-3' : 'R1-5', `[${s.label}] som em todas as ${lv.length} faixas (> ${CH_LEVEL_DB} dB)`, lv.length === s.expect.channels && quiet.length === 0,
         quiet.length ? 'sem som: ' + quiet.map(([n, v]) => `${n} ${fmt(v.total)} dB`).join(', ') : `faixa mais baixa ${fmt(low)} dB`);
     }
   }
@@ -178,7 +191,7 @@ export function analyze(key, R) {
   }
 
   // ---------- item 3: alinhamento (R − L) por trecho ----------
-  if (seq !== 'NAN' && seq !== 'LEVELS') {
+  if (seq !== 'NAN' && seq !== 'LEVELS' && seq !== 'PENDENTE') {
     const bounds = changes.map((c) => ({ ctx: c.ctx, pitch: c.to }));
     const segs = [{ from: 0, pitch: 0 }, ...bounds.map((b) => ({ from: b.ctx, pitch: b.pitch }))];
     const pauseEv = R.events.find((e) => e.type === 'pause');
