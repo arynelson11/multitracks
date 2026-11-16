@@ -1,0 +1,12 @@
+# Áudio decodificado do demo (13 MB): não vai pro git, se gera de novo (ver README).
+demo-wav/
+# Saídas locais das medições.
+results*
+dist/
+node_modules/
+# Fontes da v1.4.9: idênticas ao commit 5e051c2, se geram de novo (ver README).
+# Ficam fora do git porque quebrariam o eslint do repo (código antigo).
+v149/
+# O build usa o esbuild que já vem com o Vite (node_modules da raiz do repo).
+package.json
+package-lock.json

@@ -1,0 +1,540 @@
+[
+ {
+  "file": "Blip-accents.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0,
+  "first_m20dB_ms": 0.045,
+  "first_m6dB_ms": 0.045,
+  "peakMs": 0.227,
+  "tailEndMs": 42.7,
+  "hits": [
+   {
+    "onsetMs": 0.05,
+    "peakMs": 0.23,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Blip-eighth.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0,
+  "first_m20dB_ms": 0.045,
+  "first_m6dB_ms": 0.068,
+  "peakMs": 0.317,
+  "tailEndMs": 49.2,
+  "hits": [
+   {
+    "onsetMs": 0.05,
+    "peakMs": 0.32,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Blip-quarter.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0,
+  "first_m20dB_ms": 0.045,
+  "first_m6dB_ms": 0.091,
+  "peakMs": 0.454,
+  "tailEndMs": 73,
+  "hits": [
+   {
+    "onsetMs": 0.05,
+    "peakMs": 0.45,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Blip-sixteenth.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0,
+  "first_m20dB_ms": 0.045,
+  "first_m6dB_ms": 0.068,
+  "peakMs": 0.317,
+  "tailEndMs": 48.7,
+  "hits": [
+   {
+    "onsetMs": 0.05,
+    "peakMs": 0.32,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Classic-accents.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0,
+  "first_m20dB_ms": 0.045,
+  "first_m6dB_ms": 0.454,
+  "peakMs": 9.41,
+  "tailEndMs": 166.7,
+  "hits": [
+   {
+    "onsetMs": 0.05,
+    "peakMs": 9.41,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Classic-eighth.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0.045,
+  "first_m20dB_ms": 1.02,
+  "first_m6dB_ms": 2.29,
+  "peakMs": 4.444,
+  "tailEndMs": 11.3,
+  "hits": []
+ },
+ {
+  "file": "Classic-quarter.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0.045,
+  "first_m20dB_ms": 1.088,
+  "first_m6dB_ms": 1.837,
+  "peakMs": 2.336,
+  "tailEndMs": 11.6,
+  "hits": []
+ },
+ {
+  "file": "Classic-sixteenth.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0.045,
+  "first_m20dB_ms": 0.68,
+  "first_m6dB_ms": 1.587,
+  "peakMs": 3.129,
+  "tailEndMs": 15.9,
+  "hits": [
+   {
+    "onsetMs": 0.32,
+    "peakMs": 3.13,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Cowbell-accents.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0.045,
+  "first_m20dB_ms": 0.522,
+  "first_m6dB_ms": 1.02,
+  "peakMs": 1.973,
+  "tailEndMs": 91.9,
+  "hits": [
+   {
+    "onsetMs": 0.52,
+    "peakMs": 1.97,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Cowbell-eighth.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0.159,
+  "first_m20dB_ms": 1.043,
+  "first_m6dB_ms": 2.018,
+  "peakMs": 3.923,
+  "tailEndMs": 173.2,
+  "hits": [
+   {
+    "onsetMs": 1,
+    "peakMs": 3.92,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Cowbell-quarter.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0.295,
+  "first_m20dB_ms": 1.156,
+  "first_m6dB_ms": 2.426,
+  "peakMs": 5.692,
+  "tailEndMs": 172.5,
+  "hits": [
+   {
+    "onsetMs": 1.04,
+    "peakMs": 5.69,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Cowbell-sixteenth.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0.317,
+  "first_m20dB_ms": 0.794,
+  "first_m6dB_ms": 1.519,
+  "peakMs": 2.948,
+  "tailEndMs": 138.1,
+  "hits": []
+ },
+ {
+  "file": "Digital-accents.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0.023,
+  "first_m20dB_ms": 0.068,
+  "first_m6dB_ms": 0.091,
+  "peakMs": 3.787,
+  "tailEndMs": 73,
+  "hits": [
+   {
+    "onsetMs": 0.05,
+    "peakMs": 3.79,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Digital-sixteenth.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0.023,
+  "first_m20dB_ms": 0.068,
+  "first_m6dB_ms": 0.091,
+  "peakMs": 5.782,
+  "tailEndMs": 75.2,
+  "hits": [
+   {
+    "onsetMs": 0.05,
+    "peakMs": 5.78,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Gentle-accents.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0.045,
+  "first_m20dB_ms": 0.068,
+  "first_m6dB_ms": 0.204,
+  "peakMs": 0.408,
+  "tailEndMs": 29.4,
+  "hits": [
+   {
+    "onsetMs": 0.05,
+    "peakMs": 0.41,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Gentle-eighth.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0,
+  "first_m20dB_ms": 0.045,
+  "first_m6dB_ms": 0.045,
+  "peakMs": 0.068,
+  "tailEndMs": 4.8,
+  "hits": [
+   {
+    "onsetMs": 0,
+    "peakMs": 0.07,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Gentle-quarter.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0,
+  "first_m20dB_ms": 0.045,
+  "first_m6dB_ms": 0.113,
+  "peakMs": 0.204,
+  "tailEndMs": 11.6,
+  "hits": [
+   {
+    "onsetMs": 0.05,
+    "peakMs": 0.2,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Gentle-sixteenth.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0,
+  "first_m20dB_ms": 0.045,
+  "first_m6dB_ms": 0.113,
+  "peakMs": 0.204,
+  "tailEndMs": 11.6,
+  "hits": [
+   {
+    "onsetMs": 0.05,
+    "peakMs": 0.2,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Percussive-accents.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0,
+  "first_m20dB_ms": 0.045,
+  "first_m6dB_ms": 0.091,
+  "peakMs": 6.961,
+  "tailEndMs": 251.2,
+  "hits": [
+   {
+    "onsetMs": 0.05,
+    "peakMs": 6.96,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Percussive-eighth.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0,
+  "first_m20dB_ms": 5.261,
+  "first_m6dB_ms": 17.574,
+  "peakMs": 23.832,
+  "tailEndMs": 31.9,
+  "hits": []
+ },
+ {
+  "file": "Percussive-quarter.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0.045,
+  "first_m20dB_ms": 4.444,
+  "first_m6dB_ms": 18.821,
+  "peakMs": 23.719,
+  "tailEndMs": 277.4,
+  "hits": []
+ },
+ {
+  "file": "Percussive-sixteenth.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0,
+  "first_m20dB_ms": 3.628,
+  "first_m6dB_ms": 19.501,
+  "peakMs": 25.76,
+  "tailEndMs": 37.8,
+  "hits": []
+ },
+ {
+  "file": "Saw-accents.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0.295,
+  "first_m20dB_ms": 0.952,
+  "first_m6dB_ms": 1.678,
+  "peakMs": 2.766,
+  "tailEndMs": 81,
+  "hits": []
+ },
+ {
+  "file": "Saw-eighth.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0,
+  "first_m20dB_ms": 0.045,
+  "first_m6dB_ms": 0.045,
+  "peakMs": 0.068,
+  "tailEndMs": 78.5,
+  "hits": [
+   {
+    "onsetMs": 0,
+    "peakMs": 0.07,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Saw-quarter.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0,
+  "first_m20dB_ms": 0.045,
+  "first_m6dB_ms": 0.045,
+  "peakMs": 0.068,
+  "tailEndMs": 78.5,
+  "hits": [
+   {
+    "onsetMs": 0,
+    "peakMs": 0.07,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Woodblock-accents.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0.045,
+  "first_m20dB_ms": 0.159,
+  "first_m6dB_ms": 0.385,
+  "peakMs": 0.567,
+  "tailEndMs": 46.2,
+  "hits": [
+   {
+    "onsetMs": 0.14,
+    "peakMs": 0.57,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Woodblock-eighth.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0.023,
+  "first_m20dB_ms": 0.136,
+  "first_m6dB_ms": 0.34,
+  "peakMs": 7.347,
+  "tailEndMs": 40.3,
+  "hits": [
+   {
+    "onsetMs": 0.11,
+    "peakMs": 7.35,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Woodblock-quarter.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0.023,
+  "first_m20dB_ms": 0.136,
+  "first_m6dB_ms": 0.34,
+  "peakMs": 7.347,
+  "tailEndMs": 40.3,
+  "hits": [
+   {
+    "onsetMs": 0.11,
+    "peakMs": 7.35,
+    "peakDb": 0
+   }
+  ]
+ },
+ {
+  "file": "Woodblock-sixteenth.wav",
+  "sr": 44100,
+  "ch": 2,
+  "bits": 16,
+  "durMs": 1000,
+  "dataOff": 44,
+  "first_m60dB_ms": 0.023,
+  "first_m20dB_ms": 0.136,
+  "first_m6dB_ms": 0.34,
+  "peakMs": 7.347,
+  "tailEndMs": 40.3,
+  "hits": [
+   {
+    "onsetMs": 0.11,
+    "peakMs": 7.35,
+    "peakDb": 0
+   }
+  ]
+ }
+]
