@@ -7,7 +7,7 @@ import { updateCachedSongMeta } from '../lib/offlineCache';
 import { uploadToR2 } from '../lib/r2';
 import { type Marker } from '../types';
 import { isAdminEmail } from '../lib/admin';
-import { editedBpmColumns, preciseBpm } from '../lib/cloudBpm';
+import { INVALID_BPM_MESSAGE, editedBpmColumns, preciseBpm } from '../lib/cloudBpm';
 import type { TimeSignatureType } from '../lib/AudioAnalyzer';
 
 interface LibraryModalProps {
@@ -54,7 +54,7 @@ export function LibraryModal({ isOpen, onClose, onDownload, onSongEdited }: Libr
         // texto inválido avisa e não grava (nunca apaga o BPM por engano).
         const bpmCols = editedBpmColumns(song, editingSong.bpmText);
         if (!bpmCols) {
-            alert('BPM inválido. Use um número maior que 0 e menor que 400 (ex.: 72,5), ou deixe o campo vazio.');
+            alert(INVALID_BPM_MESSAGE);
             return;
         }
 

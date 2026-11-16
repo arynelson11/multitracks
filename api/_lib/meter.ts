@@ -7,7 +7,8 @@
 // mesmos casos: mudou lá, muda aqui. O banco tem a mesma regra nas checks de
 // db/supabase-bpm-exact-migration.sql.
 
-const TIME_SIGNATURES: readonly string[] = ['3/4', '4/4', '5/4', '6/8', '7/8', '12/8'];
+/** Compassos aceitos pelo banco (mesma lista do src/lib/cloudBpm.ts e da check da migration). */
+export const TIME_SIGNATURES: readonly string[] = ['3/4', '4/4', '5/4', '6/8', '7/8', '12/8'];
 
 const BPM_MAX = 400;
 

@@ -17,10 +17,10 @@
 --
 -- O ALTER pede lock exclusivo da tabela. Se houver transação longa aberta em
 -- songs, ele desiste em 5 s em vez de ficar na fila travando as leituras do
--- app; aí é só rodar de novo. No fim, o PostgREST relê o esquema pra API já
--- enxergar as colunas novas. O Supabase costuma recarregar sozinho depois de
--- DDL; o notify garante, senão a regravação tolerante do app continuaria
--- descartando o BPM exato e o compasso sem ninguém ver.
+-- app; aí é só rodar de novo. Depois das colunas, o PostgREST relê o esquema
+-- pra API já enxergar as colunas novas. O Supabase costuma recarregar sozinho
+-- depois de DDL; o notify garante, senão a regravação tolerante do app
+-- continuaria descartando o BPM exato e o compasso sem ninguém ver.
 -- ============================================================
 
 set lock_timeout = '5s';
@@ -32,12 +32,13 @@ alter table public.songs add column if not exists time_signature text null check
 comment on column public.songs.bpm_exact is 'BPM com 2 casas. Vale só quando round(bpm_exact) = bpm, senão o app usa bpm (inteiro, lido pelos apps antigos).';
 comment on column public.songs.time_signature is 'Compasso da música (3/4, 4/4, 5/4, 6/8, 7/8 ou 12/8). Vazio = não informado.';
 
--- Verificação
+-- API (PostgREST) enxerga as colunas novas na hora.
+notify pgrst, 'reload schema';
+
+-- Verificação (por último: o SQL Editor do Supabase só mostra o resultado do
+-- último comando)
 select column_name, data_type, numeric_precision, numeric_scale, is_nullable
 from information_schema.columns
 where table_schema = 'public' and table_name = 'songs'
   and column_name in ('bpm', 'bpm_exact', 'time_signature')
 order by column_name;
-
--- API (PostgREST) enxerga as colunas novas na hora.
-notify pgrst, 'reload schema';

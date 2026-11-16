@@ -13,7 +13,8 @@
 // as duas cópias: mudou aqui, muda lá.
 import type { TimeSignatureType } from './AudioAnalyzer'
 
-const TIME_SIGNATURES: readonly TimeSignatureType[] = ['3/4', '4/4', '5/4', '6/8', '7/8', '12/8']
+/** Compassos aceitos pelo banco (mesma lista da check da migration e de api/_lib/meter.ts). */
+export const TIME_SIGNATURES: readonly TimeSignatureType[] = ['3/4', '4/4', '5/4', '6/8', '7/8', '12/8']
 
 const BPM_MAX = 400
 
@@ -46,6 +47,23 @@ export function bpmColumns(value: number): { bpm: number; bpm_exact: number } | 
 // "72.5", "120", "72,", ",5"). Mais estrito que Number(), que aceita "1e3".
 const DECIMAL_TEXT = /^(\d+(\.\d*)?|\.\d+)$/
 
+/** Aviso dos campos de BPM (biblioteca e envio do admin) quando o texto não vale. */
+export const INVALID_BPM_MESSAGE = 'BPM inválido. Use um número maior que 0 e menor que 400 (ex.: 72,5), ou deixe o campo vazio.'
+
+/**
+ * BPM digitado num campo de texto: aceita vírgula ou ponto e devolve o valor com
+ * 2 casas. Vazio ou 0 = 0 (sem BPM). Inválido ou fora de (0, 400): null, pra a
+ * tela avisar em vez de gravar ou apagar o BPM.
+ */
+export function bpmFromText(text: string): number | null {
+  const t = text.trim().replace(',', '.')
+  if (t === '') return 0
+  if (!DECIMAL_TEXT.test(t)) return null
+  const value = Number(t)
+  if (value === 0) return 0
+  return bpmColumns(value)?.bpm_exact ?? null
+}
+
 /**
  * Colunas de BPM pra gravar a partir do campo de edição da biblioteca.
  * `text` undefined = não mexeu: regrava o BPM que vale hoje (e conserta o par
@@ -63,10 +81,8 @@ export function editedBpmColumns(
     return (current !== undefined ? bpmColumns(current) : null)
       ?? { bpm: Number.isFinite(whole) ? whole : 0, bpm_exact: null }
   }
-  const t = text.trim().replace(',', '.')
-  if (t === '') return { bpm: 0, bpm_exact: null }
-  if (!DECIMAL_TEXT.test(t)) return null
-  const value = Number(t)
+  const value = bpmFromText(text)
+  if (value === null) return null
   if (value === 0) return { bpm: 0, bpm_exact: null }
   return bpmColumns(value)
 }

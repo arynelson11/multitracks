@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
+  INVALID_BPM_MESSAGE,
+  TIME_SIGNATURES,
   bpmColumns,
+  bpmFromText,
   editedBpmColumns,
   isMissingMeterColumn,
   preciseBpm,
@@ -119,6 +122,33 @@ describe('bpmColumns', () => {
   })
 })
 
+describe('bpmFromText (campo de BPM do envio do admin)', () => {
+  it('aceita vírgula ou ponto e devolve o BPM com 2 casas', () => {
+    expect(bpmFromText('72,5')).toBe(72.5)
+    expect(bpmFromText('72.5')).toBe(72.5)
+    expect(bpmFromText(' 120 ')).toBe(120)
+    expect(bpmFromText('72,456')).toBe(72.46)
+  })
+
+  it('vazio ou 0 é sem BPM (0)', () => {
+    expect(bpmFromText('')).toBe(0)
+    expect(bpmFromText('  ')).toBe(0)
+    expect(bpmFromText('0')).toBe(0)
+    expect(bpmFromText('0,00')).toBe(0)
+  })
+
+  it('valor inválido ou fora de (0, 400) dá null (a tela avisa e não envia)', () => {
+    for (const t of ['abc', '72,5,1', '1e3', '-72', '+72', '72bpm', ',', '450', '400', '399,999']) {
+      expect(bpmFromText(t), t).toBeNull()
+    }
+  })
+
+  it('aviso em português, com exemplo de vírgula, sem travessão', () => {
+    expect(INVALID_BPM_MESSAGE).toBe('BPM inválido. Use um número maior que 0 e menor que 400 (ex.: 72,5), ou deixe o campo vazio.')
+    expect(INVALID_BPM_MESSAGE).not.toContain(String.fromCharCode(0x2014))
+  })
+})
+
 describe('editedBpmColumns (campo de BPM da biblioteca)', () => {
   const song = { bpm: 73, bpm_exact: 72.5 }
 
@@ -220,8 +250,22 @@ describe('migration (db/supabase-bpm-exact-migration.sql)', () => {
     expect(statements[0]).toBe("set lock_timeout = '5s'")
   })
 
-  it('termina pedindo ao PostgREST que releia o esquema', () => {
-    expect(statements[statements.length - 1]).toBe("notify pgrst, 'reload schema'")
+  it('pede ao PostgREST que releia o esquema logo antes do select de verificação', () => {
+    // O SQL Editor do Supabase só mostra o resultado do último comando: o select
+    // de conferência fica por último e o notify vem logo antes dele.
+    expect(statements[statements.length - 2]).toBe("notify pgrst, 'reload schema'")
+    expect(statements[statements.length - 1]).toMatch(/^select column_name, data_type, .* from information_schema\.columns /)
+    const lastDdl = Math.max(
+      ...statements.map((st, i) => (st.startsWith('alter table') || st.startsWith('comment on')) ? i : -1),
+    )
+    expect(lastDdl).toBeLessThan(statements.length - 2)
+  })
+
+  it('a check do compasso no banco tem a mesma lista do app', () => {
+    const check = sql.match(/time_signature in \(([^)]*)\)/)
+    expect(check).not.toBeNull()
+    const inDb = (check?.[1] ?? '').split(',').map(t => t.trim().replace(/^'|'$/g, ''))
+    expect(inDb).toEqual([...TIME_SIGNATURES])
   })
 
   it('é aditiva e idempotente: só cria coluna se não existe, nunca apaga nem regrava linha', () => {
@@ -268,6 +312,8 @@ describe('paridade com a cópia do servidor (api/_lib/meter.ts)', () => {
   })
 
   it('as listas fechadas são as mesmas', () => {
+    expect([...serverMeter.TIME_SIGNATURES]).toEqual([...TIME_SIGNATURES])
+    expect(TIME_SIGNATURES).toEqual(['3/4', '4/4', '5/4', '6/8', '7/8', '12/8'])
     expect([...serverMeter.SONG_METER_COLUMNS]).toEqual(['bpm_exact', 'time_signature'])
     const row = { name: 'X', bpm: 73, bpm_exact: 72.5, time_signature: '6/8' }
     expect(serverMeter.withoutMeterColumns(row)).toEqual(withoutMeterColumns(row))

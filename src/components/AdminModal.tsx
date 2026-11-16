@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { X, Upload, Music, Image as ImageIcon, Loader2, AlertCircle, CheckCircle2, ChevronRight, Hash, Activity, Layers, Disc, Repeat } from 'lucide-react';
 import { useAdminUpload, type UploadMetadata } from '../hooks/useAdminUpload';
 import { AUDIO_FILE_ACCEPT } from '../lib/uploadContentType';
-import { bpmColumns } from '../lib/cloudBpm';
+import { INVALID_BPM_MESSAGE, bpmFromText } from '../lib/cloudBpm';
 
 interface AdminModalProps {
     isOpen: boolean;
@@ -22,6 +22,9 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
         key: '',
         bpm: 0
     });
+
+    // Texto do campo de BPM, como foi digitado ("72,5" ou "72.5"); vira número no envio.
+    const [bpmText, setBpmText] = useState('');
 
     const [coverFile, setCoverFile] = useState<File | null>(null);
     const [stemFiles, setStemFiles] = useState<File[]>([]);
@@ -48,10 +51,14 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
 
         if (activeTab === 'music') {
             if (!metadata.name || stemFiles.length === 0) return;
-            // BPM com até 2 casas (bpmColumns); o servidor grava o inteiro e o
-            // exato. Vazio sobe sem BPM (0); fora de (0, 400) o próprio campo
-            // (min, max e step) já barra o envio do formulário.
-            const bpm = bpmColumns(metadata.bpm)?.bpm_exact ?? 0;
+            // BPM com até 2 casas, mesma regra da biblioteca (bpmFromText); o
+            // servidor grava o inteiro e o exato. Vazio sobe sem BPM (0); texto
+            // inválido avisa e não envia.
+            const bpm = bpmFromText(bpmText);
+            if (bpm === null) {
+                alert(INVALID_BPM_MESSAGE);
+                return;
+            }
             const success = await uploadProject({ ...metadata, bpm }, coverFile, stemFiles);
             if (success) setIsSuccess(true);
         } else if (activeTab === 'pads') {
@@ -70,6 +77,7 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
         if (isUploading) return;
         setIsSuccess(false);
         setMetadata({ name: '', artist: '', key: '', bpm: 0 });
+        setBpmText('');
         setCoverFile(null);
         setStemFiles([]);
         setPadFiles(new Map());
@@ -223,14 +231,12 @@ export function AdminModal({ isOpen, onClose }: AdminModalProps) {
                                         <div className="relative">
                                             <Activity size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
                                             <input
-                                                type="number"
+                                                type="text"
                                                 inputMode="decimal"
-                                                step="0.01"
-                                                min="0"
-                                                max="399.99"
-                                                value={metadata.bpm || ''}
-                                                onChange={e => setMetadata({ ...metadata, bpm: parseFloat(e.target.value) || 0 })}
-                                                placeholder="e.g. 72"
+                                                autoComplete="off"
+                                                value={bpmText}
+                                                onChange={e => setBpmText(e.target.value)}
+                                                placeholder="ex.: 72"
                                                 className="w-full daw-input text-white text-xs pl-9 pr-3 py-2.5 rounded-md font-mono"
                                             />
                                         </div>
