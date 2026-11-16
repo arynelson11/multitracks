@@ -32,7 +32,8 @@ describe('texto de espera do pulo', () => {
     expect(transitionWaitText(t, 22.04)).toBeNull()
     expect(transitionWaitText({ ...t, hasGrid: false, countTimes: [], countLabels: [], countTotal: 0, barsLeft: null }, 22.01)).toBeNull()
     expect(transitionWaitText({ ...t, clickAudible: false }, 22.01)).toBeNull()
-    expect(transitionWaitText({ ...t, switchAt: null }, 99)).toBe('último comp.')
+    // Sem instante de troca conhecido não há "depois do pulo".
+    expect(transitionWaitText({ ...noCount, switchAt: null, barsLeft: 1 }, 99)).toBe('último comp.')
   })
   it('nenhum texto com travessão', () => {
     const all = [
