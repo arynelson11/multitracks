@@ -1,5 +1,7 @@
 import { get, set, del, keys } from 'idb-keyval';
 import { type CloudSong } from './supabase';
+import type { TimeSignatureType } from './AudioAnalyzer';
+import { preciseBpm, sanitizeTimeSignature } from './cloudBpm';
 
 import { type Marker } from '../types';
 
@@ -164,7 +166,7 @@ export async function cacheSong(
     }
 }
 
-// Atualiza só os metadados (nome, artista, tom, bpm, capa) do snapshot guardado
+// Atualiza só os metadados (nome, artista, tom, bpm e bpm_exact, capa) do snapshot guardado
 // no índice offline quando a música é editada na biblioteca. Sem isso, reabrir
 // uma música já baixada mostrava os dados de quando ela foi baixada. Os stems
 // não mudam — reescrevemos apenas o índice leve. Se a capa mudou, rebaixa o blob
@@ -259,6 +261,7 @@ export async function getCachedSong(songId: string): Promise<{
     originalKey: string | null;
     artist?: string;
     bpm?: number;
+    timeSignature: TimeSignatureType | null;
     lyrics?: string | null;
     lyricsSynced?: string | null;
     chords?: string | null;
@@ -310,7 +313,9 @@ export async function getCachedSong(songId: string): Promise<{
             markers: data.song.markers || null,
             originalKey: data.song.key || null,
             artist: data.song.artist || undefined,
-            bpm: data.song.bpm || undefined,
+            // Exato quando o índice tem (baixada depois da migration), senão o inteiro.
+            bpm: preciseBpm(data.song),
+            timeSignature: sanitizeTimeSignature(data.song.time_signature),
             lyrics: data.song.lyrics ?? null,
             lyricsSynced: data.song.lyrics_synced ?? null,
             chords: data.song.chords ?? null

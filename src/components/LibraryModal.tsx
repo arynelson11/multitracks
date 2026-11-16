@@ -7,11 +7,13 @@ import { updateCachedSongMeta } from '../lib/offlineCache';
 import { uploadToR2 } from '../lib/r2';
 import { type Marker } from '../types';
 import { isAdminEmail } from '../lib/admin';
+import { bpmColumns, preciseBpm } from '../lib/cloudBpm';
+import type { TimeSignatureType } from '../lib/AudioAnalyzer';
 
 interface LibraryModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onDownload: (files: File[], songName: string, coverUrl: string | null, markers?: Marker[], originalKey?: string | null, artist?: string, bpm?: number, extra?: { lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null }, songId?: string) => void;
+    onDownload: (files: File[], songName: string, coverUrl: string | null, markers?: Marker[], originalKey?: string | null, artist?: string, bpm?: number, extra?: { lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null; timeSignature?: TimeSignatureType | null }, songId?: string) => void;
     // Reflete a edição (nome/tom/bpm/capa) na música já baixada/no ao vivo.
     onSongEdited?: (e: { songId: string; prevName: string; prevBpm?: number; prevOriginalKey?: string | null; name: string; artist?: string; originalKey?: string | null; bpm?: number; coverImage?: string }) => void;
 }
@@ -37,7 +39,8 @@ export function LibraryModal({ isOpen, onClose, onDownload, onSongEdited }: Libr
     const isAdmin = isAdminEmail(user?.email);
 
     const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
-    const [editingSong, setEditingSong] = useState<Partial<CloudSong> & { file?: File | null }>({});
+    // bpmText: o que está digitado no campo de BPM (undefined = não mexeu).
+    const [editingSong, setEditingSong] = useState<Partial<CloudSong> & { file?: File | null; bpmText?: string }>({});
     const [isSavingEdit, setIsSavingEdit] = useState(false);
     const [activeTab, setActiveTab] = useState<'platform' | 'personal'>('platform');
 
@@ -46,6 +49,24 @@ export function LibraryModal({ isOpen, onClose, onDownload, onSongEdited }: Libr
     }, [isOpen]);
 
     const handleEditSave = async (song: CloudSong) => {
+        // O BPM vai pra nuvem nas duas colunas (bpmColumns): o inteiro, que os
+        // apps antigos leem, e o exato com 2 casas.
+        let bpmCols: { bpm: number; bpm_exact: number | null };
+        if (editingSong.bpmText === undefined) {
+            // Não mexeu no BPM: regrava o que vale hoje (e acerta o par se um
+            // app antigo tiver mudado só o inteiro).
+            const current = preciseBpm(song);
+            bpmCols = (current !== undefined ? bpmColumns(current) : null) ?? { bpm: song.bpm ?? 0, bpm_exact: null };
+        } else {
+            const typed = editingSong.bpmText.trim() === '' ? 0 : Number(editingSong.bpmText);
+            const cols = typed === 0 ? { bpm: 0, bpm_exact: null } : bpmColumns(typed);
+            if (!cols) {
+                alert('BPM inválido. Use um número maior que 0 e menor que 400, ou deixe o campo vazio.');
+                return;
+            }
+            bpmCols = cols;
+        }
+
         setIsSavingEdit(true);
         try {
             let newCoverUrl = song.cover_url;
@@ -60,7 +81,7 @@ export function LibraryModal({ isOpen, onClose, onDownload, onSongEdited }: Libr
             const updates = {
                 name: editingSong.name ?? song.name,
                 artist: editingSong.artist ?? song.artist,
-                bpm: editingSong.bpm ?? song.bpm,
+                ...bpmCols,
                 key: editingSong.key ?? song.key,
                 cover_url: newCoverUrl
             };
@@ -71,18 +92,20 @@ export function LibraryModal({ isOpen, onClose, onDownload, onSongEdited }: Libr
                 // música foi baixada: (1) o índice do cache offline e (2) o item
                 // já presente no repertório/ao vivo. Sem isto, a lista atualizava
                 // mas a música baixada continuava com nome/tom/bpm antigos.
+                // O patch leva bpm e bpm_exact, e o repertório recebe o BPM
+                // exato (preciseBpm): é por ele que o syncSongMeta acha a música.
                 await updateCachedSongMeta(song.id, updates);
                 const prevName = song.artist ? `${song.artist} - ${song.name}` : song.name;
                 const newName = updates.artist ? `${updates.artist} - ${updates.name}` : updates.name;
                 onSongEdited?.({
                     songId: song.id,
                     prevName,
-                    prevBpm: song.bpm,
+                    prevBpm: preciseBpm(song),
                     prevOriginalKey: song.key ?? null,
                     name: newName,
                     artist: updates.artist ?? undefined,
                     originalKey: updates.key ?? null,
-                    bpm: updates.bpm,
+                    bpm: preciseBpm(bpmCols) ?? 0,
                     coverImage: newCoverUrl ?? undefined,
                 });
                 await refreshSongs();
@@ -106,7 +129,7 @@ export function LibraryModal({ isOpen, onClose, onDownload, onSongEdited }: Libr
         // files vazio + cachedSourceId = música no cache: o engine carrega lendo do
         // cache 1 stem por vez (sem segurar todos os blobs na memória = OOM mobile).
         if (result && (result.files.length > 0 || result.cachedSourceId)) {
-            onDownload(result.files, songName, result.coverUrl, result.markers || undefined, result.originalKey, result.artist, result.bpm, { lyrics: result.lyrics, lyricsSynced: result.lyricsSynced, chords: result.chords }, songId);
+            onDownload(result.files, songName, result.coverUrl, result.markers || undefined, result.originalKey, result.artist, result.bpm, { lyrics: result.lyrics, lyricsSynced: result.lyricsSynced, chords: result.chords, timeSignature: result.timeSignature }, songId);
             setDownloadedIds(prev => new Set(prev).add(songId));
         }
     };
@@ -195,6 +218,7 @@ export function LibraryModal({ isOpen, onClose, onDownload, onSongEdited }: Libr
                                         const isDownloading = downloadingSongId === song.id;
                                         const isDownloaded = downloadedIds.has(song.id);
                                         const isEditing = editingSong.id === song.id;
+                                        const songBpm = preciseBpm(song);
 
                                 if (isEditing) {
                                     return (
@@ -214,7 +238,7 @@ export function LibraryModal({ isOpen, onClose, onDownload, onSongEdited }: Libr
                                                 </div>
                                                 <div>
                                                     <label className="text-[9px] text-text-muted uppercase font-bold font-mono tracking-wider">BPM</label>
-                                                    <input type="number" value={editingSong.bpm ?? song.bpm} onChange={e => setEditingSong({...editingSong, bpm: Number(e.target.value)})} className="w-full daw-input rounded-md px-2 py-1.5 text-white text-xs font-mono" />
+                                                    <input type="number" inputMode="decimal" step="0.01" min="0" max="399.99" value={editingSong.bpmText ?? String(songBpm ?? '')} onChange={e => setEditingSong({...editingSong, bpmText: e.target.value})} className="w-full daw-input rounded-md px-2 py-1.5 text-white text-xs font-mono" />
                                                 </div>
                                                 <div>
                                                     <label className="text-[9px] text-text-muted uppercase font-bold font-mono tracking-wider">Tom</label>
@@ -266,9 +290,9 @@ export function LibraryModal({ isOpen, onClose, onDownload, onSongEdited }: Libr
                                                         TOM: {song.key}
                                                     </span>
                                                 )}
-                                                {song.bpm > 0 && (
+                                                {songBpm !== undefined && (
                                                     <span className="text-[9px] font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded font-mono">
-                                                        {song.bpm} BPM
+                                                        {songBpm} BPM
                                                     </span>
                                                 )}
                                                 {cachedSongIds.has(song.id) && (

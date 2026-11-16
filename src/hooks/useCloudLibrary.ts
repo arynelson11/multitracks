@@ -3,6 +3,8 @@ import { fetchSongs, searchSongs, fetchStems, downloadFileAsBlobWithProgress, de
 import { cacheSongsList, getCachedSongsList, cacheSong, isSongCached, removeCachedSong, getCachedSongIds } from '../lib/offlineCache';
 import { useNetworkStatus } from './useNetworkStatus';
 import { type Marker } from '../types';
+import type { TimeSignatureType } from '../lib/AudioAnalyzer';
+import { preciseBpm, sanitizeTimeSignature } from '../lib/cloudBpm';
 
 export function useCloudLibrary() {
     const [songs, setSongs] = useState<CloudSong[]>([]);
@@ -84,7 +86,7 @@ export function useCloudLibrary() {
     }, [searchQuery, isOnline]);
 
     // Download a song (or load from local cache if offline/cached)
-    const downloadSong = useCallback(async (songId: string): Promise<{ files: File[], coverUrl: string | null, markers: Marker[] | null, originalKey: string | null, artist?: string, bpm?: number, lyrics?: string | null, lyricsSynced?: string | null, chords?: string | null, cachedSourceId?: string } | null> => {
+    const downloadSong = useCallback(async (songId: string): Promise<{ files: File[], coverUrl: string | null, markers: Marker[] | null, originalKey: string | null, artist?: string, bpm?: number, timeSignature: TimeSignatureType | null, lyrics?: string | null, lyricsSynced?: string | null, chords?: string | null, cachedSourceId?: string } | null> => {
         setDownloadingSongId(songId);
 
         // Check cache first
@@ -106,7 +108,8 @@ export function useCloudLibrary() {
                         markers: s?.markers ?? null,
                         originalKey: s?.key ?? null,
                         artist: s?.artist ?? undefined,
-                        bpm: s?.bpm ?? undefined,
+                        bpm: s ? preciseBpm(s) : undefined,
+                        timeSignature: sanitizeTimeSignature(s?.time_signature),
                         lyrics: s?.lyrics ?? null,
                         lyricsSynced: s?.lyrics_synced ?? null,
                         chords: s?.chords ?? null
@@ -232,7 +235,9 @@ export function useCloudLibrary() {
             const markers = song?.markers || null;
             const originalKey = song?.key || null;
             const artist = song?.artist || undefined;
-            const bpm = song?.bpm || undefined;
+            // BPM exato (com decimais) quando a nuvem tem; senão o inteiro.
+            const bpm = song ? preciseBpm(song) : undefined;
+            const timeSignature = sanitizeTimeSignature(song?.time_signature);
             const lyrics = song?.lyrics ?? null;
             const lyricsSynced = song?.lyrics_synced ?? null;
             const chords = song?.chords ?? null;
@@ -242,11 +247,11 @@ export function useCloudLibrary() {
             // os buffers decodificados estourava a aba no iPhone. Os `files` locais
             // viram lixo coletável assim que esta função retorna.
             if (cachedOk) {
-                return { files: [], cachedSourceId: songId, coverUrl, markers, originalKey, artist, bpm, lyrics, lyricsSynced, chords };
+                return { files: [], cachedSourceId: songId, coverUrl, markers, originalKey, artist, bpm, timeSignature, lyrics, lyricsSynced, chords };
             }
 
             // Sem cache (offline grande demais): cai no carregamento em memória.
-            return { files, coverUrl, markers, originalKey, artist, bpm, lyrics, lyricsSynced, chords };
+            return { files, coverUrl, markers, originalKey, artist, bpm, timeSignature, lyrics, lyricsSynced, chords };
         } catch (e) {
             const err = e as Error;
             console.error('Error downloading song:', err);

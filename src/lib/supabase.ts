@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
+import type { TimeSignatureType } from './AudioAnalyzer';
+import { isMissingMeterColumn, withoutMeterColumns } from './cloudBpm';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -37,7 +39,11 @@ export interface CloudSong {
     name: string;
     artist: string;
     key: string;
+    // Inteiro, lido pelos apps antigos. O BPM de verdade sai de preciseBpm (cloudBpm.ts).
     bpm: number;
+    // Só existem depois de db/supabase-bpm-exact-migration.sql; antes vêm ausentes.
+    bpm_exact?: number | null;
+    time_signature?: TimeSignatureType | null;
     cover_url: string | null;
     markers: any[] | null;
     lyrics?: string | null;
@@ -285,14 +291,23 @@ export async function uploadFile(bucket: string, path: string, file: File): Prom
     return { url: getStorageUrl(bucket, data.path), error: null };
 }
 
+// Banco sem db/supabase-bpm-exact-migration.sql: grava o resto (o bpm inteiro
+// incluso) e avisa. O BPM decimal e o compasso só sobem depois da migration.
+function warnMissingMeterColumns() {
+    console.warn('[songs] Colunas bpm_exact/time_signature ainda não existem no banco (rodar db/supabase-bpm-exact-migration.sql). Gravando sem elas.');
+}
+
 // Admin: Insert song metadata
 export async function insertSong(song: Omit<CloudSong, 'id' | 'created_at' | 'markers'>): Promise<string | null> {
     if (!supabase) throw new Error('Supabase não inicializado. Verifique VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.');
-    const { data, error } = await supabase
-        .from('songs')
-        .insert(song)
-        .select('id')
-        .single();
+    const db = supabase;
+    const insert = (row: object) => db.from('songs').insert(row).select('id').single();
+    let result = await insert(song);
+    if (result.error && isMissingMeterColumn(result.error)) {
+        warnMissingMeterColumns();
+        result = await insert(withoutMeterColumns(song));
+    }
+    const { data, error } = result;
 
     if (error) {
         console.error('Error inserting song:', error);
@@ -304,10 +319,16 @@ export async function insertSong(song: Omit<CloudSong, 'id' | 'created_at' | 'ma
 // Admin: Update song metadata
 export async function updateSong(songId: string, updates: Partial<Omit<CloudSong, 'id' | 'created_at'>>): Promise<boolean> {
     if (!supabase) return false;
-    const { error } = await supabase
-        .from('songs')
-        .update(updates)
-        .eq('id', songId);
+    const db = supabase;
+    const update = (row: object) => db.from('songs').update(row).eq('id', songId);
+    let { error } = await update(updates);
+    if (error && isMissingMeterColumn(error)) {
+        warnMissingMeterColumns();
+        const rest = withoutMeterColumns(updates);
+        // Só havia coluna nova pra gravar: nada foi salvo, não finge sucesso.
+        if (Object.keys(rest).length === 0) return false;
+        ({ error } = await update(rest));
+    }
 
     if (error) {
         console.error('Error updating song:', error);
