@@ -1,8 +1,8 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import type { TimeSignatureType } from './AudioAnalyzer'
 import {
-  GRID_WARNING_TEXT, TIME_SIGNATURES, countPulses, gridHasPhase, isCompound, pulsesPerBar, signatureForPulses,
-  type SongGrid, type TimeSignature,
+  GRID_WARNING_TEXT, TIME_SIGNATURES, countPulses, displayBpmFromPulseBpm, gridHasPhase, isCompound, pulseBpmFromDisplayBpm,
+  pulsesPerBar, signatureForPulses, type SongGrid, type TimeSignature,
 } from './stageContracts'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
@@ -25,6 +25,34 @@ describe('compasso', () => {
   it('pulsos voltam pro compasso e o resto é nulo', () => {
     for (const s of TIME_SIGNATURES) expect(signatureForPulses(pulsesPerBar(s))).toBe(s)
     for (const n of [0, 1, 2, 8, 9, 10, 11, 13, 4.5, -4, NaN, Infinity]) expect(signatureForPulses(n)).toBeNull()
+  })
+})
+
+describe('BPM do pulso e BPM exibido (Ruling T3-BPM: o exibido e o salvo são sempre na semínima)', () => {
+  it('no composto o pulso é a colcheia: 156 de pulso em 6/8 é 78, e 78 em 6/8 é 156', () => {
+    expect(displayBpmFromPulseBpm(156, '6/8')).toBe(78); expect(pulseBpmFromDisplayBpm(78, '6/8')).toBe(156)
+    expect(displayBpmFromPulseBpm(150, '12/8')).toBe(75); expect(pulseBpmFromDisplayBpm(75, '12/8')).toBe(150)
+  })
+  it('no simples os dois devolvem o próprio valor', () => {
+    expect(displayBpmFromPulseBpm(120, '4/4')).toBe(120); expect(pulseBpmFromDisplayBpm(120, '4/4')).toBe(120)
+    for (const s of TIME_SIGNATURES.filter((x) => !isCompound(x))) {
+      expect(displayBpmFromPulseBpm(72.5, s)).toBe(72.5); expect(pulseBpmFromDisplayBpm(72.5, s)).toBe(72.5)
+    }
+  })
+  it('ida e volta dá o número original em todos os compassos', () => {
+    for (const s of TIME_SIGNATURES) {
+      for (const bpm of [30, 62.5, 67.5, 72.5, 78, 140 / 3, 299.99, 300]) {
+        expect(displayBpmFromPulseBpm(pulseBpmFromDisplayBpm(bpm, s), s)).toBe(bpm)
+        expect(pulseBpmFromDisplayBpm(displayBpmFromPulseBpm(bpm, s), s)).toBe(bpm)
+      }
+    }
+  })
+  it('entrada não finita ou menor ou igual a 0 devolve NaN', () => {
+    for (const s of TIME_SIGNATURES) {
+      for (const bad of [0, -78, NaN, Infinity, -Infinity]) {
+        expect(displayBpmFromPulseBpm(bad, s)).toBeNaN(); expect(pulseBpmFromDisplayBpm(bad, s)).toBeNaN()
+      }
+    }
   })
 })
 

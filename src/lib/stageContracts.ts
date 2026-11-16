@@ -33,6 +33,23 @@ export function signatureForPulses(n: number): TimeSignature | null {
   return TIME_SIGNATURES.find((s) => PULSES[s] === n) ?? null
 }
 
+// ---------- BPM do pulso e BPM exibido ----------
+// Conversão única (Ruling T3-BPM): o BPM que a tela mostra e que o `bpm_exact` grava é sempre o
+// da semínima, como no Ableton, na MultiTracks e no nome das pastas ("Fé" em 6/8 = 78). O pulso
+// da grade (o `SongGrid.bpm`, e a grade do metrônomo no composto) é a colcheia no 6/8 e no 12/8.
+
+/** BPM exibido e salvo (semínima) a partir do BPM do pulso: metade no composto, o mesmo no simples. NaN com entrada não finita ou <= 0. */
+export function displayBpmFromPulseBpm(pulseBpm: number, signature: TimeSignature): number {
+  if (!Number.isFinite(pulseBpm) || pulseBpm <= 0) return NaN
+  return isCompound(signature) ? pulseBpm / 2 : pulseBpm
+}
+
+/** BPM do pulso a partir do BPM exibido e salvo (semínima): o dobro no composto, o mesmo no simples. NaN com entrada não finita ou <= 0. */
+export function pulseBpmFromDisplayBpm(displayBpm: number, signature: TimeSignature): number {
+  if (!Number.isFinite(displayBpm) || displayBpm <= 0) return NaN
+  return isCompound(signature) ? displayBpm * 2 : displayBpm
+}
+
 // ---------- Grade da música ----------
 
 export type GridSource = 'click' | 'bpm'                            // de onde vêm BPM e fase
