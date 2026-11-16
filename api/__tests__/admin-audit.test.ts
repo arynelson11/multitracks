@@ -122,6 +122,22 @@ describe('registro das ações do admin', () => {
     }
   })
 
+  it('frase técnica desconhecida sai mascarada no registro e chega crua ao log', async () => {
+    const cases: [unknown, string, string][] = [
+      [new BillingError('asaas_unavailable', 'Asaas sem resposta em 4000 ms (borda pbs-7, fila 12)', 502), 'O Asaas não respondeu. Status do Asaas: sem dado.', 'borda pbs-7, fila 12'],
+      [new AsaasError('unavailable', 'Asaas sem resposta em 4000 ms'), 'O Asaas não respondeu. Status do Asaas: sem dado.', 'Asaas sem resposta em 4000 ms'],
+      [new BillingError('asaas_rejected', 'Asaas: campo customer.cpfCnpj recusado pela regra R-88', 502), 'O Asaas recusou o pedido. Status do Asaas: sem dado.', 'regra R-88'],
+    ]
+    for (const [err, saved, logged] of cases) {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      db.rpcCalls.length = 0
+      await withAudit(ctxOf(), { action: 'cancel_subscription', targetUserId: USER_ID }, async () => { throw err }).catch(() => null)
+      expect(finishArgs()?.p_message, saved).toBe(saved)
+      expect(log.mock.calls.flat().join(' '), saved).toContain(logged)
+      log.mockRestore()
+    }
+  })
+
   it('partial e erro comum também vão pro log com o detalhe', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
     const partial = new BillingError('partial', 'O Asaas trocou o plano, mas o banco respondeu not_found. Conferir à mão.', 500)

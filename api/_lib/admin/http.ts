@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { applyCors } from '../cors.js'
 import { verifyAdmin } from '../auth.js'
 import { AsaasError, asaasFromEnv, type AsaasApi, type AsaasErrorKind } from '../asaas.js'
-import { BillingError } from '../billing.js'
+import { BillingError, type BillingErrorCode } from '../billing.js'
 
 // Roteador das ações do admin: /api/admin-stats?action=<nome>.
 // * Toda ação é conferida no servidor pelo papel (verifyAdmin lê
@@ -47,16 +47,31 @@ export class AdminError extends Error {
 const MSG_UNEXPECTED = 'Erro inesperado no servidor.'
 const MSG_NO_DB = 'Servidor sem configuração do banco.'
 const MSG_MISCONFIGURED = 'Configuração do servidor incompleta. Avise o suporte.'
-const MSG_FORBIDDEN = 'Forbidden: admin required'
+const MSG_SESSION = 'Sessão inválida ou expirada. Entre de novo.'
+const MSG_FORBIDDEN = 'Esta conta não é admin.'
 
-// ── Texto técnico do Asaas. O cliente (api/_lib/asaas.ts, toAsaasError) monta
-// frases como "Asaas recusou (400): <descrição do Asaas>", e a troca de plano
-// da Fase 3 embute essa frase na mensagem dela. Isso nunca sai na resposta nem
-// no registro: vira uma frase genérica, e o status do Asaas, quando se sabe,
-// vai pro registro (Ruling ADM-T3-registro). O teste confere estas marcas
-// contra o asaas.ts.
+// Frase em português pra recusa do verifyAdmin (que fala inglês pros outros
+// endpoints). O texto original vai pro log quando é falha do servidor.
+function authRefusal(status: number, original: string): { status: number; error: string } {
+  if (status === 401) return { status, error: MSG_SESSION }
+  if (status === 403) return { status, error: MSG_FORBIDDEN }
+  console.error('[admin] conferencia do admin falhou:', String(original).slice(0, 200))
+  return { status: status >= 500 ? status : 500, error: MSG_MISCONFIGURED }
+}
 
-const ASAAS_TECH = /Asaas recusou \(\d{3}\)|Asaas respondeu \d{3}|Asaas sem resposta \(|não encontrado no Asaas|falha inesperada ao falar com o Asaas/
+// ── O que pode passar pra resposta e pro registro (Ruling ADM-T3-permitidas).
+// Lista do que PODE passar, nunca do que bloquear: frase nova de quem quer que
+// seja cai na frase genérica sozinha.
+// * AdminError: frase escrita nos módulos do admin.
+// * BillingError com código marcado como seguro: a Fase 3 escreve essas frases
+//   à mão, em português (o teste confere no billing.ts).
+// * Falha do Asaas (BillingError asaas_* ou AsaasError): frase genérica e o
+//   status HTTP do Asaas quando se sabe, nunca o texto do Asaas nem do cliente.
+// * misconfigured: frase genérica (pode citar nome de variável de ambiente).
+// * Todo o resto (db_error, código novo, erro qualquer): erro inesperado.
+// O detalhe vai sempre pro log (roteador e withAudit).
+
+const SAFE_BILLING_CODES: ReadonlySet<BillingErrorCode> = new Set<BillingErrorCode>(['not_found', 'pending_stop', 'partial'])
 
 const ASAAS_PHRASE: Record<AsaasErrorKind, string> = {
   rejected: 'O Asaas recusou o pedido.',
@@ -64,28 +79,32 @@ const ASAAS_PHRASE: Record<AsaasErrorKind, string> = {
   not_found: 'O Asaas não achou o que foi pedido.',
 }
 
-function asaasKindInText(text: string): AsaasErrorKind {
-  if (/Asaas recusou \(/.test(text)) return 'rejected'
-  if (/não encontrado no Asaas/.test(text)) return 'not_found'
-  return 'unavailable'
-}
-
+// Só pra achar o status: o cliente do Asaas (toAsaasError) escreve
+// "Asaas recusou (400)", "Asaas respondeu 503" e "não encontrado no Asaas".
+// Frase que não bate aqui não vaza: só fica com status "sem dado".
 function asaasStatusInText(text: string): number | null {
   const m = /Asaas recusou \((\d{3})\)|Asaas respondeu (\d{3})/.exec(text)
   if (m) return Number(m[1] ?? m[2])
   return /não encontrado no Asaas/.test(text) ? 404 : null
 }
 
-export type AsaasFailure = { kind: AsaasErrorKind; status: number | null; phrase: string }
+const asaasMessage = (kind: AsaasErrorKind, status: number | null): string =>
+  `${ASAAS_PHRASE[kind]} Status do Asaas: ${status ?? 'sem dado'}.`
+
+export type AsaasFailure = { status: number | null; message: string }
 
 // Falha do Asaas (AsaasError cru, ou BillingError asaas_* da Fase 3) com a
-// frase sem detalhe técnico e o status HTTP do Asaas (null quando não se sabe:
-// sem resposta, ou frase pronta da Fase 3 sem o status). null se não é do Asaas.
+// frase genérica e o status HTTP do Asaas (null quando não se sabe). null se
+// o erro não é do Asaas.
 export function asaasFailure(e: unknown): AsaasFailure | null {
-  if (e instanceof AsaasError) return { kind: e.kind, status: e.status ?? null, phrase: ASAAS_PHRASE[e.kind] }
+  if (e instanceof AsaasError) {
+    const status = e.status ?? null
+    return { status, message: asaasMessage(e.kind, status) }
+  }
   if (e instanceof BillingError && (e.code === 'asaas_rejected' || e.code === 'asaas_unavailable')) {
-    const kind = ASAAS_TECH.test(e.message) ? asaasKindInText(e.message) : e.code === 'asaas_rejected' ? 'rejected' : 'unavailable'
-    return { kind, status: asaasStatusInText(e.message), phrase: toHttpError(e).error }
+    const status = asaasStatusInText(e.message)
+    const kind: AsaasErrorKind = status === 404 ? 'not_found' : e.code === 'asaas_rejected' ? 'rejected' : 'unavailable'
+    return { status, message: asaasMessage(kind, status) }
   }
   return null
 }
@@ -93,12 +112,10 @@ export function asaasFailure(e: unknown): AsaasFailure | null {
 export function toHttpError(e: unknown): { status: number; error: string } {
   if (e instanceof AdminError) return { status: e.status, error: e.message }
   if (e instanceof BillingError) {
-    // db_error traz o nome da função e a mensagem do Postgres; misconfigured
-    // pode citar nome de variável de ambiente. O detalhe fica só no log.
-    if (e.code === 'db_error') return { status: 500, error: MSG_UNEXPECTED }
+    if (SAFE_BILLING_CODES.has(e.code)) return { status: e.httpStatus, error: e.message }
     if (e.code === 'misconfigured') return { status: e.httpStatus, error: MSG_MISCONFIGURED }
-    if (ASAAS_TECH.test(e.message)) return { status: e.httpStatus, error: ASAAS_PHRASE[asaasKindInText(e.message)] }
-    return { status: e.httpStatus, error: e.message }
+    const asaas = asaasFailure(e)
+    if (asaas) return { status: e.httpStatus, error: asaas.message }
   }
   return { status: 500, error: MSG_UNEXPECTED }
 }
@@ -268,7 +285,8 @@ export function createAdminRouter(handlers: AdminHandlers, options: AdminRouterO
       // descobre quais ações existem.
       const auth = await verifyAdmin(req)
       if (!auth.ok) {
-        res.status(auth.status).json({ error: auth.error })
+        const refusal = authRefusal(auth.status, auth.error)
+        res.status(refusal.status).json({ error: refusal.error })
         return
       }
       // Defesa a mais: ok sem o papel (se alguém trocar verifyAdmin por verifyUser) não passa.

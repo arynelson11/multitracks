@@ -40,6 +40,7 @@ vi.mock('../_lib/auth.js', () => ({
     // ok sem papel de admin: o que viria se alguém trocasse verifyAdmin por verifyUser
     if (header === 'Bearer quase') return { ok: true, userId: ADMIN_ID, email: 'quem@igreja.com', isAdmin: false, blocked: false }
     if (header === 'Bearer explode') throw new Error('getaddrinfo ENOTFOUND fake.supabase.co')
+    if (header === 'Bearer semconfig') return { ok: false, status: 500, error: 'Auth backend misconfigured' }
     return { ok: false, status: 401, error: 'Invalid or expired token' }
   }),
 }))
@@ -177,6 +178,24 @@ describe('roteador do admin', () => {
     }
   })
 
+  it('mensagens de acesso saem em português', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const cases: [string | null, number, string][] = [
+      [null, 401, 'Sessão inválida ou expirada. Entre de novo.'],
+      ['vencido', 401, 'Sessão inválida ou expirada. Entre de novo.'],
+      ['comum', 403, 'Esta conta não é admin.'],
+      ['quase', 403, 'Esta conta não é admin.'],
+      ['semconfig', 500, 'Configuração do servidor incompleta. Avise o suporte.'],
+    ]
+    for (const [token, status, error] of cases) {
+      const res = await call(router, { method: 'GET', query: { action: 'ping' }, token })
+      expect(res.statusCode, String(token)).toBe(status)
+      expect(res.body, String(token)).toEqual({ error })
+      expect(JSON.stringify(res.body)).not.toMatch(/Forbidden|Bearer|token|misconfigured/i)
+      expect(JSON.stringify(res.body).includes(TRAVESSAO)).toBe(false)
+    }
+  })
+
   it('resposta ok do auth sem papel de admin não passa', async () => {
     const res = await call(router, { method: 'GET', query: { action: 'ping' }, token: 'quase' })
     expect(res.statusCode).toBe(403)
@@ -213,10 +232,33 @@ describe('roteador do admin', () => {
 
 describe('erros viram resposta em português', () => {
   it('BillingError vira o status e a mensagem dela', async () => {
+    // só passa a frase dos códigos marcados como seguros (Ruling ADM-T3-permitidas)
+    const msg = 'Sua conta não foi excluída: ainda estamos terminando de cancelar sua assinatura no sistema de pagamento. Tente de novo em alguns minutos.'
+    const res = await call(failing(new BillingError('pending_stop', msg, 409)), { method: 'GET', query: { action: 'quebra' } })
+    expect(res.statusCode).toBe(409)
+    expect(res.body).toEqual({ error: msg })
+  })
+
+  it('BillingError do Asaas vira o status dela e a frase genérica com o status do Asaas', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const res = await call(failing(new BillingError('asaas_unavailable', 'O Asaas não respondeu.', 502)), { method: 'GET', query: { action: 'quebra' } })
     expect(res.statusCode).toBe(502)
-    expect(res.body).toEqual({ error: 'O Asaas não respondeu.' })
+    expect(res.body).toEqual({ error: 'O Asaas não respondeu. Status do Asaas: sem dado.' })
+  })
+
+  it('frase técnica desconhecida sai mascarada na resposta e chega crua ao log', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const strange = new BillingError('asaas_unavailable', 'Asaas sem resposta em 4000 ms (borda pbs-7, fila 12)', 502)
+    const res = await call(failing(strange), { method: 'GET', query: { action: 'quebra' } })
+    expect(res.statusCode).toBe(502)
+    expect(res.body).toEqual({ error: 'O Asaas não respondeu. Status do Asaas: sem dado.' })
+    expect(JSON.stringify(res.body)).not.toContain('pbs-7')
+    expect(log.mock.calls.flat().join(' ')).toContain('Asaas sem resposta em 4000 ms (borda pbs-7, fila 12)')
+    // código que a lista não conhece também não passa a frase
+    const unknown = new BillingError('codigo_novo' as never, 'TypeError at Object.<anonymous> (billing.ts:999)', 418)
+    const other = await call(failing(unknown), { method: 'GET', query: { action: 'quebra' } })
+    expect(other.statusCode).toBe(500)
+    expect(other.body).toEqual({ error: 'Erro inesperado no servidor.' })
   })
 
   it('AdminError(409) vira 409', async () => {
@@ -254,9 +296,10 @@ describe('erros viram resposta em português', () => {
   it('texto técnico do cliente do Asaas não sai na resposta', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const cases: [BillingError, string][] = [
-      [new BillingError('asaas_rejected', 'O Asaas não trocou o plano: Asaas recusou (400): O valor informado é inválido. Nada mudou.', 502), 'O Asaas recusou o pedido.'],
-      [new BillingError('asaas_unavailable', 'O Asaas não trocou o plano: Asaas respondeu 503. Nada mudou.', 502), 'O Asaas não respondeu.'],
-      [new BillingError('asaas_unavailable', 'O Asaas não trocou o plano: Asaas sem resposta (ECONNABORTED). Nada mudou.', 502), 'O Asaas não respondeu.'],
+      [new BillingError('asaas_rejected', 'O Asaas não trocou o plano: Asaas recusou (400): O valor informado é inválido. Nada mudou.', 502), 'O Asaas recusou o pedido. Status do Asaas: 400.'],
+      [new BillingError('asaas_unavailable', 'O Asaas não trocou o plano: Asaas respondeu 503. Nada mudou.', 502), 'O Asaas não respondeu. Status do Asaas: 503.'],
+      [new BillingError('asaas_unavailable', 'O Asaas não trocou o plano: Asaas sem resposta (ECONNABORTED). Nada mudou.', 502), 'O Asaas não respondeu. Status do Asaas: sem dado.'],
+      [new BillingError('asaas_unavailable', 'O Asaas não trocou o plano: não encontrado no Asaas. Nada mudou.', 502), 'O Asaas não achou o que foi pedido. Status do Asaas: 404.'],
     ]
     for (const [err, phrase] of cases) {
       const res = await call(failing(err), { method: 'GET', query: { action: 'quebra' } })
@@ -293,6 +336,7 @@ describe('painel antigo (?source=) até a T28', () => {
   it('usuário comum com ?source=asaas responde 403 sem abrir o painel antigo', async () => {
     const res = await adminStats({ method: 'GET', query: { source: 'asaas' }, token: 'comum' })
     expect(res.statusCode).toBe(403)
+    expect(res.body).toEqual({ error: 'Esta conta não é admin.' })
     expect(legacyStats).not.toHaveBeenCalled()
   })
 
@@ -439,13 +483,17 @@ describe('mergeHandlers', () => {
 })
 
 describe('arquivos do roteador', () => {
-  it('as marcas de texto técnico seguem as do cliente do Asaas', () => {
-    // http.ts reconhece o texto técnico pelas frases que toAsaasError monta;
-    // se o cliente mudar a frase, este teste avisa.
-    const src = readFileSync(new URL('../_lib/asaas.ts', import.meta.url), 'utf8')
-    for (const mark of ['`Asaas recusou (${status}): ', '`Asaas respondeu ${status}`', "'não encontrado no Asaas'", '`Asaas sem resposta (', "'falha inesperada ao falar com o Asaas'"]) {
-      expect(src, mark).toContain(mark)
+  it('os códigos marcados como seguros só levam frase escrita no servidor', () => {
+    // A lista do que pode passar (not_found, pending_stop, partial) vale porque
+    // a Fase 3 escreve essas frases à mão. Se alguém passar a montar uma delas
+    // com a mensagem de um erro (do Asaas, do banco), este teste avisa.
+    const src = readFileSync(new URL('../_lib/billing.ts', import.meta.url), 'utf8')
+    const found: Record<string, number> = {}
+    for (const m of src.matchAll(/new BillingError\('(not_found|pending_stop|partial)',([\s\S]*?),\s*\d{3}\)/g)) {
+      found[m[1]] = (found[m[1]] ?? 0) + 1
+      expect(m[2], m[0]).not.toMatch(/\.message|\$\{\s*(e|err|error)\b/)
     }
+    expect(Object.keys(found).sort()).toEqual(['not_found', 'partial', 'pending_stop'])
   })
 
   it('nenhum arquivo do roteador tem travessão', () => {

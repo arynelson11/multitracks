@@ -9,9 +9,9 @@ import { AdminError, asaasFailure, toHttpError, type AdminCtx } from './http.js'
 //   chamada e o resultado depois. Sem conseguir gravar o pendente, a ação não
 //   roda. Se só o fechamento falhar, a ação já feita segue e o registro fica
 //   pendente, visível como "sem confirmação".
-// * O registro nunca guarda texto técnico: na falha, a frase pronta (a mesma
-//   da resposta) e, se a falha foi do Asaas, o status do Asaas (Ruling
-//   ADM-T3-registro). O erro cru vai pro log aqui mesmo, porque quem chama
+// * O registro nunca guarda texto técnico: na falha, a frase que pode passar
+//   (a mesma da resposta) e, se a falha foi do Asaas, a frase genérica com o
+//   status do Asaas (Rulings ADM-T3-registro e ADM-T3-permitidas). O erro cru vai pro log aqui mesmo, porque quem chama
 //   pode responder sozinho sem deixar o erro chegar ao roteador.
 
 export type AuditAction =
@@ -50,11 +50,11 @@ function errorText(e: unknown): string {
   return 'erro sem mensagem'
 }
 
-// Frase gravada no registro quando a ação falha.
+// Frase gravada no registro quando a ação falha: a mesma da resposta; pro
+// AsaasError cru (que na resposta vira erro inesperado) a frase do Asaas com o
+// status.
 function failureMessage(err: unknown): string {
-  const asaas = asaasFailure(err)
-  if (!asaas) return toHttpError(err).error
-  return `${asaas.phrase} Status do Asaas: ${asaas.status ?? 'sem dado'}.`
+  return asaasFailure(err)?.message ?? toHttpError(err).error
 }
 
 export async function auditStart(ctx: AdminCtx, e: AuditStartInput): Promise<number> {
