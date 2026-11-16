@@ -60,9 +60,14 @@ describe('rótulos da lista', () => {
   })
   it('cor pela família, inclusive pelo nome do usuário', () => {
     expect(buildChannelLabels([{ id: 'v', name: 'Track 7', customName: 'Violão do Zé' }])[0].color).toBe(FAMILY_COLOR.violao)
-    expect(FAMILY_COLOR).toEqual({ click: '#FF6B35', guia: '#f59e0b', bateria: '#ef4444', percussao: '#f97316',
-      baixo: '#22c55e', synthBass: '#16a34a', violao: '#ec4899', guitarra: '#f43f5e', teclado: '#8b5cf6',
-      piano: '#a855f7', pad: '#6366f1', ambiencia: '#818cf8', vocal: '#06b6d4', backing: '#0ea5e9', desconhecido: '#9d9da8' })
+    // Paleta aprovada pelo dono (P4): uma cor por grupo; o violão tem grupo próprio.
+    expect(FAMILY_COLOR).toEqual({ click: '#94a3b8', guia: '#a8a29e', bateria: '#d4a373', percussao: '#d4a373',
+      baixo: '#22c55e', synthBass: '#22c55e', violao: '#2dd4bf', guitarra: '#14b8a6', teclado: '#818cf8',
+      piano: '#818cf8', pad: '#818cf8', ambiencia: '#818cf8', vocal: '#06b6d4', backing: '#06b6d4', desconhecido: '#7a7a85' })
+  })
+  it('nenhuma cor de família repete cor de estado', () => {
+    // ps-or (ligado), ps-arm (armado), ps-alert (alerta), ps-mute (M) e ps-solo (S).
+    for (const c of Object.values(FAMILY_COLOR)) expect(['#ff6b35', '#f5f5f7', '#fbbf24', '#ef4444', '#facc15']).not.toContain(c.toLowerCase())
   })
 })
 

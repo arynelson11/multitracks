@@ -41,7 +41,7 @@ export function isSilencedBySolo<T extends ChannelIdentity & MixState>(ch: T, al
 }
 
 // Preenchimento do fader do mixer. `silenced`: M ligado ou calado pelo Solo de outro canal.
-// Calado fica cinza neutro, nunca vermelho: o vermelho é a cor da família Bateria, e o M
+// Calado fica cinza neutro, nunca vermelho nem a cor da família: o vermelho é do M, e o M
 // aceso já marca o mute.
 export function channelFaderFill(color: string, silenced: boolean): string {
   return silenced

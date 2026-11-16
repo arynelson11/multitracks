@@ -145,7 +145,7 @@ describe('bordas do patch e da lista', () => {
   })
 })
 
-// Revisão final (I3): o vermelho é a cor da família Bateria; não pode dizer "calado" também.
+// Revisão final (I3): calado fica cinza neutro, sem a cor da família (Bateria areia) e sem o vermelho do M.
 describe('fader do canal calado', () => {
   it('com Solo em outro canal, Bateria calada e Bateria tocando têm preenchimentos diferentes; calado nunca é vermelho', () => {
     const all = [mix('k', 'KICK', { soloed: true }), mix('s', 'SNARE'), mix('h', 'HH', { soloed: true, muted: true })]
@@ -162,8 +162,8 @@ describe('fader do canal calado', () => {
       expect(silenced.toLowerCase()).not.toContain(FAMILY_COLOR.bateria.toLowerCase())
     }
   })
-  it('a cor da família Bateria não muda', () => {
-    expect(FAMILY_COLOR.bateria).toBe('#ef4444')
+  it('a cor da família Bateria é a areia da paleta aprovada', () => {
+    expect(FAMILY_COLOR.bateria).toBe('#d4a373')
   })
 })
 
