@@ -7,7 +7,7 @@ import { updateCachedSongMeta } from '../lib/offlineCache';
 import { uploadToR2 } from '../lib/r2';
 import { type Marker } from '../types';
 import { isAdminEmail } from '../lib/admin';
-import { bpmColumns, preciseBpm } from '../lib/cloudBpm';
+import { editedBpmColumns, preciseBpm } from '../lib/cloudBpm';
 import type { TimeSignatureType } from '../lib/AudioAnalyzer';
 
 interface LibraryModalProps {
@@ -50,21 +50,12 @@ export function LibraryModal({ isOpen, onClose, onDownload, onSongEdited }: Libr
 
     const handleEditSave = async (song: CloudSong) => {
         // O BPM vai pra nuvem nas duas colunas (bpmColumns): o inteiro, que os
-        // apps antigos leem, e o exato com 2 casas.
-        let bpmCols: { bpm: number; bpm_exact: number | null };
-        if (editingSong.bpmText === undefined) {
-            // Não mexeu no BPM: regrava o que vale hoje (e acerta o par se um
-            // app antigo tiver mudado só o inteiro).
-            const current = preciseBpm(song);
-            bpmCols = (current !== undefined ? bpmColumns(current) : null) ?? { bpm: song.bpm ?? 0, bpm_exact: null };
-        } else {
-            const typed = editingSong.bpmText.trim() === '' ? 0 : Number(editingSong.bpmText);
-            const cols = typed === 0 ? { bpm: 0, bpm_exact: null } : bpmColumns(typed);
-            if (!cols) {
-                alert('BPM inválido. Use um número maior que 0 e menor que 400, ou deixe o campo vazio.');
-                return;
-            }
-            bpmCols = cols;
+        // apps antigos leem, e o exato com 2 casas. Aceita "72,5" ou "72.5";
+        // texto inválido avisa e não grava (nunca apaga o BPM por engano).
+        const bpmCols = editedBpmColumns(song, editingSong.bpmText);
+        if (!bpmCols) {
+            alert('BPM inválido. Use um número maior que 0 e menor que 400 (ex.: 72,5), ou deixe o campo vazio.');
+            return;
         }
 
         setIsSavingEdit(true);
@@ -238,7 +229,7 @@ export function LibraryModal({ isOpen, onClose, onDownload, onSongEdited }: Libr
                                                 </div>
                                                 <div>
                                                     <label className="text-[9px] text-text-muted uppercase font-bold font-mono tracking-wider">BPM</label>
-                                                    <input type="number" inputMode="decimal" step="0.01" min="0" max="399.99" value={editingSong.bpmText ?? String(songBpm ?? '')} onChange={e => setEditingSong({...editingSong, bpmText: e.target.value})} className="w-full daw-input rounded-md px-2 py-1.5 text-white text-xs font-mono" />
+                                                    <input type="text" inputMode="decimal" autoComplete="off" value={editingSong.bpmText ?? String(songBpm ?? '')} onChange={e => setEditingSong({...editingSong, bpmText: e.target.value})} className="w-full daw-input rounded-md px-2 py-1.5 text-white text-xs font-mono" />
                                                 </div>
                                                 <div>
                                                     <label className="text-[9px] text-text-muted uppercase font-bold font-mono tracking-wider">Tom</label>

@@ -42,6 +42,35 @@ export function bpmColumns(value: number): { bpm: number; bpm_exact: number } | 
   return { bpm: Math.round(exact), bpm_exact: exact }
 }
 
+// Número com ponto ou vírgula decimal, sem sinal, expoente ou milhar ("72,5",
+// "72.5", "120", "72,", ",5"). Mais estrito que Number(), que aceita "1e3".
+const DECIMAL_TEXT = /^(\d+(\.\d*)?|\.\d+)$/
+
+/**
+ * Colunas de BPM pra gravar a partir do campo de edição da biblioteca.
+ * `text` undefined = não mexeu: regrava o BPM que vale hoje (e conserta o par
+ * se um app antigo mudou só o inteiro). Vazio ou 0 = sem BPM, de propósito.
+ * Aceita vírgula ou ponto. Texto inválido ou fora de (0, 400): null, pra a tela
+ * avisar em vez de apagar o BPM.
+ */
+export function editedBpmColumns(
+  song: { bpm?: number | null; bpm_exact?: number | null },
+  text: string | undefined,
+): { bpm: number; bpm_exact: number | null } | null {
+  if (text === undefined) {
+    const current = preciseBpm(song)
+    const whole = Number(song.bpm)
+    return (current !== undefined ? bpmColumns(current) : null)
+      ?? { bpm: Number.isFinite(whole) ? whole : 0, bpm_exact: null }
+  }
+  const t = text.trim().replace(',', '.')
+  if (t === '') return { bpm: 0, bpm_exact: null }
+  if (!DECIMAL_TEXT.test(t)) return null
+  const value = Number(t)
+  if (value === 0) return { bpm: 0, bpm_exact: null }
+  return bpmColumns(value)
+}
+
 /** Compasso aceito pelo banco, ou null. */
 export function sanitizeTimeSignature(raw: unknown): TimeSignatureType | null {
   if (typeof raw !== 'string') return null

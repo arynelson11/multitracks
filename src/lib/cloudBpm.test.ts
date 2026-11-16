@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   bpmColumns,
+  editedBpmColumns,
   isMissingMeterColumn,
   preciseBpm,
   sanitizeTimeSignature,
@@ -108,6 +109,53 @@ describe('bpmColumns', () => {
     expect(bpmColumns(399.999)).toBeNull()
     expect(bpmColumns(0.001)).toBeNull()
     expect(bpmColumns(Number.POSITIVE_INFINITY)).toBeNull()
+  })
+})
+
+describe('editedBpmColumns (campo de BPM da biblioteca)', () => {
+  const song = { bpm: 73, bpm_exact: 72.5 }
+
+  it('aceita vírgula ou ponto, como o teclado do iPad em pt-BR manda', () => {
+    expect(editedBpmColumns(song, '72,5')).toEqual({ bpm: 73, bpm_exact: 72.5 })
+    expect(editedBpmColumns(song, '72.5')).toEqual({ bpm: 73, bpm_exact: 72.5 })
+    expect(editedBpmColumns(song, ' 120 ')).toEqual({ bpm: 120, bpm_exact: 120 })
+    expect(editedBpmColumns(song, '72,456')).toEqual({ bpm: 72, bpm_exact: 72.46 })
+    expect(editedBpmColumns(song, '72,')).toEqual({ bpm: 72, bpm_exact: 72 })
+    expect(editedBpmColumns(song, ',5')).toEqual({ bpm: 1, bpm_exact: 0.5 })
+  })
+
+  it('campo vazio ou 0 grava sem BPM, de propósito', () => {
+    expect(editedBpmColumns(song, '')).toEqual({ bpm: 0, bpm_exact: null })
+    expect(editedBpmColumns(song, '   ')).toEqual({ bpm: 0, bpm_exact: null })
+    expect(editedBpmColumns(song, '0')).toEqual({ bpm: 0, bpm_exact: null })
+    expect(editedBpmColumns(song, '0,0')).toEqual({ bpm: 0, bpm_exact: null })
+  })
+
+  it('valor inválido dá null (a tela avisa) em vez de apagar o BPM', () => {
+    for (const t of ['abc', '72,5,1', '72.5.1', '1.000,5', '1e3', '-72', '+72', 'Infinity', '0x10', '72 5', '72bpm', ',', '.', '450', '400', '399,999']) {
+      expect(editedBpmColumns(song, t), t).toBeNull()
+    }
+  })
+
+  it('não mexeu no campo: regrava o BPM que vale hoje', () => {
+    expect(editedBpmColumns({ bpm: 73, bpm_exact: 72.5 }, undefined)).toEqual({ bpm: 73, bpm_exact: 72.5 })
+    expect(editedBpmColumns({ bpm: 120 }, undefined)).toEqual({ bpm: 120, bpm_exact: 120 })
+    expect(editedBpmColumns({ bpm: 0 }, undefined)).toEqual({ bpm: 0, bpm_exact: null })
+    expect(editedBpmColumns({}, undefined)).toEqual({ bpm: 0, bpm_exact: null })
+  })
+
+  it('não mexeu e o par estava velho (app antigo mudou só o inteiro): conserta', () => {
+    expect(editedBpmColumns({ bpm: 74, bpm_exact: 72.5 }, undefined)).toEqual({ bpm: 74, bpm_exact: 74 })
+    expect(editedBpmColumns({ bpm: 0, bpm_exact: 72.5 }, undefined)).toEqual({ bpm: 0, bpm_exact: null })
+  })
+
+  it('não mexeu e o BPM antigo está fora da faixa: mantém o inteiro, sem exato', () => {
+    expect(editedBpmColumns({ bpm: 450 }, undefined)).toEqual({ bpm: 450, bpm_exact: null })
+  })
+
+  it('o resultado é o que o repertório recebe pelo preciseBpm', () => {
+    const cols = editedBpmColumns(song, '72,5')
+    expect(cols && preciseBpm(cols)).toBe(72.5)
   })
 })
 
