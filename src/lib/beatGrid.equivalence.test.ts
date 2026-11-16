@@ -15,6 +15,15 @@
 // caso daqui muda de BPM (nem o 6/8 sem compasso pedido, que continua em 60). O
 // detectSongGrid passa a oferecer a metade e o dobro em `alternatives`, o BPM do
 // pulso em `pulseBpm` (igual ao `bpm` no compasso simples) e o `preferConflict`.
+//
+// M3: o "1" soma o voto principal (baixo e harmonia) com o bumbo, agora na banda de
+// 100 Hz, e sem outro voto o bumbo empatado desempata por onde a bateria começa em
+// qualquer compasso (antes, só no par). Nos casos daqui (só a bateria) o "1" fica
+// igual, menos o "pop sincopado 84 BPM, compasso pedido 7/8", que saiu da lista: 7
+// tempos pedidos numa música 4/4 não têm "1" certo, e o antigo (tempo 6) era o
+// máximo da banda grave sem desempate, que só valia no compasso par. Com o bumbo
+// empatado nos 7, agora vale onde a bateria começa; o teste dele está em
+// src/lib/tempo/downbeat.test.ts.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,7 +52,7 @@ interface Caso {
 
 // Os 8 casos do relatório que a M1 congela (tabela da seção 2), mais os que a
 // revisão da M1 pediu antes de mudar o detector: 44,1 kHz (hop de 221, fps não
-// inteiro) e os compassos 5, 6, 7 e 12 (ramos par e ímpar da regra do "1").
+// inteiro) e os compassos 5, 6 e 12 (o 7 saiu na M3, ver o cabeçalho).
 const CASOS: Caso[] = [
   { nome: 'b: 1º tempo em 1,37 s, 120 BPM', song: { bpm: 120, firstBeat: 1.37 }, beatsPerBar: 4 },
   { nome: 'c: BPM decimal 72,5', song: { bpm: 72.5, firstBeat: 0.43 }, beatsPerBar: 4 },
@@ -58,7 +67,6 @@ const CASOS: Caso[] = [
   { nome: '6/8 (colcheia 180), compasso pedido 6/8', song: { bpm: 180, firstBeat: 0.3, pattern: 'sixeight' }, beatsPerBar: 6, bpmTravado: 60 },
   { nome: '6/8 (colcheia 180), compasso pedido 12/8', song: { bpm: 180, firstBeat: 0.3, pattern: 'sixeight' }, beatsPerBar: 12, bpmTravado: 60 },
   { nome: 'rock 110 BPM, compasso pedido 5/4', song: { bpm: 110, firstBeat: 0.45 }, beatsPerBar: 5 },
-  { nome: 'pop sincopado 84 BPM, compasso pedido 7/8', song: { bpm: 84, firstBeat: 0.5, pattern: 'popsync44' }, beatsPerBar: 7 },
 ];
 
 // Pad e baixo não sorteiam nada, então tirar os dois não muda a bateria (e corta 2/3 do tempo).
@@ -128,7 +136,9 @@ describe('detectSongGrid', () => {
     expect(tracksUsed).toEqual(['bat']);
   }, LENTO);
 
-  it('baixo e harmonia viram votos do "1" (ainda não mudam o resultado; a M3 usa)', () => {
+  // Desde a M3 o baixo e a harmonia votam no "1" (os casos em que o voto decide estão
+  // em src/lib/tempo/downbeat.test.ts); no d a bateria sozinha já acerta o 1.
+  it('baixo e harmonia entram como votos do "1" e, no d, a grade sai igual à da bateria sozinha', () => {
     const s = makeSong({ sr: SR, duration: DURACAO, ...CASOS[3].song });
     const so = detectSongGrid([{ id: 'bat', label: 'Bateria', use: 'pulse', channels: s.tracks.drums }], SR);
     const comVotos = detectSongGrid([
