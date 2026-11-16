@@ -5,7 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 import electron from 'vite-plugin-electron/simple'
 import type { Plugin } from 'vite'
 import { applyPageHead, dropUnsetSearchConsoleTag, stripHtmlComments } from './src/lib/siteHtml'
-import { injectSiteSeo, withoutFaqJsonLd } from './src/lib/siteSeo'
+import { buildSitemap, injectSiteSeo, withoutFaqJsonLd } from './src/lib/siteSeo'
 import { PAGE_HEADS } from './src/content/site'
 import { SW_NAVIGATION_ALLOWLIST } from './src/content/routes'
 
@@ -58,6 +58,8 @@ function siteHtml({ desktop }: { desktop: boolean }): Plugin {
         for (const page of [PAGE_HEADS.download, PAGE_HEADS.admin]) {
           this.emitFile({ type: 'asset', fileName: `${page.path.slice(1)}.html`, source: applyPageHead(withoutFaqJsonLd(html), page) })
         }
+        // sitemap.xml sai das rotas públicas (as legais só com LEGAL_PAGES_LIVE ligado).
+        this.emitFile({ type: 'asset', fileName: 'sitemap.xml', source: buildSitemap(new Date().toISOString().slice(0, 10)) })
       },
     },
   }

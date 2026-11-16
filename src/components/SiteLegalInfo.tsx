@@ -1,7 +1,8 @@
 import { COMPANY, CONTACT, LEGAL_LINKS, WHATSAPP_URL } from '../content/site'
 
-// Bloco legal do rodapé das páginas públicas (landing e /download): páginas de
-// Privacidade, Termos e Cancelamento, o contato e quem presta o serviço.
+// Bloco legal do rodapé das páginas públicas (landing e /download): o contato, quem presta
+// o serviço e, quando LEGAL_PAGES_LIVE estiver ligado (src/content/site.ts), os links de
+// Privacidade, Termos e Cancelamento.
 export function SiteLegalInfo({ className = '' }: { className?: string }) {
   const link = 'inline-flex items-center min-h-6 py-1 text-warm-200 hover:text-bone underline-offset-4 hover:underline transition-colors'
   return (

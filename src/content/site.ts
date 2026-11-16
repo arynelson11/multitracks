@@ -29,12 +29,27 @@ export const WHATSAPP_URL =
   `https://wa.me/${CONTACT.whatsappNumber}?text=` +
   encodeURIComponent('Olá! Vim pelo site do Playback Studio e preciso de ajuda.')
 
-// Páginas legais (HTML estático em public/, servido sem o .html pelo cleanUrls da Vercel).
-export const LEGAL_LINKS = [
+// Páginas legais (Privacidade, Termos e Cancelamento). ÚNICO interruptor pra religar.
+// Enquanto o dono não aprova o texto, os HTML ficam em docs/legal-rascunho/ (fora do build)
+// e nada do site aponta pra elas. Pra religar (lista também no FATOS, seção 4):
+//   1. git mv docs/legal-rascunho/*.html public/
+//   2. LEGAL_PAGES_LIVE = true aqui
+// Isso volta os links do rodapé (landing e /download), o sitemap, o <noscript> e a frase
+// da FAQ de cancelamento. Um teste falha se o interruptor e os arquivos não baterem.
+export const LEGAL_PAGES_LIVE = false
+
+export interface LegalPage {
+  href: string
+  label: string
+}
+
+export const LEGAL_PAGES: LegalPage[] = [
   { href: '/privacidade', label: 'Privacidade' },
   { href: '/termos', label: 'Termos' },
   { href: '/cancelamento', label: 'Cancelamento' },
-] as const
+]
+
+export const LEGAL_LINKS: LegalPage[] = LEGAL_PAGES_LIVE ? LEGAL_PAGES : []
 
 // Preço cobrado de verdade (api/checkout.ts). annualTotal é o valor cobrado no anual.
 export const PRICES = {
@@ -128,6 +143,6 @@ export const FAQS: Faq[] = [
   },
   {
     q: 'Posso cancelar quando quiser?',
-    a: `Sim, sem fidelidade. Por enquanto o cancelamento é feito pelo nosso atendimento: chame no WhatsApp ${CONTACT.whatsappDisplay} ou mande um email pra ${CONTACT.email} pedindo o cancelamento. As regras estão na página Cancelamento, no rodapé do site.`,
+    a: `Sim, sem fidelidade. Por enquanto o cancelamento é feito pelo nosso atendimento: chame no WhatsApp ${CONTACT.whatsappDisplay} ou mande um email pra ${CONTACT.email} pedindo o cancelamento.${LEGAL_PAGES_LIVE ? ' As regras estão na página Cancelamento, no rodapé do site.' : ''}`,
   },
 ]

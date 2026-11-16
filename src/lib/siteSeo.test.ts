@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { buildJsonLd, buildNoscript, injectSiteSeo, withoutFaqJsonLd } from './siteSeo'
-import { FAQS } from '../content/site'
+import { FAQS, LEGAL_PAGES_LIVE } from '../content/site'
 
 const indexHtml = readFileSync(fileURLToPath(new URL('../../index.html', import.meta.url)), 'utf8')
 
@@ -71,7 +71,7 @@ describe('noscript', () => {
     expect(html).toContain('R$ 49,90 por mês ou R$ 454,80 por ano')
     expect(html).toContain('R$ 119,90 por mês ou R$ 1.078,80 por ano')
     expect(html).toContain('href="/download"')
-    expect(html).toContain('href="/privacidade"')
+    expect(html.includes('href="/privacidade"')).toBe(LEGAL_PAGES_LIVE)
     expect(html).toContain('Grupo AIO · CNPJ 43.247.025/0001-05 · Macaé/RJ')
     expect(html).toContain('multitracks')
     expect(html).not.toContain('—')

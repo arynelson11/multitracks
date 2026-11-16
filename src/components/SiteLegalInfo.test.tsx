@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import { SiteLegalInfo } from './SiteLegalInfo'
 import { LandingPage } from './LandingPage'
+import { LEGAL_PAGES, LEGAL_PAGES_LIVE } from '../content/site'
 
 afterEach(cleanup)
 
@@ -12,11 +13,13 @@ describe('rodapé legal', () => {
     expect(screen.getByText('Grupo AIO · CNPJ 43.247.025/0001-05 · Macaé/RJ')).toBeTruthy()
   })
 
-  it('leva pra Privacidade, Termos e Cancelamento', () => {
+  it('só leva pra Privacidade, Termos e Cancelamento com as páginas ligadas', () => {
     render(<SiteLegalInfo />)
-    expect(screen.getByRole('link', { name: 'Privacidade' }).getAttribute('href')).toBe('/privacidade')
-    expect(screen.getByRole('link', { name: 'Termos' }).getAttribute('href')).toBe('/termos')
-    expect(screen.getByRole('link', { name: 'Cancelamento' }).getAttribute('href')).toBe('/cancelamento')
+    for (const page of LEGAL_PAGES) {
+      const link = screen.queryByRole('link', { name: page.label })
+      if (LEGAL_PAGES_LIVE) expect(link?.getAttribute('href')).toBe(page.href)
+      else expect(link).toBeNull()
+    }
   })
 
   it('mostra o contato que o site já usa (WhatsApp e email)', () => {
@@ -29,6 +32,6 @@ describe('rodapé legal', () => {
     render(<LandingPage onEnter={() => {}} />)
     const footer = document.querySelector('footer')
     expect(footer?.textContent).toContain('Grupo AIO · CNPJ 43.247.025/0001-05 · Macaé/RJ')
-    expect(footer?.querySelector('a[href="/privacidade"]')).toBeTruthy()
+    expect(!!footer?.querySelector('a[href="/privacidade"]')).toBe(LEGAL_PAGES_LIVE)
   })
 })
