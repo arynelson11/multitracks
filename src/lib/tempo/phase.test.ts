@@ -92,8 +92,9 @@ describe('tempo x contratempo nos casos do relatório', () => {
 // Quando uma tarefa seguinte corrigir um destes, o teste quebra de propósito e o
 // caso sai da lista (e o `knownIssue` do catálogo também).
 describe('falhas conhecidas do catálogo (comportamento de hoje)', () => {
+  // t_160 e t_176 (BPM pela metade) saíram na M4: o teste deles está em octave.test.ts.
   it('a lista de falhas conhecidas é esta', () => {
-    expect(TEMPO_CASES.filter(c => c.knownIssue).map(c => c.id)).toEqual(['e2', 't_160', 't_176', 'loop-shaker']);
+    expect(TEMPO_CASES.filter(c => c.knownIssue).map(c => c.id)).toEqual(['e2', 'loop-shaker']);
   });
 
   it.each([
@@ -108,10 +109,6 @@ describe('falhas conhecidas do catálogo (comportamento de hoje)', () => {
     expect(grid.offbeatRisk).toBe(risco);
   });
 
-  it.each(['t_160', 't_176'])('falha conhecida: %s sai pela metade do BPM (a oitava é da M4)', (id) => {
-    const { song, grid } = detect(tempoCase(id));
-    expect(grid.bpm).toBeCloseTo(song.bpm / 2, 1);
-  });
 });
 
 // ── choosePhase com ataques montados à mão (sem áudio) ──

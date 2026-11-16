@@ -160,11 +160,9 @@ export const TEMPO_CASES: readonly TempoCase[] = [
   { id: 't_58', group: 'calibracao', positive: true, song: synth({ bpm: 58, firstBeat: 0.7 }),
     note: 'balada 58 BPM, chimbal em colcheias' },
   { id: 't_160', group: 'validacao', positive: true, song: synth({ bpm: 160, firstBeat: 0.7 }),
-    note: 'rápida 160 BPM, chimbal em colcheias',
-    knownIssue: 'o BPM sai pela metade (80): a oitava é da M4' },
+    note: 'rápida 160 BPM, chimbal em colcheias: o detector antigo saía pela metade (80)' },
   { id: 't_176', group: 'calibracao', positive: true, song: synth({ bpm: 176, firstBeat: 0.7 }),
-    note: 'rápida 176 BPM, chimbal em colcheias',
-    knownIssue: 'o BPM sai pela metade (88): a oitava é da M4' },
+    note: 'rápida 176 BPM, chimbal em colcheias: o detector antigo saía pela metade (88)' },
   { id: 'n_kicksplit', group: 'validacao', positive: true, song: synth({ bpm: 104, firstBeat: 0.55 }),
     note: 'pacote com a bateria numa faixa "KICK" (sem "drum"): o pulso é a bateria (o AUTO antigo caía no BASS)' },
   // ── Só baixo ou só shaker (cointoss.mjs e harness.mjs) ──

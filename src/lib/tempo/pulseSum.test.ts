@@ -10,7 +10,7 @@ const SR = 48000;
 const LENTO = 30_000;
 
 describe('kit separado somado', () => {
-  it('kit separado (KICK, SNARE, HIHAT) somado acha o tempo que a peça sozinha não acha', () => {
+  it('kit separado (KICK, SNARE, HIHAT) somado acha o tempo que o bumbo e o chimbal sozinhos não acham', () => {
     const c = tempoCase('kit-separado');
     const song = c.song({ votes: false });
     const tracks = caseTracks(c, song);
@@ -21,8 +21,11 @@ describe('kit separado somado', () => {
     const somado = detectSongGrid(tracks, SR, { beatsPerBar: 4 });
     expect(somado.tracksUsed).toEqual(['kick', 'snare', 'hihat']);
     expect(acha(somado)).toBe(true);
-    // Sozinhos: o bumbo e o chimbal caem no contratempo, a caixa (só 2 e 4) erra o BPM.
-    for (const t of tracks) expect({ peca: t.id, acha: acha(detectSongGrid([t], SR, { beatsPerBar: 4 })) }).toEqual({ peca: t.id, acha: false });
+    // Sozinhos: o bumbo e o chimbal caem no contratempo. A caixa sozinha (2 e 4 e as
+    // notas fantasmas) travava em 128, 4/3 do tempo; desde a M4 a proporção 4:3 é
+    // trocada (ataque nos terços) e ela também acha os 96.
+    const sozinha = Object.fromEntries(tracks.map(t => [t.id, acha(detectSongGrid([t], SR, { beatsPerBar: 4 }))]));
+    expect(sozinha).toEqual({ kick: false, snare: true, hihat: false });
   }, LENTO);
 
   // A banda grave do "1" só vem das peças com bumbo: o vazamento grave do chimbal e

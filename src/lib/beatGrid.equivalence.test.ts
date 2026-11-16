@@ -10,6 +10,10 @@
 // corte; testada em src/lib/tempo/confidence.test.ts). BPM, 1º tempo e o "1"
 // continuam iguais em todos os casos daqui. O teste "só a primeira faixa de pulso
 // entra na conta" saiu: as faixas de pulso agora somam (src/lib/tempo/pulseSum.test.ts).
+//
+// M4: a etapa do andamento testa metade, dobro e as proporções 3:2 e 4:3, mas nenhum
+// caso daqui muda de BPM (nem o 6/8 sem compasso pedido, que continua em 60). O
+// detectSongGrid passa a oferecer a metade e o dobro em `alternatives`.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -117,7 +121,7 @@ describe('detectSongGrid', () => {
     const { offbeatRisk, alternatives, tracksUsed, ...grade } = r;
     expect(grade).toEqual(detectBeatGrid(ch, SR, { beatsPerBar: 4 }));
     expect(offbeatRisk).toBe(false);
-    expect(alternatives).toEqual([]);
+    expect(alternatives).toEqual([60, 240]);
     expect(tracksUsed).toEqual(['bat']);
   }, LENTO);
 
