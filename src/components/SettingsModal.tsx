@@ -6,7 +6,8 @@ import type { Channel } from '../types';
 import { buildChannelLabels } from '../lib/channelNames';
 import { PricingModal } from './PricingModal';
 import { supabase } from '../lib/supabase';
-import { planDisplayName, isPaidPlan, maxSeparationsPerMonth } from '../lib/plans';
+import { planDisplayName, isPaidPlan } from '../lib/plans';
+import { SeparationUsageMeter } from './SeparationUsageMeter';
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark';
 import { ProfileTab } from './ProfileTab';
 import { CHANGELOG } from '../lib/changelog';
@@ -273,28 +274,8 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                                         : 'Obrigado por apoiar o Playback Studio. Aproveite tudo do seu plano.'}
                                 </p>
 
-                                {(() => {
-                                    const maxLimit = maxSeparationsPerMonth(userPlan);
-                                    const currentUsage = parseInt(localStorage.getItem('separator_usage') || '0');
-                                    const usagePercent = Math.min(100, Math.round((currentUsage / maxLimit) * 100));
-                                    
-                                    return (
-                                        <div className="w-full bg-white/5 rounded-lg p-4 mb-6 border border-white/10 text-left">
-                                            <div className="flex justify-between items-center mb-2">
-                                                <span className="text-white text-xs font-bold uppercase tracking-wider">Separações de Faixas com IA</span>
-                                                <span className="text-text-muted text-[10px] font-mono">{currentUsage} / {maxLimit} usadas</span>
-                                            </div>
-                                            <div className="w-full h-2 bg-black/50 rounded-full overflow-hidden">
-                                                <div 
-                                                    className={`h-full rounded-full transition-all duration-500 ${usagePercent > 90 ? 'bg-red-500' : 'bg-primary'}`} 
-                                                    style={{ width: `${usagePercent}%` }}
-                                                />
-                                            </div>
-                                            <p className="text-white/30 text-[9px] font-mono mt-2">O limite é renovado a cada ciclo de faturamento.</p>
-                                        </div>
-                                    );
-                                })()}
-                                
+                                <SeparationUsageMeter plan={userPlan} isAdmin={isAdmin} />
+
                                 <button
                                     onClick={() => setIsPricingOpen(true)}
                                     className="px-6 py-3 bg-laranja text-bone text-xs font-bold uppercase tracking-wider rounded-lg transition-transform hover:scale-105 active:scale-95 shadow-lg shadow-laranja/25 mb-2"

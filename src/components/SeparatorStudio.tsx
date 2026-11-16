@@ -5,6 +5,7 @@ import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume
 import { uploadToR2 } from '../lib/r2';
 import { AUDIO_FILE_ACCEPT } from '../lib/uploadContentType';
 import { getAuthHeaders } from '../lib/supabase';
+import { fetchSeparationUsage, formatDateBR } from '../lib/separationUsage';
 import { useAuth } from '../hooks/useAuth';
 import { canDownloadStems, canUseVoiceGuide, canUseBpmDetection, planTier, maxSeparationsPerMonth } from '../lib/plans';
 import { PricingModal } from './PricingModal';
@@ -867,14 +868,17 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   };
 
   const processAudio = async (audioFile: File, stemCount: number) => {
-    // ── Limit check based on Plan ──
-    const maxLimit = maxSeparationsPerMonth(userPlan);
-    
-    const count = parseInt(localStorage.getItem('separator_usage') || '0');
-    if (count >= maxLimit) {
-      alert(`Você atingiu o limite de ${maxLimit} separações mensais do seu plano. Faça upgrade para continuar!`);
-      setIsPricingOpen(true);
-      return;
+    // ── Cota do mês (lida do banco, a mesma que o servidor usa) ──
+    // Só evita subir o arquivo à toa: quem decide de verdade é o servidor (402).
+    // Se não der pra ler o contador, segue e deixa o servidor responder.
+    if (!isAdmin) {
+      const maxLimit = maxSeparationsPerMonth(userPlan);
+      const usage = await fetchSeparationUsage();
+      if (usage && usage.used >= maxLimit) {
+        alert(`Você já usou as ${maxLimit} separações deste mês. O contador volta a zero em ${formatDateBR(usage.resetsAt)}.`);
+        setIsPricingOpen(true);
+        return;
+      }
     }
 
     setIsProcessing(true);
@@ -899,7 +903,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
-        if (res.status === 402) throw new Error(`Cota esgotada: ${errBody.error}. Faça upgrade do plano para continuar.`);
+        if (res.status === 402) {
+          setIsPricingOpen(true);
+          throw new Error(errBody.error || 'Você chegou no limite de separações deste mês.');
+        }
         if (res.status === 401) throw new Error('Sessão expirada. Faça login novamente.');
         throw new Error(errBody.error || 'Falha ao iniciar IA.');
       }
@@ -990,10 +997,6 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       setStems(persistedStems);
       setProgress(100);
       setIsProcessing(false);
-
-      // Increment count for all users
-      const currentCount = parseInt(localStorage.getItem('separator_usage') || '0');
-      localStorage.setItem('separator_usage', (currentCount + 1).toString());
 
       // ── Auto-save to local library ──
       try {

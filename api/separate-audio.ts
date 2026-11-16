@@ -93,7 +93,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return;
         }
         if (consumed !== true) {
-            res.status(402).json({ error: 'Quota exceeded for your plan', plan, limit });
+            // A cota é por mês civil (horário de Brasília): o RPC zera o contador
+            // sozinho na primeira separação do mês (db/supabase_cota_mensal.sql).
+            res.status(402).json({
+                error: `Você já usou as ${limit} separações deste mês. O contador volta a zero no dia 1º.`,
+                plan,
+                limit,
+            });
             return;
         }
     }
