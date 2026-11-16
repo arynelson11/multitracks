@@ -1,3 +1,5 @@
+import type { SongGrid, TimeSignature } from './lib/stageContracts'
+
 // Papel do canal no palco. Click e Guia continuam tocando com outro canal em
 // Solo e ficam fora da troca de tom. Campo ausente no canal quer dizer
 // automático (o papel vem do nome do arquivo).
@@ -52,6 +54,11 @@ export interface Song {
     lyrics?: string | null;
     lyricsSynced?: string | null; // LRC format ([mm:ss.xx] linha)
     chords?: string | null;
+    // Grade da música (Parte 2): BPM, primeiro 1 e compasso lidos no click, ou só o BPM
+    // salvo; o compasso escolhido no EDITAR vence. Ausente quer dizer ainda sem grade.
+    grid?: SongGrid;
+    // Compasso salvo na nuvem (songs.time_signature). Ausente quer dizer não informado.
+    timeSignature?: TimeSignature;
 }
 
 export interface Marker {

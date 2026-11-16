@@ -2,7 +2,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, renderHook } from '@testing-library/react'
 import JSZip from 'jszip'
-import type { SavedSong } from '../lib/repertoireSchema'
+import { REPERTOIRE_SCHEMA_VERSION, type SavedSong } from '../lib/repertoireSchema'
 import { useAudioEngine } from './useAudioEngine'
 // Código do motor como texto, pra guarda de forma no fim do arquivo. Pelo ?raw do Vite
 // porque no ambiente jsdom o import.meta.url deixa de ser file://.
@@ -216,7 +216,8 @@ const v1Local: SavedSong = {
   ],
 }
 const [chG, chK, chD] = v1Local.channels
-// Registro v2 com nome e papel do usuário, ordem manual e ligação com a nuvem.
+// Registro v2 com nome e papel do usuário, ordem manual e ligação com a nuvem. Fica
+// com schemaVersion 2 de propósito: é o formato que a v1.4.16 deixou gravado no aparelho.
 const v2: SavedSong = {
   ...v1, id: 's4', sourceId: 'cloud-1', channelOrder: 'manual', schemaVersion: 2,
   channels: [{ ...chB, id: 'vb', muted: false, customName: 'Baixo do Zé', role: 'guide' }, { ...chA, id: 'va' }, { ...chC, id: 'vc' }],
@@ -231,7 +232,7 @@ function seed(...songs: SavedSong[]) {
 const resetWrites = () => { mem.writes.length = 0; mem.metaWrites.length = 0 }
 
 describe('repertório salvo sobrevive à Parte 1', () => {
-  it('registro v1 real volta inteiro e o primeiro save grava v2 sem perder nada', async () => {
+  it('registro v1 real volta inteiro e o primeiro save grava a versão atual sem perder nada', async () => {
     seed(v1, v1Manual, v1Local)
     const { result } = await openApp()
 
@@ -250,9 +251,9 @@ describe('repertório salvo sobrevive à Parte 1', () => {
     await act(async () => { result.current.renameSong('s1', v1.name) })
 
     expect(saved()).toEqual([
-      { ...v1, channelOrder: 'auto', schemaVersion: 2 },
-      { ...v1Manual, channelOrder: 'manual', schemaVersion: 2 },
-      { ...v1Local, channels: [chK, chD, chG], channelOrder: 'auto', schemaVersion: 2 },
+      { ...v1, channelOrder: 'auto', schemaVersion: REPERTOIRE_SCHEMA_VERSION },
+      { ...v1Manual, channelOrder: 'manual', schemaVersion: REPERTOIRE_SCHEMA_VERSION },
+      { ...v1Local, channels: [chK, chD, chG], channelOrder: 'auto', schemaVersion: REPERTOIRE_SCHEMA_VERSION },
     ])
   })
 
@@ -267,7 +268,8 @@ describe('repertório salvo sobrevive à Parte 1', () => {
     expect(channel(result, 'vb').gainNode.gain.value).toBe(1.1)
 
     await act(async () => { result.current.renameSong('s4', v2.name) })
-    expect(saved()).toEqual([v2])
+    // Sobe pra versão atual sem perder nada do v2.
+    expect(saved()).toEqual([{ ...v2, schemaVersion: REPERTOIRE_SCHEMA_VERSION }])
   })
 
   it('ordem arrastada no mixer vira manual e sobrevive a reabrir o app', async () => {
@@ -573,7 +575,7 @@ describe('rede de segurança do reinício', () => {
 })
 
 describe('música nova', () => {
-  it('loadFiles grava o registro provisório v2 e monta os canais na ordem padrão', async () => {
+  it('loadFiles grava o registro provisório na versão atual e monta os canais na ordem padrão', async () => {
     const { result } = await openApp()
     const files = ['GTR_1.wav', 'CLICK.wav', 'BASS.wav'].map((n) => new File([n], n, { type: 'audio/wav' }))
     await act(async () => {
@@ -581,11 +583,11 @@ describe('música nova', () => {
     })
 
     const provisional = (mem.metaWrites[0] as SavedSong[])[0]
-    expect(provisional).toMatchObject({ name: 'Nova', duration: 0, sourceId: 'cloud-9', channelOrder: 'auto', schemaVersion: 2 })
+    expect(provisional).toMatchObject({ name: 'Nova', duration: 0, sourceId: 'cloud-9', channelOrder: 'auto', schemaVersion: REPERTOIRE_SCHEMA_VERSION })
     const nova = result.current.playlist[0]
     expect(nova).toMatchObject({ sourceId: 'cloud-9', channelOrder: 'auto', duration: 300 })
     expect(nova.channels.map((c) => c.name)).toEqual(['CLICK', 'BASS', 'GTR_1'])
-    expect(saved()[0]).toMatchObject({ sourceId: 'cloud-9', channelOrder: 'auto', schemaVersion: 2 })
+    expect(saved()[0]).toMatchObject({ sourceId: 'cloud-9', channelOrder: 'auto', schemaVersion: REPERTOIRE_SCHEMA_VERSION })
     expect(saved()[0].channels.map((c) => c.name)).toEqual(['CLICK', 'BASS', 'GTR_1'])
   })
 
@@ -659,7 +661,7 @@ describe('ZIP de repertório', () => {
     expect(manifest.songs[0].channels[0]).toMatchObject({ id: 'vb', name: 'BASS_1', customName: 'Baixo do Zé', role: 'guide' })
 
     await importZip(first.result, zip)
-    expect(saved().map((s) => [s.id, s.channelOrder, s.schemaVersion])).toEqual([['s4', 'manual', 2], ['s1', 'auto', 2]])
+    expect(saved().map((s) => [s.id, s.channelOrder, s.schemaVersion])).toEqual([['s4', 'manual', REPERTOIRE_SCHEMA_VERSION], ['s1', 'auto', REPERTOIRE_SCHEMA_VERSION]])
 
     cleanup()
     const { result } = await openApp()
@@ -683,7 +685,7 @@ describe('ZIP de repertório', () => {
 
     const first = await openApp()
     await importZip(first.result, zip)
-    expect(savedSong('s9')).toMatchObject({ channelOrder: 'manual', schemaVersion: 2 })
+    expect(savedSong('s9')).toMatchObject({ channelOrder: 'manual', schemaVersion: REPERTOIRE_SCHEMA_VERSION })
 
     cleanup()
     const { result } = await openApp()
