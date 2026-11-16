@@ -217,6 +217,12 @@ export interface SongOptions {
   seed?: number;
   withPad?: boolean;
   withBass?: boolean;
+  /**
+   * Gera as faixas extras (shaker e baixo em colcheias). Padrão true. Com false
+   * elas saem vazias (só deixa o teste mais rápido); com chiado (`noiseDb`) o shaker
+   * é sorteado mesmo assim, pro chiado da bateria continuar o mesmo.
+   */
+  withExtras?: boolean;
   /** Prato no 1 a cada N compassos depois da entrada da bateria. Padrão 0 (sem prato). */
   crashEvery?: number;
   /** Virada de caixa em semicolcheias no compasso antes da entrada, a partir deste tempo (1 = do início). */
@@ -259,7 +265,7 @@ export interface SynthSong {
 export function makeSong(opts: SongOptions): SynthSong {
   const { sr = 48000, duration = 300, bpm, firstBeat = 0, pattern = 'rock44', introBars = 0,
     gain = 1, noiseDb = null, jitterMs = 0, seed = 1, withPad = true, withBass = true,
-    crashEvery = 0, fillBeforeEntry = null, rampMs = 0.3, splitKit = false } = opts;
+    crashEvery = 0, fillBeforeEntry = null, rampMs = 0.3, splitKit = false, withExtras = true } = opts;
   // Rampa 0 dividia por zero (t / 0 = NaN na 1ª amostra de cada golpe); um piso
   // de 1 ns deixa a 1ª amostra em 0 e a seguinte já no pico (ataque instantâneo).
   const ramp = Math.max(rampMs, 1e-6) / 1000;
@@ -307,12 +313,14 @@ export function makeSong(opts: SongOptions): SynthSong {
     }
   }
   // Faixas extras (pacotes sem "Bateria"): shaker 16 com acento no "e"; baixo em colcheias iguais.
-  const shaker = new Float32Array(n);
-  const bass8 = new Float32Array(n);
+  // O shaker sorteia, então só sai de fora quando nada sorteado vem depois dele.
+  const withShaker = withExtras || noiseDb !== null;
+  const shaker = new Float32Array(withShaker ? n : 0);
+  const bass8 = new Float32Array(withExtras ? n : 0);
   for (let bar = introBars; bar < bars.length; bar++) {
     const tb = bars[bar];
-    for (let q = 0; q < P.beatsPerBar * 4; q++) addHat(shaker, sr, tb + (q * beatDur) / 4, q % 4 === 2 ? 1 : 0.45, rnd, ramp);
-    for (let q = 0; q < P.beatsPerBar * 2; q++) addBassNote(bass8, sr, tb + (q * beatDur) / 2, (beatDur / 2) * 0.9, BASS[bar % 4], 0.35);
+    if (withShaker) for (let q = 0; q < P.beatsPerBar * 4; q++) addHat(shaker, sr, tb + (q * beatDur) / 4, q % 4 === 2 ? 1 : 0.45, rnd, ramp);
+    if (withExtras) for (let q = 0; q < P.beatsPerBar * 2; q++) addBassNote(bass8, sr, tb + (q * beatDur) / 2, (beatDur / 2) * 0.9, BASS[bar % 4], 0.35);
   }
   if (noiseDb !== null) {
     const a = Math.pow(10, noiseDb / 20);

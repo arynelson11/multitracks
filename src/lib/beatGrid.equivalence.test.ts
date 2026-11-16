@@ -23,6 +23,8 @@ import { detectClicks, evaluate, mixToMono, parseWav } from '../test/clickProbe'
 const SR = 48000;
 // 1 min basta: a conta é a mesma de 5 min (o relatório usou 300 s) e o teste fica rápido.
 const DURACAO = 60;
+// Cada caso sintetiza 1 min e roda os dois detectores (~1,5 s; mais com a máquina carregada).
+const LENTO = 20_000;
 
 interface Caso {
   nome: string;
@@ -76,7 +78,7 @@ describe('detectBeatGrid em etapas dá o mesmo resultado do detector antigo', ()
     expect(antigo.bpm).toBeCloseTo(bpmTravado ?? song.bpm, 1);
     expect(antigo.confidence).toBeGreaterThan(0.1);
     expectMesmaGrade(detectBeatGrid(ch, sr, opts), antigo);
-  });
+  }, LENTO);
 
   // O Separador chama com o BPM digitado (busca fina de ±0,8% em volta dele).
   it.each([
@@ -88,7 +90,7 @@ describe('detectBeatGrid em etapas dá o mesmo resultado do detector antigo', ()
     const ch = bateria(song, sr);
     const opts: BeatGridOptions = { nearBpm, beatsPerBar };
     expectMesmaGrade(detectBeatGrid(ch, sr, opts), legacyDetectBeatGrid(ch, sr, opts));
-  });
+  }, LENTO);
 
   it('sem áudio que dê pra medir, devolve a mesma grade de reserva', () => {
     const curto = [new Float32Array(SR * 3)];
@@ -117,7 +119,7 @@ describe('detectSongGrid', () => {
     expect(offbeatRisk).toBe(false);
     expect(alternatives).toEqual([]);
     expect(tracksUsed).toEqual(['bat']);
-  });
+  }, LENTO);
 
   it('baixo e harmonia viram votos do "1" (ainda não mudam o resultado; a M3 usa)', () => {
     const s = makeSong({ sr: SR, duration: DURACAO, ...CASOS[3].song });
@@ -129,7 +131,7 @@ describe('detectSongGrid', () => {
     ], SR);
     expect({ ...comVotos, tracksUsed: [] }).toEqual({ ...so, tracksUsed: [] });
     expect(comVotos.tracksUsed).toEqual(['bat', 'bx', 'pad']);
-  }, 20_000);
+  }, LENTO);
 
   it('sem faixa de pulso, devolve a grade de reserva sem confiança (no BPM de referência)', () => {
     // A reserva sai antes de olhar o áudio: 5 s bastam. O 97 (não o padrão 120) prova que o nearBpm é usado.
@@ -215,7 +217,7 @@ describe('fumaça: synthMusic + clickProbe', () => {
     expect(certo.max).toBeLessThan(4);
     expect(certo.first).toBeGreaterThanOrEqual(0);
     expect(certo.accentOn1).toBe(100);
-  });
+  }, LENTO);
 
   it('caso b com a grade detectada: o mesmo +3,6 ms do relatório, acento no 1', async () => {
     const song = makeSong({ sr: SR, duration: DURACAO, bpm: 120, firstBeat: 1.37, withPad: false, withBass: false });
@@ -226,5 +228,6 @@ describe('fumaça: synthMusic + clickProbe', () => {
     expect(ev.max).toBeLessThan(4);
     expect(ev.mean).toBeCloseTo(3.6, 0);
     expect(ev.accentOn1).toBe(100);
-  });
+    // A detecção ficou ~3 vezes mais pesada na M2 (bandas de bumbo e caixa): folga pra máquina carregada.
+  }, LENTO);
 });

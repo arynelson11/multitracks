@@ -30,9 +30,18 @@ const DURATION = 60;
 /** Faixas de uma música sintética; `kick`, `snare` e `hihat` são o kit separado. */
 export type TempoCaseTrack = 'drums' | 'pad' | 'bass' | 'shaker' | 'bass8' | 'kick' | 'snare' | 'hihat';
 
-/** `votes: false` pula o pad e o baixo quando eles não são o pulso do caso (só deixa o teste mais rápido). */
 export interface TempoCaseSongOptions {
+  /**
+   * `false` deixa só o pulso do caso: pula o pad e o baixo (que votam no "1") e as
+   * faixas extras (shaker e baixo em colcheias) que não são o pulso. Só deixa o
+   * teste mais rápido; as faixas que ficam não mudam.
+   */
   votes?: boolean;
+  /**
+   * Duração em segundos (padrão 60). Mais curta só onde o que se mede não depende
+   * dela (o erro de uma grade travada); a confiança depende, então o corte usa 60 s.
+   */
+  duration?: number;
 }
 
 export interface TempoCase {
@@ -56,21 +65,24 @@ export interface TempoCase {
 
 // Música do relatório: Bateria, Baixo e Pad (o pacote padrão do harness), 60 s a
 // 48 kHz. Pad e baixo não sorteiam nada, então tirar os dois não muda as outras faixas.
-const synth = (opts: SongOptions) => (o: TempoCaseSongOptions = {}) =>
-  makeSong({ sr: SR, duration: DURATION, ...opts, ...(o.votes === false ? { withPad: false, withBass: false } : {}) });
+const synth = (opts: SongOptions, pulseIsExtra = false) => (o: TempoCaseSongOptions = {}) => makeSong({
+  sr: SR, ...opts, duration: o.duration ?? DURATION,
+  ...(o.votes === false ? { withPad: false, withBass: false, withExtras: pulseIsExtra } : {}),
+});
 // Mesmo assim, com o pad e o baixo sempre (o caso analisa um dos dois).
-const synthAll = (opts: SongOptions) => () => makeSong({ sr: SR, duration: DURATION, ...opts });
+const synthAll = (opts: SongOptions) => (o: TempoCaseSongOptions = {}) =>
+  makeSong({ sr: SR, ...opts, duration: o.duration ?? DURATION });
 
 // Faixa que não é música do sintetizador (ruído, voz): vai no lugar da bateria,
 // as outras faixas ficam vazias e a música não tem tempos.
-function signalSong(fill: (t: number) => number): SynthSong {
-  const n = SR * DURATION;
+function signalSong(fill: (t: number) => number, duration = DURATION): SynthSong {
+  const n = SR * duration;
   const a = new Float32Array(n);
   for (let i = 0; i < n; i++) a[i] = fill(i / SR);
   const empty = (): StereoTrack => [new Float32Array(0), new Float32Array(0)];
   return {
     tracks: { drums: [a, Float32Array.from(a)], pad: empty(), bass: empty(), shaker: empty(), bass8: empty() },
-    beats: [], bars: [], sr: SR, duration: DURATION, bpm: 0, firstBeat: 0, beatsPerBar: 4,
+    beats: [], bars: [], sr: SR, duration, bpm: 0, firstBeat: 0, beatsPerBar: 4,
   };
 }
 
@@ -83,14 +95,15 @@ function gridsweepRandom(seed: number): () => number {
   };
 }
 
-const whiteNoise = (seed: number) => () => {
+const whiteNoise = (seed: number) => (o: TempoCaseSongOptions = {}) => {
   const rnd = gridsweepRandom(seed);
-  return signalSong(() => (rnd() * 2 - 1) * 0.1);
+  return signalSong(() => (rnd() * 2 - 1) * 0.1, o.duration);
 };
 
 // Voz em glissando (o do gridsweep: 220 Hz +- 60 Hz a 0,13 Hz, volume a 0,07 Hz).
-const glissando = (f0: number, depth: number, rate: number, ampRate: number) => () => signalSong(
-  t => Math.sin(2 * Math.PI * (f0 + depth * Math.sin(2 * Math.PI * rate * t)) * t) * (0.5 + 0.5 * Math.sin(2 * Math.PI * ampRate * t)) * 0.3
+const glissando = (f0: number, depth: number, rate: number, ampRate: number) => (o: TempoCaseSongOptions = {}) => signalSong(
+  t => Math.sin(2 * Math.PI * (f0 + depth * Math.sin(2 * Math.PI * rate * t)) * t) * (0.5 + 0.5 * Math.sin(2 * Math.PI * ampRate * t)) * 0.3,
+  o.duration
 );
 
 export const TEMPO_CASES: readonly TempoCase[] = [
@@ -155,16 +168,16 @@ export const TEMPO_CASES: readonly TempoCase[] = [
   { id: 'n_kicksplit', group: 'validacao', positive: true, song: synth({ bpm: 104, firstBeat: 0.55 }),
     note: 'pacote com a bateria numa faixa "KICK" (sem "drum"): o pulso é a bateria (o AUTO antigo caía no BASS)' },
   // ── Só baixo ou só shaker (cointoss.mjs e harness.mjs) ──
-  { id: 'bass-colcheias', group: 'calibracao', positive: true, song: synth({ bpm: 104, firstBeat: 0.55 }), pulse: ['bass8'],
+  { id: 'bass-colcheias', group: 'calibracao', positive: true, song: synth({ bpm: 104, firstBeat: 0.55 }, true), pulse: ['bass8'],
     note: 'só baixo em colcheias iguais (o BASS do pacote n_kicksplit), 104 BPM: tempo e contratempo empatam' },
-  { id: 'loop-shaker', group: 'validacao', positive: true, song: synth({ bpm: 104, firstBeat: 0.55 }), pulse: ['shaker'],
+  { id: 'loop-shaker', group: 'validacao', positive: true, song: synth({ bpm: 104, firstBeat: 0.55 }, true), pulse: ['shaker'],
     note: 'só Loop de shaker em semicolcheias com acento no "e" (o n_loop do harness), 104 BPM',
     knownIssue: 'a grade fica no contratempo (sem bumbo nem caixa não há como decidir); pelo menos avisa o risco' },
   // ── Kit separado ──
   { id: 'kit-separado', group: 'calibracao', positive: true, song: synth({ bpm: 96, firstBeat: 0.35, pattern: 'sync44', splitKit: true }), pulse: ['kick', 'snare', 'hihat'],
     note: 'o e1 em três faixas (KICK, SNARE, HIHAT): nenhuma peça sozinha acha o tempo, as três somadas acham' },
   // ── Controles negativos (gridsweep.mjs, parte "conf") ──
-  { id: 'silencio', group: 'calibracao', positive: false, song: () => signalSong(() => 0),
+  { id: 'silencio', group: 'calibracao', positive: false, song: (o = {}) => signalSong(() => 0, o.duration),
     note: 'silêncio absoluto' },
   { id: 'ruido-branco', group: 'validacao', positive: false, song: whiteNoise(7),
     note: 'ruído branco (o do gridsweep, semente 7)' },

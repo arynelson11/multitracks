@@ -52,26 +52,39 @@ describe('tempo x contratempo nos casos do relatório', () => {
   // Antes da M2 estes já saíam no tempo certo (detector congelado da v1.4.15):
   // a decisão de bumbo e caixa não pode tirar nenhum do lugar. O relatório mediu
   // o click entre +0,2 e +6,8 ms do golpe; a grade sozinha fica abaixo disso.
+  // Todo positivo de uma faixa entra: ou na lista dos que davam certo, ou na dos
+  // que o detector antigo errava (esses têm teste próprio). Duração curta (o erro
+  // de uma grade travada não depende dela) e só a faixa do pulso: 20 s, e 30 s nos
+  // casos com 8 compassos de intro (a bateria entra em 19,2 s). O baixo em colcheias
+  // é cara ou coroa pros dois detectores (entre 30 e 45 s o antigo cai no
+  // contratempo); em 20 s, como em 60 s, os dois acertam.
+  const DAVAM_CERTO = ['a', 'b', 'b44k', 'c1', 'c2', 'd', 'f1', 'f3', 'g1', 'h', 'x_disco', 'x_popsync', 'x_kicksync',
+    'x_hat16on', 'x_a_crash', 'x_a_popsync0', 'x_d_fill4', 'x_d_fill3', 'x_d_pickup', 't_64', 't_68_16', 't_58', 'n_kicksplit', 'bass-colcheias'];
+  const ANTIGO_ERRAVA = ['e1', 'e2', 'x_sync16even', 't_160', 't_176', 'loop-shaker'];
+
+  it('todo positivo de uma faixa está numa das duas listas', () => {
+    const umaFaixa = TEMPO_CASES.filter(c => c.positive && (c.pulse?.length ?? 1) === 1).map(c => c.id).sort();
+    expect([...DAVAM_CERTO, ...ANTIGO_ERRAVA].sort()).toEqual(umaFaixa);
+  });
+
   it('os casos que já davam certo continuam no mesmo erro (até +6,8 ms)', () => {
-    let conferidos = 0;
-    for (const c of TEMPO_CASES) {
-      if (!c.positive || (c.pulse && c.pulse.length > 1)) continue;
-      const { song, grid } = detect(c);
+    for (const id of DAVAM_CERTO) {
+      const c = tempoCase(id);
+      const duration = ['d', 'x_d_fill4', 'x_d_fill3'].includes(id) ? 30 : 20;
+      const song = c.song({ votes: false, duration });
       const [pulso] = caseTracks(c, song);
-      const antigo = legacyDetectBeatGrid(pulso.channels, song.sr, { beatsPerBar: caseBeatsPerBar(c, song) });
+      const beatsPerBar = caseBeatsPerBar(c, song);
+      const antigo = legacyDetectBeatGrid(pulso.channels, song.sr, { beatsPerBar });
       const erroAntigo = firstBeatError(c, song, antigo.firstBeat);
-      const davaCerto = Math.abs(antigo.bpm - expectedBpm(c, song)) < 0.05 && Math.abs(erroAntigo) < 0.010;
-      if (!davaCerto) continue;
-      conferidos++;
-      expect({ id: c.id, bpm: grid.bpm }).toEqual({ id: c.id, bpm: antigo.bpm });
+      // O caso continua sendo um que o detector antigo acertava (a comparação não é vazia).
+      const antigoCerto = Math.abs(antigo.bpm - expectedBpm(c, song)) < 0.05 && Math.abs(erroAntigo) < 0.010;
+      expect({ id, antigoCerto }).toEqual({ id, antigoCerto: true });
+      const grid = detectSongGrid([pulso], song.sr, { beatsPerBar });
+      expect({ id, bpm: grid.bpm }).toEqual({ id, bpm: antigo.bpm });
       const erro = firstBeatError(c, song, grid.firstBeat);
-      expect(Math.abs(erro - erroAntigo), c.id).toBeLessThanOrEqual(0.0005);
-      expect(Math.abs(erro), c.id).toBeLessThanOrEqual(0.0068);
+      expect(Math.abs(erro - erroAntigo), id).toBeLessThanOrEqual(0.0005);
+      expect(Math.abs(erro), id).toBeLessThanOrEqual(0.0068);
     }
-    // a, b, b44k, c1, c2, d, f1, f3, g1, h, x_disco, x_popsync, x_kicksync,
-    // x_hat16on, x_a_crash, x_a_popsync0, x_d_fill4, x_d_fill3, x_d_pickup,
-    // t_64, t_68_16, t_58, n_kicksplit e bass-colcheias: a lista não é vazia.
-    expect(conferidos).toBeGreaterThanOrEqual(20);
   }, LENTO);
 });
 
