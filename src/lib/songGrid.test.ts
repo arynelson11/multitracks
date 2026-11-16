@@ -238,7 +238,7 @@ describe('grade da música', () => {
     expect(gridFromClick({ ...base, firstDownbeat: 4 }).firstDownbeat).toBe(0)
   })
   it('click: pulsos do acento viram compasso; número desconhecido é 4/4 assumido', () => {
-    expect(gridFromClick({ bpm: 60, subdivision: 3, compound: true, firstPulse: 0, pulsesPerBar: 6, firstDownbeat: 0 })).toMatchObject({ signature: '6/8', meterSource: 'acento' })
+    expect(gridFromClick({ bpm: 90, subdivision: 3, compound: true, firstPulse: 0, pulsesPerBar: 6, firstDownbeat: 0 })).toMatchObject({ bpm: 180, signature: '6/8', meterSource: 'acento' })
     expect(gridFromClick({ bpm: 180, subdivision: 1, compound: false, firstPulse: 0, pulsesPerBar: 9, firstDownbeat: 0 })).toMatchObject({ signature: '4/4', meterSource: 'padrao' })
   })
   it('click com fase quebrada não inventa o 1: grade recusada e aviso de sem grade', () => {
@@ -261,10 +261,10 @@ describe('grade da música', () => {
   })
 })
 
-describe('grade do click com subdivisão (T3: BPM em tempos)', () => {
-  // A leitura dá o BPM em tempos (semínima no simples, pontuada no composto) e a subdivisão.
-  // A grade conta pulsos do compasso: tempos no simples, colcheias no 6/8 e no 12/8 (6 e 12
-  // pulsos), com a contagem de 3 em 3, que é o tempo do composto.
+describe('grade do click com subdivisão (T3: BPM na semínima)', () => {
+  // A leitura dá o BPM sempre na semínima (Ruling T3-BPM) e a subdivisão. A grade conta pulsos
+  // do compasso: tempos no simples, colcheias no 6/8 e no 12/8 (6 e 12 pulsos, o dobro da
+  // semínima), com a contagem de 3 em 3, que é o tempo do composto.
   const leitura = (o: Partial<Parameters<typeof gridFromClick>[0]>) => ({ bpm: 66, subdivision: 1 as const, compound: false, firstPulse: 0, pulsesPerBar: null, firstDownbeat: null, ...o })
   it('4/4 em colcheias: a grade e a contagem ficam em semínimas, o 1 no primeiro tempo', () => {
     const grid = gridFromClick(leitura({ bpm: 66, subdivision: 2, firstPulse: 0.45 }))
@@ -273,25 +273,28 @@ describe('grade do click com subdivisão (T3: BPM em tempos)', () => {
   })
   it('6/8 em colcheias e em pontuada dão a mesma grade: colcheias, contagem de 2 tempos', () => {
     for (const subdivision of [3, 1] as const) {
-      const grid = gridFromClick(leitura({ bpm: 60, subdivision, compound: true, pulsesPerBar: 6, firstDownbeat: 1.2 }))
+      const grid = gridFromClick(leitura({ bpm: 90, subdivision, compound: true, pulsesPerBar: 6, firstDownbeat: 1.2 }))
       expect(grid).toMatchObject({ bpm: 180, signature: '6/8', countEvery: 3, meterSource: 'acento' })
       expect(countPulses(grid.signature, grid.countEvery)).toBe(2); expectTime(barSeconds(grid), 2); expectTime(grid.firstDownbeat, 1.2)
     }
   })
   it('12/8 em pontuada: 4 tempos de contagem num compasso de 12 colcheias', () => {
-    const grid = gridFromClick(leitura({ bpm: 50, compound: true, pulsesPerBar: 12, firstDownbeat: 0.3 }))
+    const grid = gridFromClick(leitura({ bpm: 75, compound: true, pulsesPerBar: 12, firstDownbeat: 0.3 }))
     expect(grid).toMatchObject({ bpm: 150, signature: '12/8', countEvery: 3 })
     expect(countPulses(grid.signature, grid.countEvery)).toBe(4); expectTime(barSeconds(grid), 4.8)
   })
   it('leitura composta sem compasso lido nem salvo: 6/8 assumido, não 4/4', () => {
-    expect(gridFromClick(leitura({ bpm: 66, subdivision: 3, compound: true }))).toMatchObject({ bpm: 198, signature: '6/8', countEvery: 3, meterSource: 'padrao' })
+    expect(gridFromClick(leitura({ bpm: 99, subdivision: 3, compound: true }))).toMatchObject({ bpm: 198, signature: '6/8', countEvery: 3, meterSource: 'padrao' })
+  })
+  it('semicolcheias (subdivisão 4): a grade fica na semínima', () => {
+    expect(gridFromClick(leitura({ bpm: 66, subdivision: 4, firstPulse: 0.33 }))).toMatchObject({ bpm: 66, signature: '4/4', countEvery: 1 })
   })
   it('compasso salvo diferente da leitura: a grade converte sem triplicar nem dividir errado', () => {
     // Leitura feita sem o 6/8 (a T27 deve passar o compasso salvo, mas a grade não pode quebrar).
     expect(gridFromClick(leitura({ bpm: 66, subdivision: 2 }), '6/8')).toMatchObject({ bpm: 132, signature: '6/8', countEvery: 3 })
     expect(gridFromClick(leitura({ bpm: 60 }), '6/8')).toMatchObject({ bpm: 180, signature: '6/8', countEvery: 3 })
-    // Leitura em 6/8 de um 3/4 em colcheias: a semínima vale 2 colcheias.
-    const tres = gridFromClick(leitura({ bpm: 140 / 3, subdivision: 3, compound: true, pulsesPerBar: 6 }), '3/4')
+    // Leitura em 6/8 de um 3/4 em colcheias: o BPM já é a semínima, que é o tempo do 3/4.
+    const tres = gridFromClick(leitura({ bpm: 70, subdivision: 3, compound: true, pulsesPerBar: 6 }), '3/4')
     expect(tres).toMatchObject({ signature: '3/4', countEvery: 1, meterSource: 'salvo' }); expectTime(tres.bpm, 70)
   })
 })

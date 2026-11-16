@@ -218,28 +218,25 @@ export function gridFromBpm(bpm: number, savedSignature?: TimeSignature | null):
 
 /**
  * O que a grade precisa da leitura da faixa de click (a `ClickAnalysis` da T3 encaixa por
- * estrutura). `bpm` em tempos (semínima no simples, semínima pontuada no composto);
- * `subdivision` = pulsos do click por tempo; `compound` = o tempo é a semínima pontuada.
+ * estrutura). `bpm` sempre na semínima (Ruling T3-BPM); `subdivision` = pulsos do click por
+ * tempo do compasso; `compound` = o tempo é a semínima pontuada.
  */
 export interface ClickAnalysisLike {
-  bpm: number; subdivision: 1 | 2 | 3; compound: boolean
+  bpm: number; subdivision: 1 | 2 | 3 | 4; compound: boolean
   firstPulse: number; pulsesPerBar: number | null; firstDownbeat: number | null
 }
 
 /**
- * Pulsos da grade por minuto no compasso que vale: tempos no simples, colcheias no 6/8 e no
- * 12/8 (a grade conta 6 e 12 pulsos neles). Leitura feita num quadro diferente do compasso
- * salvo (a T27 deve ler o click já com o compasso salvo): no composto, o click lido no
- * simples vira colcheia pelo andamento, como no clickMeter; no simples, a leitura composta
- * vira semínima de 2 colcheias.
+ * Pulsos da grade por minuto no compasso que vale: a semínima no simples e as colcheias no 6/8
+ * e no 12/8 (o dobro, pela conversão única `pulseBpmFromDisplayBpm`). Leitura feita no simples
+ * com o compasso salvo composto (a T27 deve ler o click já com o compasso salvo): o BPM dela
+ * não é a semínima do composto, então o click é colcheia ou pontuada pelo andamento, como no
+ * clickMeter.
  */
 function gridPulseBpm(a: ClickAnalysisLike, signature: TimeSignature): number {
-  if (isCompound(signature)) {
-    if (a.compound) return a.bpm * 3
-    const clickPulses = a.bpm * a.subdivision
-    return clickPulses < DOTTED_PULSE_MAX_BPM ? clickPulses * 3 : clickPulses
-  }
-  return a.compound ? (a.bpm * 3) / 2 : a.bpm
+  if (!isCompound(signature) || a.compound) return pulseBpmFromDisplayBpm(a.bpm, signature)
+  const clickPulses = a.bpm * a.subdivision
+  return clickPulses < DOTTED_PULSE_MAX_BPM ? clickPulses * 3 : clickPulses
 }
 
 /**
@@ -257,8 +254,8 @@ function intoFirstBar(x: number, bar: number): number {
 /**
  * Grade lida na faixa de click. Compasso: o salvo (`'salvo'`), senão o que o acento mostrou
  * (`'acento'`), senão 4/4 (`'padrao'`; 6/8 quando a leitura é composta). O BPM da grade sai
- * em tempos no compasso simples e em colcheias no composto, com a contagem de 3 em 3 (o tempo
- * do composto): a contagem nunca conta colcheias. O primeiro 1 (`firstDownbeat`, ou o primeiro
+ * na semínima no compasso simples e em colcheias no composto (o dobro do BPM da leitura), com a
+ * contagem de 3 em 3 (o tempo do composto): a contagem nunca conta colcheias. O primeiro 1 (`firstDownbeat`, ou o primeiro
  * tempo sem acento) vai pra dentro do primeiro compasso do compasso que vale. Leitura com
  * `firstPulse` ou `firstDownbeat` não finito é leitura quebrada: a fase sai NaN, a grade é
  * recusada pelo `sanitizeGrid` e o `gridWarning` dá `'sem-grade'` (nunca um 1 chutado em 0:00).
