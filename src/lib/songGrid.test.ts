@@ -22,10 +22,10 @@ it('barras e encaixe', () => {
 })
 it('seções encaixadas e a última nunca passa do áudio', () => {
   const m = [{ id: 'b', time: 8.2, label: 'Refrão' }, { id: 'a', time: 0, label: 'Intro' }, { id: 'c', time: 16.4, label: 'Final' }]
-  expect(sectionSpans(m, 20.1, g)).toEqual([{ index: 0, start: 0, end: 8.25 }, { index: 1, start: 8.25, end: 16.25 }, { index: 2, start: 16.25, end: 20.1 }])
+  expect(sectionSpans(m, 20.1, g)).toEqual([{ index: 0, start: 0, end: 8.25, snappedTo: 'raw' }, { index: 1, start: 8.25, end: 16.25, snappedTo: 'bar' }, { index: 2, start: 16.25, end: 20.1, snappedTo: 'bar' }])
   expect(markerIdForSpan(m, 20.1, g, 1)).toBe('b')
 })
-it('ignora marca inválida e o índice é o da lista de spans', () => expect(sectionSpans([{ id: 'x', time: NaN, label: 'X' }, { id: 'y', time: 99, label: 'Y' }, { id: 'z', time: 3, label: 'Z' }], 30, null)).toEqual([{ index: 0, start: 3, end: 30 }]))
+it('ignora marca inválida e o índice é o da lista de spans', () => expect(sectionSpans([{ id: 'x', time: NaN, label: 'X' }, { id: 'y', time: 99, label: 'Y' }, { id: 'z', time: 3, label: 'Z' }], 30, null)).toEqual([{ index: 0, start: 3, end: 30, snappedTo: 'raw' }]))
 it('grade a partir do bpm salvo e do click, com a origem do compasso', () => {
   expect(gridFromBpm(72.5)).toEqual({ bpm: 72.5, firstDownbeat: 0, signature: '4/4', countEvery: 1, source: 'bpm', meterSource: 'padrao' })
   expect(gridFromBpm(72.5, '3/4')!.meterSource).toBe('salvo'); expect(gridFromBpm(0)).toBeNull()
@@ -80,15 +80,16 @@ describe('encaixe', () => {
 describe('seções', () => {
   it('duas marcas no mesmo compasso: o trecho vazio sai e a lista continua contínua', () => {
     const m = [mk('a', 0), mk('b', 8.2), mk('c', 8.3), mk('d', 16.4)]
-    expect(sectionSpans(m, 20.1, g)).toEqual([{ index: 0, start: 0, end: 8.25 }, { index: 1, start: 8.25, end: 16.25 }, { index: 2, start: 16.25, end: 20.1 }])
+    expect(sectionSpans(m, 20.1, g)).toEqual([{ index: 0, start: 0, end: 8.25, snappedTo: 'raw' }, { index: 1, start: 8.25, end: 16.25, snappedTo: 'bar' }, { index: 2, start: 16.25, end: 20.1, snappedTo: 'bar' }])
     expect(markerIdForSpan(m, 20.1, g, 1)).toBe('c'); expect(markerIdForSpan(m, 20.1, g, 2)).toBe('d')
   })
-  it('marca que encaixaria depois do fim do áudio fica crua', () => {
-    expect(sectionSpans([mk('a', 0), mk('b', 20)], 20.1, g)).toEqual([{ index: 0, start: 0, end: 20 }, { index: 1, start: 20, end: 20.1 }])
+  it('marca que encaixaria depois do fim do áudio cai no último pulso antes do fim', () => {
+    expect(sectionSpans([mk('a', 0), mk('b', 20)], 20.1, g)).toEqual([{ index: 0, start: 0, end: 19.75, snappedTo: 'raw' }, { index: 1, start: 19.75, end: 20.1, snappedTo: 'pulse' }])
+    expect(sectionSpans([mk('a', 0), mk('b', 20)], 20.1, null)).toEqual([{ index: 0, start: 0, end: 20, snappedTo: 'raw' }, { index: 1, start: 20, end: 20.1, snappedTo: 'raw' }])
   })
   it('a última termina na barra antes do fim, ou no fim quando essa barra não deixa a seção existir', () => {
-    expect(sectionSpans([mk('a', 0)], 20.6, g)).toEqual([{ index: 0, start: 0, end: 20.25 }])
-    expect(sectionSpans([mk('a', 0), mk('b', 20.3)], 20.6, g)).toEqual([{ index: 0, start: 0, end: 20.25 }, { index: 1, start: 20.25, end: 20.6 }])
+    expect(sectionSpans([mk('a', 0)], 20.6, g)).toEqual([{ index: 0, start: 0, end: 20.25, snappedTo: 'raw' }])
+    expect(sectionSpans([mk('a', 0), mk('b', 20.3)], 20.6, g)).toEqual([{ index: 0, start: 0, end: 20.25, snappedTo: 'raw' }, { index: 1, start: 20.25, end: 20.6, snappedTo: 'bar' }])
   })
   it('sem marcas ou sem duração, nenhuma seção', () => {
     expect(sectionSpans([], 30, g)).toEqual([])
@@ -96,13 +97,13 @@ describe('seções', () => {
   })
   it('marca negativa ou no fim exato fica de fora; a lista recebida não muda', () => {
     const m = [mk('b', 10), mk('neg', -1), mk('fim', 30), mk('a', 2)]
-    expect(sectionSpans(m, 30, null)).toEqual([{ index: 0, start: 2, end: 10 }, { index: 1, start: 10, end: 30 }])
+    expect(sectionSpans(m, 30, null)).toEqual([{ index: 0, start: 2, end: 10, snappedTo: 'raw' }, { index: 1, start: 10, end: 30, snappedTo: 'raw' }])
     expect(m.map((x) => x.id)).toEqual(['b', 'neg', 'fim', 'a'])
   })
   it('marcas da nuvem sem limpeza: item nulo, vazio ou sem tempo numérico é ignorado, nunca lança', () => {
     const sujas = [null, {}, { time: 'x' }, { time: 10 }] as unknown as Marker[]
     expect(() => sectionSpans(sujas, 30, g)).not.toThrow()
-    expect(sectionSpans(sujas, 30, null)).toEqual([{ index: 0, start: 10, end: 30 }])
+    expect(sectionSpans(sujas, 30, null)).toEqual([{ index: 0, start: 10, end: 30, snappedTo: 'raw' }])
     expect(markerIdForSpan(sujas, 30, null, 0)).toBeNull() // a marca não tem id
     const comVazio = [undefined, ...sujas, { id: 'ok', time: 20 }] as unknown as Marker[]
     expect(() => markerIdForSpan(comVazio, 30, g, 1)).not.toThrow()
@@ -122,6 +123,49 @@ describe('seções', () => {
   it('no início exato de uma seção, um erro de arredondamento não volta pra anterior', () => {
     const spans = sectionSpans([mk('a', 0), mk('b', 8.2)], 20, g)
     expect(sectionIndexAt(spans, 8.25 - 1e-9)).toBe(1)
+  })
+})
+
+describe('início da seção: barra, pulso ou cru', () => {
+  it('longe da barra encaixa no pulso mais perto do click, nunca fica fora do pulso', () => {
+    expect(sectionSpans([mk('a', 0), mk('b', 5.3)], 20.1, g)).toEqual([{ index: 0, start: 0, end: 5.25, snappedTo: 'raw' }, { index: 1, start: 5.25, end: 20.1, snappedTo: 'pulse' }])
+  })
+  it('com grade de click todo início fora de 0:00 cai na barra (até 1/4 de compasso) ou no pulso', () => {
+    const pulso = pulseSeconds(g), bar = barSeconds(g)
+    for (let k = 1; k * 0.07 < 40; k++) {
+      const t = k * 0.07
+      const s = sectionSpans([mk('a', 0), mk('x', t)], 60, g)[1]
+      expect(['bar', 'pulse']).toContain(s.snappedTo)
+      const pulsos = (s.start - g.firstDownbeat) / pulso
+      expect(Math.abs(pulsos - Math.round(pulsos))).toBeLessThanOrEqual(TOL)
+      expect(Math.abs(s.start - t)).toBeLessThanOrEqual((s.snappedTo === 'bar' ? bar / 4 : pulso / 2) + TOL)
+    }
+  })
+  it('6/8 a 180: o pulso é a colcheia do click', () => {
+    const seis: SongGrid = { ...g, bpm: 180, signature: '6/8', firstDownbeat: 0 }
+    const s = sectionSpans([mk('a', 0), mk('b', 0.9)], 10, seis)
+    expect(s[1].snappedTo).toBe('pulse'); expectTime(s[1].start, 1)
+  })
+  it('sem fase ou com grade quebrada continua cru', () => {
+    for (const grade of [{ ...g, source: 'bpm' as const }, { ...g, bpm: NaN }, null]) {
+      expect(sectionSpans([mk('b', 5.3)], 20, grade)).toEqual([{ index: 0, start: 5.3, end: 20, snappedTo: 'raw' }])
+    }
+  })
+  it('marca em 0:00 nunca mexe e diz se 0:00 já cai na barra ou no pulso', () => {
+    expect(sectionSpans([mk('a', 0)], 10, { ...g, firstDownbeat: 0 })[0].snappedTo).toBe('bar')
+    expect(sectionSpans([mk('a', 0)], 10, { ...g, firstDownbeat: 0.5 })[0].snappedTo).toBe('pulse')
+    expect(sectionSpans([mk('a', 0)], 10, g)[0]).toEqual({ index: 0, start: 0, end: 10, snappedTo: 'raw' })
+  })
+  it('barra antes de 0:00 encaixa em 0, como o snapToBar', () => {
+    const tarde: SongGrid = { ...g, firstDownbeat: 1.9 } // barras em -0,1; 1,9; pulsos em -0,1; 0,4; 0,9...
+    const [s] = sectionSpans([mk('a', 0.3)], 10, tarde)
+    expect(s).toMatchObject({ index: 0, start: 0, snappedTo: 'raw' }); expect(snapToBar(0.3, tarde)).toBe(0)
+    expectTime(s.end, 9.9) // fim na barra de 9,9 (a 0,1 s do fim do áudio)
+  })
+  it('duas marcas no mesmo pulso: fica a de depois', () => {
+    const m = [mk('a', 0), mk('b', 5.2), mk('c', 5.35)]
+    expect(sectionSpans(m, 20, g)).toEqual([{ index: 0, start: 0, end: 5.25, snappedTo: 'raw' }, { index: 1, start: 5.25, end: 20, snappedTo: 'pulse' }])
+    expect(markerIdForSpan(m, 20, g, 1)).toBe('c')
   })
 })
 

@@ -67,13 +67,56 @@ export function snapToBar(t: number, g: SongGrid | null): number {
 
 // ---------- Seções ----------
 
-interface SpanEntry { span: SectionSpan; markerId: string | null }
+/** Como o início do trecho caiu na grade: na barra, no pulso do click, ou cru (sem grade com fase). */
+export type SpanSnap = 'bar' | 'pulse' | 'raw'
+
+/**
+ * Trecho de seção: o `SectionSpan` da T1 mais o jeito do encaixe do início. A T11 usa o
+ * `snappedTo` do trecho seguinte pra saber se o fim deste (o `switchAt`) cai no pulso do click:
+ * `'bar'` e `'pulse'` caem; `'raw'` só sai sem grade com fase, ou em 0:00 fora da grade.
+ */
+export interface SnappedSpan extends SectionSpan { snappedTo: SpanSnap }
+
+/** Pulso do click mais perto de `t` (mesma conta da barra: fase mais um número inteiro de pulsos). */
+function nearestPulseLine(t: number, g: SongGrid): number {
+  const pulse = pulseSeconds(g)
+  return g.firstDownbeat + Math.round((t - g.firstDownbeat) / pulse) * pulse
+}
+
+function hasUsablePhase(g: SongGrid | null): g is SongGrid {
+  return g !== null && gridHasPhase(g) && isUsableGrid(g)
+}
+
+/** 0:00 nunca mexe; diz se 0:00 já cai na barra ou no pulso da grade. */
+function atZero(g: SongGrid | null): { time: number; snappedTo: SpanSnap } {
+  if (!hasUsablePhase(g)) return { time: 0, snappedTo: 'raw' }
+  if (Math.abs(nearestBarLine(0, g)) <= EPS) return { time: 0, snappedTo: 'bar' }
+  return { time: 0, snappedTo: Math.abs(nearestPulseLine(0, g)) <= EPS ? 'pulse' : 'raw' }
+}
+
+/**
+ * Início de uma seção (decisão do coordenador, spec 4.4 "sem sair do tempo"): com grade de
+ * click, a barra mais perto até 1/4 de compasso (como o `snapToBar`); mais longe, o pulso mais
+ * perto. Barra ou pulso antes de 0:00 vira 0:00; pulso depois do fim do áudio vira o último
+ * pulso antes do fim. Sem grade com fase, a marca crua.
+ */
+function snapSectionStart(t: number, g: SongGrid | null, duration: number): { time: number; snappedTo: SpanSnap } {
+  if (t <= 0) return atZero(g)
+  if (!hasUsablePhase(g)) return { time: t, snappedTo: 'raw' }
+  const bar = nearestBarLine(t, g)
+  if (Math.abs(bar - t) <= barSeconds(g) / 4 + EPS && bar < duration) return bar <= 0 ? atZero(g) : { time: bar, snappedTo: 'bar' }
+  let pulse = nearestPulseLine(t, g)
+  if (pulse >= duration) pulse -= pulseSeconds(g)
+  return pulse <= 0 ? atZero(g) : { time: pulse, snappedTo: 'pulse' }
+}
+
+interface SpanEntry { span: SnappedSpan; markerId: string | null }
 
 /**
  * Trechos das seções com a marca de cada um. Regras além do plano, pra nenhum trecho sair do
- * áudio nem ficar vazio: o início que o encaixe jogaria pra depois do fim fica na marca crua;
- * duas marcas no mesmo compasso deixam um trecho vazio, que sai (fica a de depois); a última
- * termina no fim do áudio quando a barra encaixada do fim não fica depois do início dela.
+ * áudio nem ficar vazio: duas marcas no mesmo compasso (ou pulso) deixariam um trecho vazio, que
+ * sai (fica a de depois); marca colada no fim do áudio sai; a última termina no fim do áudio
+ * quando a barra encaixada do fim não fica depois do início dela.
  */
 function spanEntries(markers: readonly Marker[], duration: number, grid: SongGrid | null): SpanEntry[] {
   if (!Number.isFinite(duration) || duration <= 0) return []
@@ -81,31 +124,33 @@ function spanEntries(markers: readonly Marker[], duration: number, grid: SongGri
   const valid = markers
     .filter((m) => m != null && Number.isFinite(m.time) && m.time >= 0 && m.time < duration)
     .sort((a, b) => a.time - b.time)
-  if (valid.length === 0) return []
-  const starts = valid.map((m) => {
-    const s = snapToBar(m.time, grid)
-    return s < duration ? s : m.time
-  })
-  const lastStart = starts[starts.length - 1]
+  const kept: { start: number; snappedTo: SpanSnap; markerId: string | null }[] = []
+  for (const m of valid) {
+    const s = snapSectionStart(m.time, grid, duration)
+    if (s.time > duration - EPS) continue
+    while (kept.length > 0 && s.time - kept[kept.length - 1].start <= EPS) kept.pop()
+    kept.push({ start: s.time, snappedTo: s.snappedTo, markerId: typeof m.id === 'string' ? m.id : null })
+  }
+  if (kept.length === 0) return []
+  const lastStart = kept[kept.length - 1].start
   const tail = snapToBar(duration, grid)
   const lastEnd = tail <= duration && tail > lastStart + EPS ? tail : duration
-  const out: SpanEntry[] = []
-  valid.forEach((m, i) => {
-    const start = starts[i]
-    const end = i + 1 < starts.length ? starts[i + 1] : lastEnd
-    if (end - start > EPS) out.push({ span: { index: out.length, start, end }, markerId: typeof m.id === 'string' ? m.id : null })
-  })
-  return out
+  return kept.map((k, i) => ({
+    span: { index: i, start: k.start, end: i + 1 < kept.length ? kept[i + 1].start : lastEnd, snappedTo: k.snappedTo },
+    markerId: k.markerId,
+  }))
 }
 
 /**
  * Seções da música em trechos contínuos e encaixados. Marca com tempo não finito ou fora de
- * `[0, duration)` é ignorada; `start` é a marca encaixada (`snapToBar`); `end` é o início da
- * seguinte; a última termina em `snapToBar(duration)` se isso não passar de `duration`, senão
- * em `duration`. `index` é a posição nesta lista (o índice que o palco, a banda e o motor usam),
- * não a posição da marca em `markers`.
+ * `[0, duration)` é ignorada. `start`: com grade de click, a barra mais perto até 1/4 de
+ * compasso (`'bar'`), senão o pulso mais perto (`'pulse'`); sem grade com fase, a marca crua
+ * (`'raw'`); marca em 0:00 nunca mexe. `end` é o início da seguinte; a última termina em
+ * `snapToBar(duration)` se isso não passar de `duration`, senão em `duration` (o fim da última
+ * pode ficar fora do pulso). `index` é a posição nesta lista (o índice que o palco, a banda e o
+ * motor usam), não a posição da marca em `markers`.
  */
-export function sectionSpans(markers: readonly Marker[], duration: number, grid: SongGrid | null): SectionSpan[] {
+export function sectionSpans(markers: readonly Marker[], duration: number, grid: SongGrid | null): SnappedSpan[] {
   return spanEntries(markers, duration, grid).map((e) => e.span)
 }
 
