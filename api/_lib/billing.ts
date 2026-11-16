@@ -296,43 +296,61 @@ export type CancelResult = {
   plan: string
 }
 
-async function adoptLegacySubscriptions(deps: BillingDeps & { asaas: AsaasApi }, userId: string): Promise<void> {
-  const { data, error } = await deps.db.from('payments').select('asaas_checkout_id, plan_key').eq('user_id', userId)
+type LegacyCandidate = { checkoutId: string; planKey: PlanKey }
+
+// Assinou antes desta versão: o checkout pago ficou em payments, sem linha em
+// billing_subscriptions. Só esses precisam de consulta ao Asaas pra serem achados.
+async function legacyCandidates(db: SupabaseClient, userId: string): Promise<LegacyCandidate[]> {
+  const { data, error } = await db.from('payments').select('asaas_checkout_id, plan_key').eq('user_id', userId)
   if (error) throw new BillingError('db_error', `Falha no banco (payments): ${error.message}`, 500)
+  const out: LegacyCandidate[] = []
   for (const p of (data as { asaas_checkout_id?: unknown; plan_key?: unknown }[] | null) ?? []) {
     const checkoutId = str(p.asaas_checkout_id)
     if (!checkoutId || !isPlanKey(p.plan_key)) continue
-    if (await getSubBy(deps.db, 'id', checkoutId)) continue
-    const subId = await findSubscriptionIdByCheckout(deps.asaas, checkoutId)
+    if (await getSubBy(db, 'id', checkoutId)) continue
+    out.push({ checkoutId, planKey: p.plan_key })
+  }
+  return out
+}
+
+async function adoptLegacySubscriptions(db: SupabaseClient, asaas: AsaasApi, userId: string, candidates: LegacyCandidate[]): Promise<void> {
+  for (const c of candidates) {
+    const subId = await findSubscriptionIdByCheckout(asaas, c.checkoutId)
     if (!subId) continue
-    const sub = await getSubscription(deps.asaas, subId)
+    const sub = await getSubscription(asaas, subId)
     if (!sub || sub.status !== 'ACTIVE') continue
-    await rpc<string>(deps.db, 'billing_upsert_subscription', {
-      p_id: checkoutId, p_user_id: userId, p_plan_key: p.plan_key, p_cycle: PLAN_PRICING[p.plan_key].cycle,
+    await rpc<string>(db, 'billing_upsert_subscription', {
+      p_id: c.checkoutId, p_user_id: userId, p_plan_key: c.planKey, p_cycle: PLAN_PRICING[c.planKey].cycle,
       p_subscription_id: subId, p_customer_id: str(sub.customer),
     })
   }
 }
 
+const MSG_MISCONFIGURED = 'O cancelamento está indisponível agora. Fale com a gente pelo WhatsApp.'
+
+// Cancela as assinaturas DESTE usuário. Também usado ao excluir a conta
+// (immediate: true). Sem nada pra cancelar, lança not_found sem falar com o Asaas.
 export async function cancelSubscriptionForUser(
   deps: BillingDeps,
   input: { userId: string; source: 'user' | 'admin'; immediate?: boolean },
 ): Promise<CancelResult> {
-  const asaas = deps.asaas
-  if (!asaas) throw new BillingError('misconfigured', 'O cancelamento está indisponível agora. Fale com a gente pelo WhatsApp.', 500)
   const { db } = deps
   const now = (deps.now ?? (() => new Date()))()
 
   // 1. Só as assinaturas DESTE usuário (o id vem do login, nunca do pedido).
   let rows = await activeRowsForUser(db, input.userId)
-  try {
-    if (rows.length === 0) {
-      await adoptLegacySubscriptions({ ...deps, asaas }, input.userId)
+  if (rows.length === 0) {
+    const candidates = await legacyCandidates(db, input.userId)
+    if (candidates.length > 0) {
+      if (!deps.asaas) throw new BillingError('misconfigured', MSG_MISCONFIGURED, 500)
+      try {
+        await adoptLegacySubscriptions(db, deps.asaas, input.userId, candidates)
+      } catch (e) {
+        if (e instanceof AsaasError) throw new BillingError('asaas_unavailable', MSG_ASAAS_DOWN_NOTHING_CHANGED, 502)
+        throw e
+      }
       rows = await activeRowsForUser(db, input.userId)
     }
-  } catch (e) {
-    if (e instanceof AsaasError) throw new BillingError('asaas_unavailable', MSG_ASAAS_DOWN_NOTHING_CHANGED, 502)
-    throw e
   }
 
   if (rows.length === 0) {
@@ -346,6 +364,9 @@ export async function cancelSubscriptionForUser(
     throw new BillingError('not_found',
       'Não encontramos uma assinatura ativa na sua conta. Se aparece cobrança no seu cartão, fale com a gente pelo WhatsApp que a gente resolve.', 404)
   }
+
+  const asaas = deps.asaas
+  if (!asaas) throw new BillingError('misconfigured', MSG_MISCONFIGURED, 500)
 
   // 2. Lê tudo no Asaas ANTES de mudar qualquer coisa.
   type Plan = { row: SubRow; subId: string; lastPaid: string | null; withdrawal: ReturnType<typeof withdrawalStatus> }

@@ -95,14 +95,17 @@ export function ProfileTab({ user, userPlan, updateProfile, updatePassword, sign
 
   const [deleting, setDeleting] = useState(false);
   const handleDelete = async () => {
-    const typed = prompt('Isto apaga sua conta permanentemente e não pode ser desfeito.\n\nDigite EXCLUIR para confirmar:');
+    const subscriptionNote = isPaidPlan(userPlan)
+      ? '\n\nSua assinatura é cancelada na hora e nada mais é cobrado. Se você assinou há até 7 dias (primeira cobrança), devolvemos o valor no cartão.'
+      : '';
+    const typed = prompt(`Isto apaga sua conta permanentemente e não pode ser desfeito.${subscriptionNote}\n\nDigite EXCLUIR para confirmar:`);
     if (typed !== 'EXCLUIR') return;
     setDeleting(true);
     try {
       await deleteAccount();
       onClose();
-    } catch {
-      alert('Não foi possível excluir a conta. Tente novamente.');
+    } catch (e) {
+      alert(e instanceof Error && e.message ? e.message : 'Não foi possível excluir a conta. Tente novamente.');
       setDeleting(false);
     }
   };
