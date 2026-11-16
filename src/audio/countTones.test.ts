@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { asAudioContext, createFakeAudioContext, nodesOf, reaches, valueAt, type FakeAudioParam } from '../test/fakeAudio'
+import { asAudioContext, createFakeAudioContext, nodesOf, reaches, valueAt } from '../test/fakeAudio'
 import { COUNT_TONE, scheduleCount } from './countTones'
 
 describe('COUNT_TONE', () => {
@@ -104,39 +104,16 @@ describe('scheduleCount: cancel sem estalo', () => {
   const instants: number[] = []
   for (let k = Math.ceil((AT * SR) / 128); (k * 128) / SR < AT + 0.22; k++) instants.push((k * 128) / SR)
 
-  // cancelAndHoldAtTime como a especificação manda (e o Chrome e o Safari fazem), no lugar do
-  // da T1, que grava um 'set' em tc mesmo sem rampa cruzando (diverge; outra tarefa corrige o
-  // fake): os eventos em tc ficam; se o próximo depois de tc é rampa, ela passa a terminar em
-  // tc com o valor que teria ali; senão, depois de um setTarget, entra um set em tc; senão NADA
-  // entra em tc. O que vem depois de tc sai.
-  const specCancelAndHold = (p: FakeAudioParam) => (tc: number) => {
-    const held = valueAt(p, tc)
-    const line = p.events.filter((e) => e.kind !== 'cancel')
-    const atTc = line.filter((e) => e.time === tc)
-    const prev = line.filter((e) => e.time <= tc).at(-1)
-    const next = line.find((e) => e.time > tc)
-    p.cancelScheduledValues(tc) // o do fake tira também os de tempo igual: voltam abaixo
-    for (const e of atTc) {
-      if (e.kind === 'set') p.setValueAtTime(e.value!, tc)
-      else if (e.kind === 'linear') p.linearRampToValueAtTime(e.value!, tc)
-      else if (e.kind === 'exp') p.exponentialRampToValueAtTime(e.value!, tc)
-      else throw new Error(`evento ${e.kind} em tc: o cenário não tem`)
-    }
-    if (next?.kind === 'linear') p.linearRampToValueAtTime(held, tc)
-    else if (next?.kind === 'exp') p.exponentialRampToValueAtTime(held, tc)
-    else if (prev?.kind === 'target') p.setValueAtTime(held, tc)
-    return p
-  }
-
-  type Hold = 'especificação' | 'sem cancelAndHoldAtTime'
+  // 'nativo': o cancelAndHoldAtTime do fake, que segue o algoritmo da especificação (como o
+  // Chrome e o Safari): só insere evento em tc quando uma rampa cruza tc. 'sem': o Firefox.
+  type Hold = 'nativo' | 'sem cancelAndHoldAtTime'
   const setup = (label: number, now: number, hold: Hold) => {
     const ctx = createFakeAudioContext({ sampleRate: SR }); const dest = ctx.createGain()
     ctx.currentTime = 0.3
     const count = scheduleCount(asAudioContext(ctx), dest, [{ at: AT, label }])
     const [tri, sq] = nodesOf(ctx, 'OscillatorNode')
     const env = nodesOf(ctx, 'GainNode').find((g) => tri.connections.some((c) => c.to === g))!
-    // Firefox não tem cancelAndHoldAtTime.
-    Object.defineProperty(env.gain, 'cancelAndHoldAtTime', { value: hold === 'especificação' ? specCancelAndHold(env.gain) : undefined })
+    if (hold !== 'nativo') Object.defineProperty(env.gain, 'cancelAndHoldAtTime', { value: undefined })
     const played = valueAt(env.gain, now - 1 / SR) // a amostra de antes do cancel já saiu
     ctx.currentTime = now
     return { ctx, dest, count, tri, sq, env, played }
@@ -156,9 +133,9 @@ describe('scheduleCount: cancel sem estalo', () => {
     return worst
   }
 
-  for (const hold of ['especificação', 'sem cancelAndHoldAtTime'] as const) {
+  for (const hold of ['nativo', 'sem cancelAndHoldAtTime'] as const) {
     for (const label of [1, 2]) {
-      it(`${label === 1 ? 'acento' : 'tempo 2'}, cancelAndHoldAtTime ${hold === 'especificação' ? 'pela especificação' : 'ausente'}: em nenhum dos 82 instantes o envelope muda mais que 0,01 por amostra, e os osciladores param depois da descida`, () => {
+      it(`${label === 1 ? 'acento' : 'tempo 2'}, cancelAndHoldAtTime ${hold === 'nativo' ? 'pela especificação' : 'ausente'}: em nenhum dos 82 instantes o envelope muda mais que 0,01 por amostra, e os osciladores param depois da descida`, () => {
         expect(instants).toHaveLength(82)
         const bad: string[] = []; const wrongStop: string[] = []
         for (const now of instants) {
@@ -178,7 +155,7 @@ describe('scheduleCount: cancel sem estalo', () => {
   }
   it('controle: a rampa linear depois do cancelAndHoldAtTime (rodada 1) dá degrau pela especificação, como no Chrome', () => {
     const now = (210 * 128) / SR // sustentação do bipe
-    const s = setup(2, now, 'especificação')
+    const s = setup(2, now, 'nativo')
     s.env.gain.cancelAndHoldAtTime(now); s.env.gain.linearRampToValueAtTime(0, now + 0.005)
     expect(worstStep(s, now, (t) => valueAt(s.env.gain, t))).toBeGreaterThan(0.5)
   })
