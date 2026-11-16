@@ -5,6 +5,11 @@
 //
 // Regra pras tarefas seguintes do Grupo M: um caso que mudar de resultado por
 // causa de uma correção sai desta lista e vira teste da tarefa, com o motivo.
+//
+// M2: a confiança saiu da comparação (virou medida contra controle, com outro
+// corte; testada em src/lib/tempo/confidence.test.ts). BPM, 1º tempo e o "1"
+// continuam iguais em todos os casos daqui. O teste "só a primeira faixa de pulso
+// entra na conta" saiu: as faixas de pulso agora somam (src/lib/tempo/pulseSum.test.ts).
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -57,7 +62,9 @@ function expectMesmaGrade(novo: BeatGrid, antigo: BeatGrid) {
   expect(Math.abs(novo.bpm - antigo.bpm)).toBeLessThanOrEqual(0.01);
   expect(Math.abs(novo.firstBeat - antigo.firstBeat)).toBeLessThanOrEqual(1e-6);
   expect(novo.downbeat).toBe(antigo.downbeat);
-  expect(Math.abs(novo.confidence - antigo.confidence)).toBeLessThanOrEqual(1e-6);
+  // Confiança: medida nova desde a M2 (ver o cabeçalho); aqui só o intervalo.
+  expect(novo.confidence).toBeGreaterThanOrEqual(0);
+  expect(novo.confidence).toBeLessThanOrEqual(1);
 }
 
 describe('detectBeatGrid em etapas dá o mesmo resultado do detector antigo', () => {
@@ -112,7 +119,7 @@ describe('detectSongGrid', () => {
     expect(tracksUsed).toEqual(['bat']);
   });
 
-  it('baixo e harmonia viram votos do "1" (na M1 ainda não mudam o resultado)', () => {
+  it('baixo e harmonia viram votos do "1" (ainda não mudam o resultado; a M3 usa)', () => {
     const s = makeSong({ sr: SR, duration: DURACAO, ...CASOS[3].song });
     const so = detectSongGrid([{ id: 'bat', label: 'Bateria', use: 'pulse', channels: s.tracks.drums }], SR);
     const comVotos = detectSongGrid([
@@ -122,17 +129,7 @@ describe('detectSongGrid', () => {
     ], SR);
     expect({ ...comVotos, tracksUsed: [] }).toEqual({ ...so, tracksUsed: [] });
     expect(comVotos.tracksUsed).toEqual(['bat', 'bx', 'pad']);
-  });
-
-  it('na M1 só a primeira faixa de pulso entra na conta', () => {
-    const s = makeSong({ sr: SR, duration: DURACAO, withPad: false, withBass: false, ...CASOS[0].song });
-    const r = detectSongGrid([
-      { id: 'bat', label: 'Bateria', use: 'pulse', channels: s.tracks.drums },
-      { id: 'loop', label: 'Loop', use: 'pulse', channels: s.tracks.shaker },
-    ], SR);
-    expect(r.tracksUsed).toEqual(['bat']);
-    expect(r.firstBeat).toBe(detectBeatGrid(s.tracks.drums, SR).firstBeat);
-  });
+  }, 20_000);
 
   it('sem faixa de pulso, devolve a grade de reserva sem confiança (no BPM de referência)', () => {
     // A reserva sai antes de olhar o áudio: 5 s bastam. O 97 (não o padrão 120) prova que o nearBpm é usado.

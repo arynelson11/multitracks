@@ -16,7 +16,8 @@ function rng(seed: number): () => number {
   };
 }
 
-function addKick(buf: Float32Array, sr: number, t0: number, amp: number, ramp: number): void {
+// `also` (opcional) recebe o mesmo golpe: é a faixa da peça no kit separado.
+function addKick(buf: Float32Array, sr: number, t0: number, amp: number, ramp: number, also?: Float32Array): void {
   const n0 = Math.round(t0 * sr);
   const len = Math.round(0.35 * sr);
   let ph = 0;
@@ -26,11 +27,13 @@ function addKick(buf: Float32Array, sr: number, t0: number, amp: number, ramp: n
     const f = 50 + 90 * Math.exp(-t / 0.03);
     ph += (2 * Math.PI * f) / sr;
     const env = Math.min(1, t / ramp) * Math.exp(-t / 0.12);
-    buf[n0 + i] += amp * env * Math.sin(ph + Math.PI / 2) * 0.9;
+    const v = amp * env * Math.sin(ph + Math.PI / 2) * 0.9;
+    buf[n0 + i] += v;
+    if (also) also[n0 + i] += v;
   }
 }
 
-function addSnare(buf: Float32Array, sr: number, t0: number, amp: number, rnd: () => number, ramp: number): void {
+function addSnare(buf: Float32Array, sr: number, t0: number, amp: number, rnd: () => number, ramp: number, also?: Float32Array): void {
   const n0 = Math.round(t0 * sr);
   const len = Math.round(0.25 * sr);
   for (let i = 0; i < len && n0 + i < buf.length; i++) {
@@ -39,11 +42,13 @@ function addSnare(buf: Float32Array, sr: number, t0: number, amp: number, rnd: (
     const a = Math.min(1, t / ramp);
     const noise = (rnd() * 2 - 1) * Math.exp(-t / 0.05) * 0.5;
     const tone = Math.sin(2 * Math.PI * 190 * t) * Math.exp(-t / 0.04) * 0.45;
-    buf[n0 + i] += amp * a * (noise + tone);
+    const v = amp * a * (noise + tone);
+    buf[n0 + i] += v;
+    if (also) also[n0 + i] += v;
   }
 }
 
-function addHat(buf: Float32Array, sr: number, t0: number, amp: number, rnd: () => number, ramp: number): void {
+function addHat(buf: Float32Array, sr: number, t0: number, amp: number, rnd: () => number, ramp: number, also?: Float32Array): void {
   const n0 = Math.round(t0 * sr);
   const len = Math.round(0.06 * sr);
   let prev = 0;
@@ -53,11 +58,13 @@ function addHat(buf: Float32Array, sr: number, t0: number, amp: number, rnd: () 
     const x = rnd() * 2 - 1;
     const hp = x - prev;
     prev = x;
-    buf[n0 + i] += amp * Math.min(1, t / ramp) * hp * Math.exp(-t / 0.015) * 0.18;
+    const v = amp * Math.min(1, t / ramp) * hp * Math.exp(-t / 0.015) * 0.18;
+    buf[n0 + i] += v;
+    if (also) also[n0 + i] += v;
   }
 }
 
-function addOpenHat(buf: Float32Array, sr: number, t0: number, amp: number, rnd: () => number, ramp: number): void {
+function addOpenHat(buf: Float32Array, sr: number, t0: number, amp: number, rnd: () => number, ramp: number, also?: Float32Array): void {
   const n0 = Math.round(t0 * sr);
   const len = Math.round(0.25 * sr);
   let prev = 0;
@@ -67,11 +74,13 @@ function addOpenHat(buf: Float32Array, sr: number, t0: number, amp: number, rnd:
     const x = rnd() * 2 - 1;
     const hp = x - prev;
     prev = x;
-    buf[n0 + i] += amp * Math.min(1, t / ramp) * hp * Math.exp(-t / 0.08) * 0.22;
+    const v = amp * Math.min(1, t / ramp) * hp * Math.exp(-t / 0.08) * 0.22;
+    buf[n0 + i] += v;
+    if (also) also[n0 + i] += v;
   }
 }
 
-function addCrash(buf: Float32Array, sr: number, t0: number, amp: number, rnd: () => number, ramp: number): void {
+function addCrash(buf: Float32Array, sr: number, t0: number, amp: number, rnd: () => number, ramp: number, also?: Float32Array): void {
   const n0 = Math.round(t0 * sr);
   const len = Math.round(1.5 * sr);
   let prev = 0;
@@ -81,7 +90,9 @@ function addCrash(buf: Float32Array, sr: number, t0: number, amp: number, rnd: (
     const x = rnd() * 2 - 1;
     const hp = x - prev;
     prev = x;
-    buf[n0 + i] += amp * Math.min(1, t / ramp) * hp * Math.exp(-t / 0.5) * 0.3;
+    const v = amp * Math.min(1, t / ramp) * hp * Math.exp(-t / 0.5) * 0.3;
+    buf[n0 + i] += v;
+    if (also) also[n0 + i] += v;
   }
 }
 
@@ -212,13 +223,27 @@ export interface SongOptions {
   fillBeforeEntry?: number | null;
   /** Rampa de ataque de cada golpe, em ms. Padrão 0,3 (a variável RAMP_MS do synth.mjs). 0 = ataque instantâneo. */
   rampMs?: number;
+  /**
+   * Também devolve o kit separado (`tracks.kit`: bumbo, caixa e pratos, com chimbal
+   * e prato), como num pacote de multitracks com KICK, SNARE e HIHAT. A bateria
+   * (`tracks.drums`) continua a mesma, amostra por amostra. Padrão false.
+   */
+  splitKit?: boolean;
 }
 
 /** Faixa estéreo: os dois canais com o mesmo sinal. */
 export type StereoTrack = [Float32Array, Float32Array];
 
+/** Kit separado em faixas (só com `splitKit`). */
+export interface SynthKit {
+  kick: StereoTrack;
+  snare: StereoTrack;
+  /** Chimbal (fechado e aberto) e prato. */
+  hihat: StereoTrack;
+}
+
 export interface SynthSong {
-  tracks: { drums: StereoTrack; pad: StereoTrack; bass: StereoTrack; shaker: StereoTrack; bass8: StereoTrack };
+  tracks: { drums: StereoTrack; pad: StereoTrack; bass: StereoTrack; shaker: StereoTrack; bass8: StereoTrack; kit?: SynthKit };
   /** Todos os tempos reais, em segundos. */
   beats: number[];
   /** Inícios de compasso, em segundos. */
@@ -234,7 +259,7 @@ export interface SynthSong {
 export function makeSong(opts: SongOptions): SynthSong {
   const { sr = 48000, duration = 300, bpm, firstBeat = 0, pattern = 'rock44', introBars = 0,
     gain = 1, noiseDb = null, jitterMs = 0, seed = 1, withPad = true, withBass = true,
-    crashEvery = 0, fillBeforeEntry = null, rampMs = 0.3 } = opts;
+    crashEvery = 0, fillBeforeEntry = null, rampMs = 0.3, splitKit = false } = opts;
   // Rampa 0 dividia por zero (t / 0 = NaN na 1ª amostra de cada golpe); um piso
   // de 1 ns deixa a 1ª amostra em 0 e a seguinte já no pico (ataque instantâneo).
   const ramp = Math.max(rampMs, 1e-6) / 1000;
@@ -244,6 +269,9 @@ export function makeSong(opts: SongOptions): SynthSong {
   const drums = new Float32Array(n);
   const pad = new Float32Array(n);
   const bass = new Float32Array(n);
+  const kick = splitKit ? new Float32Array(n) : undefined;
+  const snare = splitKit ? new Float32Array(n) : undefined;
+  const hihat = splitKit ? new Float32Array(n) : undefined;
   const beatDur = 60 / bpm;
   const barDur = beatDur * P.beatsPerBar;
   const stepDur = beatDur / P.stepsPerBeat;
@@ -262,19 +290,19 @@ export function makeSong(opts: SongOptions): SynthSong {
     if (fillBeforeEntry && introBars > 0 && bar === introBars - 1) {
       // virada de caixa em semicolcheias a partir do tempo fillBeforeEntry (1 = do início) do compasso anterior à entrada
       for (let q = (fillBeforeEntry - 1) * 4; q < P.beatsPerBar * 4; q++) {
-        addSnare(drums, sr, tb + (q * beatDur) / 4, (0.5 + (0.5 * q) / (P.beatsPerBar * 4)) * gain, rnd, ramp);
+        addSnare(drums, sr, tb + (q * beatDur) / 4, (0.5 + (0.5 * q) / (P.beatsPerBar * 4)) * gain, rnd, ramp, snare);
       }
     }
-    if (bar >= introBars && crashEvery && (bar - introBars) % crashEvery === 0) addCrash(drums, sr, tb, gain, rnd, ramp);
+    if (bar >= introBars && crashEvery && (bar - introBars) % crashEvery === 0) addCrash(drums, sr, tb, gain, rnd, ramp, hihat);
     if (bar >= introBars) {
       if (withBass) addBassNote(bass, sr, tb, barDur * 0.98, BASS[bar % 4], 0.35);
       for (const [step, inst, amp] of P.hits) {
         const j = jitterMs ? ((rnd() + rnd() + rnd() - 1.5) * 2 * jitterMs) / 1000 : 0;
         const t = tb + step * stepDur + j;
-        if (inst === 'k') addKick(drums, sr, t, amp * gain, ramp);
-        else if (inst === 's') addSnare(drums, sr, t, amp * gain, rnd, ramp);
-        else if (inst === 'o') addOpenHat(drums, sr, t, amp * gain, rnd, ramp);
-        else addHat(drums, sr, t, amp * gain, rnd, ramp);
+        if (inst === 'k') addKick(drums, sr, t, amp * gain, ramp, kick);
+        else if (inst === 's') addSnare(drums, sr, t, amp * gain, rnd, ramp, snare);
+        else if (inst === 'o') addOpenHat(drums, sr, t, amp * gain, rnd, ramp, hihat);
+        else addHat(drums, sr, t, amp * gain, rnd, ramp, hihat);
       }
     }
   }
@@ -291,8 +319,9 @@ export function makeSong(opts: SongOptions): SynthSong {
     for (let i = 0; i < n; i++) drums[i] += (rnd() * 2 - 1) * a * 1.732;
   }
   const st = (m: Float32Array): StereoTrack => [m, Float32Array.from(m)];
+  const kit = kick && snare && hihat ? { kick: st(kick), snare: st(snare), hihat: st(hihat) } : undefined;
   return {
-    tracks: { drums: st(drums), pad: st(pad), bass: st(bass), shaker: st(shaker), bass8: st(bass8) },
+    tracks: { drums: st(drums), pad: st(pad), bass: st(bass), shaker: st(shaker), bass8: st(bass8), ...(kit ? { kit } : {}) },
     beats, bars, sr, duration, bpm, firstBeat, beatsPerBar: P.beatsPerBar,
   };
 }

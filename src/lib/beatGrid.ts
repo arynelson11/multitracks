@@ -9,7 +9,10 @@
 // Método: função de onset (subida de energia, comprimida em log) a ~200 quadros/s,
 // tempo aproximado por autocorrelação e depois busca fina conjunta de período +
 // fase maximizando a energia de onset que cai em cima da grade na música INTEIRA
-// (é isso que mata a deriva). O tempo forte (o "1") sai da banda grave (bumbo).
+// (é isso que mata a deriva). Bumbo e caixa decidem entre tempo e contratempo; a
+// confiança compara a grade com a mesma busca em versões embaralhadas da música.
+// O tempo forte (o "1") sai da banda grave (bumbo). Várias faixas de pulso (kit
+// separado) entram somadas.
 //
 // Este arquivo é o orquestrador: cada etapa mora em src/lib/tempo/ (ataques por
 // banda, andamento, tempo x contratempo, confiança e o "1") e pode ser trocada
@@ -19,7 +22,7 @@ import type { TimeSignatureType } from './AudioAnalyzer';
 import { measureConfidence } from './tempo/confidence';
 import { chooseDownbeat, type DownbeatVotes } from './tempo/downbeat';
 import { pickTempo, roughTempo, tempoCandidates } from './tempo/octave';
-import { combScore, ONSET_LAG_FRAMES, onsetBands, type OnsetBands } from './tempo/onsets';
+import { combScore, ONSET_LAG_FRAMES, onsetBands, sumOnsetBands, type OnsetBands } from './tempo/onsets';
 import { choosePhase } from './tempo/phase';
 
 export interface BeatGrid {
@@ -51,11 +54,11 @@ export interface TempoTrack {
 }
 
 export interface SongGridDetection extends BeatGrid {
-  /** A grade pode estar no contratempo (meio tempo fora). M1: sempre false. */
+  /** A grade pode estar no contratempo (meio tempo fora): bumbo e caixa não decidem, ou não há nenhum dos dois. */
   offbeatRisk: boolean;
-  /** Outros BPMs plausíveis (ex.: metade e dobro) pra oferecer. M1: sempre vazio. */
+  /** Outros BPMs plausíveis (ex.: metade e dobro) pra oferecer. Ainda sempre vazio (a M4 preenche). */
   alternatives: number[];
-  /** Ids das faixas que entraram na conta: a de pulso primeiro, depois as que votam no "1". */
+  /** Ids das faixas que entraram na conta: as de pulso primeiro, depois as que votam no "1". */
   tracksUsed: string[];
 }
 
@@ -110,12 +113,12 @@ function fitGrid(o: Float32Array, fps: number, roughBpm: number, range: number):
 }
 
 /**
- * Grade da música a partir das faixas dela. M1: a conta de hoje, sobre a
- * PRIMEIRA faixa `pulse` (as outras de pulso ainda não entram); `bass` (a
- * primeira) e `harmony` vão pra etapa do "1" como votos. Sem faixa de pulso
- * que dê pra medir, devolve a grade de reserva com confiança 0.
- * `signature` só chega na etapa do andamento (M1: ainda não muda nada); o "1"
- * usa `beatsPerBar` (padrão 4).
+ * Grade da música a partir das faixas dela. Todas as faixas `pulse` que dão pra
+ * medir entram somadas (cada banda dividida pelo próprio máximo; kit separado
+ * conta inteiro); `bass` (a primeira) e `harmony` vão pra etapa do "1" como votos.
+ * Sem faixa de pulso que dê pra medir, devolve a grade de reserva com confiança 0.
+ * `signature` só chega na etapa do andamento (ainda não muda nada); o "1" usa
+ * `beatsPerBar` (padrão 4).
  */
 export function detectSongGrid(
   tracks: readonly TempoTrack[],
@@ -127,11 +130,18 @@ export function detectSongGrid(
     bpm: opts.nearBpm ?? 120, firstBeat: 0, downbeat: 0, confidence: 0,
     offbeatRisk: false, alternatives: [], tracksUsed: [],
   };
-  const pulse = tracks.find(t => t.use === 'pulse');
-  const b = pulse ? onsetBands(pulse.channels, sampleRate) : null;
-  if (!pulse || !b) return fallback;
+  const tracksUsed: string[] = [];
+  const pulseBands: OnsetBands[] = [];
+  for (const t of tracks) {
+    if (t.use !== 'pulse') continue;
+    const pb = onsetBands(t.channels, sampleRate);
+    if (!pb) continue;
+    pulseBands.push(pb);
+    tracksUsed.push(t.id);
+  }
+  if (!pulseBands.length) return fallback;
+  const b = sumOnsetBands(pulseBands);
 
-  const tracksUsed = [pulse.id];
   const votes: DownbeatVotes = {};
   const bassTrack = tracks.find(t => t.use === 'bass');
   const bass = bassTrack ? onsetBands(bassTrack.channels, sampleRate) : null;
@@ -159,7 +169,7 @@ export function detectSongGrid(
   const fit = fits.find(f => f.bpm === tempo.bpm) ?? fits[0];
 
   const { phase, offbeatRisk } = choosePhase(b, fit.period, fit.phase);
-  const confidence = measureConfidence(o, fit.period, phase);
+  const confidence = measureConfidence(o, fit.period, phase, fps);
 
   const period = fit.period / fps;
   let firstBeat = (phase + ONSET_LAG_FRAMES) / fps;
