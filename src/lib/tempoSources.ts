@@ -36,9 +36,10 @@ interface Candidate<T> {
   family: ChannelFamily
 }
 
-// Palavras do nome do arquivo e do nome do usuário.
+// Manual vence automático: com nome do usuário, só as palavras dele; senão, as do arquivo.
 function wordsOf(ch: ChannelIdentity): Set<string> {
-  return new Set([...nameTokens(ch.name), ...nameTokens(ch.customName ?? '')])
+  const custom = typeof ch.customName === 'string' && ch.customName.trim() !== '' ? ch.customName : undefined
+  return new Set(nameTokens(custom ?? ch.name))
 }
 
 const hasAnyWord = (words: ReadonlySet<string>, wanted: ReadonlySet<string>) => [...wanted].some((word) => words.has(word))

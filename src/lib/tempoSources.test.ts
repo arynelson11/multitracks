@@ -3,7 +3,7 @@ import type { ChannelIdentity } from './channelNames'
 import { pickTempoSources } from './tempoSources'
 
 const mk = (names: string[]): ChannelIdentity[] => names.map((name, i) => ({ id: `c${i}`, name }))
-const shown = (ch: ChannelIdentity | null) => (ch ? ch.customName ?? ch.name : null)
+const shown = (ch: ChannelIdentity | null) => (ch ? (ch.customName?.trim() ? ch.customName : ch.name) : null)
 
 function pick(channels: ChannelIdentity[]) {
   const s = pickTempoSources(channels)
@@ -77,6 +77,17 @@ describe('pulso', () => {
       .toEqual(['Drums'])
     expect(pick([{ id: 'a', name: 'Track 3', customName: 'Bateria' }, { id: 'b', name: 'Pad' }]).pulse)
       .toEqual(['Bateria'])
+  })
+  // Rodada 1, item 2: manual vence automático; com nome do usuário, só as palavras dele contam.
+  it('com nome do usuário, as palavras dele decidem o kit, sem somar as do arquivo', () => {
+    expect(pick([{ id: 'a', name: 'Drum Loop', customName: 'Bateria' }, { id: 'b', name: 'LOOP' }]).pulse)
+      .toEqual(['Bateria'])
+    expect(pick([{ id: 'a', name: 'DRUMS', customName: 'Loop do Zé' }, { id: 'b', name: 'Bateria' }]).pulse)
+      .toEqual(['Bateria'])
+  })
+  it('nome do usuário só com espaço não conta: valem as palavras do arquivo', () => {
+    expect(pick([{ id: 'a', name: 'DRUMS', customName: '   ' }, { id: 'b', name: 'Drum Loop' }]).pulse)
+      .toEqual(['DRUMS'])
   })
   it('sem bateria nem percussão, o pulso é o primeiro baixo', () => {
     expect(pick(mk(['Click', 'Guia', 'Pad', 'BASS', 'Baixo 2', 'Vocal']))).toEqual({
