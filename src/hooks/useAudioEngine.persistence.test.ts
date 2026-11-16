@@ -33,7 +33,8 @@ const mem = vi.hoisted(() => ({
   // Chaves gravadas e cópias de cada gravação do repertório, na ordem.
   writes: [] as string[],
   metaWrites: [] as unknown[],
-  settings: { autoPan: true, audioDeviceId: 'default' },
+  // Sem `outputs` o motor fica em "Click e Guia separados" (T25); o pan automático só existe em "Tudo junto".
+  settings: { autoPan: true, audioDeviceId: 'default' } as { autoPan: boolean; audioDeviceId: string; outputs?: unknown },
   ctx: null as { currentTime: number } | null,
   // Segura a leitura do repertório até o teste liberar (ver openApp).
   metaGate: null as Promise<void> | null,
@@ -128,6 +129,9 @@ class FakeAudioContext {
   }
   // Bipes da pré-contagem.
   createOscillator() { return { ...audioNode(), type: 'square', frequency: param(0), start() {}, stop() {} } }
+  // Roteador das saídas e medidor do principal (grafo da T12, montado no initEngine desde a T25).
+  createChannelSplitter() { return audioNode() }
+  createAnalyser() { return { ...audioNode(), fftSize: 2048, smoothingTimeConstant: 0.8, getFloatTimeDomainData() {} } }
   async decodeAudioData() { return { duration: 300 } }
   async resume() {}
 }
@@ -155,6 +159,7 @@ beforeEach(() => {
   mem.pitchGate = null
   mem.onStart = null
   mem.settings.autoPan = true
+  mem.settings.outputs = undefined
   vi.stubGlobal('AudioContext', FakeAudioContext)
   vi.stubGlobal('requestAnimationFrame', () => 0)
   vi.stubGlobal('cancelAnimationFrame', () => {})
@@ -308,6 +313,8 @@ describe('setChannelMeta', () => {
   })
 
   it('papel novo reaplica o pan automático, o ganho do Solo e a ordem padrão', async () => {
+    // Pan automático só em "Tudo junto" (T25): nos outros modos o pan salvo não muda com o papel.
+    mem.settings.outputs = { mode: 'stereo', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } }
     seed(v1)
     const { result } = await openApp()
 
