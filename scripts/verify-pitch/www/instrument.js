@@ -45,6 +45,15 @@ class TrackedAWN extends OrigAWN {
 }
 window.AudioWorkletNode = TrackedAWN;
 
+// Marca de "mesma execução": o 1º stop() abre uma marca que só vale até a
+// próxima microtask. Um start() com a mesma marca do stop() anterior rodou sem
+// nenhum await no meio (o reinício foi síncrono).
+let syncMark = 0, syncSeq = 0;
+const markSync = () => {
+  if (!syncMark) { syncMark = ++syncSeq; queueMicrotask(() => { syncMark = 0; }); }
+  return syncMark;
+};
+
 // Fontes: guarda when/offset de cada start() e o instante do stop().
 export const sources = [];
 const origCreateBS = BaseAudioContext.prototype.createBufferSource;
@@ -57,6 +66,14 @@ BaseAudioContext.prototype.createBufferSource = function () {
   const oStart = s.start.bind(s);
   const oStop = s.stop.bind(s);
   s.start = (when = 0, offset = 0, ...r) => {
+    // STALL: trava o laço de start() do play (busy-wait) depois de `skip`
+    // chamadas, uma vez só, pra simular o motor de áudio passando do instante.
+    const st = window.__stall;
+    if (st) {
+      if (st.skip > 0) st.skip--;
+      else { window.__stall = null; const t0 = performance.now(); while (performance.now() - t0 < st.ms) { /* trava */ } }
+    }
+    rec.startMark = syncMark;
     rec.started = true;
     rec.when = when;
     rec.offset = offset;
@@ -66,7 +83,7 @@ BaseAudioContext.prototype.createBufferSource = function () {
     return oStart(when, offset, ...r);
   };
   s.stop = (...a) => {
-    if (!rec.stopped) { rec.stopped = true; rec.ctxAtStop = ctx.currentTime; }
+    if (!rec.stopped) { rec.stopped = true; rec.ctxAtStop = ctx.currentTime; rec.tStop = now(); rec.stopMark = markSync(); }
     return oStop(...a);
   };
   return s;

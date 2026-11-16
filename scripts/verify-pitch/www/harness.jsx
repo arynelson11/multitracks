@@ -1,5 +1,5 @@
 // Roda o hook REAL useAudioEngine numa página, sem a UI do app, e mede o áudio.
-// Cenários (query string): seq=S1 | S2 | SPREAD | NAN, n = nº de instrumentos,
+// Cenários (query string): seq=S1 | S2 | SPREAD | NAN | ... (ver run.mjs), n = nº de instrumentos,
 // order = A (click/guia primeiro) ou B (por último, como o Separador grava),
 // click = nome do canal de click.
 import { now, events, ev, edges, inbound, worklets, sources, OrigAWN } from './instrument.js';
@@ -94,7 +94,7 @@ async function main() {
   // só o erro do phase vocoder naquela frequência.
   const LEVEL_TRACKS = { 'Mono R': [1, 1], 'Mono C': [1, 0], 'Estereo R': [2, 1], 'Estereo C': [2, 0], 'Controle C': [2, 0] };
   const instr = SEQ === 'LEVELS' ? Object.keys(LEVEL_TRACKS) : INSTRUMENTS.slice(0, N);
-  const measure = (SEQ === 'SPREAD' || SEQ === 'SEEKS') ? 'both' : (ORDER === 'A' ? 'last' : 'first');
+  const measure = (SEQ === 'SPREAD' || SEQ === 'SEEKS' || SEQ === 'STALL') ? 'both' : (ORDER === 'A' ? 'last' : 'first');
   const clk = clickTrain(DUR, 0.5, 0.25);
   const files = [];
   const instrFiles = instr.map((name, i) => {
@@ -113,7 +113,11 @@ async function main() {
   if (ORDER === 'A') files.push(clickFile, guideFile, ...instrFiles); else files.push(...instrFiles, clickFile, guideFile);
   const dt = new DataTransfer();
   files.forEach((f) => dt.items.add(f));
-  await E().loadFiles(dt.files, 'Teste', undefined, undefined, 'C', 120);
+  // LOOP: seção B = [2, 3,0137) s, clicks em 2,25 e 2,75; na emenda o intervalo
+  // ideal é 0,5137 s. O tamanho não é múltiplo do quadro de tela (16,7 ms), então
+  // o atraso do rAF varia de volta em volta em vez de ficar travado num valor.
+  const markers = SEQ === 'LOOP' ? [{ id: 'a', time: 0, label: 'A' }, { id: 'b', time: 2, label: 'B' }, { id: 'c', time: 3.0137, label: 'C' }, { id: 'd', time: 30, label: 'D' }] : undefined;
+  await E().loadFiles(dt.files, 'Teste', undefined, markers, 'C', 120);
   await waitFor(() => E().channels.length === files.length, 60000, 'load');
   const chNames = E().channels.map((c) => c.name);
   ev('channels', { names: chNames });
@@ -145,7 +149,7 @@ async function main() {
   // R − L = diferença de início entre a 1ª e a última faixa.
   for (const c of E().channels) c.pannerNode.pan.value = (c.name === CLICK || c.name === 'Voz Guia') ? -1 : 1;
   if (SEQ === 'LEVELS') for (const c of E().channels) if (LEVEL_TRACKS[c.name]) c.pannerNode.pan.value = LEVEL_TRACKS[c.name][1];
-  if (SEQ === 'SPREAD' || SEQ === 'SEEKS') {
+  if (SEQ === 'SPREAD' || SEQ === 'SEEKS' || SEQ === 'STALL') {
     const chs = E().channels;
     chs.find((c) => c.name === instr[0]).pannerNode.pan.value = -1;
     E().toggleMute(chs.find((c) => c.name === CLICK).id);
@@ -220,12 +224,27 @@ async function main() {
 
   const tBase = performance.now();
   const at = (s, fn) => new Promise((res) => setTimeout(async () => { try { await fn(); } catch (e) { ev('step_error', { msg: String(e && e.stack || e) }); } res(); }, Math.max(0, s * 1000 - (performance.now() - tBase))));
-  const pitch = (v) => () => { ev('changePitch', { to: v }); E().changePitch(v); };
+  // syncStarts: quantas fontes já estavam agendadas quando a chamada voltou
+  // (= todas as faixas se o reinício não passou por nenhum await).
+  // Fontes descartadas e reagendadas na mesma chamada (STALL) já saem paradas.
+  const syncCount = (before) => sources.slice(before).filter((r) => r.started && !r.stopped).length;
+  const pitch = (v) => () => { const b = sources.length; const e = ev('changePitch', { to: v }); E().changePitch(v); e.syncStarts = syncCount(b); e.nChannels = E().channels.length; };
   const play = () => { ev('play'); return E().play(); };
   const pause = () => { ev('pause'); E().pause(); };
   const snap = (l) => () => snapshot(l);
-  const seek = (t) => () => { ev('seekTo', { to: t }); E().seekTo(t); };
+  // stall: trava o laço de start() depois da 1ª faixa medida (3ª chamada: click,
+  // guia e 1º instrumento passam; os seguintes ficam pra depois da trava).
+  const seek = (t, stall) => () => {
+    if (stall) window.__stall = { skip: 3, ms: 15 };
+    const b = sources.length; const e = ev('seekTo', { to: t, stall: !!stall }); E().seekTo(t); e.syncStarts = syncCount(b); e.nChannels = E().channels.length;
+  };
+  // Seeks pra 50 ms antes de um click (clicks em 0,25 + 0,5 k): o atraso do 1º
+  // click depois da chamada, menos 50 ms, é o buraco do reinício.
+  const gapSeeks = (t0, n, pos0) => Array.from({ length: n }, (_, k) => [t0 + k * 0.7, seek(pos0 + k - 0.05)]);
+  const loopOn = () => { ev('armLoop'); E().armLoop(1, 'infinite'); };
+  const loopOff = () => { ev('cancelLoop'); E().cancelLoop(); };
   const seeks = (t0, n, pos0) => Array.from({ length: n }, (_, k) => [t0 + k * 0.5, seek(pos0 + k * 0.3)]);
+  const stallSeeks = (t0, n, pos0) => Array.from({ length: n }, (_, k) => [t0 + k * 1.0, seek(pos0 + k * 0.3, true)]);
 
   const steps = {
     S1: [[0, play], [3, pitch(2)], [7, snap('apos +2')], [9, pitch(0)], [13, snap('apos volta 0')],
@@ -237,6 +256,13 @@ async function main() {
     SPREAD: [[0, play], [3, snap('tom 0')], [4, pitch(2)], [9, snap('apos +2')], [10, pause], [11, snap('fim (pausado)')]],
     // Muitos reinícios (seek) no tom 0 e no +2: conta quantos separam as faixas.
     SEEKS: [[0, play], ...seeks(1, 25, 3), [14, pitch(2)], ...seeks(16, 25, 12), [29, snap('apos seeks no +2')], [30, pause], [31, snap('fim (pausado)')]],
+    // Buraco no reinício (seek tocando) no tom 0 e no +2.
+    RESTART: [[0, play], ...gapSeeks(2, 10, 5.25), [10, pitch(2)], ...gapSeeks(12, 10, 15.25), [19.5, snap('apos seeks no +2')], [20, pause], [21, snap('fim (pausado)')]],
+    // Loop de seção tocando: emenda do click no tom 0 e no +2.
+    LOOP: [[0, play], [0.6, loopOn], [22, pitch(2)], [44, loopOff], [45, snap('apos loops no +2')], [46, pause], [47, snap('fim (pausado)')]],
+    // Laço de start() travado 15 ms no meio (o motor passa do instante comum):
+    // o play tem de descartar e reagendar tudo junto, no tom 0 e no +2.
+    STALL: [[0, play], ...stallSeeks(1.5, 6, 3), [8, pitch(2)], ...stallSeeks(10, 6, 12), [16.5, snap('apos travas no +2')], [17, pause], [18, snap('fim (pausado)')]],
     // Nível de faixa mono e estéreo, pan total e centro, no tom 0 e transposto.
     LEVELS: [[0, play], [3, snap('tom 0')], [4, pitch(2)], [8, snap('apos +2')], [9, pitch(0)], [12, snap('apos volta 0')], [13, pause], [14, snap('fim (pausado)')]],
     NAN: [[0, play], [3, pitch(NaN)], [7, snap('apos tom NaN')], [8, pitch(2)], [12, snap('apos +2')], [13, pause], [14, snap('fim (pausado)')]],
@@ -255,10 +281,11 @@ async function main() {
   const srcRecs = sources.filter((r) => r.started).map((r) => ({
     id: r.id, ch: bufName.get(r.s.buffer) || '?', when: r.when, offset: +r.offset.toFixed(4), ctxAtStart: +r.ctxAtStart.toFixed(5),
     eff: +r.eff.toFixed(5), tStart: r.tStart, ctxAtStop: r.ctxAtStop !== undefined ? +r.ctxAtStop.toFixed(5) : null,
+    tStop: r.tStop ?? null, startMark: r.startMark ?? 0, stopMark: r.stopMark ?? 0,
   }));
   const res = {
     cfg: { SEQ, N, ORDER, CLICK, measure, DUR, sampleRate: ctx.sampleRate, pansAtLoad, pannerCfg, voice: [...VOICE].filter((v) => instr.includes(v)), instruments: instr, channels: chNames },
-    events, snaps, rRelLms: pairs,
+    events, snaps, rRelLms: pairs, onsetsL: L_on.map((x) => +x.toFixed(5)), onsetsR: R_on.map((x) => +x.toFixed(5)),
     rms: rms.map((r) => [r[0], +(20 * Math.log10(r[1] + 1e-9)).toFixed(1), +(20 * Math.log10(r[2] + 1e-9)).toFixed(1), r[3]]),
     sources: srcRecs, workletsCreated: worklets.map((w) => w.createdAt),
   };

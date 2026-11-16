@@ -26,6 +26,9 @@ transposto no R. Sai com código 1 se algum critério falhar. JSON em
 | `SPREAD` / `SPREAD22` | 1ª e última faixa com o mesmo click em L e R (8 ou 22 instrumentos): diferença de início entre faixas |
 | `SEEKS` | 52 reinícios (seek) com 24 canais, no tom 0 e no +2: quantos separam as faixas |
 | `LEVELS` | nível de faixa mono e estéreo (pan total e centro) no tom 0 e transposto, com controle do erro do vocoder |
+| `RESTART` | buraco no reinício (seek tocando) no tom 0 e no +2 |
+| `LOOP` | loop de seção tocando, no tom 0 e no +2: buraco na emenda (descontado o atraso do rAF que detecta o fim da seção) e volta sem await |
+| `STALL` | laço de `start()` travado 15 ms no meio (o motor de áudio passa do instante comum): o play descarta e reagenda todas as faixas juntas |
 | `NAN` | tom inválido (NaN) chegando no motor |
 | `METRONOMO` | click "Metrônomo" (com acento) gravado depois dos stems, como o Separador faz |
 

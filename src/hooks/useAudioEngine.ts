@@ -21,10 +21,21 @@ import { REPERTOIRE_SCHEMA_VERSION, migrateManifestSong, migrateSavedSong, toMan
 // O formato do repertório salvo no aparelho (SavedSong, v2 com nome, papel e
 // ordem do usuário) e do manifest do ZIP vive em src/lib/repertoireSchema.ts.
 
-// Folga entre o play e o som sair: todas as faixas são agendadas pro MESMO
-// instante `when`, um pouco à frente do relógio (mesmo padrão do
-// syncedTrackPlayer). 40 ms é imperceptível ao apertar play.
-const START_LEAD_S = 0.04;
+// Instante comum de início: 2 blocos de áudio (128 amostras cada; 5,33 ms a
+// 48 kHz) depois do relógio, na mesma grade de blocos do start(0) da v1.4.9.
+// Com 1 bloco, sob carga (22 worklets) o motor às vezes já estava calculando o
+// bloco seguinte e parte das faixas começava 1 bloco depois (medido); com 2,
+// nenhuma separação. A folga entra em todo seek, loop e salto de seção tocando,
+// por isso é a mínima segura: 40 ms davam um tropeço audível a cada volta.
+const START_LEAD_QUANTA = 2;
+// Reserva (a folga antiga), só quando o motor de áudio chegou no instante comum
+// antes de o laço de start() terminar: sistema que calcula vários blocos de uma
+// vez (Windows, iPhone) ou aparelho travado naquele instante.
+const RETRY_LEAD_S = 0.04;
+const nextRenderQuantum = (ctx: BaseAudioContext, quanta: number): number => {
+    const quantum = 128 / ctx.sampleRate;
+    return (Math.floor(ctx.currentTime / quantum + 1e-6) + quanta) * quantum;
+};
 
 // Faixa mono: o panner trabalha com 1 canal. A saída do worklet de tom é
 // estéreo (L = R) e, com o panner no padrão, o StereoPanner passava a tratar a
@@ -171,10 +182,25 @@ export function useAudioEngine(userId?: string) {
     // alinhado com os instrumentos. Um DelayNode por canal, criado uma vez.
     const pitchDelaysRef = useRef(new Map<string, { delay: DelayNode; panner: StereoPannerNode }>());
 
+    // Latência real do nó, perguntada uma vez ao pacote (é fixa). Lida já quando
+    // o primeiro worklet nasce: assim o play() não espera por ela mesmo se o play
+    // que criou os worklets tiver sido cancelado antes de chegar nessa leitura.
+    const readPitchLatency = async (node: SignalsmithStretchNode): Promise<void> => {
+        if (pitchLatencyRef.current !== null) return;
+        try {
+            const seconds = await node.latency();
+            if (pitchLatencyRef.current === null && Number.isFinite(seconds) && seconds > 0 && seconds < 1) pitchLatencyRef.current = seconds;
+        } catch (e) {
+            console.error('Não consegui ler a latência do worklet de tom', e);
+        }
+    };
+
     const createPitchNode = async (ctx: AudioContext): Promise<SignalsmithStretchNode | null> => {
         try {
             // Nasce parado (inativo); só processa depois do start() no play().
-            return await SignalsmithStretch(ctx, { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+            const node = await SignalsmithStretch(ctx, { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+            void readPitchLatency(node);
+            return node;
         } catch (e) {
             console.error('Worklet de tom falhou; faixa tocará sem transpose', e);
             return null;
@@ -541,80 +567,103 @@ export function useAudioEngine(userId?: string) {
         // depois da anterior (dezenas de ms) e o click saía fora do resto da banda.
         // Agora todos os start() rodam no mesmo tick, então começam juntos.
         if (currentPitchRef.current !== 0) {
-            await Promise.all(channels
-                .filter(ch => !isPitchExempt(ch))
-                .map(ch => ensurePitchSlot(ctx, ch)));
-            // Outro play() (troca de tom, seek, pausa) começou enquanto o worklet
-            // nascia: este desiste. Sem isso as duas levas de fontes tocavam juntas.
-            if (gen !== playGenRef.current) return;
-            // Latência real do nó, perguntada uma vez ao pacote (é fixa).
+            // Só espera quando falta worklet. Com todos prontos (seek, loop ou
+            // salto transposto) segue sem await, tão rápido quanto no tom 0.
+            // Click e Guia (regra central, o papel manual vale) nunca usam worklet.
+            const missing = channels.filter(ch => !isPitchExempt(ch) && !pitchSlotsRef.current.has(ch.id));
+            if (missing.length > 0) {
+                await Promise.all(missing.map(ch => ensurePitchSlot(ctx, ch)));
+                // Outro play() (troca de tom, seek, pausa) começou enquanto o worklet
+                // nascia: este desiste. Sem isso as duas levas de fontes tocavam juntas.
+                if (gen !== playGenRef.current) return;
+            }
+            // Latência do nó: normalmente já foi lida quando o worklet nasceu.
             if (pitchLatencyRef.current === null) {
                 const anySlot = channels.map(ch => pitchSlotsRef.current.get(ch.id)).find(Boolean);
                 if (anySlot) {
-                    try {
-                        const seconds = await anySlot.node.latency();
-                        if (Number.isFinite(seconds) && seconds > 0 && seconds < 1) pitchLatencyRef.current = seconds;
-                    } catch (e) {
-                        console.error('Não consegui ler a latência do worklet de tom', e);
-                    }
+                    await readPitchLatency(anySlot.node);
                     if (gen !== playGenRef.current) return;
                 }
             }
         }
         // Lido de novo: o tom pode ter mudado (entre dois tons != 0) durante a espera.
         const playPitch = currentPitchRef.current;
-        // Um instante só pra todas as faixas. Com start(0) ("assim que der"), se
-        // o laço cruzava um bloco de áudio (2,67 ms) parte das faixas começava um
-        // ou dois blocos depois (medido: 7 a 10 de 52 reinícios, até 5,3 ms).
-        const when = ctx.currentTime + START_LEAD_S;
         // Com tom != 0 as faixas transpostas saem com a latência do worklet; quem
         // não passa por ele (Click e Guia pela regra central, ou worklet que falhou)
         // atrasa o mesmo tanto. Tom 0: sem atraso.
         const viaPitch = (ch: Channel) => playPitch !== 0 && !isPitchExempt(ch) && pitchSlotsRef.current.has(ch.id);
         const compensation = channels.some(viaPitch) ? pitchLatencyRef.current : null;
 
-        for (const ch of channels) {
-            const source = ctx.createBufferSource();
-            source.buffer = ch.buffer;
+        // Monta as fontes de todas as faixas e só então agenda todas no mesmo
+        // instante, lido depois de montar tudo: o laço de start() só agenda
+        // (microssegundos). Com start(0) ("assim que der") e o laço longo, se ele
+        // cruzava um bloco de áudio (2,67 ms) parte das faixas começava um ou dois
+        // blocos depois (medido: 7 a 10 de 52 reinícios).
+        const scheduleAll = (leadQuanta: number) => {
+            const prepared: AudioBufferSourceNode[] = [];
+            for (const ch of channels) {
+                const source = ctx.createBufferSource();
+                source.buffer = ch.buffer;
 
-            const nameL = ch.name.toLowerCase();
+                const nameL = ch.name.toLowerCase();
 
-            if (nameL.includes('metronomo loop')) {
-                source.loop = true;
+                if (nameL.includes('metronomo loop')) {
+                    source.loop = true;
+                }
+                // Cancel any pending gain automation and apply correct volume immediately
+                if (ch.gainNode) {
+                    ch.gainNode.gain.cancelScheduledValues(ctx.currentTime);
+                    ch.gainNode.gain.setValueAtTime(channelGain(ch, channels), ctx.currentTime);
+                }
+
+                // BYPASS NO TOM 0: a engine de tom (worklet+WASM) é um phase-vocoder
+                // caro que roda DSP por quadro mesmo parada. No tom 0 (caso comum) a
+                // fonte vai DIRETO pro panner, sem worklet, então N faixas não
+                // saturam a thread de áudio (era isso que zerava o som em músicas de
+                // muitos canais). O worklet só nasce, sob demanda, quando a música
+                // está transposta e a faixa não é click/guia.
+                source.playbackRate.value = 1.0;
+                const slot = viaPitch(ch) ? pitchSlotsRef.current.get(ch.id) : undefined;
+                if (slot) {
+                    startPitchNode(slot);
+                    applyPitchToChannel(ch, playPitch);
+                    source.connect(slot.node);
+                } else if (compensation) {
+                    // Click/guia (ou worklet que falhou) com a música transposta: mesmo atraso.
+                    source.connect(getLatencyDelay(ctx, ch, compensation));
+                } else {
+                    // Tom 0: direto, sem worklet e sem atraso.
+                    source.connect(ch.pannerNode);
+                }
+
+                ch.sourceNode = source;
+                liveSourcesRef.current.add(source);
+                source.onended = () => { liveSourcesRef.current.delete(source); };
+                prepared.push(source);
             }
-            // Cancel any pending gain automation and apply correct volume immediately
-            if (ch.gainNode) {
-                ch.gainNode.gain.cancelScheduledValues(ctx.currentTime);
-                ch.gainNode.gain.setValueAtTime(channelGain(ch, channels), ctx.currentTime);
-            }
+            const when = nextRenderQuantum(ctx, leadQuanta);
+            const offset = pausedAtRef.current;
+            for (const source of prepared) source.start(when, offset);
+            return { when, prepared };
+        };
 
-            // BYPASS NO TOM 0: a engine de tom (worklet+WASM) é um phase-vocoder
-            // caro que roda DSP por quadro mesmo parada. No tom 0 (caso comum) a
-            // fonte vai DIRETO pro panner — sem worklet — então N faixas não
-            // saturam a thread de áudio (era isso que zerava o som em músicas de
-            // muitos canais). O worklet só nasce, sob demanda, quando a música
-            // está transposta e a faixa não é click/guia.
-            source.playbackRate.value = 1.0;
-            const slot = viaPitch(ch) ? pitchSlotsRef.current.get(ch.id) : undefined;
-            if (slot) {
-                startPitchNode(slot);
-                applyPitchToChannel(ch, playPitch);
-                source.connect(slot.node);
-            } else if (compensation) {
-                // Click/guia (ou worklet que falhou) com a música transposta: mesmo atraso.
-                source.connect(getLatencyDelay(ctx, ch, compensation));
-            } else {
-                // Tom 0: direto, sem worklet e sem atraso.
-                source.connect(ch.pannerNode);
+        let scheduled = scheduleAll(START_LEAD_QUANTA);
+        // O relógio chegou no instante comum antes de o laço terminar: o motor
+        // pode ter calculado aquele bloco com parte das faixas ainda sem start(),
+        // e essas começariam um bloco depois até o próximo reinício. Descarta e
+        // agenda de novo com a folga de reserva. Raro: precisa de 2 blocos de
+        // áudio calculados durante um laço de microssegundos.
+        if (ctx.currentTime >= scheduled.when) {
+            for (const source of scheduled.prepared) {
+                source.onended = null;
+                try { source.stop(); } catch { /* já parada */ }
+                source.disconnect();
+                liveSourcesRef.current.delete(source);
             }
-
-            source.start(when, pausedAtRef.current);
-            ch.sourceNode = source;
-            liveSourcesRef.current.add(source);
-            source.onended = () => { liveSourcesRef.current.delete(source); };
+            scheduled = scheduleAll(Math.ceil(RETRY_LEAD_S * ctx.sampleRate / 128));
         }
 
-        startTimeRef.current = when;
+        startTimeRef.current = scheduled.when;
         playPendingRef.current = false;
         setIsPlaying(true);
     }, [channels, stopAllNodes, masterVolume]);
