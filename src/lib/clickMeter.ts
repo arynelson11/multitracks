@@ -95,6 +95,11 @@ const ONSET_THRESHOLD = 0.3
  * estalo até 5x o pico do click e acento até 5x os outros tempos sem perder os tempos.
  */
 const PROBE_THRESHOLD = 0.2
+/**
+ * A primeira passada roda num resumo com o máximo de cada bloco destas amostras (0,33 ms a
+ * 48 kHz): o nível não precisa do instante exato, e a leitura não paga uma passada inteira a mais.
+ */
+const LEVEL_BLOCK = 16
 /** Distância mínima entre dois ataques, em segundos. */
 const MIN_ONSET_GAP_S = 0.06
 /**
@@ -188,20 +193,28 @@ function onsetsAbove(x: Float32Array, sampleRate: number, threshold: number): nu
 
 /**
  * Amostras dos ataques (etapa 1): subida do envelope acima de 30% do nível típico do click, que
- * é a mediana dos picos (nos primeiros 15 ms) dos ataques acima de 20% do pico global.
+ * é a mediana dos picos (nos primeiros 15 ms) dos ataques acima de 20% do pico global. O nível
+ * sai do resumo por blocos (LEVEL_BLOCK), montado na mesma passada que acha o pico global.
  */
 function detectOnsets(x: Float32Array, sampleRate: number): number[] {
+  const blocks = new Float32Array(Math.ceil(x.length / LEVEL_BLOCK))
   let peak = 0
-  for (let i = 0; i < x.length; i++) {
-    const v = Math.abs(x[i])
-    if (v > peak) peak = v
+  for (let b = 0, i = 0; b < blocks.length; b++) {
+    let m = 0
+    for (const end = Math.min(x.length, i + LEVEL_BLOCK); i < end; i++) {
+      const v = Math.abs(x[i])
+      if (v > m) m = v
+    }
+    blocks[b] = m
+    if (m > peak) peak = m
   }
   if (!(peak > 0) || !Number.isFinite(peak)) return []
-  const len = Math.round(TRAIT_WINDOW_S * sampleRate)
-  const levels = onsetsAbove(x, sampleRate, PROBE_THRESHOLD * peak).map((start) => {
-    let p = 0
-    for (let i = start; i < Math.min(x.length, start + len); i++) p = Math.max(p, Math.abs(x[i]))
-    return p
+  const blockRate = sampleRate / LEVEL_BLOCK
+  const len = Math.max(1, Math.round(TRAIT_WINDOW_S * blockRate))
+  const levels = onsetsAbove(blocks, blockRate, PROBE_THRESHOLD * peak).map((start) => {
+    let level = 0
+    for (let b = start; b < Math.min(blocks.length, start + len); b++) level = Math.max(level, blocks[b])
+    return level
   })
   return onsetsAbove(x, sampleRate, ONSET_THRESHOLD * median(levels))
 }
