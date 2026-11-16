@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   Mic2, Drumstick, Guitar, Music, Disc3,
-  Star, ChevronDown, Check,
+  ChevronDown, Check,
   ArrowRight, Church, Download,
   Gauge, Archive, ScrollText, Sparkles, FileAudio, WifiOff, QrCode,
 } from 'lucide-react'
@@ -9,14 +9,11 @@ import { DemoMixer } from './DemoMixer'
 import { BrandLogo } from './BrandLogo'
 import { DomingoMark } from './brand/DomingoMark'
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark'
-
-// Suporte / contato via WhatsApp
-const WHATSAPP_URL =
-  'https://wa.me/5522997249896?text=' +
-  encodeURIComponent('Olá! Vim pelo site do Playback Studio e preciso de ajuda.')
+import { CONTACT, FAQS, PRICES, WHATSAPP_URL } from '../content/site'
+import { annualPerMonth, annualSavings, formatReais } from '../lib/prices'
 
 // Suporte / contato por email
-const SUPPORT_EMAIL = 'contatoplaybackstudio@gmail.com'
+const SUPPORT_EMAIL = CONTACT.email
 
 function WhatsappIcon({ className }: { className?: string }) {
   return (
@@ -34,143 +31,98 @@ interface LandingPageProps {
 
 /**
  * Audience multi-perfil: worship em destaque + outros contextos.
- * 'Feito por quem toca' é a âncora — qualquer banda/músico que toca todo
+ * 'Feito por quem toca' é a âncora: qualquer banda/músico que toca todo
  * fim de semana se reconhece aqui.
  */
 const AUDIENCE = [
-  { icon: Church,    title: 'Equipes de adoração',  desc: 'Do ensaio ao culto, qualquer música pronta com a levada na mão.' },
+  { icon: Church,    title: 'Equipes de adoração',  desc: 'Do ensaio ao culto da igreja, qualquer música vira VS, com as faixas separadas na mão.' },
   { icon: Music,     title: 'Bandas em geral',      desc: 'Gospel, sertanejo, MPB, rock, indie. Qualquer ritmo, faixas separadas pro próximo show.' },
-  { icon: Mic2,      title: 'Vocalistas e ministros', desc: 'Voice guide discreto, tonalidade no seu alcance, referência sem inundar o in-ear.' },
+  { icon: Mic2,      title: 'Vocalistas e ministros', desc: 'Voz guia discreta, o tom no seu alcance e referência sem encher o in-ear.' },
   { icon: Guitar,    title: 'Instrumentistas',      desc: 'Faixas separadas de qualquer música. Guitarra, baixo, teclado, piano pra ensaiar como sua banda toca.' },
-  { icon: Drumstick, title: 'Bateristas',           desc: 'Click track no seu jeito, separação que respeita a levada original.' },
-  { icon: Disc3,     title: 'Solo e produtores',    desc: 'Construa em cima de qualquer faixa. Separe, remixe, refaça arranjos.' },
+  { icon: Drumstick, title: 'Bateristas',           desc: 'Click no tempo da música e a bateria separada pra estudar a levada original.' },
+  { icon: Disc3,     title: 'Músicos e estudantes', desc: 'Separe qualquer faixa pra estudar arranjos, tirar as partes e ensaiar no seu tempo.' },
 ]
 
 /**
  * Recursos que já existem no produto mas costumam passar batido na primeira
  * visita. Tudo aqui é entregue de verdade hoje, sem promessa de roadmap.
+ * `pro`: só nos planos pagos (Pro e Studio), conforme src/lib/plans.ts e o FATOS.
  */
 const FEATURES = [
-  { icon: Gauge,      title: 'BPM detectado pela IA',      desc: 'Ao separar, a IA já estima o andamento da música. O click entra na velocidade certa, sem você contar nada.' },
-  { icon: ScrollText, title: 'Teleprompter de letras',     desc: 'Suba a letra da música e a equipe acompanha na tela, sincronizada com as seções, no palco ou pelo celular.' },
-  { icon: Sparkles,   title: 'Voz guia automática',        desc: 'O Playback Studio marca sozinho os pontos de entrada e monta a voz guia pra orientar quem canta.' },
-  { icon: Archive,    title: 'Repertório com backup .zip', desc: 'Monte seus repertórios e salve tudo num arquivo .zip. Carregue de volta em qualquer aparelho, quando quiser.' },
-  { icon: FileAudio,  title: 'Download em WAV ou MP3',     desc: 'Baixe cada faixa separada no formato que precisar. WAV pra produzir, MP3 pra mandar rápido pra equipe.' },
-  { icon: QrCode,     title: 'Banda conecta por QR Code',  desc: 'No Modo Ao Vivo, cada músico aponta o celular pro QR Code e entra na sessão. Música, tom e letra em tempo real.' },
-  { icon: WifiOff,    title: 'App desktop que toca offline', desc: 'Baixe o app pro Mac ou Windows. Depois de carregar as músicas, tudo funciona no palco mesmo sem internet.' },
+  { icon: Gauge,      pro: true,  title: 'BPM detectado pela IA',      desc: 'Ao separar, a IA já estima o andamento da música. O click entra na velocidade certa, sem você contar nada.' },
+  { icon: ScrollText, pro: true,  title: 'Teleprompter de letras',     desc: 'Suba a letra da música e a equipe acompanha na tela, sincronizada com as seções, no palco ou pelo celular.' },
+  { icon: Sparkles,   pro: true,  title: 'Voz guia automática',        desc: 'O Playback Studio marca sozinho os pontos de entrada e monta a voz guia, falada em português, pra orientar quem canta.' },
+  { icon: Archive,    pro: true,  title: 'Repertório com backup .zip', desc: 'Monte seus repertórios e salve tudo num arquivo .zip. Carregue de volta em qualquer aparelho, quando quiser.' },
+  { icon: FileAudio,  pro: true,  title: 'Download em WAV ou MP3',     desc: 'Baixe cada faixa separada no formato que precisar. WAV pra produzir, MP3 pra mandar rápido pra equipe.' },
+  { icon: QrCode,     pro: true,  title: 'Banda conecta por QR Code',  desc: 'No Modo Ao Vivo, aberto pelo app de computador, cada músico aponta o celular pro QR Code e entra na sessão. Música, tom e letra em tempo real.' },
+  { icon: WifiOff,    pro: false, title: 'App desktop que toca offline', desc: 'Baixe o app pro Mac ou Windows, grátis. Depois de carregar as músicas, ele toca no palco mesmo sem internet. Os recursos seguem o seu plano.' },
 ]
 
+// Preços de src/content/site.ts (os mesmos do api/checkout.ts e do FATOS).
+// annualTotal é o valor cobrado no anual; o "por mês" do anual sai dele.
 const PLANS = [
   {
     id: 'gratuito',
     name: 'Livre',
-    monthly: 0, annual: 0,
+    monthly: 0, annualTotal: 0,
     desc: 'Pra experimentar e ver se funciona',
     badge: null as string | null,
     highlight: false,
     features: [
       '5 separações de faixas por mês',
-      'Separação em 2 faixas (vocal e instrumental)',
+      'Separação em 2 faixas (voz e instrumental)',
       'Ouça cada faixa isolada no mixer',
       'Biblioteca de separações local, salva no navegador',
     ],
+    note: 'Download, BPM, voz guia, seções, troca de tom e Modo Ao Vivo ficam nos planos Pro e Studio.' as string | null,
     cta: 'Começar grátis',
   },
   {
     id: 'essencial',
-    name: 'Pro',
-    monthly: 49.90, annual: 37.90,
+    name: PRICES.pro.name,
+    monthly: PRICES.pro.monthly, annualTotal: PRICES.pro.annualTotal,
     desc: 'Pra equipe que toca toda semana',
-    badge: 'Mais escolhido',
+    badge: 'Recomendado' as string | null,
     highlight: true,
     features: [
       '50 separações de faixas por mês',
       'Separação em 2, 4 e 6 faixas',
       'Download das faixas em WAV e MP3',
-      'BPM pela IA e click com levada brasileira',
-      'Voz guia pra orientar a equipe',
+      'BPM pela IA e click no tempo da música',
+      'Voz guia em português pra orientar a equipe',
       'Pads de ambiente',
       'Marque seções e repita em loop infinito ao vivo',
-      'Transposição de tom',
-      'Modo Ao Vivo: banda conecta por QR Code, até 4 aparelhos',
+      'Troca de tom',
+      'Modo Ao Vivo no app de computador: a banda conecta por QR Code, até 4 aparelhos',
       'Teleprompter de letras',
-      'Biblioteca cloud e repertório com backup .zip',
-      'Suporte por email',
+      'Biblioteca na nuvem e repertório com backup .zip',
     ],
+    note: null,
     cta: 'Assinar Pro',
   },
   {
     id: 'pro',
-    name: 'Studio',
-    monthly: 119.90, annual: 89.90,
+    name: PRICES.studio.name,
+    monthly: PRICES.studio.monthly, annualTotal: PRICES.studio.annualTotal,
     desc: 'Pra quem leva o ao vivo a sério',
     badge: null as string | null,
     highlight: false,
     features: [
       '150 separações de faixas por mês',
-      'Qualidade máxima de separação',
       'Tudo do Pro',
       'Modo Ao Vivo sem limite de aparelhos',
       'A banda controla loop e seções pelo celular',
-      'Prioridade no processamento',
-      'Suporte prioritário',
     ],
+    note: null,
     cta: 'Assinar Studio',
   },
 ]
 
-const FAQS = [
-  {
-    q: 'O que é separação de faixas?',
-    a: 'São as faixas individuais de uma música (também chamadas de stems): voz separada, bateria separada, baixo separado, e por aí vai. Com o Playback Studio você sobe qualquer música e recebe tudo separado pra sua banda ensaiar e tocar como precisa.'
-  },
-  {
-    q: 'Dá pra repetir uma parte da música ao vivo?',
-    a: 'Dá. Você marca as seções (intro, verso, refrão, ponte) e, no momento do louvor, repete um trecho quantas vezes quiser ou deixa em loop até decidir seguir. A volta acontece no fim da parte, sem cortar a música no meio.'
-  },
-  {
-    q: 'A banda consegue acompanhar pelo celular?',
-    a: 'Sim, no Modo Ao Vivo. Cada músico conecta o celular e acompanha a música, o tom e a letra em tempo real. Nos planos pagos a banda também ajuda a controlar a execução, e no Studio controla as repetições e seções direto do celular.'
-  },
-  {
-    q: 'Como funciona a separação?',
-    a: 'Você sobe a música (MP3, WAV ou AAC). A IA do Playback Studio separa em voz, bateria, baixo, guitarra, piano e os outros instrumentos em alguns minutos. Os stems ficam disponíveis pra download, no mixer e pra compartilhar com a equipe.'
-  },
-  {
-    q: 'Qual a diferença pra um catálogo de multitracks?',
-    a: 'Catálogo te dá só as músicas que já foram licenciadas, e você espera o release sair. O Playback Studio é uma ferramenta: você sobe qualquer música e ela vira multitracks na hora. Worship, gospel, sertanejo, MPB, rock, indie, até a original da sua banda. Você cria o que precisa, não espera o que existe.'
-  },
-  {
-    q: 'Funciona no celular?',
-    a: 'Sim. É um Progressive Web App otimizado pra mobile. Funciona no navegador do iPhone e Android, sem instalar nada. A interface se adapta à tela do celular.'
-  },
-  {
-    q: 'Posso usar ao vivo no palco?',
-    a: 'Pode. Foi construído pra isso. Após carregar as músicas, o player e mixer funcionam offline com baixa latência e controle total dos canais em tempo real.'
-  },
-  {
-    q: 'Posso cancelar quando quiser?',
-    a: 'Sim, sem fidelidade. Cancele direto pelo painel a qualquer momento. O acesso continua até o fim do período pago.'
-  },
-]
-
-const TESTIMONIALS = [
-  {
-    name: 'Lucas Ferreira',
-    role: 'Ministro de louvor',
-    text: 'Domingo flui agora. A equipe chega afinada porque ensaiou com stems de verdade, não com áudio original cheio de voz.',
-  },
-  {
-    name: 'Ana Paula Costa',
-    role: 'Vocalista, banda gospel',
-    text: 'A levada do click brasileiro fez diferença real no ensaio. Antes a banda tava sempre se ajustando ao metrônomo gringo. Agora é natural.',
-  },
-  {
-    name: 'Rodrigo Melo',
-    role: 'Tecladista e produtor',
-    text: 'Sábado o ministro de louvor muda uma música? Em alguns minutos tá separada. Domingo a gente não precisa improvisar.',
-  },
-]
+// Selo do anual: o maior desconto entre os planos (24% no Pro, 25% no Studio).
+const MAX_ANNUAL_DISCOUNT = Math.max(
+  annualSavings(PRICES.pro.monthly, PRICES.pro.annualTotal).percent,
+  annualSavings(PRICES.studio.monthly, PRICES.studio.annualTotal).percent,
+)
 
 /* ─── Componente ────────────────────────── */
 
@@ -248,7 +200,8 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <p className="text-[clamp(.95rem,2vw,1.2rem)] text-warm-200 max-w-2xl mx-auto mb-10 leading-relaxed">
             Sábado 23h alguém manda mudando o setlist, e a música não está em catálogo nenhum.
             O Playback Studio separa qualquer música, do worship ao sertanejo,
-            em faixas prontas. No domingo, repita o refrão e estenda a ministração sem cortar nada.
+            em faixas prontas pra banda da igreja. No Pro, você marca as seções e repete o refrão
+            ao vivo sem cortar a música.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
@@ -275,7 +228,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <p className="text-[12px] text-warm-400 mt-5">Sem cartão de crédito · Cancele quando quiser</p>
         </div>
 
-        {/* Product preview — DAW preserved (dual aesthetic) */}
+        {/* Product preview: DAW preserved (dual aesthetic) */}
         <div className="relative mt-16 w-full max-w-3xl mx-auto">
           <div className="rounded-2xl overflow-hidden border border-tinta-border shadow-2xl shadow-black/40">
             <DemoMixer />
@@ -284,7 +237,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         </div>
       </section>
 
-      {/* ════════ STAKES — problema + empatia ════════ */}
+      {/* ════════ STAKES: problema + empatia ════════ */}
       <section className="py-24 px-5 sm:px-8 bg-tinta-soft">
         <div className="max-w-3xl mx-auto">
           <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o sábado que a gente conhece</p>
@@ -293,7 +246,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           </h2>
           <div className="bg-tinta-raised border border-tinta-border rounded-2xl p-7 sm:p-9 mb-8 leading-relaxed text-[15px] text-warm-200">
             <p className="mb-4">
-              Sábado 23h o ministro de louvor manda mudando o setlist. Você passa a madrugada procurando multitracks
+              Sábado 23h o ministro de louvor manda mudando o setlist. Você passa a madrugada procurando VS e multitracks
               em fórum. Domingo de manhã o som tá descosturado porque a equipe não teve tempo de ensaiar como precisa.
               Segunda você acorda exausto. Tudo de novo na próxima semana.
             </p>
@@ -304,7 +257,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         </div>
       </section>
 
-      {/* ════════ GUIDE — 3 benefícios ════════ */}
+      {/* ════════ GUIDE: 3 benefícios ════════ */}
       <section id="como-funciona" className="py-24 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto">
           <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o que o Playback Studio entrega</p>
@@ -315,8 +268,8 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           </h2>
           <div className="grid sm:grid-cols-3 gap-6">
             {[
-              { title: 'Qualquer música, não só o catálogo', desc: 'A música que o ministro escolheu não está em catálogo nenhum? Sobe ela aqui. Qualquer música vira multitracks, na hora.' },
-              { title: 'Biblioteca de Separações Local', desc: 'Suas separações ficam salvas no seu navegador. Feche e abra depois sem gastar tokens novamente.' },
+              { title: 'Qualquer música, não só o catálogo', desc: 'A música que o ministro escolheu não está em catálogo nenhum? Sobe ela aqui. Qualquer música vira multitracks em alguns minutos.' },
+              { title: 'O tom no alcance de quem canta', desc: 'Nos planos Pro e Studio, mude o tom da música sem perder o tempo: o click e a voz guia ficam fora da troca de tom e a banda segue junto.' },
               { title: 'Você cria, não espera release', desc: 'No catálogo você recebe o que já existe. Aqui você prepara o que a sua equipe precisa, sem esperar lançamento nem licença gringa.' },
             ].map((item, i) => (
               <div key={i} className="bg-tinta-raised border border-tinta-border rounded-2xl p-7 hover:border-laranja/40 transition-colors">
@@ -331,7 +284,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         </div>
       </section>
 
-      {/* ════════ PLAN — 3 passos ════════ */}
+      {/* ════════ PLAN: 3 passos ════════ */}
       <section className="py-24 px-5 sm:px-8 bg-tinta-soft">
         <div className="max-w-4xl mx-auto">
           <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o domingo em 3 passos</p>
@@ -341,9 +294,9 @@ export function LandingPage({ onEnter }: LandingPageProps) {
 
           <div className="space-y-5">
             {[
-              { n: '1', title: 'Sobe a música', desc: 'Qualquer formato de áudio: MP3, WAV ou AAC.' },
-              { n: '2', title: 'O Playback Studio separa tudo', desc: 'Voz, bateria, baixo, guitarra, piano e os outros instrumentos. Em alguns minutos.' },
-              { n: '3', title: 'Sua banda chega pronta no domingo', desc: 'Faixas separadas, click e voice guide. Você marca as seções (intro, verso, refrão) pra repetir trechos ao vivo, e a banda acompanha pelo celular.' },
+              { n: '1', title: 'Sobe a música', desc: 'Em MP3, WAV ou AAC.' },
+              { n: '2', title: 'O Playback Studio separa tudo', desc: 'Voz, bateria, baixo, guitarra, piano e os outros instrumentos, em até 6 faixas (2 no Livre). Em alguns minutos.' },
+              { n: '3', title: 'Sua banda chega pronta no domingo', desc: 'Faixas separadas no mixer, com click e voz guia. No Pro, você marca as seções (intro, verso, refrão) pra repetir trechos ao vivo, e a banda acompanha pelo celular no Modo Ao Vivo.' },
             ].map(step => (
               <div key={step.n} className="bg-tinta-raised border border-tinta-border rounded-2xl p-6 sm:p-8 flex items-start gap-6">
                 <div className="w-14 h-14 rounded-full bg-laranja text-bone flex items-center justify-center font-display font-semibold text-[24px] shrink-0">
@@ -368,7 +321,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         </div>
       </section>
 
-      {/* ════════ AUDIENCE — pra quem é ════════ */}
+      {/* ════════ AUDIENCE: pra quem é ════════ */}
       <section className="py-24 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto">
           <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">feito pra</p>
@@ -389,15 +342,19 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         </div>
       </section>
 
-      {/* ════════ FEATURES — tudo que vem junto ════════ */}
+      {/* ════════ FEATURES: tudo que vem junto ════════ */}
       <section className="py-24 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto">
           <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">tudo que vem junto</p>
           <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-4 text-center">
             Mais do que separar faixas.
           </h2>
-          <p className="text-warm-200 text-[15px] max-w-2xl mx-auto mb-16 text-center leading-relaxed">
+          <p className="text-warm-200 text-[15px] max-w-2xl mx-auto mb-4 text-center leading-relaxed">
             A separação é só o começo. O Playback Studio leva a música do upload até o palco, com tudo que a banda precisa no caminho.
+          </p>
+          <p className="text-warm-200 text-[14px] max-w-2xl mx-auto mb-16 text-center leading-relaxed">
+            No Livre você separa 5 músicas por mês em 2 faixas (voz e instrumental) e ouve cada uma no mixer.
+            Os recursos com o selo <span className="font-semibold text-bone">Pro</span> vêm nos planos Pro e Studio.
           </p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {FEATURES.map((f, i) => (
@@ -405,7 +362,12 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                 <div className="w-10 h-10 rounded-xl bg-laranja/15 group-hover:bg-laranja/25 flex items-center justify-center mb-4 transition-colors">
                   <f.icon size={20} className="text-laranja" />
                 </div>
-                <h4 className="font-display font-semibold text-[16px] text-bone mb-2">{f.title}</h4>
+                <h4 className="font-display font-semibold text-[16px] text-bone mb-2">
+                  {f.title}
+                  {f.pro && (
+                    <span className="ml-2 align-middle text-[10px] font-sans font-bold uppercase tracking-wider text-laranja bg-laranja/15 border border-laranja/30 px-1.5 py-0.5 rounded">Pro</span>
+                  )}
+                </h4>
                 <p className="text-[13px] text-warm-200 leading-relaxed">{f.desc}</p>
               </div>
             ))}
@@ -413,7 +375,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         </div>
       </section>
 
-      {/* ════════ SUCCESS — transformação ════════ */}
+      {/* ════════ SUCCESS: transformação ════════ */}
       <section className="py-24 px-5 sm:px-8 bg-tinta-soft">
         <div className="max-w-3xl mx-auto">
           <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">seu próximo domingo, diferente</p>
@@ -432,30 +394,6 @@ export function LandingPage({ onEnter }: LandingPageProps) {
               <div key={i} className="flex items-baseline gap-5 pb-4 last:pb-0 border-b border-tinta-border last:border-0">
                 <span className="font-display font-semibold text-bone text-[18px] w-24 shrink-0">{row.day}</span>
                 <span className="text-warm-200">{row.text}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ════════ TESTIMONIALS ════════ */}
-      <section className="py-24 px-5 sm:px-8">
-        <div className="max-w-5xl mx-auto">
-          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">bandas que já chegam prontas</p>
-          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-16 text-center">
-            Histórias de domingo.
-          </h2>
-          <div className="grid sm:grid-cols-3 gap-5">
-            {TESTIMONIALS.map((r, i) => (
-              <div key={i} className="bg-tinta-raised border border-tinta-border rounded-2xl p-7">
-                <div className="flex gap-0.5 mb-4">
-                  {[1, 2, 3, 4, 5].map(j => <Star key={j} size={12} className="text-laranja fill-laranja" />)}
-                </div>
-                <p className="text-[14px] text-warm-200 leading-relaxed mb-5">"{r.text}"</p>
-                <div>
-                  <div className="font-display font-semibold text-[15px] text-bone">{r.name}</div>
-                  <div className="text-[12px] text-warm-400">{r.role}</div>
-                </div>
               </div>
             ))}
           </div>
@@ -486,14 +424,15 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                 className={`px-5 py-2 rounded-lg text-[13px] font-semibold transition-all cursor-pointer flex items-center gap-2 ${billing === 'annual' ? 'bg-bone text-tinta' : 'text-warm-200 hover:text-bone'}`}
               >
                 Anual
-                <span className="text-[10px] font-bold text-musgo-light bg-musgo/20 px-1.5 py-0.5 rounded">−25%</span>
+                <span className="text-[10px] font-bold text-musgo-light bg-musgo/20 px-1.5 py-0.5 rounded">até −{MAX_ANNUAL_DISCOUNT}%</span>
               </button>
             </div>
           </div>
 
           <div className="grid sm:grid-cols-3 gap-5">
             {PLANS.map((plan) => {
-              const price = billing === 'annual' ? plan.annual : plan.monthly
+              const price = billing === 'annual' ? annualPerMonth(plan.annualTotal) : plan.monthly
+              const savings = annualSavings(plan.monthly, plan.annualTotal)
               return (
                 <div
                   key={plan.id}
@@ -518,19 +457,21 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                       <>
                         <div className="flex items-baseline gap-1">
                           <span className="text-[14px] text-warm-400">R$</span>
-                          <span className="font-display font-semibold text-[40px] text-bone leading-none">{price.toFixed(2).replace('.', ',')}</span>
+                          <span className="font-display font-semibold text-[40px] text-bone leading-none">{formatReais(price)}</span>
                           <span className="text-warm-400 text-[14px]">/mês</span>
                         </div>
                         {billing === 'annual' && (
-                          <p className="text-[11px] text-musgo-light mt-2">R$ {(price * 12).toFixed(2).replace('.', ',')} cobrado anualmente</p>
+                          <p className="text-[11px] text-musgo-light mt-2">
+                            R$ {formatReais(plan.annualTotal)} cobrado por ano. Economia de R$ {formatReais(savings.reais)} ({savings.percent}%)
+                          </p>
                         )}
                         {billing === 'monthly' && (
-                          <p className="text-[11px] text-warm-400 mt-2">ou R$ {plan.annual.toFixed(2).replace('.', ',')}/mês no anual</p>
+                          <p className="text-[11px] text-warm-400 mt-2">ou R$ {formatReais(annualPerMonth(plan.annualTotal))}/mês no anual ({savings.percent}% a menos)</p>
                         )}
                       </>
                     )}
                   </div>
-                  <ul className="space-y-2.5 mb-8 flex-1">
+                  <ul className={`space-y-2.5 flex-1 ${plan.note ? 'mb-4' : 'mb-8'}`}>
                     {plan.features.map((feat, j) => (
                       <li key={j} className="flex items-start gap-2.5 text-[13px] text-warm-200">
                         <Check size={13} className={`mt-0.5 shrink-0 ${plan.highlight ? 'text-laranja' : 'text-musgo-light'}`} />
@@ -538,6 +479,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                       </li>
                     ))}
                   </ul>
+                  {plan.note && <p className="text-[12px] text-warm-200 leading-relaxed mb-8">{plan.note}</p>}
                   <button
                     onClick={() => goToCheckout(plan.id, price)}
                     className={`w-full py-3 rounded-xl text-[13px] font-semibold transition-all cursor-pointer ${plan.highlight
@@ -551,7 +493,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
               )
             })}
           </div>
-          <p className="text-center text-[12px] text-warm-400 mt-8">Preços em Reais · Cancele quando quiser · Sem fidelidade</p>
+          <p className="text-center text-[12px] text-warm-400 mt-8">Preços em reais · Pagamento no cartão de crédito, com renovação automática · Cancele quando quiser · Sem fidelidade</p>
         </div>
       </section>
 
