@@ -78,6 +78,10 @@ describe('armAt (REPETIR e banda)', () => {
     ['NaN vira 1', null, 4, NaN, {}, armed(i(4, 1))],
     ['quebrado desce pro inteiro', null, 4, 2.7, {}, armed(i(4, 2))],
     ['teto 0 ou quebrado nunca passa de 1', null, 4, 5, { gates: { ...gates, maxRepeats: 0 } }, armed(i(4, 1))],
+    ['teto quebrado desce pro inteiro', null, 4, 12, { gates: { ...gates, maxRepeats: 9.5 } }, armed(i(4, 9))],
+    ['sem teto (maxRepeats infinito), número grande fica', null, 4, 12, { gates: { ...gates, maxRepeats: Infinity } }, armed(i(4, 12))],
+    ['sem teto, infinito numérico é o loop sem fim, que o portão do infinito permite', null, 4, Infinity, { gates: { ...gates, maxRepeats: Infinity } }, armed(i(4, 'infinite'))],
+    ['sem teto e sem o portão do infinito, infinito numérico pede upgrade', i(2, 1), 4, Infinity, { gates: { ...gates, maxRepeats: Infinity, infinite: false } }, upgrade(i(2, 1))],
     ['troca o que estava armado', i(2, 1), 4, 2, {}, armed(i(4, 2))],
     ['armar de novo o mesmo não cancela', i(4, 2), 4, 2, {}, armed(i(4, 2))],
     ['parado, outra seção: leva pra lá e a chegada é a 1ª passagem', null, 4, 3, parado, seek(4, i(4, 2))],
@@ -162,6 +166,8 @@ describe('bandRepeat (sentido antigo do celular)', () => {
     expect(band(4, net('abc'))).toEqual(armed(i(4, 1)))
     expect(armAt(null, 4, net(''), ctx())).toEqual(armed(i(4, 1)))
   })
+
+  it('número fora do JSON (1e309 vira Infinity) cai no teto finito', () => expect(band(4, JSON.parse('1e309') as number)).toEqual(armed(i(4, 9))))
 
   it('passa pelo armAt, que aplica o teto do plano', () => {
     const b = bandRepeat(4, 9, 1)

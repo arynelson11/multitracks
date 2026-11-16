@@ -20,16 +20,17 @@ const seekTo = (index: number, intent: ArmIntent | null = null): ArmResult => ({
 const inList = (index: number, c: ArmContext) => Number.isInteger(index) && index >= 0 && index < c.sectionCount
 
 /**
- * Número de passagens dentro do plano: acima do teto vira o teto, abaixo de 1 (ou NaN) vira 1,
- * quebrado desce pro inteiro. Número nunca vira loop sem fim (isso é só o `'infinite'`, que
- * tem portão próprio).
+ * Passagens dentro do plano: acima do teto vira o teto (inclusive o Infinity numérico), abaixo
+ * de 1 (ou NaN) vira 1, quebrado desce pro inteiro. Só sai loop sem fim quando o próprio teto
+ * é sem fim (`maxRepeats: Infinity`), e aí ele vira `'infinite'`, que passa pelo portão do
+ * infinito como qualquer loop.
  */
-function clampPlays(plays: number, maxRepeats: number): number {
+function clampPlays(plays: number, maxRepeats: number): Plays {
   const cap = maxRepeats >= 1 ? Math.floor(maxRepeats) : 1
   const asked = Number(plays) // da rede pode vir texto
   if (!(asked >= 1)) return 1
   const n = Math.min(Math.floor(asked), cap)
-  return Number.isFinite(n) ? n : 1
+  return Number.isFinite(n) ? n : 'infinite'
 }
 
 /**
@@ -70,8 +71,8 @@ export function stepSection(intent: ArmIntent | null, dir: -1 | 1, c: ArmContext
 export function armAt(intent: ArmIntent | null, index: number, plays: Plays, c: ArmContext): ArmResult {
   if (!inList(index, c)) return withIntent(intent)
   if (!c.gates.sections) return askUpgrade(intent)
-  if (plays === 'infinite' && !c.gates.infinite) return askUpgrade(intent)
   const next: ArmIntent = { target: index, plays: plays === 'infinite' ? plays : clampPlays(plays, c.gates.maxRepeats) }
+  if (next.plays === 'infinite' && !c.gates.infinite) return askUpgrade(intent)
   if (!c.isPlaying && index !== c.current) return seekTo(index, afterLanding(next))
   return withIntent(next)
 }
