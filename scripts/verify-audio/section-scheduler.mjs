@@ -27,11 +27,14 @@ const RES = path.join(HERE, 'results')
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const TIMEOUT_S = 900
 
-async function bundle() {
+// `folga0`: o mesmo código com a folga mínima da T11 (MIN_LEAD) em 0, pra provar que o 1 da volta
+// seguinte não depende dela.
+async function bundle(folga0 = false) {
   const src = path.join(ROOT, 'src')
+  const transition = path.join(src, 'lib', 'sectionTransition.ts')
   await esbuild({
     entryPoints: [path.join(HERE, 'www/section-scheduler.page.js')],
-    outfile: path.join(OUT, 'section-scheduler.bundle.js'),
+    outfile: path.join(OUT, folga0 ? 'section-scheduler-folga0.bundle.js' : 'section-scheduler.bundle.js'),
     bundle: true,
     format: 'esm',
     platform: 'browser',
@@ -40,7 +43,17 @@ async function bundle() {
     logLevel: 'warning',
     plugins: [{
       name: 'src-da-t17',
-      setup(b) { b.onResolve({ filter: /^@t17\/\w+$/ }, (a) => ({ path: path.join(src, 'audio', a.path.slice(5) + '.ts') })) },
+      setup(b) {
+        b.onResolve({ filter: /^@t17\/\w+$/ }, (a) => ({ path: path.join(src, 'audio', a.path.slice(5) + '.ts') }))
+        if (!folga0) return
+        b.onLoad({ filter: /sectionTransition\.ts$/ }, (a) => {
+          if (a.path !== transition) return undefined
+          const text = fs.readFileSync(a.path, 'utf8')
+          const patched = text.replace('export const MIN_LEAD = 0.05', 'export const MIN_LEAD = 0')
+          if (patched === text) throw new Error('MIN_LEAD não encontrado em sectionTransition.ts')
+          return { contents: patched, loader: 'ts' }
+        })
+      },
     }],
   })
 }
@@ -60,6 +73,10 @@ function serve() {
       })
       return
     }
+    if (u.pathname === '/section-scheduler-folga0.html') {
+      const html = fs.readFileSync(path.join(HERE, 'www/section-scheduler.html'), 'utf8').replace('section-scheduler.bundle.js', 'section-scheduler-folga0.bundle.js')
+      res.setHeader('Content-Type', 'text/html'); res.setHeader('Cache-Control', 'no-store'); res.end(html); return
+    }
     const rel = u.pathname.startsWith('/.build/') ? u.pathname.slice(1) : path.join('www', u.pathname)
     const file = path.join(HERE, rel)
     if (!file.startsWith(HERE) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.statusCode = 404; res.end(); return }
@@ -70,12 +87,12 @@ function serve() {
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)))
 }
 
-async function runChrome(server, name) {
+async function runChrome(server, name, page = 'section-scheduler.html', query = '') {
   const out = path.join(RES, name + '.json')
   fs.rmSync(out, { force: true })
   const profile = path.join(HERE, `chrome-profile-${name}`)
   fs.rmSync(profile, { recursive: true, force: true })
-  const url = `http://127.0.0.1:${server.address().port}/section-scheduler.html?name=${name}`
+  const url = `http://127.0.0.1:${server.address().port}/${page}?name=${name}${query}`
   const chrome = spawn(CHROME, ['--headless=new', '--no-first-run', '--no-default-browser-check', '--mute-audio', `--user-data-dir=${profile}`, url], { stdio: 'ignore' })
   const t0 = Date.now()
   while (!fs.existsSync(out) && Date.now() - t0 < TIMEOUT_S * 1000) await new Promise((r) => setTimeout(r, 300))
@@ -96,9 +113,10 @@ function report(data) {
   let ok = true
   for (const c of data.cases) {
     ok &&= c.ok
-    const extra = c.onsets ? ` bipes em ${c.onsets.map((t) => t.toFixed(5)).join(' ')};` : ''
-    const guia = c.guideDev !== undefined ? ` guia desvio ${f(c.guideDev)}${c.guideStep !== undefined ? `, degrau ${f(c.guideStep)}` : ''};` : ''
-    console.log(`${c.ok ? 'OK   ' : 'FALHA'} ${c.name}:${extra}${guia} música antes ${f(c.pos.before)} depois ${f(c.pos.after)}; soma das vozes ${f(c.dc.worst)}; pousos ${JSON.stringify(c.landed)}${c.error ? ' ERRO ' + c.error : ''}`)
+    const bipes = c.count ? ` bipes em ${c.count.onsets.map((t) => t.toFixed(4)).join(' ')} (início até ${f(Math.max(0, ...c.count.onsetErr))} amostra, pico até ${f(Math.max(0, ...c.count.peakErr))}, degrau ${f(c.count.step)});` : ''
+    if (c.first !== undefined) { console.log(`${c.ok ? 'OK   ' : 'FALHA'} ${c.name}: ${f(c.first)} (pico do bipe ${f(c.peak)})`); continue }
+    const guia = c.guide ? ` guia desvio ${f(c.guide.dev)}, degrau ${f(c.guide.step)};` : ''
+    console.log(`${c.ok ? 'OK   ' : 'FALHA'} ${c.name}:${bipes}${guia} música ${f(c.pos.worst)}; soma das vozes ${f(c.dc.worst)}; pousos ${JSON.stringify(c.landed)}${c.error ? ' ERRO ' + c.error : ''}`)
   }
   for (const s of data.sweeps) {
     ok &&= s.ok
@@ -115,10 +133,14 @@ function report(data) {
 }
 
 await bundle()
+await bundle(true)
 const server = await serve()
-const name = 'section-scheduler'
 const t0 = Date.now()
-const data = await runChrome(server, name)
+const main = await runChrome(server, 'section-scheduler')
+const folga0 = await runChrome(server, 'section-scheduler-folga0', 'section-scheduler-folga0.html', '&case=folga0')
 server.close()
 console.log(`tempo: ${((Date.now() - t0) / 1000).toFixed(1)} s`)
-process.exit(report(data) ? 0 : 1)
+const okMain = report(main)
+console.log('--- folga mínima 0 (MIN_LEAD da T11 trocado por 0 no pacote) ---')
+const okFolga0 = report(folga0)
+process.exit(okMain && okFolga0 ? 0 : 1)
