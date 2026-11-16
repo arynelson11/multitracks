@@ -177,6 +177,32 @@ describe('célula de tom', () => {
     fireEvent.click(gridKey('A'))
     expect(onChangePitch).toHaveBeenLastCalledWith(2)
   })
+  it('tocar no tom atual só fecha a grade: com +8 não manda −4 nem troca a VS de oitava', () => {
+    const onChangePitch = vi.fn()
+    const onGridOpenChange = vi.fn()
+    render(<KeyCell {...keyProps({ gridOpen: true, pitch: 8, onChangePitch, onGridOpenChange })} />)
+    // G + 8 = D#, o atual em laranja.
+    expect(gridKey('D#').getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(gridKey('D#'))
+    expect(onChangePitch).not.toHaveBeenCalled()
+    expect(onGridOpenChange).toHaveBeenLastCalledWith(false)
+    fireEvent.click(gridKey('E'))
+    expect(onChangePitch).toHaveBeenLastCalledWith(-3)
+  })
+  it('sem tom original: tocar no semitom atual só fecha; fora de −6..+6 o foco fica na grade, não num botão', () => {
+    const onChangePitch = vi.fn()
+    const onGridOpenChange = vi.fn()
+    const { unmount } = render(<KeyCell {...keyProps({ originalKey: null, gridOpen: true, pitch: 3, onChangePitch, onGridOpenChange })} />)
+    fireEvent.click(btn('+3 semitons'))
+    expect(onChangePitch).not.toHaveBeenCalled()
+    expect(onGridOpenChange).toHaveBeenLastCalledWith(false)
+    unmount()
+    render(<KeyCell {...keyProps({ originalKey: null, gridOpen: true, pitch: 9 })} />)
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.querySelector('[aria-pressed="true"]')).toBeNull()
+    // Um Enter por engano não manda −6: o foco está na grade, não no primeiro botão.
+    expect(document.activeElement).toBe(dialog)
+  })
   it('grade: 12 tons, o original marcado ORIGINAL e o atual em laranja', () => {
     render(<KeyCell {...keyProps({ gridOpen: true, pitch: -1 })} />)
     const dialog = screen.getByRole('dialog')

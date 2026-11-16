@@ -82,11 +82,12 @@ export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChan
 
   useLayoutEffect(() => { changeRef.current = onGridOpenChange })
 
-  // Abriu: o foco vai pro tom atual. Fechou com o foco dentro da grade: volta pro botão do tom.
+  // Abriu: o foco vai pro tom atual; sem atual na grade (semitom fora de −6..+6), pra própria grade,
+  // pra um Enter por engano não mandar nada. Fechou com o foco dentro da grade: volta pro botão do tom.
   useLayoutEffect(() => {
     const dialog = dialogRef.current
     if (gridOpen && dialog) {
-      const target = dialog.querySelector<HTMLElement>('button[aria-pressed="true"]') ?? dialog.querySelector<HTMLElement>('button') ?? dialog
+      const target = dialog.querySelector<HTMLElement>('button[aria-pressed="true"]') ?? dialog
       target.focus()
     } else if (!gridOpen && focusInside.current) {
       focusInside.current = false
@@ -105,8 +106,10 @@ export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChan
     return () => document.removeEventListener('pointerdown', onPointerDown, true)
   }, [gridOpen])
 
-  const choose = (semitones: number) => {
-    onChangePitch(sanitizeSemitones(semitones))
+  // Escolher manda os semitons e fecha. O tom atual (null) só fecha: com mais de 6 semitons
+  // (alcançável pelo +1/−1) o caminho mais curto trocaria a VS de oitava ao vivo.
+  const choose = (semitones: number | null) => {
+    if (semitones !== null) onChangePitch(sanitizeSemitones(semitones))
     onGridOpenChange(false)
   }
 
@@ -162,7 +165,7 @@ export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChan
                 return (
                   <GridButton
                     key={name} aria={i === originalIndex ? `${label}, original` : label} original={i === originalIndex} current={i === currentIndex}
-                    onChoose={() => choose(semitonesBetweenKeys(originalKey, KEY_NAMES[i]))}
+                    onChoose={() => choose(i === currentIndex ? null : semitonesBetweenKeys(originalKey, KEY_NAMES[i]))}
                   >
                     <KeyName name={label} />
                   </GridButton>
@@ -174,7 +177,7 @@ export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChan
             <div className="grid grid-cols-6 gap-1.5">
               {SEMITONE_STEPS.map((n) => (
                 <GridButton
-                  key={n} aria={semitoneLabel(n)} original={n === 0} current={n === shift} wide={n === 0} onChoose={() => choose(n)}
+                  key={n} aria={semitoneLabel(n)} original={n === 0} current={n === shift} wide={n === 0} onChoose={() => choose(n === shift ? null : n)}
                 >
                   <span className="ps-num">{n === 0 ? '0' : shiftText(n)}</span>
                 </GridButton>
