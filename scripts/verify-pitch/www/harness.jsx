@@ -71,7 +71,12 @@ function wavFile(name, x, x2) {
 }
 
 const INSTRUMENTS = ['Bateria', 'Baixo', 'Vocal', 'Teclado', 'Guitarra', 'Violao', 'Pad', 'Backing', 'Synth', 'Strings',
-  'Perc', 'Loop', 'Sax', 'Trompete', 'Orgao', 'Piano', 'Coro', 'Bells', 'FX', 'Contra', 'Tamborim', 'Shaker'];
+  'Perc', 'Loop', 'Sax', 'Trompete', 'Orgao', 'Piano', 'Coro', 'Bells', 'FX', 'Contra', 'Tamborim', 'Shaker',
+  'Viola', 'Cello', 'Flauta', 'Clarinete', 'Harpa', 'Marimba'];
+// Repertório com várias músicas (instrumentos por música, sem click e guia).
+// SONGS: 24, 10 e 30 canais.
+const SONG_SIZES = { SONGS: [22, 8, 28] }[SEQ] || [N];
+const MULTI = SONG_SIZES.length > 1;
 const VOICE = new Set(['Vocal', 'Backing', 'Coro']);
 
 async function waitFor(fn, ms = 20000, label = '') {
@@ -93,32 +98,45 @@ async function main() {
   // O caminho dele não muda entre tom 0 e transposto, então a diferença dele é
   // só o erro do phase vocoder naquela frequência.
   const LEVEL_TRACKS = { 'Mono R': [1, 1], 'Mono C': [1, 0], 'Estereo R': [2, 1], 'Estereo C': [2, 0], 'Controle C': [2, 0] };
-  const instr = SEQ === 'LEVELS' ? Object.keys(LEVEL_TRACKS) : INSTRUMENTS.slice(0, N);
+  const instr = SEQ === 'LEVELS' ? Object.keys(LEVEL_TRACKS) : INSTRUMENTS.slice(0, SONG_SIZES[0]);
   const measure = (SEQ === 'SPREAD' || SEQ === 'SEEKS' || SEQ === 'STALL') ? 'both' : (ORDER === 'A' ? 'last' : 'first');
   const clk = clickTrain(DUR, 0.5, 0.25);
-  const files = [];
-  const instrFiles = instr.map((name, i) => {
-    if (SEQ === 'LEVELS') {
-      // Senoide pura de 440 Hz: o phase vocoder perde 0 a 0,3 dB conforme a
-      // frequência e isso mascararia o efeito do panner (o controle mede).
-      const sine = harmonic(DUR, 440, 1, 0.1);
-      if (name === 'Controle C') return wavFile(name, sine, sine);
-      return LEVEL_TRACKS[name][0] === 2 ? wavFile(name, sine, harmonic(DUR, 660, 1, 0.07)) : wavFile(name, sine);
-    }
-    const isMeasured = (measure === 'last' && i === N - 1) || (measure === 'first' && i === 0) || (measure === 'both' && (i === 0 || i === N - 1));
-    return wavFile(name, isMeasured ? clk : harmonic(DUR, 97 + 11 * i, 4, 0.002));
-  });
-  const clickFile = wavFile(CLICK, clk);
-  const guideFile = wavFile('Voz Guia', new Float32Array(Math.round(SR * DUR)));
-  if (ORDER === 'A') files.push(clickFile, guideFile, ...instrFiles); else files.push(...instrFiles, clickFile, guideFile);
-  const dt = new DataTransfer();
-  files.forEach((f) => dt.items.add(f));
+  const songFiles = (names) => {
+    const n = names.length;
+    const instrFiles = names.map((name, i) => {
+      if (SEQ === 'LEVELS') {
+        // Senoide pura de 440 Hz: o phase vocoder perde 0 a 0,3 dB conforme a
+        // frequência e isso mascararia o efeito do panner (o controle mede).
+        const sine = harmonic(DUR, 440, 1, 0.1);
+        if (name === 'Controle C') return wavFile(name, sine, sine);
+        return LEVEL_TRACKS[name][0] === 2 ? wavFile(name, sine, harmonic(DUR, 660, 1, 0.07)) : wavFile(name, sine);
+      }
+      const isMeasured = (measure === 'last' && i === n - 1) || (measure === 'first' && i === 0) || (measure === 'both' && (i === 0 || i === n - 1));
+      return wavFile(name, isMeasured ? clk : harmonic(DUR, 97 + 11 * i, 4, 0.002));
+    });
+    const clickFile = wavFile(CLICK, clk);
+    // Com várias músicas o critério é som em todas as faixas: a guia também toca.
+    const guideFile = wavFile('Voz Guia', MULTI ? harmonic(DUR, 150, 3, 0.002) : new Float32Array(Math.round(SR * DUR)));
+    return ORDER === 'A' ? [clickFile, guideFile, ...instrFiles] : [...instrFiles, clickFile, guideFile];
+  };
   // LOOP: seção B = [2, 3,0137) s, clicks em 2,25 e 2,75; na emenda o intervalo
   // ideal é 0,5137 s. O tamanho não é múltiplo do quadro de tela (16,7 ms), então
   // o atraso do rAF varia de volta em volta em vez de ficar travado num valor.
   const markers = SEQ === 'LOOP' ? [{ id: 'a', time: 0, label: 'A' }, { id: 'b', time: 2, label: 'B' }, { id: 'c', time: 3.0137, label: 'C' }, { id: 'd', time: 30, label: 'D' }] : undefined;
-  await E().loadFiles(dt.files, 'Teste', undefined, markers, 'C', 120);
-  await waitFor(() => E().channels.length === files.length, 60000, 'load');
+  const songSizes = [];
+  for (let k = 0; k < SONG_SIZES.length; k++) {
+    const files = songFiles(k === 0 ? instr : INSTRUMENTS.slice(0, SONG_SIZES[k]));
+    const dt = new DataTransfer();
+    files.forEach((f) => dt.items.add(f));
+    await E().loadFiles(dt.files, MULTI ? 'Musica ' + 'ABCDEF'[k] : 'Teste', undefined, markers, 'C', 120);
+    await waitFor(() => E().playlist.length === k + 1 && E().playlist[k].channels.length === files.length, 60000, 'load');
+    songSizes.push(files.length);
+  }
+  await waitFor(() => E().channels.length === songSizes[0], 60000, 'load');
+  // Buffer -> música (ordem de carga) e nome do canal, pra todas as músicas.
+  const bufSong = new Map();
+  const songIds = E().playlist.map((sg) => sg.id);
+  E().playlist.forEach((sg, k) => sg.channels.forEach((c) => bufSong.set(c.buffer, { song: k, ch: c.name })));
   const chNames = E().channels.map((c) => c.name);
   ev('channels', { names: chNames });
 
@@ -147,7 +165,7 @@ async function main() {
   // Lados fixos pra medir, independente da regra de nomes: click/guia no L,
   // instrumentos no R. SPREAD: 1º instrumento no L e click mudo, então
   // R − L = diferença de início entre a 1ª e a última faixa.
-  for (const c of E().channels) c.pannerNode.pan.value = (c.name === CLICK || c.name === 'Voz Guia') ? -1 : 1;
+  for (const c of E().playlist.flatMap((sg) => sg.channels)) c.pannerNode.pan.value = (c.name === CLICK || c.name === 'Voz Guia') ? -1 : 1;
   if (SEQ === 'LEVELS') for (const c of E().channels) if (LEVEL_TRACKS[c.name]) c.pannerNode.pan.value = LEVEL_TRACKS[c.name][1];
   if (SEQ === 'SPREAD' || SEQ === 'SEEKS' || SEQ === 'STALL') {
     const chs = E().channels;
@@ -242,6 +260,9 @@ async function main() {
   // click depois da chamada, menos 50 ms, é o buraco do reinício.
   const gapSeeks = (t0, n, pos0) => Array.from({ length: n }, (_, k) => [t0 + k * 0.7, seek(pos0 + k - 0.05)]);
   const loopOn = () => { ev('armLoop'); E().armLoop(1, 'infinite'); };
+  // Troca de música pelo repertório (índice atual) e remoção (ordem de carga).
+  const jump = (i) => () => { ev('jumpToSong', { to: i }); E().jumpToSong(i); };
+  const removeSong = (k) => () => { ev('removeSong', { song: k }); E().removeSongFromPlaylist(songIds[k]); };
   const loopOff = () => { ev('cancelLoop'); E().cancelLoop(); };
   const seeks = (t0, n, pos0) => Array.from({ length: n }, (_, k) => [t0 + k * 0.5, seek(pos0 + k * 0.3)]);
   const stallSeeks = (t0, n, pos0) => Array.from({ length: n }, (_, k) => [t0 + k * 1.0, seek(pos0 + k * 0.3, true)]);
@@ -263,6 +284,11 @@ async function main() {
     // Laço de start() travado 15 ms no meio (o motor passa do instante comum):
     // o play tem de descartar e reagendar tudo junto, no tom 0 e no +2.
     STALL: [[0, play], ...stallSeeks(1.5, 6, 3), [8, pitch(2)], ...stallSeeks(10, 6, 12), [16.5, snap('apos travas no +2')], [17, pause], [18, snap('fim (pausado)')]],
+    // Repertório: A (24 canais) +2, B (10) +3, C (30) +2, remove B com C tocando,
+    // volta pra A (ainda +2) e A no tom 0. A reserva de worklets trabalha aqui.
+    SONGS: [[0, play], [1, pitch(2)], [4, snap('A 24 canais +2')], [5, jump(1)], [6, pitch(3)], [9, snap('B 10 canais +3')],
+      [10, jump(2)], [11, pitch(2)], [14.5, snap('C 30 canais +2')], [15.5, removeSong(1)], [17, snap('C depois de remover B')],
+      [18, jump(0)], [21, snap('A de volta (+2)')], [22, pitch(0)], [25, snap('A tom 0')], [26, pause], [27, snap('fim (pausado)')]],
     // Nível de faixa mono e estéreo, pan total e centro, no tom 0 e transposto.
     LEVELS: [[0, play], [3, snap('tom 0')], [4, pitch(2)], [8, snap('apos +2')], [9, pitch(0)], [12, snap('apos volta 0')], [13, pause], [14, snap('fim (pausado)')]],
     NAN: [[0, play], [3, pitch(NaN)], [7, snap('apos tom NaN')], [8, pitch(2)], [12, snap('apos +2')], [13, pause], [14, snap('fim (pausado)')]],
@@ -277,14 +303,14 @@ async function main() {
     for (const l of L_on) if (best === null || Math.abs(r - l) < Math.abs(r - best)) best = l;
     return best === null ? null : [+r.toFixed(4), +((r - best) * 1000).toFixed(2)];
   }).filter(Boolean);
-  const bufName = new Map(E().channels.map((ch) => [ch.buffer, ch.name]));
   const srcRecs = sources.filter((r) => r.started).map((r) => ({
-    id: r.id, ch: bufName.get(r.s.buffer) || '?', when: r.when, offset: +r.offset.toFixed(4), ctxAtStart: +r.ctxAtStart.toFixed(5),
+    id: r.id, ch: bufSong.get(r.s.buffer)?.ch || '?', song: bufSong.get(r.s.buffer)?.song ?? -1, when: r.when, offset: +r.offset.toFixed(4), ctxAtStart: +r.ctxAtStart.toFixed(5),
     eff: +r.eff.toFixed(5), tStart: r.tStart, ctxAtStop: r.ctxAtStop !== undefined ? +r.ctxAtStop.toFixed(5) : null,
     tStop: r.tStop ?? null, startMark: r.startMark ?? 0, stopMark: r.stopMark ?? 0,
   }));
   const res = {
-    cfg: { SEQ, N, ORDER, CLICK, measure, DUR, sampleRate: ctx.sampleRate, pansAtLoad, pannerCfg, voice: [...VOICE].filter((v) => instr.includes(v)), instruments: instr, channels: chNames },
+    cfg: { SEQ, N, ORDER, CLICK, measure, DUR, sampleRate: ctx.sampleRate, pansAtLoad, pannerCfg, songSizes,
+      maxTransposable: MULTI ? Math.max(...SONG_SIZES) : undefined, voice: [...VOICE].filter((v) => instr.includes(v)), instruments: instr, channels: chNames },
     events, snaps, rRelLms: pairs, onsetsL: L_on.map((x) => +x.toFixed(5)), onsetsR: R_on.map((x) => +x.toFixed(5)),
     rms: rms.map((r) => [r[0], +(20 * Math.log10(r[1] + 1e-9)).toFixed(1), +(20 * Math.log10(r[2] + 1e-9)).toFixed(1), r[3]]),
     sources: srcRecs, workletsCreated: worklets.map((w) => w.createdAt),

@@ -11,6 +11,7 @@ const JUMP_S = 0.02;       // salto de posição ao reiniciar
 const CLOCK_MIN = 0.95;    // relógio de áudio / relógio de parede
 const LEVEL_DB = -40;      // pico de RMS (janelas de 50 ms) antes de cada snapshot
 const LEVEL_MATCH_DB = 0.1; // LEVELS: nível transposto x tom 0, por faixa
+const CH_LEVEL_DB = -70;   // SONGS: nível mínimo de cada faixa da música tocando (silêncio = -180)
 // Rodada 1, item 2: referência da v1.4.9 (5e051c2, start(0) sem folga) medida neste
 // harness. Seek no tom 0: mediana 0,0 ms. Loop: buraco na emenda, sem o atraso do
 // rAF, mediana 0,0 ms. Aceite: a folga de 2 blocos de áudio (5,33 ms a 48 kHz, a
@@ -113,7 +114,8 @@ export function analyze(key, R) {
   const spreads = groups.map((g) => (Math.max(...g.map((r) => r.eff)) - Math.min(...g.map((r) => r.eff))) * 1000);
   const sizes = groups.map((g) => g.length);
   const split = spreads.filter((x) => x > START_EPS_MS);
-  const sizesBad = sizes.filter((n) => n !== nChannels);
+  // Com várias músicas, cada play tem o número de faixas da música dele.
+  const sizesBad = groups.filter((g) => g.length !== (cfg.songSizes && g[0].song >= 0 ? cfg.songSizes[g[0].song] : nChannels)).map((g) => g.length);
   add(2, `todas as fontes de cada play no mesmo instante (<= ${START_EPS_MS} ms)`, split.length === 0 && sizesBad.length === 0,
     groups.length > 8
       ? `plays ${groups.length}; com faixas separadas ${split.length} (até ${fmt(Math.max(0, ...spreads), 3)} ms)${sizesBad.length ? '; faixas por play fora do esperado: ' + sizesBad.join(', ') : ''}`
@@ -122,6 +124,8 @@ export function analyze(key, R) {
   const jumps = [];
   for (let i = 1; i < groups.length; i++) {
     const prev = groups[i - 1], cur = groups[i];
+    // Música trocada: a nova começa do 0.
+    if (cur[0].song !== undefined && cur[0].song !== prev[0].song) { jumps.push(cur[0].offset); continue; }
     const stops = prev.map((r) => r.ctxAtStop).filter((x) => x !== null);
     const stopAt = stops.length ? Math.min(...stops) : null;
     if (stopAt === null) { jumps.push(NaN); continue; }
@@ -135,6 +139,17 @@ export function analyze(key, R) {
     else checks.push({ item: 'R1-2', scenario: key, name: 'plays refeitos (relógio passou do instante comum durante o laço)', pass: true, info: true, detail: `${redone.length}` });
   }
   if (jumps.length && !['SEEKS', 'RESTART', 'LOOP', 'STALL'].includes(seq)) add(1, `posição contínua ao reiniciar (|salto| <= ${JUMP_S} s)`, jumps.every((j) => Math.abs(j) <= JUMP_S), `saltos s: ${jumps.map((j) => fmt(j, 3)).join(', ')}`);
+
+  // ---------- rodada 1, item 3: som em todas as faixas da música tocando ----------
+  if (seq === 'SONGS') {
+    for (const s of R.snaps.filter(isPlayingSnap)) {
+      const lv = Object.entries(s.levels);
+      const quiet = lv.filter(([, v]) => !(v.total > CH_LEVEL_DB));
+      const low = lv.length ? Math.min(...lv.map(([, v]) => v.total)) : null;
+      add('R1-3', `[${s.label}] som em todas as ${lv.length} faixas (> ${CH_LEVEL_DB} dB)`, lv.length === s.expect.channels && quiet.length === 0,
+        quiet.length ? 'sem som: ' + quiet.map(([n, v]) => `${n} ${fmt(v.total)} dB`).join(', ') : `faixa mais baixa ${fmt(low)} dB`);
+    }
+  }
 
   // ---------- rodada 1, item 1: nível mono/estéreo transposto x tom 0 ----------
   if (seq === 'LEVELS') {
@@ -173,7 +188,7 @@ export function analyze(key, R) {
       if (to - s.from < 1.2) return; // trecho curto da troca rápida
       // SEEKS: fora os 300 ms depois de cada reinício (o click cortado pelo stop
       // sai diferente em cada phase vocoder); o instante agendado é checado acima.
-      const seekCtx = R.events.filter((e) => e.type === 'seekTo').map((e) => e.ctx);
+      const seekCtx = R.events.filter((e) => ['seekTo', 'jumpToSong', 'removeSong'].includes(e.type)).map((e) => e.ctx);
       const settled = (t) => !seekCtx.some((c) => t >= c && t < c + 0.3);
       const vals = R.rRelLms.filter((p) => p[0] >= s.from + 0.8 && p[0] < to && settled(p[0])).map((p) => p[1]);
       if (!vals.length) { add(seq === 'SPREAD' ? 2 : 3, `trecho tom ${s.pitch} desde ${fmt(s.from, 1)} s: alinhamento`, false, 'sem pares de onset'); return; }
@@ -194,7 +209,7 @@ export function analyze(key, R) {
   }
 
   // ---------- item 3: rota de quem não passa pelo worklet ----------
-  if (seq === 'S1' || seq === 'S2') {
+  if (seq === 'S1' || seq === 'S2' || seq === 'SONGS') {
     const bad = [];
     for (const s of R.snaps.filter(isPlayingSnap)) {
       for (const a of s.sourcesAlive.filter((x) => exempt.has(x.ch) && !x.route.includes('worklet'))) {
@@ -206,7 +221,7 @@ export function analyze(key, R) {
   }
 
   // ---------- item 4: click/guia fora do caminho do tom ----------
-  if (seq === 'S1' || seq === 'S2') {
+  if (seq === 'S1' || seq === 'S2' || seq === 'SONGS') {
     const viaWorklet = new Set();
     for (const s of R.snaps) {
       s.sourcesAlive.filter((a) => exempt.has(a.ch) && a.route.includes('worklet')).forEach((a) => viaWorklet.add(a.ch));

@@ -33,6 +33,8 @@ export const SCENARIOS = {
   LOOP: { query: 'seq=LOOP&n=8&order=A', timeout: 120 },
   // Laço de start() travado no meio de 12 seeks: o play descarta e reagenda tudo junto.
   STALL: { query: 'seq=STALL&n=8&order=A', timeout: 90 },
+  // Repertório: A (24 canais) +2, B (10) +3, C (30) +2, remove B, A de volta e no tom 0.
+  SONGS: { query: 'seq=SONGS&order=A&dur=30', timeout: 180 },
   // Nível de faixa mono e estéreo (pan total e centro), tom 0 x transposto.
   LEVELS: { query: 'seq=LEVELS&order=A', timeout: 90 },
   // Tom inválido (NaN) chegando no motor.

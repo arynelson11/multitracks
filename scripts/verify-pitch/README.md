@@ -29,6 +29,7 @@ transposto no R. Sai com código 1 se algum critério falhar. JSON em
 | `RESTART` | buraco no reinício (seek tocando) no tom 0 e no +2 |
 | `LOOP` | loop de seção tocando, no tom 0 e no +2: buraco na emenda (descontado o atraso do rAF que detecta o fim da seção) e volta sem await |
 | `STALL` | laço de `start()` travado 15 ms no meio (o motor de áudio passa do instante comum): o play descarta e reagenda todas as faixas juntas |
+| `SONGS` | repertório com 3 músicas: A (24 canais) +2, B (10) +3, C (30) +2, remove B com C tocando, A de volta (+2) e no tom 0. Fontes sem órfãs, worklets rodando = faixas transpostas da música atual, total de worklets <= maior música, sem salto de posição, som em todas as faixas |
 | `NAN` | tom inválido (NaN) chegando no motor |
 | `METRONOMO` | click "Metrônomo" (com acento) gravado depois dos stems, como o Separador faz |
 
