@@ -83,10 +83,26 @@ describe('pulso', () => {
       click: 'Click', pulse: ['BASS'], bass: 'BASS', harmony: ['Pad'], label: 'Baixo',
     })
   })
-  it('Synth Bass não vira pulso sozinho', () => {
+  // Ajuste do coordenador: pacote só com Synth Bass não pode cair em sem-faixa.
+  it('sem Baixo, o pulso tirado do baixo usa o primeiro Synth Bass', () => {
     expect(pick(mk(['SYNTH BASS', 'Pad']))).toEqual({
-      click: null, pulse: [], bass: 'SYNTH BASS', harmony: ['Pad'], label: 'Synth Bass',
+      click: null, pulse: ['SYNTH BASS'], bass: 'SYNTH BASS', harmony: ['Pad'], label: 'Synth Bass',
     })
+  })
+  it('com Baixo presente, o pulso tirado do baixo continua preferindo o Baixo', () => {
+    expect(pick(mk(['Pad', 'SUB', 'BASS']))).toEqual({
+      click: null, pulse: ['BASS'], bass: 'BASS', harmony: ['Pad'], label: 'Baixo',
+    })
+  })
+  // Ajuste do coordenador: "drum" no singular também é kit inteiro; "Kit" e "Bat" sozinhos não.
+  it('"drum" no singular conta como kit inteiro', () => {
+    expect(pick(mk(['Drum', 'Drum Loop'])).pulse).toEqual(['Drum'])
+    expect(pick(mk(['Drum L', 'Drum R', 'Drum Fills'])).pulse).toEqual(['Drum L', 'Drum R'])
+    expect(pick(mk(['DRUM KIT', 'LOOP', 'PERC'])).pulse).toEqual(['DRUM KIT'])
+  })
+  it('"Kit" e "Bat" sozinhos não contam como kit inteiro (ambíguos)', () => {
+    expect(pick(mk(['KIT', 'Drum Loop'])).pulse).toEqual(['KIT', 'Drum Loop'])
+    expect(pick(mk(['Bat', 'Drum Fills'])).pulse).toEqual(['Bat', 'Drum Fills'])
   })
 })
 

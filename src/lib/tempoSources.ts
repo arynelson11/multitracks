@@ -24,7 +24,8 @@ const HARMONY_FAMILIES: ReadonlySet<ChannelFamily> = new Set(['pad', 'teclado', 
 const HARMONY_MAX = 2
 
 // Kit inteiro: o canal da bateria toda. Loop e virada tocam só parte da música.
-const FULL_KIT_WORDS: ReadonlySet<string> = new Set(['drums', 'bateria', 'batera'])
+// "Kit" e "Bat" sozinhos são ambíguos e não contam.
+const FULL_KIT_WORDS: ReadonlySet<string> = new Set(['drum', 'drums', 'bateria', 'batera'])
 const PARTIAL_KIT_WORDS: ReadonlySet<string> = new Set(['loop', 'loops', 'fill', 'fills'])
 
 interface Candidate<T> {
@@ -66,9 +67,9 @@ export function pickTempoSources<T extends ChannelIdentity>(channels: readonly T
   const first = (family: ChannelFamily) => candidates.find((c) => c.family === family)
 
   const percussive = candidates.filter((c) => PULSE_FAMILIES.has(c.family))
-  const firstBaixo = first('baixo')
-  const pulse = percussive.length > 0 ? pickPulse(percussive) : firstBaixo ? [firstBaixo] : []
-  const bass = firstBaixo ?? first('synthBass')
+  // Primeiro Baixo; sem ele, primeiro Synth Bass. Sem bateria nem percussão, ele é o pulso.
+  const bass = first('baixo') ?? first('synthBass')
+  const pulse = percussive.length > 0 ? pickPulse(percussive) : bass ? [bass] : []
   const harmony = candidates.filter((c) => HARMONY_FAMILIES.has(c.family)).slice(0, HARMONY_MAX)
   const analyzed = bass ? [...pulse, bass] : pulse
 
