@@ -346,6 +346,18 @@ describe('plano das saídas', () => {
     for (const o of [2, 3, 4, 5, 6, 7]) for (const k of [4, 5, 6, 7]) expect(sig[o][k]).toBe(0)
   })
 
+  it('aparelho de 1 canal: tudo junto no canal único, com o aviso mono e sem RangeError', async () => {
+    mem.ctxOpts = { maxChannelCount: 1 }
+    seed(song('s1', { click: 0.6 }))
+    const hook = await openApp()
+    expect(hook.result.current.outputPlan).toMatchObject({ mode: 'stereo', channels: 1, fellBackFrom: 'split2', warning: 'mono' })
+    expect(hook.result.current.maxOutputChannels).toBe(1)
+    expect(ctxOf().destination.channelCount).toBe(1)
+    // Nada a separar: o knob vale, como em "Tudo junto".
+    expect(panOf(hook, 's1-click')).toBe(0.6)
+    expect(warn.mock.calls.filter((c) => String(c[0]).includes('[saídas]'))).toEqual([])
+  })
+
   it('troca de aparelho refaz o plano com os canais do aparelho novo', async () => {
     mem.ctxOpts = { maxChannelCount: 2, sinks: { placa: 8, fone: 2 } }
     mem.settings = { ...mem.settings, outputs: MULTI }
