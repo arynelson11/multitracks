@@ -318,11 +318,19 @@ function legacyRoleFromName(raw: string): ChannelRole | undefined {
   return undefined
 }
 
-// Papel automático pelo nome. O papel manual (`role`) é decidido antes, em resolveChannelRole.
-export function roleFromName(raw: string): ChannelRole {
+// Papel pela palavra inteira, sem o teste antigo.
+function roleFromWords(raw: string): ChannelRole {
   const family = matchFamily(raw, false)?.familyRule.family
   if (family === 'click') return 'click'
   if (family === 'guia') return 'guide'
+  return 'normal'
+}
+
+// Papel automático pelo nome do arquivo: a palavra e, se ela não der Click nem Guia,
+// o teste antigo. O papel manual (`role`) é decidido antes, em resolveChannelRole.
+export function roleFromName(raw: string): ChannelRole {
+  const fromWords = roleFromWords(raw)
+  if (fromWords !== 'normal') return fromWords
   return legacyRoleFromName(raw) ?? 'normal'
 }
 
@@ -330,13 +338,19 @@ function hasCustomName(ch: ChannelIdentity): ch is ChannelIdentity & { customNam
   return typeof ch.customName === 'string' && ch.customName.trim() !== ''
 }
 
-// Manual vence; renomear não tira o papel que veio do nome original.
+// Manual vence; renomear não tira o papel que veio do nome original. Ordem: palavra
+// no nome do arquivo, palavra no nome do usuário e, só então, o teste antigo no nome
+// do ARQUIVO. O teste antigo existe pras músicas já salvas; no nome digitado ele
+// tiraria da PA um "Violão Aguiar" ou um "Teclado guiado".
 export function resolveChannelRole(ch: ChannelIdentity): ChannelRole {
   if (ch.role) return ch.role
-  const fromName = roleFromName(ch.name)
+  const fromName = roleFromWords(ch.name)
   if (fromName !== 'normal') return fromName
-  if (hasCustomName(ch)) return roleFromName(ch.customName)
-  return 'normal'
+  if (hasCustomName(ch)) {
+    const fromCustom = roleFromWords(ch.customName)
+    if (fromCustom !== 'normal') return fromCustom
+  }
+  return legacyRoleFromName(ch.name) ?? 'normal'
 }
 
 export function channelFamily(ch: ChannelIdentity): ChannelFamily {

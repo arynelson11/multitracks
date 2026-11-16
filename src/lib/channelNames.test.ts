@@ -328,6 +328,22 @@ describe('compatibilidade com o detector antigo: o antigo pegava, o novo tem que
     expect(roleFromName(name)).toBe(role)
     expect(buildChannelLabels([{ id: '1', name }])[0]).toMatchObject({ label, role })
   })
+  // Junção (R1): o teste antigo existe pras músicas já salvas, então só vale no nome
+  // do ARQUIVO. O nome digitado pelo usuário só conta por palavra inteira.
+  it.each([
+    ['GTR', 'Violão Aguiar', 'normal', 'violao'],
+    ['Piano', 'Teclado guiado', 'normal', 'teclado'],
+  ])('%s renomeado "%s": letras de guia/click dentro de outra palavra não mudam o papel', (name, customName, role, family) => {
+    const ch = { id: '1', name, customName }
+    expect([resolveChannelRole(ch), channelFamily(ch)]).toEqual([role, family])
+  })
+  it('vozguia renomeado "Click": a palavra do nome do usuário decide antes do teste antigo', () => {
+    expect(resolveChannelRole({ id: '1', name: 'vozguia', customName: 'Click' })).toBe('click')
+  })
+  it('vozguia renomeado sem palavra de papel continua Guia pelo teste antigo no nome do arquivo', () => {
+    const ch = { id: '1', name: 'vozguia', customName: 'Voz do Zé' }
+    expect([resolveChannelRole(ch), channelFamily(ch)]).toEqual(['guide', 'guia'])
+  })
   it('papel manual vence: vozguia com papel Normal continua Normal', () => {
     const ch = { id: '1', name: 'vozguia', role: 'normal' as const }
     expect([resolveChannelRole(ch), channelFamily(ch)]).toEqual(['normal', 'desconhecido'])
