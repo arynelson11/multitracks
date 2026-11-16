@@ -108,16 +108,36 @@ describe('fadeOutVoices e restoreVoices', () => {
     // Só automação: a fonte continua, quem solta é o agendador.
     expect(asFake(voices[0].source).stops).toEqual([])
   })
-  it('restaurar antes do pulo apaga a descida e volta pra 1 já', () => {
+  it('restaurar antes do pulo apaga a descida e o envelope fica em 1', () => {
     const { ctx, voices } = setup()
     fadeOutVoices(voices, 10, 0.005)
     ctx.currentTime = 9.5
     restoreVoices(voices, 9.5)
     for (const v of voices) {
-      expect(asFake(v.env.gain).events.slice(-2)).toEqual([{ kind: 'cancel', time: 9.5 }, { kind: 'set', value: 1, time: 9.5 }])
-      expect(valueAt(v.env.gain, 9.5)).toBe(1); expect(valueAt(v.env.gain, 10)).toBe(1); expect(valueAt(v.env.gain, 15)).toBe(1)
+      expect(asFake(v.env.gain).events.at(-1)).toEqual({ kind: 'linear', value: 1, time: 9.5 + 0.005 })
+      for (const t of [9.5, 9.502, 9.995, 9.9975, 10, 15]) expect(valueAt(v.env.gain, t)).toBe(1)
     }
   })
+  for (const withoutHold of [false, true]) {
+    it(`restaurar no meio da descida volta a 1 em 5 ms, sem salto${withoutHold ? ' (sem cancelAndHoldAtTime)' : ''}`, () => {
+      const { ctx, voices } = setup()
+      fadeOutVoices(voices, 10, 0.005)
+      const now = 9.9975 // envelope em 0,5
+      const sr = ctx.sampleRate
+      const tocado = voices.map((v) => valueAt(v.env.gain, now - 1 / sr)) // a amostra antes de now já saiu
+      ctx.currentTime = now
+      // Firefox não tem cancelAndHoldAtTime: cai em cancelScheduledValues + setValueAtTime(valor atual).
+      if (withoutHold) for (const v of voices) Object.defineProperty(v.env.gain, 'cancelAndHoldAtTime', { value: undefined })
+      restoreVoices(voices, now)
+      voices.forEach((v, i) => {
+        expect(valueAt(v.env.gain, now)).toBeCloseTo(0.5, 10)
+        expect(valueAt(v.env.gain, now + 0.005)).toBe(1); expect(valueAt(v.env.gain, 10.01)).toBe(1); expect(valueAt(v.env.gain, 12)).toBe(1)
+        let worst = 0; let prev = tocado[i]
+        for (let k = 0; k <= 0.02 * sr; k++) { const g = valueAt(v.env.gain, now + k / sr); worst = Math.max(worst, Math.abs(g - prev)); prev = g }
+        expect(worst).toBeLessThanOrEqual(1 / (0.005 * sr) + 1e-12) // nenhuma amostra muda mais que a rampa de 5 ms
+      })
+    })
+  }
   it('lista vazia não faz nada', () => {
     expect(() => { fadeOutVoices([], 10, 0.005); restoreVoices([], 9); stopVoices([], 9) }).not.toThrow()
   })

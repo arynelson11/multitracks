@@ -75,11 +75,19 @@ export function fadeOutVoices(voices: readonly Voice[], T: number, fade: number)
   }
 }
 
-/** Pulo cancelado: apaga a descida agendada e devolve o envelope pra 1 em `now`. */
+// Volta do envelope pra 1 quando o pulo é cancelado.
+const RESTORE_RAMP = 0.005
+
+/**
+ * Pulo cancelado: apaga a descida agendada e devolve o envelope pra 1. Seguro em qualquer
+ * instante, inclusive no meio da descida: segura o valor de `now` (`holdAt`) e sobe até 1 em
+ * 5 ms, sem salto de ganho. Antes da descida (o caso do agendador, que só cancela até
+ * `T - 0,03`) o valor segurado já é 1 e o som não muda. Chamar com `now` = `ctx.currentTime`.
+ */
 export function restoreVoices(voices: readonly Voice[], now: number): void {
   for (const v of voices) {
-    v.env.gain.cancelScheduledValues(now)
-    v.env.gain.setValueAtTime(1, now)
+    holdAt(v.env.gain, now)
+    v.env.gain.linearRampToValueAtTime(1, now + RESTORE_RAMP)
   }
 }
 
