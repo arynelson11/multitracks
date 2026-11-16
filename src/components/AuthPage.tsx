@@ -3,7 +3,13 @@ import { Mail, Lock, Loader2, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark';
 import { isElectron, onDeepLinkAuth } from '../lib/desktop';
-import { startPasswordRecovery } from '../lib/passwordRecovery';
+import { SITE_URL } from '../content/site';
+
+// Os links dos e-mails de cadastro e de recuperar senha sempre voltam no site, na web e no
+// desktop (o app de file:// não recebe link de e-mail com segurança: o deep link se perde se o
+// app não estiver aberto, e no celular não abre nada). A tela Criar nova senha fica no site.
+const AUTH_EMAIL_REDIRECT = `${SITE_URL}/`;
+const DESKTOP_RECOVERY_HINT = 'Abra o link do e-mail no navegador, crie a nova senha e volte ao app para entrar.';
 
 import { DomingoMark } from './brand/DomingoMark';
 
@@ -25,6 +31,13 @@ export function AuthPage({ }: AuthPageProps) {
         const cleanup = onDeepLinkAuth(async (fragment) => {
             // fragment = "access_token=xxx&refresh_token=yyy&..."
             const params = new URLSearchParams(fragment);
+            // Recuperar senha não passa pelo app: se um link desses chegar aqui, não loga
+            // com ele e orienta a usar o navegador (mensagem própria, não a do Google).
+            if (params.get('type') === 'recovery') {
+                setError(null);
+                setMessage(DESKTOP_RECOVERY_HINT);
+                return;
+            }
             const accessToken = params.get('access_token');
             const refreshToken = params.get('refresh_token');
 
@@ -34,10 +47,7 @@ export function AuthPage({ }: AuthPageProps) {
                     refresh_token: refreshToken,
                 });
                 if (error) {
-                    setError('Erro ao restaurar sessão do Google: ' + error.message);
-                } else if (params.get('type') === 'recovery') {
-                    // Link de recuperar senha aberto no computador: abre a tela Criar nova senha.
-                    startPasswordRecovery();
+                    setError('Erro ao entrar com o Google: ' + error.message);
                 }
                 // Se deu certo, o onAuthStateChange do useAuth vai pegar a sessão.
             }
@@ -57,19 +67,18 @@ export function AuthPage({ }: AuthPageProps) {
                 const { error } = await supabase!.auth.signInWithPassword({ email, password });
                 if (error) throw error;
             } else if (mode === 'register') {
-                const { error } = await supabase!.auth.signUp({ email, password });
+                const { error } = await supabase!.auth.signUp({
+                    email,
+                    password,
+                    options: { emailRedirectTo: AUTH_EMAIL_REDIRECT },
+                });
                 if (error) throw error;
                 setMessage('Cadastro feito. Verifica seu email pra confirmar.');
             } else if (mode === 'forgot') {
-                // No app desktop o link do email volta pelo playbackstudio:// e abre a tela de
-                // nova senha no próprio app; no navegador volta no site (Site URL do Supabase).
-                const { error } = await supabase!.auth.resetPasswordForEmail(
-                    email,
-                    isElectron ? { redirectTo: 'playbackstudio://auth/callback' } : undefined,
-                );
+                const { error } = await supabase!.auth.resetPasswordForEmail(email, { redirectTo: AUTH_EMAIL_REDIRECT });
                 if (error) throw error;
                 setMessage(isElectron
-                    ? 'Instruções de recuperação enviadas pro seu email. Abra o link neste computador, com o app instalado.'
+                    ? `Instruções de recuperação enviadas pro seu e-mail. ${DESKTOP_RECOVERY_HINT}`
                     : 'Instruções de recuperação enviadas pro seu email.');
             }
         } catch (err: any) {
