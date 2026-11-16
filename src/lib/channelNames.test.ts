@@ -63,11 +63,25 @@ describe('rótulos da lista', () => {
     // Paleta aprovada pelo dono (P4): uma cor por grupo; o violão tem grupo próprio.
     expect(FAMILY_COLOR).toEqual({ click: '#94a3b8', guia: '#a8a29e', bateria: '#d4a373', percussao: '#d4a373',
       baixo: '#22c55e', synthBass: '#22c55e', violao: '#2dd4bf', guitarra: '#14b8a6', teclado: '#818cf8',
-      piano: '#818cf8', pad: '#818cf8', ambiencia: '#818cf8', vocal: '#06b6d4', backing: '#06b6d4', desconhecido: '#7a7a85' })
+      piano: '#818cf8', pad: '#818cf8', ambiencia: '#818cf8', vocal: '#06b6d4', backing: '#06b6d4', desconhecido: '#878792' })
   })
   it('nenhuma cor de família repete cor de estado', () => {
     // ps-or (ligado), ps-arm (armado), ps-alert (alerta), ps-mute (M) e ps-solo (S).
     for (const c of Object.values(FAMILY_COLOR)) expect(['#ff6b35', '#f5f5f7', '#fbbf24', '#ef4444', '#facc15']).not.toContain(c.toLowerCase())
+  })
+  it('toda cor de família tem contraste de pelo menos 4,5:1 sobre o fundo #121214 (WCAG)', () => {
+    // Luminância relativa da WCAG 2: canal sRGB linearizado, pesos 0,2126 / 0,7152 / 0,0722.
+    const luminance = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+        .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    const fundo = luminance('#121214')
+    for (const [family, c] of Object.entries(FAMILY_COLOR)) {
+      const l = luminance(c)
+      const ratio = (Math.max(l, fundo) + 0.05) / (Math.min(l, fundo) + 0.05)
+      expect(ratio, `${family} ${c}`).toBeGreaterThanOrEqual(4.5)
+    }
   })
 })
 

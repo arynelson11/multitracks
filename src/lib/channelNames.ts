@@ -44,11 +44,12 @@ export const FAMILY_LABEL: Record<KnownFamily, string> = {
 }
 
 // Paleta aprovada pelo dono (P4): uma cor por grupo (o violão tem grupo próprio). Nenhuma
-// repete cor de estado (ligado, armado, alerta, M, S) nem cor de seção.
+// repete cor de estado (ligado, armado, alerta, M, S) nem cor de seção, e todas têm
+// contraste de pelo menos 4,5:1 sobre o fundo #121214.
 export const FAMILY_COLOR: Record<ChannelFamily, string> = {
   click: '#94a3b8', guia: '#a8a29e', bateria: '#d4a373', percussao: '#d4a373', baixo: '#22c55e',
   synthBass: '#22c55e', violao: '#2dd4bf', guitarra: '#14b8a6', teclado: '#818cf8', piano: '#818cf8',
-  pad: '#818cf8', ambiencia: '#818cf8', vocal: '#06b6d4', backing: '#06b6d4', desconhecido: '#7a7a85',
+  pad: '#818cf8', ambiencia: '#818cf8', vocal: '#06b6d4', backing: '#06b6d4', desconhecido: '#878792',
 }
 
 export const FAMILY_RANK: Record<ChannelFamily, number> = {
