@@ -3,10 +3,36 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import electron from 'vite-plugin-electron/simple'
+import type { Plugin } from 'vite'
+import { dropUnsetSearchConsoleTag, stripHtmlComments } from './src/lib/siteHtml'
 
 // DESKTOP=1 ativa o variante Electron (scripts *:desktop).
 // Sem a flag, é o build normal do site (idêntico ao de antes).
 const isDesktop = !!process.env.DESKTOP
+
+// Limpa o index.html publicado (site e desktop): nenhum comentário sai no HTML e a meta
+// do Google Search Console só sai quando tiver o código de verdade.
+// Notas do index.html que antes eram comentários dentro dele:
+// - viewport: maximum-scale=1 faz o iPhone não dar zoom sozinho ao tocar num campo
+//   (o zoom com dois dedos continua no iOS).
+// - apple-touch-icon: quadrado com fundo cheio (180x180); o iOS aplica os cantos e
+//   canto transparente viraria preto.
+// - mobile-web-app-capable: o app instalado na tela de início abre sem a barra do navegador.
+// - apple-mobile-web-app-status-bar-style 'black' (e não 'black-translucent'): o app fica
+//   abaixo do relógio/notch. Com translucent ele desenha por baixo e o CSS não trata
+//   safe-area, então VOLTAR/SALVAR do topo ficariam escondidos atrás do relógio.
+// - google-site-verification: troque COLE_AQUI_O_CODIGO_DO_SEARCH_CONSOLE pelo código que
+//   o Search Console mostra no método "Tag HTML" (só o valor do content).
+function siteHtml(): Plugin {
+  return {
+    name: 'playback-site-html',
+    enforce: 'post',
+    transformIndexHtml: {
+      order: 'post',
+      handler: (html) => dropUnsetSearchConsoleTag(stripHtmlComments(html)),
+    },
+  }
+}
 
 export default defineConfig({
   // Assets relativos no desktop pra resolverem sob file://; '/' no site.
@@ -106,5 +132,6 @@ export default defineConfig({
           }),
         ]
       : []),
+    siteHtml(),
   ],
 })
