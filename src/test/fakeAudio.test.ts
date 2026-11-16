@@ -240,6 +240,14 @@ describe('ligações', () => {
     const d = ctx.createDelay(); const fb = ctx.createGain(); d.connect(fb); fb.connect(d)
     expect(reaches(d, out)).toBe(false); expect(reaches(d, d)).toBe(true)
   })
+  it('modular um AudioParam do nó conta como chegar no nó (mas não numa entrada dele)', () => {
+    const ctx = createFakeAudioContext(); const lfo = ctx.createOscillator(); const vca = ctx.createGain(); const bus = ctx.createGain()
+    bus.connect(lfo.frequency); lfo.connect(vca.gain)
+    expect(reaches(lfo, vca)).toBe(true)
+    expect(reaches(bus, vca)).toBe(true)
+    expect(reaches(lfo, vca, 0)).toBe(false)
+    expect(reaches(lfo, vca.gain)).toBe(true)
+  })
   it('nó opaco (sem connections, como o mock antigo do worklet) lança em vez de dizer "não" sem provar', () => {
     const ctx = createFakeAudioContext(); const beeps = ctx.createOscillator(); const vs = ctx.createChannelMerger(4)
     const opaque = { connectedTo: null as unknown, connect(dest: unknown) { opaque.connectedTo = dest } }

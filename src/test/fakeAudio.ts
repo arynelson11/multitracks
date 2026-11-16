@@ -673,7 +673,8 @@ type Carried = 'all' | number // canal que leva o sinal de `from` no fluxo daque
 /**
  * Busca no grafo inteiro: algum caminho leva o som de `from` até `to` (chegando na entrada
  * `input`, se pedida)? Segue ligações em nós (inclusive o FakeWorkletNode do worklet de tom),
- * em AudioParam (o sinal que modula um parâmetro sai pelo dono dele) e em objeto que grave
+ * em AudioParam (o sinal que modula um parâmetro chega no dono e sai por ele; sem `input`,
+ * modular um parâmetro de `to` já conta como chegar em `to`) e em objeto que grave
  * `connections` no mesmo formato. Item opaco no caminho (sem `connections`) lança em vez de
  * parar em silêncio. Respeita merger e splitter: entrar no merger pela entrada i põe o sinal
  * só no canal i; o splitter só passa esse canal na saída de mesmo número. Um nó comum no
@@ -696,6 +697,8 @@ export function reaches(from: FakeGraphItem, to: FakeGraphItem, input?: number):
     for (const c of connectionsOf(item)) {
       if (splitter && carried !== 'all' && c.output !== carried) continue
       if (c.to === to && (input === undefined || c.input === input)) return true
+      // Modular um parâmetro do nó é chegar no nó (o som dele muda), mas não por uma entrada.
+      if (c.to instanceof FakeAudioParam && c.to.owner === to && input === undefined) return true
       if (c.to instanceof FakeAudioParam) visit(c.to.owner, 'all')
       else if (c.to instanceof FakeChannelMergerNode) visit(c.to, c.input)
       else if (c.to instanceof FakeChannelSplitterNode) visit(c.to, splitter ? 0 : carried)
