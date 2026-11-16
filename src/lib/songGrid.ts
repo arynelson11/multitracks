@@ -1,5 +1,5 @@
-// Grade da música (Parte 2): barras de compasso, encaixe das seções na barra, seções em
-// trechos contínuos e o aviso âmbar quando a grade falta ou foi assumida.
+// Grade da música (Parte 2): barras de compasso, encaixe das seções na barra ou no pulso do
+// click, seções em trechos contínuos e o aviso âmbar quando a grade falta ou foi assumida.
 // Puro: sem React e sem Web Audio. Tempos em segundos da música.
 import type { Marker } from '../types'
 import {
@@ -56,7 +56,8 @@ function isUsableGrid(g: SongGrid): boolean {
 /**
  * Encaixa `t` na barra mais perto quando a grade sabe onde cai o 1 e a barra está a no máximo
  * 1/4 de compasso; senão devolve `t`. `t <= 0` é sempre 0 (marca em 0:00 nunca mexe), e a
- * barra antes de 0:00 encaixa em 0: o encaixe nunca devolve tempo negativo.
+ * barra antes de 0:00 encaixa em 0: o encaixe nunca devolve tempo negativo. Só a barra: o início
+ * de seção que fica longe dela vai pro pulso no `sectionSpans`.
  */
 export function snapToBar(t: number, g: SongGrid | null): number {
   if (t <= 0) return 0
