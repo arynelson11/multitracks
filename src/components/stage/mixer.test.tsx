@@ -689,9 +689,10 @@ describe('mixer inteiro', () => {
       unobserve() {}
       disconnect() {}
     })
-    // 1280 px: 1280 - 2 x 16 de margem - 10 de vão - 116 do PRINCIPAL = 1122 px de mixer (4 px de cada lado por dentro).
+    // 1280 px: 1280 - 2 x 16 de margem - 10 de vão - 116 do PRINCIPAL = 1122 px de caixa; menos 4 px de folga
+    // de cada lado da caixa (parada) = 1114 px de área que rola.
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
-      return this.dataset.mixerScroll !== undefined ? 1122 : 0
+      return this.dataset.mixerScroll !== undefined ? 1114 : 0
     })
     const many = (n: number) => Array.from({ length: n }, (_, i) => stageChannel(`k${i}`, `Teclado ${i + 1}`))
     const { rerenderWith, container } = renderMixer(view({ channels: many(14) }))
@@ -714,7 +715,11 @@ describe('mixer inteiro', () => {
     expect(scroller.className).toContain('overflow-x-auto')
     expect(scroller.className).toContain('snap-x')
     expect(scroller.className).toContain('snap-mandatory')
-    expect(scroller.className).toContain('scroll-px-1') // encaixe com a mesma folga de 4 px dos lados
+    // A folga de 4 px dos lados fica na caixa, que não rola: a área que rola mostra só canais inteiros.
+    const box = container.querySelector<HTMLElement>('[data-mixer-box]')!
+    expect(box.contains(scroller)).toBe(true)
+    expect(box.className).toContain('px-1')
+    expect(scroller.className).not.toMatch(/\bp[xl]?-|\bpr-/)
 
     // EDITAR CANAIS: mínimo de 88 px pra lixeira armada caber; em 1280 px ficam 12 inteiros e o resto rola.
     rerenderWith(view({ channels: many(14), channelEditMode: true }))
@@ -742,16 +747,16 @@ describe('mixer inteiro', () => {
       return this.dataset.mixerScroll !== undefined ? 220 - bar : 0
     })
     const { container } = renderMixer()
-    const scroller = container.querySelector<HTMLElement>('[data-mixer-scroll]')!
+    const box = container.querySelector<HTMLElement>('[data-mixer-box]')!
     act(() => { for (const o of observers) o() })
-    expect(scroller.style.paddingBottom).toBe('') // sem barra: a folga de 8 px da classe
-    expect(scroller.className).toContain('pb-2')
+    expect(box.style.paddingBottom).toBe('') // sem barra: a folga de 8 px da classe
+    expect(box.className).toContain('pb-2')
     bar = 5 // barra de 5 px do index.css (Chrome e app)
     act(() => { for (const o of observers) o() })
-    expect(scroller.style.paddingBottom).toBe('3px')
+    expect(box.style.paddingBottom).toBe('3px')
     bar = 12 // barra mais grossa que a folga: folga zero, nunca negativa
     act(() => { for (const o of observers) o() })
-    expect(scroller.style.paddingBottom).toBe('0px')
+    expect(box.style.paddingBottom).toBe('0px')
   })
 
   it('alvos de toque: pan, lápis, alça, lixeira, PRONTO (EDITAR CANAIS ligado) e mudo geral com 44 px', () => {

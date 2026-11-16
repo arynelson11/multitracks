@@ -13,8 +13,6 @@ export interface StageMixerProps { view: Pick<StageView, 'channels' | 'channelEd
 const STRIP_MIN_PX = 76
 /** No EDITAR CANAIS o canal fica mais largo, pra lixeira armada ("Apagar?", 80 px medidos no Chrome) caber com 4 px de cada lado. */
 const EDIT_STRIP_MIN_PX = 88
-/** Folga de cada lado por dentro da caixa do mixer (px-1). */
-const SCROLL_PAD_X_PX = 4
 /** Folga de baixo da caixa do mixer (pb-2). Com a barra de rolagem de lado, a barra ocupa parte dela. */
 const SCROLL_PAD_BOTTOM_PX = 8
 
@@ -58,7 +56,7 @@ export function StageMixer({ view, actions, clock }: StageMixerProps) {
     const el = scrollRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(() => {
-      setInnerWidth(Math.max(0, el.clientWidth - 2 * SCROLL_PAD_X_PX))
+      setInnerWidth(el.clientWidth)
       setScrollbar(Math.max(0, el.offsetHeight - el.clientHeight))
     })
     ro.observe(el)
@@ -120,41 +118,42 @@ export function StageMixer({ view, actions, clock }: StageMixerProps) {
   return (
     <section aria-label="Mixer" data-tour="mixer" className="flex h-full min-h-0 w-full gap-2.5 font-ps-sans">
       <div
-        ref={scrollRef}
-        data-mixer-scroll=""
+        data-mixer-box=""
         // A barra de rolagem entra na folga de baixo: os faders dos canais continuam na linha do fader do PRINCIPAL.
-        // scroll-px-1: o encaixe respeita a folga de 4 px dos lados, então o canal encaixado não fica rente
-        // à borda e nenhum pedaço do canal vizinho aparece.
         style={scrollbar > 0 ? { paddingBottom: Math.max(0, SCROLL_PAD_BOTTOM_PX - scrollbar) } : undefined}
-        className="flex min-w-0 flex-1 snap-x snap-mandatory scroll-px-1 overflow-x-auto overflow-y-hidden rounded-ps-2xl bg-ps-well px-1 pt-2.5 pb-2 inset-ring inset-ring-ps-line"
+        className="flex min-w-0 flex-1 rounded-ps-2xl bg-ps-well px-1 pt-2.5 pb-2 inset-ring inset-ring-ps-line"
       >
-        {channels.length === 0 && <p className="m-auto px-4 text-center text-ps-sm text-ps-mut">Os canais da música aparecem aqui.</p>}
-        {channels.map((ch, i) => (
-          <div
-            key={ch.id}
-            data-strip-slot={i}
-            data-dragging={drag?.from === i}
-            data-drop-target={drag !== null && drag.over === i && drag.over !== drag.from}
-            className={cx(SLOT, !scrolls && FILL_SLOT[minWidth])}
-            style={scrolls ? { width: fit.width } : undefined}
-          >
-            <ChannelStrip
-              ch={ch}
-              panEditable={panEditable(outputs.mode, ch)}
-              editMode={channelEditMode}
-              clock={clock}
-              count={ch.id === click.channelId ? transition : null}
-              onVolume={(g) => actions.setVolume(ch.id, g)}
-              onPan={(p) => actions.setPan(ch.id, p)}
-              onMute={() => actions.toggleMute(ch.id)}
-              onSolo={() => actions.toggleSolo(ch.id)}
-              onEdit={() => actions.openChannelEdit(ch.id)}
-              onRemove={() => trash.press(ch.id)}
-              removeArmed={trash.armedId === ch.id}
-              dragHandle={channelEditMode ? handleFor(i) : undefined}
-            />
-          </div>
-        ))}
+        {/* A folga dos lados fica na caixa, que não rola: a área que rola tem a largura exata dos canais
+            inteiros, então encaixado em qualquer posição nenhum pedaço de canal vizinho aparece. */}
+        <div ref={scrollRef} data-mixer-scroll="" className="flex min-w-0 flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden">
+          {channels.length === 0 && <p className="m-auto px-4 text-center text-ps-sm text-ps-mut">Os canais da música aparecem aqui.</p>}
+          {channels.map((ch, i) => (
+            <div
+              key={ch.id}
+              data-strip-slot={i}
+              data-dragging={drag?.from === i}
+              data-drop-target={drag !== null && drag.over === i && drag.over !== drag.from}
+              className={cx(SLOT, !scrolls && FILL_SLOT[minWidth])}
+              style={scrolls ? { width: fit.width } : undefined}
+            >
+              <ChannelStrip
+                ch={ch}
+                panEditable={panEditable(outputs.mode, ch)}
+                editMode={channelEditMode}
+                clock={clock}
+                count={ch.id === click.channelId ? transition : null}
+                onVolume={(g) => actions.setVolume(ch.id, g)}
+                onPan={(p) => actions.setPan(ch.id, p)}
+                onMute={() => actions.toggleMute(ch.id)}
+                onSolo={() => actions.toggleSolo(ch.id)}
+                onEdit={() => actions.openChannelEdit(ch.id)}
+                onRemove={() => trash.press(ch.id)}
+                removeArmed={trash.armedId === ch.id}
+                dragHandle={channelEditMode ? handleFor(i) : undefined}
+              />
+            </div>
+          ))}
+        </div>
       </div>
       <MasterStrip
         master={master}
