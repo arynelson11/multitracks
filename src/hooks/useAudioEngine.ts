@@ -1331,6 +1331,13 @@ export function useAudioEngine(userId?: string) {
         setIsCountingIn(false);
     }, []);
 
+    // O timer da pré-contagem chama o play() mais novo, com a lista de canais de
+    // quando a contagem acaba: trocar o papel de um canal durante a contagem (tom
+    // diferente de 0) já vale no play. Com o play() da hora do clique, um Click que
+    // virou Normal saía sem transpor na PA até o próximo play.
+    const playRef = useRef(play);
+    useEffect(() => { playRef.current = play; }, [play]);
+
     const playWithPrecount = useCallback(async () => {
         const ctx = audioCtxRef.current;
         if (!ctx) return;
@@ -1375,7 +1382,7 @@ export function useAudioEngine(userId?: string) {
             countInTimeoutRef.current = null;
             countInOscsRef.current = [];
             setIsCountingIn(false);
-            play();
+            void playRef.current();
         }, totalMs);
     }, [precountEnabled, precountBeats, play]);
 

@@ -14,8 +14,8 @@ import src from './useAudioEngine.ts?raw'
 // IndexedDB em memória; a regra em si é testada em src/lib/repertoireSchema.test.ts
 // e src/lib/channelRoles.test.ts.
 
-type FakeParam = { value: number; cancelScheduledValues(): void; setValueAtTime(v: number): void; setTargetAtTime(v: number): void }
-type FakeSource = { offset: number; dest: unknown }
+type FakeParam = { value: number; cancelScheduledValues(): void; setValueAtTime(v: number): void; setTargetAtTime(v: number): void; linearRampToValueAtTime(): void; exponentialRampToValueAtTime(): void }
+type FakeSource = { offset: number; dest: unknown; buffer: unknown }
 // Worklet de tom falso com a API real do pacote: start/stop/schedule/latency, sem
 // close() (o pacote não tem). `active` diz se o DSP está rodando (start sem stop).
 type FakePitchNode = { active: boolean; starts: number; stops: number; connectedTo: unknown }
@@ -88,6 +88,8 @@ function param(value: number): FakeParam {
     cancelScheduledValues: () => {},
     setValueAtTime: (v) => { p.value = v },
     setTargetAtTime: (v) => { p.value = v },
+    linearRampToValueAtTime: () => {},
+    exponentialRampToValueAtTime: () => {},
   }
   return p
 }
@@ -118,6 +120,8 @@ class FakeAudioContext {
     mem.sources.push(source)
     return source
   }
+  // Bipes da pré-contagem.
+  createOscillator() { return { ...audioNode(), type: 'square', frequency: param(0), start() {}, stop() {} } }
   async decodeAudioData() { return { duration: 300 } }
   async resume() {}
 }
@@ -174,6 +178,9 @@ type Engine = Awaited<ReturnType<typeof openApp>>['result']
 const song = (r: Engine, id: string) => r.current.playlist.find((s) => s.id === id)!
 const ids = (r: Engine, songId: string) => song(r, songId).channels.map((c) => c.id)
 const channel = (r: Engine, id: string) => r.current.channels.find((c) => c.id === id)!
+// Fonte que toca o canal, achada pelo buffer dele (não pela posição: um play pode ter
+// agendado a lista numa ordem que já mudou).
+const sourceOf = (r: Engine, id: string) => mem.sources.find((s) => s.buffer === channel(r, id).buffer)!
 const savedSong = (id: string) => saved().find((s) => s.id === id)!
 
 // Registro v1 real (o mesmo da T5): gravado pela versão de antes da Parte 1,
@@ -329,11 +336,10 @@ describe('setChannelMeta', () => {
     seed(v1)
     const { result } = await openApp()
     await act(async () => { await result.current.play() })
-    const sourceOf = (id: string) => mem.sources[ids(result, 's1').indexOf(id)]
     // Tom -2: só o baixo (b) e a guitarra (c) ganham worklet; o Click não.
     expect(mem.pitchNodes).toHaveLength(2)
     const [nodeB, nodeC] = mem.pitchNodes
-    expect(sourceOf('c').dest).toBe(nodeC)
+    expect(sourceOf(result, 'c').dest).toBe(nodeC)
 
     mem.ctx!.currentTime = 10
     mem.sources.length = 0
@@ -348,14 +354,14 @@ describe('setChannelMeta', () => {
     // Todas as faixas retomam do ponto da troca (o play anterior começou em START_LEAD).
     for (const s of mem.sources) expect(s.offset).toBeCloseTo(10 - START_LEAD, 6)
     // A Guia toca sem o worklet, pelo atraso igual à latência dele (alinhada com a banda).
-    expect(sourceOf('c').dest).toMatchObject({ delayTime: { value: PITCH_LATENCY }, connectedTo: channel(result, 'c').pannerNode })
+    expect(sourceOf(result, 'c').dest).toMatchObject({ delayTime: { value: PITCH_LATENCY }, connectedTo: channel(result, 'c').pannerNode })
 
     // O Click que vira Normal entra na troca de tom: reaproveita o worklet da reserva
     // em vez de criar outro.
     mem.sources.length = 0
     await act(async () => { result.current.setChannelMeta('a', { role: 'normal' }) })
     expect(mem.pitchNodes).toHaveLength(2)
-    expect(sourceOf('a').dest).toBe(nodeC)
+    expect(sourceOf(result, 'a').dest).toBe(nodeC)
     expect(nodeC).toMatchObject({ active: true, connectedTo: channel(result, 'a').pannerNode })
   })
 
@@ -377,10 +383,9 @@ describe('setChannelMeta', () => {
     // próximo play, sem worklet novo.
     await act(async () => { result.current.setChannelMeta('a', { role: 'normal' }) })
     await act(async () => { await result.current.play() })
-    const sourceOf = (id: string) => mem.sources[ids(result, 's1').indexOf(id)]
     expect(mem.pitchNodes).toHaveLength(2)
-    expect(sourceOf('a').dest).toBe(nodeC)
-    expect(sourceOf('c').dest).toMatchObject({ delayTime: { value: PITCH_LATENCY }, connectedTo: channel(result, 'c').pannerNode })
+    expect(sourceOf(result, 'a').dest).toBe(nodeC)
+    expect(sourceOf(result, 'c').dest).toMatchObject({ delayTime: { value: PITCH_LATENCY }, connectedTo: channel(result, 'c').pannerNode })
   })
 
   it('papel trocado com um play pendente retoma do ponto certo e o play antigo não agenda nada', async () => {
@@ -409,9 +414,35 @@ describe('setChannelMeta', () => {
     expect(mem.sources).toHaveLength(3)
     for (const s of mem.sources) expect(s.offset).toBeCloseTo(10 - START_LEAD, 6)
     // A Guia nova não passa pelo worklet; o baixo sim.
-    const sourceOf = (id: string) => mem.sources[ids(result, 's1').indexOf(id)]
-    expect(mem.pitchNodes.some((n) => sourceOf('c').dest === n)).toBe(false)
-    expect(mem.pitchNodes.some((n) => sourceOf('b').dest === n)).toBe(true)
+    expect(mem.pitchNodes.some((n) => sourceOf(result, 'c').dest === n)).toBe(false)
+    expect(mem.pitchNodes.some((n) => sourceOf(result, 'b').dest === n)).toBe(true)
+  })
+
+  it('papel trocado durante a pré-contagem já vale no play que ela dispara', async () => {
+    localStorage.setItem('precount_enabled', 'true')
+    localStorage.setItem('precount_beats', '1')
+    try {
+      seed(v1)
+      const { result } = await openApp()
+      act(() => { void result.current.playWithPrecount() })
+      expect(result.current.isCountingIn).toBe(true)
+
+      // Durante a contagem (1 tempo a 100 BPM = 600 ms): o Click vira Normal e a
+      // guitarra vira Click. Tom -2.
+      await act(async () => { result.current.setChannelMeta('a', { role: 'normal' }) })
+      await act(async () => { result.current.setChannelMeta('c', { role: 'click' }) })
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 700)) })
+
+      expect(result.current.isPlaying).toBe(true)
+      expect(mem.sources).toHaveLength(3)
+      // O Normal novo transpõe junto com a banda (não sai desafinado na PA); o Click
+      // novo fica fora do worklet.
+      expect(mem.pitchNodes.some((n) => sourceOf(result, 'a').dest === n)).toBe(true)
+      expect(mem.pitchNodes.some((n) => sourceOf(result, 'c').dest === n)).toBe(false)
+    } finally {
+      localStorage.removeItem('precount_enabled')
+      localStorage.removeItem('precount_beats')
+    }
   })
 
   it('no tom 0, trocar o papel tocando não reinicia o áudio', async () => {
