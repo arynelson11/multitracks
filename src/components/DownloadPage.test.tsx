@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { DownloadPage } from './DownloadPage'
 
 afterEach(cleanup)
@@ -31,5 +31,25 @@ describe('DownloadPage', () => {
   it('rodapé com o bloco legal', () => {
     render(<DownloadPage />)
     expect(text()).toContain('Grupo AIO · CNPJ 43.247.025/0001-05 · Macaé/RJ')
+  })
+})
+
+describe('DownloadPage: textos atualizados', () => {
+  it('requisito do macOS 12, Mac Intel pelo processador e sem levada brasileira', () => {
+    render(<DownloadPage />)
+    expect(text()).toContain('12 (Monterey) ou mais novo')
+    expect(text()).not.toContain('Big Sur')
+    expect(text()).toContain('Macs com processador Intel')
+    expect(text()).not.toContain('até 2020')
+    expect(text()).not.toContain('levada brasileira')
+  })
+
+  it('a ajuda do Mac separa o macOS 14 ou mais antigo do macOS 15 ou mais novo', () => {
+    render(<DownloadPage />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Como instalar no Mac' })[0])
+    expect(text()).toContain('Primeira abertura no macOS 14 (Sonoma) ou mais antigo')
+    expect(text()).toContain('No macOS 15 (Sequoia) ou mais novo')
+    expect(text()).toContain('Abrir Mesmo Assim')
+    expect(text()).not.toContain('geralmente resolve já no passo 2')
   })
 })

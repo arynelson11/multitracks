@@ -21,7 +21,7 @@ const FEATURES = [
   { icon: Smartphone, title: 'Controle pela banda', desc: 'Os músicos comandam play, repertório, mixer, pads e tom pelo celular, sempre com a sua liberação.' },
   { icon: FileText, title: 'Letra e cifra', desc: 'Busca automática da letra, com versão sincronizada que rola sozinha no tempo da música.' },
   { icon: Music4, title: 'Pads de ambiente', desc: 'Pads em qualquer tom pra sustentar os momentos do louvor.' },
-  { icon: Keyboard, title: 'Tom e click', desc: 'Mude a tonalidade em segundos, com click de levada brasileira e pré-contagem.' },
+  { icon: Keyboard, title: 'Tom e click', desc: 'Mude o tom em segundos, com click no tempo da música e pré-contagem.' },
 ]
 
 export function DownloadPage() {
@@ -91,7 +91,7 @@ export function DownloadPage() {
           />
           <DownloadButton
             href={MAC_INTEL_URL} icon={<Apple className="w-7 h-7" />}
-            platform="Mac" label="Baixar (Intel)" sub="Macs até 2020" highlighted={isMac}
+            platform="Mac" label="Baixar (Intel)" sub="Macs com processador Intel" highlighted={isMac}
             onHelp={() => setShowHelp('mac')}
           />
           <DownloadButton
@@ -115,7 +115,7 @@ export function DownloadPage() {
             <p className="font-bold text-white mb-1 flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-orange-400" /> Primeira vez abrindo</p>
             {showHelp === 'mac' ? (
               <div className="space-y-4">
-                <p className="text-zinc-400">O app ainda não tem certificado pago da Apple (custa caro e estamos começando), então na primeira vez o Mac avisa antes de abrir. <strong className="text-zinc-200">Isso é normal, o app não tem vírus nem nada de errado.</strong> Segue os passos na ordem, geralmente resolve já no passo 2.</p>
+                <p className="text-zinc-400">O app ainda não tem certificado pago da Apple (custa caro e estamos começando), então na primeira vez o Mac avisa antes de abrir. <strong className="text-zinc-200">Isso é normal, o app não tem vírus nem nada de errado.</strong> Siga os passos da versão do seu macOS (pra ver qual é: menu Apple, Sobre Este Mac).</p>
 
                 <div>
                   <p className="font-semibold text-white mb-1">1. Depois de baixar o arquivo</p>
@@ -123,13 +123,13 @@ export function DownloadPage() {
                 </div>
 
                 <div>
-                  <p className="font-semibold text-white mb-1">2. Primeira abertura (o pulo do gato)</p>
+                  <p className="font-semibold text-white mb-1">2. Primeira abertura no macOS 14 (Sonoma) ou mais antigo</p>
                   <p>Abra o <strong>Finder</strong> e vá em <strong>Applications</strong> (Aplicativos). Ache o <strong>Playback Studio</strong>. <strong className="text-zinc-200">Não dê duplo clique.</strong> Clique com o <strong>botão direito do mouse</strong> em cima do ícone (no trackpad, clique com dois dedos) e escolha <strong>Abrir</strong> no menu que aparecer. Vai surgir um aviso da Apple perguntando se quer mesmo abrir: clique em <strong>Abrir</strong> de novo. Só precisa fazer isso uma vez, da próxima vez pode dar duplo clique normal.</p>
                 </div>
 
                 <div>
-                  <p className="font-semibold text-white mb-1">3. Se o menu não tiver a opção "Abrir"</p>
-                  <p>Clique no <strong>menu Apple</strong> (o logo da maçã, no canto superior esquerdo da tela) e escolha <strong>Ajustes do Sistema</strong> (em Macs mais antigos chama <strong>Preferências do Sistema</strong>). No menu da esquerda, clique em <strong>Privacidade e Segurança</strong>. Role a página até o final: vai ter uma mensagem parecida com <strong>"Playback Studio" foi bloqueado para proteger o Mac</strong>, com um botão <strong>Abrir Mesmo Assim</strong> do lado. Clique nele, digite a senha do seu Mac se pedir, tente abrir o app de novo e confirme uma última vez.</p>
+                  <p className="font-semibold text-white mb-1">3. No macOS 15 (Sequoia) ou mais novo, ou se o menu não tiver a opção "Abrir"</p>
+                  <p>No macOS 15 o atalho do botão direito não libera mais o app. Dê um duplo clique no <strong>Playback Studio</strong> uma vez e feche o aviso que aparecer. Depois clique no <strong>menu Apple</strong> (o logo da maçã, no canto superior esquerdo da tela) e escolha <strong>Ajustes do Sistema</strong> (em Macs mais antigos chama <strong>Preferências do Sistema</strong>). No menu da esquerda, clique em <strong>Privacidade e Segurança</strong>. Role a página até o final: vai ter uma mensagem parecida com <strong>"Playback Studio" foi bloqueado para proteger o Mac</strong>, com um botão <strong>Abrir Mesmo Assim</strong> do lado. Clique nele, digite a senha do seu Mac se pedir, tente abrir o app de novo e confirme uma última vez.</p>
                 </div>
 
                 <div>
@@ -186,7 +186,7 @@ export function DownloadPage() {
         <div className="max-w-2xl mx-auto bg-white/[0.03] border border-white/10 rounded-2xl p-6 mb-12">
           <h3 className="font-semibold text-white mb-3">Requisitos</h3>
           <ul className="text-sm text-zinc-400 space-y-2">
-            <li><strong className="text-zinc-200">macOS:</strong> 11 (Big Sur) ou superior.</li>
+            <li><strong className="text-zinc-200">macOS:</strong> 12 (Monterey) ou mais novo.</li>
             <li><strong className="text-zinc-200">Windows:</strong> 10 ou 11 (64 bits).</li>
             <li>Login com a sua conta Playback Studio (a mesma do site).</li>
           </ul>
