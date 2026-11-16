@@ -5,7 +5,7 @@
 import {
   BRAND_NAME, COMPANY, CONTACT, FAQS, LEGAL_LINKS, OG_IMAGE, PAGE_HEADS, PLAN_SUMMARIES, PRICES, SITE_URL,
 } from '../content/site'
-import { SITEMAP_PATHS } from '../content/routes'
+import { SITEMAP_PAGES } from '../content/routes'
 import { formatReais } from './prices'
 import { escapeHtml } from './siteHtml'
 
@@ -132,10 +132,11 @@ export function injectSiteSeo(html: string): string {
     .replace('<div id="root"></div>', `<div id="root"></div>\n${buildNoscript()}`)
 }
 
-// sitemap.xml das páginas públicas (src/content/routes.ts), escrito no build do site.
-export function buildSitemap(lastmod: string): string {
-  const urls = SITEMAP_PATHS.map(p => {
-    const loc = p === '/' ? `${SITE_URL}/` : `${SITE_URL}${p}`
+// sitemap.xml das páginas públicas (src/content/routes.ts), escrito no build do site, com o
+// lastmod fixo de cada página (data da última mudança do conteúdo).
+export function buildSitemap(): string {
+  const urls = SITEMAP_PAGES.map(({ path, lastmod }) => {
+    const loc = path === '/' ? `${SITE_URL}/` : `${SITE_URL}${path}`
     return `  <url>\n    <loc>${loc}</loc>\n    <lastmod>${lastmod}</lastmod>\n  </url>`
   })
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>\n`

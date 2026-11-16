@@ -58,8 +58,9 @@ function siteHtml({ desktop }: { desktop: boolean }): Plugin {
         for (const page of [PAGE_HEADS.download, PAGE_HEADS.admin]) {
           this.emitFile({ type: 'asset', fileName: `${page.path.slice(1)}.html`, source: applyPageHead(withoutFaqJsonLd(html), page) })
         }
-        // sitemap.xml sai das rotas públicas (as legais só com LEGAL_PAGES_LIVE ligado).
-        this.emitFile({ type: 'asset', fileName: 'sitemap.xml', source: buildSitemap(new Date().toISOString().slice(0, 10)) })
+        // sitemap.xml sai das rotas públicas (as legais só com LEGAL_PAGES_LIVE ligado), com o
+        // lastmod fixo de cada página em src/content/routes.ts.
+        this.emitFile({ type: 'asset', fileName: 'sitemap.xml', source: buildSitemap() })
       },
     },
   }

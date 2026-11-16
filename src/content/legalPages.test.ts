@@ -19,7 +19,7 @@ describe('páginas legais (rascunho até o dono aprovar)', () => {
     if (LEGAL_PAGES_LIVE) return
     expect(LEGAL_LINKS).toEqual([])
     expect([...SITEMAP_PATHS]).toEqual(['/', '/download'])
-    const sitemap = buildSitemap('2026-11-16')
+    const sitemap = buildSitemap()
     const noscript = buildNoscript()
     for (const page of LEGAL_PAGES) {
       expect(sitemap).not.toContain(page.href)

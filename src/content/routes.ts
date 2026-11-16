@@ -8,7 +8,14 @@ export const APP_ROUTES = ['/', '/download', '/admin'] as const
 
 // Páginas públicas que entram no sitemap (gerado no build). As legais só entram com
 // LEGAL_PAGES_LIVE ligado em src/content/site.ts.
-export const SITEMAP_PATHS: string[] = ['/', '/download', ...LEGAL_LINKS.map(l => l.href)]
+// lastmod é a data da ÚLTIMA MUDANÇA DO CONTEÚDO da página, fixa (não a data do build: o
+// Google ignora lastmod que muda a cada deploy). Mudou o texto da página, troque a data aqui.
+export const SITEMAP_PAGES: { path: string; lastmod: string }[] = [
+  { path: '/', lastmod: '2026-11-16' },
+  { path: '/download', lastmod: '2026-11-16' },
+  ...LEGAL_LINKS.map(l => ({ path: l.href, lastmod: l.lastmod })),
+]
+export const SITEMAP_PATHS: string[] = SITEMAP_PAGES.map(p => p.path)
 
 // O service worker só devolve o app guardado (index.html) na navegação para as rotas
 // do app. O resto (páginas legais, 404, arquivos) vai pra rede, senão quem já visitou o

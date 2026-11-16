@@ -43,12 +43,14 @@ export const LEGAL_PAGES_LIVE = false
 export interface LegalPage {
   href: string
   label: string
+  // Data da última mudança do texto (vai pro lastmod do sitemap). Troque ao aprovar ou editar.
+  lastmod: string
 }
 
 export const LEGAL_PAGES: LegalPage[] = [
-  { href: '/privacidade', label: 'Privacidade' },
-  { href: '/termos', label: 'Termos' },
-  { href: '/cancelamento', label: 'Cancelamento' },
+  { href: '/privacidade', label: 'Privacidade', lastmod: '2026-11-16' },
+  { href: '/termos', label: 'Termos', lastmod: '2026-11-16' },
+  { href: '/cancelamento', label: 'Cancelamento', lastmod: '2026-11-16' },
 ]
 
 export const LEGAL_LINKS: LegalPage[] = LEGAL_PAGES_LIVE ? LEGAL_PAGES : []
