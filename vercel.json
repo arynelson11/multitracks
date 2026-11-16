@@ -8,6 +8,9 @@
     },
     "api/delete-account.ts": {
       "maxDuration": 30
+    },
+    "api/admin-stats.ts": {
+      "maxDuration": 30
     }
   },
   "crons": [
