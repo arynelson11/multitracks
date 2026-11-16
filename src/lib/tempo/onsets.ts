@@ -159,7 +159,8 @@ export function combScore(o: Float32Array, period: number, phase: number): numbe
 
 /**
  * Funções de onset de uma faixa (os canais são somados em mono). `null` quando
- * não dá pra medir nada confiável: sem áudio, taxa inválida ou menos de 4 s.
+ * não dá pra medir nada confiável: sem áudio, taxa inválida, menos de 4 s ou
+ * silêncio do começo ao fim (energia zero).
  */
 export function onsetBands(channels: Float32Array[], sampleRate: number): OnsetBands | null {
   if (!channels.length || !channels[0].length || sampleRate <= 0) return null;
@@ -245,14 +246,15 @@ export function onsetBands(channels: Float32Array[], sampleRate: number): OnsetB
     totBody += cBody[n] + cBody[n + 1];
     totNoise += eNoise[n];
   }
+  if (!(totAll > 0)) return null;
   const full = cleanOnsets(onsetEnvelope(eAll), fps);
   const low = cleanOnsets(onsetEnvelope(eLow), fps);
   // Presença pela fatia da energia da faixa: o chimbal (só agudo) não vira caixa
   // e o bumbo (vaza em 150 a 300 Hz, mas não tem ruído agudo) também não. O ataque
   // da caixa sai só do ruído agudo porque o bumbo, que começa em ~140 Hz, sobe junto
   // na banda de 150 a 300 Hz e empataria tempo e contratempo numa levada sincopada.
-  const hasKick = totAll > 0 && totKick / totAll >= KICK_MIN_SHARE;
-  const hasSnare = totAll > 0 && totBody / totAll >= SNARE_MIN_SHARE && totNoise / totAll >= SNARE_MIN_SHARE;
+  const hasKick = totKick / totAll >= KICK_MIN_SHARE;
+  const hasSnare = totBody / totAll >= SNARE_MIN_SHARE && totNoise / totAll >= SNARE_MIN_SHARE;
   const kick = hasKick ? cleanOnsets(linearOnsetEnvelope(eKick), fps) : new Float32Array(frames);
   const snare = hasSnare ? cleanOnsets(linearOnsetEnvelope(eNoise), fps) : new Float32Array(frames);
   return { fps, full, low, kick, snare, hasKick, hasSnare };

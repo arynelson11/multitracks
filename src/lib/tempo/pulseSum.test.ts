@@ -65,6 +65,17 @@ describe('kit separado somado', () => {
     expect(so.bpm).toBe(120);
   }, LENTO);
 
+  it('faixa de pulso em silêncio (do tamanho da música) fica de fora de tracksUsed e não muda a grade', () => {
+    const c = tempoCase('b');
+    const song = c.song({ votes: false });
+    const [bateria] = caseTracks(c, song);
+    const silencio = song.tracks.drums.map(ch => new Float32Array(ch.length));
+    expect(onsetBands(silencio, SR)).toBeNull();
+    const r = detectSongGrid([{ ...bateria, id: 'bat' }, { id: 'sil', label: 'Perc', use: 'pulse', channels: silencio }], SR);
+    expect(r.tracksUsed).toEqual(['bat']);
+    expect(r).toEqual(detectSongGrid([{ ...bateria, id: 'bat' }], SR));
+  }, LENTO);
+
   it('a faixa de pulso que não dá pra medir fica de fora e a seguinte vale', () => {
     const c = tempoCase('b');
     const song = c.song({ votes: false });
