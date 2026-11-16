@@ -151,10 +151,12 @@ function releaseGuide(g: GuideMute, now: number): void {
 }
 
 /**
- * Agendador do pulo de seção. O motor (T28) cria um por música tocando, chama `tick` pelo relógio
- * (25 ms) e logo depois de cada play, `setIntent` a cada toque do operador e `reset` na pausa, na
- * busca, na troca de música e no reinício do play. Com a VS parada o motor deixa a linha do tempo
- * vazia: o tique não agenda nada e guarda a intenção. Quem cria chama `dispose`.
+ * Agendador do pulo de seção. O motor (T28) cria o agendador e chama `tick` pelo relógio (25 ms) e
+ * logo depois de cada play, `setIntent` a cada pedido do operador (botoeira, onda, REPETIR, LOOP,
+ * banda) e `reset` na pausa, na busca, na troca de música e no reinício do play. Com a VS parada o
+ * motor deixa a linha do tempo vazia: o tique não agenda nada e guarda a intenção. Quem cria chama
+ * `dispose`. O aviso ao operador de relógio no setInterval (`clockMode`) é da tela (T28/T29): a
+ * `TransitionView` não tem campo pra isso.
  */
 export class SectionScheduler {
   readonly #deps: SchedulerDeps
