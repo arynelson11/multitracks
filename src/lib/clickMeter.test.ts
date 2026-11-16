@@ -201,6 +201,26 @@ describe('analyzeClickTrack: subdivisão e BPM em tempos', () => {
   })
 })
 
+describe('analyzeClickTrack: de onde vem o "1"', () => {
+  // Sem acento que feche o compasso, o "1" é assumido no primeiro tempo (`firstPulse`): a T27
+  // usa o 1 das seções marcadas quando houver e mostra o compasso assumido em âmbar.
+  it('acento no 1: "accent" e o 1 no acento', () => {
+    const a = analyzeClickTrack(synthClick({ bpm: 120, seconds: 30, pulsesPerBar: 4, accent: 'loud', firstPulse: 0.2, pickupPulses: 1 }), 48000)!
+    expect(a.downbeatSource).toBe('accent'); expect(Math.abs(a.firstDownbeat! - 0.7)).toBeLessThan(0.002)
+  })
+  it('sem acento, acento só nos tempos ou composto salvo sem acento: "assumed", compasso e 1 nulos', () => {
+    const casos = [
+      analyzeClickTrack(synthClick({ bpm: 100, seconds: 30, pulsesPerBar: 4, accent: 'none', firstPulse: 0.3 }), 48000)!,
+      analyzeClickTrack(synthClick({ bpm: 132, seconds: 30, pulsesPerBar: 4, accent: 'every2', firstPulse: 0.3 }), 48000)!,
+      analyzeClickTrack(synthClick({ bpm: 198, seconds: 30, pulsesPerBar: 6, accent: 'none', firstPulse: 0.3 }), 48000, '6/8')!,
+    ]
+    for (const a of casos) {
+      expect(a.downbeatSource).toBe('assumed'); expect(a.pulsesPerBar).toBeNull(); expect(a.firstDownbeat).toBeNull()
+      expect(Math.abs(a.firstPulse - 0.3)).toBeLessThan(0.002)
+    }
+  })
+})
+
 describe('da faixa de click à grade do palco', () => {
   const gridOf = (a: ClickAnalysis) => { const like: ClickAnalysisLike = a; return gridFromClick(like) }
   it('4/4 em colcheias com cada tempo acentuado: grade e contagem em semínimas', () => {

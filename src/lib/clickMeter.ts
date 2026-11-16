@@ -39,6 +39,12 @@ export interface ClickAnalysis {
   pulsesPerBar: number | null
   /** Primeiro "1" em segundos do arquivo (na reta ajustada). Nulo junto com `pulsesPerBar`. */
   firstDownbeat: number | null
+  /**
+   * De onde vem o "1": `accent` (o acento fecha o compasso, `firstDownbeat`) ou `assumed` (sem
+   * acento no 1: o "1" é assumido no primeiro tempo, `firstPulse`; a T27 usa o 1 das seções
+   * marcadas quando houver e mostra o compasso assumido em âmbar).
+   */
+  downbeatSource: 'accent' | 'assumed'
   /** Ataques que caíram na grade e entraram na conta. */
   onsets: number
   /** Traço que marcou o acento: mais forte (`loud`) ou mais agudo (`bright`). Nulo junto com `pulsesPerBar`. */
@@ -465,6 +471,7 @@ export function analyzeClickTrack(
     firstPulse: timeOf(it.beatPhase),
     pulsesPerBar: it.meter,
     firstDownbeat,
+    downbeatSource: downbeat ? 'accent' : 'assumed',
     onsets: grid.length,
     accent: downbeat?.trait ?? null,
   }
