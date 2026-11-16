@@ -480,3 +480,20 @@ describe('isDrumPieceToken', () => {
     expect([roleFromName('Tom Guia'), roleFromName('Tom Click'), roleFromName('TOM')]).toEqual(['guide', 'click', 'normal'])
   })
 })
+
+// Rodada 1 da M5, item 3: as palavras novas (peças, LOOP, SHAKER, BAJO) não mudam o papel
+// de Click e Guia. Valores iguais aos da base cb539ec (sonda da revisão e da rodada 1).
+describe('palavras novas da M5 com Click e Guia mantêm o papel', () => {
+  it.each([
+    ['Loop Click', 'click', 'click', 'Click'], ['Bumbo Click', 'click', 'click', 'Click'],
+    ['Shaker Click', 'click', 'click', 'Click'], ['Caixa Guia', 'guide', 'guia', 'Guia'],
+    ['LOOP CUE', 'guide', 'guia', 'Guia'], ['Chimbal Guia', 'guide', 'guia', 'Guia'],
+    ['Bajo Guia', 'guide', 'guia', 'Guia'],
+  ])('%s: papel %s, família %s, rótulo %s', (name, role, family, label) => {
+    const ch = { id: '1', name }
+    expect(roleFromName(name)).toBe(role)
+    expect([resolveChannelRole(ch), channelFamily(ch)]).toEqual([role, family])
+    expect(buildChannelLabels([ch])[0]).toMatchObject({ label, role, family })
+    expect(resolveChannelRole({ id: '2', name: 'Track 1', customName: name })).toBe(role)
+  })
+})
