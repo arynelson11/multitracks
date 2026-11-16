@@ -6,7 +6,7 @@ import { cx } from '../ui'
 import { Icon } from './icons'
 import { setFlag } from './stageDom'
 import { useFrame } from './useFrame'
-import { arcPath, lighter, placeLabels } from './wavePeaks'
+import { arcPath, INLINE_TAG_GAP, lighter, placeLabels } from './wavePeaks'
 import type { LabelBox } from './wavePeaks'
 
 export interface WaveformSectionsProps {
@@ -231,6 +231,8 @@ export function WaveformSections({
     if (!container || !(w > 0 && h > 0)) return []
     const els = [...container.querySelectorAll<HTMLElement>('[data-block]')]
     const rows = clamp(Math.floor((h - RULER - ARC_BAND - ROW_TOP - 22) / ROW) + 1, 1, MAX_ROWS)
+    // Largura exata (offsetWidth arredonda e o selo podia passar meio pixel da folga).
+    const widthOf = (el: HTMLElement | null) => (el ? el.getBoundingClientRect().width : 0)
     const measured = els.map((el, k) => {
       const b = blocks[k]
       const selo = el.querySelector<HTMLElement>('[data-selo]')
@@ -239,25 +241,31 @@ export function WaveformSections({
       setFlag(el, 'narrow', (b?.width ?? 0) * w < TOUCH)
       if (selo) delete selo.dataset.fit
       if (tag) delete tag.dataset.fit
-      const width = Math.max(selo?.offsetWidth ?? 0, tag?.offsetWidth ?? 0)
-      // Perto da borda direita o selo recua pra caber inteiro na onda.
-      const x = Math.max(EDGE, Math.min(leftPx + LABEL_X, w - EDGE - width))
-      const box: LabelBox = { x, width, span: tag ? 2 : 1, priority: tag ? 0 : b?.state ? 1 : 2 }
-      return { selo, tag, leftPx, box }
+      const seloW = widthOf(selo)
+      const box: LabelBox = { x: leftPx + LABEL_X, width: seloW, priority: tag ? 0 : b?.state ? 1 : 2 }
+      if (tag) box.tagWidth = widthOf(tag)
+      return { selo, tag, leftPx, seloW, box }
     })
-    const rowOf = placeLabels(measured.map((m) => m.box), rows, GAP)
+    const spots = placeLabels(measured.map((m) => m.box), rows, GAP, EDGE, w - EDGE)
     const placed: Placed[] = []
-    measured.forEach(({ selo, tag, leftPx, box }, k) => {
-      const row = rowOf[k]
-      if (row === null) {
+    measured.forEach(({ selo, tag, leftPx, seloW, box }, k) => {
+      const spot = spots[k]
+      if (spot === null) {
         if (selo) selo.dataset.fit = 'none'
         if (tag) tag.dataset.fit = 'none'
         return
       }
-      const left = `${(box.x - leftPx).toFixed(1)}px`
-      if (selo) { selo.style.left = left; selo.style.top = `${ROW_TOP + ROW * row}px` }
-      if (tag) { tag.style.left = left; tag.style.top = `${ROW_TOP + ROW * (row + 1)}px` }
-      placed.push({ l: box.x, r: box.x + box.width, bottom: ROW_TOP + ROW * (row + box.span) - 6 })
+      const top = ROW_TOP + ROW * spot.row
+      if (selo) { selo.style.left = `${spot.x - leftPx}px`; selo.style.top = `${top}px` }
+      placed.push({ l: spot.x, r: spot.x + seloW, bottom: top + 22 })
+      if (!tag) return
+      const tagW = box.tagWidth ?? 0
+      // Embaixo do selo (v5) ou, sem lugar, ao lado dele, centrada na altura do selo (22 x 18).
+      const tagX = spot.inline ? spot.x + seloW + INLINE_TAG_GAP : spot.x
+      const tagTop = spot.inline ? top + 2 : top + ROW
+      tag.style.left = `${tagX - leftPx}px`
+      tag.style.top = `${tagTop}px`
+      placed.push({ l: tagX, r: tagX + tagW, bottom: tagTop + 18 })
     })
     return placed
   }
@@ -270,10 +278,10 @@ export function WaveformSections({
     for (const el of band.querySelectorAll<HTMLElement>('[data-ruler-label]')) {
       delete el.dataset.fit
       const x = Math.max(RULER_FIRST, (Number(el.dataset.t) / dur) * w + 5)
-      const lw = el.offsetWidth
+      const lw = el.getBoundingClientRect().width
       if (x >= lastRight + RULER_GAP && x + lw <= w - RULER_EDGE) {
         lastRight = x + lw
-        el.style.left = `${x.toFixed(1)}px`
+        el.style.left = `${x}px`
       } else {
         el.dataset.fit = 'none'
       }

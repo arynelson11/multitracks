@@ -42,34 +42,78 @@ export function arcPath(x1: number, x2: number, baseY: number, maxLift: number):
 }
 
 /**
- * Selo de uma seção na onda: começa em `x` (px), tem `width` px e ocupa `span` linhas (2 com
- * a etiqueta PRÓXIMA, REPETE ou LOOP embaixo). Menor `priority` é posto primeiro.
+ * Selo de uma seção na onda: quer começar em `x` (px) e tem `width` px. Com `tagWidth`, tem
+ * a etiqueta PRÓXIMA, REPETE ou LOOP, que vai embaixo do selo (v5) ou, sem lugar, ao lado
+ * dele na mesma linha. `priority`: 0 com etiqueta, 1 a seção atual, 2 as outras; 0 e 1 são
+ * as últimas a ficar de fora.
  */
-export interface LabelBox { x: number; width: number; span: 1 | 2; priority: number }
+export interface LabelBox { x: number; width: number; tagWidth?: number; priority: number }
+/** Onde o selo ficou: linha (0 em cima), começo em px e se a etiqueta está ao lado (`inline`) em vez de embaixo. */
+export interface LabelSpot { row: number; x: number; inline: boolean }
+
+/** Folga entre o selo e a etiqueta quando ela fica ao lado. */
+export const INLINE_TAG_GAP = 4
+/** Abaixo desta prioridade o selo é importante (com etiqueta ou o da seção atual). */
+const IMPORTANT = 2
 
 /**
  * Linha de cada selo, de cima pra baixo, sem nenhum encostar no outro: cada um fica na
- * primeira linha em que as `span` linhas estão livres de `x - gap` a `x + width + gap`.
- * Vai primeiro quem tem menor prioridade (etiqueta, depois a atual), e entre iguais da
- * esquerda pra direita. Sem lugar nas `rows` linhas: `null` (o selo não aparece; nunca
- * fica por cima de outro nem cortado).
+ * primeira linha livre de `x - gap` a `x + largura + gap` (a etiqueta embaixo ocupa a linha
+ * de baixo só na largura dela). Perto da borda direita (`right`) o selo recua pra caber
+ * inteiro, sem passar de `left`. Tenta quatro jeitos (importantes primeiro ou da esquerda pra
+ * direita; etiqueta embaixo ou ao lado) e fica com o que deixa menos importantes de fora,
+ * depois menos selos de fora; no empate, o primeiro (importantes primeiro e etiqueta
+ * embaixo, como no v5). Sem lugar nas `rows` linhas: `null` (o selo não aparece; nunca fica
+ * por cima de outro nem cortado).
  */
-export function placeLabels(boxes: readonly LabelBox[], rows: number, gap: number): (number | null)[] {
+export function placeLabels(boxes: readonly LabelBox[], rows: number, gap: number, left = -Infinity, right = Infinity): (LabelSpot | null)[] {
+  const hasTag = boxes.some((b) => b.tagWidth !== undefined)
+  let best: (LabelSpot | null)[] = []
+  let bestScore: [number, number] = [Infinity, Infinity]
+  for (const importantFirst of [true, false]) {
+    for (const tagBeside of hasTag ? [false, true] : [false]) {
+      const spots = place(boxes, rows, gap, left, right, importantFirst, tagBeside)
+      const missing = spots.filter((s) => s === null).length
+      if (missing === 0) return spots
+      const score: [number, number] = [spots.filter((s, i) => s === null && boxes[i].priority < IMPORTANT).length, missing]
+      if (score[0] < bestScore[0] || (score[0] === bestScore[0] && score[1] < bestScore[1])) {
+        best = spots
+        bestScore = score
+      }
+    }
+  }
+  return best
+}
+
+function place(
+  boxes: readonly LabelBox[], rows: number, gap: number, left: number, right: number, importantFirst: boolean, tagBeside: boolean,
+): (LabelSpot | null)[] {
   const taken: Array<Array<[number, number]>> = Array.from({ length: Math.max(0, Math.floor(rows)) }, () => [])
-  const order = boxes.map((_, i) => i).sort((a, b) => boxes[a].priority - boxes[b].priority || boxes[a].x - boxes[b].x || a - b)
-  const result: (number | null)[] = boxes.map(() => null)
+  const rank = (i: number) => (importantFirst ? boxes[i].priority : 0)
+  const order = boxes.map((_, i) => i).sort((a, b) => rank(a) - rank(b) || boxes[a].x - boxes[b].x || a - b)
+  const result: (LabelSpot | null)[] = boxes.map(() => null)
   const free = (row: number, a: number, b: number) => taken[row].every(([l, r]) => b + gap <= l || r + gap <= a)
+  // Peças do selo em cada tentativa: [linha relativa, largura].
+  const tries = (box: LabelBox): Array<{ inline: boolean; parts: Array<[number, number]> }> => {
+    const w = Math.max(0, box.width)
+    if (box.tagWidth === undefined) return [{ inline: false, parts: [[0, w]] }]
+    const t = Math.max(0, box.tagWidth)
+    const stacked = { inline: false, parts: [[0, w], [1, t]] as Array<[number, number]> }
+    const inline = { inline: true, parts: [[0, w + INLINE_TAG_GAP + t]] as Array<[number, number]> }
+    return tagBeside ? [inline] : [stacked, inline]
+  }
   for (const i of order) {
-    const { x, width, span } = boxes[i]
-    const a = x
-    const b = x + Math.max(0, width)
-    for (let row = 0; row + span <= taken.length; row++) {
-      let ok = true
-      for (let k = row; k < row + span && ok; k++) ok = free(k, a, b)
-      if (!ok) continue
-      for (let k = row; k < row + span; k++) taken[k].push([a, b])
-      result[i] = row
-      break
+    const box = boxes[i]
+    search: for (const attempt of tries(box)) {
+      const span = Math.max(...attempt.parts.map(([k]) => k)) + 1
+      const widest = Math.max(...attempt.parts.map(([, w]) => w))
+      const x = Math.max(left, Math.min(box.x, right - widest))
+      for (let row = 0; row + span <= taken.length; row++) {
+        if (!attempt.parts.every(([k, w]) => free(row + k, x, x + w))) continue
+        for (const [k, w] of attempt.parts) taken[row + k].push([x, x + w])
+        result[i] = { row, x, inline: attempt.inline }
+        break search
+      }
     }
   }
   return result

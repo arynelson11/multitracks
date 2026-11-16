@@ -9,7 +9,7 @@ import type { StageSection } from '../../lib/stageContracts'
 import { SECTION_SHORTCUTS } from '../SectionBar'
 import { WaveformSections } from './WaveformSections'
 import { arcPath, computePeaks, lighter, placeLabels } from './wavePeaks'
-import type { LabelBox } from './wavePeaks'
+import type { LabelBox, LabelSpot } from './wavePeaks'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
 const PROIBIDAS = /\b(next|play|cancel|start|repeat|section|edit|settings|upgrade)\b/i
@@ -72,11 +72,11 @@ const rect = (left: number, width: number) => ({ left, width, top: 0, height: 44
 function fakeLayout(w: number, h: number, widths: { selo: number; tag: number; ruler: number }) {
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(w)
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(h)
-  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
-    if (this.dataset.selo !== undefined) return widths.selo
-    if (this.dataset.tag !== undefined) return widths.tag
-    if (this.dataset.rulerLabel !== undefined) return widths.ruler
-    return 0
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    if (this.dataset.selo !== undefined) return rect(0, widths.selo)
+    if (this.dataset.tag !== undefined) return rect(0, widths.tag)
+    if (this.dataset.rulerLabel !== undefined) return rect(0, widths.ruler)
+    return rect(0, 0)
   })
 }
 
@@ -133,15 +133,39 @@ describe('wavePeaks', () => {
     expect(lighter('var(--x)')).toBe('var(--x)')
   })
 
-  it('selos que se encostariam descem de linha; quem tem etiqueta vai primeiro; sem lugar fica de fora', () => {
-    const box = (x: number, width: number, span: 1 | 2 = 1, priority = 2): LabelBox => ({ x, width, span, priority })
-    expect(placeLabels([box(0, 100), box(200, 100)], 3, 8)).toEqual([0, 0])
-    expect(placeLabels([box(0, 100), box(104, 100)], 3, 8)).toEqual([0, 1]) // 4 px de folga é pouco
-    expect(placeLabels([box(0, 100), box(108, 100)], 3, 8)).toEqual([0, 0]) // 8 px de folga basta
-    // A armada (2 linhas) entra primeiro; a vizinha que encostaria nela desce pra 3ª linha.
-    expect(placeLabels([box(0, 120), box(100, 120, 2, 0)], 3, 8)).toEqual([2, 0])
-    expect(placeLabels([box(0, 120), box(100, 120, 2, 0)], 2, 8)).toEqual([null, 0])
-    expect(placeLabels([box(0, 120, 2, 0)], 1, 8)).toEqual([null])
+  it('selos que se encostariam descem de linha; quem tem etiqueta vai primeiro', () => {
+    const box = (x: number, width: number, o: Partial<LabelBox> = {}): LabelBox => ({ x, width, priority: 2, ...o })
+    const rowsOf = (r: (LabelSpot | null)[]) => r.map((s) => (s ? s.row : null))
+    expect(rowsOf(placeLabels([box(0, 100), box(200, 100)], 3, 8))).toEqual([0, 0])
+    expect(rowsOf(placeLabels([box(0, 100), box(104, 100)], 3, 8))).toEqual([0, 1]) // 4 px de folga é pouco
+    expect(rowsOf(placeLabels([box(0, 100), box(108, 100)], 3, 8))).toEqual([0, 0]) // 8 px de folga basta
+    // A armada (etiqueta embaixo, 2 linhas) entra primeiro; a vizinha que encostaria nela desce pra 3ª linha.
+    expect(placeLabels([box(0, 120), box(100, 120, { tagWidth: 60, priority: 0 })], 3, 8))
+      .toEqual([{ row: 2, x: 0, inline: false }, { row: 0, x: 100, inline: false }])
+    // A etiqueta embaixo ocupa a linha de baixo só na largura dela: a vizinha da direita cabe ali.
+    expect(placeLabels([box(0, 120, { tagWidth: 60, priority: 0 }), box(100, 120)], 3, 8))
+      .toEqual([{ row: 0, x: 0, inline: false }, { row: 1, x: 100, inline: false }])
+  })
+
+  it('sem lugar embaixo, a etiqueta vai ao lado; sem lugar nenhum, o selo fica de fora (os importantes por último)', () => {
+    const box = (x: number, width: number, o: Partial<LabelBox> = {}): LabelBox => ({ x, width, priority: 2, ...o })
+    // Duas linhas: com a etiqueta embaixo a vizinha da esquerda sobraria; com a etiqueta ao lado, cabe.
+    expect(placeLabels([box(0, 120), box(100, 120, { tagWidth: 60, priority: 0 })], 2, 8))
+      .toEqual([{ row: 1, x: 0, inline: false }, { row: 0, x: 100, inline: true }])
+    expect(placeLabels([box(0, 120, { tagWidth: 60, priority: 0 })], 1, 8)).toEqual([{ row: 0, x: 0, inline: true }])
+    expect(placeLabels([box(0, 120), box(50, 120)], 1, 8)).toEqual([{ row: 0, x: 0, inline: false }, null])
+    expect(placeLabels([box(0, 120), box(50, 120, { priority: 1 })], 1, 8)).toEqual([null, { row: 0, x: 50, inline: false }])
+    // A atual posta primeiro quebraria a alternância; da esquerda pra direita todos cabem em 2 linhas.
+    const four = [box(0, 120), box(100, 120), box(200, 120), box(300, 120, { priority: 1 })]
+    expect(placeLabels(four, 2, 8).map((s) => s?.row)).toEqual([0, 1, 0, 1])
+  })
+
+  it('perto da borda o selo recua pra caber inteiro (com a etiqueta ao lado, recua mais)', () => {
+    const box = (x: number, width: number, o: Partial<LabelBox> = {}): LabelBox => ({ x, width, priority: 2, ...o })
+    expect(placeLabels([box(950, 100)], 1, 8, 6, 994)).toEqual([{ row: 0, x: 894, inline: false }])
+    expect(placeLabels([box(950, 100, { tagWidth: 60, priority: 0 })], 2, 8, 6, 994)).toEqual([{ row: 0, x: 894, inline: false }])
+    expect(placeLabels([box(950, 100, { tagWidth: 60, priority: 0 })], 1, 8, 6, 994)).toEqual([{ row: 0, x: 830, inline: true }])
+    expect(placeLabels([box(-20, 50)], 1, 8, 6, 994)).toEqual([{ row: 0, x: 6, inline: false }])
   })
 })
 
@@ -320,42 +344,40 @@ describe('WaveformSections', () => {
     expect(lines[4].alpha).toBe(lines[0].alpha)
   })
 
-  it('selos nunca se encostam: descem de linha, ficam dentro da onda e não cortam o nome', () => {
-    // 10 seções de 10 s numa onda de 1000 px (blocos de 100 px) com selos de 120 px.
+  it.each([[140, 3], [132, 2]])('selos nunca se encostam: onda de %i px (%i linhas), dentro da onda e sem cortar o nome', (h) => {
+    // 10 seções de 10 s numa onda de 1000 px (blocos de 100 px) com selos de 120 px: não cabem lado a lado.
     const many: StageSection[] = Array.from({ length: 10 }, (_, i) => ({ index: i, label: `Seção ${i + 1}`.padEnd(14, 'x'), color: '#10b981', start: i * 10, end: i * 10 + 10, bars: 4 }))
-    fakeLayout(1000, 140, { selo: 120, tag: 60, ruler: 30 })
+    fakeLayout(1000, h, { selo: 120, tag: 60, ruler: 30 })
     const { container } = renderWave({ sections: many, currentSection: 4, intent: { target: 5, plays: 1 } })
-    const placed: Array<{ l: number; r: number; t: number; b: number }> = []
-    blocks(container).forEach((b, i) => {
-      const left = i * 100
+    const placed: Array<{ k: number; l: number; r: number; t: number; b: number }> = []
+    blocks(container).forEach((b, k) => {
+      const left = k * 100
       const selo = b.querySelector<HTMLElement>('[data-selo]')!
       expect(selo.className).not.toMatch(/truncate|text-ellipsis|line-clamp|overflow-hidden/)
       expect(selo.className).toContain('whitespace-nowrap')
-      if (selo.dataset.fit === 'none') return
+      expect(selo.dataset.fit).toBeUndefined() // aqui todos cabem (em 2 linhas, a etiqueta vai ao lado)
       const x = left + parseFloat(selo.style.left)
       const top = parseFloat(selo.style.top)
-      placed.push({ l: x, r: x + 120, t: top, b: top + 22 })
+      placed.push({ k, l: x, r: x + 120, t: top, b: top + 22 })
       const tag = b.querySelector<HTMLElement>('[data-tag]')
-      if (tag) {
-        const tt = parseFloat(tag.style.top)
-        expect(tt).toBe(top + 28)
-        placed.push({ l: left + parseFloat(tag.style.left), r: left + parseFloat(tag.style.left) + 60, t: tt, b: tt + 18 })
-      }
+      if (!tag) return
+      const tx = left + parseFloat(tag.style.left)
+      const tt = parseFloat(tag.style.top)
+      if (tt === top + 2) expect(tx).toBe(x + 120 + 4) // ao lado, na altura do selo
+      else expect([tt, tx]).toEqual([top + 28, x]) // embaixo (v5)
+      placed.push({ k, l: tx, r: tx + 60, t: tt, b: tt + 18 })
     })
-    expect(placed.length).toBeGreaterThanOrEqual(10) // a armada (com etiqueta) e a atual sempre aparecem
     for (const a of placed) {
       expect(a.l).toBeGreaterThanOrEqual(6)
       expect(a.r).toBeLessThanOrEqual(1000 - 6)
-      expect(a.b).toBeLessThanOrEqual(140 - 22 - 30) // fora da faixa da seta e da régua
+      expect(a.b).toBeLessThanOrEqual(h - 22 - 30) // fora da faixa da seta e da faixa de toque da régua
     }
     for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) {
       const a = placed[i]
       const c = placed[j]
-      const apart = a.r + 8 <= c.l || c.r + 8 <= a.l || a.b <= c.t || c.b <= a.t
-      expect(apart).toBe(true)
+      const gap = a.k === c.k ? 4 : 8
+      expect(a.r + gap <= c.l || c.r + gap <= a.l || a.b <= c.t || c.b <= a.t).toBe(true)
     }
-    expect(blocks(container)[4].querySelector<HTMLElement>('[data-selo]')!.dataset.fit).toBeUndefined()
-    expect(blocks(container)[5].querySelector<HTMLElement>('[data-selo]')!.dataset.fit).toBeUndefined()
   })
 
   it('selo da última seção curta não passa da borda direita', () => {
