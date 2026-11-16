@@ -507,6 +507,36 @@ describe('setChannelMeta', () => {
   })
 })
 
+// Revisão da v1.4.16, Menor 2: remover a música ativa enquanto o 1º play transposto
+// dela espera o worklet nascer. Sem cancelar, o play antigo terminava depois e tocava
+// a música removida (sem tom, porque os worklets dela já tinham sido soltos).
+describe('remover a música ativa', () => {
+  it.each([
+    ['última música do repertório', [v1]],
+    ['com outra música no repertório', [v1, v1Local]],
+  ])('%s: cancela o play pendente e nada da música removida toca', async (_label, songs) => {
+    seed(...songs)
+    const { result } = await openApp()
+    let releaseWorklets!: () => void
+    mem.pitchGate = new Promise<void>((resolve) => { releaseWorklets = resolve })
+    // Parado, tom -2: o play da s1 fica pendente esperando os worklets.
+    act(() => { void result.current.play() })
+    expect(mem.sources).toHaveLength(0)
+
+    await act(async () => { result.current.removeSongFromPlaylist('s1') })
+    await act(async () => {
+      releaseWorklets()
+      for (let i = 0; i < 10; i++) await Promise.resolve()
+    })
+
+    expect(result.current.playlist.some((s) => s.id === 's1')).toBe(false)
+    expect(mem.sources).toHaveLength(0)
+    expect(result.current.isPlaying).toBe(false)
+    // Os worklets que nasceram depois foram pra reserva, parados.
+    expect(mem.pitchNodes.every((n) => !n.active && n.connectedTo === null)).toBe(true)
+  })
+})
+
 describe('música nova', () => {
   it('loadFiles grava o registro provisório v2 e monta os canais na ordem padrão', async () => {
     const { result } = await openApp()

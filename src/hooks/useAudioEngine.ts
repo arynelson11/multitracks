@@ -1474,7 +1474,10 @@ export function useAudioEngine(userId?: string) {
 
         updatePlaylistAndSave(newPlaylist);
 
+        // Removendo a música ativa: um play dela que ainda espera o worklet nascer
+        // tocaria a música removida depois (a closure dele tem os canais dela).
         if (newPlaylist.length === 0) {
+            cancelPendingPlay();
             stopAllNodes();
             setActiveSongIndex(0);
             setCurrentTime(0);
@@ -1483,6 +1486,7 @@ export function useAudioEngine(userId?: string) {
         }
 
         if (songId === currentActiveId) {
+            cancelPendingPlay();
             stopAllNodes();
             pausedAtRef.current = 0;
             setCurrentTime(0);
