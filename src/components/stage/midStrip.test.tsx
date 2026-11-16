@@ -223,21 +223,32 @@ describe('célula de tom', () => {
     fireEvent.click(btn('Subir meio tom'))
     expect(onChangePitch).toHaveBeenLastCalledWith(12)
   })
-  it('sem tom original: grade desabilitada com "Tom original desconhecido"', () => {
+  it('sem tom original: grade em semitons, habilitada (Ruling T13-semitom)', () => {
     const onChangePitch = vi.fn()
-    render(<KeyCell {...keyProps({ originalKey: null, gridOpen: true, pitch: 3, onChangePitch })} />)
+    const onGridOpenChange = vi.fn()
+    render(<KeyCell {...keyProps({ originalKey: null, gridOpen: true, pitch: 3, onChangePitch, onGridOpenChange })} />)
     expect(q('[data-tour="tom"]').textContent).toContain('Tom original desconhecido')
-    const dialog = screen.getByRole('dialog')
-    expect(dialog.textContent).toContain('Tom original desconhecido')
+    const dialog = screen.getByRole('dialog', { name: 'Escolher tom' })
+    expect(dialog.textContent).toContain('Sem tom original: escolha em semitons')
+    // De −6 a +6, a mesma distância que a grade de tons usa (o caminho mais curto); nada travado.
     const keys = [...dialog.querySelectorAll('button')]
-    expect(keys).toHaveLength(12)
-    for (const k of keys) expect(k.disabled).toBe(true)
-    fireEvent.click(keys[4])
-    expect(onChangePitch).not.toHaveBeenCalled()
-    // O semitom continua valendo: o selo mostra e −1/+1/ORIG. funcionam.
-    expect(q('[data-key-shift]').textContent).toBe('+3')
-    fireEvent.click(btn('Voltar ao tom original'))
+    const unit = (n: number) => `${n > 0 ? '+' : n < 0 ? MENOS : ''}${Math.abs(n)} ${Math.abs(n) === 1 ? 'semitom' : 'semitons'}${n === 0 ? ', original' : ''}`
+    expect(keys.map((k) => k.getAttribute('aria-label'))).toEqual([-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6].map(unit))
+    for (const k of keys) expect(k.disabled).toBe(false)
+    const cur = btn('+3 semitons')
+    expect(cur.getAttribute('aria-pressed')).toBe('true')
+    expect(cur.className).toContain('bg-ps-or')
+    expect(document.activeElement).toBe(cur)
+    expect(btn('0 semitons, original').querySelector('[data-original-tag]')?.textContent).toBe('ORIGINAL')
+    fireEvent.click(btn(`${MENOS}2 semitons`))
+    expect(onChangePitch).toHaveBeenLastCalledWith(-2)
+    expect(onGridOpenChange).toHaveBeenLastCalledWith(false)
+    fireEvent.click(btn('0 semitons, original'))
     expect(onChangePitch).toHaveBeenLastCalledWith(0)
+    // O selo e −1/+1/ORIG. continuam valendo; o motor recebe semitons, como hoje.
+    expect(q('[data-key-shift]').textContent).toBe('+3')
+    fireEvent.click(btn('Subir meio tom'))
+    expect(onChangePitch).toHaveBeenLastCalledWith(4)
   })
 })
 

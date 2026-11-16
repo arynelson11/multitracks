@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef } from 'react'
+import type { ReactNode } from 'react'
 import { KEY_NAMES, keyIndex, transposeKeyName } from '../../lib/keyNames'
 import { sanitizeSemitones, semitonesBetweenKeys } from '../../lib/pitchRules'
 import { Chip, Panel, cx } from '../ui'
@@ -13,6 +14,10 @@ const MINUS = '−'
 /** "+2" ou "−1" (sinal de menos); vazio no tom original. */
 const shiftText = (s: number): string => (s > 0 ? `+${s}` : s < 0 ? `${MINUS}${-s}` : '')
 const shiftTitle = (s: number): string => `Transposto ${Math.abs(s)} ${Math.abs(s) === 1 ? 'semitom' : 'semitons'} ${s > 0 ? 'acima' : 'abaixo'}`
+/** Sem tom original, a grade escolhe em semitons, na mesma distância que a grade de tons dá (caminho mais curto). */
+const SEMITONE_STEPS: readonly number[] = [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6]
+const SEMITONE_NOTE = 'Sem tom original: escolha em semitons'
+const semitoneLabel = (n: number): string => `${n === 0 ? '0' : shiftText(n)} ${Math.abs(n) === 1 ? 'semitom' : 'semitons'}${n === 0 ? ', original' : ''}`
 
 // v5 .cell com 12 px de lado (o v5 tem 16): em 1280 a coluna tem 176 px e a fileira −1 ORIG. +1 com
 // alvos de 44 px precisa de 147.
@@ -24,9 +29,27 @@ const KEY_BTN =
 const CHIP_EXTRA = 'grow focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
 // v5 .kp-g button: 50 px de altura; a largura vem do texto (a coluna mais larga manda nas 6), com 6 px de folga.
 const GRID_KEY =
-  'flex min-h-[50px] min-w-ps-touch flex-col items-center justify-center gap-1 rounded-ps-md px-1.5 transition-[box-shadow,transform] duration-150 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or disabled:opacity-35 disabled:pointer-events-none'
+  'flex min-h-[50px] min-w-ps-touch flex-col items-center justify-center gap-1 rounded-ps-md px-1.5 transition-[box-shadow,transform] duration-150 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
 const GRID_IDLE = 'bg-ps-s2 text-ps-bone inset-ring inset-ring-ps-line hover:inset-ring-ps-line-3'
 const GRID_CURRENT = 'bg-ps-or text-ps-on-or'
+
+/** Botão da grade: o rótulo em cima e ORIGINAL embaixo (reservado em todos, visível no original); o atual em laranja. */
+function GridButton({ aria, original, current, wide = false, onChoose, children }: { aria: string; original: boolean; current: boolean; wide?: boolean; onChoose(): void; children: ReactNode }) {
+  return (
+    <button
+      type="button" aria-pressed={current} aria-label={aria} onClick={() => onChoose()}
+      className={cx(GRID_KEY, wide && 'col-span-6', current ? GRID_CURRENT : GRID_IDLE)}
+    >
+      <span className="text-ps-md leading-none font-extrabold whitespace-nowrap">{children}</span>
+      <span
+        data-original-tag="" aria-hidden="true"
+        className={cx('text-[8.5px] leading-none font-extrabold tracking-[0.04em]', original ? 'visible' : 'invisible', current ? 'text-ps-on-or' : 'text-ps-mut')}
+      >
+        ORIGINAL
+      </span>
+    </button>
+  )
+}
 
 /** Tom com o "m" do menor menor (60%), como numa cifra: "C#m" ocupa menos e não cansa a leitura. */
 function KeyName({ name }: { name: string }) {
@@ -39,7 +62,9 @@ function KeyName({ name }: { name: string }) {
  * transporte (+2 / −1); −1 e +1 de meio em meio tom e ORIG. de volta pro original. A grade dos 12
  * tons abre e fecha pelo `gridOpen` da casca: o botão do tom e o toque fora da célula só pedem
  * (`onGridOpenChange`), e o Esc é da casca (que fecha a grade sem cancelar o pulo). Escolher um
- * tom vai pelo caminho mais curto. Sem tom original, a grade fica desabilitada com o aviso.
+ * tom vai pelo caminho mais curto. Sem tom original, nada trava (Ruling T13-semitom): a grade mostra
+ * a mudança em semitons, de −6 a +6, com a nota "Sem tom original: escolha em semitons"; o motor
+ * recebe semitons, como sempre.
  */
 export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChangePitch }: KeyCellProps) {
   const rootRef = useRef<HTMLDivElement>(null)
@@ -61,7 +86,7 @@ export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChan
   useLayoutEffect(() => {
     const dialog = dialogRef.current
     if (gridOpen && dialog) {
-      const target = dialog.querySelector<HTMLElement>('button[aria-pressed="true"]:not(:disabled)') ?? dialog.querySelector<HTMLElement>('button:not(:disabled)') ?? dialog
+      const target = dialog.querySelector<HTMLElement>('button[aria-pressed="true"]') ?? dialog.querySelector<HTMLElement>('button') ?? dialog
       target.focus()
     } else if (!gridOpen && focusInside.current) {
       focusInside.current = false
@@ -80,8 +105,8 @@ export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChan
     return () => document.removeEventListener('pointerdown', onPointerDown, true)
   }, [gridOpen])
 
-  const choose = (i: number) => {
-    onChangePitch(semitonesBetweenKeys(originalKey, KEY_NAMES[i]))
+  const choose = (semitones: number) => {
+    onChangePitch(sanitizeSemitones(semitones))
     onGridOpenChange(false)
   }
 
@@ -91,7 +116,7 @@ export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChan
       <button
         ref={triggerRef} type="button" data-fit-width="" aria-haspopup="dialog" aria-expanded={gridOpen} aria-controls={dialogId}
         aria-label={current ? `Tom atual ${current}. Escolher o tom` : `${UNKNOWN}. Escolher o tom`}
-        title="Escolher o tom (grade com os 12 tons)" onClick={() => onGridOpenChange(!gridOpen)} className={KEY_BTN}
+        title={originalIndex !== null ? 'Escolher o tom (grade com os 12 tons)' : 'Escolher a mudança em semitons'} onClick={() => onGridOpenChange(!gridOpen)} className={KEY_BTN}
       >
         <span data-key-current="" className="shrink-0 text-[36px] leading-none font-extrabold tracking-[-0.02em] whitespace-nowrap group-data-[fit]/key:text-[30px]">
           {current ? <KeyName name={current} /> : '?'}
@@ -128,30 +153,34 @@ export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChan
         <Panel variant="pop" className="p-3">
           <div className="mb-2.5 flex items-center justify-between gap-4">
             <span className="ps-label leading-none">Tom da música</span>
-            <span className="text-ps-sm text-ps-mut">{originalIndex !== null ? 'original marcado' : UNKNOWN}</span>
+            <span className="text-ps-sm text-ps-mut">{originalIndex !== null ? 'original marcado' : SEMITONE_NOTE}</span>
           </div>
-          <div className="grid grid-cols-6 gap-1.5">
-            {KEY_NAMES.map((name, i) => {
-              const label = originalIndex !== null ? transposeKeyName(originalKey, i - originalIndex) ?? name : name
-              const isOriginal = i === originalIndex
-              const isCurrent = i === currentIndex
-              return (
-                <button
-                  key={name} type="button" disabled={originalIndex === null} aria-pressed={isCurrent}
-                  aria-label={isOriginal ? `${label}, original` : label} onClick={() => choose(i)}
-                  className={cx(GRID_KEY, isCurrent ? GRID_CURRENT : GRID_IDLE)}
-                >
-                  <span className="text-ps-md leading-none font-extrabold whitespace-nowrap"><KeyName name={label} /></span>
-                  <span
-                    data-original-tag="" aria-hidden="true"
-                    className={cx('text-[8.5px] leading-none font-extrabold tracking-[0.04em]', isOriginal ? 'visible' : 'invisible', isCurrent ? 'text-ps-on-or' : 'text-ps-mut')}
+          {originalIndex !== null ? (
+            <div className="grid grid-cols-6 gap-1.5">
+              {KEY_NAMES.map((name, i) => {
+                const label = transposeKeyName(originalKey, i - originalIndex) ?? name
+                return (
+                  <GridButton
+                    key={name} aria={i === originalIndex ? `${label}, original` : label} original={i === originalIndex} current={i === currentIndex}
+                    onChoose={() => choose(semitonesBetweenKeys(originalKey, KEY_NAMES[i]))}
                   >
-                    ORIGINAL
-                  </span>
-                </button>
-              )
-            })}
-          </div>
+                    <KeyName name={label} />
+                  </GridButton>
+                )
+              })}
+            </div>
+          ) : (
+            // −6 a −1 na primeira linha, o 0 (original) na linha toda, +1 a +6 embaixo.
+            <div className="grid grid-cols-6 gap-1.5">
+              {SEMITONE_STEPS.map((n) => (
+                <GridButton
+                  key={n} aria={semitoneLabel(n)} original={n === 0} current={n === shift} wide={n === 0} onChoose={() => choose(n)}
+                >
+                  <span className="ps-num">{n === 0 ? '0' : shiftText(n)}</span>
+                </GridButton>
+              ))}
+            </div>
+          )}
         </Panel>
       </div>
     </div>
