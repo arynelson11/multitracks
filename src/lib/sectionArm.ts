@@ -26,8 +26,9 @@ const inList = (index: number, c: ArmContext) => Number.isInteger(index) && inde
  */
 function clampPlays(plays: number, maxRepeats: number): number {
   const cap = maxRepeats >= 1 ? Math.floor(maxRepeats) : 1
-  if (!(plays >= 1)) return 1
-  const n = Math.min(Math.floor(plays), cap)
+  const asked = Number(plays) // da rede pode vir texto
+  if (!(asked >= 1)) return 1
+  const n = Math.min(Math.floor(asked), cap)
   return Number.isFinite(n) ? n : 1
 }
 
@@ -94,8 +95,9 @@ export function toggleLoop(intent: ArmIntent | null, c: ArmContext): ArmResult {
  * conta a chegada como a 1ª dessas passagens.
  */
 export function bandRepeat(index: number, times: Plays, current: number): { target: number; plays: Plays } {
-  if (times === 'infinite' || index === current) return { target: index, plays: times }
-  return { target: index, plays: times + 1 }
+  if (times === 'infinite') return { target: index, plays: times }
+  const n = Number(times) // da rede pode vir texto: "2" vira 2, nunca "21"
+  return { target: index, plays: index === current ? n : n + 1 }
 }
 
 /** Ao pousar na seção armada: infinito continua, N maior que 1 desce 1, senão desarma. */

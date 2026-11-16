@@ -146,6 +146,19 @@ describe('bandRepeat (sentido antigo do celular)', () => {
   it('parado, arm-loop N na atual arma sem buscar', () => expect(band(1, 2, parado)).toEqual(armed(i(1, 2))))
   it('tocando, arm-loop N em outra arma N + 1 pousos sem buscar', () => expect(band(4, 2)).toEqual(armed(i(4, 3))))
 
+  // Número vindo da rede como texto: o App não confere o tipo do value do arm-loop.
+  const net = (v: string) => v as unknown as Plays
+  it('texto numérico da rede vira número antes de somar, nunca concatena', () => {
+    expect(bandRepeat(4, net('2'), 1)).toEqual({ target: 4, plays: 3 })
+    expect(bandRepeat(1, net('2'), 1)).toEqual({ target: 1, plays: 2 })
+    expect(band(4, net('2'))).toEqual(armed(i(4, 3)))
+    expect(armAt(null, 4, net('3'), ctx())).toEqual(armed(i(4, 3)))
+  })
+  it('texto que não é número vira 1 passagem', () => {
+    expect(band(4, net('abc'))).toEqual(armed(i(4, 1)))
+    expect(armAt(null, 4, net(''), ctx())).toEqual(armed(i(4, 1)))
+  })
+
   it('passa pelo armAt, que aplica o teto do plano', () => {
     const b = bandRepeat(4, 9, 1)
     expect(armAt(null, b.target, b.plays, ctx()).intent).toEqual(i(4, 9))
