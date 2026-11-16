@@ -3,7 +3,8 @@ import { analyzeClickTrack } from './clickMeter'
 
 // Gerador de click sintético a 48 kHz: bipe senoidal de 25 ms com queda exponencial.
 // `loud` = acento com 1,8x a amplitude; `bright` = acento com a mesma amplitude em 2400 Hz
-// (o normal é 1200 Hz); `every2` = acento forte a cada 2 pulsos; `none` = todos iguais.
+// (o normal é 1200 Hz); `every2` = acento forte a cada 2 pulsos; `none` = todos iguais;
+// `compound` = 1 com 2x e o meio do compasso (o 4 do 6/8) com 1,6x.
 // `pickupPulses` = pulsos de anacruse antes do primeiro "1"; `jitterMs` = desvio sorteado
 // (uniforme, semente fixa) de cada pulso; `gap` = trecho [início, fim) em segundos sem click.
 const SR = 48000
@@ -14,7 +15,7 @@ interface SynthClickOptions {
   bpm: number
   seconds: number
   pulsesPerBar: number
-  accent: 'loud' | 'bright' | 'none' | 'every2'
+  accent: 'loud' | 'bright' | 'none' | 'every2' | 'compound'
   firstPulse: number
   pickupPulses?: number
   jitterMs?: number
@@ -35,7 +36,13 @@ function seeded(seed: number): () => number {
 }
 
 function synthClick(o: SynthClickOptions): Float32Array {
+  return synthClickWithTimes(o).samples
+}
+
+/** O click e o tempo real (em segundos) de cada pulso que tocou. */
+function synthClickWithTimes(o: SynthClickOptions): { samples: Float32Array; times: number[] } {
   const out = new Float32Array(Math.round(o.seconds * SR))
+  const times: number[] = []
   const period = 60 / o.bpm
   const pickup = o.pickupPulses ?? 0
   const rand = seeded(7)
@@ -47,6 +54,7 @@ function synthClick(o: SynthClickOptions): Float32Array {
     const beat = (((k - pickup) % o.pulsesPerBar) + o.pulsesPerBar) % o.pulsesPerBar
     const t = nominal + jitter + (o.beatOffsetsMs?.[beat] ?? 0) / 1000
     if (t < 0 || (o.gap && t >= o.gap[0] && t < o.gap[1])) continue
+    times.push(t)
     const isOne = beat === 0
     const isEven = (((k - pickup) % 2) + 2) % 2 === 0
     let amp = BASE_AMP
@@ -54,13 +62,14 @@ function synthClick(o: SynthClickOptions): Float32Array {
     if (o.accent === 'loud' && isOne) amp *= 1.8
     if (o.accent === 'every2' && isEven) amp *= 1.8
     if (o.accent === 'bright' && isOne) freq = 2400
+    if (o.accent === 'compound') amp *= isOne ? 2 : beat === o.pulsesPerBar / 2 ? 1.6 : 1
     const start = Math.round(t * SR)
     for (let i = 0; i < beepLen && start + i < out.length; i++) {
       const s = i / SR
       out[start + i] += amp * Math.exp(-s / 0.008) * Math.sin(2 * Math.PI * freq * s)
     }
   }
-  return out
+  return { samples: out, times }
 }
 
 describe('analyzeClickTrack: casos do plano', () => {
@@ -126,6 +135,19 @@ describe('analyzeClickTrack: o resto do contrato', () => {
     expect(a).not.toBeNull()
     expect(Math.abs(a.bpm - 140)).toBeLessThan(0.02); expect(a.pulsesPerBar).toBe(4); expect(a.onsets).toBe(840)
     expect(Math.abs(a.firstDownbeat! - 0.00075)).toBeLessThan(0.002)
+  })
+  it('10 min a 72,5 BPM: a grade cai a menos de 5 ms do último pulso real', () => {
+    // 0,02 BPM de erro dariam ~166 ms aos 10 min: o BPM tem de sair da reta sobre todos os
+    // pulsos. A grade é a que o palco monta: primeiro pulso + k * 60 / bpm.
+    for (const extra of [{}, { jitterMs: 1, beatOffsetsMs: [0, 0.5, 1, 1.5] }]) {
+      const { samples, times } = synthClickWithTimes({ bpm: 72.5, seconds: 600, pulsesPerBar: 4, accent: 'loud', firstPulse: 0.31, ...extra })
+      const a = analyzeClickTrack(samples, 48000)!
+      const k = times.length - 1
+      const errLast = Math.abs(a.firstPulse + k * 60 / a.bpm - times[k])
+      const errDownbeat = Math.abs(a.firstDownbeat! + Math.floor(k / 4) * 4 * 60 / a.bpm - times[Math.floor(k / 4) * 4])
+      expect(times[k]).toBeGreaterThan(599)
+      expect(errLast).toBeLessThan(0.005); expect(errDownbeat).toBeLessThan(0.005)
+    }
   })
   it('outra taxa de amostragem dá o mesmo tempo', () => {
     // O mesmo click reamostrado por vizinho mais perto pra 44,1 kHz.
