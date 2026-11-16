@@ -215,7 +215,7 @@ describe('compoundPulseBpm', () => {
 
   it('pulso com ataque nos terços é semínima pontuada: a colcheia é o triplo', () => {
     expect(compoundPulseBpm({ bpm: 60, thirds: 0.6 }, '6/8')).toBe(180);
-    expect(compoundPulseBpm({ bpm: 52, thirds: 0.3 }, '12/8')).toBe(156);
+    expect(compoundPulseBpm({ bpm: 52, thirds: 0.26 }, '12/8')).toBe(156);
   });
 
   it('a metade da semínima pontuada também vira colcheia (o triplo cai na faixa de 90 a 240)', () => {
@@ -223,7 +223,7 @@ describe('compoundPulseBpm', () => {
   });
 
   it('pulso sem ataque nos terços já é a colcheia', () => {
-    expect(compoundPulseBpm({ bpm: 156, thirds: 0.1 }, '6/8')).toBe(156);
+    expect(compoundPulseBpm({ bpm: 156, thirds: 0.14 }, '6/8')).toBe(156);
     expect(compoundPulseBpm({ bpm: 70, thirds: 0.02 }, '6/8')).toBe(140);
   });
 

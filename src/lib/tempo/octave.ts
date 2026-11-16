@@ -33,18 +33,31 @@ const MIN_AUTO_BPM = 40;
 const MAX_AUTO_BPM = 240;
 /** O BPM da música vale pro candidato a até 5% dele (BPM salvo inteiro, música com decimais). */
 const PREFER_TOLERANCE = 0.05;
-/** Ataque nos terços a partir disto (da energia no tempo): a grade é 3:2 ou 4:3 da música. */
+/**
+ * Ataque nos terços a partir disto (da energia no tempo): a grade é 3:2 ou 4:3 da
+ * música. Nas 45 multitracks do dono (gabarito pelo click), as grades 3:2 e 4:3 deram
+ * de 0,68 a 0,99 e as certas e as de oitava, no máximo 0,32.
+ */
 const THIRDS_WRONG = 0.5;
 /** Parente aceito na troca de proporção: terços abaixo disto (subdivisão binária limpa). */
 const THIRDS_CLEAN = 0.25;
 /** Na troca de proporção, o parente precisa de pelo menos isto da pontuação do aproximado. */
 const RATIO_MIN_SCORE = 0.8;
-/** Backbeat (bumbo x caixa, 0 a 1) que já conta como evidência clara de oitava. */
-const BACKBEAT_STRONG = 0.4;
+/**
+ * Backbeat (bumbo x caixa, 0 a 1) que já conta como evidência clara de oitava. Nos
+ * sintéticos o nível certo dá de 0,55 a 0,58 e os outros, no máximo 0,35 (o dobro do
+ * one drop); nas multitracks reais nenhum nível passa de 0,35 (a banda aguda da
+ * bateria é quase toda prato), então a evidência não troca a oitava de música real.
+ */
+const BACKBEAT_STRONG = 0.45;
 /** A oitava só troca se o backbeat do candidato for pelo menos isto vezes o do atual. */
 const BACKBEAT_RATIO = 2;
-/** Compasso composto: terços acima disto = o pulso é a semínima pontuada (a colcheia está nos terços). */
-const THIRDS_COMPOUND = 0.25;
+/**
+ * Compasso composto: terços acima disto = o pulso é a semínima pontuada, ou a metade
+ * dela (a colcheia está nos terços). Medido: semínima pontuada e metade de 0,26 a 0,68
+ * (sintético 6/8 e os três 6/8 reais), pulso já em colcheia até 0,14.
+ */
+const THIRDS_COMPOUND = 0.2;
 /** Colcheia plausível no 6/8 e no 12/8 (semínima pontuada de 30 a 80). */
 const MIN_EIGHTH_BPM = 90;
 const MAX_EIGHTH_BPM = 240;
