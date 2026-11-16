@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-- Tudo em português do Brasil. Nenhum travessão (caractere Unicode U+2014) em texto de interface, comentário novo, doc ou commit. Nos testes, `const TRAVESSAO = String.fromCharCode(0x2014)` (nunca o caractere no código). Texto de interface em português; ficam como no mockup aprovado só estes rótulos: LOOP, CLICK, PAD, HOST, ONLINE, OFFLINE, SAMPLES, LOOPS, FADE, AUTO, Synth Bass, Backing. Teste de "sem inglês" procura uma lista fechada de palavras proibidas, sem diferenciar caixa: `next`, `play`, `cancel`, `start`, `repeat`, `section`, `edit`, `settings`, `upgrade`.
+- Tudo em português do Brasil. Nenhum travessão (caractere Unicode U+2014) em texto de interface, comentário novo, doc ou commit. Nos testes, `const TRAVESSAO = String.fromCharCode(0x2014)` (nunca o caractere no código). Texto de interface em português; ficam como no mockup aprovado só estes rótulos: LOOP, CLICK, PAD, HOST, ONLINE, OFFLINE, SAMPLES, LOOPS, FADE, AUTO, Synth Bass, Backing, Shaker. Teste de "sem inglês" procura uma lista fechada de palavras proibidas, sem diferenciar caixa: `next`, `play`, `cancel`, `start`, `repeat`, `section`, `edit`, `settings`, `upgrade`.
 - Nenhum texto encostando na borda ou cortado (pedido explícito do dono). Botões com largura que acompanha o texto, nunca largura fixa com texto dentro. O palco novo passa no verificador da T20 em 1024x768, 1280x760, 1280x800, 1440x900 e 1920x1080.
 - Alvos de toque de pelo menos 44px. Única exceção: M/S do mixer (~36x32px com 14 canais em 1280px, aprovado no mockup v5), marcados com `data-touch-exception="ms"`.
 - Código de cores com um significado só: laranja `#FF6B35` (`ps-or`) = ligado; branco `#F5F5F7` (`ps-arm`) = armado; cor da seção = seção; âmbar `#fbbf24` (`ps-alert`) = alerta.
