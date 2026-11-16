@@ -124,6 +124,21 @@ export async function findSubscriptionIdByCheckout(api: AsaasApi, checkoutId: st
   return hit?.subscription ?? null
 }
 
+export type AsaasSubscription = { id: string; checkoutSession?: string | null; customer?: string | null; status?: string; deleted?: boolean }
+
+// Assinaturas de um cliente (GET /subscriptions?customer=, docs "Listar
+// assinaturas"), paginado. Só leitura (usado pela conferência diária).
+export async function listCustomerSubscriptions(api: AsaasApi, customerId: string, status = 'ACTIVE'): Promise<AsaasSubscription[]> {
+  const all: AsaasSubscription[] = []
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const res = await api.get<ListPage<AsaasSubscription>>('/subscriptions', { customer: customerId, status, limit: 100, offset: page * 100 })
+    const data = Array.isArray(res?.data) ? res.data : []
+    all.push(...data)
+    if (!res?.hasMore || data.length === 0) break
+  }
+  return all
+}
+
 export async function getSubscription(api: AsaasApi, subscriptionId: string): Promise<{ id: string; checkoutSession?: string | null; customer?: string | null; status?: string; deleted?: boolean } | null> {
   try {
     return await api.get(`/subscriptions/${encodeURIComponent(subscriptionId)}`)

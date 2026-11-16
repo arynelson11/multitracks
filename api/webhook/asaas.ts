@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { asaasFromEnv } from '../_lib/asaas.js'
 import { isBillingEvent, processStoredEvent, runDailyJob, runPendingActions, sanitizeAsaasPayload } from '../_lib/billing.js'
+import { RECONCILE_CRON, runReconcile } from '../_lib/reconcile.js'
 
 // Webhook do Asaas + job diário de cobrança.
 //
@@ -18,6 +19,9 @@ import { isBillingEvent, processStoredEvent, runDailyJob, runPendingActions, san
 // GET (Vercel Cron, 1x por dia): header `Authorization: Bearer <CRON_SECRET>`.
 // Roda o job diário (o mesmo do pg_cron), reprocessa eventos que falharam e
 // tenta de novo as pendências com o Asaas.
+// GET ?action=reconcile (outro cron diário, mesmo segredo): conferência entre o
+// app e o Asaas que só lê o Asaas e só marca pro admin (api/_lib/reconcile.ts).
+// Também é reconhecida pelo cabeçalho x-vercel-cron-schedule do agendamento dela.
 //
 // Regras em api/_lib/billing.ts; estado em db/supabase_assinaturas.sql.
 
@@ -31,6 +35,16 @@ function safeEqualStr(a: string, b: string): boolean {
 function header(req: any, name: string): string { // eslint-disable-line @typescript-eslint/no-explicit-any
   const v = req.headers?.[name]
   return typeof v === 'string' ? v : ''
+}
+
+function getAction(req: any): string { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const q = req.query?.action
+  if (typeof q === 'string' && q) return q
+  if (typeof req.url === 'string' && req.url.includes('?')) {
+    const v = new URLSearchParams(req.url.slice(req.url.indexOf('?') + 1)).get('action')
+    if (v) return v
+  }
+  return header(req, 'x-vercel-cron-schedule') === RECONCILE_CRON ? 'reconcile' : ''
 }
 
 export default async function handler(req: any, res: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -49,6 +63,16 @@ export default async function handler(req: any, res: any) { // eslint-disable-li
     const auth = header(req, 'authorization')
     if (!cronSecret || !auth.startsWith('Bearer ') || !safeEqualStr(auth.slice(7), cronSecret)) {
       return res.status(401).json({ error: 'Unauthorized' })
+    }
+    if (getAction(req) === 'reconcile') {
+      try {
+        const out = await runReconcile({ db: createClient(supabaseUrl, serviceRoleKey), asaas: asaasFromEnv(5000) })
+        console.log('[billing-reconcile] ok', out)
+        return res.status(200).json({ ok: true, reconcile: out })
+      } catch (e) {
+        console.error('[billing-reconcile] falhou:', e instanceof Error ? e.message : 'erro')
+        return res.status(500).json({ error: 'Reconcile failed' })
+      }
     }
     try {
       const out = await runDailyJob({ db: createClient(supabaseUrl, serviceRoleKey), asaas: asaasFromEnv(5000) })
