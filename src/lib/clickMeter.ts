@@ -92,8 +92,9 @@ const MIN_ONSETS = 8
 /** Limiar do ataque, em fração do nível típico do click (ver detectOnsets). */
 const ONSET_THRESHOLD = 0.3
 /**
- * Primeira passada, em fração do pico global: só acha o nível típico do click. Aguenta um
- * estalo até 5x o pico do click e acento até 5x os outros tempos sem perder os tempos.
+ * Primeira passada, em fração do pico global: só acha o nível típico do click. Aguenta estalo e
+ * acento até 4x o click sem perder os tempos (medido: acento de 5x já perde os tempos e estalo
+ * de 6x dá leitura nula).
  */
 const PROBE_THRESHOLD = 0.2
 /**
@@ -631,11 +632,12 @@ function fromBar(pulseBpm: number, bar: MeterReading, two: MeterReading | null, 
 }
 
 /**
- * Etapa 5. Ordem: compasso composto conhecido, ou o click em pontuada pelo BPM salvo
- * (compoundFrame); 7/8 conhecido (eighthFrame); acento em cada tempo de um click em tercinas ou semicolcheias, pelo BPM
- * salvo; compasso simples conhecido com o acento fechando 1, 2 ou 3 pulsos por tempo; o acento
- * sozinho (fromBar), com o BPM salvo desempatando; sem acento de compasso, o acento a cada 2
- * pulsos (colcheias com cada tempo acentuado) e o BPM salvo dizem a subdivisão.
+ * Etapa 5. Ordem: compasso composto conhecido, ou o click em pontuada pelo BPM salvo sem
+ * compasso salvo (compoundFrame); 7/8 conhecido (eighthFrame); acento em cada tempo de um click
+ * em tercinas ou semicolcheias, pelo BPM salvo; compasso simples conhecido com o acento fechando
+ * 1, 2 ou 3 pulsos por tempo; o acento sozinho (fromBar), com o BPM salvo desempatando; sem
+ * acento de compasso, o acento a cada 2 pulsos (colcheias com cada tempo acentuado) e o BPM
+ * salvo dizem a subdivisão.
  */
 function interpret(
   pulseBpm: number, bar: MeterReading | null, two: MeterReading | null,
@@ -644,8 +646,9 @@ function interpret(
   const k = knownRatio(pulseBpm, knownBpm)
   if (knownSignature && isCompound(knownSignature)) return compoundFrame(pulseBpm, bar, two, signaturePulses(knownSignature), k)
   if (knownSignature && isEighthPulse(knownSignature)) return eighthFrame(bar, two, signaturePulses(knownSignature), k)
-  // Click na pontuada pelo BPM salvo: 12/8 com o acento fechando 4 pulsos, senão 6/8.
-  if (k === 'dotted') return compoundFrame(pulseBpm, bar, two, bar?.m === 4 ? 12 : 6, k)
+  // Click na pontuada pelo BPM salvo, sem compasso salvo (o simples salvo vence): 12/8 com o
+  // acento fechando 4 pulsos, senão 6/8.
+  if (!knownSignature && k === 'dotted') return compoundFrame(pulseBpm, bar, two, bar?.m === 4 ? 12 : 6, k)
   if (bar) {
     // Tercinas ou semicolcheias com cada tempo acentuado: o tempo vem, o compasso e o "1" não.
     if (k !== null && k > 2 && bar.m === k) return interpretation({ subdivision: k, compound: false, meter: null, downbeat: null, beat: bar })

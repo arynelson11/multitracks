@@ -360,6 +360,13 @@ describe('analyzeClickTrack: compasso composto', () => {
     const doze = analyzeClickTrack(synthClick({ bpm: 50, seconds: 40, pulsesPerBar: 4, accent: 'bright', firstPulse: 0 }), 48000, null, 75)!
     expect(doze).toMatchObject({ subdivision: 1, compound: true, pulsesPerBar: 12 })
   })
+  it('compasso simples salvo vence a razão 2/3 do BPM salvo: o click a 80 com 4/4 e 120 salvos é 4/4 a 80', () => {
+    // Menor 2 da re-revisão: antes o ramo da pontuada lia 12/8 a 120 e a grade ficava 4/4 a 120, sem aviso.
+    const quatro = analyzeClickTrack(synthClick({ bpm: 80, seconds: 30, pulsesPerBar: 4, accent: 'loud', firstPulse: 0 }), 48000, '4/4', 120)!
+    expect(quatro).toMatchObject({ compound: false, subdivision: 1, pulsesPerBar: 4 }); expect(Math.abs(quatro.bpm - 80)).toBeLessThan(0.02)
+    const tres = analyzeClickTrack(synthClick({ bpm: 80, seconds: 30, pulsesPerBar: 3, accent: 'loud', firstPulse: 0 }), 48000, '3/4', 120)!
+    expect(tres).toMatchObject({ compound: false, subdivision: 1, pulsesPerBar: 3 }); expect(Math.abs(tres.bpm - 80)).toBeLessThan(0.02)
+  })
   it('6/8 salvo por engano num 4/4 em colcheias (acento em cada semínima): as colcheias ficam colcheias', () => {
     // Visto nos clicks reais da MultiTracks: colcheias a 132 com acento a cada 2.
     const a = analyzeClickTrack(synthClick({ bpm: 132, seconds: 30, pulsesPerBar: 4, accent: 'every2', firstPulse: 0 }), 48000, '6/8')!
