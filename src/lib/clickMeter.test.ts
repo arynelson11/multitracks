@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeClickTrack } from './clickMeter'
+import { analyzeClickTrack, type ClickAnalysis } from './clickMeter'
+import { barSeconds, gridFromClick, type ClickAnalysisLike } from './songGrid'
+import { countPulses } from './stageContracts'
 
 // Gerador de click sintético a 48 kHz: bipe senoidal de 25 ms com queda exponencial.
 // `loud` = acento com 1,8x a amplitude; `bright` = acento com a mesma amplitude em 2400 Hz
@@ -196,6 +198,26 @@ describe('analyzeClickTrack: subdivisão e BPM em tempos', () => {
   it('acento a cada 2 abaixo de 100 pulsos por minuto não é subdivisão', () => {
     const a = analyzeClickTrack(synthClick({ bpm: 80, seconds: 30, pulsesPerBar: 4, accent: 'every2', firstPulse: 0 }), 48000)!
     expect(a.subdivision).toBe(1); expect(Math.abs(a.bpm - 80)).toBeLessThan(0.02)
+  })
+})
+
+describe('da faixa de click à grade do palco', () => {
+  const gridOf = (a: ClickAnalysis) => { const like: ClickAnalysisLike = a; return gridFromClick(like) }
+  it('4/4 em colcheias com cada tempo acentuado: grade e contagem em semínimas', () => {
+    const grid = gridOf(analyzeClickTrack(synthClick({ bpm: 132, seconds: 30, pulsesPerBar: 4, accent: 'every2', firstPulse: 0 }), 48000)!)
+    expect(Math.abs(grid.bpm - 66)).toBeLessThan(0.01); expect(countPulses(grid.signature, grid.countEvery)).toBe(4)
+    expect(Math.abs(barSeconds(grid) - 4 * 60 / 66)).toBeLessThan(0.001)
+  })
+  it('6/8 em colcheias: grade em colcheias, contagem de 2 tempos, compasso de 6 colcheias', () => {
+    const grid = gridOf(analyzeClickTrack(synthClick({ bpm: 180, seconds: 30, pulsesPerBar: 6, accent: 'loud', firstPulse: 0 }), 48000)!)
+    expect(grid.signature).toBe('6/8'); expect(Math.abs(grid.bpm - 180)).toBeLessThan(0.02)
+    expect(countPulses(grid.signature, grid.countEvery)).toBe(2); expect(Math.abs(barSeconds(grid) - 2)).toBeLessThan(0.001)
+  })
+  it('6/8 em pontuada lido com o 6/8 salvo: a mesma grade do 6/8 em colcheias', () => {
+    const a = analyzeClickTrack(synthClick({ bpm: 60, seconds: 30, pulsesPerBar: 2, accent: 'loud', firstPulse: 0 }), 48000, '6/8')!
+    const grid = gridFromClick(a, '6/8')
+    expect(Math.abs(grid.bpm - 180)).toBeLessThan(0.05); expect(countPulses(grid.signature, grid.countEvery)).toBe(2)
+    expect(Math.abs(barSeconds(grid) - 2)).toBeLessThan(0.001)
   })
 })
 

@@ -89,7 +89,7 @@ const KNOWN_BPM_TOLERANCE = 0.03
  * daria uma pontuada abaixo de 33 por minuto); a partir disto é colcheia (como pontuada daria
  * colcheias acima de 300 por minuto).
  */
-const DOTTED_PULSE_MAX_BPM = 100
+export const DOTTED_PULSE_MAX_BPM = 100
 
 type AccentTrait = 'loud' | 'bright'
 type TraitMarks = [AccentTrait, boolean[] | null][]

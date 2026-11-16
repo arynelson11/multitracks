@@ -6,6 +6,7 @@ import {
   TIME_SIGNATURES, gridHasPhase, isCompound, pulsesPerBar, signatureForPulses,
   type GridSource, type GridWarning, type MeterSource, type SectionSpan, type SongGrid, type TimeSignature,
 } from './stageContracts'
+import { DOTTED_PULSE_MAX_BPM } from './clickMeter'
 
 /** Folga de arredondamento nas comparações de tempo (1 microssegundo). */
 const EPS = 1e-6
@@ -195,8 +196,31 @@ export function gridFromBpm(bpm: number, savedSignature?: TimeSignature | null):
   return { bpm, firstDownbeat: 0, signature: saved ?? '4/4', countEvery: 1, source: 'bpm', meterSource: saved ? 'salvo' : 'padrao' }
 }
 
-/** O que a grade precisa da leitura da faixa de click (a `ClickAnalysis` da T3 encaixa por estrutura). */
-export interface ClickAnalysisLike { bpm: number; firstPulse: number; pulsesPerBar: number | null; firstDownbeat: number | null }
+/**
+ * O que a grade precisa da leitura da faixa de click (a `ClickAnalysis` da T3 encaixa por
+ * estrutura). `bpm` em tempos (semínima no simples, semínima pontuada no composto);
+ * `subdivision` = pulsos do click por tempo; `compound` = o tempo é a semínima pontuada.
+ */
+export interface ClickAnalysisLike {
+  bpm: number; subdivision: 1 | 2 | 3; compound: boolean
+  firstPulse: number; pulsesPerBar: number | null; firstDownbeat: number | null
+}
+
+/**
+ * Pulsos da grade por minuto no compasso que vale: tempos no simples, colcheias no 6/8 e no
+ * 12/8 (a grade conta 6 e 12 pulsos neles). Leitura feita num quadro diferente do compasso
+ * salvo (a T27 deve ler o click já com o compasso salvo): no composto, o click lido no
+ * simples vira colcheia pelo andamento, como no clickMeter; no simples, a leitura composta
+ * vira semínima de 2 colcheias.
+ */
+function gridPulseBpm(a: ClickAnalysisLike, signature: TimeSignature): number {
+  if (isCompound(signature)) {
+    if (a.compound) return a.bpm * 3
+    const clickPulses = a.bpm * a.subdivision
+    return clickPulses < DOTTED_PULSE_MAX_BPM ? clickPulses * 3 : clickPulses
+  }
+  return a.compound ? (a.bpm * 3) / 2 : a.bpm
+}
 
 /**
  * Traz `x` pra dentro de `[0, bar)`. Fase não finita continua NaN (nunca inventa o 1); com
@@ -212,20 +236,23 @@ function intoFirstBar(x: number, bar: number): number {
 
 /**
  * Grade lida na faixa de click. Compasso: o salvo (`'salvo'`), senão o que o acento mostrou
- * (`'acento'`), senão 4/4 (`'padrao'`). O primeiro 1 (`firstDownbeat`, ou o primeiro pulso sem
- * acento) vai pra dentro do primeiro compasso do compasso que vale. Leitura com `firstPulse` ou
- * `firstDownbeat` não finito é leitura quebrada: a fase sai NaN, a grade é recusada pelo
- * `sanitizeGrid` e o `gridWarning` dá `'sem-grade'` (nunca um 1 chutado em 0:00).
+ * (`'acento'`), senão 4/4 (`'padrao'`; 6/8 quando a leitura é composta). O BPM da grade sai
+ * em tempos no compasso simples e em colcheias no composto, com a contagem de 3 em 3 (o tempo
+ * do composto): a contagem nunca conta colcheias. O primeiro 1 (`firstDownbeat`, ou o primeiro
+ * tempo sem acento) vai pra dentro do primeiro compasso do compasso que vale. Leitura com
+ * `firstPulse` ou `firstDownbeat` não finito é leitura quebrada: a fase sai NaN, a grade é
+ * recusada pelo `sanitizeGrid` e o `gridWarning` dá `'sem-grade'` (nunca um 1 chutado em 0:00).
  */
 export function gridFromClick(a: ClickAnalysisLike, savedSignature?: TimeSignature | null): SongGrid {
   const saved = knownSignature(savedSignature)
   const accent = a.pulsesPerBar === null ? null : signatureForPulses(a.pulsesPerBar)
-  const signature = saved ?? accent ?? '4/4'
+  const signature = saved ?? accent ?? (a.compound ? '6/8' : '4/4')
   const meterSource: MeterSource = saved ? 'salvo' : accent ? 'acento' : 'padrao'
-  const bar = (60 / a.bpm) * pulsesPerBar(signature)
+  const bpm = gridPulseBpm(a, signature)
+  const bar = (60 / bpm) * pulsesPerBar(signature)
   const phaseOk = Number.isFinite(a.firstPulse) && (a.firstDownbeat == null || Number.isFinite(a.firstDownbeat))
   const firstDownbeat = phaseOk ? intoFirstBar(a.firstDownbeat ?? a.firstPulse, bar) : NaN
-  return { bpm: a.bpm, firstDownbeat, signature, countEvery: 1, source: 'click', meterSource }
+  return { bpm, firstDownbeat, signature, countEvery: isCompound(signature) ? 3 : 1, source: 'click', meterSource }
 }
 
 // ---------- Compasso manual ----------
