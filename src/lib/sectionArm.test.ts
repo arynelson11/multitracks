@@ -12,7 +12,7 @@ const ctx = (p: Partial<ArmContext> = {}): ArmContext => ({ current: 1, isPlayin
 const parado = { isPlaying: false }
 
 const armed = (intent: ArmIntent | null): ArmResult => ({ intent, seekToSection: null, upgrade: false })
-const seek = (i: number): ArmResult => ({ intent: null, seekToSection: i, upgrade: false })
+const seek = (i: number, intent: ArmIntent | null = null): ArmResult => ({ intent, seekToSection: i, upgrade: false })
 const upgrade = (intent: ArmIntent | null): ArmResult => ({ intent, seekToSection: null, upgrade: true })
 const i = (target: number, plays: Plays): ArmIntent => ({ target, plays })
 
@@ -76,7 +76,12 @@ describe('armAt (REPETIR e banda)', () => {
     ['teto 0 ou quebrado nunca passa de 1', null, 4, 5, { gates: { ...gates, maxRepeats: 0 } }, armed(i(4, 1))],
     ['troca o que estava armado', i(2, 1), 4, 2, {}, armed(i(4, 2))],
     ['armar de novo o mesmo não cancela', i(4, 2), 4, 2, {}, armed(i(4, 2))],
-    ['parado também arma (vale quando tocar)', null, 4, 2, parado, armed(i(4, 2))],
+    ['parado, outra seção: leva pra lá e a chegada é a 1ª passagem', null, 4, 3, parado, seek(4, i(4, 2))],
+    ['parado, outra seção com 1 passagem: só leva pra lá e desarma', i(2, 1), 4, 1, parado, seek(4)],
+    ['parado, outra seção com infinito: leva pra lá e segue em loop', null, 4, 'infinite', parado, seek(4, i(4, 'infinite'))],
+    ['parado, acima do teto: leva pra lá e conta a partir do teto', null, 4, 12, parado, seek(4, i(4, 8))],
+    ['parado, na atual: arma sem buscar', null, 1, 2, parado, armed(i(1, 2))],
+    ['parado no Livre pede upgrade sem buscar', i(2, 1), 4, 2, { gates: livre, ...parado }, upgrade(i(2, 1))],
     ['Livre pede upgrade sem mudar nada', i(2, 1), 4, 2, { gates: livre }, upgrade(i(2, 1))],
     ['infinito sem o portão pede upgrade sem mudar nada', i(2, 1), 4, 'infinite', { gates: { ...gates, infinite: false } }, upgrade(i(2, 1))],
     ['número sem o portão do infinito arma', null, 4, 3, { gates: { ...gates, infinite: false } }, armed(i(4, 3))],
@@ -93,6 +98,8 @@ describe('armRepeat (na seção atual)', () => {
     ['infinito na atual', null, 'infinite', {}, armed(i(1, 'infinite'))],
     ['acima do teto vira o teto', null, 20, {}, armed(i(1, 9))],
     ['abaixo de 1 vira 1', null, 0, {}, armed(i(1, 1))],
+    ['parado arma na atual sem buscar', null, 3, parado, armed(i(1, 3))],
+    ['parado, infinito na atual arma sem buscar', null, 'infinite', parado, armed(i(1, 'infinite'))],
     ['Livre pede upgrade', null, 3, { gates: livre }, upgrade(null)],
     ['infinito sem o portão pede upgrade', i(4, 1), 'infinite', { gates: { ...gates, infinite: false } }, upgrade(i(4, 1))],
     ['atual fora da lista: nada muda', null, 3, { current: -1 }, armed(null)],
@@ -125,6 +132,19 @@ describe('bandRepeat (sentido antigo do celular)', () => {
     ['infinito continua infinito na atual', 1, 'infinite', 1, { target: 1, plays: 'infinite' }],
   ]
   it.each(rows)('%s', (_, index, times, current, out) => expect(bandRepeat(index, times, current)).toEqual(out))
+
+  // A banda passa por bandRepeat e depois armAt (adaptadores da T28); arm-jump é armAt com 1.
+  const band = (index: number, times: Plays, patch: Partial<ArmContext> = {}) => {
+    const c = ctx(patch); const b = bandRepeat(index, times, c.current); return armAt(null, b.target, b.plays, c)
+  }
+  it('parado, arm-jump leva pra seção e não deixa nada armado', () => expect(armAt(null, 4, 1, ctx(parado))).toEqual(seek(4)))
+  it('parado, arm-loop N em outra leva pra lá e repete N vezes (N + 1 passagens, como na v1.4.16)', () => {
+    expect(band(4, 2, parado)).toEqual(seek(4, i(4, 2)))
+    expect(band(4, 1, parado)).toEqual(seek(4, i(4, 1)))
+  })
+  it('parado, arm-loop infinito em outra leva pra lá e segue em loop', () => expect(band(4, 'infinite', parado)).toEqual(seek(4, i(4, 'infinite'))))
+  it('parado, arm-loop N na atual arma sem buscar', () => expect(band(1, 2, parado)).toEqual(armed(i(1, 2))))
+  it('tocando, arm-loop N em outra arma N + 1 pousos sem buscar', () => expect(band(4, 2)).toEqual(armed(i(4, 3))))
 
   it('passa pelo armAt, que aplica o teto do plano', () => {
     const b = bandRepeat(4, 9, 1)

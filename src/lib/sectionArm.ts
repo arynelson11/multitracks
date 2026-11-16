@@ -5,12 +5,17 @@
 import type { ArmIntent, Plays, StageGates } from './stageContracts'
 
 export interface ArmContext { current: number; isPlaying: boolean; sectionCount: number; gates: StageGates }
-/** `seekToSection`: parado, levar a VS pro início desta seção. `upgrade`: abrir os Planos. */
+/**
+ * Quem decide é esta regra (T4); quem executa é o motor (T28), sem decidir de novo.
+ * `seekToSection`: levar a VS pro início desta seção (só com a VS parada); `intent` passa a
+ * valer depois da busca e já vem contada a partir da posição nova (a chegada pela busca é a
+ * 1ª passagem). `upgrade`: abrir os Planos, sem mudar nada.
+ */
 export interface ArmResult { intent: ArmIntent | null; seekToSection: number | null; upgrade: boolean }
 
 const withIntent = (intent: ArmIntent | null): ArmResult => ({ intent, seekToSection: null, upgrade: false })
 const askUpgrade = (intent: ArmIntent | null): ArmResult => ({ intent, seekToSection: null, upgrade: true })
-const seekTo = (index: number): ArmResult => ({ intent: null, seekToSection: index, upgrade: false })
+const seekTo = (index: number, intent: ArmIntent | null = null): ArmResult => ({ intent, seekToSection: index, upgrade: false })
 
 const inList = (index: number, c: ArmContext) => Number.isInteger(index) && index >= 0 && index < c.sectionCount
 
@@ -56,13 +61,18 @@ export function stepSection(intent: ArmIntent | null, dir: -1 | 1, c: ArmContext
 
 /**
  * Arma `plays` passagens na seção `index` (REPETIR, ∞ e banda). Nunca cancela: armar de novo o
- * mesmo deixa igual. Vale tocando ou parado (parado fica armado pra quando tocar).
+ * mesmo deixa igual. Parado numa seção diferente da atual, leva a VS pra lá (como o `armLoop`
+ * da v1.4.16) e a chegada conta como a 1ª passagem: `{ i, 1 }` (arm-jump) só busca e desarma,
+ * `{ i, N }` fica `{ i, N - 1 }`, infinito continua. Parado na atual (REPETIR, LOOP), arma sem
+ * buscar.
  */
 export function armAt(intent: ArmIntent | null, index: number, plays: Plays, c: ArmContext): ArmResult {
   if (!inList(index, c)) return withIntent(intent)
   if (!c.gates.sections) return askUpgrade(intent)
-  if (plays === 'infinite') return c.gates.infinite ? withIntent({ target: index, plays }) : askUpgrade(intent)
-  return withIntent({ target: index, plays: clampPlays(plays, c.gates.maxRepeats) })
+  if (plays === 'infinite' && !c.gates.infinite) return askUpgrade(intent)
+  const next: ArmIntent = { target: index, plays: plays === 'infinite' ? plays : clampPlays(plays, c.gates.maxRepeats) }
+  if (!c.isPlaying && index !== c.current) return seekTo(index, afterLanding(next))
+  return withIntent(next)
 }
 
 /** REPETIR na seção atual: `{ atual, N }` (ou infinito). Mudar N com REPETIR armado re-arma. */
@@ -80,7 +90,8 @@ export function toggleLoop(intent: ArmIntent | null, c: ArmContext): ArmResult {
 /**
  * "Repetir N" da banda pelo celular, no sentido antigo: em outra seção ela ia pra lá e
  * repetia N vezes (N + 1 passagens); na atual, N passagens. Infinito continua infinito. O
- * teto do plano vem depois, no `armAt`.
+ * resultado passa pelo `armAt`, que aplica o teto do plano e, com a VS parada, busca a seção e
+ * conta a chegada como a 1ª dessas passagens.
  */
 export function bandRepeat(index: number, times: Plays, current: number): { target: number; plays: Plays } {
   if (times === 'infinite' || index === current) return { target: index, plays: times }
