@@ -25,6 +25,7 @@ import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections 
 import { isAdminEmail } from './lib/admin'
 import { keyToSemitone, semitonesBetweenKeys } from './lib/pitchRules'
 import { InstallAppBanner } from './components/InstallAppBanner'
+import { RenewalNoticeBanner } from './components/RenewalNoticeBanner'
 import { AUDIO_FILE_ACCEPT } from './lib/uploadContentType'
 import { useDesktopUpdate } from './hooks/useDesktopUpdate'
 import { CURRENT_VERSION } from './lib/changelog'
@@ -1993,6 +1994,7 @@ export default function App() {
       {showTour && <GuidedTour steps={TOUR_STEPS} onClose={closeTour} />}
       {showWhatsNew && <WhatsNewModal onClose={closeWhatsNew} />}
       <InstallAppBanner />
+      <RenewalNoticeBanner userId={user?.id} plan={userPlan} />
 
       <LiveModeModal
         isOpen={isLiveModeOpen}

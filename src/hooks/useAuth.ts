@@ -4,6 +4,8 @@ import { apiUrl } from '../lib/api';
 import { effectivePlan, fetchPlanState } from '../lib/planState';
 import type { User, Session } from '@supabase/supabase-js';
 
+const PLAN_CHANGED_EVENT = 'playback-plan-changed';
+
 export function useAuth() {
     const [user, setUser] = useState<User | null>(null);
     const [session, setSession] = useState<Session | null>(null);
@@ -65,10 +67,18 @@ export function useAuth() {
         return () => subscription.unsubscribe();
     }, [fetchPlan]);
 
-    // Relê o plano (ex.: depois de cancelar a assinatura).
-    const refreshPlan = useCallback(async () => {
-        if (user) await fetchPlan(user.id);
+    // Relê o plano em TODAS as telas abertas (cada componente tem sua instância
+    // deste hook), ex.: depois de cancelar a assinatura.
+    useEffect(() => {
+        if (!user) return;
+        const onChanged = () => { void fetchPlan(user.id); };
+        window.addEventListener(PLAN_CHANGED_EVENT, onChanged);
+        return () => window.removeEventListener(PLAN_CHANGED_EVENT, onChanged);
     }, [user, fetchPlan]);
+
+    const refreshPlan = useCallback(async () => {
+        window.dispatchEvent(new Event(PLAN_CHANGED_EVENT));
+    }, []);
 
     const signOut = async () => {
         await supabase!.auth.signOut();

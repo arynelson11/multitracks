@@ -21,6 +21,7 @@ export type FakeDb = {
   rpcCalls: { name: string; args: Record<string, unknown> }[]
   writes: { table: string; op: 'insert' | 'upsert' | 'update' | 'delete'; payload: unknown }[]
   failTable: (table: string, error: DbError) => void
+  setRpc: (name: string, handler: RpcHandler) => RpcHandler | undefined
   from: (table: string) => QueryBuilder
   rpc: (name: string, args?: Record<string, unknown>) => Promise<DbResult>
 }
@@ -157,6 +158,13 @@ class FakeDbImpl implements FakeDb {
   }
 
   failTable(table: string, error: DbError): void { this.failures.set(table, error) }
+
+  // Troca o RPC falso e devolve o anterior (pra simular falha e depois voltar).
+  setRpc(name: string, handler: RpcHandler): RpcHandler | undefined {
+    const previous = this.rpcHandlers[name]
+    this.rpcHandlers[name] = handler
+    return previous
+  }
 
   from(table: string): QueryBuilder { return new QueryBuilder(this, table) }
 

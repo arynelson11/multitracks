@@ -4,9 +4,14 @@ import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
 import { verifyUser } from './_lib/auth.js';
 import { PLAN_PRICING, isPlanKey } from './_lib/pricing.js';
-import { asaasBaseUrl } from './_lib/asaas.js';
+import { asaasBaseUrl, asaasFromEnv } from './_lib/asaas.js';
+import { BillingError, cancelSubscriptionForUser } from './_lib/billing.js';
 
-// Preços: api/_lib/pricing.ts (fonte única, usada também pelo webhook).
+// Ações de cobrança do usuário logado:
+//   POST /api/checkout                 cria o checkout hospedado do Asaas (padrão)
+//   POST /api/checkout?action=cancel   cancela a assinatura de quem está logado
+// O cancelamento mora aqui porque a Vercel do plano atual aceita no máximo 12
+// funções em api/ e já são 12. Preços: api/_lib/pricing.ts (fonte única).
 
 function parseBody(req: any): Record<string, any> {
   const raw = req?.body;
@@ -31,6 +36,10 @@ export default async function handler(req: any, res: any) {
     const auth = await verifyUser(req);
     if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
     const userId = auth.userId;
+
+    const action = typeof req.query?.action === 'string' ? req.query.action : '';
+    if (action === 'cancel') return cancelForUser(userId, res);
+    if (action) return res.status(400).json({ error: 'Invalid action' });
 
     const body = parseBody(req);
     const planKey = typeof body.planKey === 'string' ? body.planKey : '';
@@ -111,5 +120,36 @@ export default async function handler(req: any, res: any) {
   } catch (e: any) {
     console.error('[checkout] unexpected handler error:', e?.message, e?.stack);
     return res.status(500).json({ error: 'Unexpected handler error', message: e?.message || 'unknown' });
+  }
+}
+
+// Cancela a assinatura de QUEM ESTÁ LOGADO (o id vem do JWT; o corpo do pedido é
+// ignorado). Regras em api/_lib/billing.ts: até o fim do período pago, ou
+// estorno e Livre na hora se for arrependimento em até 7 dias da primeira compra.
+async function cancelForUser(userId: string, res: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const supaUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supaUrl || !serviceKey) {
+    console.error('[checkout:cancel] missing Supabase env');
+    return res.status(500).json({ error: 'O cancelamento está indisponível agora. Fale com a gente pelo WhatsApp.' });
+  }
+  try {
+    const result = await cancelSubscriptionForUser(
+      { db: createClient(supaUrl, serviceKey), asaas: asaasFromEnv() },
+      { userId, source: 'user' },
+    );
+    console.log('[checkout:cancel] ok', { result: result.result, refunded: result.refunded });
+    return res.status(200).json(result);
+  } catch (e) {
+    if (e instanceof BillingError) {
+      // erro de banco antes de qualquer passo no Asaas: nada mudou; sem detalhe técnico pro usuário
+      const message = e.code === 'db_error'
+        ? 'Não deu para cancelar agora. Nada foi alterado. Tente de novo em alguns minutos.'
+        : e.message;
+      if (e.code === 'db_error') console.error('[checkout:cancel] db:', e.message);
+      return res.status(e.httpStatus).json({ error: message, code: e.code });
+    }
+    console.error('[checkout:cancel] unexpected:', e instanceof Error ? e.message : 'erro');
+    return res.status(500).json({ error: 'Não deu para cancelar agora. Nada foi alterado. Tente de novo em alguns minutos.' });
   }
 }

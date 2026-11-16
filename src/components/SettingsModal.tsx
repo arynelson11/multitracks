@@ -7,6 +7,7 @@ import { buildChannelLabels } from '../lib/channelNames';
 import { PricingModal } from './PricingModal';
 import { planDisplayName, isPaidPlan } from '../lib/plans';
 import { SeparationUsageMeter } from './SeparationUsageMeter';
+import { SubscriptionPanel } from './SubscriptionPanel';
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark';
 import { ProfileTab } from './ProfileTab';
 import { CHANGELOG } from '../lib/changelog';
@@ -29,7 +30,7 @@ type Tab = 'Perfil' | 'Geral' | 'Buses' | 'Novidades' | 'Assinatura' | 'Sobre';
 export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin, onReplayTour, desktopUpdate, onInstallUpdate }: SettingsModalProps) {
     const { settings, updateSetting, availableAudioDevices, refreshAudioDevices } = useSettings();
     // Plano efetivo (cancelado vale até a data de fim, depois é Livre).
-    const { user, userPlan, updateProfile, updatePassword, signOutEverywhere, deleteAccount } = useAuth();
+    const { user, userPlan, planExpiresAt, refreshPlan, updateProfile, updatePassword, signOutEverywhere, deleteAccount } = useAuth();
     const [activeTab, setActiveTab] = useState<Tab>('Perfil');
     const [isPricingOpen, setIsPricingOpen] = useState(false);
 
@@ -264,6 +265,13 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                                 </p>
 
                                 <SeparationUsageMeter plan={userPlan} isAdmin={isAdmin} />
+
+                                <SubscriptionPanel
+                                    plan={userPlan}
+                                    planExpiresAt={planExpiresAt}
+                                    onChanged={() => { void refreshPlan(); }}
+                                    onOpenPricing={() => setIsPricingOpen(true)}
+                                />
 
                                 <button
                                     onClick={() => setIsPricingOpen(true)}
