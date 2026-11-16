@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef } from 'react'
 import type { StageClock } from '../../lib/stageContracts'
 import { cx } from '../ui'
 import { Icon } from './icons'
+import { setFlag, setText } from './stageDom'
 import { useFrame } from './useFrame'
 
 /** Pulso do click: duração de um pulso em segundos e o primeiro "1" em segundos da música (só com grade com fase). */
@@ -29,12 +30,6 @@ function pulsePhase(p: StagePulse, position: number): number | null {
   return x - Math.floor(x)
 }
 
-/** Marca de estado escrita direto no DOM (só quando muda), pra tela andar sem renderizar o React. */
-function setFlag(el: HTMLElement, name: string, on: boolean) {
-  const v = on ? 'true' : 'false'
-  if (el.dataset[name] !== v) el.dataset[name] = v
-}
-
 // v5 .play: círculo de 68px, laranja vazado parado e cheio tocando; o anel do pulso troca a sombra.
 const BASE =
   'group relative grid size-[68px] shrink-0 place-items-center rounded-full select-none transition-[background-color,box-shadow,color,transform] duration-100 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
@@ -59,8 +54,7 @@ export function PlayButton({ isPlaying, isCountingIn, precountTimes, pulse, cloc
     const phase = isPlaying && beep === 0 && pulse ? pulsePhase(pulse, clock.position()) : null
     setFlag(button, 'precount', beep > 0)
     setFlag(button, 'pulse', phase !== null && phase < PULSE_WINDOW)
-    const text = beep > 0 ? String(beep) : ''
-    if (number.textContent !== text) number.textContent = text
+    setText(number, beep > 0 ? String(beep) : '')
   }
   // Pinta logo depois de cada renderização (sem esperar o quadro) e depois a cada quadro enquanto há o que mexer.
   useLayoutEffect(paint)

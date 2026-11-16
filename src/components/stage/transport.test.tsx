@@ -61,9 +61,16 @@ const renderPill = (o: PillOpts = {}) => render(
     onCancel={o.onCancel ?? (() => {})}
   />,
 )
-const pill = () => screen.getByRole('status', { hidden: true })
+const pill = () => document.querySelector('[data-next-pill]') as HTMLElement
 const dots = () => [...pill().querySelectorAll('[data-dot]')].map((d) => d.getAttribute('data-on'))
 const waitText = () => pill().querySelector('[data-wait]') as HTMLElement
+const pillName = () => pill().querySelector('[data-pill-name]') as HTMLElement
+const announcer = () => screen.getByRole('status')
+// Contagem de n pulsos no último compasso (passo 0,5 s), troca em 22 s.
+const counting = (n: number): TransitionView => {
+  const times = Array.from({ length: n }, (_, i) => 22 - (n - i) * 0.5)
+  return { ...T, countTimes: times, countLabels: times.map((_, i) => i + 1), countTotal: n }
+}
 
 const view = (patch: Partial<TransportBarProps['view']> = {}): TransportBarProps['view'] => ({
   isPlaying: true, isCountingIn: false, precount: { enabled: true, beats: 4, times: [] }, endMode: 'continue',
@@ -119,6 +126,8 @@ describe('aviso PRÓXIMA', () => {
     renderPill({ transition: { ...T, barsLeft: 3 } })
     expect(pill().getAttribute('data-waiting')).toBe('true')
     expect(waitText().textContent).toBe('em 3 comp.')
+    // Esperando, as bolinhas ficam invisíveis mas no lugar (não somem do layout).
+    expect(pill().querySelector('[data-dots]')!.className).toContain('group-data-[waiting=true]:invisible')
     expect(waitText().getAttribute('data-alert')).toBe('false')
     cleanup()
     renderPill({ transition: { ...T, clickAudible: false } })
@@ -139,6 +148,12 @@ describe('aviso PRÓXIMA', () => {
     const w = screen.getByText('SEM CLICK LIDO')
     expect(w.getAttribute('title')).toBe(GRID_WARNING_TEXT['sem-click-lido'].title)
     expect(w.className).toContain('text-ps-alert')
+    // Ao lado do rótulo (mesma linha, como no v5), não embaixo do nome.
+    expect(w.parentElement).toBe(screen.getByText('PRÓXIMA').parentElement)
+    expect(w.parentElement!.compareDocumentPosition(pillName()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // A explicação não fica só no title: o X (único foco do aviso) é descrito por ela.
+    const desc = document.getElementById(btn('Cancelar pulo').getAttribute('aria-describedby')!)
+    expect(desc!.textContent).toBe(GRID_WARNING_TEXT['sem-click-lido'].title)
     cleanup()
     renderPill({ gridWarning: 'compasso-assumido' })
     expect(screen.getByText('4/4 ASSUMIDO').getAttribute('title')).toBe(GRID_WARNING_TEXT['compasso-assumido'].title)
@@ -151,6 +166,21 @@ describe('aviso PRÓXIMA', () => {
     cleanup()
     renderPill({ gridWarning: 'sem-click-lido', intent: null, transition: null })
     expect(screen.queryByText('SEM CLICK LIDO')).toBeNull()
+  })
+  it('região viva fora do aviso: anuncia armou e desarmou uma vez, nunca por bipe', () => {
+    heard = 10
+    const { rerender } = renderPill({ intent: null, transition: null, gridWarning: 'sem-click-lido' })
+    expect(announcer().getAttribute('aria-hidden')).toBeNull()
+    expect(announcer().contains(pill())).toBe(false)
+    expect(announcer().textContent).toBe('Nenhum pulo armado')
+    const props = { sections: SECTIONS, currentSection: 1, gridWarning: 'sem-click-lido' as const, clock, onCancel: () => {} }
+    rerender(<NextPill {...props} transition={T} intent={{ target: 2, plays: 1 }} />)
+    const armed = announcer().textContent
+    expect(armed).toBe(`PRÓXIMA Refrão. SEM CLICK LIDO: ${GRID_WARNING_TEXT['sem-click-lido'].title}`)
+    for (const h of [20.01, 20.51, 21.01, 21.51]) { heard = h; frame() }
+    expect(announcer().textContent).toBe(armed)
+    rerender(<NextPill {...props} transition={null} intent={null} />)
+    expect(announcer().textContent).toBe('Nenhum pulo armado')
   })
   it('aviso escondido no loop infinito da própria seção', () => {
     renderPill({ transition: SELF_LOOP, intent: { target: 1, plays: 'infinite' } })
@@ -169,16 +199,74 @@ describe('aviso PRÓXIMA', () => {
     expect(pill().textContent).toContain('PRÓXIMA')
     for (const c of ['animate-ps-armglow', 'inset-ring-ps-arm']) expect(pill().className).toContain(c)
   })
-  it('até 4 bolinhas numa linha; 5 a 12 quebram em duas (12/8 contando todos os pulsos: duas de 6)', () => {
-    const cols = (n: number) => {
-      const times = Array.from({ length: n }, (_, i) => 16 + i * 0.5)
-      renderPill({ transition: { ...T, countTimes: times, countLabels: times.map((_, i) => i + 1), countTotal: n } })
-      expect(dots()).toHaveLength(n)
-      const c = pill().querySelector('[data-dot]')!.parentElement!.className.match(/grid-cols-(\d+)/)![1]
+  it('uma bolinha por TEMPO do compasso: 12/8 conta 4, 6/8 conta 2, no máximo 7; até 4 numa linha', () => {
+    const shape = (n: number) => {
+      renderPill({ transition: counting(n) })
+      const d = dots().length
+      const c = Number(pill().querySelector('[data-dots]')!.className.match(/grid-cols-(\d+)/)![1])
       cleanup()
-      return Number(c)
+      return [d, c]
     }
-    expect([3, 4, 5, 6, 7, 12].map(cols)).toEqual([3, 4, 3, 3, 4, 6])
+    // 2 (6/8 de 3 em 3), 3/4, 4/4, 5/4, 6/8 pulso a pulso, 7/8, 12/8 pulso a pulso.
+    expect([2, 3, 4, 5, 6, 7, 12].map(shape)).toEqual([[2, 2], [3, 3], [4, 4], [5, 3], [2, 2], [7, 4], [4, 4]])
+  })
+  it('12/8 contado pulso a pulso acende a bolinha do tempo quando o pulso dele soa', () => {
+    heard = 22 - 12 * 0.5 + 0.01 // primeiro pulso
+    renderPill({ transition: counting(12) })
+    expect(dots()).toEqual(['true', 'false', 'false', 'false'])
+    heard = 22 - 6 * 0.5 + 0.01 // sétimo pulso: começo do terceiro tempo
+    frame()
+    expect(dots()).toEqual(['true', 'true', 'true', 'false'])
+  })
+  it('lugar das bolinhas e do texto de espera reservado com a mesma largura fixa desde o primeiro quadro', () => {
+    heard = 10
+    renderPill({ transition: { ...counting(7), barsLeft: 3 } })
+    const slot = pill().querySelector('[data-count-slot]') as HTMLElement
+    expect(slot.className).toMatch(/(^|\s)w-\[76px\]/)
+    expect(slot.contains(waitText())).toBe(true)
+    expect(slot.contains(pill().querySelector('[data-dots]'))).toBe(true)
+    // Os dois na mesma célula e nenhum sai do layout ao trocar (invisible, nunca hidden).
+    for (const el of [waitText(), pill().querySelector('[data-dots]') as HTMLElement]) {
+      expect(el.className).toContain('[grid-area:1/1]')
+      expect(el.className).not.toMatch(/(^|\s)hidden(\s|$)/)
+    }
+    heard = 22 - 7 * 0.5 + 0.01
+    frame()
+    expect(pill().getAttribute('data-waiting')).toBe('false')
+    expect(pill().querySelector('[data-count-slot]')).toBe(slot)
+  })
+  it('nome em 16 px até 2 linhas, sem reticências; mais que isso desce pra 14 px, sem cortar', () => {
+    // O jsdom não mede: a altura do nome vem de uma régua falsa (14 caracteres por linha a 16 px, 20 a 14 px).
+    const desc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get(this: HTMLElement) {
+        if (!this.hasAttribute('data-pill-name')) return 0
+        const small = this.dataset.fit === 'small'
+        const perLine = small ? 20 : 14
+        return Math.ceil((this.textContent ?? '').length / perLine) * (small ? 14 : 16) * 1.1
+      },
+    })
+    try {
+      renderPill()
+      expect(pillName().className).toContain('text-ps-md')
+      expect(pillName().className).not.toMatch(/whitespace-nowrap|truncate|text-ellipsis/)
+      expect(pillName().dataset.fit).toBeUndefined()
+      cleanup()
+      const longo = [...SECTIONS.slice(0, 2), { ...SECTIONS[2], label: 'Ponte Instrumental Final de Novo' }] // 32 car.: 3 linhas a 16 px, 2 a 14 px
+      render(<NextPill transition={T} intent={{ target: 2, plays: 1 }} sections={longo} currentSection={1} gridWarning={null} clock={clock} onCancel={() => {}} />)
+      expect(pillName().dataset.fit).toBe('small')
+      expect(pillName().className).toContain('data-[fit=small]:text-[14px]')
+      expect(pillName().textContent).toBe('Ponte Instrumental Final de Novo')
+    } finally {
+      if (desc) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', desc)
+    }
+  })
+  it('o aviso encolhe dentro da coluna: max-w-full e min-w-0, sem shrink-0', () => {
+    renderPill()
+    for (const c of ['max-w-full', 'min-w-0']) expect(pill().className).toContain(c)
+    expect(pill().className).not.toContain('shrink-0')
+    expect((pillName().parentElement as HTMLElement).className).toContain('min-w-0')
   })
 })
 
@@ -248,7 +336,7 @@ describe('transporte', () => {
     expect(a.toggleClick).toHaveBeenCalledTimes(1)
     fireEvent.click(btn('Metrônomo'))
     expect(a.openMetronome).toHaveBeenCalledTimes(1)
-    fireEvent.click(btn('PRÉ-CONT.'))
+    fireEvent.click(btn('Pré-contagem'))
     expect(a.togglePrecount).toHaveBeenCalledTimes(1)
     fireEvent.click(btn(/Tempos da pré-contagem/))
     expect(a.cyclePrecountBeats).toHaveBeenCalledTimes(1)
@@ -269,7 +357,7 @@ describe('transporte', () => {
     expect(tour('play')).toBe(btn('Pausar'))
     expect(tour('metronomo')).toBe(btn('Metrônomo'))
     expect(tour('modos')!.contains(screen.getByRole('radiogroup', { name: 'Fim da música' }))).toBe(true)
-    expect(tour('precontagem')!.contains(btn('PRÉ-CONT.'))).toBe(true)
+    expect(tour('precontagem')!.contains(btn('Pré-contagem'))).toBe(true)
     expect(tour('precontagem')!.contains(btn(/Tempos da pré-contagem/))).toBe(true)
   })
   it('LOOP aceso com o loop infinito da atual; CLICK e PRÉ-CONT. acesos pelo estado', () => {
@@ -277,15 +365,44 @@ describe('transporte', () => {
     expect(btn('LOOP').getAttribute('aria-pressed')).toBe('true')
     expect(btn('LOOP').className).toContain('text-ps-or')
     expect(btn('CLICK').getAttribute('aria-pressed')).toBe('true')
-    expect(btn('PRÉ-CONT.').getAttribute('aria-pressed')).toBe('true')
+    expect(btn('Pré-contagem').getAttribute('aria-pressed')).toBe('true')
     expect(btn(/Tempos da pré-contagem/).textContent).toBe('4')
     rerender(<TransportBar view={view({ intent: { target: 1, plays: 3 }, click: { channelId: 'c1', on: false }, precount: { enabled: false, beats: 2, times: [] } })} actions={actions()} clock={clock} pulse={null} />)
     expect(btn('LOOP').getAttribute('aria-pressed')).toBe('false')
     expect(btn('LOOP').className).not.toContain('text-ps-or')
     expect(btn('CLICK').getAttribute('aria-pressed')).toBe('false')
-    expect(btn('PRÉ-CONT.').getAttribute('aria-pressed')).toBe('false')
+    expect(btn('Pré-contagem').getAttribute('aria-pressed')).toBe('false')
     expect(btn(/Tempos da pré-contagem/).textContent).toBe('2')
     expect(btn(/Tempos da pré-contagem/).className).toContain('text-ps-dim')
+  })
+  it('ao cancelar o pulo o foco vai pro Play, nunca pro body', () => {
+    const a = actions()
+    const armed = view({ intent: { target: 2, plays: 1 }, transition: T })
+    const { rerender } = render(<TransportBar view={armed} actions={a} clock={clock} pulse={null} />)
+    const x = btn('Cancelar pulo')
+    x.focus()
+    expect(document.activeElement).toBe(x)
+    fireEvent.click(x)
+    expect(a.cancelArm).toHaveBeenCalledTimes(1)
+    rerender(<TransportBar view={view()} actions={a} clock={clock} pulse={null} />)
+    expect(document.activeElement).toBe(btn('Pausar'))
+    // Pousou com o foco no X (o pulo aconteceu): mesma coisa.
+    rerender(<TransportBar view={armed} actions={a} clock={clock} pulse={null} />)
+    btn('Cancelar pulo').focus()
+    rerender(<TransportBar view={view({ currentSection: 2 })} actions={a} clock={clock} pulse={null} />)
+    expect(document.activeElement).toBe(btn('Pausar'))
+  })
+  it('coluna do aviso com largura própria a partir de 1280 e linha da altura do transporte (o centro não anda)', () => {
+    render(<TransportBar view={view()} actions={actions()} clock={clock} pulse={null} />)
+    const bar = screen.getByRole('region', { name: 'Transporte' })
+    // Mínimo fixo (não depende do conteúdo do aviso): o centro fica no mesmo lugar o tempo todo.
+    expect(bar.className).toContain('xl:grid-cols-[minmax(0,1fr)_auto_minmax(328px,1fr)]')
+    // Nada mais alto que o transporte aumenta a linha da grade e empurra o centro pra baixo.
+    expect(bar.className).toContain('grid-rows-[minmax(0,1fr)]')
+  })
+  it('rótulo "Fim da música" sem altura de linha sobrando (não encosta na borda de baixo)', () => {
+    render(<TransportBar view={view()} actions={actions()} clock={clock} pulse={null} />)
+    expect(screen.getByText('Fim da música').className).toContain('leading-none')
   })
   it('CLICK desabilitado sem canal de click', () => {
     const a = actions()

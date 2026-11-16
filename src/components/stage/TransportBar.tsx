@@ -1,4 +1,6 @@
+import { useLayoutEffect, useRef } from 'react'
 import type React from 'react'
+import { isSelfLoop } from '../../lib/sectionArm'
 import type { StageActions, StageClock, StageView } from '../../lib/stageContracts'
 import { Led, Segmented, cx } from '../ui'
 import type { SegmentedOption } from '../ui'
@@ -72,19 +74,35 @@ function TransportButton({ icon, label, toggle = false, on = false, joined = fal
  */
 export function TransportBar({ view, actions, clock, pulse }: TransportBarProps) {
   const { intent, currentSection, click, precount } = view
-  const loopOn = intent !== null && intent.target === currentSection && intent.plays === 'infinite'
+  const barRef = useRef<HTMLElement>(null)
+  const pillColumnRef = useRef<HTMLDivElement>(null)
+  const loopOn = isSelfLoop(intent, currentSection)
   const hasClick = click.channelId !== null
   // Plano pago sem seções marcadas: nada pra armar. No Livre os toques seguem pro convite dos planos.
   const noSections = view.gates.sections && view.sections.length === 0
 
+  // O aviso sumiu (cancelou ou pousou) com o foco no X: o foco vai pro Play, nunca pro body.
+  useLayoutEffect(() => {
+    const column = pillColumnRef.current
+    const focused = document.activeElement
+    if (!column || !focused || !column.contains(focused) || !column.querySelector('[inert]')) return
+    barRef.current?.querySelector<HTMLElement>('[data-tour="play"]')?.focus()
+  })
+
+  // Três colunas do v5. A partir de 1280 a do aviso tem no mínimo 328 px (rótulo + aviso da grade
+  // numa linha e o nome em 2 linhas, ao lado do X e do lugar reservado): de ~1360 px pra cima tudo
+  // fica centralizado; em 1280 o centro fica fixo um pouco à esquerda do meio. O mínimo não depende
+  // do conteúdo, então o centro nunca anda durante o uso. A linha tem a altura do transporte: nada
+  // mais alto empurra o centro pra baixo. Abaixo de 1280 quem decide é a T20.
   return (
     <section
+      ref={barRef}
       aria-label="Transporte"
-      className="grid h-[clamp(72px,9vh,88px)] shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-3.5 border-b border-ps-line px-ps-gutter font-ps-sans"
+      className="grid h-[clamp(72px,9vh,88px)] shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] items-center xl:grid-cols-[minmax(0,1fr)_auto_minmax(328px,1fr)] gap-x-3.5 border-b border-ps-line px-ps-gutter font-ps-sans"
     >
       <div className="flex min-w-0 items-center">
         <div data-tour="modos" className="flex flex-col gap-[5px]">
-          <span className="ps-label">Fim da música</span>
+          <span className="ps-label leading-none">Fim da música</span>
           <Segmented aria-label="Fim da música" options={END_MODES} value={view.endMode} onChange={actions.setEndMode} />
         </div>
       </div>
@@ -117,7 +135,7 @@ export function TransportBar({ view, actions, clock, pulse }: TransportBarProps)
         </div>
         <div data-tour="precontagem" className="flex shrink-0 gap-0.5">
           <TransportButton
-            icon="count" label="PRÉ-CONT." toggle joined on={precount.enabled}
+            icon="count" label="PRÉ-CONT." aria-label="Pré-contagem" toggle joined on={precount.enabled}
             title="Pré-contagem antes de começar a tocar" onClick={actions.togglePrecount}
           />
           <button
@@ -152,7 +170,7 @@ export function TransportBar({ view, actions, clock, pulse }: TransportBarProps)
         </div>
       </div>
 
-      <div className="flex min-w-0 justify-end">
+      <div ref={pillColumnRef} className="flex min-w-0 justify-end">
         <NextPill
           transition={view.transition} intent={intent} sections={view.sections} currentSection={currentSection}
           gridWarning={view.gridWarning} clock={clock} onCancel={actions.cancelArm}
