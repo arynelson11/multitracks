@@ -13,6 +13,7 @@ import { applyChannelMetaToList, autoPanFor, channelGain, isPitchExempt, pickMai
 import { arrangeChannels, resolveChannelRole, type ChannelIdentity } from '../lib/channelNames';
 import { REPERTOIRE_SCHEMA_VERSION, migrateManifestSong, migrateSavedSong, toManifestSong, toSavedSong, type SavedSong } from '../lib/repertoireSchema';
 import { createOutputGraph, type OutputGraph } from '../audio/outputGraph';
+import { createSchedulerClock, type SchedulerClock } from '../audio/schedulerClock';
 import { effectivePan, planOutputs, sanitizeOutputs, type PlannedOutputs } from '../lib/outputPlan';
 import type { OutputPlan, OutputSettings } from '../lib/stageContracts';
 
@@ -94,20 +95,61 @@ const cutLead = (ctx: BaseAudioContext): number =>
 const FROZEN_CLOCK_MS = 50;
 // Teto da espera pelo fundo do corte (thread de áudio atrasada): troca assim mesmo.
 const MAX_CUT_WAIT_MS = 300;
+// Teto do setSinkId: aparelho que não responde não segura a fila de trocas.
+const SINK_TIMEOUT_MS = 3000;
 
-/** Espera o relógio do áudio passar de `t`. Desiste se ele parar, se o contexto não estiver tocando ou se passar do teto. */
-function waitForAudioTime(ctx: BaseAudioContext, t: number): Promise<void> {
+// Tique da espera do corte pelo relógio Worker da T5 (src/audio/schedulerClock.ts), ligado só
+// enquanto alguém espera.
+const CUT_CLOCK_INTERVAL_MS = 2;
+
+/**
+ * Espera o relógio do áudio passar de `t` (Ruling T25-relogio), conferindo o `currentTime` a
+ * cada tique do relógio Worker da T5 (`tickers`), que o navegador não atrasa como os timers da
+ * janela em segundo plano (ali um setTimeout de 1 ms vira 1 s). Medido no Chrome 157: uma fonte
+ * marcadora por espera (ConstantSource terminando em `t`) cortava às vezes a subida do corte no
+ * limite de um bloco (degrau 0,06 em 2 de 7 passadas), então nenhum nó é criado aqui. Reserva
+ * por timer da janela (contexto sem Worker, os de teste) e pro relógio que não anda (contexto
+ * suspenso ou travado: parado 50 ms ou mais de 300 ms de espera, troca assim mesmo).
+ */
+function waitForAudioTime(ctx: BaseAudioContext, t: number, tickers: { add(fn: () => void): () => void } | null): Promise<void> {
     return new Promise((resolve) => {
+        let done = false;
+        let unsubscribe: (() => void) | null = null;
         const started = performance.now();
-        const clockAtStart = ctx.currentTime;
-        const tick = () => {
-            const waited = performance.now() - started;
-            const frozen = waited > FROZEN_CLOCK_MS && ctx.currentTime === clockAtStart;
-            if (ctx.currentTime >= t || ctx.state !== 'running' || frozen || waited > MAX_CUT_WAIT_MS) resolve();
-            else setTimeout(tick, 1);
+        let lastClock = ctx.currentTime;
+        let lastMove = started;
+        const check = () => {
+            if (done) return;
+            const now = performance.now();
+            if (ctx.currentTime !== lastClock) { lastClock = ctx.currentTime; lastMove = now; }
+            if (ctx.currentTime >= t || ctx.state !== 'running' || now - lastMove > FROZEN_CLOCK_MS || now - started > MAX_CUT_WAIT_MS) {
+                done = true;
+                unsubscribe?.();
+                resolve();
+            }
         };
-        tick();
+        check();
+        if (done) return;
+        unsubscribe = tickers?.add(check) ?? null;
+        const timerTick = () => {
+            check();
+            if (!done) setTimeout(timerTick, 5);
+        };
+        setTimeout(timerTick, 5);
     });
+}
+
+/** O setSinkId com teto: aparelho que não responde em 3 s não segura a fila (a troca segue com o aparelho de agora). */
+async function setSinkWithTimeout(ctx: SinkAudioContext, deviceId: string): Promise<void> {
+    if (typeof ctx.setSinkId !== 'function') return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<'timeout'>((resolve) => { timer = setTimeout(() => resolve('timeout'), SINK_TIMEOUT_MS); });
+    try {
+        const result = await Promise.race([ctx.setSinkId(deviceId).then(() => 'ok' as const), timeout]);
+        if (result === 'timeout') console.warn(`[saídas] o setSinkId não respondeu em ${SINK_TIMEOUT_MS / 1000} s; seguindo com o aparelho de agora.`);
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 // Canais do aparelho de saída. Medido no Chrome 157 (AudioContext de tempo real): o
@@ -290,6 +332,11 @@ export function useAudioEngine(userId?: string) {
     // Cortes das trocas de rota (um por barramento) e o repertório mais novo pra quem troca
     // a rota fora da renderização.
     const routeCutsRef = useRef<RouteCuts | null>(null);
+    // Quem espera o fundo do corte, chamado a cada tique do relógio Worker (criado na primeira espera).
+    const cutWaitersRef = useRef(new Set<() => void>());
+    const cutClockRef = useRef<SchedulerClock | null>(null);
+    // Fim da subida do último corte, em tempo do áudio: o próximo só começa depois dele (NB3).
+    const lastCutEndRef = useRef(0);
     const playlistRef = useRef<Song[]>([]);
     const faderBusRef = useRef(new WeakMap<GainNode, ChannelRole>());
     // Valores da renderização mais nova pra quem roda fora dela (initEngine, sinkchange,
@@ -574,7 +621,11 @@ export function useAudioEngine(userId?: string) {
     // fader no corte do barramento do papel. Nunca direto no principal.
     const connectChannel = (cuts: RouteCuts, graph: OutputGraph, ch: ChannelIdentity & { pan: number }, panner: StereoPannerNode, gain: GainNode) => {
         const role = resolveChannelRole(ch);
-        const pan = channelPanFor(ch, graph.plan, autoPanRef.current);
+        // Com troca na fila, o canal já nasce no plano NOVO (Ruling T25-canal-novo): ainda não
+        // toca (só ganha fonte no próximo play) e o fim da troca confere de novo.
+        const ctx = audioCtxRef.current;
+        const plan = routeJobsRef.current > 0 && ctx ? planOutputs(outputsRef.current, deviceChannels(ctx)) : graph.plan;
+        const pan = channelPanFor(ch, plan, autoPanRef.current);
         panner.pan.value = pan;
         pannerPanRef.current.set(panner, pan);
         gain.connect(cuts[role]);
@@ -622,10 +673,30 @@ export function useAudioEngine(userId?: string) {
     /**
      * Troca no fundo de um corte de 3 ms nos três barramentos: desce (âncora com
      * setValueAtTime e rampa linear, nunca depois de setTarget: o corte não tem outra
-     * automação), a partir de uma folga à frente do relógio, espera o relógio do áudio passar
-     * do fundo, faz a troca inteira na mesma tarefa e sobe em 3 ms (também com folga). Sem
-     * som, só a troca.
+     * automação), a partir de uma folga à frente do relógio e depois do fim do corte
+     * anterior, espera o relógio do ÁUDIO passar do fundo (Ruling T25-relogio), faz a troca
+     * inteira na mesma tarefa e sobe em 3 ms (também com folga). Sem som, só a troca.
      */
+    // O Worker do relógio do corte sai junto com o motor.
+    useEffect(() => () => { cutClockRef.current?.dispose(); cutClockRef.current = null; }, []);
+    // Tiques do relógio Worker da T5 pra espera do corte. Sem Worker (contexto de teste), só a reserva por timer.
+    const cutTickers = (): { add(fn: () => void): () => void } | null => {
+        if (typeof Worker === 'undefined') return null;
+        if (!cutClockRef.current) {
+            cutClockRef.current = createSchedulerClock(() => { for (const fn of [...cutWaitersRef.current]) fn(); }, { intervalMs: CUT_CLOCK_INTERVAL_MS });
+        }
+        const clock = cutClockRef.current;
+        return {
+            add(fn) {
+                cutWaitersRef.current.add(fn);
+                clock.start();
+                return () => {
+                    cutWaitersRef.current.delete(fn);
+                    if (cutWaitersRef.current.size === 0) clock.stop();
+                };
+            },
+        };
+    };
     const withRouteCut = async (change: () => void | Promise<void>): Promise<void> => {
         const ctx = audioCtxRef.current;
         const cuts = routeCutsRef.current;
@@ -634,14 +705,16 @@ export function useAudioEngine(userId?: string) {
             return;
         }
         const nodes = Object.values(cuts);
-        const t0 = ctx.currentTime + cutLead(ctx);
+        // Começa depois de a subida do corte anterior terminar (NB3): a âncora em 1 é o valor
+        // real do ganho ali, mesmo que a espera do corte anterior tenha saído pela reserva.
+        const t0 = Math.max(ctx.currentTime + cutLead(ctx), lastCutEndRef.current);
         const bottom = t0 + ROUTE_CUT_S;
         for (const g of nodes) {
-            g.gain.cancelScheduledValues(t0);
             g.gain.setValueAtTime(1, t0);
             g.gain.linearRampToValueAtTime(0, bottom);
         }
-        await waitForAudioTime(ctx, bottom + 128 / ctx.sampleRate);
+        lastCutEndRef.current = bottom;
+        await waitForAudioTime(ctx, bottom + 128 / ctx.sampleRate, cutTickers());
         try {
             await change();
         } finally {
@@ -650,7 +723,8 @@ export function useAudioEngine(userId?: string) {
                 g.gain.setValueAtTime(0, up);
                 g.gain.linearRampToValueAtTime(1, up + ROUTE_CUT_S);
             }
-            await waitForAudioTime(ctx, up + ROUTE_CUT_S);
+            lastCutEndRef.current = up + ROUTE_CUT_S;
+            await waitForAudioTime(ctx, up + ROUTE_CUT_S, cutTickers());
         }
     };
     // As trocas vão numa fila, na ordem: uma nunca começa no meio do corte de outra.
@@ -658,10 +732,21 @@ export function useAudioEngine(userId?: string) {
     const routeJobsRef = useRef(0);
     const enqueueRoute = (job: () => Promise<void>) => {
         routeJobsRef.current++;
-        routeQueueRef.current = routeQueueRef.current
-            .then(job)
-            .catch((e) => console.error('[saídas] a troca de rota falhou', e))
-            .finally(() => { routeJobsRef.current--; });
+        routeQueueRef.current = routeQueueRef.current.then(async () => {
+            try {
+                await job();
+            } catch (e) {
+                console.error('[saídas] a troca de rota falhou', e);
+            } finally {
+                // Rede de segurança no fim de cada troca, sobre TODOS os canais (Ruling
+                // T25-canal-novo): canal que entrou no repertório no meio do corte fica no pan
+                // do plano novo. Só canal novo pode estar diferente aqui, e ele ainda não toca.
+                const ctx = audioCtxRef.current;
+                const graph = graphRef.current;
+                if (ctx && graph) syncAllPans(ctx, graph.plan, autoPanRef.current);
+                routeJobsRef.current--;
+            }
+        });
     };
     // Troca síncrona (plano, papel, pan automático): fila vazia e nada soando, na hora.
     const switchRoute = (change: () => void) => {
@@ -734,7 +819,7 @@ export function useAudioEngine(userId?: string) {
         enqueueRoute(() => withRouteCut(async () => {
             if (typeof ctx.setSinkId === 'function' && ctx.sinkId !== deviceId) {
                 try {
-                    await ctx.setSinkId(deviceId);
+                    await setSinkWithTimeout(ctx, deviceId);
                 } catch (e) {
                     console.error("Failed to set audio sink. Permissions or unsupported browser.", e);
                 }
@@ -744,13 +829,15 @@ export function useAudioEngine(userId?: string) {
         }));
     }, [settings.audioDeviceId, isReady]);
 
-    // Rede de segurança: canal novo ou repertório trocado fora de uma troca de rota. Os
-    // canais já nascem com o pan certo; aqui só corrige o que tiver ficado pra trás.
+    // Rede de segurança: canal novo ou repertório trocado. Os canais já nascem com o pan
+    // certo; aqui só corrige o que tiver ficado pra trás. Com troca na fila, entra na fila
+    // atrás dela (o fim de cada troca acerta todos os canais) em vez de escrever no meio do corte.
     useEffect(() => {
         const ctx = audioCtxRef.current;
         const graph = graphRef.current;
-        if (!ctx || !graph || routeJobsRef.current > 0) return;
-        syncAllPans(ctx, graph.plan, autoPanRef.current);
+        if (!ctx || !graph) return;
+        if (routeJobsRef.current > 0) enqueueRoute(async () => {});
+        else syncAllPans(ctx, graph.plan, autoPanRef.current);
     }, [playlist, outputPlan]);
 
     // Sync pitch ref whenever the active song or its pitch changes

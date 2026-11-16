@@ -25,6 +25,8 @@ const mem = vi.hoisted(() => ({
   ctx: null as unknown,
   ctxOpts: {} as Record<string, unknown>,
   metaGate: null as Promise<void> | null,
+  // Segura a gravação dos arquivos (stems) até o teste liberar.
+  fileGate: null as Promise<void> | null,
 }))
 
 const isMetaKey = (key: string) => key.startsWith('mt_meta_playlist')
@@ -33,7 +35,10 @@ vi.mock('idb-keyval', () => ({
     if (isMetaKey(key) && mem.metaGate) await mem.metaGate
     return isMetaKey(key) ? structuredClone(mem.db.get(key)) : mem.db.get(key)
   },
-  set: async (key: string, value: unknown) => { mem.db.set(key, isMetaKey(key) ? structuredClone(value) : value) },
+  set: async (key: string, value: unknown) => {
+    if (!isMetaKey(key) && mem.fileGate) await mem.fileGate
+    mem.db.set(key, isMetaKey(key) ? structuredClone(value) : value)
+  },
   del: async (key: string) => { mem.db.delete(key) },
   keys: async () => [...mem.db.keys()],
 }))
@@ -84,6 +89,7 @@ beforeEach(() => {
   mem.db.clear()
   mem.updates.length = 0
   mem.metaGate = null
+  mem.fileGate = null
   mem.ctx = null
   mem.ctxOpts = {}
   mem.settings = { autoPan: false, audioDeviceId: 'default', outputs: SPLIT, legacyPanReset: false }
@@ -908,4 +914,112 @@ describe('corte curto nas trocas de rota (Ruling T25-corte e T25-sincrono)', () 
     expect(panners.length).toBeGreaterThanOrEqual(4)
     act(() => { hook.result.current.cancelCountIn() })
   })
+})
+
+describe('rodada 3: canal novo no meio do corte, relógio, âncora e setSinkId', () => {
+  // Relógio do fake andando `ms` milissegundos de áudio, 1 ms por vez, com a thread livre entre eles.
+  async function stepAudio(ms: number) {
+    await act(async () => {
+      for (let i = 0; i < ms; i++) { ctxOf().currentTime += 0.001; await new Promise((resolve) => setTimeout(resolve, 2)) }
+    })
+  }
+  const pause = (ms: number) => act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)) })
+
+  it('canal ligado com a troca pendente nasce com o pan do plano novo, atrás do corte', async () => {
+    // Caso do revisor: separados com o lado trocado -> Tudo junto com pan automático.
+    mem.settings = { ...mem.settings, autoPan: true, outputs: { ...SPLIT, earOnSecond: true } }
+    seed(song('s1'))
+    const hook = await openApp()
+    const bus = graphOf(ctxOf())
+    await act(async () => { await hook.result.current.play() })
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    await act(async () => { hook.rerender() })
+    const before = nodesOf(ctxOf(), 'StereoPannerNode').length
+    let adding!: Promise<void>
+    await act(async () => { adding = hook.result.current.addChannelToActiveSong(new File(['mono'], 'CLICK 2.wav', { type: 'audio/wav' })); await adding })
+    const [novo] = nodesOf(ctxOf(), 'StereoPannerNode').slice(before)
+    expect(hook.result.current.outputPlan.mode).toBe('split2') // a troca ainda não aconteceu
+    expect(valueAt(novo.pan, ctxOf().currentTime)).toBe(-1) // nasceu no plano novo (o Click à esquerda)
+    const fader = novo.connections[0].to as FakeGainNode
+    expect(connectedTo(fader, bus.cut.click)).toBe(true)
+    await letAudioRun(80)
+    expect(hook.result.current.outputPlan.mode).toBe('stereo')
+    expect(valueAt(novo.pan, ctxOf().currentTime)).toBe(-1)
+    act(() => { hook.result.current.pause() })
+  })
+
+  it('canal listado no meio da troca, com o pan do plano velho, é acertado quando a troca termina', async () => {
+    mem.settings = { ...mem.settings, autoPan: true, outputs: { ...SPLIT, earOnSecond: true } }
+    seed(song('s1'))
+    const hook = await openApp()
+    await act(async () => { await hook.result.current.play() })
+    // O canal nasce ANTES da troca (pan do plano velho, +1) e só entra no repertório depois do
+    // fundo, com a troca ainda subindo (o Chrome mediu isso em 7 de 60).
+    let releaseFile!: () => void
+    mem.fileGate = new Promise<void>((resolve) => { releaseFile = resolve })
+    let adding!: Promise<void>
+    const before = nodesOf(ctxOf(), 'StereoPannerNode').length
+    await act(async () => {
+      adding = hook.result.current.addChannelToActiveSong(new File(['mono'], 'CLICK 2.wav', { type: 'audio/wav' }))
+      for (let i = 0; i < 100 && nodesOf(ctxOf(), 'StereoPannerNode').length === before; i++) await new Promise((resolve) => setTimeout(resolve, 2))
+    })
+    const [novo] = nodesOf(ctxOf(), 'StereoPannerNode').slice(before)
+    expect(valueAt(novo.pan, ctxOf().currentTime)).toBe(1)
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    await act(async () => { hook.rerender() })
+    await stepAudio(17) // passa do fundo: roteador e pans dos canais listados trocam; o relógio para na subida
+    expect(hook.result.current.outputPlan.mode).toBe('stereo')
+    await act(async () => { releaseFile(); await adding }) // listado com a troca ainda na fila
+    expect(hook.result.current.channels.some((c) => c.name === 'CLICK 2')).toBe(true)
+    await pause(150) // a troca termina (pela reserva do relógio parado)
+    expect(valueAt(novo.pan, ctxOf().currentTime)).toBe(-1)
+    act(() => { hook.result.current.pause() })
+  })
+
+  it('duas trocas seguidas, a segunda antes de a primeira terminar de subir: o corte nunca dá degrau', async () => {
+    mem.settings = { ...mem.settings, autoPan: true, outputs: SPLIT }
+    seed(song('s1'))
+    const hook = await openApp()
+    const bus = graphOf(ctxOf())
+    await act(async () => { await hook.result.current.play() })
+    const ctx = ctxOf()
+    const t0 = ctx.currentTime
+    // 1ª troca: o relógio passa do fundo e para no começo da subida (aparelho travado).
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    await act(async () => { hook.rerender() })
+    await stepAudio(17)
+    // 2ª troca antes de a subida da 1ª terminar; a 1ª sai pela reserva do relógio parado.
+    mem.settings = { ...mem.settings, outputs: { ...SPLIT, earOnSecond: true } }
+    await act(async () => { hook.rerender() })
+    await pause(350) // passa do teto da espera: a 1ª termina com a subida ainda marcada no futuro
+    await letAudioRun(120)
+    expect(hook.result.current.outputPlan).toMatchObject({ mode: 'split2', click: [1] })
+    // A automação do corte, amostra a amostra: nunca anda mais que uma rampa de 3 ms por amostra.
+    let worst = 0
+    let prev = valueAt(bus.cut.click.gain, t0)
+    for (let t = t0; t < ctx.currentTime + 0.05; t += 1 / SR) {
+      const v = valueAt(bus.cut.click.gain, t)
+      worst = Math.max(worst, Math.abs(v - prev))
+      prev = v
+    }
+    expect(worst).toBeLessThanOrEqual(1 / 144 + 1e-6)
+    expect(valueAt(bus.cut.click.gain, ctx.currentTime + 0.05)).toBe(1)
+    act(() => { hook.result.current.pause() })
+  }, 30000)
+
+  it('setSinkId que não volta em 3 s: a fila segue e as trocas seguintes valem', async () => {
+    mem.ctxOpts = { maxChannelCount: 2, sinks: { placa: 8 } }
+    seed(song('s1'))
+    const hook = await openApp()
+    const ctx = ctxOf()
+    ctx.setSinkId = () => new Promise<void>(() => {}) // aparelho que não responde
+    mem.settings = { ...mem.settings, audioDeviceId: 'placa' }
+    await act(async () => { hook.rerender() })
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    await act(async () => { hook.rerender() })
+    expect(hook.result.current.outputPlan.mode).toBe('split2') // ainda atrás do setSinkId
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 3300)) })
+    expect(hook.result.current.outputPlan.mode).toBe('stereo')
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('setSinkId'))).toBe(true)
+  }, 30000)
 })
