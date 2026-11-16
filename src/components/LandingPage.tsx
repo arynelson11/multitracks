@@ -9,11 +9,9 @@ import { DemoMixer } from './DemoMixer'
 import { BrandLogo } from './BrandLogo'
 import { DomingoMark } from './brand/DomingoMark'
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark'
-import { CONTACT, FAQS, PRICES, WHATSAPP_URL } from '../content/site'
+import { FAQS, PRICES, WHATSAPP_URL } from '../content/site'
 import { annualPerMonth, annualSavings, formatReais } from '../lib/prices'
-
-// Suporte / contato por email
-const SUPPORT_EMAIL = CONTACT.email
+import { SiteLegalInfo } from './SiteLegalInfo'
 
 function WhatsappIcon({ className }: { className?: string }) {
   return (
@@ -566,21 +564,11 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             <button onClick={goToApp} className="hover:text-bone transition-colors cursor-pointer">Entrar</button>
             <button onClick={goToApp} className="hover:text-bone transition-colors cursor-pointer">Criar conta</button>
             <a href="#precos" className="hover:text-bone transition-colors">Planos</a>
-            <a
-              href={WHATSAPP_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 hover:text-bone transition-colors"
-            >
-              <WhatsappIcon className="w-3.5 h-3.5" />
-              Suporte
-            </a>
-            <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-bone transition-colors">
-              Email
-            </a>
+            <a href="/download" className="hover:text-bone transition-colors">Baixar app</a>
           </div>
           <p className="text-[11px] text-warm-400">© {new Date().getFullYear()} Playback Studio · Feito por quem toca.</p>
         </div>
+        <SiteLegalInfo className="max-w-5xl mx-auto mt-8 pt-6 border-t border-tinta-border" />
       </footer>
 
       {/* ════════ BOTÃO FLUTUANTE WHATSAPP ════════ */}

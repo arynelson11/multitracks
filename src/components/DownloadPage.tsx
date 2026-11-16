@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark'
 import { InstallAppGuide } from './InstallAppGuide'
+import { SiteLegalInfo } from './SiteLegalInfo'
 import { detectInstallPlatform } from '../hooks/usePWAInstall'
 
 const GH = 'https://github.com/arynelson11/multitracks/releases/latest/download'
@@ -187,8 +188,9 @@ export function DownloadPage() {
           </ul>
         </div>
 
-        <footer className="text-center text-zinc-600 text-xs pb-8">
-          Playback Studio · A plataforma do domingo
+        <footer className="text-center text-xs pb-8 border-t border-white/10 pt-8">
+          <p className="text-zinc-400 mb-4">Playback Studio · A plataforma do domingo</p>
+          <SiteLegalInfo />
         </footer>
       </div>
     </div>
