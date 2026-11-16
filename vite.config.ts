@@ -125,6 +125,9 @@ export default defineConfig({
               // /cancelamento e em endereço que não existe (o 404 tem que vir da rede).
               navigateFallbackAllowlist: SW_NAVIGATION_ALLOWLIST,
               globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+              // A imagem de compartilhamento (1200x630, ~240 KB) só serve pro WhatsApp e
+              // redes sociais: não entra no cache do app de quem visita.
+              globIgnores: ['**/node_modules/**/*', '**/og-image.png'],
               runtimeCaching: [
                 {
                   urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
