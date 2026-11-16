@@ -516,13 +516,29 @@ describe('faixa do meio', () => {
     fireEvent.click(gridKey('E'))
     expect(a.changePitch).toHaveBeenLastCalledWith(-3)
   })
-  it('PAD mostra o pad tocando; o compasso em uso vem da grade', () => {
-    renderStrip({
-      view: { padPanelOpen: true, activePad: 'C#', grid: { bpm: 52, firstDownbeat: 0, signature: '6/8', countEvery: 3, source: 'click', meterSource: 'acento' }, song: { ...SONG, bpm: 78, signature: null } },
-    })
+  it('PAD mostra o pad tocando', () => {
+    renderStrip({ view: { padPanelOpen: true, activePad: 'C#' } })
     expect(btn(/^PAD/).textContent).toContain('tocando C#')
     expect(btn(/^PAD/).getAttribute('aria-pressed')).toBe('true')
-    // BPM exibido é sempre o da semínima (o da música); o compasso é o que o palco usa.
+  })
+  // Ruling T13-bpm: a grade guarda o BPM do PULSO (a colcheia no x/8); a tela mostra a semínima pela
+  // conversão única do contrato. Sem grade, o BPM salvo da música, que já é a semínima.
+  it.each([
+    [156, '6/8', 3, '78.0 BPM · 6/8'],
+    [120, '4/4', 1, '120.0 BPM · 4/4'],
+    [140, '7/8', 1, '70.0 BPM · 7/8'],
+    [144.6, '12/8', 3, '72.3 BPM · 12/8'],
+  ] as const)('grade de %s pulsos por minuto em %s mostra a semínima', (pulse, sig, countEvery, shown) => {
+    renderStrip({
+      view: { grid: { bpm: pulse, firstDownbeat: 0, signature: sig, countEvery, source: 'click', meterSource: 'acento' }, song: { ...SONG, bpm: 99, signature: '4/4' } },
+    })
+    expect(q('[data-bpm]').textContent).toBe(shown)
+  })
+  it('sem grade (ou com grade quebrada) mostra o BPM salvo da música', () => {
+    const { unmount } = renderStrip({ view: { grid: null, song: { ...SONG, bpm: 78, signature: '6/8' } } })
+    expect(q('[data-bpm]').textContent).toBe('78.0 BPM · 6/8')
+    unmount()
+    renderStrip({ view: { grid: { bpm: Number.NaN, firstDownbeat: 0, signature: '6/8', countEvery: 3, source: 'bpm', meterSource: 'salvo' }, song: { ...SONG, bpm: 78, signature: '6/8' } } })
     expect(q('[data-bpm]').textContent).toBe('78.0 BPM · 6/8')
   })
   it('modo EDITAR: o Compasso abre o editor da casca', () => {

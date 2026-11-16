@@ -34,8 +34,9 @@ const WARNING =
 
 /**
  * Tempo da faixa do meio (mockup v5): tempo OUVIDO em "mm:ss" (escrito a cada quadro, direto no
- * DOM) e a duração; "72.0 BPM · 4/4" ou "BPM não informado". O BPM é o da semínima (Ruling
- * T3-BPM: o "Fé" em 6/8 é 78); o compasso composto só muda a contagem. Sem os botões de andamento
+ * DOM) e a duração; "72.0 BPM · 4/4" ou "BPM não informado". `bpm` chega já na semínima (Ruling
+ * T3-BPM: o "Fé" em 6/8 é 78; quem converte o BPM do pulso da grade é a MidStrip), e o compasso
+ * composto só muda a contagem. Sem os botões de andamento
  * (Projeto 4). Com aviso da grade, o chip âmbar com o texto de GRID_WARNING_TEXT. No modo
  * EDITAR a linha do BPM vira o botão "Compasso".
  */

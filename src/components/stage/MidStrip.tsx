@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import type { StageActions, StageClock, StageView } from '../../lib/stageContracts'
+import { displayBpmFromPulseBpm } from '../../lib/stageContracts'
+import type { SongGrid, StageActions, StageClock, StageView } from '../../lib/stageContracts'
 import { BigButton } from './BigButton'
 import { CurrentSectionCell } from './CurrentSectionCell'
 import { KeyCell } from './KeyCell'
@@ -51,6 +52,17 @@ function overflowsX(el: HTMLElement): boolean {
     if (r.width > 0 && (r.left < left || r.right > right)) return true
   }
   return false
+}
+
+/**
+ * BPM exibido, sempre a semínima (Ruling T3-BPM, Ruling T13-bpm). A grade guarda o BPM do PULSO
+ * (a colcheia no x/8: o "Fé" em 6/8 tem a grade em 156), então passa pela conversão única do
+ * contrato (156 em 6/8 = 78, 140 em 7/8 = 70). Sem grade, ou com o BPM dela quebrado, o BPM salvo
+ * da música, que já é a semínima. A mesma regra do MeterEditor.
+ */
+function shownBpm(grid: SongGrid | null, songBpm: number | null): number | null {
+  const fromGrid = grid ? displayBpmFromPulseBpm(grid.bpm, grid.signature) : NaN
+  return Number.isFinite(fromGrid) ? fromGrid : songBpm
 }
 
 /** Degraus do encaixe: --ps-fit vai de 1 (tamanho cheio) a 0 (texto em 12 px, capa em 48 px) em 8 passos. */
@@ -116,17 +128,18 @@ const STRIP =
  * Faixa do meio do palco novo (mockup v5): tempo, TOM, seção atual, música, PAD e LETRA. Só monta
  * as células com o que vem da vista e liga cada toque na ação do palco. A grade de tons é aberta e
  * fechada pela casca (`keyGridOpen`), que também trata o Esc; o "Compasso" do modo EDITAR abre o
- * editor da casca (`onOpenMeter`). O BPM é o da música (semínima, Ruling T3-BPM); o compasso é o
- * da grade em uso (o salvo quando ainda não há grade).
+ * editor da casca (`onOpenMeter`). BPM e compasso são os da grade em uso; sem grade, os salvos da
+ * música (ver `shownBpm`).
  */
 export function MidStrip({ view, actions, clock, keyGridOpen, onKeyGridOpenChange, onOpenMeter }: MidStripProps) {
   const rootRef = useRef<HTMLElement>(null)
   const song = view.song
   const signature = view.grid?.signature ?? song?.signature ?? null
+  const bpm = shownBpm(view.grid, song?.bpm ?? null)
 
   // Mede de novo só quando muda algum texto que mexe no tamanho (a casca renderiza a cada quadro).
   const fitKey = [
-    song?.name, song?.artist, song?.nextName, song?.repertoireName, song?.position, song?.total, song?.originalKey, song?.pitch, song?.bpm,
+    song?.name, song?.artist, song?.nextName, song?.repertoireName, song?.position, song?.total, song?.originalKey, song?.pitch, bpm,
     signature, view.gridWarning, view.editMode, view.activePad, view.currentSection, view.sections.map((s) => s.label).join('\n'),
   ].join('\t')
   useLayoutEffect(() => {
@@ -150,7 +163,7 @@ export function MidStrip({ view, actions, clock, keyGridOpen, onKeyGridOpenChang
   return (
     <section ref={rootRef} aria-label="Música atual" className={STRIP}>
       <TimeCell
-        duration={song?.duration ?? 0} bpm={song?.bpm ?? null} signature={signature} gridWarning={view.gridWarning}
+        duration={song?.duration ?? 0} bpm={bpm} signature={signature} gridWarning={view.gridWarning}
         editMode={view.editMode} clock={clock} onOpenMeter={() => onOpenMeter()}
       />
       <KeyCell
