@@ -7,9 +7,9 @@ import type { Channel, Song, Marker } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { detectKey, generateEndlessClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { loadClickSelection } from '../lib/clickLibrary';
-import { sanitizeSemitones, wantsFormantCompensation } from '../lib/pitchRules';
+import { sanitizeSemitones } from '../lib/pitchRules';
 import { getCachedStem, getCachedStemNames, isSongCached } from '../lib/offlineCache';
-import { applyChannelMetaToList, autoPanFor, channelGain, isPitchExempt, pickMainChannel, pitchChangeAction, type ChannelMetaPatch } from '../lib/channelRoles';
+import { applyChannelMetaToList, autoPanFor, channelGain, isPitchExempt, pickMainChannel, pitchChangeAction, wantsFormantCompensation, type ChannelMetaPatch } from '../lib/channelRoles';
 import { arrangeChannels } from '../lib/channelNames';
 import { REPERTOIRE_SCHEMA_VERSION, migrateManifestSong, migrateSavedSong, toManifestSong, toSavedSong, type SavedSong } from '../lib/repertoireSchema';
 
@@ -306,12 +306,13 @@ export function useAudioEngine(userId?: string) {
     const applyPitchToChannel = (ch: Channel, semitones: number) => {
         const slot = pitchSlotsRef.current.get(ch.id);
         if (!slot || !slot.active) return;
-        // Click e Guia (regra central, o papel manual vale) nunca transpõem: ficam em 0
-        // e sem formantes. Formantes só em voz, pela regra de pitchRules.ts.
+        // Click e Guia (regra central, o papel manual vale) nunca transpõem: ficam em 0.
+        // Formantes só em voz (família Vocal ou Backing da regra central, com o nome
+        // dado pelo usuário): em instrumento transposto eles tiram definição.
         const exempt = isPitchExempt(ch);
         void slot.node.schedule({
             semitones: exempt ? 0 : semitones,
-            formantCompensation: wantsFormantCompensation(ch.name, exempt),
+            formantCompensation: wantsFormantCompensation(ch),
             formantBaseHz: 0,
         });
     };

@@ -60,8 +60,13 @@ describe('motor usa a regra central de canais', () => {
     expect(src).toMatch(/const\s+routingFor\s*=[\s\S]{0,160}?=>\s*autoPanFor\(/)
   })
 
-  it('formantes seguem o papel da regra central (papel manual vale)', () => {
-    expect(bodyOf('applyPitchToChannel')).toMatch(/\bwantsFormantCompensation\(\s*ch\.name\s*,\s*exempt\s*\)/)
+  // Formantes pela família da regra central (Vocal ou Backing, com o nome do usuário e
+  // o papel manual), recebendo o canal inteiro: nunca o pedaço do nome do arquivo.
+  it('formantes seguem a família da regra central (papel e nome do usuário valem)', () => {
+    expect(bodyOf('applyPitchToChannel')).toMatch(/\bwantsFormantCompensation\(\s*ch\s*\)/)
+    expect(src).toMatch(/import\s*\{[^}]*\bwantsFormantCompensation\b[^}]*\}\s*from\s*['"]\.\.\/lib\/channelRoles['"]/)
+    expect(src).not.toMatch(/import\s*\{[^}]*\bwantsFormantCompensation\b[^}]*\}\s*from\s*['"]\.\.\/lib\/pitchRules['"]/)
+    expect(src).not.toMatch(/wantsFormantCompensation\(\s*ch\.name/)
   })
 
   it('importa os helpers da regra central', () => {

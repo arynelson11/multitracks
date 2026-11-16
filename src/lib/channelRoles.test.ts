@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   CUSTOM_NAME_MAX, applyChannelMetaPatch, applyChannelMetaToList, autoPanFor, channelFaderFill, channelGain, findClickChannel,
   isPitchExempt, isSilencedBySolo, isSoloSafe, pickMainChannel, pickTempoSourceChannel, pickWaveformChannel, pitchChangeAction,
+  wantsFormantCompensation,
 } from './channelRoles'
 import { FAMILY_COLOR, buildChannelLabels, recognizeChannel, sortChannelsByDefault, type ChannelIdentity } from './channelNames'
 
@@ -208,5 +209,27 @@ describe('Metronome é Click pela regra central (ajuste do tom, item 4)', () => 
     const ch = { id: 'm', name: 'Metronome', role: 'normal' as const }
     expect(isPitchExempt(ch)).toBe(false)
     expect(autoPanFor(ch, true)).toEqual({ pan: 1, bus: '2' })
+  })
+})
+
+// Formantes do worklet de tom só em voz, pela família da regra central (Vocal ou
+// Backing), que já olha o nome dado no EDITAR CANAIS e põe instrumento antes de voz.
+// Em instrumento transposto a compensação tira definição (medido: +4 a 7 dB de ruído).
+describe('formantes só em voz, pela família da regra central', () => {
+  it.each(['Lead EG', 'Lead AG', 'Lead Violão', 'Teclado Lead', 'Lead Pno', 'Lead Guitar', 'Synth Lead', 'Lead Pad', 'Lead Bass',
+    'DRUMS', 'BASS', 'Strings', 'Click', 'Metrônomo', 'Voz Guia'])('%s: sem formantes', (name) => {
+    expect(wantsFormantCompensation({ id: '1', name })).toBe(false)
+  })
+  it.each(['Vocal', 'VOC', 'BGV', 'Backing', 'Lead Vox', 'Lead', 'Voz 2', 'Coro', 'Coral', 'Choir', 'BV alto'])('%s: com formantes', (name) => {
+    expect(wantsFormantCompensation({ id: '1', name })).toBe(true)
+  })
+  it('vale o nome dado pelo usuário: "FX" renomeado "Voz" ganha, "Lead" renomeado "Guitarra Solo" perde', () => {
+    expect(wantsFormantCompensation({ id: '1', name: 'FX', customName: 'Voz' })).toBe(true)
+    expect(wantsFormantCompensation({ id: '2', name: 'Lead', customName: 'Guitarra Solo' })).toBe(false)
+  })
+  it('vale o papel manual: voz marcada Guia perde, "Voz Guia" marcada Normal ganha', () => {
+    expect(wantsFormantCompensation({ id: '1', name: 'Vocal', role: 'guide' })).toBe(false)
+    expect(wantsFormantCompensation({ id: '2', name: 'Voz Guia', role: 'normal' })).toBe(true)
+    expect(wantsFormantCompensation({ id: '3', name: 'DRUMS', role: 'normal' })).toBe(false)
   })
 })

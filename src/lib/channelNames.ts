@@ -92,7 +92,8 @@ const FAMILY_RULES: readonly FamilyRule[] = [
     weakWords: ['TEMPO', 'BEAT'],
   }),
   rule('guia', ['GUIA', 'GUIAS', 'GUIDE', 'GUIDES', 'CUE', 'CUES']),
-  rule('backing', ['BV', 'BVS', 'BGV', 'BGVS', 'BACKING', 'BACKINGS', 'CORO', 'CHOIR'], {
+  // CORAL e CORAIS: nome comum de coro em pt-BR (antes só a regra de formantes pegava).
+  rule('backing', ['BV', 'BVS', 'BGV', 'BGVS', 'BACKING', 'BACKINGS', 'CORO', 'CORAL', 'CORAIS', 'CHOIR'], {
     sequences: [['BACK', 'VOCAL'], ['BACK', 'VOX']],
   }),
   rule('synthBass', ['SUB', 'SUBBASS', 'SYNTHBASS'], {

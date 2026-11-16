@@ -46,6 +46,8 @@ do worklet, formantes só em voz, saída sem NaN e com som.
 node scripts/verify-pitch/unit.mjs
 ```
 
-Testa `src/lib/pitchRules.ts` (transpilado com o esbuild): reconhecimento de
-click/guia por nome sem acento e sem caixa, decisão de formantes (só voz) e
-tom em qualquer grafia para semitons (bemol, minúscula, menor; nunca NaN).
+Transpila com o esbuild e testa as regras que o motor usa: Click e Guia fora do
+tom (`isPitchExempt`) e formantes só em voz (`wantsFormantCompensation`, família
+Vocal ou Backing) pela regra central de `src/lib/channelRoles.ts`, com o papel
+manual e o nome dado pelo usuário; e, em `src/lib/pitchRules.ts`, tom em qualquer
+grafia para semitons (bemol, minúscula, menor, solfejo; nunca NaN).

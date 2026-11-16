@@ -1,42 +1,13 @@
-// Regras puras da troca de tom (sem Web Audio). Testadas por
-// scripts/verify-pitch/unit.mjs.
+// Regras puras da troca de tom (sem Web Audio): tom escrito -> semitom e
+// semitons seguros pro motor. Testadas por scripts/verify-pitch/unit.mjs.
+// Quem transpõe, quem passa pelo atraso de latência e quem ganha compensação de
+// formantes NÃO sai daqui: vem da regra central de canais (isPitchExempt e
+// wantsFormantCompensation em src/lib/channelRoles.ts, com o papel manual e o
+// nome dado pelo usuário). Os testes por pedaço de nome que ficavam aqui saíram.
 
-// Nome sem acento e em minúsculas: "METRÔNOMO" -> "metronomo".
+// Sem acento e em minúsculas: "Lá m" -> "la m" (solfejo).
 export const normalizeChannelName = (name: string): string =>
     name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-
-// Teste antigo de click/voz-guia só pelo nome, sem acento e sem caixa ("metronom"
-// cobre metronomo, metrônomo, metronome e metronom). NÃO decide áudio: no motor,
-// quem fica fora do worklet de tom, o atraso de latência, o lado do pan
-// automático e o Solo saem da regra central de canais (isPitchExempt,
-// autoPanFor e channelGain em src/lib/channelRoles.ts, onde o papel manual vale
-// e "Metronome" já é Click). Aqui ele só é o padrão de `exempt` em
-// wantsFormantCompensation pra quem chama sem o papel (os testes em Node).
-export const isClickOrGuideName = (name: string): boolean => {
-    const n = normalizeChannelName(name);
-    return n.includes('click') || n.includes('metronom') || n.includes('guia') || n.includes('guide');
-};
-
-// Termos de faixa de voz. "coral" entra junto com "coro" (nome comum em pt-BR);
-// "voc" e "bgv" são as abreviações de vocal e de backing vocal.
-const VOICE_TERMS = ['vocal', 'voc', 'voz', 'vox', 'backing', 'bgv', 'coro', 'coral', 'choir', 'bv'];
-// "lead" sozinho é voz ("Lead", "Lead 2"), mas também nomeia instrumento solo
-// ("Lead Guitar", "Synth Lead", "Lead Keys"). Com um destes no nome, não é voz.
-const LEAD_INSTRUMENT_TERMS = ['guitar', 'gtr', 'guit', 'synth', 'key', 'keys', 'piano', 'bass', 'baixo'];
-
-export const isVoiceChannelName = (name: string): boolean => {
-    const n = normalizeChannelName(name);
-    if (VOICE_TERMS.some(t => n.includes(t))) return true;
-    return n.includes('lead') && !LEAD_INSTRUMENT_TERMS.some(t => n.includes(t));
-};
-
-// Liga a compensação de formantes do worklet de tom nesta faixa? Só em voz:
-// com rastreio automático (formantBaseHz 0) ela piora instrumento (medido:
-// +4 a 7 dB de ruído e até 3 dB de inclinação nos harmônicos). Click e Guia
-// nunca: o motor passa em `exempt` o papel da regra central de canais
-// (isPitchExempt, onde o papel manual vale); sem ele, vale o teste por nome.
-export const wantsFormantCompensation = (name: string, exempt: boolean = isClickOrGuideName(name)): boolean =>
-    isVoiceChannelName(name) && !exempt;
 
 // Tônica de um tom em qualquer grafia comum -> semitom (0 = C ... 11 = B).
 // Aceita sustenido e bemol (#, b, ♯, ♭), minúsculas e menor/maior depois da

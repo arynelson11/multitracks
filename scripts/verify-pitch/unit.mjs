@@ -1,6 +1,8 @@
 #!/usr/bin/env node
-// Testes das regras puras da troca de tom (src/lib/pitchRules.ts), sem dependência
-// nova: transpila com o esbuild do Vite e roda no Node.
+// Testes das regras puras da troca de tom, sem dependência nova: transpila com o
+// esbuild do Vite e roda no Node. Tom escrito e semitons em src/lib/pitchRules.ts;
+// quem fica fora do tom (Click e Guia) e quem ganha formantes (voz) pela regra
+// central de canais em src/lib/channelRoles.ts, a mesma que o motor usa.
 // Uso: node scripts/verify-pitch/unit.mjs   (sai com 1 se algo falhar)
 import { build } from 'esbuild';
 import fs from 'node:fs';
@@ -9,10 +11,15 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../..');
-const OUT = path.join(HERE, '.build', 'pitchRules.mjs');
-fs.mkdirSync(path.dirname(OUT), { recursive: true });
-await build({ entryPoints: [path.join(ROOT, 'src/lib/pitchRules.ts')], outfile: OUT, format: 'esm', platform: 'neutral', bundle: false, logLevel: 'warning' });
-const R = await import(pathToFileURL(OUT).href + '?t=' + Date.now());
+const BUILD = path.join(HERE, '.build');
+fs.mkdirSync(BUILD, { recursive: true });
+const load = async (src, out) => {
+  const outfile = path.join(BUILD, out);
+  await build({ entryPoints: [path.join(ROOT, src)], outfile, format: 'esm', platform: 'neutral', bundle: true, logLevel: 'warning' });
+  return import(pathToFileURL(outfile).href + '?t=' + Date.now());
+};
+const R = await load('src/lib/pitchRules.ts', 'pitchRules.mjs');
+const C = await load('src/lib/channelRoles.ts', 'channelRoles.mjs');
 
 let fails = 0, total = 0;
 const check = (item, label, got, want) => {
@@ -22,49 +29,53 @@ const check = (item, label, got, want) => {
   const show = (v) => (typeof v === 'number' && !Number.isFinite(v) ? String(v) : v === undefined ? 'undefined' : JSON.stringify(v));
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  item ${item}  ${label}  ->  ${show(got)}${ok ? '' : ` (esperado ${show(want)})`}`);
 };
-const need = (fn) => {
-  if (typeof R[fn] === 'function') return R[fn];
+const need = (fn, mod = R, file = 'src/lib/pitchRules.ts') => {
+  if (typeof mod[fn] === 'function') return mod[fn];
   total++; fails++;
-  console.log(`  FAIL  ${fn} não existe em src/lib/pitchRules.ts`);
+  console.log(`  FAIL  ${fn} não existe em ${file}`);
   return null;
 };
+const needCentral = (fn) => need(fn, C, 'src/lib/channelRoles.ts');
+const ch = (name, extra = {}) => ({ id: 'u', name, ...extra });
 
-console.log('== item 4: click/guia por nome, sem acento e sem caixa ==');
-const isClick = need('isClickOrGuideName');
-if (isClick) {
+console.log('== item 4: Click e Guia fora do tom pela regra central (sem acento e sem caixa) ==');
+const exemptOf = needCentral('isPitchExempt');
+if (exemptOf) {
+  const isClick = (n) => exemptOf(ch(n));
   for (const n of ['Metrônomo', 'METRÔNOMO', 'metronomo', 'Metronomo Loop', 'Click', 'CLICK', 'Click_IA_120bpm', 'Voz Guia', 'GUIA', 'Guide'])
     check(4, `"${n}" é click/guia`, isClick(n), true);
-  // Rodada 1, item 4: "metronom" cobre o nome em inglês e sem a última letra.
+  // Rodada 1, item 4: o nome em inglês e sem a última letra.
   for (const n of ['Metronome', 'METRONOME', 'metronome 120bpm', 'Metronom', 'metronom'])
     check('R1-4', `"${n}" é click/guia`, isClick(n), true);
   for (const n of ['Bateria', 'Baixo', 'Vocal', 'Voz', 'Teclado', 'Violão', 'Backing'])
     check(4, `"${n}" não é click/guia`, isClick(n), false);
+  check(4, '"CLICK" marcado Normal transpõe (papel manual vale)', exemptOf(ch('CLICK', { role: 'normal' })), false);
 }
 
-console.log('\n== item 5: formantes só em voz ==');
-const formant = need('wantsFormantCompensation');
-if (formant) {
+console.log('\n== item 5: formantes só em voz (família Vocal ou Backing da regra central) ==');
+const formantOf = needCentral('wantsFormantCompensation');
+if (formantOf) {
+  const formant = (n, extra) => formantOf(ch(n, extra));
   for (const n of ['Vocal', 'VOCAL 1', 'Voz', 'Voz 2', 'Vox', 'Lead Vocal', 'Backing', 'Backing Vocals', 'Coro', 'Coral', 'Choir', 'BV', 'bv alto'])
     check(5, `"${n}" com formantes`, formant(n), true);
   for (const n of ['Bateria', 'Baixo', 'Teclado', 'Guitarra', 'Violão', 'Pad', 'Synth', 'Strings', 'Piano', 'Click', 'Metrônomo', 'Voz Guia'])
     check(5, `"${n}" sem formantes`, formant(n), false);
-  // O motor passa o papel da regra central (papel manual vale): voz marcada Normal
-  // na mão ganha formantes mesmo com "guia" no nome; voz marcada Click/Guia não.
-  check(5, '"Voz Guia" marcada Normal com formantes', formant('Voz Guia', false), true);
-  check(5, '"VozGuia" marcada Normal com formantes', formant('VozGuia', false), true);
-  check(5, '"Vocal" marcado Guia sem formantes', formant('Vocal', true), false);
-  check(5, '"Bateria" marcada Normal sem formantes', formant('Bateria', false), false);
-  // Rodada 1, item 7: "lead" só é voz sem nome de instrumento; VOC e BGV são voz.
+  // Papel manual vale: voz marcada Normal ganha formantes mesmo com "guia" no nome;
+  // voz marcada Click/Guia não.
+  check(5, '"Voz Guia" marcada Normal com formantes', formant('Voz Guia', { role: 'normal' }), true);
+  check(5, '"VozGuia" marcada Normal com formantes', formant('VozGuia', { role: 'normal' }), true);
+  check(5, '"Vocal" marcado Guia sem formantes', formant('Vocal', { role: 'guide' }), false);
+  check(5, '"Bateria" marcada Normal sem formantes', formant('Bateria', { role: 'normal' }), false);
+  // Rodada 1, item 7: instrumento solo nunca (a família do instrumento vem antes de
+  // voz); VOC, BGV e "Lead" sozinho são voz.
   for (const n of ['Lead', 'LEAD', 'Lead 2', 'Lead Vocal', 'Lead Vox', 'VOC', 'Voc 1', 'voc', 'BGV', 'bgv 2', 'BGVs'])
     check('R1-7', `"${n}" com formantes`, formant(n), true);
   for (const n of ['Lead Guitar', 'Guitarra Lead', 'Lead Gtr', 'GTR Lead', 'Lead Guit', 'Synth Lead', 'Lead Synth', 'Lead Key', 'Lead Keys',
-    'Keys Lead', 'Piano Lead', 'Lead Bass', 'Baixo Lead'])
+    'Keys Lead', 'Piano Lead', 'Lead Bass', 'Baixo Lead', 'Lead EG', 'EG Lead', 'Lead AG', 'Lead Violão', 'Teclado Lead', 'Lead Pno', 'Lead Pad'])
     check('R1-7', `"${n}" sem formantes`, formant(n), false);
-  // Junção com a Parte 1: o motor passa o papel da regra central em `exempt`; a regra
-  // do item 7 continua valendo com ele (instrumento lead nunca, VOC e BGV só se Normal).
-  for (const [n, exempt, want] of [['Lead Guitar', false, false], ['Synth Lead', false, false], ['Lead', false, true],
-    ['VOC', false, true], ['BGV', false, true], ['VOC', true, false], ['BGV', true, false], ['Lead', true, false]])
-    check('R1-7', `"${n}" ${exempt ? 'Click/Guia' : 'Normal'} pela regra central`, formant(n, exempt), want);
+  // Vale o nome dado no EDITAR CANAIS.
+  check('R1-7', '"FX" renomeado "Voz" com formantes', formant('FX', { customName: 'Voz' }), true);
+  check('R1-7', '"Lead" renomeado "Guitarra Solo" sem formantes', formant('Lead', { customName: 'Guitarra Solo' }), false);
 }
 
 console.log('\n== item 6: tom em qualquer formato, nunca NaN ==');
