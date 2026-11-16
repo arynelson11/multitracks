@@ -1,12 +1,18 @@
 import type React from 'react'
-import { useTwoTapConfirm } from '../../hooks/useTwoTapConfirm'
 import { SECTION_SHORTCUTS } from '../../lib/sectionTypes'
 import type { StageSection } from '../../lib/stageContracts'
 import { Button, cx } from '../ui'
 import { Icon } from './icons'
+import { TwoTapTrashButton } from './TwoTapTrashButton'
 
 export interface SectionEditBarProps {
-  sections: StageSection[]; selected: number | null; hasGrid: boolean
+  sections: StageSection[]; selected: number | null
+  /**
+   * A grade sabe onde cai o 1 (click lido: `gridHasPhase`), que é quando o `nudgeSection` anda
+   * em compassos. Só com o BPM salvo, ou sem grade, é falso e o ajuste é de 1 s. Não é o
+   * `hasGrid` da botoeira (`grid !== null`): música só com BPM salvo tem grade, mas não fase.
+   */
+  hasPhase: boolean
   onSelect(i: number): void; onMark(label: string): void; onNudge(i: number, dir: -1 | 1): void; onRemove(i: number): void
 }
 
@@ -31,27 +37,19 @@ const CHIP =
 const CHIP_IDLE = 'bg-ps-s2 inset-ring inset-ring-ps-line hover:inset-ring-ps-line-2'
 const CHIP_SELECTED = 'bg-[color-mix(in_srgb,var(--ps-c)_20%,var(--color-ps-s1))] inset-ring-2 inset-ring-(--ps-c)'
 const STRIP = 'pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-(--ps-c)'
-// Lixeira de dois toques com a cara da do EDITAR CANAIS: repouso neutro, armada no âmbar de alerta com "Apagar?".
-const TRASH =
-  'inline-flex shrink-0 items-center justify-center gap-1 min-h-ps-touch min-w-ps-touch rounded-ps-pill font-ps-sans text-ps-sm font-bold whitespace-nowrap select-none transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
-const TRASH_IDLE = 'bg-ps-s2 text-ps-mut inset-ring inset-ring-ps-line hover:text-ps-bone'
-const TRASH_ARMED = 'px-3 bg-ps-alert text-ps-ink'
 
 /**
  * Barra do modo EDITAR do palco, no lugar da botoeira. MARCAR cria uma seção do tipo tocado
  * (o App marca na posição ouvida); toque numa seção seleciona; a selecionada anda 1 compasso pra
- * trás ou pra frente (sem grade, 1 s) e sai com a lixeira de dois toques. `selected` e os índices
+ * trás ou pra frente (sem fase, 1 s) e sai com a lixeira de dois toques do palco (uma armada por
+ * vez no palco inteiro; trocar a seleção ou a selecionada andar desarma). `selected` e os índices
  * dos avisos são o `index` da `StageSection` (a T29 traduz pra marca com `markerIdForSpan`).
  * As teclas I V P R B F aparecem em cada tipo; quem escuta o teclado é o App.
  */
-export function SectionEditBar({ sections, selected, hasGrid, onSelect, onMark, onNudge, onRemove }: SectionEditBarProps) {
+export function SectionEditBar({ sections, selected, hasPhase, onSelect, onMark, onNudge, onRemove }: SectionEditBarProps) {
   const sel = selected === null ? null : sections.find((s) => s.index === selected) ?? null
-  // Trocar de seleção (ou a selecionada mudar de lugar ou de nome) desarma a lixeira.
-  const trash = useTwoTapConfirm((id) => onRemove(Number(id)), {
-    resetKey: sel ? `${sel.index}|${sel.start}|${sel.label}` : null,
-  })
-  const unit = hasGrid ? '1 comp.' : '1 s'
-  const unitName = hasGrid ? '1 compasso' : '1 segundo'
+  const unit = hasPhase ? '1 comp.' : '1 s'
+  const unitName = hasPhase ? '1 compasso' : '1 segundo'
 
   return (
     <div className={BAR}>
@@ -115,10 +113,12 @@ export function SectionEditBar({ sections, selected, hasGrid, onSelect, onMark, 
                 {unit}
                 <span aria-hidden="true"><Icon name="chr" className="size-4" /></span>
               </Button>
-              <TrashButton
-                label={sel.label}
-                armed={trash.armedId === String(sel.index)}
-                onPress={() => trash.press(String(sel.index))}
+              {/* A chave remonta a lixeira (desarmada) quando a seleção muda ou a selecionada anda. */}
+              <TwoTapTrashButton
+                key={`${sel.index}|${sel.start}|${sel.label}`}
+                label={`Apagar a seção ${sel.label}`}
+                confirmLabel={`Toque de novo para apagar a seção ${sel.label}`}
+                onConfirm={() => onRemove(sel.index)}
               />
             </div>
           ) : (
@@ -127,23 +127,5 @@ export function SectionEditBar({ sections, selected, hasGrid, onSelect, onMark, 
         </div>
       </div>
     </div>
-  )
-}
-
-function TrashButton({ label, armed, onPress }: { label: string; armed: boolean; onPress(): void }) {
-  const name = armed ? `Toque de novo para apagar a seção ${label}` : `Apagar a seção ${label}`
-  return (
-    <button
-      type="button"
-      aria-label={name}
-      title={name}
-      onClick={onPress}
-      // Tecla segurada repete o keydown e o navegador repete o clique: só o primeiro vale.
-      onKeyDown={(e) => { if (e.repeat && (e.key === 'Enter' || e.key === ' ')) e.preventDefault() }}
-      className={cx(TRASH, armed ? TRASH_ARMED : TRASH_IDLE)}
-    >
-      <Icon name="trash" className="size-[15px]" />
-      {armed && <span>Apagar?</span>}
-    </button>
   )
 }
