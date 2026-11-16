@@ -32,6 +32,7 @@ transposto no R. Sai com código 1 se algum critério falhar. JSON em
 | `SONGS` | repertório com 3 músicas: A (24 canais) +2, B (10) +3, C (30) +2, remove B com C tocando, A de volta (+2) e no tom 0. Fontes sem órfãs, worklets rodando = faixas transpostas da música atual, total de worklets <= maior música, sem salto de posição, som em todas as faixas |
 | `NAN` | tom inválido (NaN) chegando no motor |
 | `METRONOMO` | click "Metrônomo" (com acento) gravado depois dos stems, como o Separador faz |
+| `METRONOME` | o mesmo com o click em inglês ("Metronome") |
 
 Critérios por item: worklets ativos (0 no tom 0, 1 por canal transposto), nenhum
 duplicado, fontes sem órfãs, relógio de áudio em tempo real, posição contínua,

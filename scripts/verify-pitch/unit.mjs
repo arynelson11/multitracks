@@ -34,6 +34,9 @@ const isClick = need('isClickOrGuideName');
 if (isClick) {
   for (const n of ['Metrônomo', 'METRÔNOMO', 'metronomo', 'Metronomo Loop', 'Click', 'CLICK', 'Click_IA_120bpm', 'Voz Guia', 'GUIA', 'Guide'])
     check(4, `"${n}" é click/guia`, isClick(n), true);
+  // Rodada 1, item 4: "metronom" cobre o nome em inglês e sem a última letra.
+  for (const n of ['Metronome', 'METRONOME', 'metronome 120bpm', 'Metronom', 'metronom'])
+    check('R1-4', `"${n}" é click/guia`, isClick(n), true);
   for (const n of ['Bateria', 'Baixo', 'Vocal', 'Voz', 'Teclado', 'Violão', 'Backing'])
     check(4, `"${n}" não é click/guia`, isClick(n), false);
 }

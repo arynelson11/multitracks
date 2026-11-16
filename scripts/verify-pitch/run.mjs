@@ -41,6 +41,8 @@ export const SCENARIOS = {
   NAN: { query: 'seq=NAN&n=4&order=A', timeout: 90 },
   // Click do Separador: "Metrônomo" com acento, gravado depois dos stems.
   METRONOMO: { query: 'seq=S1&n=6&order=B&click=' + encodeURIComponent('Metrônomo'), timeout: 120 },
+  // Click com o nome em inglês ("Metronome"), mesma ordem do Separador.
+  METRONOME: { query: 'seq=S1&n=6&order=B&click=Metronome', timeout: 120 },
 };
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json' };

@@ -7,10 +7,12 @@ export const normalizeChannelName = (name: string): string =>
 
 // Click/voz-guia nunca transpõem (ficam fora do worklet de tom). Ignora acento
 // e caixa: o click do Separador se chama "Metrônomo" e, sem isso, era
-// transposto e saía atrasado junto com os instrumentos.
+// transposto e saía atrasado junto com os instrumentos. "metronom" cobre
+// metronomo, metrônomo, metronome e metronom. A mesma regra decide o lado do
+// autoPan (click no fone, banda no PA).
 export const isClickOrGuideName = (name: string): boolean => {
     const n = normalizeChannelName(name);
-    return n.includes('click') || n.includes('metronomo') || n.includes('guia') || n.includes('guide');
+    return n.includes('click') || n.includes('metronom') || n.includes('guia') || n.includes('guide');
 };
 
 // Termos de faixa de voz. "coral" entra junto com "coro" (nome comum em pt-BR).
