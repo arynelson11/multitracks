@@ -104,6 +104,10 @@ export class FakeAudioParam {
     const kind = next && (next.kind === 'linear' || next.kind === 'exp') ? next.kind : 'set'
     return this.#push({ kind, value: held, time: cancelTime })
   }
+  /** Existe pro tipo do AudioParam; o fake não simula curva e avisa em vez de gravar algo que o valueAt não sabe ler. */
+  setValueCurveAtTime(values: number[] | Float32Array, startTime: number, duration: number): this {
+    throw domError(`setValueCurveAtTime(${values.length} valores, ${startTime}, ${duration}) não é simulado pelo AudioContext falso`, 'NotSupportedError')
+  }
 
   #push(e: FakeParamEvent): this {
     this.events.push(e)
@@ -171,17 +175,17 @@ interface NodeShape { inputs: number; outputs: number; channelCount?: number; mo
 
 export class FakeAudioNode extends FakeEventTarget {
   readonly kind: string
-  readonly context: FakeAudioContext
   readonly numberOfInputs: number
   readonly numberOfOutputs: number
   channelCountMode: ChannelCountMode
   channelInterpretation: ChannelInterpretation
   readonly connections: FakeConnection[] = []
+  readonly #context: FakeAudioContext
   #channelCount: number
 
   constructor(context: FakeAudioContext, kind: string, shape: NodeShape) {
     super()
-    this.context = context
+    this.#context = context
     this.kind = kind
     this.numberOfInputs = shape.inputs
     this.numberOfOutputs = shape.outputs
@@ -189,6 +193,9 @@ export class FakeAudioNode extends FakeEventTarget {
     this.channelCountMode = shape.mode ?? 'max'
     this.channelInterpretation = shape.interpretation ?? 'speakers'
   }
+
+  /** O contexto falso, com o tipo do Web Audio: assim o nó do fake entra onde o código pede AudioNode. */
+  get context(): BaseAudioContext { return asAudioContext(this.#context) }
 
   get channelCount(): number { return this.#channelCount }
   set channelCount(n: number) {
@@ -286,6 +293,10 @@ export class FakeBiquadFilterNode extends FakeAudioNode {
     this.gain = new FakeAudioParam(this, 0)
     this.detune = new FakeAudioParam(this, 0)
   }
+  /** Existe pro tipo do BiquadFilterNode; o fake não calcula resposta de filtro. */
+  getFrequencyResponse(frequencyHz: Float32Array, magResponse: Float32Array, phaseResponse: Float32Array): void {
+    throw domError(`getFrequencyResponse (${frequencyHz.length}/${magResponse.length}/${phaseResponse.length}) não é simulado pelo AudioContext falso`, 'NotSupportedError')
+  }
 }
 
 export class FakeAnalyserNode extends FakeAudioNode {
@@ -345,7 +356,7 @@ class FakeScheduledSourceNode extends FakeAudioNode {
 }
 
 export class FakeAudioBufferSourceNode extends FakeScheduledSourceNode {
-  buffer: FakeAudioBuffer | AudioBuffer | null = null
+  buffer: AudioBuffer | null = null
   loop = false
   loopStart = 0
   loopEnd = 0
@@ -365,6 +376,7 @@ export class FakeAudioBufferSourceNode extends FakeScheduledSourceNode {
 
 export class FakeOscillatorNode extends FakeScheduledSourceNode {
   type: OscillatorType = 'sine'
+  periodicWave: PeriodicWave | null = null
   readonly frequency: FakeAudioParam
   readonly detune: FakeAudioParam
   constructor(ctx: FakeAudioContext) {
@@ -375,6 +387,11 @@ export class FakeOscillatorNode extends FakeScheduledSourceNode {
   start(when = 0): void {
     checkTime(when, 'when')
     this.begin({ when })
+  }
+  /** Como no navegador, a onda própria troca o tipo pra 'custom'. */
+  setPeriodicWave(wave: PeriodicWave): void {
+    this.periodicWave = wave
+    this.type = 'custom'
   }
 }
 
@@ -401,7 +418,7 @@ export class FakeAudioBuffer {
   readonly numberOfChannels: number
   readonly length: number
   readonly sampleRate: number
-  readonly #data: (Float32Array | undefined)[]
+  readonly #data: (Float32Array<ArrayBuffer> | undefined)[]
 
   constructor(numberOfChannels: number, length: number, sampleRate: number) {
     if (!Number.isInteger(numberOfChannels) || numberOfChannels < 1 || numberOfChannels > 32) throw domError(`buffer com ${numberOfChannels} canais`, 'NotSupportedError')
@@ -410,12 +427,12 @@ export class FakeAudioBuffer {
     this.numberOfChannels = numberOfChannels
     this.length = length
     this.sampleRate = sampleRate
-    this.#data = new Array<Float32Array | undefined>(numberOfChannels)
+    this.#data = new Array<Float32Array<ArrayBuffer> | undefined>(numberOfChannels)
   }
 
   get duration(): number { return this.length / this.sampleRate }
 
-  getChannelData(channel: number): Float32Array {
+  getChannelData(channel: number): Float32Array<ArrayBuffer> {
     if (!Number.isInteger(channel) || channel < 0 || channel >= this.numberOfChannels) throw domError(`canal ${channel} não existe`, 'IndexSizeError')
     return (this.#data[channel] ??= new Float32Array(this.length))
   }
@@ -535,6 +552,44 @@ export class FakeAudioContext extends FakeEventTarget {
 /** AudioContext falso. Pra trocar o global num teste do motor: `vi.stubGlobal('AudioContext', function () { return createFakeAudioContext() })`. */
 export function createFakeAudioContext(opts?: FakeAudioContextOptions): FakeAudioContext {
   return new FakeAudioContext(opts)
+}
+
+// ---------- Pontes de tipo (as únicas: teste nenhum precisa de `as unknown as`) ----------
+
+/**
+ * O contexto falso com o tipo do Web Audio, pra passar a quem pede AudioContext ou
+ * BaseAudioContext. Os nós do fake já entram direto onde se pede AudioNode, GainNode,
+ * AudioParam ou AudioBuffer; o contexto não (o fake não tem todas as fábricas do navegador).
+ */
+export function asAudioContext(ctx: FakeAudioContext): AudioContext {
+  if (!(ctx instanceof FakeAudioContext)) throw new TypeError('asAudioContext: o objeto não é o AudioContext falso')
+  return ctx as unknown as AudioContext
+}
+
+type FakeThing = FakeAudioNode | FakeAudioParam | FakeAudioBuffer | FakeAudioContext
+
+/**
+ * O caminho de volta: o que o código devolveu com tipo do Web Audio (a fonte da voz, o
+ * ganho do envelope, o ctx guardado nas dependências) com o tipo do fake, pra ler `starts`,
+ * `events`, `connections` etc. Lança se o objeto não for do fake.
+ */
+export function asFake<T extends FakeThing>(item: T): T
+export function asFake(item: AudioBufferSourceNode): FakeAudioBufferSourceNode
+export function asFake(item: OscillatorNode): FakeOscillatorNode
+export function asFake(item: BiquadFilterNode): FakeBiquadFilterNode
+export function asFake(item: GainNode): FakeGainNode
+export function asFake(item: DelayNode): FakeDelayNode
+export function asFake(item: StereoPannerNode): FakeStereoPannerNode
+export function asFake(item: AnalyserNode): FakeAnalyserNode
+export function asFake(item: AudioDestinationNode): FakeAudioDestinationNode
+export function asFake(item: AudioWorkletNode): FakeWorkletNode
+export function asFake(item: AudioNode): FakeAudioNode
+export function asFake(item: AudioParam): FakeAudioParam
+export function asFake(item: AudioBuffer): FakeAudioBuffer
+export function asFake(item: BaseAudioContext): FakeAudioContext
+export function asFake(item: unknown): FakeThing {
+  if (item instanceof FakeAudioNode || item instanceof FakeAudioParam || item instanceof FakeAudioBuffer || item instanceof FakeAudioContext) return item
+  throw new TypeError('asFake: o objeto não é do AudioContext falso')
 }
 
 // ---------- Ajudantes de grafo ----------
