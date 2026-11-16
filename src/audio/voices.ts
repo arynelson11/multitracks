@@ -10,6 +10,22 @@ export interface Voice { channelId: string; source: AudioBufferSourceNode; env: 
 export interface VoiceSpec { channelId: string; buffer: AudioBuffer; entry: AudioNode; loop?: boolean }
 
 /**
+ * Segura o valor que o parâmetro tem em `t` e apaga o que vinha depois, inclusive uma rampa em
+ * curso, sem salto: `cancelAndHoldAtTime` onde existe; no Firefox (sem ele),
+ * `cancelScheduledValues(t)` + `setValueAtTime(valor atual, t)`. Chamar com `t` =
+ * `ctx.currentTime` (o valor atual é o desse instante). Usado também pelos bipes da contagem.
+ */
+export function holdAt(param: AudioParam, t: number): void {
+  if (typeof param.cancelAndHoldAtTime === 'function') {
+    param.cancelAndHoldAtTime(t)
+    return
+  }
+  const current = param.value
+  param.cancelScheduledValues(t)
+  param.setValueAtTime(current, t)
+}
+
+/**
  * Começa uma voz em `at` (tempo do contexto) no ponto `offset` da faixa (segundos do buffer):
  * fonte, envelope em 1 e `spec.entry`. Offset negativo vira 0. `rate` é a velocidade
  * (playbackRate, 1 por padrão). Quando a fonte termina, fonte e envelope se desligam; vai por
