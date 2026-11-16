@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { listAudioOutputs } from '../lib/audioOutputs';
 
 export interface AppSettings {
     autoPan: boolean;
@@ -44,29 +45,27 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         });
     };
 
-    const refreshAudioDevices = async () => {
+    // Lista as saídas e, se faltar o nome delas, pede o microfone (o navegador só
+    // mostra os nomes com essa permissão). Quem chama é a aba Geral das Configurações,
+    // que só existe depois do login: a carga do site e a landing nunca pedem microfone.
+    const refreshAudioDevices = useCallback(async () => {
         try {
-            // Requesting microphone permission briefly is sometimes needed in browsers to get the full labels of output devices
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                stream.getTracks().forEach(track => track.stop());
-            } catch (e) {
-                console.warn("User denied or no mic, device labels might be empty.", e);
-            }
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            const audioOutputs = devices.filter(device => device.kind === 'audiooutput');
-            setAvailableAudioDevices(audioOutputs);
+            setAvailableAudioDevices(await listAudioOutputs(navigator.mediaDevices, { askLabels: true }));
         } catch (e) {
             console.error("Failed to enumerate audio devices", e);
         }
-    };
+    }, []);
 
-    // Keep devices fresh if permissions change
+    // Troca de aparelho (fone ou interface plugada): atualiza a lista sem pedir nada.
     useEffect(() => {
-        refreshAudioDevices();
-        navigator.mediaDevices?.addEventListener('devicechange', refreshAudioDevices);
+        const onDeviceChange = () => {
+            listAudioOutputs(navigator.mediaDevices, { askLabels: false })
+                .then(setAvailableAudioDevices)
+                .catch(e => console.error("Failed to enumerate audio devices", e));
+        };
+        navigator.mediaDevices?.addEventListener?.('devicechange', onDeviceChange);
         return () => {
-            navigator.mediaDevices?.removeEventListener('devicechange', refreshAudioDevices);
+            navigator.mediaDevices?.removeEventListener?.('devicechange', onDeviceChange);
         };
     }, []);
 
