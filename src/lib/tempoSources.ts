@@ -29,12 +29,18 @@ const HARMONY_MAX = 2
 // Kit inteiro: o canal da bateria toda. Loop e virada tocam só parte da música, e
 // peça ("Snare Drum", "Kick Drum") é só uma parte do kit separado. "Kit" e "Bat"
 // sozinhos são ambíguos e não contam.
-const FULL_KIT_WORDS: ReadonlySet<string> = new Set(['drum', 'drums', 'bateria', 'batera'])
+const FULL_KIT_WORDS: ReadonlySet<string> = new Set(['drum', 'drums', 'drumm', 'bateria', 'batera'])
+// Peça com FX ("KICK FX") é efeito, não levada: fica na Bateria do mixer, fora do pulso.
+const EFFECT_WORDS: ReadonlySet<string> = new Set(['fx'])
 const PARTIAL_KIT_WORDS: ReadonlySet<string> = new Set(['loop', 'loops', 'fill', 'fills'])
 
 interface Candidate<T> {
   ch: T
   family: ChannelFamily
+}
+
+interface PulseCandidate<T> extends Candidate<T> {
+  words: ReadonlySet<string>
 }
 
 // Manual vence automático, pela mesma regra do channelFamily: com nome do usuário
@@ -48,8 +54,8 @@ const hasAnyWord = (words: ReadonlySet<string>, wanted: ReadonlySet<string>) => 
 // Bateria e percussão inteiras. Com algum loop ou virada: havendo kit inteiro, fica só
 // ele; sem kit inteiro mas com kit separado (peça sem loop nem virada), saem só o loop
 // e a virada, e peças e percussão ficam.
-function pickPulse<T extends ChannelIdentity>(percussive: readonly Candidate<T>[]): Candidate<T>[] {
-  const words = percussive.map((c) => wordsOf(c.ch))
+function pickPulse<T extends ChannelIdentity>(percussive: readonly PulseCandidate<T>[]): Candidate<T>[] {
+  const words = percussive.map((c) => c.words)
   const isPartial = words.map((w) => hasAnyWord(w, PARTIAL_KIT_WORDS))
   const isPiece = words.map((w) => [...w].some(isDrumPieceToken))
   if (!isPartial.some(Boolean)) return [...percussive]
@@ -58,6 +64,8 @@ function pickPulse<T extends ChannelIdentity>(percussive: readonly Candidate<T>[
   const hasSeparateKit = percussive.some((_, i) => isPiece[i] && !isPartial[i])
   return hasSeparateKit ? percussive.filter((_, i) => !isPartial[i]) : [...percussive]
 }
+
+const isEffectPiece = (words: ReadonlySet<string>) => hasAnyWord(words, EFFECT_WORDS) && [...words].some(isDrumPieceToken)
 
 const isSourceFamily = (family: ChannelFamily): family is SourceFamily => family !== 'desconhecido'
 
@@ -77,7 +85,10 @@ export function pickTempoSources<T extends ChannelIdentity>(channels: readonly T
   const candidates: Candidate<T>[] = channels.map((ch) => ({ ch, family: channelFamily(ch) }))
   const first = (family: ChannelFamily) => candidates.find((c) => c.family === family)
 
-  const percussive = candidates.filter((c) => PULSE_FAMILIES.has(c.family))
+  const percussive = candidates
+    .filter((c) => PULSE_FAMILIES.has(c.family))
+    .map((c) => ({ ...c, words: wordsOf(c.ch) }))
+    .filter((c) => !isEffectPiece(c.words))
   // Primeiro Baixo; sem ele, primeiro Synth Bass. Sem bateria nem percussão, ele é o pulso.
   const bass = first('baixo') ?? first('synthBass')
   const pulse = percussive.length > 0 ? pickPulse(percussive) : bass ? [bass] : []

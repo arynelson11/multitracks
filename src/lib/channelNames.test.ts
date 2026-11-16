@@ -603,3 +603,33 @@ describe('familySourceName', () => {
     }
   })
 })
+
+// Rodada 3 da M5: nomes de multitracks reais da calibração da M2b (task-M2b-calibracao.md).
+describe('nomes da calibração com multitracks reais (M5, rodada 3)', () => {
+  it.each([
+    ['DRUMM', 'Bateria', 'bateria'], ['DRUMM LR', 'Bateria', 'bateria'], ['Drumm', 'Bateria', 'bateria'],
+    ['PANDEIROLA', 'Percussão', 'percussao'], ['PANDEIROLAS', 'Percussão', 'percussao'],
+    ['PANDEIRO', 'Percussão', 'percussao'], ['Pandeiro 2', 'Percussão', 'percussao'],
+    ['LOOP AXÉ', 'Loop', 'percussao'], ['LOOP AXE', 'Loop', 'percussao'], ['Loop Pop', 'Loop', 'percussao'],
+    ['Loop Rock 2', 'Loop', 'percussao'], ['FUNK LOOP', 'Loop', 'percussao'], ['Loop Groove', 'Loop', 'percussao'],
+    ['LOOP AXÉ - GRAVE', 'Loop', 'percussao'], ['LOOP AXÉ - AGUDO', 'Loop', 'percussao'],
+    ['LOOP AXÉ - REFRÃO', 'Loop', 'percussao'], ['Loop Pop L', 'Loop L', 'percussao'],
+    ['KICK FX', 'Bumbo FX', 'bateria'], ['SNARE FX', 'Caixa FX', 'bateria'], ['BUMBO FX', 'Bumbo FX', 'bateria'],
+  ])('%s vira %s (%s), papel Normal', (raw, label, family) => {
+    expect(recognizeChannel(raw)).toEqual({ label, family })
+    expect(roleFromName(raw)).toBe('normal')
+  })
+  it.each([
+    ['Loop Pop Vocal', 'Vocal Loop', 'vocal'], ['Loop Rock Amb', 'Ambiência Loop', 'ambiencia'],
+    ['Loop Pop Beat', 'Loop Pop Beat', 'desconhecido'],
+    ['Beat Loop', 'Beat Loop', 'desconhecido'], ['Intro-Loop', 'Intro Loop', 'desconhecido'], ['Rock', 'Rock', 'desconhecido'],
+    ['Pop Beat', 'Pop Beat', 'desconhecido'], ['Groove', 'Groove', 'desconhecido'],
+  ])('%s continua como antes: %s (%s)', (raw, label, family) => {
+    expect(recognizeChannel(raw)).toEqual({ label, family })
+    expect(roleFromName(raw)).toBe('normal')
+  })
+  it('estilo com Click ou Guia não muda o papel', () => {
+    expect([roleFromName('Loop Pop Click'), roleFromName('LOOP AXÉ GUIA'), roleFromName('Rock Tempo'), roleFromName('Groove 120')])
+      .toEqual(['click', 'guide', 'normal', 'normal'])
+  })
+})

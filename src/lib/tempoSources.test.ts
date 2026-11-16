@@ -150,6 +150,34 @@ describe('pulso', () => {
   })
 })
 
+// Rodada 3: pacotes reais da calibração da M2b.
+describe('pacotes da calibração com multitracks reais', () => {
+  it('Toda Sorte de Bençãos: "DRUMM LR" é kit inteiro', () => {
+    expect(pick(mk(['Click', 'DRUMM LR', 'BASS']))).toEqual({
+      click: 'Click', pulse: ['DRUMM LR'], bass: 'BASS', harmony: [], label: 'Bateria e Baixo',
+    })
+    expect(pick(mk(['DRUMM', 'Drum Loop'])).pulse).toEqual(['DRUMM'])
+  })
+  it('Me Derramar: "PANDEIROLA" é percussão', () => {
+    expect(pick(mk(['Click', 'PANDEIROLA', 'BASS']))).toEqual({
+      click: 'Click', pulse: ['PANDEIROLA'], bass: 'BASS', harmony: [], label: 'Percussão e Baixo',
+    })
+  })
+  it('VS Videira: loops de axé entram no pulso', () => {
+    expect(pick(mk(['MET', 'LOOP AXÉ - GRAVE', 'LOOP AXÉ - AGUDO', 'LOOP AXÉ - REFRÃO', 'BASS'])).pulse)
+      .toEqual(['LOOP AXÉ - GRAVE', 'LOOP AXÉ - AGUDO', 'LOOP AXÉ - REFRÃO'])
+  })
+  it('VS Cruz: peça com FX é efeito e não entra no pulso', () => {
+    expect(pick(mk(['Click', 'KICK FX_01-01', 'SINTH BASS_01-01', 'KEY_01-01', 'PAD_01-01']))).toEqual({
+      click: 'Click', pulse: ['SINTH BASS_01-01'], bass: 'SINTH BASS_01-01', harmony: ['KEY_01-01', 'PAD_01-01'], label: 'Baixo',
+    })
+    expect(pick(mk(['KICK', 'SNARE FX', 'BUMBO FX', 'HH'])).pulse).toEqual(['KICK', 'HH'])
+  })
+  it('peça com FX não liga o filtro do kit separado', () => {
+    expect(pick(mk(['KICK FX', 'Drum Loop'])).pulse).toEqual(['Drum Loop'])
+  })
+})
+
 describe('baixo e harmonia', () => {
   it('bass é o primeiro Baixo; sem Baixo, o primeiro Synth Bass', () => {
     expect(pick(mk(['SUB', 'DRUMS', 'BASS'])).bass).toBe('BASS')

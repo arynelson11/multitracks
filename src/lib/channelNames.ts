@@ -74,6 +74,10 @@ interface FamilyRule {
   // A palavra fraca também conta quando o nome já tem palavra forte da família
   // ("Tom Drum" é a peça Tom). Só a Bateria tem.
   weakJoinsStrong: boolean
+  // Âncoras da palavra fraca: com uma delas no nome, a fraca vale e o resto pode ser
+  // qualquer palavra que não seja de outra família ("LOOP AXÉ - REFRÃO" é Loop; "Loop Pop
+  // Vocal" continua Vocal). Só a Percussão tem (estilo musical do loop).
+  weakAnchors: ReadonlySet<string>
   sequences: readonly (readonly string[])[]
   // Peças com rótulo próprio dentro da família (bateria e percussão). Peça que também
   // é palavra fraca só dá o rótulo quando decide a família ("Loop 2" é Loop; "PERC LOOP"
@@ -88,6 +92,7 @@ const rule = (
     weakWords?: readonly string[]
     weakCompanions?: readonly string[]
     weakJoinsStrong?: boolean
+    weakAnchors?: readonly string[]
     sequences?: readonly (readonly string[])[]
     pieces?: Record<string, string>
   } = {},
@@ -97,6 +102,7 @@ const rule = (
   weakWords: new Set(extra.weakWords ?? []),
   weakCompanions: new Set(extra.weakCompanions ?? []),
   weakJoinsStrong: extra.weakJoinsStrong ?? false,
+  weakAnchors: new Set(extra.weakAnchors ?? []),
   sequences: extra.sequences ?? [],
   pieces: extra.pieces ? new Map(Object.entries(extra.pieces)) : undefined,
 })
@@ -137,18 +143,22 @@ const FAMILY_RULES: readonly FamilyRule[] = [
   // TOM é fraca ("tom" também é tonalidade): só é a peça Tom sozinho, com número, lado ou
   // posição ("TOM 1", "Floor Tom"), ou junto de outra palavra da bateria ("Tom Drum").
   // "Voz Tom" continua Vocal.
-  rule('bateria', ['DRUMS', 'DRUM', 'DRM', 'BATERIA', 'BATERIAS', 'BATERA', 'BAT', 'KIT', 'DRUMSET', 'DRUMKIT'], {
+  // DRUMM: erro de digitação comum em pacote real ("DRUMM LR").
+  rule('bateria', ['DRUMS', 'DRUM', 'DRUMM', 'DRM', 'BATERIA', 'BATERIAS', 'BATERA', 'BAT', 'KIT', 'DRUMSET', 'DRUMKIT'], {
     pieces: DRUM_PIECES,
     weakWords: ['TOM'],
     weakCompanions: ['FLOOR', 'RACK', 'HI', 'MID', 'LOW', 'L', 'R', 'LEFT', 'RIGHT', 'ESQ', 'DIR'],
     weakJoinsStrong: true,
   }),
   // LOOP é fraca: só é Percussão quando é a única palavra do nome, fora número,
-  // andamento, lado do par estéreo e variação ("Loop 2", "Loop L", "Loop A", "Loop Fx").
-  // "Drum Loop" é Bateria Loop; "Beat Loop" fica não reconhecido.
-  rule('percussao', ['PERC', 'PERCS', 'PERCUSSION', 'PERCUSSAO', 'PERCUSSOES', 'CAJON', 'CONGA', 'CONGAS'], {
+  // andamento, lado do par estéreo e variação ("Loop 2", "Loop L", "Loop A", "Loop Fx"),
+  // ou quando tem estilo musical ("LOOP AXÉ - GRAVE"). "Drum Loop" é Bateria Loop;
+  // "Beat Loop" fica não reconhecido.
+  rule('percussao', ['PERC', 'PERCS', 'PERCUSSION', 'PERCUSSAO', 'PERCUSSOES', 'CAJON', 'CONGA', 'CONGAS',
+    'PANDEIRO', 'PANDEIROS', 'PANDEIROLA', 'PANDEIROLAS'], {
     weakWords: ['LOOP', 'LOOPS'],
     weakCompanions: ['L', 'R', 'LEFT', 'RIGHT', 'ESQ', 'DIR', 'A', 'B', 'FX'],
+    weakAnchors: ['AXE', 'POP', 'ROCK', 'FUNK', 'GROOVE'],
     pieces: { SHAKER: 'Shaker', LOOP: 'Loop', LOOPS: 'Loop' },
   }),
   // LEADVOCAL, LEADVOX (grudados) e VOCALISTA: grafias que a regra antiga de formantes pegava.
@@ -246,15 +256,23 @@ export function isDrumPieceToken(token: string): boolean {
 const TEMPO_MARKS: ReadonlySet<string> = new Set(['BPM'])
 const isTempoMark = (token: string) => /^\p{N}+$/u.test(token) || TEMPO_MARKS.has(token)
 
+// Palavra de alguma família (forte, peça ou fraca): trava a âncora da palavra fraca.
+function isFamilyWord(token: string): boolean {
+  return FAMILY_RULES.some((r) => r.words.has(token) || r.pieces?.has(token) || r.weakWords.has(token))
+}
+
 // Palavra fraca só conta quando todo o resto do nome é marca de andamento (ou, na
-// Percussão, lado ou variação do loop).
+// Percussão, lado ou variação do loop, ou qualquer palavra sem família com estilo no nome).
 function weakHits(tokens: readonly string[], familyRule: FamilyRule): Set<number> {
   const hits = new Set<number>()
   tokens.forEach((token, i) => {
     if (familyRule.weakWords.has(token)) hits.add(i)
   })
+  if (hits.size === 0) return hits
+  const hasAnchor = tokens.some((token) => familyRule.weakAnchors.has(token))
   const isAllowedRest = (token: string) => isTempoMark(token) || familyRule.weakCompanions.has(token)
-  if (hits.size === 0 || !tokens.every((token, i) => hits.has(i) || isAllowedRest(token))) return new Set()
+    || familyRule.weakAnchors.has(token) || (hasAnchor && !isFamilyWord(token))
+  if (!tokens.every((token, i) => hits.has(i) || isAllowedRest(token))) return new Set()
   return hits
 }
 
