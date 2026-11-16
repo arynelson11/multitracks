@@ -145,18 +145,29 @@ export function MidStrip({ view, actions, clock, keyGridOpen, onKeyGridOpenChang
   useLayoutEffect(() => {
     if (rootRef.current) fitStrip(rootRef.current)
   }, [fitKey])
-  // A largura muda com a janela e as fontes chegam depois da primeira pintura: mede de novo.
+  // Mede de novo quando a faixa muda de tamanho, quando a JANELA muda (Ruling T13-resize: abaixo de
+  // 840 px de altura a faixa fica em 168 px, mas as fontes seguem a altura da tela e crescem sem a
+  // faixa mudar) e quando as fontes chegam depois da primeira pintura. Uma medida por quadro, no máximo.
   useEffect(() => {
     const root = rootRef.current
     if (!root) return
-    let alive = true
-    const refit = () => { if (alive) fitStrip(root) }
+    let frame = 0
+    const refit = () => {
+      if (frame) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        fitStrip(root)
+      })
+    }
     document.fonts?.ready.then(refit, () => {})
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(refit)
     ro?.observe(root)
+    window.addEventListener('resize', refit)
     return () => {
-      alive = false
+      window.removeEventListener('resize', refit)
       ro?.disconnect()
+      if (frame) cancelAnimationFrame(frame)
+      frame = -1 // desmontou: a promessa das fontes que chegar depois não agenda mais nada
     }
   }, [])
 

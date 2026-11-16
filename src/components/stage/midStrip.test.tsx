@@ -625,6 +625,33 @@ describe('faixa do meio', () => {
     expect(q('[data-cover]').dataset.fit).toBeUndefined()
     expect(q('[data-fit-width]').dataset.fit).toBeUndefined()
   })
+  it('o encaixe refaz quando só a altura da janela muda (Ruling T13-resize)', () => {
+    // Abaixo de 840 px de altura a faixa fica em 168 px e as fontes (vh) crescem: a faixa não muda de
+    // tamanho, só a janela. Régua: com a janela "alta", o conteúdo da seção não cabe acima de 0,5.
+    let tall = false
+    const rect = (top: number, height: number) => ({ top, bottom: top + height, height, left: 0, right: 100, width: 100, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      if (this.hasAttribute('data-fit-height')) return rect(0, 168)
+      const cell = this.closest('[data-cell="secao"]') as HTMLElement | null
+      const k = Number(cell?.style.getPropertyValue('--ps-fit') || 1)
+      return cell && tall && k > 0.5 ? rect(-10, 188) : rect(20, 100)
+    })
+    const name = 'Novo Mais Uma Vez Ponte Instrumental'
+    expect(name).toHaveLength(36)
+    renderStrip({ view: { sections: [SECTIONS[0], { ...SECTIONS[1], label: name }, SECTIONS[2]] } })
+    const fit = () => q('[data-cell="secao"]').style.getPropertyValue('--ps-fit')
+    expect(fit()).toBe('1')
+    tall = true
+    fireEvent(window, new Event('resize'))
+    frame()
+    expect(fit()).toBe('0.5')
+    // Vários resize no mesmo quadro medem uma vez só; voltar a janela devolve o tamanho cheio.
+    tall = false
+    fireEvent(window, new Event('resize'))
+    fireEvent(window, new Event('resize'))
+    frame()
+    expect(fit()).toBe('1')
+  })
   it('os tamanhos que encolhem param em 12 px (texto) e 48 px (capa)', () => {
     renderStrip()
     const minOf = (el: Element, min: string) => expect(el.className).toMatch(new RegExp(`calc\\(${min}_\\+_.*var\\(--ps-fit,1\\)`))
