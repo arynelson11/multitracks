@@ -95,12 +95,13 @@ describe('parseKey', () => {
   it('keyToSemitone igual ao de antes em todo tom e grafia que já aceitava (e no que recusava)', () => {
     const keys = [...UNIT_CASES, ...crossProduct()]
     let accepted = 0
+    const differ: string[] = []
     for (const k of keys) {
       const before = legacyKeyToSemitone(k)
       if (before !== null) accepted++
-      expect(keyToSemitone(k), JSON.stringify(k)).toBe(before)
-      expect(parseKey(k)?.semitone ?? null, JSON.stringify(k)).toBe(before)
+      if (keyToSemitone(k) !== before || (parseKey(k)?.semitone ?? null) !== before) differ.push(JSON.stringify(k))
     }
+    expect(differ).toEqual([])
     // A comparação cobre de verdade os dois lados: milhares de grafias aceitas e outras tantas recusadas.
     expect(accepted).toBeGreaterThan(5000)
     expect(keys.length - accepted).toBeGreaterThan(5000)
