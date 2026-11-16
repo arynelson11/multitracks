@@ -50,9 +50,11 @@ export function countState(t: TransitionView, heardNow: number): CountState {
 /**
  * Texto de espera do pulo armado, nesta prioridade: sem grade "no fim da seção"; click sem
  * som "CLICK DESLIGADO"; contando, nada (os números falam); dois compassos ou mais,
- * "em N comp."; senão "último comp.".
+ * "em N comp."; senão "último comp.". Do "1" ouvido em diante (`heardNow >= switchAt`) o
+ * pulo já aconteceu: nada, enquanto o pouso não chega na tela (alguns quadros).
  */
 export function transitionWaitText(t: TransitionView, heardNow: number): string | null {
+  if (t.switchAt !== null && heardNow >= t.switchAt) return null
   if (!t.hasGrid) return 'no fim da seção'
   if (!t.clickAudible) return 'CLICK DESLIGADO'
   if (countState(t, heardNow).counting) return null

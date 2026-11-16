@@ -27,6 +27,13 @@ describe('texto de espera do pulo', () => {
     expect(transitionWaitText({ ...t, barsLeft: 0 }, 10)).toBe('último comp.')
     expect(transitionWaitText(noCount, 10)).toBe('em 3 comp.')
   })
+  it('no "1" ouvido o pulo já aconteceu: nada de voltar pra "último comp." até o pouso chegar', () => {
+    expect(transitionWaitText(t, 22)).toBeNull()
+    expect(transitionWaitText(t, 22.04)).toBeNull()
+    expect(transitionWaitText({ ...t, hasGrid: false, countTimes: [], countLabels: [], countTotal: 0, barsLeft: null }, 22.01)).toBeNull()
+    expect(transitionWaitText({ ...t, clickAudible: false }, 22.01)).toBeNull()
+    expect(transitionWaitText({ ...t, switchAt: null }, 99)).toBe('último comp.')
+  })
   it('nenhum texto com travessão', () => {
     const all = [
       transitionWaitText({ ...t, hasGrid: false }, 10), transitionWaitText({ ...t, clickAudible: false }, 10),
