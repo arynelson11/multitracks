@@ -98,4 +98,8 @@ describe('heardTime', () => {
     expect(heardTime(10, Infinity, 0.01)).toBeCloseTo(9.99, 9)
     expect(heardTime(10, NaN, -Infinity)).toBe(10)
   })
+  it('latência negativa conta 0: o tempo ouvido nunca passa à frente do contexto', () => {
+    expect(heardTime(10, -0.5, 0)).toBe(10)
+    expect(heardTime(10, 0.02, -0.01)).toBeCloseTo(9.98, 9)
+  })
 })

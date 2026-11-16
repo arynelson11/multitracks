@@ -165,3 +165,46 @@ describe('caminho padrão (Worker do navegador)', () => {
     clock.start(); expect(setIntervalFn).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('modo do relógio (a T17 aumenta o horizonte ou avisa o operador)', () => {
+  it('com Worker fica em worker e não chama o onFallback', () => {
+    const onFallback = vi.fn()
+    const clock = createSchedulerClock(vi.fn(), { createWorker: fakeWorker, createObjectURL: () => 'blob:x', revokeObjectURL: vi.fn(), onFallback })
+    expect(clock.mode).toBe('worker')
+    clock.start(); clock.stop(); clock.start()
+    expect(clock.mode).toBe('worker'); expect(onFallback).not.toHaveBeenCalled()
+  })
+  it('Worker que não nasce: modo interval e onFallback uma vez, com o motivo', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const motivo = new Error('Worker indisponível'); const onFallback = vi.fn()
+    const clock = createSchedulerClock(vi.fn(), {
+      createWorker: () => { throw motivo }, createObjectURL: () => 'blob:x', revokeObjectURL: vi.fn(), setIntervalFn: vi.fn(), clearIntervalFn: vi.fn(), onFallback,
+    })
+    expect(clock.mode).toBe('worker') // o Worker só é tentado no primeiro start
+    clock.start()
+    expect(clock.mode).toBe('interval'); expect(onFallback).toHaveBeenCalledTimes(1); expect(onFallback).toHaveBeenCalledWith(motivo)
+    clock.stop(); clock.start()
+    expect(onFallback).toHaveBeenCalledTimes(1)
+  })
+  it('Worker que falha depois de nascer: modo interval e onFallback com o evento de erro', () => {
+    vi.stubGlobal('Worker', FakeBrowserWorker)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const onFallback = vi.fn()
+    const clock = createSchedulerClock(vi.fn(), { createObjectURL: () => 'blob:y', revokeObjectURL: vi.fn(), setIntervalFn: vi.fn(), clearIntervalFn: vi.fn(), onFallback })
+    clock.start(); expect(clock.mode).toBe('worker')
+    FakeBrowserWorker.made[0].fail()
+    expect(clock.mode).toBe('interval'); expect(onFallback).toHaveBeenCalledTimes(1); expect(onFallback.mock.calls[0][0]).toBeInstanceOf(Event)
+  })
+  it('onFallback que lança não derruba o relógio', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const onTick = vi.fn(); const setIntervalFn = vi.fn()
+    const clock = createSchedulerClock(onTick, {
+      createWorker: () => { throw new Error('x') }, createObjectURL: () => 'blob:x', revokeObjectURL: vi.fn(), setIntervalFn, clearIntervalFn: vi.fn(),
+      onFallback: () => { throw new Error('ouvinte quebrado') },
+    })
+    expect(() => clock.start()).not.toThrow()
+    expect(clock.running).toBe(true); expect(clock.mode).toBe('interval'); expect(setIntervalFn).toHaveBeenCalledTimes(1); expect(error).toHaveBeenCalledTimes(1)
+    ;(setIntervalFn.mock.calls[0][0] as () => void)(); expect(onTick).toHaveBeenCalledTimes(1)
+  })
+})

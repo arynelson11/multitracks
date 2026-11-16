@@ -2,12 +2,21 @@
 // Só decide QUANDO o agendador olha o plano: o som em si é marcado no tempo do AudioContext.
 // O tique vem de um Worker nascido de uma Blob URL (funciona no desktop em file://): o
 // navegador segura o setInterval da janela quando o app fica atrás de outra janela no culto
-// (Holyrics, OBS, projetor), e o do Worker continua no ritmo. Sem Worker, o setInterval da
-// janela segura as pontas, com aviso no console.
+// (Holyrics, OBS, projetor), e o do Worker continua no ritmo.
+// CONDIÇÃO: o Worker só mantém os 25 ms em segundo plano com o AudioContext RODANDO (medido no
+// Electron 42: sem contexto rodando o timer do próprio Worker cai pra 1 a 3 s). Hoje vale porque
+// o motor nunca suspende o contexto depois do primeiro play. Não suspender o contexto na pausa,
+// nem ligar o relógio antes do contexto rodar, sem rever isso.
+// Sem Worker, o setInterval da janela segura as pontas (`mode: 'interval'`), com aviso no console
+// e no `onFallback`. Ele NÃO cumpre a folga de 0,3 s com a janela escondida (1 tique por segundo):
+// quem agenda aumenta o horizonte ou avisa o operador.
 
 /** O pedaço do Worker que o relógio usa (o teste passa um falso). */
 export interface WorkerLike { postMessage(m: unknown): void; terminate(): void; onmessage: ((e: { data: unknown }) => void) | null }
-export interface SchedulerClock { start(): void; stop(): void; dispose(): void; readonly running: boolean }
+/** Caminho do tique: o Worker, ou o setInterval da janela depois de o Worker faltar ou falhar. */
+export type ClockMode = 'worker' | 'interval'
+/** `mode` começa em 'worker' (o Worker só é tentado no primeiro start) e passa a 'interval' de vez se ele faltar ou falhar. */
+export interface SchedulerClock { start(): void; stop(): void; dispose(): void; readonly running: boolean; readonly mode: ClockMode }
 
 /** Intervalo entre tiques do agendador, em milissegundos. */
 export const CLOCK_INTERVAL_MS = 25
@@ -19,6 +28,8 @@ export interface SchedulerClockOptions {
   revokeObjectURL?: (url: string) => void
   setIntervalFn?: typeof setInterval
   clearIntervalFn?: typeof clearInterval
+  /** Chamado uma vez, com o motivo, quando o relógio passa pra 'interval' (já ligado no caminho novo se estava rodando). */
+  onFallback?: (reason: unknown) => void
 }
 
 const FALLBACK_WARNING = 'Relógio do agendador sem Worker: usando o setInterval da janela, que o navegador pode atrasar com o app em segundo plano.'
@@ -49,8 +60,9 @@ function browserWorker(url: string, onBroken: (err: unknown) => void): WorkerLik
 /**
  * Relógio que chama `onTick` a cada `intervalMs` (padrão 25 ms) entre `start` e `stop`. O Worker
  * nasce no primeiro `start` e é reaproveitado até o `dispose`. Sem Worker (ausente, lançando ao
- * nascer ou com erro depois), cai no `setIntervalFn` e avisa uma vez. Tique atrasado que chega
- * depois do `stop` é ignorado. Depois do `dispose`, `start` não faz nada.
+ * nascer ou com erro depois), cai no `setIntervalFn`, passa `mode` pra 'interval' e avisa uma vez
+ * (console e `onFallback`; um `onFallback` que lança não derruba o relógio). Tique atrasado que
+ * chega depois do `stop` é ignorado. Depois do `dispose`, `start` não faz nada.
  */
 export function createSchedulerClock(onTick: () => void, opts: SchedulerClockOptions = {}): SchedulerClock {
   const intervalMs = opts.intervalMs !== undefined && Number.isFinite(opts.intervalMs) && opts.intervalMs > 0 ? opts.intervalMs : CLOCK_INTERVAL_MS
@@ -93,6 +105,11 @@ export function createSchedulerClock(onTick: () => void, opts: SchedulerClockOpt
     useInterval = true
     releaseWorker()
     if (running) startInterval()
+    try {
+      opts.onFallback?.(reason)
+    } catch (err) {
+      console.error('Relógio do agendador: o aviso de troca pro setInterval falhou.', err)
+    }
   }
 
   function ensureWorker(): WorkerLike | null {
@@ -132,5 +149,5 @@ export function createSchedulerClock(onTick: () => void, opts: SchedulerClockOpt
     releaseWorker()
   }
 
-  return { start, stop, dispose, get running() { return running } }
+  return { start, stop, dispose, get running() { return running }, get mode(): ClockMode { return useInterval ? 'interval' : 'worker' } }
 }
