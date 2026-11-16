@@ -525,3 +525,17 @@ describe('loop estéreo e variações (M5, rodada 1)', () => {
     expect(recognizeChannel('Pad Loop L')).toEqual({ label: 'Pad Loop L', family: 'pad' })
   })
 })
+
+// Rodada 1 da M5, item 5: baixo sintetizado em espanhol, como o Synth Bass.
+describe('Bajo Synth é Synth Bass (M5, rodada 1)', () => {
+  it.each([['Bajo Synth'], ['Synth Bajo'], ['Syn Bajo'], ['SYNTH_BAJO_1.wav']])('%s vira Synth Bass, papel Normal', (raw) => {
+    expect(recognizeChannel(raw)).toEqual({ label: 'Synth Bass', family: 'synthBass' })
+    expect(roleFromName(raw)).toBe('normal')
+    expect(buildChannelLabels([{ id: '1', name: raw }])[0]).toMatchObject({ family: 'synthBass', color: FAMILY_COLOR.synthBass })
+  })
+  it('Bajo sozinho continua Baixo e o resto do Baixo não muda', () => {
+    expect(recognizeChannel('Bajo')).toEqual({ label: 'Baixo', family: 'baixo' })
+    expect(recognizeChannel('Baixo Synth')).toEqual({ label: 'Baixo', family: 'baixo' })
+    expect(recognizeChannel('SYNTH BASS')).toEqual({ label: 'Synth Bass', family: 'synthBass' })
+  })
+})

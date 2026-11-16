@@ -115,7 +115,7 @@ const FAMILY_RULES: readonly FamilyRule[] = [
     sequences: [['BACK', 'VOCAL'], ['BACK', 'VOX']],
   }),
   rule('synthBass', ['SUB', 'SUBBASS', 'SYNTHBASS'], {
-    sequences: [['SYNTH', 'BASS'], ['SYN', 'BASS'], ['SUB', 'BASS']],
+    sequences: [['SYNTH', 'BASS'], ['SYN', 'BASS'], ['SUB', 'BASS'], ['SYNTH', 'BAJO'], ['BAJO', 'SYNTH'], ['SYN', 'BAJO']],
   }),
   rule('baixo', ['BASS', 'BASSES', 'BAIXO', 'BX', 'BAJO']),
   rule('violao', ['AG', 'ACOUSTIC', 'ACUSTICO', 'VIOLAO', 'VIOLOES', 'VL'], {
