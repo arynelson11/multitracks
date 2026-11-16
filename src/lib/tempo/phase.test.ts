@@ -108,7 +108,6 @@ describe('falhas conhecidas do catálogo (comportamento de hoje)', () => {
     expect(Math.abs(Math.abs(firstBeatError(c, song, grid.firstBeat)) - meioPeriodo)).toBeLessThan(0.010);
     expect(grid.offbeatRisk).toBe(risco);
   });
-
 });
 
 // ── choosePhase com ataques montados à mão (sem áudio) ──

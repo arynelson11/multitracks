@@ -11,9 +11,13 @@
 // - oitava: fica no candidato com bumbo no tempo e caixa um tempo depois (backbeat),
 //   só com evidência clara (na bateria real a banda aguda é quase toda prato e
 //   chimbal, então sem evidência fica o tempo aproximado);
-// - o BPM da música (`preferBpm`), quando vem, escolhe o nível (pesa mais que a
-//   evidência), e o BPM exato ainda sai da música;
+// - o BPM da música (`preferBpm`), quando vem, só escolhe entre candidatos tirados do
+//   áudio: decide a oitava; na proporção 3:2 só desempata quando os terços são
+//   ambíguos. Se nenhum candidato admitido bate com ele (5%), vale a evidência e o
+//   resultado avisa (`preferConflict`);
 // - compasso composto: o pulso de semínima pontuada vira colcheia (vezes 3).
+// Tudo aqui é em BPM do pulso (a colcheia no composto); a conversão pra semínima
+// (o BPM que se mostra e salva) é do beatGrid, pela conversão única dos contratos.
 // O `nearBpm` (BPM digitado no Separador) continua o refino rígido de ±0,8%: um
 // candidato só, sem trocar de nível.
 import { isCompound, type TimeSignature } from '../stageContracts';
@@ -35,19 +39,30 @@ const MAX_AUTO_BPM = 240;
 const PREFER_TOLERANCE = 0.05;
 /**
  * Ataque nos terços a partir disto (da energia no tempo): a grade é 3:2 ou 4:3 da
- * música. Nas 45 multitracks do dono (gabarito pelo click), as grades 3:2 e 4:3 deram
- * de 0,68 a 0,99 e as certas e as de oitava, no máximo 0,32.
+ * música e a evidência troca sozinha. Nas 45 multitracks do dono (gabarito pelo
+ * click), o aproximado nas grades 3:2 e 4:3 deu de 0,68 a 0,99, menos a Fé (6/8 sem
+ * compasso pedido, metade da semínima pontuada), com 0,34; as certas e as de oitava,
+ * no máximo 0,32. Entre `THIRDS_CLEAN` e este valor é ambíguo: só o BPM da música
+ * desempata.
  */
 const THIRDS_WRONG = 0.5;
-/** Parente aceito na troca de proporção: terços abaixo disto (subdivisão binária limpa). */
+/**
+ * Terços abaixo disto: subdivisão binária limpa. O aproximado limpo recusa qualquer
+ * troca de proporção (nem o BPM da música derruba); o parente precisa ser limpo pra
+ * entrar numa troca. Nas 5 trocas reais, os parentes certos deram de 0,02 a 0,17.
+ */
 const THIRDS_CLEAN = 0.25;
-/** Na troca de proporção, o parente precisa de pelo menos isto da pontuação do aproximado. */
+/** Na troca de proporção pela evidência, o parente precisa de pelo menos isto da pontuação do aproximado. */
 const RATIO_MIN_SCORE = 0.8;
+/** No desempate pelo BPM da música (terços ambíguos), o parente precisa de pelo menos isto (Fé real: 77%). */
+const PREFER_RATIO_MIN_SCORE = 0.6;
 /**
  * Backbeat (bumbo x caixa, 0 a 1) que já conta como evidência clara de oitava. Nos
  * sintéticos o nível certo dá de 0,55 a 0,58 e os outros, no máximo 0,35 (o dobro do
- * one drop); nas multitracks reais nenhum nível passa de 0,35 (a banda aguda da
- * bateria é quase toda prato), então a evidência não troca a oitava de música real.
+ * one drop). Nas multitracks reais, a metade e o dobro do aproximado (os únicos que a
+ * oitava pode escolher) ficam em até 0,343, e o próprio aproximado chega a 0,406 (a
+ * simeão, no nível 2/3, que não é alvo da troca): a banda aguda da bateria real é
+ * quase toda prato, e a evidência não troca a oitava de música real.
  */
 const BACKBEAT_STRONG = 0.45;
 /** A oitava só troca se o backbeat do candidato for pelo menos isto vezes o do atual. */
@@ -121,21 +136,26 @@ function tempoPrior(bpm: number): number {
 
 const logDistance = (a: number, b: number) => Math.abs(Math.log2(a / b));
 
+const withinPrefer = (bpm: number, prefer: number) => logDistance(bpm, prefer) <= Math.log2(1 + PREFER_TOLERANCE);
+
+function nearestTo<T>(items: readonly T[], target: number, bpmOf: (x: T) => number): T {
+  let best = items[0];
+  for (const x of items) if (logDistance(bpmOf(x), target) < logDistance(bpmOf(best), target)) best = x;
+  return best;
+}
+
 /**
- * Andamentos (BPM) a testar na busca fina, o tempo aproximado primeiro.
+ * Andamentos (BPM do pulso) a testar na busca fina, o tempo aproximado primeiro.
+ * Só saem do áudio: o BPM da música nunca entra como candidato.
  * - Com `nearBpm`: só ele (refino rígido do Separador).
  * - Sem: o aproximado, a metade, o dobro e as proporções 2/3, 3/4, 4/3 e 3/2,
  *   só os que ficam entre 30 e 300 BPM. No compasso composto (6/8, 12/8), só a
  *   metade e o dobro: lá o ataque nos terços é a colcheia, não uma grade errada.
- * - Com `preferBpm` longe (mais de 5%) de todos eles, ele entra no fim.
  */
-export function tempoCandidates(rough: number, opts: { nearBpm?: number; preferBpm?: number; signature?: TimeSignature }): number[] {
+export function tempoCandidates(rough: number, opts: { nearBpm?: number; signature?: TimeSignature }): number[] {
   if (opts.nearBpm && opts.nearBpm > 0) return [opts.nearBpm];
   const ratios = opts.signature && isCompound(opts.signature) ? COMPOUND_RATIOS : RATIOS;
-  const out = ratios.map(r => rough * r).filter((bpm, i) => i === 0 || (bpm >= MIN_CANDIDATE_BPM && bpm <= MAX_CANDIDATE_BPM));
-  const pref = opts.preferBpm;
-  if (pref && pref > 0 && !out.some(bpm => logDistance(bpm, pref) <= Math.log2(1 + PREFER_TOLERANCE))) out.push(pref);
-  return out;
+  return ratios.map(r => rough * r).filter((bpm, i) => i === 0 || (bpm >= MIN_CANDIDATE_BPM && bpm <= MAX_CANDIDATE_BPM));
 }
 
 function maxOf(o: Float32Array): number {
@@ -172,32 +192,42 @@ const backbeat = (c: TempoCandidate) => c.kickOnBeat * c.snareOffBeat;
 const sameBpm = (a: number, b: number, tol = RELATION_TOLERANCE) => logDistance(a, b) <= Math.log2(1 + tol);
 const inAutoRange = (c: TempoCandidate) => c.bpm >= MIN_AUTO_BPM && c.bpm <= MAX_AUTO_BPM;
 
-// Troca de proporção: o tempo aproximado com ataque forte nos terços é uma grade 3:2
-// ou 4:3 da música; fica o parente (2/3, 3/4, 4/3 ou 3/2) sem ataque nos terços, com
-// pontuação parecida, e entre os dois da mesma família o de pontuação vezes a
-// preferência por andamentos comuns.
-function fixRatio(base: TempoCandidate, cands: readonly TempoCandidate[]): TempoCandidate {
-  if (base.thirds < THIRDS_WRONG) return base;
-  let best: TempoCandidate | null = null;
-  let bestValue = -Infinity;
-  for (const c of cands) {
-    const r = c.bpm / base.bpm;
-    const related = [2 / 3, 3 / 4, 4 / 3, 3 / 2].some(x => sameBpm(r, x));
-    if (!related || !inAutoRange(c) || c.thirds >= THIRDS_CLEAN || c.score < RATIO_MIN_SCORE * base.score) continue;
-    const value = c.score * tempoPrior(c.bpm);
-    if (value > bestValue) {
-      bestValue = value;
-      best = c;
+const isRatioRelative = (c: TempoCandidate, base: TempoCandidate) => [2 / 3, 3 / 4, 4 / 3, 3 / 2].some(x => sameBpm(c.bpm / base.bpm, x));
+const isOctaveRelative = (c: TempoCandidate, base: TempoCandidate) => sameBpm(c.bpm, base.bpm * 2) || sameBpm(c.bpm, base.bpm / 2);
+
+// Proporção (a evidência manda):
+// - aproximado com ataque forte nos terços: é uma grade 3:2 ou 4:3 da música e troca
+//   pelo parente (2/3, 3/4, 4/3 ou 3/2) sem ataque nos terços, com pontuação parecida;
+//   entre os dois da mesma família, o de pontuação vezes a preferência por andamentos
+//   comuns (a oitava fica pra depois);
+// - aproximado limpo: nenhuma troca, nem pedida pelo BPM da música;
+// - no meio (ambíguo): só o BPM da música desempata, pelo parente limpo perto dele.
+function fixRatio(base: TempoCandidate, cands: readonly TempoCandidate[], prefer: number | null): TempoCandidate {
+  if (base.thirds >= THIRDS_WRONG) {
+    let best: TempoCandidate | null = null;
+    let bestValue = -Infinity;
+    for (const c of cands) {
+      if (!isRatioRelative(c, base) || !inAutoRange(c) || c.thirds >= THIRDS_CLEAN || c.score < RATIO_MIN_SCORE * base.score) continue;
+      const value = c.score * tempoPrior(c.bpm);
+      if (value > bestValue) {
+        bestValue = value;
+        best = c;
+      }
     }
+    return best ?? base;
   }
-  return best ?? base;
+  if (base.thirds < THIRDS_CLEAN || prefer === null) return base;
+  const clean = cands.filter(c => isRatioRelative(c, base) && c.thirds < THIRDS_CLEAN && c.score >= PREFER_RATIO_MIN_SCORE * base.score);
+  if (!clean.length) return base;
+  const near = nearestTo(clean, prefer, c => c.bpm);
+  return withinPrefer(near.bpm, prefer) ? near : base;
 }
 
 // Troca de oitava: o dobro ou a metade com backbeat claro e bem maior que o do atual.
 function fixOctave(base: TempoCandidate, cands: readonly TempoCandidate[]): TempoCandidate {
   let best = base;
   for (const c of cands) {
-    if (!(sameBpm(c.bpm, base.bpm * 2) || sameBpm(c.bpm, base.bpm / 2)) || !inAutoRange(c)) continue;
+    if (!isOctaveRelative(c, base) || !inAutoRange(c)) continue;
     const bb = backbeat(c);
     if (bb >= BACKBEAT_STRONG && bb >= BACKBEAT_RATIO * backbeat(base) && bb > backbeat(best)) best = c;
   }
@@ -212,45 +242,52 @@ export function halfAndDouble(bpm: number): number[] {
 }
 
 /**
- * Escolhe o andamento entre os candidatos já medidos. O primeiro é o tempo
- * aproximado (1x); os outros, proporções dele em qualquer ordem.
+ * Escolhe o andamento entre os candidatos já medidos (tudo em BPM do pulso). O
+ * primeiro é o tempo aproximado (1x); os outros, proporções dele em qualquer ordem.
  * - `nearBpm`: o candidato mais perto dele (o Separador passa só esse).
- * - `preferBpm`: o candidato mais perto dele, se algum está a até 5%.
- * - Senão a evidência: primeiro a proporção (terços), depois a oitava (backbeat).
- *   Sem evidência clara fica o tempo aproximado.
- * @returns o BPM escolhido (como veio no candidato) e a metade e o dobro dele
+ * - Senão, primeiro a proporção (terços; o `preferBpm` só desempata terços ambíguos),
+ *   depois a oitava: com `preferBpm`, o candidato da oitava (o escolhido, a metade ou
+ *   o dobro) a até 5% dele; sem, ou se nenhum bate, o backbeat. Sem evidência clara
+ *   fica o tempo aproximado.
+ * @returns o BPM escolhido (como veio no candidato), a metade e o dobro dele e
+ *   `preferConflict`: veio `preferBpm` e nenhum candidato admitido ficou a até 5% dele
+ *   (o BPM salvo não bate com o áudio; vale o do áudio)
  */
-export function pickTempo(cands: readonly TempoCandidate[], opts: { nearBpm?: number; preferBpm?: number }): { bpm: number; alternatives: number[] } {
+export function pickTempo(
+  cands: readonly TempoCandidate[],
+  opts: { nearBpm?: number; preferBpm?: number },
+): { bpm: number; alternatives: number[]; preferConflict: boolean } {
   if (!cands.length) throw new Error('pickTempo: nenhum candidato de andamento');
-  const ref = opts.nearBpm && opts.nearBpm > 0 ? opts.nearBpm : opts.preferBpm && opts.preferBpm > 0 ? opts.preferBpm : null;
-  if (ref !== null) {
-    let near = cands[0];
-    for (const c of cands) if (logDistance(c.bpm, ref) < logDistance(near.bpm, ref)) near = c;
-    if (opts.nearBpm || logDistance(near.bpm, ref) <= Math.log2(1 + PREFER_TOLERANCE)) return { bpm: near.bpm, alternatives: halfAndDouble(near.bpm) };
-  }
-  const chosen = fixOctave(fixRatio(cands[0], cands), cands);
-  return { bpm: chosen.bpm, alternatives: halfAndDouble(chosen.bpm) };
+  const result = (c: TempoCandidate, preferConflict: boolean) => ({ bpm: c.bpm, alternatives: halfAndDouble(c.bpm), preferConflict });
+  if (opts.nearBpm && opts.nearBpm > 0) return result(nearestTo(cands, opts.nearBpm, c => c.bpm), false);
+  const prefer = opts.preferBpm && opts.preferBpm > 0 ? opts.preferBpm : null;
+  const base = fixRatio(cands[0], cands, prefer);
+  if (prefer === null) return result(fixOctave(base, cands), false);
+  const octave = nearestTo(cands.filter(c => c === base || isOctaveRelative(c, base)), prefer, c => c.bpm);
+  return withinPrefer(octave.bpm, prefer) ? result(octave, false) : result(fixOctave(base, cands), true);
 }
 
 /**
  * Compasso composto (6/8, 12/8): a grade da música é em colcheia. Se o pulso
  * escolhido tem ataque nos terços (é a semínima pontuada ou a metade dela), a
  * colcheia é 3 vezes ele; senão ele já é a colcheia. Depois o nível vai pra faixa
- * plausível da colcheia (90 a 240) e, com o BPM da música, pro nível mais perto
- * dele lido como colcheia, semínima (metade) ou semínima pontuada (um terço).
- * Compasso simples (ou sem compasso): o pulso como veio.
- * @returns o BPM da colcheia (ou o do pulso, no compasso simples)
+ * plausível da colcheia (90 a 240) e, com o BPM salvo, pra oitava a até 5% dele.
+ * Compasso simples (ou sem compasso): o pulso como veio (lá o BPM salvo já entrou
+ * na escolha do pulso).
+ * @param preferPulseBpm o BPM salvo já convertido pro pulso (a colcheia no composto)
+ * @returns o BPM do pulso (a colcheia no composto) e `preferConflict`: veio BPM salvo
+ *   e nenhuma oitava da colcheia ficou a até 5% dele (vale a colcheia do áudio)
  */
-export function compoundPulseBpm(pulse: { bpm: number; thirds: number }, signature: TimeSignature | undefined, preferBpm?: number): number {
-  if (!signature || !isCompound(signature)) return pulse.bpm;
+export function compoundPulseBpm(
+  pulse: { bpm: number; thirds: number },
+  signature: TimeSignature | undefined,
+  preferPulseBpm?: number,
+): { bpm: number; preferConflict: boolean } {
+  if (!signature || !isCompound(signature)) return { bpm: pulse.bpm, preferConflict: false };
   let eighth = pulse.thirds >= THIRDS_COMPOUND ? pulse.bpm * 3 : pulse.bpm;
   while (eighth > MAX_EIGHTH_BPM) eighth /= 2;
   while (eighth < MIN_EIGHTH_BPM) eighth *= 2;
-  if (preferBpm && preferBpm > 0) {
-    const fit = (e: number) => Math.min(logDistance(e, preferBpm), logDistance(e / 2, preferBpm), logDistance(e / 3, preferBpm));
-    let best = eighth;
-    for (const e of [eighth / 2, eighth * 2]) if (fit(e) < fit(best)) best = e;
-    eighth = best;
-  }
-  return eighth;
+  if (!preferPulseBpm || !(preferPulseBpm > 0)) return { bpm: eighth, preferConflict: false };
+  const level = nearestTo([eighth, eighth / 2, eighth * 2], preferPulseBpm, e => e);
+  return withinPrefer(level, preferPulseBpm) ? { bpm: level, preferConflict: false } : { bpm: eighth, preferConflict: true };
 }

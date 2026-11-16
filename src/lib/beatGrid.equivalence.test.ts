@@ -13,7 +13,8 @@
 //
 // M4: a etapa do andamento testa metade, dobro e as proporções 3:2 e 4:3, mas nenhum
 // caso daqui muda de BPM (nem o 6/8 sem compasso pedido, que continua em 60). O
-// detectSongGrid passa a oferecer a metade e o dobro em `alternatives`.
+// detectSongGrid passa a oferecer a metade e o dobro em `alternatives`, o BPM do
+// pulso em `pulseBpm` (igual ao `bpm` no compasso simples) e o `preferConflict`.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -118,10 +119,12 @@ describe('detectSongGrid', () => {
   it('com uma faixa de pulso só, é o detectBeatGrid de hoje mais os campos novos', () => {
     const ch = bateria(CASOS[0].song);
     const r = detectSongGrid([{ id: 'bat', label: 'Bateria', use: 'pulse', channels: ch }], SR, { beatsPerBar: 4 });
-    const { offbeatRisk, alternatives, tracksUsed, ...grade } = r;
+    const { offbeatRisk, alternatives, tracksUsed, pulseBpm, preferConflict, ...grade } = r;
     expect(grade).toEqual(detectBeatGrid(ch, SR, { beatsPerBar: 4 }));
     expect(offbeatRisk).toBe(false);
     expect(alternatives).toEqual([60, 240]);
+    expect(pulseBpm).toBe(grade.bpm);
+    expect(preferConflict).toBe(false);
     expect(tracksUsed).toEqual(['bat']);
   }, LENTO);
 
@@ -140,7 +143,7 @@ describe('detectSongGrid', () => {
   it('sem faixa de pulso, devolve a grade de reserva sem confiança (no BPM de referência)', () => {
     // A reserva sai antes de olhar o áudio: 5 s bastam. O 97 (não o padrão 120) prova que o nearBpm é usado.
     const r = detectSongGrid([{ id: 'pad', label: 'Pad', use: 'harmony', channels: [new Float32Array(SR * 5)] }], SR, { nearBpm: 97 });
-    expect(r).toEqual({ bpm: 97, firstBeat: 0, downbeat: 0, confidence: 0, offbeatRisk: false, alternatives: [], tracksUsed: [] });
+    expect(r).toEqual({ bpm: 97, pulseBpm: 97, firstBeat: 0, downbeat: 0, confidence: 0, offbeatRisk: false, preferConflict: false, alternatives: [], tracksUsed: [] });
   });
 });
 

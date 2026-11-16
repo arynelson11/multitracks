@@ -1,6 +1,7 @@
 // Andamento (M4): a oitava (metade, inteiro, dobro), as proporções 3:2 e 4:3, o
-// compasso composto (6/8 e 12/8 em colcheia) e o BPM da música como referência
-// suave (`preferBpm`), sem mexer no refino rígido do Separador (`nearBpm`).
+// compasso composto (6/8 e 12/8: grade em colcheia, BPM em semínima) e o BPM da
+// música como referência suave (`preferBpm`: escolhe entre os candidatos do áudio e
+// avisa quando não bate), sem mexer no refino rígido do Separador (`nearBpm`).
 // Casos do relatório do metrônomo automático (src/test/tempoCases.ts).
 import { describe, expect, it } from 'vitest';
 import { detectBeatGrid, detectSongGrid, type BeatGridOptions, type SongGridDetection } from '../beatGrid';
@@ -40,8 +41,8 @@ function foraDaGrade(t: number, t0: number, passo: number): number {
   return d;
 }
 
-/** Onde cai o "1" da grade detectada (o primeiro), em segundos. */
-const primeiroUm = (g: SongGridDetection) => g.firstBeat + g.downbeat * (60 / g.bpm);
+/** Onde cai o "1" da grade detectada (o primeiro), em segundos. A grade anda no pulso (`pulseBpm`). */
+const primeiroUm = (g: SongGridDetection) => g.firstBeat + g.downbeat * (60 / g.pulseBpm);
 
 describe('oitava do andamento', () => {
   it.each([['t_160', 160], ['t_176', 176]])('%s: %s BPM sai inteiro, não pela metade', (id, bpm) => {
@@ -63,16 +64,32 @@ describe('oitava do andamento', () => {
 });
 
 describe('BPM da música como referência', () => {
+  const comPrefer = (id: string, preferBpm: number) => {
+    const { grid } = detect(id, { beatsPerBar: 4, preferBpm });
+    return { bpm: Math.round(grid.bpm * 10) / 10, preferConflict: grid.preferConflict };
+  };
+
   it('com preferBpm escolhe a oitava dele', () => {
-    expect(detect('b', { preferBpm: 60 }).grid.bpm).toBeCloseTo(60, 1);
-    expect(detect('t_160', { preferBpm: 80 }).grid.bpm).toBeCloseTo(80, 1);
-    expect(detect('t_64', { preferBpm: 128 }).grid.bpm).toBeCloseTo(128, 1);
+    expect(comPrefer('b', 60)).toEqual({ bpm: 60, preferConflict: false });
+    expect(comPrefer('t_160', 80)).toEqual({ bpm: 80, preferConflict: false });
+    expect(comPrefer('t_64', 128)).toEqual({ bpm: 128, preferConflict: false });
   }, LENTO);
 
   it('preferBpm é suave: o BPM ainda sai da música, não fica preso ao de referência', () => {
     // Com nearBpm 118 o refino fica em volta de 118 (no máximo ~119,1); com preferBpm acha o 120.
-    expect(detect('b', { preferBpm: 118 }).grid.bpm).toBe(120);
-    expect(detect('c1', { preferBpm: 72 }).grid.bpm).toBeCloseTo(72.5, 1);
+    expect(comPrefer('b', 118)).toEqual({ bpm: 120, preferConflict: false });
+    expect(comPrefer('c1', 72)).toEqual({ bpm: 72.5, preferConflict: false });
+  }, LENTO);
+
+  it('BPM salvo que não bate com o áudio: vale o andamento do áudio e avisa (preferConflict)', () => {
+    // f1 com 120 seria uma grade 4:3 (ataque nos terços); b com 100 não tem parente nenhum; b com 90 é 3:4.
+    expect(comPrefer('f1', 120)).toEqual({ bpm: 90, preferConflict: true });
+    expect(comPrefer('b', 100)).toEqual({ bpm: 120, preferConflict: true });
+    expect(comPrefer('b', 90)).toEqual({ bpm: 120, preferConflict: true });
+  }, LENTO);
+
+  it('sem preferBpm não há aviso', () => {
+    expect(detect('b').grid.preferConflict).toBe(false);
   }, LENTO);
 
   it('com nearBpm continua o refino rígido (Separador)', () => {
@@ -88,36 +105,61 @@ describe('BPM da música como referência', () => {
 });
 
 describe('compasso', () => {
-  it('6/8 pedido em 6/8 conta colcheias (180) com o acento a cada compasso', () => {
+  // Unidade (Ruling T3-BPM): `bpm` e `alternatives` sempre em semínima (o que mostrar e
+  // salvar); a grade anda no pulso (`pulseBpm`, colcheia no 6/8 e no 12/8).
+  const unidades = (g: SongGridDetection) => ({ bpm: Math.round(g.bpm * 10) / 10, pulseBpm: Math.round(g.pulseBpm * 10) / 10 });
+
+  it('6/8 pedido em 6/8: grade em colcheia (180) com o acento a cada compasso, BPM em semínima (90)', () => {
     const { song, grid } = detect('f3', { signature: '6/8' });
     const colcheia = 60 / 180;
-    expect(grid.bpm).toBeCloseTo(180, 1);
+    expect(unidades(grid)).toEqual({ bpm: 90, pulseBpm: 180 });
     expect(Math.abs(foraDaGrade(grid.firstBeat, song.firstBeat, colcheia))).toBeLessThan(0.010);
     // O "1" cai no começo de um compasso de 6 colcheias.
     expect(Math.abs(foraDaGrade(primeiroUm(grid), song.firstBeat, 6 * colcheia))).toBeLessThan(0.010);
-    expect(grid.alternatives).toEqual([90, 360]);
+    expect(grid.alternatives).toEqual([45, 180]);
   }, LENTO);
 
   it('12/8 pedido em 12/8 também fica em colcheia', () => {
-    expect(detect('f3', { signature: '12/8' }).grid.bpm).toBeCloseTo(180, 1);
+    expect(unidades(detect('f3', { signature: '12/8' }).grid)).toEqual({ bpm: 90, pulseBpm: 180 });
   }, LENTO);
 
   it('6/8 sem compasso pedido continua no pulso de semínima pontuada (60), como hoje', () => {
-    expect(detect('f3', { beatsPerBar: 6 }).grid.bpm).toBeCloseTo(60, 1);
+    expect(unidades(detect('f3', { beatsPerBar: 6 }).grid)).toEqual({ bpm: 60, pulseBpm: 60 });
   }, LENTO);
 
   it('signature 3/4 sem beatsPerBar acha o 1 a cada 3', () => {
     const { song, grid } = detect('f1', { signature: '3/4' });
     const tempo = 60 / 90;
-    expect(grid.bpm).toBeCloseTo(90, 1);
+    expect(unidades(grid)).toEqual({ bpm: 90, pulseBpm: 90 });
     expect(Math.abs(foraDaGrade(primeiroUm(grid), song.firstBeat, 3 * tempo))).toBeLessThan(0.010);
   }, LENTO);
 
-  it('6/8 com o BPM da música em colcheia, em semínima ou em semínima pontuada acha a colcheia', () => {
-    for (const preferBpm of [180, 90, 60]) {
-      expect({ preferBpm, bpm: detect('f3', { signature: '6/8', preferBpm }).grid.bpm }).toEqual({ preferBpm, bpm: 180 });
-    }
+  it('6/8: o BPM da música é lido em semínima; outra leitura não vale e avisa', () => {
+    const r = (preferBpm: number) => {
+      const { grid } = detect('f3', { signature: '6/8', preferBpm });
+      return { ...unidades(grid), preferConflict: grid.preferConflict };
+    };
+    expect(r(90)).toEqual({ bpm: 90, pulseBpm: 180, preferConflict: false });
+    // 45 em semínima = colcheia 90: a oitava é do BPM salvo.
+    expect(r(45)).toEqual({ bpm: 45, pulseBpm: 90, preferConflict: false });
+    // 60 seria a semínima pontuada: não é a convenção, então vale o áudio e avisa.
+    expect(r(60)).toEqual({ bpm: 90, pulseBpm: 180, preferConflict: true });
   }, LENTO);
+
+  it('nearBpm no composto também é lido em semínima (refino rígido em volta da colcheia)', () => {
+    expect(unidades(detect('f3', { signature: '6/8', nearBpm: 90 }).grid)).toEqual({ bpm: 90, pulseBpm: 180 });
+  }, LENTO);
+
+  it('grade de reserva na mesma convenção: BPM em semínima e o pulso pela conversão', () => {
+    const vazio = [new Float32Array(48000 * 5)];
+    const reserva = (opts: Opcoes) => detectSongGrid([{ id: 'x', label: '', use: 'pulse', channels: vazio }], 48000, opts);
+    expect(reserva({ signature: '6/8', preferBpm: 78 })).toEqual({
+      bpm: 78, pulseBpm: 156, firstBeat: 0, downbeat: 0, confidence: 0,
+      offbeatRisk: false, preferConflict: false, alternatives: [], tracksUsed: [],
+    });
+    // Fora de 30 a 300 o BPM salvo não vale nem pra reserva.
+    expect(reserva({ preferBpm: 1000 })).toMatchObject({ bpm: 120, pulseBpm: 120 });
+  });
 });
 
 // ── pickTempo e tempoCandidates com a evidência montada à mão (sem áudio) ──
@@ -144,21 +186,17 @@ describe('tempoCandidates', () => {
     expect(tempoCandidates(60, { signature: '3/4' })).toEqual([60, 30, 120, 40, 45, 80, 90]);
   });
 
-  it('preferBpm longe de todos entra no fim; perto de um (até 5%), não', () => {
-    expect(tempoCandidates(120, { preferBpm: 108 })).toEqual([120, 60, 240, 80, 90, 160, 180, 108]);
-    expect(tempoCandidates(120, { preferBpm: 62 })).toEqual([120, 60, 240, 80, 90, 160, 180]);
-  });
 });
 
 describe('pickTempo', () => {
   it('sem evidência, fica o tempo aproximado (o primeiro), mesmo com pontuação menor', () => {
     const r = pickTempo([cand(100, 1), cand(50, 1.2), cand(200, 0.8)], {});
-    expect(r).toEqual({ bpm: 100, alternatives: [50, 200] });
+    expect(r).toEqual({ bpm: 100, alternatives: [50, 200], preferConflict: false });
   });
 
   it('o dobro com bumbo no tempo e caixa um tempo depois (backbeat) ganha do aproximado', () => {
     const r = pickTempo([cand(80, 1, 0, 0), cand(40, 1.1), cand(160, 0.9, 0.9, 0.8)], {});
-    expect(r).toEqual({ bpm: 160, alternatives: [80, 320] });
+    expect(r).toEqual({ bpm: 160, alternatives: [80, 320], preferConflict: false });
   });
 
   it('a metade com o backbeat ganha do aproximado', () => {
@@ -189,17 +227,44 @@ describe('pickTempo', () => {
     expect(pickTempo([cand(84, 0.5, 0, 0, 0.99), cand(126, 0.3, 0, 0, 0.02)], {}).bpm).toBe(84);
   });
 
-  it('preferBpm escolhe o candidato mais perto dele, mesmo com evidência contra', () => {
+  it('na oitava o preferBpm decide, mesmo com o backbeat contra', () => {
     const r = pickTempo([cand(80, 1), cand(40, 1.1), cand(160, 0.9, 0.9, 0.9)], { preferBpm: 82 });
-    expect(r).toEqual({ bpm: 80, alternatives: [40, 160] });
+    expect(r).toEqual({ bpm: 80, alternatives: [40, 160], preferConflict: false });
   });
 
-  it('preferBpm longe de todos (mais de 5%) fica de fora e vale a evidência', () => {
-    expect(pickTempo([cand(80, 1), cand(160, 0.9, 0.9, 0.9)], { preferBpm: 120 }).bpm).toBe(160);
+  it('preferBpm longe de todos (mais de 5%): vale a evidência e avisa', () => {
+    expect(pickTempo([cand(80, 1), cand(160, 0.9, 0.9, 0.9)], { preferBpm: 120 })).toMatchObject({ bpm: 160, preferConflict: true });
+  });
+
+  it('na família 3:2 manda a evidência: aproximado sem ataque nos terços recusa a troca que o preferBpm pede', () => {
+    const cands = [cand(104, 0.36, 0, 0, 0.1), cand(78, 0.28, 0, 0, 0.11), cand(156, 0.26, 0, 0, 0.12)];
+    expect(pickTempo(cands, { preferBpm: 78 })).toMatchObject({ bpm: 104, preferConflict: true });
+  });
+
+  it('terços ambíguos no aproximado: o preferBpm desempata pelo parente limpo', () => {
+    // Como a Fé real (6/8 sem compasso pedido): aproximado 104 com terços 0,34, parentes 78 e 156 limpos.
+    const cands = [cand(104, 0.36, 0, 0, 0.34), cand(52, 0.5, 0, 0, 0.26), cand(208, 0.19, 0, 0, 0.41),
+      cand(78, 0.28, 0, 0, 0.11), cand(156, 0.26, 0, 0, 0.12)];
+    expect(pickTempo(cands, { preferBpm: 78 })).toMatchObject({ bpm: 78, preferConflict: false });
+    expect(pickTempo(cands, { preferBpm: 156 })).toMatchObject({ bpm: 156, preferConflict: false });
+    // Sem o BPM da música, terços ambíguos não trocam.
+    expect(pickTempo(cands, {}).bpm).toBe(104);
+  });
+
+  it('terços ambíguos: parente com ataque nos terços ou com pontuação baixa não serve pro desempate', () => {
+    expect(pickTempo([cand(104, 0.36, 0, 0, 0.34), cand(78, 0.28, 0, 0, 0.6)], { preferBpm: 78 })).toMatchObject({ bpm: 104, preferConflict: true });
+    expect(pickTempo([cand(104, 0.36, 0, 0, 0.34), cand(78, 0.1, 0, 0, 0.1)], { preferBpm: 78 })).toMatchObject({ bpm: 104, preferConflict: true });
+  });
+
+  it('troca 3:2 pela evidência: o preferBpm no aproximado recusado não vale, mas escolhe a oitava da troca', () => {
+    const cands = [cand(84, 0.55, 0, 0, 0.99), cand(42, 0.63, 0, 0, 1), cand(168, 0.35, 0, 0, 0.98),
+      cand(63, 0.77, 0, 0, 0.03), cand(126, 0.64, 0, 0, 0.03)];
+    expect(pickTempo(cands, { preferBpm: 84 })).toMatchObject({ bpm: 126, preferConflict: true });
+    expect(pickTempo(cands, { preferBpm: 63 })).toMatchObject({ bpm: 63, preferConflict: false });
   });
 
   it('nearBpm fica com o candidato dele', () => {
-    expect(pickTempo([cand(97, 1)], { nearBpm: 97 })).toEqual({ bpm: 97, alternatives: [48.5, 194] });
+    expect(pickTempo([cand(97, 1)], { nearBpm: 97 })).toEqual({ bpm: 97, alternatives: [48.5, 194], preferConflict: false });
   });
 
   it('sem candidato, erro', () => {
@@ -207,30 +272,39 @@ describe('pickTempo', () => {
   });
 });
 
-describe('compoundPulseBpm', () => {
+describe('compoundPulseBpm (tudo em BPM do pulso: a colcheia no composto)', () => {
+  const colcheia = (bpm: number, thirds: number, sig: TimeSignature | undefined, preferPulseBpm?: number) =>
+    compoundPulseBpm({ bpm, thirds }, sig, preferPulseBpm);
+
   it('compasso simples (ou sem compasso): o pulso como veio', () => {
-    expect(compoundPulseBpm({ bpm: 60, thirds: 0.9 }, undefined)).toBe(60);
-    expect(compoundPulseBpm({ bpm: 60, thirds: 0.9 }, '3/4')).toBe(60);
+    expect(colcheia(60, 0.9, undefined)).toEqual({ bpm: 60, preferConflict: false });
+    expect(colcheia(60, 0.9, '3/4')).toEqual({ bpm: 60, preferConflict: false });
   });
 
   it('pulso com ataque nos terços é semínima pontuada: a colcheia é o triplo', () => {
-    expect(compoundPulseBpm({ bpm: 60, thirds: 0.6 }, '6/8')).toBe(180);
-    expect(compoundPulseBpm({ bpm: 52, thirds: 0.26 }, '12/8')).toBe(156);
+    expect(colcheia(60, 0.6, '6/8').bpm).toBe(180);
+    expect(colcheia(52, 0.26, '12/8').bpm).toBe(156);
   });
 
   it('a metade da semínima pontuada também vira colcheia (o triplo cai na faixa de 90 a 240)', () => {
-    expect(compoundPulseBpm({ bpm: 104, thirds: 0.34 }, '6/8')).toBe(156);
+    expect(colcheia(104, 0.34, '6/8').bpm).toBe(156);
   });
 
   it('pulso sem ataque nos terços já é a colcheia', () => {
-    expect(compoundPulseBpm({ bpm: 156, thirds: 0.14 }, '6/8')).toBe(156);
-    expect(compoundPulseBpm({ bpm: 70, thirds: 0.02 }, '6/8')).toBe(140);
+    expect(colcheia(156, 0.14, '6/8').bpm).toBe(156);
+    expect(colcheia(70, 0.02, '6/8').bpm).toBe(140);
   });
 
-  it('o BPM da música em colcheia, semínima ou semínima pontuada escolhe o nível da colcheia', () => {
-    expect(compoundPulseBpm({ bpm: 60, thirds: 0.6 }, '6/8', 90)).toBe(180);
-    expect(compoundPulseBpm({ bpm: 60, thirds: 0.6 }, '6/8', 60)).toBe(180);
-    expect(compoundPulseBpm({ bpm: 60, thirds: 0.6 }, '6/8', 360)).toBe(360);
-    expect(compoundPulseBpm({ bpm: 60, thirds: 0.6 }, '6/8', 45)).toBe(90);
+  it('o BPM salvo (já convertido pra colcheia) escolhe a oitava da colcheia quando bate a até 5%', () => {
+    expect(colcheia(60, 0.6, '6/8', 180)).toEqual({ bpm: 180, preferConflict: false });
+    expect(colcheia(60, 0.6, '6/8', 360)).toEqual({ bpm: 360, preferConflict: false });
+    expect(colcheia(60, 0.6, '6/8', 90)).toEqual({ bpm: 90, preferConflict: false });
+    // Semínima de 90 e de 135 com o aproximado na semínima: a colcheia é 180 e 270.
+    expect(colcheia(90, 0.05, '6/8', 180)).toEqual({ bpm: 180, preferConflict: false });
+    expect(colcheia(135, 0.05, '6/8', 270)).toEqual({ bpm: 270, preferConflict: false });
+  });
+
+  it('BPM salvo sem nível a até 5%: fica a colcheia do áudio e avisa', () => {
+    expect(colcheia(60, 0.6, '6/8', 120)).toEqual({ bpm: 180, preferConflict: true });
   });
 });
