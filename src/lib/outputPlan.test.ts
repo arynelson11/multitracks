@@ -215,26 +215,26 @@ describe('sanitizeOutputs', () => {
 
 describe('migrateOutputs', () => {
   it('migração: pan automático (padrão) vira separados, desliga e zera os pans uma vez', () => {
-    expect(migrateOutputs({ autoPan: true })).toEqual({ outputs: DEFAULT_OUTPUTS, autoPan: false, resetLegacyPans: true })
+    expect(migrateOutputs({ autoPan: true })).toEqual({ outputs: DEFAULT_OUTPUTS, autoPan: false, resetLegacyPans: true, warnings: [] })
     expect(migrateOutputs({})).toMatchObject({ resetLegacyPans: true }); expect(migrateOutputs({ autoPan: false })).toMatchObject({ outputs: { mode: 'stereo' }, resetLegacyPans: false })
     expect(migrateOutputs({ autoPan: true, outputs: { ...DEFAULT_OUTPUTS, mode: 'stereo' } })).toMatchObject({ outputs: { mode: 'stereo' }, resetLegacyPans: false })
   })
 
   it('pan automático desligado vira tudo junto, sem zerar pan nenhum', () => {
-    expect(migrateOutputs({ autoPan: false })).toEqual({ outputs: STEREO, autoPan: false, resetLegacyPans: false })
-    expect(migrateOutputs({ autoPan: false, outputs: { mode: 'x' } })).toEqual({ outputs: STEREO, autoPan: false, resetLegacyPans: false })
+    expect(migrateOutputs({ autoPan: false })).toEqual({ outputs: STEREO, autoPan: false, resetLegacyPans: false, warnings: [] })
+    expect(migrateOutputs({ autoPan: false, outputs: { mode: 'x' } })).toEqual({ outputs: STEREO, autoPan: false, resetLegacyPans: false, warnings: [] })
   })
 
   it('qualquer outro valor do pan automático conta como o padrão ligado', () => {
     for (const autoPan of [undefined, null, 'false', 0, 1, {}])
-      expect(migrateOutputs({ autoPan })).toEqual({ outputs: DEFAULT_OUTPUTS, autoPan: false, resetLegacyPans: true })
-    expect(migrateOutputs({ autoPan: true, outputs: 'split2' })).toEqual({ outputs: DEFAULT_OUTPUTS, autoPan: false, resetLegacyPans: true })
+      expect(migrateOutputs({ autoPan })).toEqual({ outputs: DEFAULT_OUTPUTS, autoPan: false, resetLegacyPans: true, warnings: [] })
+    expect(migrateOutputs({ autoPan: true, outputs: 'split2' })).toEqual({ outputs: DEFAULT_OUTPUTS, autoPan: false, resetLegacyPans: true, warnings: [] })
   })
 
   it('saídas já gravadas vencem e guardam o interruptor do pan automático', () => {
-    expect(migrateOutputs({ autoPan: true, outputs: STEREO })).toEqual({ outputs: STEREO, autoPan: true, resetLegacyPans: false })
-    expect(migrateOutputs({ autoPan: false, outputs: multi(4, 0, 1) })).toEqual({ outputs: multi(4, 0, 1), autoPan: false, resetLegacyPans: false })
-    expect(migrateOutputs({ outputs: DEFAULT_OUTPUTS })).toEqual({ outputs: DEFAULT_OUTPUTS, autoPan: false, resetLegacyPans: false })
+    expect(migrateOutputs({ autoPan: true, outputs: STEREO })).toEqual({ outputs: STEREO, autoPan: true, resetLegacyPans: false, warnings: [] })
+    expect(migrateOutputs({ autoPan: false, outputs: multi(4, 0, 1) })).toEqual({ outputs: multi(4, 0, 1), autoPan: false, resetLegacyPans: false, warnings: [] })
+    expect(migrateOutputs({ outputs: DEFAULT_OUTPUTS })).toEqual({ outputs: DEFAULT_OUTPUTS, autoPan: false, resetLegacyPans: false, warnings: [] })
   })
 
   it('nunca entrega o objeto do padrão pra quem chamou', () => {
@@ -284,6 +284,10 @@ describe('depois da migração (Ruling T6-1)', () => {
     }
   })
 
+  it('com o marcador, o modo assumido avisa', () => {
+    for (const outputs of ESTRAGADOS) expect(migrateOutputs({ outputs, outputsMigrated: true }).warnings).toEqual(['modo-assumido'])
+  })
+
   it('sanitizeOutputs com migrated nunca é nulo e o modo ilegível vira separados', () => {
     for (const raw of [...ESTRAGADOS, 'split2', 2, [], { mode: 'mono' }]) {
       const out = sanitizeOutputs(raw, { migrated: true })
@@ -293,6 +297,37 @@ describe('depois da migração (Ruling T6-1)', () => {
       expect(sanitizeOutputs(raw, { migrated: 'true' as unknown as boolean })).toBeNull()
     }
     expect(sanitizeOutputs(STEREO, { migrated: true })).toEqual(STEREO)
+  })
+})
+
+describe('avisos da leitura', () => {
+  it('lado do ouvido estragado em separados avisa em vez de trocar o lado em silêncio', () => {
+    for (const earOnSecond of ['true', 1, null, undefined, {}]) {
+      const m = migrateOutputs({ outputs: { ...DEFAULT_OUTPUTS, earOnSecond } })
+      expect(m.outputs).toEqual(DEFAULT_OUTPUTS)
+      expect(m.warnings).toEqual(['lado-assumido'])
+    }
+    expect(migrateOutputs({ outputs: { mode: 'split2' }, outputsMigrated: true }).warnings).toEqual(['lado-assumido'])
+  })
+
+  it('lado estragado fora de separados não avisa (ele não vale agora)', () => {
+    expect(migrateOutputs({ outputs: { ...STEREO, earOnSecond: 'x' } }).warnings).toEqual([])
+    expect(migrateOutputs({ outputs: { ...MULTI, earOnSecond: null } }).warnings).toEqual([])
+  })
+
+  it('mapa de 4 ou mais corrigido na leitura avisa; texto de select com número não', () => {
+    expect(migrateOutputs({ outputs: { ...MULTI, multi: { vsPair: 2, click: 0, guide: 'x' } } })).toMatchObject({ outputs: multi(2, 0, 1), warnings: ['mapa-ajustado'] })
+    expect(migrateOutputs({ outputs: { ...MULTI, multi: { vsPair: 2, click: 0, guide: '1' } } })).toMatchObject({ outputs: multi(2, 0, 1), warnings: [] })
+    expect(migrateOutputs({ outputs: { ...DEFAULT_OUTPUTS, multi: { vsPair: 2, click: 0, guide: 'x' } } }).warnings).toEqual([])
+  })
+
+  it('primeira carga e saídas válidas não avisam', () => {
+    for (const stored of [{}, { autoPan: true }, { autoPan: false }, { outputs: DEFAULT_OUTPUTS }, { outputs: multi(4, 0, 1), outputsMigrated: true }])
+      expect(migrateOutputs(stored).warnings).toEqual([])
+  })
+
+  it('todo aviso tem texto em português, sem travessão', () => {
+    expect(Object.keys(OUTPUT_WARNING_TEXT).sort()).toEqual(['lado-assumido', 'mapa-ajustado', 'modo-assumido', 'poucos-canais', 'sem-saida-ouvido'])
   })
 })
 

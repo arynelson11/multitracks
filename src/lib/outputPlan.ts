@@ -11,13 +11,19 @@ const MODES: readonly OutputMode[] = ['stereo', 'split2', 'multi']
 
 type OutputMap = OutputSettings['multi']
 
-/** Aviso âmbar das saídas (as Configurações da T19 mostram o texto de `OUTPUT_WARNING_TEXT`). */
-export type OutputWarning = 'poucos-canais' | 'sem-saida-ouvido' | 'mapa-ajustado'
+/**
+ * Aviso âmbar das saídas (as Configurações da T19 mostram o texto de `OUTPUT_WARNING_TEXT`).
+ * Os três primeiros vêm do plano (`planOutputs`, placa de agora); `modo-assumido`,
+ * `lado-assumido` e também `mapa-ajustado` vêm da leitura do que estava gravado (`migrateOutputs`).
+ */
+export type OutputWarning = 'poucos-canais' | 'sem-saida-ouvido' | 'mapa-ajustado' | 'modo-assumido' | 'lado-assumido'
 
 export const OUTPUT_WARNING_TEXT: Record<OutputWarning, string> = {
   'poucos-canais': 'Esta placa tem menos de 4 canais. O mapa de 4 ou mais saídas fica guardado pra quando a placa maior voltar.',
   'sem-saida-ouvido': 'Click e Guia sem saída: as saídas 1 e 2 são da VS e esta placa não tem outra. Ligue a placa de 4 ou mais canais ou escolha outro modo.',
   'mapa-ajustado': 'Parte do mapa salvo não vale nesta placa: as saídas foram ajustadas, com Click e Guia fora da VS. Confira o resumo.',
+  'modo-assumido': 'Não deu pra ler o modo de saída gravado. Usando Click e Guia separados: confira o resumo e o lado do ouvido.',
+  'lado-assumido': 'Não deu pra ler o lado gravado de Click e Guia. Usando a saída 1 pra eles: confira antes de tocar.',
 }
 
 /** Plano com o aviso pra tela. O motor e o roteador usam só os campos de `OutputPlan`. */
@@ -152,13 +158,30 @@ export const OUTPUTS_MIGRATED_VALUE = '1'
 export function sanitizeOutputs(raw: unknown, opts: { migrated: true }): OutputSettings
 export function sanitizeOutputs(raw: unknown, opts?: { migrated?: boolean }): OutputSettings | null
 export function sanitizeOutputs(raw: unknown, opts: { migrated?: boolean } = {}): OutputSettings | null {
+  return readOutputs(raw, opts.migrated === true).outputs
+}
+
+/**
+ * Leitura com os avisos do que precisou ser assumido: modo (só depois da migração), lado do
+ * ouvido estragado quando o modo é separados (vale agora; nos outros modos ele não decide
+ * nada) e mapa de "4 ou mais" corrigido quando o modo é esse.
+ */
+function readOutputs(raw: unknown, migrated: boolean): { outputs: OutputSettings | null; warnings: OutputWarning[] } {
   const rec = isRecord(raw) ? raw : {}
   const known = MODES.includes(rec.mode as OutputMode)
-  if (!known && opts.migrated !== true) return null
+  if (!known && !migrated) return { outputs: null, warnings: [] }
+  const mode: OutputMode = known ? (rec.mode as OutputMode) : 'split2'
   const m = resolveMap(readMap(rec.multi), MAX_OUTPUTS)
   const multi: OutputMap = { vsPair: m.vsPair, click: m.click ?? DEFAULT_OUTPUTS.multi.click, guide: m.guide ?? DEFAULT_OUTPUTS.multi.guide }
-  return { mode: known ? (rec.mode as OutputMode) : 'split2', earOnSecond: rec.earOnSecond === true, multi }
+  const warnings: OutputWarning[] = []
+  if (!known) warnings.push('modo-assumido')
+  else if (mode === 'split2' && typeof rec.earOnSecond !== 'boolean') warnings.push('lado-assumido')
+  if (mode === 'multi' && m.changed) warnings.push('mapa-ajustado')
+  return { outputs: { mode, earOnSecond: rec.earOnSecond === true, multi }, warnings }
 }
+
+/** Resultado da carga das saídas; `warnings` são os avisos âmbar da leitura (a T25 guarda, a T19 mostra). */
+export interface MigratedOutputs { outputs: OutputSettings; autoPan: boolean; resetLegacyPans: boolean; warnings: OutputWarning[] }
 
 /**
  * Carga das saídas (R-23). Saídas já gravadas e válidas vencem, sem mexer em pan nenhum (o
@@ -167,14 +190,15 @@ export function sanitizeOutputs(raw: unknown, opts: { migrated?: boolean } = {})
  * ilegível vira "Click e Guia separados" (Ruling T6-1). Sem marcador e sem saídas válidas é a
  * primeira carga: quem tinha o pan automático desligado fica em "Tudo junto"; qualquer outro
  * valor (ligado era o padrão) passa pra "Click e Guia separados", desliga o pan automático e
- * pede pra zerar uma vez os pans ±1 que ele gravou nos canais. A T25 chama com o JSON cru do
- * aparelho, nunca com o objeto já mesclado com os padrões.
+ * pede pra zerar uma vez os pans ±1 que ele gravou nos canais. O que precisou ser assumido na
+ * leitura volta em `warnings`. A T25 chama com o JSON cru do aparelho, nunca com o objeto já
+ * mesclado com os padrões.
  */
-export function migrateOutputs(stored: { autoPan?: unknown; outputs?: unknown; outputsMigrated?: unknown }): { outputs: OutputSettings; autoPan: boolean; resetLegacyPans: boolean } {
-  const saved = sanitizeOutputs(stored.outputs, { migrated: stored.outputsMigrated === true })
-  if (saved) return { outputs: saved, autoPan: stored.autoPan === true, resetLegacyPans: false }
-  if (stored.autoPan === false) return { outputs: { ...copyOutputs(DEFAULT_OUTPUTS), mode: 'stereo' }, autoPan: false, resetLegacyPans: false }
-  return { outputs: copyOutputs(DEFAULT_OUTPUTS), autoPan: false, resetLegacyPans: true }
+export function migrateOutputs(stored: { autoPan?: unknown; outputs?: unknown; outputsMigrated?: unknown }): MigratedOutputs {
+  const saved = readOutputs(stored.outputs, stored.outputsMigrated === true)
+  if (saved.outputs) return { outputs: saved.outputs, autoPan: stored.autoPan === true, resetLegacyPans: false, warnings: saved.warnings }
+  if (stored.autoPan === false) return { outputs: { ...copyOutputs(DEFAULT_OUTPUTS), mode: 'stereo' }, autoPan: false, resetLegacyPans: false, warnings: [] }
+  return { outputs: copyOutputs(DEFAULT_OUTPUTS), autoPan: false, resetLegacyPans: true, warnings: [] }
 }
 
 /** Opções dos seletores de "4 ou mais": pares da VS (1/2, 3/4...) e saídas avulsas pro Click e a Guia. */
