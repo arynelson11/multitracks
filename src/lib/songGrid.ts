@@ -83,6 +83,17 @@ function nearestPulseLine(t: number, g: SongGrid): number {
   return g.firstDownbeat + Math.round((t - g.firstDownbeat) / pulse) * pulse
 }
 
+/**
+ * Último pulso antes de `limit`, pela conta direta (fase + j pulsos), nunca somando intervalos.
+ * Pode dar antes de 0:00 em áudio curtíssimo (quem chama trata). Só com grade usável (pulso > 0).
+ */
+function lastPulseBefore(limit: number, g: SongGrid): number {
+  const pulse = pulseSeconds(g)
+  let j = Math.ceil((limit - g.firstDownbeat) / pulse) - 1
+  while (g.firstDownbeat + j * pulse >= limit) j--
+  return g.firstDownbeat + j * pulse
+}
+
 function hasUsablePhase(g: SongGrid | null): g is SongGrid {
   return g !== null && gridHasPhase(g) && isUsableGrid(g)
 }
@@ -105,8 +116,8 @@ function snapSectionStart(t: number, g: SongGrid | null, duration: number): { ti
   if (!hasUsablePhase(g)) return { time: t, snappedTo: 'raw' }
   const bar = nearestBarLine(t, g)
   if (Math.abs(bar - t) <= barSeconds(g) / 4 + EPS && bar < duration) return bar <= 0 ? atZero(g) : { time: bar, snappedTo: 'bar' }
-  let pulse = nearestPulseLine(t, g)
-  if (pulse >= duration) pulse -= pulseSeconds(g)
+  const near = nearestPulseLine(t, g)
+  const pulse = near < duration ? near : lastPulseBefore(duration, g)
   return pulse <= 0 ? atZero(g) : { time: pulse, snappedTo: 'pulse' }
 }
 

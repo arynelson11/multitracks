@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Marker } from '../types'
-import { TIME_SIGNATURES, type SongGrid, type TimeSignature } from './stageContracts'
+import { TIME_SIGNATURES, pulsesPerBar, type SongGrid, type TimeSignature } from './stageContracts'
 import {
   barIndexAt, barSeconds, gridFromBpm, gridFromClick, gridWarning, keepManualMeter, markerIdForSpan, nearestBarLine,
   pulseSeconds, sanitizeGrid, sectionIndexAt, sectionSpans, snapToBar, withMeter,
@@ -15,8 +15,8 @@ function expectTime(got: number, want: number) {
 // Valores literais do plano (Tarefa 2).
 const g: SongGrid = { bpm: 120, firstDownbeat: 0.25, signature: '4/4', countEvery: 1, source: 'click', meterSource: 'acento' }
 it('barras e encaixe', () => {
-  expect(barSeconds(g)).toBe(2); expect(nearestBarLine(4.1, g)).toBeCloseTo(4.25)
-  expect(snapToBar(4.6, g)).toBeCloseTo(4.25)   // a 0,35 s da barra: encaixa (limite 0,5 s)
+  expect(barSeconds(g)).toBe(2); expectTime(nearestBarLine(4.1, g), 4.25)
+  expectTime(snapToBar(4.6, g), 4.25)   // a 0,35 s da barra: encaixa (limite 0,5 s)
   expect(snapToBar(5.3, g)).toBe(5.3)           // a 0,95 s da barra de 6,25: marca crua
   expect(snapToBar(0, g)).toBe(0); expect(snapToBar(4.6, { ...g, source: 'bpm' })).toBe(4.6); expect(snapToBar(4.6, null)).toBe(4.6)
 })
@@ -52,14 +52,14 @@ describe('pulso, compasso e barras', () => {
   it('o pulso é o do click e o compasso soma os pulsos dele', () => {
     expect(pulseSeconds(g)).toBe(0.5)
     const seisPorOito: SongGrid = { ...g, bpm: 180, signature: '6/8' }
-    expect(pulseSeconds(seisPorOito)).toBeCloseTo(1 / 3); expect(barSeconds(seisPorOito)).toBeCloseTo(2)
+    expectTime(pulseSeconds(seisPorOito), 1 / 3); expectTime(barSeconds(seisPorOito), 2)
   })
   it('índice do compasso conta a partir do primeiro 1; antes dele é a anacruse (-1)', () => {
     expect(barIndexAt(0.25, g)).toBe(0); expect(barIndexAt(2.2, g)).toBe(0); expect(barIndexAt(2.25, g)).toBe(1)
     expect(barIndexAt(0.1, g)).toBe(-1); expect(barIndexAt(16.25, g)).toBe(8)
   })
   it('barra mais perto antes do primeiro 1 continua na mesma grade', () => {
-    expect(nearestBarLine(0.1, g)).toBeCloseTo(0.25); expect(nearestBarLine(-1.6, g)).toBeCloseTo(-1.75)
+    expectTime(nearestBarLine(0.1, g), 0.25); expectTime(nearestBarLine(-1.6, g), -1.75)
   })
 })
 
@@ -69,7 +69,7 @@ describe('encaixe', () => {
     expect(snapToBar(0.3, tarde)).toBe(0); expect(snapToBar(-1, g)).toBe(0)
   })
   it('exatamente a 1/4 de compasso ainda encaixa', () => {
-    expect(snapToBar(4.75, g)).toBeCloseTo(4.25); expect(snapToBar(4.76, g)).toBe(4.76)
+    expectTime(snapToBar(4.75, g), 4.25); expect(snapToBar(4.76, g)).toBe(4.76)
   })
   it('grade quebrada ou fora da faixa conta como sem grade: marca crua', () => {
     for (const bpm of [NaN, 0, -120, Infinity, 500]) expect(snapToBar(4.6, { ...g, bpm })).toBe(4.6)
@@ -162,10 +162,60 @@ describe('início da seção: barra, pulso ou cru', () => {
     expect(s).toMatchObject({ index: 0, start: 0, snappedTo: 'raw' }); expect(snapToBar(0.3, tarde)).toBe(0)
     expectTime(s.end, 9.9) // fim na barra de 9,9 (a 0,1 s do fim do áudio)
   })
+  it('áudio que acaba antes do primeiro 1: barra e pulso depois do fim, último pulso antes de 0:00, a marca vai pra 0:00', () => {
+    expect(sectionSpans([mk('a', 0.2)], 0.22, g)).toEqual([{ index: 0, start: 0, end: 0.22, snappedTo: 'raw' }])
+  })
   it('duas marcas no mesmo pulso: fica a de depois', () => {
     const m = [mk('a', 0), mk('b', 5.2), mk('c', 5.35)]
     expect(sectionSpans(m, 20, g)).toEqual([{ index: 0, start: 0, end: 5.25, snappedTo: 'raw' }, { index: 1, start: 5.25, end: 20, snappedTo: 'pulse' }])
     expect(markerIdForSpan(m, 20, g, 1)).toBe('c')
+  })
+})
+
+describe('música longa: 10 min a 72,5 BPM', () => {
+  const DUR = 600
+  const BPM = 72.5
+  const pulso = 60 / BPM
+  it('barra, encaixe e compasso com erro 0 contra a conta direta (fase + k compassos)', () => {
+    for (const signature of TIME_SIGNATURES) {
+      const bar = (60 / BPM) * pulsesPerBar(signature)
+      for (const fd of [0, 0.37, bar / 2, bar - 0.01]) {
+        const grid: SongGrid = { bpm: BPM, firstDownbeat: fd, signature, countEvery: 1, source: 'click', meterSource: 'acento' }
+        for (let k = 0; fd + k * bar < DUR; k++) {
+          const direto = fd + k * bar
+          for (const off of [-0.24, -0.1, 0, 0.1, 0.24]) {
+            const t = direto + off * bar
+            if (t <= 0 || t >= DUR) continue
+            expect(nearestBarLine(t, grid)).toBe(direto); expect(snapToBar(t, grid)).toBe(direto)
+          }
+          expect(barIndexAt(direto, grid)).toBe(k)
+        }
+        const marcas: Marker[] = []
+        for (let k = 0; fd + k * bar + 0.2 * bar < DUR; k++) marcas.push(mk(`c${k}`, fd + k * bar + 0.2 * bar))
+        const spans = sectionSpans(marcas, DUR, grid)
+        expect(spans).toHaveLength(marcas.length)
+        spans.forEach((s, k) => { expect(s.start).toBe(fd + k * bar); expect(s.snappedTo).toBe('bar') })
+        expect(spans[spans.length - 1].end).toBeLessThanOrEqual(DUR)
+      }
+    }
+  })
+  it('início no pulso com erro 0 contra a conta direta (fase + j pulsos), até o fim do áudio', () => {
+    for (const signature of TIME_SIGNATURES) {
+      const bar = (60 / BPM) * pulsesPerBar(signature)
+      for (const fd of [0, 0.37, bar / 2, bar - 0.01]) {
+        const grid: SongGrid = { bpm: BPM, firstDownbeat: fd, signature, countEvery: 1, source: 'click', meterSource: 'acento' }
+        const marcas: Marker[] = [mk('fim', DUR - 0.05), mk('quase', DUR - pulso / 2)]
+        for (let j = 0; fd + (j + 0.3) * pulso < DUR; j++) marcas.push(mk(`p${j}`, fd + (j + 0.3) * pulso))
+        const spans = sectionSpans(marcas, DUR, grid)
+        expect(spans.length).toBeGreaterThan(0)
+        for (const s of spans) {
+          expect(s.snappedTo).not.toBe('raw')
+          const passo = s.snappedTo === 'bar' ? bar : pulso
+          expect(s.start).toBe(fd + Math.round((s.start - fd) / passo) * passo)
+          expect(s.start).toBeLessThan(DUR)
+        }
+      }
+    }
   })
 })
 
@@ -180,10 +230,10 @@ describe('grade da música', () => {
   it('click: o primeiro 1 vai pra dentro do primeiro compasso, pelo compasso que vale', () => {
     const base = { bpm: 120, firstPulse: 0.1, pulsesPerBar: 4 }
     expect(gridFromClick({ ...base, firstDownbeat: 5.3 })).toMatchObject({ source: 'click', countEvery: 1, signature: '4/4', meterSource: 'acento' })
-    expect(gridFromClick({ ...base, firstDownbeat: 5.3 }).firstDownbeat).toBeCloseTo(1.3)
-    expect(gridFromClick({ ...base, firstDownbeat: -0.5 }).firstDownbeat).toBeCloseTo(1.5)
-    expect(gridFromClick({ ...base, pulsesPerBar: null, firstPulse: 2.6, firstDownbeat: null }).firstDownbeat).toBeCloseTo(0.6)
-    expect(gridFromClick({ ...base, firstDownbeat: 5.3 }, '3/4').firstDownbeat).toBeCloseTo(0.8) // compasso de 1,5 s
+    expectTime(gridFromClick({ ...base, firstDownbeat: 5.3 }).firstDownbeat, 1.3)
+    expectTime(gridFromClick({ ...base, firstDownbeat: -0.5 }).firstDownbeat, 1.5)
+    expectTime(gridFromClick({ ...base, pulsesPerBar: null, firstPulse: 2.6, firstDownbeat: null }).firstDownbeat, 0.6)
+    expectTime(gridFromClick({ ...base, firstDownbeat: 5.3 }, '3/4').firstDownbeat, 0.8) // compasso de 1,5 s
     expect(gridFromClick({ ...base, firstDownbeat: 4 }).firstDownbeat).toBe(0)
   })
   it('click: pulsos do acento viram compasso; número desconhecido é 4/4 assumido', () => {
