@@ -3,7 +3,7 @@
 > **Última atualização:** 2026-11-16
 > **Para que serve:** este é o documento canônico dos fatos do produto. Qualquer pessoa ou agente que for criar conteúdo, copy, proposta ou tomar decisão DEVE ler este arquivo primeiro. Se algo em outro doc contradiz isto, este vence.
 > **Regra:** toda alteração de produto (preço, plano, feature, provedor, stack) atualiza este arquivo no mesmo passo. Ver seção "Histórico de mudanças".
-> **Fontes de verdade no código:** `src/lib/plans.ts` (tiers e capabilities), `src/components/PricingModal.tsx` (cards e preços), `api/checkout.ts` (preços reais cobrados), `api/separate-audio.ts` (cotas).
+> **Fontes de verdade no código:** `src/lib/plans.ts` (tiers e capabilities), `src/components/PricingModal.tsx` (cards e preços), `api/checkout.ts` (preços reais cobrados), `api/separate-audio.ts` (cotas), `src/content/site.ts` (preços, FAQ, contato e título/descrição do site público; o JSON-LD e o `<noscript>` saem dele no build). Preço mudou: `api/checkout.ts`, `PricingModal.tsx`, `src/content/site.ts` e este arquivo no mesmo passo.
 
 ---
 
@@ -53,7 +53,7 @@ Os nomes internos (no banco `profiles.plan`, no checkout e no webhook) são: `fr
 - Tudo do Pro, mais:
 - **Modo Ao Vivo sem limite de aparelhos.**
 - **A banda controla loop e seções pelo celular** (controle remoto total).
-- Prioridade no processamento.
+- (Até 2026-11-16 este item dizia "Prioridade no processamento". Saiu daqui e do site porque não existe no código: todo plano usa a mesma chamada ao Replicate, sem fila nem hardware diferente. Se um dia existir, volta aqui e no site no mesmo passo.)
 
 ### Admin
 Conta admin (`arynelson11@gmail.com`) tem tudo ilimitado e fura todas as travas.
@@ -86,7 +86,8 @@ Confirmado no código (2026-07-08):
 - **Pagamento:** **Asaas** (BRL, checkout hospedado, cartão, assinatura recorrente). Migrou do AbacatePay. Preço é definido no backend (`api/checkout.ts`), não em painel.
 - **Deploy:** Vercel (web) + Electron builder (desktop Mac/Windows). Toda atualização sai junto para web e desktop.
 - **Testes:** Vitest + Testing Library (jsdom), `npm test`. Tipos do app e dos testes com `npm run typecheck`. (Entrou na Parte 1 do palco novo, v1.4.15.)
-- **Fontes:** Inter e JetBrains Mono empacotadas no app (`@fontsource-variable`, funcionam offline no desktop). Por enquanto só as peças novas usam (`font-ps-sans` e `font-ps-mono`); as telas atuais seguem com as fontes do Google Fonts até a Parte 3. (Parte 1, v1.4.15.)
+- **Fontes:** Inter e JetBrains Mono empacotadas no app (`@fontsource-variable`, funcionam offline no desktop). Por enquanto só as peças novas usam (`font-ps-sans` e `font-ps-mono`); as telas atuais seguem com as fontes do Google Fonts até a Parte 3. (Parte 1, v1.4.15.) Desde a Fase 1 do site (2026-11-16, não publicado), o CSS do Google Fonts carrega sem bloquear a página (preload que vira stylesheet) e o Caveat vem só com o peso 500 e as letras de "domingo.".
+- **Site público (SEO), desde a Fase 1 do site (2026-11-16, não publicado):** rotas reais `/`, `/download`, `/admin` e as páginas legais estáticas `/privacidade`, `/termos` e `/cancelamento` (`public/*.html`, servidas sem o `.html` pelo `cleanUrls`); qualquer outro endereço devolve `public/404.html` com status 404. `public/robots.txt` e `public/sitemap.xml` (página nova pública entra no sitemap e em `src/content/routes.ts`). O build do site gera `download.html` e `admin.html` com head próprio (plugin `siteHtml` no `vite.config.ts`). Verificação do Google Search Console: no `index.html`, trocar o valor `COLE_AQUI_O_CODIGO_DO_SEARCH_CONSOLE` da meta `google-site-verification` pelo código do método "Tag HTML"; enquanto estiver com o valor de exemplo, o build tira a tag.
 
 ## 5. Telas e features visíveis (material de referência para conteúdo)
 
@@ -106,6 +107,46 @@ Confirmado por prints do produto em produção (2026-07-08):
 - Transport ao vivo: Auto / Parar / Fade, com anterior / play / próxima.
 
 ## 6. Histórico de mudanças (para saber o que foi feito sem rodar tudo)
+
+### 2026-11-16: Site, base técnica de SEO e textos corrigidos (NÃO publicado ainda)
+
+**O que é:** a Fase 1 do site público, a partir das auditorias técnica e de conteúdo de 2026-11-16 (`.superpowers/sdd/site-auditoria-tecnica.md` e `site-auditoria-conteudo.md` no repo do iCloud). Branch `fix/site-fase1` sobre a v1.4.15, commits com `[site-f1]` no assunto. Relatório completo em `.superpowers/sdd/site-fase1-report.md`. **Não publicado:** sem push, sem tag, a versão continua 1.4.15. Na mesma branch está o rascunho das páginas legais (`[site-f2]`, outro agente), que o sitemap e o rodapé já apontam.
+
+**Base técnica:**
+- **Microfone:** o site não pede mais microfone ao carregar (antes todo visitante da landing e do `/download` recebia o aviso). O pedido só acontece quando a aba Geral das Configurações abre (onde fica o seletor de saída de áudio, só depois do login) ou no botão de atualizar, e só se faltar o nome das saídas (`src/lib/audioOutputs.ts`, com teste). A troca de aparelho atualiza a lista sem pedir nada.
+- **robots e sitemap:** `public/robots.txt` (libera o site, tira `/admin`, aponta o sitemap) e `public/sitemap.xml` (`/`, `/download`, `/privacidade`, `/termos`, `/cancelamento`).
+- **404 de verdade:** o `vercel.json` não manda mais tudo pro `index.html`. Tem `cleanUrls` e `trailingSlash: false`; o build do site escreve `download.html` e `admin.html` (o mesmo app, com título, descrição, canonical e compartilhamento de cada página, e o `/admin` com noindex); endereço que não existe cai em `public/404.html` com status 404. O service worker só devolve o app guardado em `/`, `/download` e `/admin`, com ou sem query (`?payment=success`, `?s=CODIGO`), senão quem já visitou veria a landing nas páginas legais.
+- **Cabeçalhos (`vercel.json`):** `/assets` com cache de 1 ano imutável, áudio do demo com 1 dia mais revalidação de 7, `nosniff`, `Referrer-Policy`, `X-Frame-Options: DENY` com CSP só de `frame-ancestors`, `Permissions-Policy: microphone=(self), camera=(), geolocation=()` (o seletor de saída continua funcionando), `/admin` com `X-Robots-Tag: noindex, nofollow` e `www` com 308. Se o domínio `www` estiver com redirecionamento no painel da Vercel (hoje é 307), o do painel vale antes: trocar lá pra permanente.
+- **Head:** título "Playback Studio: multitracks de qualquer música pra igreja", descrição com separação de faixas, igreja e VS (sem stems), canonical, Open Graph completo com `public/og-image.png` (1200x630, logo sobre o fundo tinta, sem texto novo) em URL absoluta, `twitter:card` grande com título e descrição. Nenhum comentário no HTML publicado (um plugin do Vite tira).
+- **JSON-LD e noscript:** gerados no build a partir de `src/content/site.ts`: Organization (Grupo AIO, CNPJ 43.247.025/0001-05, Macaé/RJ, marca Playback Studio), WebSite, SoftwareApplication com os preços desta página (sem nota de avaliação) e FAQPage só na home, com as mesmas perguntas da landing. Um `<noscript>` com o resumo do produto, os planos e os links fica logo depois do root.
+- **Google Search Console:** o `index.html` tem `<meta name="google-site-verification" content="COLE_AQUI_O_CODIGO_DO_SEARCH_CONSOLE" />`. Enquanto estiver com esse valor, o build tira a tag. Pra verificar pelo método "Tag HTML", troque só o valor do `content` pelo código que o Search Console mostra e publique. O método de domínio (registro TXT no DNS da Vercel) também serve e não precisa mexer no código.
+- **Zoom:** o `index.html` sai sem `maximum-scale`. O app trava o zoom logo na partida, como antes (`src/lib/viewportZoom.ts`), pro iPhone não dar zoom sozinho ao tocar num campo; só a landing e o `/download` liberam enquanto estão na tela.
+- **Fontes e scripts:** o CSS do Google Fonts carrega sem bloquear (preload que vira stylesheet, com `<noscript>`), mesmas famílias e pesos; o Caveat vem só com o peso 500 e as letras de "domingo.". `registerSW.js` com `defer`. A imagem de compartilhamento não entra no cache do service worker.
+- **Acessibilidade:** `<main>` e link "Pular para o conteúdo" na landing e no `/download`, títulos sem pular nível, FAQ com a resposta sempre no HTML (o Google lê) e `aria-expanded`, botões laranja com o texto escuro do design system (`ps-on-or`, 6,8:1), textos pequenos em `ps-mut`, nomes nos botões do demo (play, M e S com `aria-pressed` e 24px), WhatsApp com nome que começa pelo texto visível e texto escuro no verde, QR code com título, anel de foco laranja e movimento reduzido só nas páginas públicas (classe `site-public`).
+
+**Textos:**
+- Saíram da landing: os depoimentos com 5 estrelas (não eram de pessoas reais); do Studio, "Qualidade máxima de separação", "Prioridade no processamento" e "Suporte prioritário"; do Pro, "Suporte por email" e "click com levada brasileira" (a levada saiu também do `/download` e do tour do Metrônomo; no lugar, "click no tempo da música" e "voz guia em português").
+- "Prioridade no processamento" saiu também deste FATOS (seção 2): não existe no código.
+- Livre x Pro na landing: selo Pro nos recursos pagos, nota no card Livre ("Download, BPM, voz guia, seções, troca de tom e Modo Ao Vivo ficam nos planos Pro e Studio."), hero e passos dizendo o que é do Pro, linha "Pagamento no cartão de crédito, com renovação automática". Selo do anual: "até −25%" no botão e, em cada card, a economia de verdade (Pro 24%, R$ 144,00 por ano; Studio 25%, R$ 360,00 por ano). "Mais escolhido" virou "Recomendado" (não há número que prove o mais escolhido).
+- FAQ (em `src/content/site.ts`): no celular dá pra instalar na tela de início; offline só no app de computador; Modo Ao Vivo abre pelo app de computador, com o limite de cada plano; pergunta nova "Dá pra montar o VS da igreja com o Playback Studio?"; cancelamento "por enquanto pelo nosso atendimento" (WhatsApp ou email), apontando a página Cancelamento, até existir o botão no app.
+- `/download`: macOS 12 (Monterey) ou mais novo (o Electron 42 não roda no 11), ajuda do Mac separada por versão (botão direito até o macOS 14; Privacidade e Segurança > Abrir Mesmo Assim no 15 ou mais novo), "Macs com processador Intel" no lugar de "Macs até 2020".
+- App: a aba Sobre mostra a versão do changelog (antes "v5.0", um teste prende o changelog à versão do `package.json`) e diz multitracks; a tela de login diz "multitracks prontas"; o tour do Separador diz "alguns minutos" em vez de "segundos".
+- Rodapé da landing e do `/download`: Privacidade, Termos, Cancelamento, WhatsApp (22) 99724-9896, contatoplaybackstudio@gmail.com e "Grupo AIO · CNPJ 43.247.025/0001-05 · Macaé/RJ".
+
+**Lighthouse (local, 2026-11-16):** a v1.4.15 (`b53a95c`) e esta fase, buildadas igual e servidas pelo mesmo servidor local que imita a Vercel (`~/playback-studio-work/site-audit/scripts/serve-vercel.mjs`: arquivos, cleanUrls, rewrites, cabeçalhos, 404 e brotli), Lighthouse 13.6.0 em pt-BR. Mediana; home no celular com 8 rodadas alternadas, o resto com 3. Relatórios em `~/playback-studio-work/site-audit/lighthouse-f1/`.
+
+| Página | Aparelho | Desempenho | Acessibilidade | SEO | LCP | TBT | FCP | CLS |
+|---|---|---|---|---|---|---|---|---|
+| Home | Celular | 52 → 51 | 72 → 100 | 91 → 100 | 5,9 → 6,4 s | 630 → 1.500 ms | 4,4 → 1,0 s | 0 → 0,045 |
+| Home | Computador | 93 → 77 | 77 → 100 | 91 → 100 | 1,4 → 1,7 s | 89 → 386 ms | 1,0 → 0,5 s | 0,004 → 0,005 |
+| /download | Celular | 51 → 76 | 80 → 100 | 91 → 100 | 4,5 → 1,0 s | 1.323 → 1.200 ms | 4,5 → 1,0 s | 0 → 0,045 |
+| /download | Computador | 93 → 84 | 83 → 100 | 91 → 100 | 1,1 → 0,4 s | 120 → 364 ms | 1,1 → 0,4 s | 0,003 |
+
+Boas práticas no servidor local: 74 → 78 (as duas versões perdem os itens de HTTPS por ser http local; a v1.4.15 ainda tinha um erro de console do microfone). Em produção a nota antes era 100. Leitura: acessibilidade e SEO chegaram a 100 nas quatro. A primeira pintura ficou muito mais cedo (o CSS do Google não segura mais a página) e o LCP do `/download` no celular caiu de 4,5 s pra 1,0 s. Na home o LCP não melhora: o título só aparece depois do JS do app inteiro e da resposta do Supabase (Fase 4). O TBT sobe no laboratório porque a primeira pintura agora vem antes do JS do app rodar (o trabalho de JS é o mesmo, mas passa a contar) e porque o CSS das fontes chega depois da página montada; o CLS de 0,045 é a troca de fonte (abaixo de 0,1, faixa boa). O servidor local entrega o JS na hora e as fontes vêm da internet, o contrário da produção, e a máquina estava com carga de 10 a 66 (outros agentes), então as notas de desempenho no computador não servem pra decidir. Medir num deploy de preview da Vercel antes de publicar; se a home piorar lá, o commit das fontes (`8451e52`) se desfaz sozinho.
+
+**Antes de publicar (dono):** aprovar o texto das páginas legais (estão como rascunho, com trechos a confirmar) porque o sitemap, o rodapé e a FAQ já apontam pra elas; trocar o redirecionamento do `www` pra permanente no painel da Vercel; conferir no Supabase (Authentication > URL Configuration) que o Site URL e os redirecionamentos apontam pra raiz do site, porque endereço que não existe agora dá 404; criar a propriedade no Search Console. Quem estiver com o service worker antigo pode ver a landing uma vez ao abrir `/privacidade` antes de a versão nova assumir.
+
+**Fica pra Fase 4:** pré-renderizar a landing e o `/download` e separar o código da landing do app (Tone.js, wavesurfer e companhia saem do carregamento de quem só visita), fontes locais. É o que leva a nota de velocidade no celular pra perto de 90.
 
 ### 2026-11-16: Ajustes da troca de tom [v1.4.16]
 **Publicado:** v1.4.16 em 2026-11-16 (site + Mac + Windows), autorizado pelo dono.
