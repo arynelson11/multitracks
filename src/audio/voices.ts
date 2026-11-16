@@ -10,12 +10,15 @@ export interface Voice { channelId: string; source: AudioBufferSourceNode; env: 
 export interface VoiceSpec { channelId: string; buffer: AudioBuffer; entry: AudioNode; loop?: boolean }
 
 /**
- * Segura o valor que o parâmetro tem em `t` e apaga o que vinha depois, inclusive uma rampa em
- * curso, sem salto: `cancelAndHoldAtTime` onde existe; no Firefox (sem ele),
- * `cancelScheduledValues(t)` + `setValueAtTime(valor atual, t)`. Chamar com `t` =
- * `ctx.currentTime` (o valor atual é o desse instante). Usado também pelos bipes da contagem.
+ * Corta a automação do parâmetro em `t` sem mudar o valor de `t`: `cancelAndHoldAtTime` onde
+ * existe; no Firefox (sem ele), `cancelScheduledValues(t)` + `setValueAtTime(valor atual, t)`.
+ * Atenção: pela especificação (e no Chrome e no Safari), o cancelAndHoldAtTime só insere um
+ * evento em `t` quando uma rampa cruza `t`; sem rampa em curso ele só apaga o que vem depois, e
+ * uma rampa pedida em seguida parte do último evento que sobrou, não de `t`. Serve ao
+ * restoreVoices porque, antes de `T`, ou a descida cruza `now` ou o que sobra vale 1. Chamar com
+ * `t` = `ctx.currentTime` (o valor atual é o desse instante).
  */
-export function holdAt(param: AudioParam, t: number): void {
+function holdAt(param: AudioParam, t: number): void {
   if (typeof param.cancelAndHoldAtTime === 'function') {
     param.cancelAndHoldAtTime(t)
     return
@@ -79,10 +82,13 @@ export function fadeOutVoices(voices: readonly Voice[], T: number, fade: number)
 const RESTORE_RAMP = 0.005
 
 /**
- * Pulo cancelado: apaga a descida agendada e devolve o envelope pra 1. Seguro em qualquer
- * instante, inclusive no meio da descida: segura o valor de `now` (`holdAt`) e sobe até 1 em
- * 5 ms, sem salto de ganho. Antes da descida (o caso do agendador, que só cancela até
- * `T - 0,03`) o valor segurado já é 1 e o som não muda. Chamar com `now` = `ctx.currentTime`.
+ * Pulo cancelado: apaga a descida agendada e devolve o envelope pra 1, sem salto de ganho, em
+ * qualquer instante ANTES de `T`. Antes da descida (o caso do agendador, que só cancela até
+ * `T - 0,03`) o que sobra vale 1 e o som não muda; no meio da descida, segura o valor da rampa
+ * em `now` e sobe até 1 em 5 ms. Depois de `T` (descida terminada) não serve: sem rampa cruzando
+ * `now`, a subida partiria de (T, 0) e saltaria (0 pra 0,8 medido no Chrome). O contrato do
+ * agendador não deixa chegar aí: depois de `T - 0,03` o pulo acontece. Chamar com `now` =
+ * `ctx.currentTime`.
  */
 export function restoreVoices(voices: readonly Voice[], now: number): void {
   for (const v of voices) {
