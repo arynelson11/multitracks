@@ -65,7 +65,9 @@ interface FamilyRule {
   // de andamento ("Beat 01", "Tempo_120bpm"). "Beat Loop" não é Click.
   weakWords: ReadonlySet<string>
   sequences: readonly (readonly string[])[]
-  // Peças com rótulo próprio dentro da família (só a bateria tem).
+  // Peças com rótulo próprio dentro da família (bateria e percussão). Peça que também
+  // é palavra fraca só dá o rótulo quando decide a família ("Loop 2" é Loop; "PERC LOOP"
+  // continua Percussão Loop).
   pieces?: ReadonlyMap<string, string>
 }
 
@@ -101,7 +103,7 @@ const FAMILY_RULES: readonly FamilyRule[] = [
   rule('synthBass', ['SUB', 'SUBBASS', 'SYNTHBASS'], {
     sequences: [['SYNTH', 'BASS'], ['SYN', 'BASS'], ['SUB', 'BASS']],
   }),
-  rule('baixo', ['BASS', 'BASSES', 'BAIXO', 'BX']),
+  rule('baixo', ['BASS', 'BASSES', 'BAIXO', 'BX', 'BAJO']),
   rule('violao', ['AG', 'ACOUSTIC', 'ACUSTICO', 'VIOLAO', 'VIOLOES', 'VL'], {
     sequences: [['AC', 'GTR'], ['AC', 'GUITAR']],
   }),
@@ -110,13 +112,19 @@ const FAMILY_RULES: readonly FamilyRule[] = [
   rule('pad', ['PAD', 'PADS']),
   rule('teclado', ['KEY', 'KEYS', 'KEYBOARD', 'KEYBOARDS', 'TECLADO', 'TECLADOS', 'TECL', 'TEC', 'SYNTH',
     'SYNTHS', 'SYN', 'ORGAN', 'ORGAO', 'RHODES', 'WURLI', 'EP']),
-  rule('bateria', ['DRUMS', 'DRUM', 'DRM', 'BATERIA', 'BATERIAS', 'BAT', 'KIT', 'DRUMSET', 'DRUMKIT'], {
+  rule('bateria', ['DRUMS', 'DRUM', 'DRM', 'BATERIA', 'BATERIAS', 'BATERA', 'BAT', 'KIT', 'DRUMSET', 'DRUMKIT'], {
     pieces: {
-      KICK: 'Bumbo', BASSDRUM: 'Bumbo', SNARE: 'Caixa', HAT: 'Chimbal', HIHAT: 'Chimbal', HH: 'Chimbal',
+      KICK: 'Bumbo', BASSDRUM: 'Bumbo', BUMBO: 'Bumbo', SNARE: 'Caixa', CAIXA: 'Caixa',
+      HAT: 'Chimbal', HIHAT: 'Chimbal', HH: 'Chimbal', CHIMBAL: 'Chimbal',
       OH: 'Overhead', OVERHEAD: 'Overhead', OVERHEADS: 'Overhead', TOMS: 'Tons',
     },
   }),
-  rule('percussao', ['PERC', 'PERCS', 'PERCUSSION', 'PERCUSSAO', 'PERCUSSOES', 'SHAKER', 'CAJON', 'CONGA', 'CONGAS']),
+  // LOOP é fraca: só é Percussão quando é a única palavra do nome, fora número e
+  // andamento ("Loop 2"). "Drum Loop" é Bateria Loop; "Beat Loop" fica não reconhecido.
+  rule('percussao', ['PERC', 'PERCS', 'PERCUSSION', 'PERCUSSAO', 'PERCUSSOES', 'CAJON', 'CONGA', 'CONGAS'], {
+    weakWords: ['LOOP', 'LOOPS'],
+    pieces: { SHAKER: 'Shaker', LOOP: 'Loop', LOOPS: 'Loop' },
+  }),
   // LEADVOCAL, LEADVOX (grudados) e VOCALISTA: grafias que a regra antiga de formantes pegava.
   rule('vocal', ['VOX', 'VOCAL', 'VOCALS', 'VOCAIS', 'VOC', 'VOZ', 'VOZES', 'VOICE', 'LEAD', 'LV', 'LEADVOCAL', 'LEADVOX', 'VOCALISTA']),
   rule('ambiencia', ['AMB', 'AMBIENCE', 'AMBIENT', 'AMBIENCIA']),
@@ -195,6 +203,13 @@ function tokenize(cleaned: string): string[] {
   return mergeCompounds(tokens)
 }
 
+// As palavras que o reconhecimento enxerga no nome, em minúsculas: mesma limpeza do
+// arquivo e mesmo corte ("Batería_Loop 2.wav" vira bateria, loop e 2). Pra quem precisa
+// olhar palavra inteira do nome sem `includes` em pedaço de texto.
+export function nameTokens(raw: string): string[] {
+  return tokenize(stripFileName(raw)).map((token) => token.toLowerCase())
+}
+
 // Marca de andamento: número ("01", "120") ou BPM ("120bpm" vira 120 e BPM).
 const TEMPO_MARKS: ReadonlySet<string> = new Set(['BPM'])
 const isTempoMark = (token: string) => /^\p{N}+$/u.test(token) || TEMPO_MARKS.has(token)
@@ -214,7 +229,8 @@ function weakHits(tokens: readonly string[], familyRule: FamilyRule): Set<number
 function familyHits(tokens: readonly string[], familyRule: FamilyRule): Set<number> {
   const hits = weakHits(tokens, familyRule)
   tokens.forEach((token, i) => {
-    if (familyRule.words.has(token) || familyRule.pieces?.has(token)) hits.add(i)
+    const isStrongPiece = familyRule.pieces?.has(token) && !familyRule.weakWords.has(token)
+    if (familyRule.words.has(token) || isStrongPiece) hits.add(i)
   })
   for (const sequence of familyRule.sequences) {
     for (let start = 0; start + sequence.length <= tokens.length; start++) {
@@ -238,10 +254,10 @@ function matchFamily(raw: string, ignoreRoleFamilies: boolean) {
   return undefined
 }
 
-// A peça vence o genérico: "KICK DRUM" vira Bumbo.
-function familyBaseLabel(familyRule: FamilyRule, tokens: readonly string[]): string {
-  for (const token of tokens) {
-    const piece = familyRule.pieces?.get(token)
+// A peça vence o genérico: "KICK DRUM" vira Bumbo. Só conta peça que casou a família.
+function familyBaseLabel(familyRule: FamilyRule, tokens: readonly string[], hits: ReadonlySet<number>): string {
+  for (const [i, token] of tokens.entries()) {
+    const piece = hits.has(i) ? familyRule.pieces?.get(token) : undefined
     if (piece) return piece
   }
   return FAMILY_LABEL[familyRule.family]
@@ -309,7 +325,7 @@ export function recognizeChannel(raw: string, opts: { ignoreRoleFamilies?: boole
   }
   if (!match) return { family: 'desconhecido', label: cleanChannelName(raw) }
   const { familyRule, tokens, hits } = match
-  const base = familyBaseLabel(familyRule, tokens)
+  const base = familyBaseLabel(familyRule, tokens, hits)
   // Click e Guia nunca têm complemento.
   const extra = ROLE_FAMILIES.has(familyRule.family) ? [] : complementOf(tokens, hits)
   return { family: familyRule.family, label: [base, ...extra].join(' ') }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  FAMILY_COLOR, arrangeChannels, buildChannelLabels, channelFamily, recognizeChannel,
-  resolveChannelRole, roleFromName, sortChannelsByDefault, type ChannelIdentity,
+  FAMILY_COLOR, arrangeChannels, buildChannelLabels, channelFamily, nameTokens, recognizeChannel,
+  resolveChannelRole, roleFromName, sortChannelsByDefault, type ChannelFamily, type ChannelIdentity,
 } from './channelNames'
 
 const mk = (names: string[]): ChannelIdentity[] => names.map((name, i) => ({ id: `c${i}`, name }))
@@ -398,5 +398,61 @@ describe('nome ausente', () => {
     expect(() => buildChannelLabels([ch])).not.toThrow()
     expect(buildChannelLabels([ch, { id: 'y', name: 'GTR' }]).map((l) => l.label)).toEqual(['Canal', 'Guitarra'])
     expect(resolveChannelRole(ch)).toBe('normal')
+  })
+})
+
+// Parte 2, M5 (achado 19 da varredura): nomes de bateria em português e espanhol,
+// SHAKER e LOOP como Percussão, BAJO como Baixo. Muda rótulo, cor e ordem.
+describe('peças e palavras novas (M5)', () => {
+  it.each([
+    ['BUMBO', 'Bumbo', 'bateria'], ['CAIXA', 'Caixa', 'bateria'], ['CHIMBAL', 'Chimbal', 'bateria'],
+    ['Bumbo_1.wav', 'Bumbo', 'bateria'], ['caixa', 'Caixa', 'bateria'], ['Chimbal 2', 'Chimbal', 'bateria'],
+    ['BATERA', 'Bateria', 'bateria'], ['Batera', 'Bateria', 'bateria'], ['Batería', 'Bateria', 'bateria'],
+    ['SHAKER', 'Shaker', 'percussao'], ['Shaker Loop', 'Shaker Loop', 'percussao'],
+    ['LOOP', 'Loop', 'percussao'], ['Loops', 'Loop', 'percussao'], ['Loop 2', 'Loop', 'percussao'],
+    ['LOOP_120bpm', 'Loop', 'percussao'],
+    ['BAJO', 'Baixo', 'baixo'], ['Bajo', 'Baixo', 'baixo'],
+  ])('%s vira %s (%s), com a cor da família e papel Normal', (raw, label, family) => {
+    expect(recognizeChannel(raw)).toEqual({ label, family })
+    expect(roleFromName(raw)).toBe('normal')
+    expect(buildChannelLabels([{ id: '1', name: raw }])[0]).toMatchObject({
+      label, family, role: 'normal', color: FAMILY_COLOR[family as ChannelFamily],
+    })
+  })
+  it('LOOP só é Percussão quando é a única palavra reconhecível; com outra família, fica de complemento', () => {
+    expect(recognizeChannel('Drum Loop')).toEqual({ label: 'Bateria Loop', family: 'bateria' })
+    expect(recognizeChannel('PERC LOOP')).toEqual({ label: 'Percussão Loop', family: 'percussao' })
+    expect(recognizeChannel('Pad Loop')).toEqual({ label: 'Pad Loop', family: 'pad' })
+    expect(recognizeChannel('Metronomo Loop')).toEqual({ label: 'Click', family: 'click' })
+  })
+  it('LOOP com palavra desconhecida continua não reconhecido', () => {
+    expect(recognizeChannel('Beat Loop')).toEqual({ label: 'Beat Loop', family: 'desconhecido' })
+    expect(recognizeChannel('Intro-Loop')).toEqual({ label: 'Intro Loop', family: 'desconhecido' })
+    expect(recognizeChannel('loop de abertura')).toEqual({ label: 'Loop De Abertura', family: 'desconhecido' })
+  })
+  it('ordem padrão: peças na Bateria, Shaker e Loop na Percussão, Bajo no Baixo', () => {
+    const input = ['LOOP', 'BAJO', 'Vocal', 'CAIXA', 'Click', 'SHAKER', 'BUMBO', 'Guía', 'CHIMBAL', 'Batera']
+    expect(sortChannelsByDefault(mk(input)).map((c) => c.name)).toEqual(['Click', 'Guía', 'CAIXA', 'BUMBO', 'CHIMBAL',
+      'Batera', 'LOOP', 'SHAKER', 'BAJO', 'Vocal'])
+  })
+  it('dois loops entram na numeração', () => {
+    expect(labels(['Loop 2', 'LOOP'])).toEqual(['Loop 2', 'Loop 1'])
+  })
+})
+
+describe('nameTokens', () => {
+  it.each([
+    ['Batería_Loop 2.wav', ['bateria', 'loop', '2']],
+    ['DrumFills', ['drum', 'fills']],
+    ['KICK_1.wav', ['kick']],
+    ['Bass Drum', ['bassdrum']],
+    ['GTR1_1', ['gtr', '1']],
+    ['Guía copy.mp3', ['guia']],
+    ['', []],
+  ])('%s vira %j', (raw, tokens) => {
+    expect(nameTokens(raw)).toEqual(tokens)
+  })
+  it('nome ausente não lança', () => {
+    expect(nameTokens(undefined as unknown as string)).toEqual([])
   })
 })

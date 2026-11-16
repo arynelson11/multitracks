@@ -1,0 +1,149 @@
+import { describe, expect, it } from 'vitest'
+import type { ChannelIdentity } from './channelNames'
+import { pickTempoSources } from './tempoSources'
+
+const mk = (names: string[]): ChannelIdentity[] => names.map((name, i) => ({ id: `c${i}`, name }))
+const shown = (ch: ChannelIdentity | null) => (ch ? ch.customName ?? ch.name : null)
+
+function pick(channels: ChannelIdentity[]) {
+  const s = pickTempoSources(channels)
+  return {
+    click: shown(s.click),
+    pulse: s.pulse.map(shown),
+    bass: shown(s.bass),
+    harmony: s.harmony.map(shown),
+    label: s.label,
+  }
+}
+
+// Tabela da seção 4 do relatório do metrônomo (refs/metronomo-auto-investigacao.md):
+// os 13 pacotes reais. Onde a tabela tem "...", o resto vem de names.mjs da medição.
+describe('pacotes da seção 4 do relatório', () => {
+  it.each([
+    ['BR completo', ['Click', 'Guia', 'Bateria', 'Baixo', 'Guitarra 1', 'Teclado', 'Pad', 'Vocal'],
+      { click: 'Click', pulse: ['Bateria'], bass: 'Baixo', harmony: ['Teclado', 'Pad'], label: 'Bateria e Baixo' }],
+    ['EN completo', ['CLICK', 'GUIDE', 'DRUMS', 'BASS', 'EG1', 'KEYS', 'PAD', 'VOX'],
+      { click: 'CLICK', pulse: ['DRUMS'], bass: 'BASS', harmony: ['KEYS', 'PAD'], label: 'Bateria e Baixo' }],
+    ['kit separado EN', ['Click', 'Cues', 'KICK', 'SNARE', 'HIHAT', 'OH', 'PERC', 'LOOP', 'BASS'],
+      { click: 'Click', pulse: ['KICK', 'SNARE', 'HIHAT', 'OH', 'PERC', 'LOOP'], bass: 'BASS', harmony: [],
+        label: 'Bateria, Percussão e Baixo' }],
+    ['kit separado BR', ['Click', 'Guia', 'BUMBO', 'CAIXA', 'CHIMBAL', 'LOOP', 'PERCUSSÃO', 'BAIXO'],
+      { click: 'Click', pulse: ['BUMBO', 'CAIXA', 'CHIMBAL', 'LOOP', 'PERCUSSÃO'], bass: 'BAIXO', harmony: [],
+        label: 'Bateria, Percussão e Baixo' }],
+    ['kit separado BR sem baixo, violão antes', ['Click', 'Guia', 'VIOLÃO', 'LOOP', 'BUMBO', 'CAIXA'],
+      { click: 'Click', pulse: ['LOOP', 'BUMBO', 'CAIXA'], bass: null, harmony: ['VIOLÃO'], label: 'Bateria e Percussão' }],
+    ['Drum Loop antes de Drums', ['Click', 'Drum Loop', 'Drums'],
+      { click: 'Click', pulse: ['Drums'], bass: null, harmony: [], label: 'Bateria' }],
+    ['só viradas antes de Drums', ['Click', 'Drum Fills', 'Drums'],
+      { click: 'Click', pulse: ['Drums'], bass: null, harmony: [], label: 'Bateria' }],
+    ['só loop e percussão', ['Click', 'Guia', 'Loop', 'Perc', 'Pad'],
+      { click: 'Click', pulse: ['Loop', 'Perc'], bass: null, harmony: ['Pad'], label: 'Percussão' }],
+    ['só Pad e Loop', ['Click', 'Guia', 'Pad', 'Loop'],
+      { click: 'Click', pulse: ['Loop'], bass: null, harmony: ['Pad'], label: 'Percussão' }],
+    ['espanhol', ['Click', 'Guía', 'Batería', 'Bajo'],
+      { click: 'Click', pulse: ['Batería'], bass: 'Bajo', harmony: [], label: 'Bateria e Baixo' }],
+    ['metrônomo com acento', ['Metrônomo', 'Pad', 'Vocal'],
+      { click: 'Metrônomo', pulse: [], bass: null, harmony: ['Pad'], label: '' }],
+    ['Batera e Bx', ['Click', 'Batera', 'Bx'],
+      { click: 'Click', pulse: ['Batera'], bass: 'Bx', harmony: [], label: 'Bateria e Baixo' }],
+    ['Separador (nomes do app)', ['Metrônomo', 'Vocais', 'Bateria', 'Baixo', 'Outros'],
+      { click: 'Metrônomo', pulse: ['Bateria'], bass: 'Baixo', harmony: [], label: 'Bateria e Baixo' }],
+  ] as const)('%s', (_, names, expected) => {
+    expect(pick(mk([...names]))).toEqual(expected)
+  })
+})
+
+describe('pulso', () => {
+  it('kit separado entra inteiro e o baixo fica em bass', () => {
+    const s = pick(mk(['KICK', 'SNARE', 'HIHAT', 'OH', 'PERC', 'BASS']))
+    expect([s.pulse, s.bass]).toEqual([['KICK', 'SNARE', 'HIHAT', 'OH', 'PERC'], 'BASS'])
+  })
+  it('BUMBO, CAIXA e CHIMBAL são peças da bateria e entram no pulso', () => {
+    expect(pick(mk(['BUMBO', 'CAIXA', 'CHIMBAL', 'Pad'])).pulse).toEqual(['BUMBO', 'CAIXA', 'CHIMBAL'])
+  })
+  it('kit inteiro só tira loop e virada; sem loop nem virada a percussão continua', () => {
+    expect(pick(mk(['DRUMS', 'PERC', 'SHAKER'])).pulse).toEqual(['DRUMS', 'PERC', 'SHAKER'])
+    expect(pick(mk(['DRUMS', 'PERC', 'LOOP'])).pulse).toEqual(['DRUMS'])
+    expect(pick(mk(['Bateria', 'Loops'])).pulse).toEqual(['Bateria'])
+  })
+  it('sem kit inteiro, loop e virada ficam no pulso', () => {
+    expect(pick(mk(['Drum Loop', 'Drum Fills', 'KICK'])).pulse).toEqual(['Drum Loop', 'Drum Fills', 'KICK'])
+  })
+  it('palavra inteira, nunca pedaço de nome: "Fillmore" não é virada', () => {
+    expect(pick(mk(['DRUMS', 'Fillmore Perc'])).pulse).toEqual(['DRUMS', 'Fillmore Perc'])
+  })
+  it('o nome do usuário conta pro kit e pra família', () => {
+    expect(pick([{ id: 'a', name: 'Track 1', customName: 'Drums' }, { id: 'b', name: 'Drum Loop' }]).pulse)
+      .toEqual(['Drums'])
+    expect(pick([{ id: 'a', name: 'Track 3', customName: 'Bateria' }, { id: 'b', name: 'Pad' }]).pulse)
+      .toEqual(['Bateria'])
+  })
+  it('sem bateria nem percussão, o pulso é o primeiro baixo', () => {
+    expect(pick(mk(['Click', 'Guia', 'Pad', 'BASS', 'Baixo 2', 'Vocal']))).toEqual({
+      click: 'Click', pulse: ['BASS'], bass: 'BASS', harmony: ['Pad'], label: 'Baixo',
+    })
+  })
+  it('Synth Bass não vira pulso sozinho', () => {
+    expect(pick(mk(['SYNTH BASS', 'Pad']))).toEqual({
+      click: null, pulse: [], bass: 'SYNTH BASS', harmony: ['Pad'], label: 'Synth Bass',
+    })
+  })
+})
+
+describe('baixo e harmonia', () => {
+  it('bass é o primeiro Baixo; sem Baixo, o primeiro Synth Bass', () => {
+    expect(pick(mk(['SUB', 'DRUMS', 'BASS'])).bass).toBe('BASS')
+    expect(pick(mk(['Click', 'Kick', 'Snare', 'Synth Bass', 'Pad']))).toEqual({
+      click: 'Click', pulse: ['Kick', 'Snare'], bass: 'Synth Bass', harmony: ['Pad'], label: 'Bateria e Synth Bass',
+    })
+  })
+  it('harmonia: até 2 entre Pad, Teclado, Piano e Violão, na ordem da lista; guitarra não entra', () => {
+    expect(pick(mk(['GTR', 'DRUMS', 'AG', 'KEYS', 'PIANO', 'PAD'])).harmony).toEqual(['AG', 'KEYS'])
+    expect(pick(mk(['GTR', 'PIANO'])).harmony).toEqual(['PIANO'])
+  })
+})
+
+describe('Guia, Vocal, Backing e Click nunca entram na análise', () => {
+  it('pelo nome', () => {
+    expect(pick(mk(['Guía', 'Voz Guia', 'Cues', 'VOX', 'Vocais', 'BV', 'Coro', 'Click', 'Metrônomo']))).toEqual({
+      click: 'Click', pulse: [], bass: null, harmony: [], label: '',
+    })
+  })
+  it('papel manual vence: canal marcado como Click ou Guia sai, e vira o click quando é Click', () => {
+    const s = pick([
+      { id: 'd', name: 'DRUMS', role: 'click' }, { id: 'b', name: 'BASS', role: 'guide' },
+      { id: 'p', name: 'PAD', role: 'guide' }, { id: 'k', name: 'KICK' },
+    ])
+    expect(s).toEqual({ click: 'DRUMS', pulse: ['KICK'], bass: null, harmony: [], label: 'Bateria' })
+  })
+  it('"vozguia bass" é Guia pelo teste antigo e não vira baixo', () => {
+    expect(pick(mk(['vozguia bass', 'DRUMS'])).bass).toBeNull()
+  })
+  it('Click com papel Normal manual não é o click', () => {
+    expect(pick([{ id: 'c', name: 'CLICK', role: 'normal' }, { id: 'd', name: 'DRUMS' }]).click).toBeNull()
+  })
+})
+
+describe('contrato', () => {
+  it('lista vazia', () => {
+    expect(pickTempoSources([])).toEqual({ click: null, pulse: [], bass: null, harmony: [], label: '' })
+  })
+  it('devolve os mesmos objetos da entrada e não muta a lista', () => {
+    const list = [{ id: 'c', name: 'Click', extra: 1 }, { id: 'd', name: 'DRUMS', extra: 2 }, { id: 'b', name: 'BASS', extra: 3 },
+      { id: 'p', name: 'PAD', extra: 4 }]
+    const copy = list.map((ch) => ({ ...ch }))
+    const s = pickTempoSources(list)
+    expect(s.click).toBe(list[0])
+    expect(s.pulse[0]).toBe(list[1])
+    expect(s.bass).toBe(list[2])
+    expect(s.harmony[0]).toBe(list[3])
+    expect(s.pulse[0].extra).toBe(2)
+    expect(list).toEqual(copy)
+  })
+  it('rótulo em português, sem travessão', () => {
+    const TRAVESSAO = String.fromCharCode(0x2014)
+    const { label } = pickTempoSources(mk(['KICK', 'PERC', 'BASS', 'PAD']))
+    expect(label).toBe('Bateria, Percussão e Baixo')
+    expect(label).not.toContain(TRAVESSAO)
+  })
+})
