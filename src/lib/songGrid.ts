@@ -32,7 +32,11 @@ export function nearestBarLine(t: number, g: SongGrid): number {
   return g.firstDownbeat + Math.round((t - g.firstDownbeat) / bar) * bar
 }
 
-/** Compasso que contém `t`: 0 é o que começa no primeiro 1; antes dele, a anacruse, é -1. */
+/**
+ * Compasso que contém `t`: 0 é o que começa no primeiro 1; antes dele, a anacruse, é -1. Com
+ * a fase em `[0, compasso)` (como saem `gridFromClick`, `withMeter` e `sanitizeGrid`), de 0:00
+ * em diante nunca dá menos que -1.
+ */
 export function barIndexAt(t: number, g: SongGrid): number {
   return Math.floor((t - g.firstDownbeat) / barSeconds(g) + 1e-9)
 }
@@ -144,8 +148,9 @@ export interface ClickAnalysisLike { bpm: number; firstPulse: number; pulsesPerB
 function intoFirstBar(x: number, bar: number): number {
   if (!Number.isFinite(x)) return NaN
   if (!Number.isFinite(bar) || bar <= 0) return x
-  const r = ((x % bar) + bar) % bar
-  return r < bar ? r : 0
+  if (x >= 0 && x < bar) return x // já dentro: o número não muda (ida e volta pelo repertório fica igual)
+  const r = x - Math.floor(x / bar) * bar
+  return r >= 0 && r < bar ? r : 0
 }
 
 /**
@@ -168,9 +173,14 @@ export function gridFromClick(a: ClickAnalysisLike, savedSignature?: TimeSignatu
 
 // ---------- Compasso manual ----------
 
-/** Compasso escolhido no modo EDITAR. Contar de 3 em 3 só vale no composto; BPM, fase e origem ficam. */
+/**
+ * Compasso escolhido no modo EDITAR. Contar de 3 em 3 só vale no composto; BPM, fase e origem
+ * ficam. O 1 volta pra dentro do primeiro compasso do compasso novo (as barras são as mesmas),
+ * pra `barIndexAt` de 0:00 em diante nunca passar da anacruse (-1).
+ */
 export function withMeter(g: SongGrid, signature: TimeSignature, countEvery: 1 | 3): SongGrid {
-  return { ...g, signature, countEvery: isCompound(signature) ? countEvery : 1, meterSource: 'manual' }
+  const next: SongGrid = { ...g, signature, countEvery: isCompound(signature) ? countEvery : 1, meterSource: 'manual' }
+  return { ...next, firstDownbeat: intoFirstBar(g.firstDownbeat, barSeconds(next)) }
 }
 
 /** "Ler o click de novo": BPM e fase vêm da leitura nova; o compasso manual de antes, se havia, continua. */
@@ -191,7 +201,8 @@ export function gridWarning(g: SongGrid | null): GridWarning | null {
 /**
  * Grade vinda de fora (repertório salvo, cache): bpm finito em [30, 300], `firstDownbeat` finito
  * e `>= 0`, compasso, `countEvery`, `source` e `meterSource` conhecidos; senão nula. Devolve uma
- * grade nova só com os campos dela, com a mesma regra do `withMeter`: 3 em 3 fora do composto vira 1.
+ * grade nova só com os campos dela, com as mesmas regras do `withMeter`: 3 em 3 fora do composto
+ * vira 1 e o 1 volta pra dentro do primeiro compasso (`[0, compasso)`, mesmas barras).
  */
 export function sanitizeGrid(raw: unknown): SongGrid | null {
   if (!raw || typeof raw !== 'object') return null
@@ -204,5 +215,6 @@ export function sanitizeGrid(raw: unknown): SongGrid | null {
   if (typeof firstDownbeat !== 'number' || !Number.isFinite(firstDownbeat) || firstDownbeat < 0) return null
   if (countEvery !== 1 && countEvery !== 3) return null
   if (!signature || !source || !meterSource) return null
-  return { bpm, firstDownbeat, signature, countEvery: isCompound(signature) ? countEvery : 1, source, meterSource }
+  const bar = (60 / bpm) * pulsesPerBar(signature)
+  return { bpm, firstDownbeat: intoFirstBar(firstDownbeat, bar), signature, countEvery: isCompound(signature) ? countEvery : 1, source, meterSource }
 }

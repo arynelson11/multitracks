@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import type { Marker } from '../types'
-import type { SongGrid, TimeSignature } from './stageContracts'
+import { TIME_SIGNATURES, type SongGrid, type TimeSignature } from './stageContracts'
 import {
   barIndexAt, barSeconds, gridFromBpm, gridFromClick, gridWarning, keepManualMeter, markerIdForSpan, nearestBarLine,
   pulseSeconds, sanitizeGrid, sectionIndexAt, sectionSpans, snapToBar, withMeter,
 } from './songGrid'
+
+/** Tempo exato a menos de arredondamento: tolerância de 1 microssegundo. */
+const TOL = 1e-6
+function expectTime(got: number, want: number) {
+  expect(got).toBeGreaterThanOrEqual(want - TOL); expect(got).toBeLessThanOrEqual(want + TOL)
+}
 
 // Valores literais do plano (Tarefa 2).
 const g: SongGrid = { bpm: 120, firstDownbeat: 0.25, signature: '4/4', countEvery: 1, source: 'click', meterSource: 'acento' }
@@ -172,6 +178,31 @@ describe('compasso manual', () => {
   it('reler o click com compasso manual: BPM e fase novos, compasso do usuário', () => {
     const lida = gridFromClick({ bpm: 96, firstPulse: 0.4, pulsesPerBar: 4, firstDownbeat: 0.4 })
     expect(keepManualMeter(lida, withMeter(g, '3/4', 1))).toEqual({ ...lida, signature: '3/4', countEvery: 1, meterSource: 'manual' })
+  })
+})
+
+describe('fase dentro do primeiro compasso', () => {
+  it('trocar o compasso traz o 1 pra dentro do compasso novo sem mexer nas barras', () => {
+    const tarde: SongGrid = { ...g, firstDownbeat: 1.9 } // 4/4 a 120: compasso de 2 s
+    const tres = withMeter(tarde, '3/4', 1) // compasso de 1,5 s: o 1 em 1,9 é o mesmo do 0,4
+    expectTime(tres.firstDownbeat, 0.4)
+    expect(barIndexAt(0, tres)).toBe(-1); expect(barIndexAt(0.3, tres)).toBe(-1); expect(barIndexAt(0.4, tres)).toBe(0)
+    expectTime(nearestBarLine(1.8, tres), 1.9)
+    expectTime(keepManualMeter(tarde, withMeter(g, '3/4', 1)).firstDownbeat, 0.4)
+  })
+  it('grade de fora com o 1 lá na frente volta pro primeiro compasso', () => {
+    expect(sanitizeGrid({ ...g, firstDownbeat: 500 })!.firstDownbeat).toBe(0) // 250 compassos de 2 s
+    expectTime(sanitizeGrid({ ...g, firstDownbeat: 501.3 })!.firstDownbeat, 1.3)
+    expect(sanitizeGrid({ ...g, firstDownbeat: 0.97 })!.firstDownbeat).toBe(0.97) // já dentro: o número não muda
+  })
+  it('o compasso de 0:00 em diante nunca passa da anacruse (-1)', () => {
+    for (const sig of TIME_SIGNATURES) {
+      for (const fd of [0, 0.3, 1.9, 7.7, 123.4, 599.99]) {
+        const s = sanitizeGrid({ ...g, bpm: 72.5, signature: sig, firstDownbeat: fd })!
+        expect(barIndexAt(0, s)).toBeGreaterThanOrEqual(-1)
+        for (const outro of TIME_SIGNATURES) expect(barIndexAt(0, withMeter(s, outro, 3))).toBeGreaterThanOrEqual(-1)
+      }
+    }
   })
 })
 
