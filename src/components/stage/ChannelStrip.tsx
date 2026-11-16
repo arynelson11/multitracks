@@ -68,11 +68,13 @@ export function ChannelStrip({
     setFlag(el, 'on', label !== null)
     setText(el, label === null ? '' : String(label))
   }
-  // Depois de cada renderização: acerta o tamanho do nome e pinta o balão (sem esperar o quadro).
+  // O nome só é medido quando muda (medir força layout, e o App renderiza a cada passo do fader);
+  // largura e fontes ficam com o efeito de baixo.
   useLayoutEffect(() => {
     if (nameRef.current) fitName(nameRef.current)
-    paintCount()
-  })
+  }, [ch.label])
+  // Depois de cada renderização: pinta o balão sem esperar o quadro (só escreve se mudou).
+  useLayoutEffect(() => paintCount())
   useFrame(paintCount, count !== null)
   // A largura do canal muda com a janela e as fontes chegam depois: mede o nome de novo.
   useEffect(() => {
