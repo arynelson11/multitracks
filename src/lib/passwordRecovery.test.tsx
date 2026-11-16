@@ -18,7 +18,8 @@ function fakeClient(updateError: { message: string } | null = null) {
         listeners.push(cb)
         return { data: { subscription: { unsubscribe } } }
       }),
-      updateUser: vi.fn(async (_attrs: { password: string }) => ({ data: {}, error: updateError })),
+      updateUser: vi.fn<(attrs: { password: string }) => Promise<{ data: object; error: { message: string } | null }>>(
+        async () => ({ data: {}, error: updateError })),
     },
   }
   return { client: client as unknown as RecoveryAuthClient & typeof client, emit: (e: string) => listeners.forEach(l => l(e)), unsubscribe }

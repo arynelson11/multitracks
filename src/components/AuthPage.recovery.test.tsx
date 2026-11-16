@@ -6,8 +6,10 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 const { deepLink, auth } = vi.hoisted(() => ({
   deepLink: { cb: null as ((fragment: string) => void) | null },
   auth: {
-    setSession: vi.fn(async (_tokens: { access_token: string; refresh_token: string }) => ({ data: {}, error: null })),
-    resetPasswordForEmail: vi.fn(async (_email: string, _opts?: { redirectTo: string }) => ({ data: {}, error: null })),
+    setSession: vi.fn<(tokens: { access_token: string; refresh_token: string }) => Promise<{ data: object; error: null }>>(
+      async () => ({ data: {}, error: null })),
+    resetPasswordForEmail: vi.fn<(email: string, opts?: { redirectTo: string }) => Promise<{ data: object; error: null }>>(
+      async () => ({ data: {}, error: null })),
   },
 }))
 vi.mock('../lib/desktop', () => ({
