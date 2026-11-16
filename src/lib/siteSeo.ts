@@ -33,13 +33,14 @@ export function buildJsonLd({ faq = true }: { faq?: boolean } = {}): string {
     {
       '@type': 'Organization',
       '@id': org,
-      name: COMPANY.name,
+      // O Google mostra o name no painel da marca: vai a marca. A razão social vai em legalName.
+      name: BRAND_NAME,
+      legalName: COMPANY.name,
       taxID: COMPANY.cnpj,
       url: `${SITE_URL}/`,
       logo: `${SITE_URL}/pwa-512.png`,
       email: CONTACT.email,
       address: { '@type': 'PostalAddress', addressLocality: COMPANY.city, addressRegion: COMPANY.state, addressCountry: 'BR' },
-      brand: { '@type': 'Brand', name: BRAND_NAME, logo: `${SITE_URL}/pwa-512.png` },
       contactPoint: {
         '@type': 'ContactPoint',
         contactType: 'customer support',

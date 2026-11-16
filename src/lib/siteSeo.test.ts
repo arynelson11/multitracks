@@ -18,12 +18,12 @@ const byType = (nodes: Node[], type: string) => nodes.find(n => n['@type'] === t
 describe('JSON-LD', () => {
   const nodes = graph(buildJsonLd())
 
-  it('Organization é o Grupo AIO com o CNPJ', () => {
+  it('Organization mostra a marca Playback Studio, com a razão social Grupo AIO e o CNPJ', () => {
     const org = byType(nodes, 'Organization')
-    expect(org?.name).toBe('Grupo AIO')
+    expect(org?.name).toBe('Playback Studio')
+    expect(org?.legalName).toBe('Grupo AIO')
     expect(org?.taxID).toBe('43.247.025/0001-05')
     expect(org?.email).toBe('contatoplaybackstudio@gmail.com')
-    expect((org?.brand as Node).name).toBe('Playback Studio')
     expect((org?.address as Node).addressLocality).toBe('Macaé')
   })
 

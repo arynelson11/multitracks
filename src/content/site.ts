@@ -12,6 +12,8 @@ export const OG_IMAGE = {
   alt: 'Logo do Playback Studio: o triângulo de play laranja cortado em faixas, sobre fundo escuro',
 }
 
+// Razão social: "Grupo AIO" por decisão do dono, PENDENTE de conferir no cartão do CNPJ
+// (anotado no FATOS). Aparece no rodapé, no <noscript> e no legalName do JSON-LD.
 export const COMPANY = {
   name: 'Grupo AIO',
   cnpj: '43.247.025/0001-05',
