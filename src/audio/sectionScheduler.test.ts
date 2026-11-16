@@ -567,6 +567,14 @@ describe('volta seguinte do REPETIR', () => {
     }
   })
 
+  it('armou depois do último tempo: esta volta não conta, mas a seguinte entra com o 1 e a guia calada desde o pouso', () => {
+    const h = play({ spans: oneBar, intent: { target: 0, plays: 2 }, armAt: 1.6, until: 4.5 })
+    expect(sounding(h.ctx)).toEqual(['2(1)', '2.5', '3', '3.5'])
+    expect(valueAt(h.guide, 1.9)).toBe(1)
+    expect(openAt(h.guide, 2.01, 4)).toEqual([])
+    expect(valueAt(h.guide, 4.01)).toBe(1)
+  })
+
   it('a tela da volta seguinte mostra a contagem inteira, com o 1 que já soou no pouso', () => {
     const h = play({ spans: oneBar, intent: { target: 0, plays: 2 }, armAt: 0.1, until: 2.05 })
     expect(h.deps.onLanded).toHaveBeenCalledWith(0, 2)
