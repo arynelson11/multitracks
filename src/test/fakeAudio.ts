@@ -89,29 +89,40 @@ export class FakeAudioParam {
     return this.#push({ kind: 'cancel', time: cancelTime })
   }
   /**
-   * Corta o que vem depois de `cancelTime` e segura o valor desse instante. Gravado como
-   * 'cancel' + o que mantém o valor: a rampa que cruzava o instante termina nele com o valor
-   * do meio; sem rampa, um 'set'. Eventos exatamente no instante ficam (gravados de novo).
+   * Algoritmo da especificação (W3C Web Audio, AudioParam.cancelAndHoldAtTime), conferido no
+   * Chrome 157. E1 = último evento com tempo <= tc; E2 = primeiro com tempo > tc.
+   * 1. E2 é rampa linear ou exponencial: E2 vira a mesma rampa terminando em tc, com o valor
+   *    que a original teria em tc (a rampa seguinte parte de tc, sem degrau).
+   * 2. Senão, E1 é setTarget: entra um set em tc com o valor do alvo em tc.
+   * 3. Senão (E2 é set ou alvo, ou não há E2): NÃO entra ponto em tc. O valor segue o último
+   *    evento antes de tc, e uma rampa pedida depois parte de E1, não de tc: o degrau que o
+   *    navegador faz quando se cancela no meio da sustentação.
+   * Depois, tudo com tempo > tc sai; eventos exatamente em tc ficam. (Curva não existe no
+   * fake: setValueCurveAtTime lança.) Gravado como 'cancel' em tc, os eventos de tc de novo e,
+   * nos casos 1 e 2, o evento novo. Divergência medida no Chrome 157 e NÃO copiada: no caso 2,
+   * uma rampa pedida depois do cancel parte de 0 em tc em vez do valor do alvo.
    */
   cancelAndHoldAtTime(cancelTime: number): this {
     checkTime(cancelTime, 'cancelTime')
     const line = timeline(this)
-    const held = valueAt(this, cancelTime)
-    const at = line.filter((e) => e.time === cancelTime)
-    const next = line.find((e) => e.time > cancelTime)
+    const e1 = line.filter((e) => e.time <= cancelTime).at(-1)
+    const e2 = line.find((e) => e.time > cancelTime)
+    const held = automationAt(this, cancelTime)
     this.#push({ kind: 'cancel', time: cancelTime })
-    for (const e of at) this.#push({ ...e })
-    const kind = next && (next.kind === 'linear' || next.kind === 'exp') ? next.kind : 'set'
-    return this.#push({ kind, value: held, time: cancelTime })
+    for (const e of line) if (e.time === cancelTime) this.#push({ ...e }, calledAt.get(e))
+    if (e2 && (e2.kind === 'linear' || e2.kind === 'exp')) return this.#push({ kind: e2.kind, value: held, time: cancelTime }, calledAt.get(e2))
+    if (e1?.kind === 'target') return this.#push({ kind: 'set', value: held, time: cancelTime })
+    return this
   }
   /** Existe pro tipo do AudioParam; o fake não simula curva e avisa em vez de gravar algo que o valueAt não sabe ler. */
   setValueCurveAtTime(values: number[] | Float32Array, startTime: number, duration: number): this {
     throw domError(`setValueCurveAtTime(${values.length} valores, ${startTime}, ${duration}) não é simulado pelo AudioContext falso`, 'NotSupportedError')
   }
 
-  #push(e: FakeParamEvent): this {
+  /** `askedAt`: instante do pedido original, pra evento regravado (a rampa sem evento antes começa nele). */
+  #push(e: FakeParamEvent, askedAt = this.owner.context.currentTime): this {
     this.events.push(e)
-    calledAt.set(e, this.owner.context.currentTime)
+    calledAt.set(e, askedAt)
     return this
   }
 }

@@ -64,6 +64,75 @@ describe('AudioParam falso', () => {
     expect(valueAt(p, 10)).toBeCloseTo(0.5, 10)
     expect(p.events.slice(-2)).toEqual([{ kind: 'cancel', time: 3 }, { kind: 'linear', value: 0.5, time: 3 }])
   })
+  // cancelAndHoldAtTime pelo algoritmo da especificação, com os valores medidos no Chrome 157
+  // (OfflineAudioContext a 48 kHz, ConstantSource no ganho; o mesmo com o cancel no currentTime).
+  describe('cancelAndHoldAtTime pela especificação, conferido no Chrome 157', () => {
+    const at = 0.1
+    const gain = () => createFakeAudioContext().createGain().gain
+    const CHROME = 4 // casas: o Chrome calcula em float32
+    it('rampa exponencial em curso (bipe): termina no instante com o valor do meio e a rampa nova parte dele', () => {
+      const p = gain(); const tc = at + 0.1
+      p.setValueAtTime(0, at); p.linearRampToValueAtTime(0.9, at + 0.004); p.setValueAtTime(0.9, at + 0.004); p.exponentialRampToValueAtTime(0.0005, at + 0.22)
+      p.cancelAndHoldAtTime(tc)
+      expect(p.events.slice(-2)).toEqual([{ kind: 'cancel', time: tc }, { kind: 'exp', value: expect.closeTo(0.03217, CHROME), time: tc }])
+      expect(valueAt(p, at + 0.15)).toBeCloseTo(0.03217, CHROME) // sem rampa depois, segura
+      p.linearRampToValueAtTime(0, tc + 0.005)
+      const chrome: [number, number][] = [[at + 0.03, 0.36509], [at + 0.099, 0.03331], [tc, 0.03217], [tc + 0.0005, 0.02895], [tc + 0.0025, 0.01609], [tc + 0.005, 0]]
+      for (const [t, v] of chrome) expect(valueAt(p, t)).toBeCloseTo(v, CHROME)
+    })
+    it('próximo evento é um set (sustentação do bipe): não entra ponto no instante e a rampa nova parte do evento anterior, com degrau', () => {
+      const p = gain(); const tc = at + 0.03
+      p.setValueAtTime(0, at); p.linearRampToValueAtTime(0.9, at + 0.004); p.setValueAtTime(0.9, at + 0.075); p.exponentialRampToValueAtTime(0.0005, at + 0.19)
+      expect(valueAt(p, tc)).toBe(0.9)
+      p.cancelAndHoldAtTime(tc)
+      expect(p.events.at(-1)).toEqual({ kind: 'cancel', time: tc })
+      expect(valueAt(p, at + 0.08)).toBe(0.9) // sem rampa depois, segura o último evento
+      p.linearRampToValueAtTime(0, tc + 0.005)
+      // Do 0,9 que tocava em tc pra 0,145: é o degrau que o Chrome faz.
+      const chrome: [number, number][] = [[at + 0.004, 0.9], [at + 0.01, 0.72581], [at + 0.02, 0.43548], [tc, 0.14516], [tc + 0.0025, 0.07258], [tc + 0.005, 0]]
+      for (const [t, v] of chrome) expect(valueAt(p, t)).toBeCloseTo(v, CHROME)
+    })
+    it('nada em curso nem depois (só um set antes): a rampa nova parte do set', () => {
+      const p = gain(); const tc = at + 0.05
+      p.setValueAtTime(0.5, at); p.cancelAndHoldAtTime(tc); p.linearRampToValueAtTime(0, at + 0.06)
+      expect(p.events.at(-2)).toEqual({ kind: 'cancel', time: tc })
+      for (const [t, v] of [[at, 0.5], [at + 0.03, 0.25], [tc, 0.08333], [at + 0.055, 0.04167]] as [number, number][]) expect(valueAt(p, t)).toBeCloseTo(v, CHROME)
+    })
+    it('rampa linear em curso: termina no instante e a rampa nova parte dele', () => {
+      const p = gain(); const tc = at + 0.05
+      p.setValueAtTime(1, at); p.linearRampToValueAtTime(0, at + 0.1); p.cancelAndHoldAtTime(tc); p.linearRampToValueAtTime(1, at + 0.06)
+      for (const [t, v] of [[at + 0.025, 0.75], [tc, 0.5], [at + 0.055, 0.75], [at + 0.06, 1], [at + 0.2, 1]] as [number, number][]) expect(valueAt(p, t)).toBeCloseTo(v, CHROME)
+    })
+    it('setTarget em curso: entra um set no instante com o valor do alvo e segura', () => {
+      const p = gain(); const tc = at + 0.05
+      p.setValueAtTime(1, 0); p.setTargetAtTime(0, at, 0.05); p.cancelAndHoldAtTime(tc)
+      expect(p.events.slice(-2)).toEqual([{ kind: 'cancel', time: tc }, { kind: 'set', value: expect.closeTo(Math.exp(-1), 10), time: tc }])
+      expect(valueAt(p, at + 0.025)).toBeCloseTo(0.60653, CHROME)
+      expect(valueAt(p, tc)).toBeCloseTo(0.36788, CHROME)
+      expect(valueAt(p, at + 0.3)).toBeCloseTo(0.36773, 3) // o Chrome segura o valor do quantum (0,36773)
+      // Especificação: a rampa nova parte do set em tc. O Chrome 157 diverge aqui (mediu 0,5 em
+      // tc + 5 ms: a rampa parte de 0 em tc, um degrau); o fake segue a especificação.
+      p.linearRampToValueAtTime(1, at + 0.06)
+      expect(valueAt(p, at + 0.055)).toBeCloseTo((Math.exp(-1) + 1) / 2, 10)
+    })
+    it('evento exatamente no instante fica; só o que vem depois sai', () => {
+      const p = gain(); const tc = at + 0.05
+      p.setValueAtTime(0, at); p.setValueAtTime(0.7, tc); p.linearRampToValueAtTime(0.1, at + 0.1)
+      p.cancelAndHoldAtTime(tc); p.linearRampToValueAtTime(0, at + 0.06)
+      for (const [t, v] of [[at + 0.04, 0], [at + 0.055, 0.35], [at + 0.06, 0], [at + 0.2, 0]] as [number, number][]) expect(valueAt(p, t)).toBeCloseTo(v, CHROME)
+    })
+    it('rampa exponencial em curso e um set agendado depois do cancel', () => {
+      const p = gain(); const tc = at + 0.05
+      p.setValueAtTime(1, at); p.exponentialRampToValueAtTime(0.01, at + 0.1); p.cancelAndHoldAtTime(tc); p.setValueAtTime(0.2, at + 0.07)
+      for (const [t, v] of [[tc, 0.1], [at + 0.06, 0.1], [at + 0.2, 0.2]] as [number, number][]) expect(valueAt(p, t)).toBeCloseTo(v, CHROME)
+    })
+    it('rampa que era o primeiro evento continua partindo do instante em que foi pedida', () => {
+      const ctx = createFakeAudioContext(); const p = ctx.createGain().gain
+      ctx.currentTime = 1; p.linearRampToValueAtTime(0, 3)
+      ctx.currentTime = 2; p.cancelAndHoldAtTime(2)
+      expect(valueAt(p, 1.5)).toBeCloseTo(0.75, 10); expect(valueAt(p, 2)).toBeCloseTo(0.5, 10); expect(valueAt(p, 5)).toBeCloseTo(0.5, 10)
+    })
+  })
   it('rampa sem evento antes começa no instante em que foi pedida', () => {
     const ctx = createFakeAudioContext(); const p = ctx.createGain().gain
     ctx.currentTime = 10
