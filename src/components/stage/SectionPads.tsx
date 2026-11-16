@@ -24,17 +24,23 @@ const GUTTER = 16
 const KEY_GAP = 4
 /** Nome a 16 px em até 2 linhas (altura de linha 1,1); passou disso, desce pra 14 px. Nunca corta. */
 const NAME_PX = 16
+const NAME_SMALL_PX = 14
 const NAME_LEADING = 1.1
 const NAME_MAX_LINES = 2
+/** Ainda passou de 2 linhas a 14 px: o botão alarga de 8 em 8 px até caber, no máximo 240 px (dado antigo maior que isso quebra). */
+const PAD_MIN_PX = 104
+const WIDEN_STEP = 8
+const WIDEN_MAX = 240
 
 // v5 .botoeira: fileira com 8 px entre os botões. Colunas iguais quando cabe; quando não cabe, cada
 // botão fica com o que o texto dele pede (no mínimo 104 px) e a fileira rola de lado.
 const ROW = 'relative grid grid-flow-col auto-cols-[minmax(min-content,1fr)] gap-ps-gap overflow-x-auto px-ps-gutter pt-2.5 [scrollbar-width:thin]'
-// v5 .sp: 64 a 82 px de altura (8vh), faixa da cor à esquerda. Cresce na altura se o nome quebrar
+// v5 .sp: 64 a 82 px de altura (8vh), faixa da cor à esquerda; 4 px entre a linha da tecla e o nome
+// (a caixa das letras da Inter sobe 2 px acima da linha). Cresce na altura se o nome quebrar
 // em 2 linhas (a fileira inteira acompanha, pra todos ficarem iguais). Foco por dentro: a fileira rola e
 // cortaria o contorno de fora.
 const PAD =
-  'group relative isolate flex min-w-[104px] min-h-[clamp(64px,8vh,82px)] flex-col justify-center gap-0.5 overflow-clip rounded-ps-lg py-[5px] pr-2.5 pl-[18px] text-left font-ps-sans text-ps-bone select-none transition-[transform,background-color] duration-150 active:scale-[0.98] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ps-or'
+  'group relative isolate flex min-w-[104px] min-h-[clamp(64px,8vh,82px)] flex-col justify-center gap-1 overflow-clip rounded-ps-lg py-1 pr-2.5 pl-[18px] text-left font-ps-sans text-ps-bone select-none transition-[transform,background-color] duration-150 active:scale-[0.98] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ps-or'
 const IDLE_RING = 'inset-ring inset-ring-ps-line hover:inset-ring-ps-line-2'
 const CURRENT_BG = 'bg-[color-mix(in_srgb,var(--ps-c)_20%,var(--color-ps-s1))]'
 const CURRENT_RING = 'inset-ring-2 inset-ring-(--ps-c)'
@@ -52,28 +58,47 @@ const KBD =
 const TAG =
   'absolute top-0 right-0 inline-flex h-[18px] items-center gap-[3px] rounded-[5px] px-1.5 text-[9.5px] leading-none font-extrabold tracking-[0.1em] whitespace-nowrap text-ps-ink-0'
 // Nome e meta numa caixa só; o número grande fica à direita dela, no espaço que o nome sempre reserva (pr-5).
-const BODY = 'relative flex flex-col gap-0.5'
+const BODY = 'relative flex flex-col gap-[3px]'
 const NAME = 'block pr-5 text-ps-md leading-[1.1] font-extrabold tracking-[0.03em] break-words data-[fit=small]:text-[14px]'
 const META = 'ps-num block text-ps-sm leading-[13px] whitespace-nowrap'
-// v5 .big: número da contagem em branco de armado. 26 px (o v5 tem 30) pra caber entre a etiqueta e a
-// borda de baixo no botão de 64 px sem encostar em nada.
+// v5 .big: número da contagem em branco de armado. 25 px (o v5 tem 30): a caixa das letras cabe na
+// altura de nome + meta, então fica a 4 px da etiqueta e da borda de baixo no botão de 64 px.
 const BIG =
-  'ps-num pointer-events-none absolute top-1/2 right-0 -translate-y-1/2 text-[26px] leading-none font-extrabold text-ps-arm [text-shadow:0_0_12px_color-mix(in_srgb,var(--color-ps-arm)_45%,transparent)]'
+  'ps-num pointer-events-none absolute top-1/2 right-0 -translate-y-1/2 text-[25px] leading-none font-extrabold text-ps-arm [text-shadow:0_0_12px_color-mix(in_srgb,var(--color-ps-arm)_45%,transparent)]'
 const NOTE = 'flex min-h-[clamp(64px,8vh,82px)] flex-wrap items-center gap-x-4 gap-y-2 rounded-ps-lg bg-ps-s1 px-4 py-2.5 inset-ring inset-ring-ps-line'
 
 interface PadParts { s: StageSection; meta: HTMLElement; fill: HTMLElement | null; big: HTMLElement | null }
 
-/** Nome em 16 px; se passar de 2 linhas na largura que o botão dá, 14 px. A tecla sai se a etiqueta não cabe ao lado. */
-function fitPad(pad: HTMLElement): void {
-  const name = pad.querySelector<HTMLElement>('[data-pad-name]')
-  if (name) {
-    delete name.dataset.fit
-    if (name.offsetHeight > NAME_PX * NAME_LEADING * (NAME_MAX_LINES + 0.5)) name.dataset.fit = 'small'
+const tooTall = (name: HTMLElement, px: number) => name.offsetHeight > px * NAME_LEADING * (NAME_MAX_LINES + 0.5)
+
+/**
+ * Nome em até 2 linhas: 16 px; se passar, 14 px; se ainda passar (nome de 14 caracteres em botão
+ * de 104 px), o botão alarga e a fileira rola. A tecla sai se a etiqueta não cabe ao lado dela.
+ * Mede só ao renderizar, ao redimensionar e quando as fontes chegam.
+ */
+function fitPads(row: HTMLElement): void {
+  const pads = [...row.querySelectorAll<HTMLElement>('[data-section-pad]')]
+  const names = pads.map((pad) => pad.querySelector<HTMLElement>('[data-pad-name]'))
+  pads.forEach((pad, k) => {
+    pad.style.minWidth = ''
+    const name = names[k]
+    if (name) delete name.dataset.fit
+  })
+  pads.forEach((pad, k) => {
+    const name = names[k]
+    if (!name || !tooTall(name, NAME_PX)) return
+    name.dataset.fit = 'small'
+    for (let w = Math.max(PAD_MIN_PX, pad.offsetWidth); tooTall(name, NAME_SMALL_PX) && w < WIDEN_MAX;) {
+      w = Math.min(WIDEN_MAX, w + WIDEN_STEP)
+      pad.style.minWidth = `${w}px`
+    }
+  })
+  for (const pad of pads) {
+    setFlag(pad, 'tight', false)
+    const key = pad.querySelector<HTMLElement>('[data-pad-key]')
+    const tag = pad.querySelector<HTMLElement>('[data-pad-tag]')
+    if (key && tag) setFlag(pad, 'tight', tag.getBoundingClientRect().left < key.getBoundingClientRect().right + KEY_GAP)
   }
-  setFlag(pad, 'tight', false)
-  const key = pad.querySelector<HTMLElement>('[data-pad-key]')
-  const tag = pad.querySelector<HTMLElement>('[data-pad-tag]')
-  if (key && tag) setFlag(pad, 'tight', tag.getBoundingClientRect().left < key.getBoundingClientRect().right + KEY_GAP)
 }
 
 /** Rola a fileira o mínimo pra o botão caber inteiro, com a margem lateral. */
@@ -130,16 +155,16 @@ export function SectionPads({ sections, currentSection, intent, transition, isPl
     }
   }
 
-  // Depois de cada renderização: guarda as peças de cada botão, acerta nome e tecla e pinta.
+  // Depois de cada renderização: acerta nome, largura e tecla, guarda as peças de cada botão e pinta.
   useLayoutEffect(() => {
     const row = rowRef.current
     const parts: PadParts[] = []
     if (row && showPads) {
+      fitPads(row)
       sections.forEach((s, k) => {
         const pad = row.children[k] as HTMLElement | undefined
         const meta = pad?.querySelector<HTMLElement>('[data-pad-meta]')
         if (!pad || !meta) return
-        fitPad(pad)
         parts.push({ s, meta, fill: pad.querySelector<HTMLElement>('[data-pad-fill]'), big: pad.querySelector<HTMLElement>('[data-pad-big]') })
       })
     }
@@ -157,7 +182,7 @@ export function SectionPads({ sections, currentSection, intent, transition, isPl
     refit.current = () => {
       const row = rowRef.current
       if (!row) return
-      for (const p of row.querySelectorAll<HTMLElement>('[data-section-pad]')) fitPad(p)
+      fitPads(row)
       keepInView(row, row.querySelector<HTMLElement>(`[data-section-pad="${currentSection}"]`))
     }
   })

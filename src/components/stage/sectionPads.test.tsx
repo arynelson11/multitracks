@@ -296,6 +296,30 @@ describe('botoeira de seções', () => {
     }
   })
 
+  it('nome que não cabe em 2 linhas nem a 14 px alarga o botão (a fileira rola), em vez de quebrar em 3', () => {
+    // Régua falsa: 5 caracteres por linha a 16 px; a 14 px, um caractere a cada 10 px de largura além de 48 px.
+    const desc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get(this: HTMLElement) {
+        if (!this.hasAttribute('data-pad-name')) return 0
+        const pad = this.closest('[data-section-pad]') as HTMLElement
+        const small = this.dataset.fit === 'small'
+        const perLine = small ? Math.floor(((parseFloat(pad.style.minWidth) || 104) - 48) / 10) : 5
+        return Math.ceil((this.textContent ?? '').length / perLine) * (small ? 14 : 16) * 1.1
+      },
+    })
+    try {
+      renderPads({ sections: [{ ...SECTIONS[0], label: 'Verso Lento 12' }, SECTIONS[1]] })
+      expect(part(0, 'pad-name')?.dataset.fit).toBe('small')
+      expect(pad(0).style.minWidth).toBe('120px') // 104 -> 112 (6 por linha, 3 linhas) -> 120 (7 por linha, 2 linhas)
+      expect(pad(1).style.minWidth).toBe('') // "Verso" cabe a 16 px: nada muda
+      expect(part(1, 'pad-name')?.dataset.fit).toBeUndefined()
+    } finally {
+      if (desc) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', desc)
+    }
+  })
+
   it('tecla some quando a etiqueta não cabe ao lado dela (nunca uma por cima da outra)', () => {
     // Régua falsa: tecla de 18 px no começo; etiqueta de 77 px encostada à direita de um botão de largura variável.
     let inner = 200
