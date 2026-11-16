@@ -1,7 +1,8 @@
-import { useEffect, useId, useLayoutEffect, useRef } from 'react'
+import { useId, useRef } from 'react'
 import type React from 'react'
 import { cx } from '../ui'
 import { Icon } from './icons'
+import { usePanelDismiss } from './panelDismiss'
 
 export interface PadPanelProps {
   open: boolean; onClose(): void; view: 'pads' | 'samples' | 'loops'; onViewChange(v: PadPanelProps['view']): void
@@ -38,40 +39,15 @@ const SIDE_BTN =
 /**
  * Painel de pads do palco novo (mockup v5): abas PADS, SAMPLES e LOOPS, grade 4x3 de C a B com
  * "TOM" no tom da música e equalizador no pad tocando, CONJUNTO (nuvem), Volume (arrastar ou tocar
- * no trilho) e EDITAR. SAMPLES e LOOPS mostram o que o app mandar. Fecha no X e no Esc.
+ * no trilho) e EDITAR. SAMPLES e LOOPS mostram o que o app mandar. Fecha no X e no Esc (o aberto
+ * por último fecha primeiro). Abrir põe o foco no painel, não num pad (o Espaço tocaria o pad).
  * A casca posiciona por cima do mixer (altura toda, `right` = largura do PRINCIPAL + gap); a
  * largura é a do painel, então fechado ele não ocupa nada.
  */
 export function PadPanel(props: PadPanelProps) {
-  const { open, onClose } = props
   const panelRef = useRef<HTMLDivElement>(null)
-
-  // Esc na CAPTURA, só enquanto aberto: fecha e marca o evento como tratado (o atalho global ignora).
-  useEffect(() => {
-    if (!open) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return
-      e.preventDefault()
-      onClose()
-    }
-    document.addEventListener('keydown', onKeyDown, true)
-    return () => document.removeEventListener('keydown', onKeyDown, true)
-  }, [open, onClose])
-
-  // Abrir leva o foco pro painel (não pra um pad: o Espaço tocaria o pad); fechar com o foco nele
-  // (ou perdido) devolve pra quem abriu.
-  useLayoutEffect(() => {
-    if (!open) return
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    panelRef.current?.focus({ preventScroll: true })
-    return () => {
-      const active = document.activeElement
-      const lost = !active || active === document.body || !active.isConnected
-      if (opener?.isConnected && lost) opener.focus({ preventScroll: true })
-    }
-  }, [open])
-
-  if (!open) return null
+  usePanelDismiss(props.open, props.onClose, panelRef)
+  if (!props.open) return null
   return <PadDrawer {...props} panelRef={panelRef} />
 }
 
@@ -123,6 +99,17 @@ function PadDrawer({
             </button>
           ))}
         </div>
+        {/* EDITAR mora aqui (no v5, embaixo do volume): a coluna do lado fica com CONJUNTO e Volume e
+            um nome de conjunto comprido cresce nela sem empurrar nada pra fora do painel. Só dos pads:
+            em SAMPLES e LOOPS some, guardando o lugar pra largura das abas não mudar. */}
+        <button
+          type="button" data-pad-edit="" aria-label="Editar pads" title="Carregar ou tirar sons dos pads" onClick={onEditPads}
+          disabled={view !== 'pads'} aria-hidden={view !== 'pads' ? true : undefined} tabIndex={view !== 'pads' ? -1 : undefined}
+          className={cx(SIDE_BTN, 'justify-center text-ps-label font-extrabold tracking-[0.12em] whitespace-nowrap text-ps-mut hover:text-ps-bone', view !== 'pads' && 'invisible')}
+        >
+          <Icon name="edit" className="size-[14px]" />
+          EDITAR
+        </button>
         <button
           type="button" aria-label="Fechar pads" title="Fechar (Esc)" onClick={onClose}
           className="inline-flex min-h-ps-touch min-w-ps-touch shrink-0 items-center justify-center rounded-ps-md bg-ps-s2 text-ps-mut transition-colors hover:text-ps-bone focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or"
@@ -131,7 +118,9 @@ function PadDrawer({
         </button>
       </div>
 
-      <div id={panelId} role="tabpanel" aria-labelledby={tabId(selected)} className="flex min-h-0 flex-1 gap-3">
+      {/* PADS cresce com o conteúdo (se não couber, o painel rola com a folga de baixo); SAMPLES e LOOPS
+          encolhem (min-h-0) e a lista rola por dentro. */}
+      <div id={panelId} role="tabpanel" aria-labelledby={tabId(selected)} className={cx('flex flex-1 gap-3', view !== 'pads' && 'min-h-0')}>
         {view === 'pads' ? (
           <>
             <div className="grid min-w-0 flex-1 grid-cols-4 grid-rows-3 gap-1.5">
@@ -160,12 +149,12 @@ function PadDrawer({
                 )
               })}
             </div>
-            {/* 200 px (o v5 tinha 178): com a seta do v5 ao lado do rótulo, e não do nome, um nome de
-                conjunto de ~30 caracteres cabe em 2 linhas e a coluna cabe no mixer de 220 px. */}
-            <div className="flex w-[200px] shrink-0 flex-col justify-between gap-0.5">
+            {/* 178 px como no v5. A seta do v5 fica ao lado do rótulo, não do nome, e o CONJUNTO ocupa a
+                altura que sobra do volume: no mixer de 220 px cabem 4 linhas de nome (uns 60 caracteres). */}
+            <div className="flex w-[178px] shrink-0 flex-col gap-2">
               <button
                 type="button" aria-label={`Conjunto de pads: ${setName ?? 'Padrão'}`} title="Conjunto de pads na nuvem (toque pra trocar)"
-                onClick={onOpenSets} className={cx(SIDE_BTN, 'text-left')}
+                onClick={onOpenSets} className={cx(SIDE_BTN, 'flex-1 text-left')}
               >
                 <Icon name="cloud" className="size-[17px] text-ps-mut" />
                 <span className="flex min-w-0 flex-1 flex-col">
@@ -177,13 +166,6 @@ function PadDrawer({
                 </span>
               </button>
               <VolumeSlider volume={volume} onVolume={onVolume} />
-              <button
-                type="button" aria-label="Editar pads" title="Carregar ou tirar sons dos pads" onClick={onEditPads}
-                className={cx(SIDE_BTN, 'justify-center text-ps-label font-extrabold tracking-[0.12em] whitespace-nowrap text-ps-mut hover:text-ps-bone')}
-              >
-                <Icon name="edit" className="size-[14px]" />
-                EDITAR
-              </button>
             </div>
           </>
         ) : (
@@ -242,8 +224,8 @@ function VolumeSlider({ volume, onVolume }: { volume: number; onVolume(v: number
     onVolume(round2(clamp01(next)))
   }
 
-  // O rótulo e o número moram dentro do alvo de 44 px (em cima), o trilho embaixo: a coluna
-  // CONJUNTO, Volume e EDITAR cabe no mixer mais baixo (220 px).
+  // O rótulo e o número moram dentro do alvo de 44 px (em cima), o trilho embaixo: sobra mais
+  // altura pro nome do CONJUNTO no mixer mais baixo (220 px).
   return (
     <div
       role="slider"

@@ -4,6 +4,7 @@ import { useTwoTapConfirm } from '../../hooks/useTwoTapConfirm'
 import { formatBpm } from '../../lib/beatGrid'
 import { cx } from '../ui'
 import { Icon } from './icons'
+import { useExclusiveArm, usePanelDismiss } from './panelDismiss'
 import { TwoTapTrashButton } from './TwoTapTrashButton'
 
 export interface RepertoireSongItem { id: string; name: string; artist?: string; coverImage?: string; originalKey?: string | null; bpm?: number | null }
@@ -13,9 +14,6 @@ export interface RepertoirePanelProps {
   onNew(): void; onExport(): void; onImport(file: File): void; onClose(): void
 }
 
-// Mesmo aviso das lixeiras (TwoTapTrashButton): armar o Novo desarma a lixeira armada e vice-versa.
-const ARM_EVENT = 'ps-two-tap-arm'
-const NEW_ID = 'novo-repertorio'
 /** Arrastando perto da borda da lista (px), ela rola pra levar a música até o lugar. */
 const EDGE = 40
 const EDGE_STEP = 12
@@ -45,38 +43,14 @@ function findByData(root: HTMLElement | null, attr: string, value: string): HTML
  * Painel REPERTÓRIOS do palco novo: gaveta da esquerda com Novo (dois toques), Salvar e Carregar
  * .zip, a lista (capa, nome, artista, tom e BPM; toque escolhe; alça de reordenar que funciona no
  * toque e nas setas; lixeira de dois toques) e as Anotações. Diálogo sem bloqueio: o palco continua
- * respondendo com ele aberto. Fecha no X e no Esc. A casca posiciona (à esquerda, altura toda); a
- * largura é a do painel, então fechado ele não ocupa nada.
+ * respondendo com ele aberto. Fecha no X e no Esc (o aberto por último fecha primeiro; com algo
+ * armado, o Esc só desarma). A casca posiciona (à esquerda, altura toda); a largura é a do painel,
+ * então fechado ele não ocupa nada.
  */
 export function RepertoirePanel(props: RepertoirePanelProps) {
-  const { open, onClose } = props
   const panelRef = useRef<HTMLDivElement>(null)
-
-  // Esc na CAPTURA, só enquanto aberto: fecha e marca o evento como tratado (o atalho global ignora).
-  useEffect(() => {
-    if (!open) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return
-      e.preventDefault()
-      onClose()
-    }
-    document.addEventListener('keydown', onKeyDown, true)
-    return () => document.removeEventListener('keydown', onKeyDown, true)
-  }, [open, onClose])
-
-  // Abrir leva o foco pro painel; fechar com o foco nele (ou perdido) devolve pra quem abriu.
-  useLayoutEffect(() => {
-    if (!open) return
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    panelRef.current?.focus({ preventScroll: true })
-    return () => {
-      const active = document.activeElement
-      const lost = !active || active === document.body || !active.isConnected
-      if (opener?.isConnected && lost) opener.focus({ preventScroll: true })
-    }
-  }, [open])
-
-  if (!open) return null
+  usePanelDismiss(props.open, props.onClose, panelRef)
+  if (!props.open) return null
   return <RepertoireDrawer {...props} panelRef={panelRef} />
 }
 
@@ -84,6 +58,7 @@ function RepertoireDrawer({
   songs, activeIndex, isPlaying, notes, onNotesChange, onSelect, onReorder, onRemove, onNew, onExport, onImport, onClose, panelRef,
 }: RepertoirePanelProps & { panelRef: React.RefObject<HTMLDivElement | null> }) {
   const notesId = useId()
+  const novoId = useId()
   const listRef = useRef<HTMLOListElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -92,15 +67,8 @@ function RepertoireDrawer({
 
   // Novo: dois toques, e uma ação de dois toques armada por vez no palco.
   const novo = useTwoTapConfirm(() => onNew())
-  const novoArmed = novo.armedId === NEW_ID
-  const { disarm: disarmNovo } = novo
-  useEffect(() => {
-    if (!novoArmed) return
-    document.dispatchEvent(new CustomEvent(ARM_EVENT, { detail: NEW_ID }))
-    const onOtherArmed = (e: Event) => { if ((e as CustomEvent<string>).detail !== NEW_ID) disarmNovo() }
-    document.addEventListener(ARM_EVENT, onOtherArmed)
-    return () => document.removeEventListener(ARM_EVENT, onOtherArmed)
-  }, [novoArmed, disarmNovo])
+  const novoArmed = novo.armedId === novoId
+  useExclusiveArm(novoArmed, novoId, novo.disarm)
 
   // Abrir mostra a música ativa. Só ao abrir: trocar de música com o painel aberto não rola a
   // lista na mão de quem está mexendo (o jsdom não tem scrollIntoView).
@@ -184,7 +152,8 @@ function RepertoireDrawer({
           type="button"
           aria-label={novoArmed ? 'Toque de novo para limpar o repertório' : 'Novo repertório'}
           title={novoArmed ? 'Toque de novo para limpar o repertório' : 'Começa um repertório vazio (pede um segundo toque)'}
-          onClick={() => novo.press(NEW_ID)}
+          data-armed={novoArmed ? 'true' : 'false'}
+          onClick={() => novo.press(novoId)}
           onKeyDown={(e) => { if (e.repeat && (e.key === 'Enter' || e.key === ' ')) e.preventDefault() }}
           className={cx(ACTION, novoArmed ? ACTION_ARMED : ACTION_IDLE)}
         >
@@ -292,6 +261,7 @@ function RepertoireDrawer({
                   <TwoTapTrashButton
                     label={`Tirar ${s.name} do repertório`}
                     confirmLabel={`Toque de novo para tirar ${s.name} do repertório`}
+                    armedText="Tirar?"
                     onConfirm={() => onRemove(s.id)}
                   />
                 </li>

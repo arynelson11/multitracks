@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { StrictMode, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react'
 import { TWO_TAP_MIN_GAP_MS, TWO_TAP_WINDOW_MS } from '../../hooks/useTwoTapConfirm'
@@ -288,6 +289,10 @@ describe('painel REPERTÓRIOS', () => {
     fireEvent.click(lixeira)
     expect(p.onRemove).not.toHaveBeenCalled()
     expect(lixeira.getAttribute('aria-label')).toBe('Toque de novo para tirar Eu era Órfão do repertório')
+    // A música não some do aparelho, só sai da lista: "Tirar?", que está dentro do nome acessível (WCAG 2.5.3).
+    expect(lixeira.textContent).toBe('Tirar?')
+    expect(lixeira.getAttribute('aria-label')!.toLowerCase()).toContain('tirar')
+    expect(lixeira.dataset.armed).toBe('true')
     act(() => { vi.advanceTimersByTime(TWO_TAP_MIN_GAP_MS) })
     fireEvent.click(lixeira)
     expect(p.onRemove).toHaveBeenCalledTimes(1)
@@ -326,7 +331,7 @@ describe('painel REPERTÓRIOS', () => {
     const lixeira = screen.getByRole('button', { name: 'Tirar Fé do repertório' })
     fireEvent.click(lixeira)
     expect(novo.textContent).toBe('NOVO')
-    expect(lixeira.textContent).toBe('Apagar?')
+    expect(lixeira.textContent).toBe('Tirar?')
     fireEvent.click(novo)
     expect(lixeira.textContent).toBe('')
     expect(p.onRemove).not.toHaveBeenCalled()
@@ -436,6 +441,31 @@ describe('painel de pads', () => {
     expect(p.onEditPads).toHaveBeenCalledTimes(1)
   })
 
+  it('EDITAR mora na fileira das abas: CONJUNTO longo não empurra nada pra fora do painel', () => {
+    const p = padProps({ setName: 'Ambient Worship Pads Volume Dois Extendido Ao Vivo' })
+    const { rerender } = render(<PadPanel {...p} />)
+    const editar = screen.getByRole('button', { name: 'Editar pads' })
+    expectTouch(editar)
+    const row = screen.getByRole('tablist').parentElement!
+    expect(row.contains(editar)).toBe(true)
+    expect(row.contains(screen.getByRole('button', { name: 'Fechar pads' }))).toBe(true)
+    // A coluna do lado fica com CONJUNTO e Volume; a lista de PADS cresce com o conteúdo (sem min-h-0).
+    const side = screen.getByRole('button', { name: /^Conjunto de pads/ }).parentElement!
+    expect(side.contains(screen.getByRole('slider', { name: 'Volume dos pads' }))).toBe(true)
+    expect(side.contains(editar)).toBe(false)
+    expect(screen.getByRole('tabpanel').className.split(/\s+/)).not.toContain('min-h-0')
+
+    // SAMPLES e LOOPS: o EDITAR (só dos pads) some sem mudar a largura das abas; a lista rola por dentro.
+    for (const view of ['samples', 'loops'] as const) {
+      rerender(<PadPanel {...p} view={view} samples={<p>samples</p>} loops={<p>loops</p>} />)
+      expect(screen.queryByRole('button', { name: 'Editar pads' })).toBeNull()
+      const hidden = document.querySelector('[data-pad-edit]') as HTMLButtonElement
+      expect(hidden.className).toContain('invisible')
+      expect(hidden.disabled).toBe(true)
+      expect(screen.getByRole('tabpanel').className.split(/\s+/)).toContain('min-h-0')
+    }
+  })
+
   it('abas PADS, SAMPLES e LOOPS; SAMPLES e LOOPS mostram o que vier do app', () => {
     const p = padProps({ samples: <p>lista de samples</p>, loops: <p>lista de loops</p> })
     const { rerender } = render(<PadPanel {...p} />)
@@ -497,16 +527,103 @@ describe('Esc e textos', () => {
     expect(rep.onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('abrir põe o foco no painel e fechar devolve pra quem abriu', () => {
+  it('abrir põe o foco no painel e fechar devolve pra quem abriu, nos dois painéis', () => {
     const opener = document.createElement('button')
     document.body.appendChild(opener)
-    opener.focus()
-    const p = repProps()
-    const { rerender } = render(<RepertoirePanel {...p} />)
-    expect(document.activeElement).toBe(screen.getByRole('dialog'))
-    rerender(<RepertoirePanel {...p} open={false} />)
-    expect(document.activeElement).toBe(opener)
+    // No StrictMode (o app em desenvolvimento) o efeito de abrir roda duas vezes: quem abriu continua o mesmo.
+    const cases = [
+      (open: boolean) => <RepertoirePanel {...repProps()} open={open} />,
+      (open: boolean) => <PadPanel {...padProps()} open={open} />,
+      (open: boolean) => <StrictMode><RepertoirePanel {...repProps()} open={open} /></StrictMode>,
+      (open: boolean) => <StrictMode><PadPanel {...padProps()} open={open} /></StrictMode>,
+    ]
+    for (const panel of cases) {
+      opener.focus()
+      const { rerender, unmount } = render(panel(true))
+      expect(document.activeElement).toBe(screen.getByRole('dialog'))
+      rerender(panel(false))
+      expect(document.activeElement).toBe(opener)
+      unmount()
+    }
     opener.remove()
+  })
+
+  // Os dois painéis na mesma tela, como na casca: abrir e fechar por estado, onClose em arrow inline.
+  function Stage() {
+    const [rep, setRep] = useState(false)
+    const [pads, setPads] = useState(false)
+    const [, setTick] = useState(0)
+    return (
+      <>
+        <button type="button" onClick={() => setRep(true)}>abre repertório</button>
+        <button type="button" onClick={() => setPads(true)}>abre pads</button>
+        <button type="button" onClick={() => setTick((t) => t + 1)}>renderiza de novo</button>
+        <RepertoirePanel {...repProps()} open={rep} onClose={() => setRep(false)} />
+        <PadPanel {...padProps()} open={pads} onClose={() => setPads(false)} />
+      </>
+    )
+  }
+  const esc = () => fireEvent.keyDown(document, { key: 'Escape' })
+  const openNames = () => screen.queryAllByRole('dialog').map((d) => d.getAttribute('aria-label'))
+
+  it('Esc fecha sempre o painel aberto por último, com onClose inline, e o foco volta pela ordem', () => {
+    for (const [first, second] of [['pads', 'repertório'], ['repertório', 'pads']] as const) {
+      const { unmount } = render(<Stage />)
+      const opener = screen.getByRole('button', { name: `abre ${first}` })
+      opener.focus()
+      fireEvent.click(opener)
+      const firstDialog = screen.getByRole('dialog')
+      expect(document.activeElement).toBe(firstDialog)
+      fireEvent.click(screen.getByRole('button', { name: `abre ${second}` })) // o foco está no primeiro painel
+      // Renderizações da casca trocam a identidade dos onClose: a ordem não pode mudar com isso.
+      fireEvent.click(screen.getByRole('button', { name: 'renderiza de novo' }))
+      fireEvent.click(screen.getByRole('button', { name: 'renderiza de novo' }))
+      expect(openNames()).toHaveLength(2)
+
+      esc()
+      const left = first === 'pads' ? 'Pads' : 'Repertório'
+      expect(openNames()).toEqual([left])
+      expect(document.activeElement).toBe(firstDialog) // quem abriu o segundo foi o primeiro painel
+      esc()
+      expect(openNames()).toEqual([])
+      expect(document.activeElement).toBe(opener)
+      unmount()
+    }
+  })
+
+  it('Esc fecha o último aberto também com onClose estável', () => {
+    const rep = repProps()
+    const pad = padProps()
+    const both = (r: boolean, p: boolean) => <><RepertoirePanel {...rep} open={r} /><PadPanel {...pad} open={p} /></>
+    const { rerender } = render(both(false, true))
+    rerender(both(true, true)) // o repertório abriu depois, embora venha antes na árvore
+    esc()
+    expect(rep.onClose).toHaveBeenCalledTimes(1)
+    expect(pad.onClose).not.toHaveBeenCalled()
+    rerender(both(false, true))
+    esc()
+    expect(pad.onClose).toHaveBeenCalledTimes(1)
+    rerender(both(false, false))
+    const free = createEvent.keyDown(document, { key: 'Escape' })
+    fireEvent(document, free)
+    expect(free.defaultPrevented).toBe(false) // nada aberto: o Esc segue pro atalho global
+  })
+
+  it('Esc com lixeira ou Novo armado só desarma (e não chega ao atalho global); o seguinte fecha', () => {
+    const p = repProps()
+    render(<RepertoirePanel {...p} />)
+    for (const name of ['Tirar Fé do repertório', 'Novo repertório']) {
+      const btn = screen.getByRole('button', { name })
+      fireEvent.click(btn)
+      expect(btn.dataset.armed).toBe('true')
+      const ev = createEvent.keyDown(document, { key: 'Escape' })
+      fireEvent(document, ev)
+      expect(ev.defaultPrevented).toBe(true)
+      expect(p.onClose).not.toHaveBeenCalled()
+      expect(btn.dataset.armed).toBe('false')
+    }
+    esc()
+    expect(p.onClose).toHaveBeenCalledTimes(1)
   })
 
   it('textos em português, sem travessão', () => {
