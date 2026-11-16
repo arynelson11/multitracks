@@ -9,8 +9,10 @@ import { BillingError, cancelSubscriptionForUser, type CancelResult } from './_l
 //
 // Antes de apagar qualquer coisa, cancela a assinatura no Asaas (senão o cartão
 // seguiria sendo cobrado por uma conta que não existe): cancelamento imediato,
-// e dentro de 7 dias da primeira cobrança com o mesmo estorno do arrependimento.
-// Se o Asaas falhar, nada é apagado e o usuário recebe um erro claro.
+// e dentro de 7 dias da primeira cobrança com a mesma regra do arrependimento.
+// Se o Asaas falhar ou ainda houver remoção pendente, a conta NÃO é apagada e o
+// usuário recebe um erro claro. Os registros de pagamento ficam, sem o vínculo
+// com a pessoa (guarda fiscal; a FK vira null).
 export default async function handler(req: any, res: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
     applyCors(req, res, 'POST,OPTIONS');
     if (req.method === 'OPTIONS') return res.status(200).end();
@@ -32,7 +34,7 @@ export default async function handler(req: any, res: any) { // eslint-disable-li
     try {
         canceled = await cancelSubscriptionForUser(
             { db: supabase, asaas: asaasFromEnv() },
-            { userId: auth.userId, source: 'user', immediate: true },
+            { userId: auth.userId, source: 'account_deleted', immediate: true },
         );
     } catch (e) {
         if (!(e instanceof BillingError && e.code === 'not_found')) {
@@ -41,7 +43,9 @@ export default async function handler(req: any, res: any) { // eslint-disable-li
                 ? e.message
                 : 'Não deu para cancelar sua assinatura agora. Tente de novo em alguns minutos.';
             console.error('[delete-account] cancelamento falhou, conta mantida:', e instanceof Error ? e.message : 'erro');
-            return res.status(status).json({ error: `Sua conta não foi excluída. ${detail}` });
+            // pending_stop já começa com "Sua conta não foi excluída"
+            const message = detail.startsWith('Sua conta não foi excluída') ? detail : `Sua conta não foi excluída. ${detail}`;
+            return res.status(status).json({ error: message });
         }
         // sem assinatura: segue
     }

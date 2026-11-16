@@ -82,3 +82,15 @@ export function renewalNotice(sub: MySubscription | null, now: Date = new Date()
   if (daysLeft < 0 || daysLeft > RENEWAL_NOTICE_DAYS) return null
   return { daysLeft, dueDate: sub.next_due_date }
 }
+
+// No login: pede pro servidor tentar de novo as pendências deste usuário com o
+// Asaas (ex.: parar uma assinatura antiga). Uma vez por usuário por abertura do
+// app; erro é ignorado (o job diário também tenta).
+const synced = new Set<string>()
+export async function syncBillingOnLogin(userId: string): Promise<void> {
+  if (synced.has(userId)) return
+  synced.add(userId)
+  try {
+    await fetch(apiUrl('/api/checkout?action=sync'), { method: 'POST', headers: await getAuthHeaders(), body: '{}' })
+  } catch { /* o job diário tenta de novo */ }
+}

@@ -1,21 +1,25 @@
 /// <reference types="node" />
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { timingSafeEqual } from 'node:crypto'
+import { createClient } from '@supabase/supabase-js'
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { asaasFromEnv } from '../_lib/asaas.js'
-import { handleAsaasEvent, isBillingEvent } from '../_lib/billing.js'
+import { isBillingEvent, processStoredEvent, runDailyJob, runPendingActions, sanitizeAsaasPayload } from '../_lib/billing.js'
 
-// Webhook do Asaas: checkout pago, assinatura (criada, alterada, inativada,
-// removida) e cobranças (paga, vencida, estornada...). As regras ficam em
-// api/_lib/billing.ts e o estado no banco (db/supabase_assinaturas.sql).
+// Webhook do Asaas + job diário de cobrança.
 //
-// Autenticação: o Asaas envia, em todo POST, o header `asaas-access-token`
-// com o valor cadastrado no painel (igual ao ASAAS_WEBHOOK_TOKEN aqui).
-// Idempotência: o `id` do evento ("evt_...") fica em asaas_webhook_events; um
-// evento já processado responde 200 sem repetir nada. Além disso, cada passo é
-// idempotente no banco (reenvio sem o mesmo id também não duplica).
-// O Asaas só conta como entregue a resposta 200; qualquer outra entra em
-// reenvio, e 15 falhas seguidas pausam a fila. Por isso só devolvemos 500
-// quando tentar de novo pode resolver (banco ou Asaas fora do ar).
+// POST (Asaas): checkout pago, assinatura e cobranças. Autenticação pelo header
+// `asaas-access-token` (= ASAAS_WEBHOOK_TOKEN, comparação em tempo constante).
+// O evento é GRAVADO (sem dados de cartão) antes de processar e a resposta é
+// 200 assim que está gravado: o que falhar no processamento (Asaas ou rede
+// fora do ar) fica 'failed' e o job tenta de novo, sem travar a fila
+// Sequencial do Asaas. Só autenticação errada responde 401; só falha ao gravar
+// o evento responde 500 (aí o Asaas reenvia, que é o certo). Idempotente pelo
+// id do evento: evento já processado responde 200 sem repetir nada.
+//
+// GET (Vercel Cron, 1x por dia): header `Authorization: Bearer <CRON_SECRET>`.
+// Roda o job diário (o mesmo do pg_cron), reprocessa eventos que falharam e
+// tenta de novo as pendências com o Asaas.
+//
+// Regras em api/_lib/billing.ts; estado em db/supabase_assinaturas.sql.
 
 function safeEqualStr(a: string, b: string): boolean {
   const ab = Buffer.from(a)
@@ -24,33 +28,46 @@ function safeEqualStr(a: string, b: string): boolean {
   return timingSafeEqual(ab, bb)
 }
 
-type Claim = 'new' | 'retry' | 'duplicate' | 'unknown'
-
-async function claimEvent(db: SupabaseClient, id: string, event: string): Promise<Claim> {
-  const { error } = await db.from('asaas_webhook_events').insert({ id, event })
-  if (!error) return 'new'
-  if (error.code !== '23505') {
-    console.warn('[asaas-webhook] nao deu pra registrar o evento, seguindo sem idempotencia por id:', error.message)
-    return 'unknown'
-  }
-  const { data } = await db.from('asaas_webhook_events').select('processed_at').eq('id', id).maybeSingle()
-  return (data as { processed_at?: string | null } | null)?.processed_at ? 'duplicate' : 'retry'
+function header(req: any, name: string): string { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const v = req.headers?.[name]
+  return typeof v === 'string' ? v : ''
 }
 
 export default async function handler(req: any, res: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' })
+  if (req.method !== 'POST' && req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' })
 
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  const webhookToken = process.env.ASAAS_WEBHOOK_TOKEN
-  if (!webhookToken || !supabaseUrl || !serviceRoleKey) {
+  if (!supabaseUrl || !serviceRoleKey) {
     console.error('[asaas-webhook] server misconfigured: missing env vars')
     return res.status(500).json({ error: 'Server misconfiguration' })
   }
 
-  const provided = typeof req.headers?.['asaas-access-token'] === 'string'
-    ? req.headers['asaas-access-token'] as string
-    : ''
+  // ── Job diário (Vercel Cron) ──
+  if (req.method === 'GET') {
+    const cronSecret = process.env.CRON_SECRET
+    const auth = header(req, 'authorization')
+    if (!cronSecret || !auth.startsWith('Bearer ') || !safeEqualStr(auth.slice(7), cronSecret)) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+    try {
+      const out = await runDailyJob({ db: createClient(supabaseUrl, serviceRoleKey), asaas: asaasFromEnv(5000) })
+      console.log('[billing-job] ok', out)
+      return res.status(200).json({ ok: true, ...out })
+    } catch (e) {
+      console.error('[billing-job] falhou:', e instanceof Error ? e.message : 'erro')
+      return res.status(500).json({ error: 'Job failed' })
+    }
+  }
+
+  // ── Webhook do Asaas ──
+  const webhookToken = process.env.ASAAS_WEBHOOK_TOKEN
+  if (!webhookToken) {
+    console.error('[asaas-webhook] server misconfigured: missing ASAAS_WEBHOOK_TOKEN')
+    return res.status(500).json({ error: 'Server misconfiguration' })
+  }
+  if (webhookToken.length < 32) console.warn('[asaas-webhook] ASAAS_WEBHOOK_TOKEN curto: o Asaas pede de 32 a 255 caracteres')
+  const provided = header(req, 'asaas-access-token')
   if (!provided || !safeEqualStr(provided, webhookToken)) {
     console.warn('[asaas-webhook] invalid or missing token')
     return res.status(401).json({ error: 'Unauthorized' })
@@ -63,24 +80,34 @@ export default async function handler(req: any, res: any) { // eslint-disable-li
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey)
-  const eventId = typeof payload.id === 'string' && payload.id ? payload.id : null
+  const deps = { db, asaas: asaasFromEnv(5000) }
+  const eventId = typeof payload.id === 'string' && payload.id
+    ? payload.id
+    : `sha:${createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 40)}`
 
-  try {
-    if (eventId) {
-      const claim = await claimEvent(db, eventId, event)
-      if (claim === 'duplicate') return res.status(200).json({ received: true, duplicate: true })
+  // 1. Grava o evento (sem cartão). Já existe: responde conforme o estado.
+  let attempts = 0
+  const { error: insErr } = await db.from('asaas_webhook_events')
+    .insert({ id: eventId, event, payload: sanitizeAsaasPayload(payload), status: 'pending' })
+  if (insErr) {
+    if (insErr.code !== '23505') {
+      console.error('[asaas-webhook] nao gravou o evento, o Asaas vai reenviar:', insErr.message)
+      return res.status(500).json({ error: 'Could not persist event' })
     }
-
-    const out = await handleAsaasEvent({ db, asaas: asaasFromEnv() }, payload)
-
-    if (eventId) {
-      const { error } = await db.from('asaas_webhook_events').update({ processed_at: new Date().toISOString() }).eq('id', eventId)
-      if (error) console.warn('[asaas-webhook] nao marcou o evento como processado:', error.message)
-    }
-    console.log('[asaas-webhook] processado', { event, result: out.result })
-    return res.status(200).json({ received: true, ...out })
-  } catch (error) {
-    console.error('[asaas-webhook] handler error:', { event, message: error instanceof Error ? error.message : 'erro' })
-    return res.status(500).json({ error: 'Internal Server Error' })
+    const { data } = await db.from('asaas_webhook_events').select('status, attempts').eq('id', eventId).maybeSingle()
+    const row = data as { status?: string; attempts?: number } | null
+    if (row?.status === 'done') return res.status(200).json({ received: true, duplicate: true })
+    attempts = row?.attempts ?? 0
   }
+
+  // 2. Processa. Falha fica 'failed' pro job; a resposta é 200 de qualquer jeito.
+  const outcome = await processStoredEvent(deps, eventId, payload, attempts)
+
+  // 3. Aproveita pra tentar de novo pendências antigas com o Asaas (best-effort).
+  try { await runPendingActions(deps, { limit: 3 }) } catch (e) {
+    console.warn('[asaas-webhook] pendencias ficam pro job:', e instanceof Error ? e.message : 'erro')
+  }
+
+  console.log('[asaas-webhook] recebido', { event, processed: outcome.ok, result: outcome.result })
+  return res.status(200).json({ received: true, processed: outcome.ok, result: outcome.result })
 }

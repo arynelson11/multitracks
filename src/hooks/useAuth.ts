@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { apiUrl } from '../lib/api';
 import { effectivePlan, fetchPlanState } from '../lib/planState';
+import { syncBillingOnLogin } from '../lib/subscription';
 import type { User, Session } from '@supabase/supabase-js';
 
 const PLAN_CHANGED_EVENT = 'playback-plan-changed';
@@ -45,6 +46,7 @@ export function useAuth() {
             setSession(session);
             setUser(session?.user ?? null);
             if (session?.user) {
+                void syncBillingOnLogin(session.user.id);
                 fetchPlan(session.user.id).finally(() => setLoading(false));
             } else {
                 setLoading(false);

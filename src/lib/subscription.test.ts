@@ -6,7 +6,7 @@ vi.mock('./supabase', () => ({
 }))
 vi.mock('./api', () => ({ apiUrl: (p: string) => `https://app.test${p}` }))
 
-import { accessDateLabel, brtTodayKey, cancelMySubscription, renewalNotice, type MySubscription } from './subscription'
+import { accessDateLabel, brtTodayKey, cancelMySubscription, renewalNotice, syncBillingOnLogin, type MySubscription } from './subscription'
 
 const base: MySubscription = {
   id: 'chk_1', kind: 'asaas', plan_key: 'essencial_mensal', cycle: 'MONTHLY', status: 'active',
@@ -63,6 +63,14 @@ describe('cancelMySubscription', () => {
   it('devolve a mensagem do servidor quando dá erro', async () => {
     fetchMock.mockResolvedValue({ ok: false, json: async () => ({ error: 'Não conseguimos falar com o sistema de pagamento agora.' }) })
     await expect(cancelMySubscription()).resolves.toEqual({ ok: false, error: 'Não conseguimos falar com o sistema de pagamento agora.' })
+  })
+
+  it('no login pede uma vez só pro servidor tentar de novo as pendências', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ ok: true }) })
+    await syncBillingOnLogin('u-sync')
+    await syncBillingOnLogin('u-sync')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0][0]).toBe('https://app.test/api/checkout?action=sync')
   })
 
   it('sem internet: mensagem clara de que nada mudou', async () => {

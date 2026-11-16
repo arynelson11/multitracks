@@ -70,10 +70,11 @@ export function createAsaasApi(apiKey: string, timeoutMs = 9000): AsaasApi {
   }
 }
 
-// null quando ASAAS_API_KEY não está configurada.
-export function asaasFromEnv(): AsaasApi | null {
+// null quando ASAAS_API_KEY não está configurada. O webhook usa timeout menor
+// (5 s) pra não estourar o tempo da função.
+export function asaasFromEnv(timeoutMs = 9000): AsaasApi | null {
   const key = process.env.ASAAS_API_KEY
-  return key ? createAsaasApi(key) : null
+  return key ? createAsaasApi(key, timeoutMs) : null
 }
 
 // ── Formatos do Asaas que o backend usa ──
@@ -137,6 +138,20 @@ export async function deleteSubscription(api: AsaasApi, subscriptionId: string):
   try {
     await api.del(`/subscriptions/${encodeURIComponent(subscriptionId)}`)
     return 'deleted'
+  } catch (e) {
+    if (e instanceof AsaasError && e.kind === 'not_found') return 'already_gone'
+    throw e
+  }
+}
+
+// Inativa a assinatura (PUT status INACTIVE): para de gerar cobranças e as já
+// existentes ficam como estão, então a cobrança vencida continua pagável
+// (docs: "Atualizar assinatura existente" e "FAQ - Assinaturas"). 404 = não
+// existe mais, conta como parada.
+export async function inactivateSubscription(api: AsaasApi, subscriptionId: string): Promise<'inactivated' | 'already_gone'> {
+  try {
+    await api.put(`/subscriptions/${encodeURIComponent(subscriptionId)}`, { status: 'INACTIVE' })
+    return 'inactivated'
   } catch (e) {
     if (e instanceof AsaasError && e.kind === 'not_found') return 'already_gone'
     throw e

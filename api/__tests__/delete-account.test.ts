@@ -59,7 +59,7 @@ describe('excluir conta', () => {
     expect(res.statusCode).toBe(200)
     expect(asaas!.post).not.toHaveBeenCalled()
     expect(asaas!.del).toHaveBeenCalledWith('/subscriptions/sub_a')
-    expect(db.rpcCalls.find((c) => c.name === 'billing_end_subscription')!.args).toMatchObject({ p_source: 'user', p_immediate: true })
+    expect(db.rpcCalls.find((c) => c.name === 'billing_end_subscription')!.args).toMatchObject({ p_source: 'account_deleted', p_immediate: true, p_already_stopped: true })
     expect(deleteUser).toHaveBeenCalledWith(USER_A)
     expect(asaas!.del.mock.invocationCallOrder[0]).toBeLessThan(deleteUser.mock.invocationCallOrder[0])
   })
@@ -81,6 +81,21 @@ describe('excluir conta', () => {
     expect(deleteUser).not.toHaveBeenCalled()
     expect(db.tables.profiles.find((p) => p.id === USER_A)).toBeTruthy()
     expect(db.writes.some((w) => w.table === 'profiles' && w.op === 'delete')).toBe(false)
+  })
+
+  it('I1: o Asaas não confirma a remoção: corta aqui, deixa pendente e NÃO apaga; na nova tentativa termina e apaga', async () => {
+    asaas!.get.mockImplementation(paymentsOf([payment({ id: 'p2', subscription: 'sub_a', dueDate: '2026-10-16', confirmedDate: '2026-10-16' }), payment({ id: 'p3', subscription: 'sub_a', dueDate: '2026-11-16', confirmedDate: '2026-11-16' })]))
+    asaas!.del.mockRejectedValue(asaasDown())
+    const first = await remove()
+    expect(first.statusCode).toBe(409)
+    expect((first.body as { error: string }).error).toContain('não foi excluída')
+    expect(deleteUser).not.toHaveBeenCalled()
+    expect(db.tables.billing_pending_actions[0]).toMatchObject({ action: 'delete_subscription', status: 'pending' })
+    asaas!.del.mockResolvedValue({ deleted: true })
+    const again = await remove()
+    expect(again.statusCode).toBe(200)
+    expect(db.tables.billing_pending_actions[0].status).toBe('done')
+    expect(deleteUser).toHaveBeenCalledWith(USER_A)
   })
 
   it('quem não tem assinatura apaga normalmente, sem falar com o Asaas', async () => {

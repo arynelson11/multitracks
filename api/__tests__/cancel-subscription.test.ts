@@ -22,12 +22,13 @@ vi.mock('../_lib/asaas.js', async (orig) => ({
   asaasFromEnv: () => asaas,
 }))
 
-async function cancel(body: Record<string, unknown> = {}) {
+async function action(name: string, body: Record<string, unknown> = {}) {
   const { default: handler } = await import('../checkout.js')
   const res = createRes()
-  await handler({ method: 'POST', headers: { authorization: 'Bearer x' }, query: { action: 'cancel' }, body }, res)
+  await handler({ method: 'POST', headers: { authorization: 'Bearer x' }, query: { action: name }, body }, res)
   return res
 }
+const cancel = (body: Record<string, unknown> = {}) => action('cancel', body)
 
 // Cobranças do Asaas por assinatura (GET /payments?subscription=...)
 function paymentsBySub(map: Record<string, Record<string, unknown>[]>) {
@@ -102,15 +103,50 @@ describe('cancelar assinatura: quem pode', () => {
   })
 })
 
+describe('arrependimento só automático na primeira assinatura da conta (I9)', () => {
+  it('segunda assinatura em até 7 dias: cancela a renovação e cria pedido de estorno pro admin, sem estorno automático', async () => {
+    authUser = USER_B
+    db.tables.payments.push({ id: 'chk_b_antigo', user_id: USER_B, plan_key: 'pro_mensal', asaas_checkout_id: 'chk_b_antigo' })
+    db.tables.billing_subscriptions.push(subRow({ id: 'chk_b_antigo', user_id: USER_B, status: 'canceled', cancel_source: 'user', started_at: '2026-09-01T00:00:00Z' }))
+    const res = await cancel()
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toMatchObject({ refunded: false, refundRequested: true })
+    expect(asaas!.post).not.toHaveBeenCalled()
+    expect(asaas!.del).toHaveBeenCalledWith('/subscriptions/sub_b')
+    expect(db.rpcCalls.find((c) => c.name === 'billing_end_subscription')!.args).toMatchObject({ p_source: 'user', p_immediate: false })
+    expect(db.tables.billing_pending_actions.find((a) => a.action === 'refund_payment')).toMatchObject({ reason: 'arrependimento_pedido_nao_e_a_primeira_assinatura', auto_retry: false })
+  })
+
+  it('prévia: diz antes de confirmar o que vai acontecer com esta pessoa', async () => {
+    const a = await action('cancel-preview')
+    expect(a.body).toMatchObject({ outcome: 'until_period_end', plan: 'essencial_mensal', accessUntil: '2026-12-17T03:00:00.000Z' })
+    authUser = USER_B
+    const b = await action('cancel-preview')
+    expect(b.body).toMatchObject({ outcome: 'refund_auto', amount: 49.9 })
+    expect(asaas!.del).not.toHaveBeenCalled()
+    expect(asaas!.post).not.toHaveBeenCalled()
+  })
+
+  it('login do usuário tenta de novo as pendências dele (sync)', async () => {
+    db.tables.billing_pending_actions.push({ id: 7, subscription_ref: 'chk_a', user_id: USER_A, action: 'delete_subscription', reason: 'user', asaas_subscription_id: 'sub_a', auto_retry: true, status: 'pending', attempts: 2, next_attempt_at: '2026-11-16T00:00:00.000Z' })
+    db.tables.billing_pending_actions.push({ id: 8, subscription_ref: 'chk_b', user_id: USER_B, action: 'delete_subscription', reason: 'user', asaas_subscription_id: 'sub_b', auto_retry: true, status: 'pending', attempts: 0, next_attempt_at: '2026-11-16T00:00:00.000Z' })
+    const res = await action('sync')
+    expect(res.statusCode).toBe(200)
+    expect(asaas!.del).toHaveBeenCalledWith('/subscriptions/sub_a')
+    expect(asaas!.del).not.toHaveBeenCalledWith('/subscriptions/sub_b')
+    expect(db.tables.billing_pending_actions.find((a) => a.id === 7)!.status).toBe('done')
+  })
+})
+
 describe('cancelar assinatura: o que acontece', () => {
   it('depois dos 7 dias: sem estorno, fica com o plano até o fim do período pago', async () => {
     const res = await cancel()
     expect(res.statusCode).toBe(200)
     expect(res.body).toMatchObject({ result: 'canceled', refunded: false, accessUntil: '2026-12-17T03:00:00.000Z', plan: 'essencial_mensal' })
     expect(asaas!.post).not.toHaveBeenCalled()
-    expect(db.rpcCalls.find((c) => c.name === 'billing_end_subscription')!.args).toEqual({ p_id: 'chk_a', p_source: 'user', p_paid_due_date: '2026-11-16', p_immediate: false })
+    expect(db.rpcCalls.find((c) => c.name === 'billing_end_subscription')!.args).toEqual({ p_id: 'chk_a', p_source: 'user', p_paid_due_date: '2026-11-16', p_immediate: false, p_stop: 'delete', p_already_stopped: true })
     expect(db.tables.profiles.find((p) => p.id === USER_A)).toMatchObject({ plan: 'essencial_mensal', plan_expires_at: '2026-12-17T03:00:00.000Z' })
-    expect(db.tables.billing_subscriptions.find((r) => r.id === 'chk_a')!.asaas_deleted_at).toBeTruthy()
+    expect(db.tables.billing_subscriptions.find((r) => r.id === 'chk_a')!.asaas_stopped_at).toBeTruthy()
   })
 
   it('até 7 dias da primeira compra: estorna e volta pro Livre na hora', async () => {
@@ -156,14 +192,25 @@ describe('cancelar assinatura: Asaas fora do ar (erro claro, nada pela metade)',
     expect(db.tables.billing_subscriptions.find((r) => r.id === 'chk_a')!.status).toBe('active')
   })
 
-  it('estorno recusado no arrependimento: nada cancelado, nada mudou', async () => {
+  it('I4: estorno recusado no arrependimento: cancela mesmo assim (sem renovação) e deixa estorno pendente pro admin', async () => {
     authUser = USER_B
     asaas!.post.mockRejectedValue(asaasRejected('saldo insuficiente'))
     const res = await cancel()
-    expect(res.statusCode).toBe(502)
-    expect((res.body as { error: string }).error).toContain('Nada foi cancelado')
-    expect(asaas!.del).not.toHaveBeenCalled()
-    expect(db.tables.profiles.find((p) => p.id === USER_B)!.plan).toBe('pro_mensal')
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toMatchObject({ result: 'canceled', refunded: false, refundFailed: true })
+    expect(asaas!.del).toHaveBeenCalledWith('/subscriptions/sub_b')
+    expect(db.tables.profiles.find((p) => p.id === USER_B)!.plan).toBe('free')
+    expect(db.tables.billing_pending_actions.find((a) => a.action === 'refund_payment')).toMatchObject({
+      subscription_ref: 'chk_b', reason: 'estorno_recusado_pelo_asaas', asaas_payment_id: 'pay_b1', auto_retry: false, status: 'pending',
+    })
+  })
+
+  it('Asaas recusa remover a assinatura (4xx): cancela aqui e a remoção fica pendente (I1)', async () => {
+    asaas!.del.mockRejectedValue(asaasRejected('erro'))
+    const res = await cancel()
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toMatchObject({ result: 'canceled', pendingStop: true })
+    expect(db.tables.billing_pending_actions[0]).toMatchObject({ subscription_ref: 'chk_a', action: 'delete_subscription', status: 'pending' })
   })
 
   it('banco falha depois de cancelar no Asaas: avisa que nada mais será cobrado; tentar de novo conclui', async () => {

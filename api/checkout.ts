@@ -5,11 +5,13 @@ import { applyCors } from './_lib/cors.js';
 import { verifyUser } from './_lib/auth.js';
 import { PLAN_PRICING, isPlanKey } from './_lib/pricing.js';
 import { asaasBaseUrl, asaasFromEnv } from './_lib/asaas.js';
-import { BillingError, brtToday, cancelSubscriptionForUser } from './_lib/billing.js';
+import { BillingError, brtToday, cancelSubscriptionForUser, previewCancellation, runPendingActions } from './_lib/billing.js';
 
 // Ações de cobrança do usuário logado:
 //   POST /api/checkout                 cria o checkout hospedado do Asaas (padrão)
 //   POST /api/checkout?action=cancel   cancela a assinatura de quem está logado
+//   POST /api/checkout?action=cancel-preview  diz o que o cancelamento faria (sem mudar nada)
+//   POST /api/checkout?action=sync     no login: tenta de novo as pendências do usuário com o Asaas
 // O cancelamento mora aqui porque a Vercel do plano atual aceita no máximo 12
 // funções em api/ e já são 12. Preços: api/_lib/pricing.ts (fonte única).
 
@@ -39,6 +41,8 @@ export default async function handler(req: any, res: any) {
 
     const action = typeof req.query?.action === 'string' ? req.query.action : '';
     if (action === 'cancel') return cancelForUser(userId, res);
+    if (action === 'cancel-preview') return previewForUser(userId, res);
+    if (action === 'sync') return syncForUser(userId, res);
     if (action) return res.status(400).json({ error: 'Invalid action' });
 
     const body = parseBody(req);
@@ -152,5 +156,36 @@ async function cancelForUser(userId: string, res: any) { // eslint-disable-line 
     }
     console.error('[checkout:cancel] unexpected:', e instanceof Error ? e.message : 'erro');
     return res.status(500).json({ error: 'Não deu para cancelar agora. Nada foi alterado. Tente de novo em alguns minutos.' });
+  }
+}
+
+function serviceDb() {
+  const supaUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  return supaUrl && serviceKey ? createClient(supaUrl, serviceKey) : null;
+}
+
+// O que o cancelamento faria pra QUEM ESTÁ LOGADO (tela de confirmação).
+async function previewForUser(userId: string, res: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const db = serviceDb();
+  if (!db) return res.status(500).json({ error: 'Indisponível agora.' });
+  try {
+    return res.status(200).json(await previewCancellation({ db, asaas: asaasFromEnv(5000) }, userId));
+  } catch (e) {
+    console.warn('[checkout:cancel-preview]', e instanceof Error ? e.message : 'erro');
+    return res.status(502).json({ error: 'Não deu para consultar agora.' });
+  }
+}
+
+// No login: tenta de novo as pendências deste usuário com o Asaas (best-effort).
+async function syncForUser(userId: string, res: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const db = serviceDb();
+  if (!db) return res.status(200).json({ ok: false });
+  try {
+    const out = await runPendingActions({ db, asaas: asaasFromEnv(5000) }, { userId, limit: 5 });
+    return res.status(200).json({ ok: true, ...out });
+  } catch (e) {
+    console.warn('[checkout:sync]', e instanceof Error ? e.message : 'erro');
+    return res.status(200).json({ ok: false });
   }
 }
