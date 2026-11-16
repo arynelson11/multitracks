@@ -87,6 +87,18 @@ describe('parseKey', () => {
     ['Am', 9, true], ['F#m', 6, true], ['Ebmin', 3, true], ['C minor', 0, true], ['Dó menor', 0, true], ['Lá m', 9, true],
     ['Rém', 2, true], ['A', 9, false], ['Cmaj', 0, false], ['Sol maior', 7, false], ['Sib', 10, false], ['bb', 10, false],
   ] as const)('%s: semitom %s, menor %s', (k, semitone, minor) => expect(parseKey(k)).toEqual({ semitone, minor }))
+  // Ruling T13-AM: na cifra brasileira M maiúsculo é maior (como em A7M); m minúsculo, min e menor são menores.
+  it.each([
+    ['AM', false], ['C#M', false], ['BbM', false], ['Lá M', false], ['Dó M', false], ['SOL M', false],
+    ['Am', true], ['am', true], ['Amin', true], ['AMIN', true], ['A min', true], ['Amenor', true], ['Lá m', true], ['LÁ m', true], ['Ré menor', true],
+    ['A', false], ['Amaj', false], ['AMAJ', false], ['A maior', false],
+  ] as const)('%s é menor: %s', (k, minor) => expect(parseKey(k)?.minor).toBe(minor))
+  it('M maiúsculo transpõe como maior; m minúsculo, como menor', () => {
+    expect(transposeKeyName('AM', 2)).toBe('B')
+    expect(transposeKeyName('Lá M', 2)).toBe('B')
+    expect(transposeKeyName('Am', 2)).toBe('Bm')
+    expect(transposeKeyName('am', 0)).toBe('Am')
+  })
   it('o que keyToSemitone não reconhece, parseKey também não', () => {
     for (const k of ['Xyz', 'H', '', '#', 'Cm7b5x', 'Sole', 'Lam7', 'Ut']) expect(parseKey(k)).toBeNull()
     expect(parseKey(null)).toBeNull()

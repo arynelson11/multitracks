@@ -18,15 +18,17 @@ export const normalizeChannelName = (name: string): string =>
 const NOTE_SEMITONE: Record<string, number> = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
 const SOLFEGE_SEMITONE: Record<string, number> = { do: 0, re: 2, mi: 4, fa: 5, sol: 7, la: 9, si: 11 };
 const KEY_QUALITY = /^(m|min|minor|menor|maj|major|maior)?$/i;
-// Menor: as qualidades de KEY_QUALITY que dizem menor, sem diferenciar caixa (a mesma regra
-// que aceita o tom): "Am", "Ebmin", "C minor", "Lá m", "Dó menor". O resto é maior.
+// Menor: "m" minúsculo, "min", "minor" ou "menor" ("Am", "Ebmin", "C minor", "Lá m", "Dó menor").
+// "M" maiúsculo sozinho é MAIOR, como na cifra brasileira (A7M): "AM", "Lá M" (Ruling T13-AM).
+// O resto é maior. Só decide o nome exibido: aceitar o tom e o semitom não dependem disso.
 const MINOR_QUALITY = /^(m|min|minor|menor)$/i;
+const isMinor = (quality: string): boolean => quality !== 'M' && MINOR_QUALITY.test(quality);
 
 const withAccidental = (semitone: number, accidental: string): number =>
     (semitone + (accidental === '#' ? 1 : accidental === 'b' ? -1 : 0) + 12) % 12;
 
 const parsed = (semitone: number, accidental: string, quality: string) =>
-    ({ semitone: withAccidental(semitone, accidental), minor: MINOR_QUALITY.test(quality) });
+    ({ semitone: withAccidental(semitone, accidental), minor: isMinor(quality) });
 
 // Tom escrito -> tônica (semitom) e se é menor. Mesma regra de keyToSemitone (que só lê o
 // semitom daqui): o que um não reconhece o outro também não.
@@ -35,9 +37,15 @@ export const parseKey = (key: string | null | undefined): { semitone: number; mi
     const k = key.trim().replace(/♯/g, '#').replace(/♭/g, 'b');
     const m = /^([A-Ga-g])([#b]?)(.*)$/.exec(k);
     if (m && KEY_QUALITY.test(m[3].trim())) return parsed(NOTE_SEMITONE[m[1].toLowerCase()], m[2], m[3].trim());
-    // Solfejo, sem acento e em minúsculas: "Lá m" -> "la m", "Rém" -> "rem".
-    const s = /^(do|re|mi|fa|sol|la|si)\s*([#b]?)(.*)$/.exec(normalizeChannelName(k));
-    if (s && KEY_QUALITY.test(s[3].trim())) return parsed(SOLFEGE_SEMITONE[s[1]], s[2], s[3].trim());
+    // Solfejo, sem acento e em minúsculas: "Lá m" -> "la m", "Rém" -> "rem". Se é menor sai da
+    // qualidade com a caixa de quem digitou (o fim do texto sem acento, do mesmo tamanho).
+    const plain = normalizeChannelName(k);
+    const s = /^(do|re|mi|fa|sol|la|si)\s*([#b]?)(.*)$/.exec(plain);
+    if (s && KEY_QUALITY.test(s[3].trim())) {
+        const cased = k.normalize('NFD').replace(/[̀-ͯ]/g, '');
+        const quality = cased.length === plain.length ? cased.slice(plain.length - s[3].length) : s[3];
+        return parsed(SOLFEGE_SEMITONE[s[1]], s[2], quality.trim());
+    }
     return null;
 };
 
