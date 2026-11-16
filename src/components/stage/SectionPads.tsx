@@ -43,12 +43,13 @@ const WIDEN_MAX = 240
 // de rolagem: quem pagina são os indicadores das pontas (e o arrasto no iPad).
 const TRACK = 'flex items-stretch gap-ps-gap'
 const ROW = 'flex min-w-0 flex-1 gap-ps-gap overflow-x-auto snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
-// v5 .sp: 64 a 82 px de altura (8vh), faixa da cor à esquerda; 4 px entre a linha da tecla e o nome
+// v5 .sp: 64 a 82 px de altura (8vh), faixa da cor à esquerda; 8 px à direita (onde o v5 põe a etiqueta)
+// e 10 px depois da faixa, pra caber o máximo de seções sem paginar; 4 px entre a linha da tecla e o nome
 // (a caixa das letras da Inter sobe 2 px acima da linha). Cresce na altura se o nome quebrar
 // em 2 linhas (a fileira inteira acompanha, pra todos ficarem iguais). Foco por dentro: a fileira rola e
 // cortaria o contorno de fora.
 const PAD =
-  'relative isolate flex flex-none snap-start data-[out=true]:invisible min-w-[104px] min-h-[clamp(64px,8vh,82px)] flex-col justify-center overflow-clip rounded-ps-lg py-1 pr-2.5 pl-[18px] text-left font-ps-sans text-ps-bone select-none transition-[transform,background-color] duration-150 active:scale-[0.98] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ps-or'
+  'relative isolate flex flex-none snap-start data-[out=true]:invisible min-w-[104px] min-h-[clamp(64px,8vh,82px)] flex-col justify-center overflow-clip rounded-ps-lg py-1 pr-2 pl-4 text-left font-ps-sans text-ps-bone select-none transition-[transform,background-color] duration-150 active:scale-[0.98] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ps-or'
 const IDLE_RING = 'inset-ring inset-ring-ps-line hover:inset-ring-ps-line-2'
 const CURRENT_BG = 'bg-[color-mix(in_srgb,var(--ps-c)_20%,var(--color-ps-s1))]'
 const CURRENT_RING = 'inset-ring-2 inset-ring-(--ps-c)'
