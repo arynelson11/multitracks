@@ -7,8 +7,10 @@
 // arredondado. Um app antigo que mude só o inteiro quebra esse par; aí o exato
 // está velho e `preciseBpm` volta pro inteiro.
 //
-// O servidor (api/insert-song.ts) repete `bpmColumns` e `sanitizeTimeSignature`,
-// porque o api/ compila separado do app. Mudou aqui, muda lá.
+// O servidor repete `bpmColumns`, `sanitizeTimeSignature`, `isMissingMeterColumn`
+// e `withoutMeterColumns` em api/_lib/meter.ts, porque o api/ compila separado
+// do app e não importa de src/. O teste de paridade em cloudBpm.test.ts compara
+// as duas cópias: mudou aqui, muda lá.
 import type { TimeSignatureType } from './AudioAnalyzer'
 
 const TIME_SIGNATURES: readonly TimeSignatureType[] = ['3/4', '4/4', '5/4', '6/8', '7/8', '12/8']

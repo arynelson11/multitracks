@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { verifyUser } from './_lib/auth.js';
 import { applyCors } from './_lib/cors.js';
 import { getUserPlan, isPaidPlan } from './_lib/plan.js';
+import { bpmColumns, isMissingMeterColumn, sanitizeTimeSignature, withoutMeterColumns } from './_lib/meter.js';
 
 const supabaseUrl     = process.env.VITE_SUPABASE_URL;
 const serviceRoleKey  = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -23,34 +24,6 @@ function clampUrl(v: unknown): string | null {
     if (!s) return null;
     if (!/^https?:\/\//i.test(s)) return null;
     return s;
-}
-
-// BPM com decimais e compasso: mesma regra de src/lib/cloudBpm.ts (bpmColumns,
-// sanitizeTimeSignature, isMissingMeterColumn). O api/ compila separado do app,
-// então a regra fica repetida aqui; mudou lá, muda aqui. O banco tem a mesma
-// regra nas checks de db/supabase-bpm-exact-migration.sql.
-const TIME_SIGNATURES = new Set(['3/4', '4/4', '5/4', '6/8', '7/8', '12/8']);
-const BPM_MAX = 400;
-const METER_COLUMNS = ['bpm_exact', 'time_signature'] as const;
-
-function bpmColumns(value: number): { bpm: number; bpm_exact: number } | null {
-    if (!Number.isFinite(value)) return null;
-    const exact = Math.round(value * 100) / 100;
-    if (exact <= 0 || exact >= BPM_MAX) return null;
-    return { bpm: Math.round(exact), bpm_exact: exact };
-}
-
-function sanitizeTimeSignature(raw: unknown): string | null {
-    if (typeof raw !== 'string') return null;
-    const ts = raw.trim();
-    return TIME_SIGNATURES.has(ts) ? ts : null;
-}
-
-// Banco ainda sem a migration: PostgREST responde PGRST204 (Postgres, 42703).
-function isMissingMeterColumn(error: { code?: string; message?: string } | null): boolean {
-    if (!error || (error.code !== 'PGRST204' && error.code !== '42703')) return false;
-    const text = error.message ?? '';
-    return METER_COLUMNS.some(col => text.includes(col));
 }
 
 export default async function handler(req: any, res: any) {
@@ -87,7 +60,8 @@ export default async function handler(req: any, res: any) {
     // user_id é forçado pelo JWT — nunca confiamos no body.
     // is_global só pode ser ativado por admin; user comum sempre insere música privada.
     // bpm é inteiro (apps antigos leem ele) e vem do exato arredondado, pra os
-    // dois baterem. Fora de (0, 400) não há exato e o inteiro segue a regra antiga.
+    // dois baterem (regra em _lib/meter.ts, a mesma do src/lib/cloudBpm.ts).
+    // Fora de (0, 400) não há exato e o inteiro segue a regra antiga.
     const rawBpm = Number(body.bpm);
     const bpmCols = bpmColumns(rawBpm);
     const timeSignature = sanitizeTimeSignature(body.time_signature);
@@ -114,9 +88,7 @@ export default async function handler(req: any, res: any) {
     if (result.error && isMissingMeterColumn(result.error)) {
         // Migration ainda não rodou: salva a música com o bpm inteiro e avisa.
         console.warn('[insert-song] bpm_exact/time_signature ainda não existem (rodar db/supabase-bpm-exact-migration.sql); gravando sem elas.');
-        const rest = { ...insertPayload };
-        for (const col of METER_COLUMNS) delete rest[col];
-        result = await insert(rest);
+        result = await insert(withoutMeterColumns(insertPayload));
     }
     const { data, error } = result;
 

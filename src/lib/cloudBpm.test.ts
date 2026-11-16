@@ -6,6 +6,8 @@ import {
   sanitizeTimeSignature,
   withoutMeterColumns,
 } from './cloudBpm'
+// Cópia do servidor (o api/ não importa de src/): tem que dar o mesmo resultado.
+import * as serverMeter from '../../api/_lib/meter'
 
 // Cliente do Supabase falso: guarda cada update/insert e responde com o que o
 // teste pôr na fila (o primeiro da fila vale pra próxima chamada).
@@ -149,6 +151,46 @@ describe('banco ainda sem as colunas novas', () => {
     expect(withoutMeterColumns(row)).toEqual({ name: 'Grande és Tu', bpm: 73 })
     expect(row.bpm_exact).toBe(72.5)
     expect(row.time_signature).toBe('6/8')
+  })
+})
+
+describe('paridade com a cópia do servidor (api/_lib/meter.ts)', () => {
+  const bpms = [
+    72.5, 72.499, 72.456, 72.455, 120, 1, 0.5, 0.01, 0.005, 0.004, 0.001, 0, -0, -1, -72.5,
+    399.99, 399.994, 399.995, 399.999, 400, 400.01, 1000, Number.NaN,
+    Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 1e-9, 1e9,
+  ]
+  it.each(bpms)('bpmColumns(%s) igual nos dois lados', (v) => {
+    expect(serverMeter.bpmColumns(v)).toEqual(bpmColumns(v))
+  })
+
+  const compassos: unknown[] = [
+    '3/4', '4/4', '5/4', '6/8', '7/8', '12/8', ' 6/8 ', '6/8\n', '9/8', '2/4', '4/4 extra',
+    '', ' ', 'undefined', null, undefined, 4, 0.75, true, ['4/4'], { ts: '4/4' },
+  ]
+  it.each(compassos)('sanitizeTimeSignature(%j) igual nos dois lados', (raw) => {
+    expect(serverMeter.sanitizeTimeSignature(raw)).toBe(sanitizeTimeSignature(raw))
+  })
+
+  const erros: unknown[] = [
+    COLUNA_FALTANDO,
+    { code: 'PGRST204', message: "Could not find the 'time_signature' column of 'songs' in the schema cache" },
+    { code: '42703', message: 'column "bpm_exact" of relation "songs" does not exist' },
+    { code: 'PGRST204', message: "Could not find the 'lyrics' column of 'songs' in the schema cache" },
+    { code: '23514', message: 'violates check constraint on bpm_exact' },
+    { code: 'PGRST204' },
+    { code: 'PGRST204', message: 42 },
+    { message: 'bpm_exact' },
+    null, undefined, 'bpm_exact', 0,
+  ]
+  it.each(erros)('isMissingMeterColumn(%j) igual nos dois lados', (e) => {
+    expect(serverMeter.isMissingMeterColumn(e)).toBe(isMissingMeterColumn(e))
+  })
+
+  it('as listas fechadas são as mesmas', () => {
+    expect([...serverMeter.SONG_METER_COLUMNS]).toEqual(['bpm_exact', 'time_signature'])
+    const row = { name: 'X', bpm: 73, bpm_exact: 72.5, time_signature: '6/8' }
+    expect(serverMeter.withoutMeterColumns(row)).toEqual(withoutMeterColumns(row))
   })
 })
 
