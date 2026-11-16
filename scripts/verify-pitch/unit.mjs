@@ -45,6 +45,12 @@ if (formant) {
     check(5, `"${n}" com formantes`, formant(n), true);
   for (const n of ['Bateria', 'Baixo', 'Teclado', 'Guitarra', 'Violão', 'Pad', 'Synth', 'Strings', 'Piano', 'Click', 'Metrônomo', 'Voz Guia'])
     check(5, `"${n}" sem formantes`, formant(n), false);
+  // O motor passa o papel da regra central (papel manual vale): voz marcada Normal
+  // na mão ganha formantes mesmo com "guia" no nome; voz marcada Click/Guia não.
+  check(5, '"Voz Guia" marcada Normal com formantes', formant('Voz Guia', false), true);
+  check(5, '"VozGuia" marcada Normal com formantes', formant('VozGuia', false), true);
+  check(5, '"Vocal" marcado Guia sem formantes', formant('Vocal', true), false);
+  check(5, '"Bateria" marcada Normal sem formantes', formant('Bateria', false), false);
 }
 
 console.log('\n== item 6: tom em qualquer formato, nunca NaN ==');

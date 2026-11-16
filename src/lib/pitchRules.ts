@@ -23,9 +23,11 @@ export const isVoiceChannelName = (name: string): boolean => {
 
 // Liga a compensação de formantes do worklet de tom nesta faixa? Só em voz:
 // com rastreio automático (formantBaseHz 0) ela piora instrumento (medido:
-// +4 a 7 dB de ruído e até 3 dB de inclinação nos harmônicos).
-export const wantsFormantCompensation = (name: string): boolean =>
-    isVoiceChannelName(name) && !isClickOrGuideName(name);
+// +4 a 7 dB de ruído e até 3 dB de inclinação nos harmônicos). Click e Guia
+// nunca: o motor passa em `exempt` o papel da regra central de canais
+// (isPitchExempt, onde o papel manual vale); sem ele, vale o teste por nome.
+export const wantsFormantCompensation = (name: string, exempt: boolean = isClickOrGuideName(name)): boolean =>
+    isVoiceChannelName(name) && !exempt;
 
 // Tônica de um tom em qualquer grafia comum -> semitom (0 = C ... 11 = B).
 // Aceita sustenido e bemol (#, b, ♯, ♭), minúsculas e menor/maior depois da

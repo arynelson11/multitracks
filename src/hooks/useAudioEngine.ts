@@ -269,11 +269,12 @@ export function useAudioEngine(userId?: string) {
     const applyPitchToChannel = (ch: Channel, semitones: number) => {
         const slot = pitchSlotsRef.current.get(ch.id);
         if (!slot || !slot.active) return;
-        // Click e Guia (regra central, o papel manual vale) nunca transpõem: ficam em 0.
+        // Click e Guia (regra central, o papel manual vale) nunca transpõem: ficam em 0
+        // e sem formantes. Formantes só em voz, pela regra de pitchRules.ts.
         const exempt = isPitchExempt(ch);
         void slot.node.schedule({
             semitones: exempt ? 0 : semitones,
-            formantCompensation: !exempt && wantsFormantCompensation(ch.name),
+            formantCompensation: wantsFormantCompensation(ch.name, exempt),
             formantBaseHz: 0,
         });
     };

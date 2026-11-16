@@ -47,6 +47,10 @@ describe('motor usa a regra central de canais', () => {
     }
   })
 
+  it('formantes seguem o papel da regra central (papel manual vale)', () => {
+    expect(bodyOf('applyPitchToChannel')).toMatch(/\bwantsFormantCompensation\(\s*ch\.name\s*,\s*exempt\s*\)/)
+  })
+
   it('importa os helpers da regra central', () => {
     expect(src).toMatch(/from\s+['"]\.\.\/lib\/channelRoles['"]/)
     for (const fn of ['isPitchExempt', 'autoPanFor', 'pickMainChannel', 'channelGain']) {
