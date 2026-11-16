@@ -47,6 +47,11 @@ vi.mock('idb-keyval', () => ({
   keys: async () => [...fakeIdb.store.keys()],
 }))
 
+// Usuário já autenticado (admin, pra não depender do lookup do plano).
+vi.mock('../../api/_lib/auth.js', () => ({
+  verifyUser: async () => ({ ok: true, userId: 'u-admin', email: 'admin@exemplo.com', isAdmin: true }),
+}))
+
 const COLUNA_FALTANDO = {
   code: 'PGRST204',
   message: "Could not find the 'bpm_exact' column of 'songs' in the schema cache",
@@ -333,6 +338,123 @@ describe('gravação na nuvem tolerante (supabase.ts)', () => {
       { name: 'X', artist: '', key: 'G', bpm: 73, bpm_exact: 72.5, time_signature: '6/8', cover_url: null },
       { name: 'X', artist: '', key: 'G', bpm: 73, cover_url: null },
     ])
+  })
+})
+
+describe('handler do /api/insert-song', () => {
+  type FakeRes = {
+    statusCode: number
+    body: unknown
+    setHeader: () => void
+    status: (c: number) => FakeRes
+    json: (b: unknown) => FakeRes
+    end: () => FakeRes
+  }
+
+  afterEach(() => {
+    fakeDb.state.calls.length = 0
+    fakeDb.state.replies.length = 0
+    vi.unstubAllEnvs()
+    vi.resetModules()
+  })
+
+  async function post(body: Record<string, unknown>): Promise<FakeRes> {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://exemplo.supabase.co')
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'chave-de-servico-de-teste')
+    vi.resetModules()
+    const { default: handler } = await import('../../api/insert-song')
+    const res: FakeRes = {
+      statusCode: 0,
+      body: undefined,
+      setHeader: () => {},
+      status(c) { this.statusCode = c; return this },
+      json(b) { this.body = b; return this },
+      end() { return this },
+    }
+    await handler({ method: 'POST', headers: { authorization: 'Bearer token-de-teste' }, body }, res)
+    return res
+  }
+
+  const inserted = () => fakeDb.state.calls.filter(c => c.op === 'insert').map(c => c.payload)
+
+  it('arredonda o inteiro a partir do exato e grava os dois', async () => {
+    const res = await post({ name: 'X', bpm: 72.5, time_signature: '6/8', is_global: true, user_id: 'outro' })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toEqual({ id: 'nova' })
+    expect(inserted()).toEqual([{
+      name: 'X', artist: '', key: '', bpm: 73, bpm_exact: 72.5, time_signature: '6/8',
+      cover_url: null, user_id: 'u-admin', is_global: true,
+    }])
+  })
+
+  it.each([
+    [72.499, 73, 72.5],
+    [72.456, 72, 72.46],
+    ['120', 120, 120],
+    [0.5, 1, 0.5],
+    [399.99, 400, 399.99],
+  ])('bpm %j vira inteiro %d e exato %d', async (bpm, whole, exact) => {
+    await post({ name: 'X', bpm })
+    expect(inserted()[0]).toMatchObject({ bpm: whole, bpm_exact: exact })
+  })
+
+  it.each([
+    [450, 450],
+    [1500, 999],
+    [399.995, 400],
+    [0, 0],
+    [-5, 0],
+    [undefined, 0],
+    ['abc', 0],
+  ])('bpm %j fora de (0, 400) grava só o inteiro %d, sem exato', async (bpm, whole) => {
+    await post({ name: 'X', bpm })
+    const row = inserted()[0]
+    expect(row.bpm).toBe(whole)
+    expect(row).not.toHaveProperty('bpm_exact')
+  })
+
+  it.each(['9/8', '2/4', '', 7, null, ['4/4']])('compasso inválido %j fica de fora', async (ts) => {
+    await post({ name: 'X', bpm: 72, time_signature: ts })
+    expect(inserted()[0]).not.toHaveProperty('time_signature')
+  })
+
+  it('compasso com espaço em volta é aceito limpo', async () => {
+    await post({ name: 'X', time_signature: ' 12/8 ' })
+    expect(inserted()[0]).toMatchObject({ time_signature: '12/8' })
+  })
+
+  it('banco sem as colunas novas: regrava uma vez sem elas e salva a música', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    fakeDb.state.replies.push({ error: COLUNA_FALTANDO }, { data: { id: 'id-novo' }, error: null })
+    const res = await post({ name: 'X', bpm: 72.5, time_signature: '6/8' })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toEqual({ id: 'id-novo' })
+    const rows = inserted()
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({ bpm: 73, bpm_exact: 72.5, time_signature: '6/8' })
+    expect(rows[1]).toMatchObject({ name: 'X', bpm: 73, user_id: 'u-admin' })
+    expect(rows[1]).not.toHaveProperty('bpm_exact')
+    expect(rows[1]).not.toHaveProperty('time_signature')
+    expect(warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('se a regravação também falha, não tenta uma terceira vez', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    fakeDb.state.replies.push({ error: COLUNA_FALTANDO }, { error: COLUNA_FALTANDO })
+    const res = await post({ name: 'X', bpm: 72.5 })
+    expect(res.statusCode).toBe(500)
+    expect(res.body).toEqual({ error: 'Failed to insert song' })
+    expect(inserted()).toHaveLength(2)
+    expect(error).toHaveBeenCalledTimes(1)
+  })
+
+  it('outro erro do banco não regrava', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    fakeDb.state.replies.push({ error: { code: '23514', message: 'violates check constraint on bpm_exact' } })
+    const res = await post({ name: 'X', bpm: 72.5 })
+    expect(res.statusCode).toBe(500)
+    expect(inserted()).toHaveLength(1)
   })
 })
 
