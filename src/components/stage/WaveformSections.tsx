@@ -354,7 +354,7 @@ export function WaveformSections({
     try {
       e.currentTarget.setPointerCapture?.(e.pointerId)
     } catch {
-      // Sem captura o arrasto vale enquanto o dedo estiver em cima da régua.
+      // Sem captura o arrasto vale enquanto o dedo estiver em cima da régua (sair dela solta).
     }
     seekFrom(e.currentTarget, e.clientX)
   }
@@ -367,7 +367,7 @@ export function WaveformSections({
     <div
       ref={rootRef}
       data-waveform=""
-      className="relative h-full w-full min-w-0 select-none overflow-hidden rounded-ps-2xl bg-ps-ink-0 font-ps-sans inset-ring inset-ring-ps-line"
+      className="relative isolate h-full w-full min-w-0 select-none overflow-hidden rounded-ps-2xl bg-ps-ink-0 font-ps-sans inset-ring inset-ring-ps-line"
     >
       <canvas ref={baseRef} data-wave="base" aria-hidden="true" className="pointer-events-none absolute inset-0 size-full" />
       <canvas ref={playedRef} data-wave="tocada" aria-hidden="true" className="pointer-events-none absolute inset-0 size-full [clip-path:inset(0_100%_0_0)]" />
@@ -434,6 +434,7 @@ export function WaveformSections({
         onPointerUp={stopDrag}
         onPointerCancel={stopDrag}
         onLostPointerCapture={stopDrag}
+        onPointerLeave={stopDrag}
       />
       <div
         ref={playheadRef}

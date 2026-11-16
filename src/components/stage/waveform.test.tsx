@@ -242,11 +242,18 @@ describe('WaveformSections', () => {
     expect(r.className).toContain('touch-none') // arrastar com o dedo não rola a tela
   })
 
-  it('faixa de toque da régua tem 44 px e fica acima dos blocos', () => {
-    const { container } = renderWave()
+  it('faixa de toque da régua tem 44 px; sair dela sem captura solta o arrasto', () => {
+    const { container, p } = renderWave()
     const r = regua(container)
     expect(r.className).toContain('h-ps-touch')
     expect(r.className).toContain('bottom-0')
+    vi.spyOn(r, 'getBoundingClientRect').mockReturnValue(rect(0, 1000))
+    pointer(r, 'pointerdown', 100)
+    fireEvent.pointerLeave(r)
+    pointer(r, 'pointermove', 900)
+    expect(p.onSeek).toHaveBeenCalledTimes(1)
+    // A onda isola as camadas dela (selos, régua, playhead) do resto da tela.
+    expect(container.querySelector('[data-waveform]')!.className).toContain('isolate')
   })
 
   it('seta só quando o alvo é outra seção', () => {
