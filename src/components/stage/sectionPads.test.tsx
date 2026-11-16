@@ -349,6 +349,14 @@ describe('botoeira de seções', () => {
     }
   })
 
+  it('nome que quase cabe numa linha (até 16 px a mais) ganha a largura dela; mais que isso quebra em 2 e o botão fica estreito', () => {
+    // Régua falsa: na largura livre o botão pede 104; com o nome numa linha só, "Refrão 2" pede 110 e "Pré-Refrão" 140.
+    const oneLine: Record<string, number> = { 'Refrão 2': 110, 'Pré-Refrão': 140 }
+    ruler(1000, (b) => (b.style.width === 'max-content' ? oneLine[b.querySelector('[data-pad-name]')?.textContent ?? ''] ?? 104 : 104))
+    renderPads({ sections: [{ ...SECTIONS[0], label: 'Refrão 2' }, { ...SECTIONS[1], label: 'Pré-Refrão' }, SECTIONS[2]] })
+    expect(pads().map((b) => b.style.width)).toEqual(['110px', '104px', '104px'])
+  })
+
   it('cada botão reserva o estado mais largo DELE (metas dele, REPETE 9x, LOOP e a tecla); "no fim da seção" só em música sem grade', () => {
     const longa = [SECTIONS[0], { ...SECTIONS[1], end: 248, bars: 120 }, { ...SECTIONS[2], start: 248, end: 264 }]
     renderPads({ sections: longa })

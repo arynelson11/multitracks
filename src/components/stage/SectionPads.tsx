@@ -36,6 +36,8 @@ const NAME_MAX_LINES = 2
 const PAD_MIN_PX = 104
 const WIDEN_STEP = 8
 const WIDEN_MAX = 240
+/** Nome que cabe numa linha com até 16 px a mais ganha essa largura (a fileira não cresce na altura por 1 px de "Refrão 2"). */
+const ONE_LINE_SLACK = 16
 
 // v5 .botoeira, com as Rulings T10-rolagem e T10-largura-2: cada botão na largura dele (nunca
 // esticado); a janela termina no último botão inteiro e o que ela cortaria some (data-out), com a
@@ -96,19 +98,24 @@ const tooTall = (name: HTMLElement, px: number) => name.offsetHeight > px * NAME
 /**
  * Mede a fileira UMA vez por layout (seções, teto do plano, grade, largura da tela, fontes); trocar
  * de estado nunca passa por aqui. Cada botão fica com o que ELE pede na largura livre (a reserva do
- * estado mais largo dele entra no min-content; nome em 2 linhas: 16 px, senão 14 px, senão a reserva
- * alarga), em px inteiros e no mínimo 104, sem esticar. Cabe tudo: a fileira termina no último botão
+ * estado mais largo dele entra no min-content; nome numa linha se custar até 16 px a mais, senão em
+ * 2 linhas: 16 px, senão 14 px, senão a reserva alarga), em px inteiros e no mínimo 104, sem esticar. Cabe tudo: a fileira termina no último botão
  * e a sobra fica vazia. Não cabe: janela entre os indicadores e, no fim, uma folga pra a última página
  * começar num botão (a rolagem não passa dela).
  */
 function layoutRow(track: HTMLElement, row: HTMLElement): RowLayout {
   const pads = [...row.querySelectorAll<HTMLElement>('[data-section-pad]')]
   const spacer = row.querySelector<HTMLElement>('[data-pads-spacer]')
+  const measure = (pad: HTMLElement, width: 'min-content' | 'max-content') => {
+    pad.style.width = width
+    return Math.ceil(parseFloat(getComputedStyle(pad).width)) || pad.offsetWidth
+  }
   const widths = pads.map((pad) => {
     const name = pad.querySelector<HTMLElement>('[data-pad-name]')
     if (name) delete name.dataset.fit
-    pad.style.width = 'min-content'
-    let w = Math.max(PAD_MIN_PX, Math.ceil(parseFloat(getComputedStyle(pad).width)) || pad.offsetWidth)
+    const oneLine = measure(pad, 'max-content')
+    let w = Math.max(PAD_MIN_PX, measure(pad, 'min-content'))
+    if (oneLine - w <= ONE_LINE_SLACK) w = Math.max(w, oneLine)
     pad.style.width = `${w}px`
     if (name && tooTall(name, NAME_PX)) {
       name.dataset.fit = 'small'
