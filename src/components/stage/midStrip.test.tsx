@@ -425,6 +425,12 @@ describe('PAD e LETRA', () => {
     expect(led.className).toContain('animate-ps-blink')
     expect(btn(/^PAD/).textContent).toContain('tocando C')
   })
+  it('abaixo de 1280 PAD fica em cima e LETRA embaixo, cada um com pelo menos 44 px', () => {
+    render(<><BigButton kind="pad" on={false} live={false} sub="parado" onPress={() => {}} /><BigButton kind="letra" on={false} live={false} sub="teleprompter" onPress={() => {}} /></>)
+    expect(q('[data-cell="pad"]').className).toContain('max-xl:pb-1')
+    expect(q('[data-cell="letra"]').className).toContain('max-xl:pt-1')
+    for (const b of [btn(/^PAD/), btn(/^LETRA/)]) expect(b.className).toContain('min-h-ps-touch')
+  })
   it('LETRA abre o teleprompter', () => {
     const onPress = vi.fn()
     render(<BigButton kind="letra" on={false} live={false} sub="teleprompter" onPress={onPress} />)
@@ -465,14 +471,22 @@ const renderStrip = (o: StripOpts = {}) => render(
 )
 
 describe('faixa do meio', () => {
-  it('seis células na ordem do mockup, nas colunas do v5', () => {
+  it('seis células na ordem do mockup: colunas do v5 de 1280 pra cima, PAD e LETRA empilhados abaixo (Ruling T13-1024)', () => {
     const { container } = renderStrip()
     const strip = container.querySelector('section')!
     expect([...strip.children].map((c) => c.getAttribute('data-cell'))).toEqual(['tempo', 'tom', 'secao', 'musica', 'pad', 'letra'])
     expect(strip.className).toContain(
-      'grid-cols-[minmax(214px,1.1fr)_minmax(176px,.9fr)_minmax(280px,1.3fr)_minmax(316px,2fr)_minmax(120px,.75fr)_minmax(96px,.6fr)]',
+      'xl:grid-cols-[minmax(214px,1.1fr)_minmax(176px,.9fr)_minmax(280px,1.3fr)_minmax(316px,2fr)_minmax(120px,.75fr)_minmax(96px,.6fr)]',
     )
     expect(strip.className).toContain('h-(--ps-mid-h)')
+    // Abaixo de 1280: cinco colunas, as quatro primeiras células nas duas linhas e PAD em cima de LETRA na última.
+    const base = /(?:^|\s)grid-cols-\[([^\]]+)\]/.exec(strip.className)![1]
+    const mins = [...base.matchAll(/minmax\((\d+)px/g)].map((m) => Number(m[1]))
+    expect(mins).toHaveLength(5)
+    // Em 1024 cabe tudo: 1024 menos os 16 px de cada lado, com folga de 4 px.
+    expect(mins.reduce((x, y) => x + y)).toBeLessThanOrEqual(1024 - 32 - 4)
+    expect(strip.className).toContain('max-xl:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]')
+    expect(strip.className).toContain('max-xl:[&>:nth-child(-n+4)]:row-span-2')
   })
   it('liga cada toque na ação do palco', () => {
     const a = makeActions()
@@ -517,59 +531,94 @@ describe('faixa do meio', () => {
     fireEvent.click(btn(/Compasso/))
     expect(onOpenMeter).toHaveBeenCalledTimes(1)
   })
-  it('o que não cabe desce um tamanho, nunca corta (régua falsa)', () => {
-    // Régua: linha de 20 px; nome de seção longo ocupa 3 linhas; a célula da música passa da altura;
-    // o botão do tom passa da largura. O resto cabe.
+  it('o que não cabe desce a fonte aos poucos até 12 px e nunca corta (régua falsa, Ruling T13-texto)', () => {
+    // Régua: linha de 20 px. Cada célula medida tem --ps-fit (1 = tamanho cheio, 0 = 12 px e capa de 48 px).
+    // Nome de seção longo ocupa 3 linhas até --ps-fit 0,6; a música não cabe até 0,5 (título longo),
+    // 0,25 (título e próxima longos) ou nunca (exagerado); o botão do tom passa da largura.
     const real = window.getComputedStyle.bind(window)
     vi.spyOn(window, 'getComputedStyle').mockImplementation((el, p) => {
       const cs = real(el, p)
       return new Proxy(cs, { get: (t, k) => (k === 'lineHeight' ? '20px' : ((v) => (typeof v === 'function' ? v.bind(t) : v))(Reflect.get(t, k, t))) })
     })
-    const long = (el: HTMLElement) => (el.textContent ?? '').length > 20
+    const len = (el: Element | null) => (el?.textContent ?? '').length
+    const fitOf = (el: Element) => {
+      const v = (el.closest('[data-fit-height]') as HTMLElement | null)?.style.getPropertyValue('--ps-fit')
+      return v ? Number(v) : 1
+    }
     vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
-      return this.hasAttribute('data-section-name') && long(this) ? 60 : 20
+      return this.hasAttribute('data-section-name') && len(this) > 20 && fitOf(this) > 0.6 ? 60 : 40
     })
-    // Célula da música com 168 px: título longo pede um degrau (small); com a próxima longa também, dois (smaller).
     const rect = (top: number, height: number) => ({ top, bottom: top + height, height, left: 0, right: 100, width: 100, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      if (this.hasAttribute('data-fit-height')) return rect(0, 168)
       const cell = this.closest('[data-cell="musica"]') as HTMLElement | null
       if (!cell) return rect(20, 100)
-      if (cell === this) return rect(0, 168)
-      // Título de enfeite na capa: cabe na capa grande, não na de 64 px (a capa fica em 20..120).
-      if (this.parentElement?.hasAttribute('data-cover')) return cell.dataset.fit === 'smaller' ? rect(10, 120) : rect(25, 60)
-      const need = long(cell.querySelector('[data-song-title]') as HTMLElement) ? (long(cell.querySelector('[aria-label^="Próxima"] b') as HTMLElement) ? 2 : 1) : 0
-      const level = cell.dataset.fit === 'smaller' ? 2 : cell.dataset.fit === 'small' ? 1 : 0
-      return level < need ? rect(-10, 188) : rect(20, 100)
+      const k = fitOf(this)
+      // Título de enfeite na capa: cabe na capa grande, não na de 48 px.
+      if (this.parentElement?.hasAttribute('data-cover')) return k <= 0.25 ? rect(10, 120) : rect(25, 60)
+      const title = len(cell.querySelector('[data-song-title]'))
+      const next = len(cell.querySelector('[aria-label^="Próxima"] b'))
+      const need = title > 70 ? -1 : title > 20 ? (next > 20 ? 0.25 : 0.5) : 1
+      return k > need ? rect(-10, 188) : rect(20, 100)
     })
     vi.spyOn(Element.prototype, 'scrollWidth', 'get').mockImplementation(function (this: Element) {
       return this.hasAttribute('data-fit-width') && (this.textContent ?? '').includes('m') ? 180 : 150
     })
     vi.spyOn(Element.prototype, 'clientWidth', 'get').mockImplementation(() => 152)
-    const longView: Partial<StageView> = {
-      sections: [SECTIONS[0], { ...SECTIONS[1], label: 'Refrão Final Estendido de Novo' }, SECTIONS[2]],
-      song: { ...SONG, name: 'Quão Grande És Tu (Ao Vivo no Ministério)', originalKey: 'F#m' },
-    }
+    const fit = (cell: string) => q(`[data-cell="${cell}"]`).style.getPropertyValue('--ps-fit')
     const a = makeActions()
-    const { rerender } = render(<MidStrip view={{ ...VIEW, ...longView }} actions={a} clock={clock} keyGridOpen={false} onKeyGridOpenChange={() => {}} onOpenMeter={() => {}} />)
-    expect(q('[data-section-name]').dataset.fit).toBe('small')
-    expect(q('[data-section-name]').className).toContain('data-[fit]:text-ps-md')
-    expect(q('[data-cell="musica"]').dataset.fit).toBe('small')
+    const strip = (v: Partial<StageView>) => <MidStrip view={{ ...VIEW, ...v }} actions={a} clock={clock} keyGridOpen={false} onKeyGridOpenChange={() => {}} onOpenMeter={() => {}} />
+    const longSong = { ...SONG, name: 'Quão Grande És Tu (Ao Vivo no Ministério)', originalKey: 'F#m' }
+    const { rerender } = render(strip({ sections: [SECTIONS[0], { ...SECTIONS[1], label: 'Refrão Final Estendido de Novo' }, SECTIONS[2]], song: longSong }))
+    expect(fit('secao')).toBe('0.5')
+    expect(fit('musica')).toBe('0.5')
+    expect(fit('tempo')).toBe('1')
     expect(q('[data-cover]').dataset.fit).toBeUndefined()
-    expect(q('[data-cell="tempo"]').dataset.fit).toBeUndefined()
     expect(q('[data-fit-width]').dataset.fit).toBe('small')
-    // Voltou a caber: volta ao tamanho grande.
-    rerender(<MidStrip view={VIEW} actions={a} clock={clock} keyGridOpen={false} onKeyGridOpenChange={() => {}} onOpenMeter={() => {}} />)
-    expect(q('[data-section-name]').dataset.fit).toBeUndefined()
-    expect(q('[data-cell="musica"]').dataset.fit).toBeUndefined()
-    expect(q('[data-fit-width]').dataset.fit).toBeUndefined()
-    // Ainda não coube no primeiro degrau: o segundo diminui a capa.
-    rerender(<MidStrip view={{ ...VIEW, ...longView, song: { ...longView.song!, nextName: 'Te Louvarei Por Toda a Minha Vida' } }} actions={a} clock={clock} keyGridOpen={false} onKeyGridOpenChange={() => {}} onOpenMeter={() => {}} />)
-    expect(q('[data-cell="musica"]').dataset.fit).toBe('smaller')
-    expect(q('[data-cover]').className).toContain('group-data-[fit=smaller]/fit:size-16')
-    // Na capa pequena o título de enfeite não cabe: some (o título está escrito ao lado), nunca vaza.
+    // Título e próxima longos: desce mais, a capa encolhe e o título de enfeite dela some (nunca vaza).
+    rerender(strip({ song: { ...longSong, nextName: 'Te Louvarei Por Toda a Minha Vida' } }))
+    expect(fit('musica')).toBe('0.25')
+    expect(fit('secao')).toBe('1')
     expect(q('[data-cover]').dataset.fit).toBe('hide')
-    expect(q('[data-cover] > span').className).toContain('group-data-[fit=hide]/cover:invisible')
     expect(q('[data-cover] > span').getAttribute('aria-hidden')).toBe('true')
+    // Nada mais cabe: para no mínimo (12 px) e, por último, a capa sai pra o texto ganhar a largura.
+    rerender(strip({ song: { ...longSong, name: 'x'.repeat(77) } }))
+    expect(fit('musica')).toBe('0')
+    expect(q('[data-cell="musica"]').dataset.fit).toBe('drop')
+    expect(q('[data-cover]').className).toContain('group-data-[fit=drop]/song:hidden')
+    // Palavra do título de enfeite mais larga que a capa: some também.
+    const width = vi.spyOn(Element.prototype, 'getBoundingClientRect')
+    const before = width.getMockImplementation()!
+    width.mockImplementation(function (this: Element) {
+      if (this.parentElement?.hasAttribute('data-cover')) return { ...rect(25, 60), left: -5, right: 110, width: 115 } as DOMRect
+      return before.call(this)
+    })
+    rerender(strip({ song: { ...SONG, name: 'Grandeeeeeeeeeeeeeza' } }))
+    expect(q('[data-cover]').dataset.fit).toBe('hide')
+    width.mockImplementation(before)
+    // Voltou a caber: tamanho cheio.
+    rerender(strip({}))
+    expect(fit('musica')).toBe('1')
+    expect(q('[data-cell="musica"]').dataset.fit).toBeUndefined()
+    expect(q('[data-cover]').dataset.fit).toBeUndefined()
+    expect(q('[data-fit-width]').dataset.fit).toBeUndefined()
+  })
+  it('os tamanhos que encolhem param em 12 px (texto) e 48 px (capa)', () => {
+    renderStrip()
+    const minOf = (el: Element, min: string) => expect(el.className).toMatch(new RegExp(`calc\\(${min}_\\+_.*var\\(--ps-fit,1\\)`))
+    minOf(q('[data-section-name]'), '12px')
+    minOf(q('[data-song-title]'), '12px')
+    minOf(q('[aria-label^="Próxima"] b'), '12px')
+    minOf(q('[data-cover]'), '48px')
+    // Nenhuma fonte que encolhe passa de 12 px pra baixo (o tempo para em 24).
+    let shrinking = 0
+    for (const el of document.querySelectorAll('[data-fit-height] *')) {
+      const m = /text-\[length:calc\((\d+)px_\+_/.exec(el.className.toString())
+      if (!m) continue
+      shrinking++
+      expect(Number(m[1])).toBeGreaterThanOrEqual(12)
+    }
+    expect(shrinking).toBeGreaterThanOrEqual(5)
   })
   it('tour guiado acha TOM e PADS', () => {
     renderStrip()

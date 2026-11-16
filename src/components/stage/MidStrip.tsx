@@ -17,16 +17,21 @@ function lineHeightPx(el: HTMLElement): number {
   return Number.isFinite(lh) ? lh : parseFloat(cs.fontSize) * 1.2
 }
 
+/** Folga mínima do conteúdo até a borda de cima e de baixo da célula (Ruling T13-texto). */
+const FIT_MARGIN = 4
+
 /**
- * Algum filho (fora os absolutos, como o texto só pro leitor de tela) sai da caixa de conteúdo da
- * célula na vertical? Conteúdo centralizado transborda pros dois lados, então compara as caixas.
+ * Algum filho (fora os absolutos, como o texto só pro leitor de tela) sai da caixa na vertical?
+ * Com `margin`, a caixa é a borda menos essa folga (célula: o conteúdo pode usar o padding até 4 px
+ * da borda); sem, é a caixa de conteúdo (capa: dentro do padding dela). Conteúdo centralizado
+ * transborda pros dois lados, então compara as caixas.
  */
-function overflowsY(cell: HTMLElement): boolean {
-  const cs = getComputedStyle(cell)
-  const box = cell.getBoundingClientRect()
-  const top = box.top + (parseFloat(cs.paddingTop) || 0) - 0.5
-  const bottom = box.bottom - (parseFloat(cs.paddingBottom) || 0) + 0.5
-  for (const child of cell.children) {
+function overflowsY(el: HTMLElement, margin?: number): boolean {
+  const cs = getComputedStyle(el)
+  const box = el.getBoundingClientRect()
+  const top = box.top + (margin ?? (parseFloat(cs.paddingTop) || 0)) - 0.5
+  const bottom = box.bottom - (margin ?? (parseFloat(cs.paddingBottom) || 0)) + 0.5
+  for (const child of el.children) {
     if (getComputedStyle(child).position === 'absolute') continue
     const r = child.getBoundingClientRect()
     if (r.height > 0 && (r.top < top || r.bottom > bottom)) return true
@@ -34,38 +39,72 @@ function overflowsY(cell: HTMLElement): boolean {
   return false
 }
 
+/** Algum filho sai da caixa de conteúdo (dentro do padding) na largura? Palavra longa num quadrado pequeno. */
+function overflowsX(el: HTMLElement): boolean {
+  const cs = getComputedStyle(el)
+  const box = el.getBoundingClientRect()
+  const left = box.left + (parseFloat(cs.paddingLeft) || 0) - 0.5
+  const right = box.right - (parseFloat(cs.paddingRight) || 0) + 0.5
+  for (const child of el.children) {
+    if (getComputedStyle(child).position === 'absolute') continue
+    const r = child.getBoundingClientRect()
+    if (r.width > 0 && (r.left < left || r.right > right)) return true
+  }
+  return false
+}
+
+/** Degraus do encaixe: --ps-fit vai de 1 (tamanho cheio) a 0 (texto em 12 px, capa em 48 px) em 8 passos. */
+const FIT_STEPS = 8
+
+/** Cabe: nada chega a menos de 4 px da borda de cima ou de baixo e nenhum `data-fit-lines="N"` passa de N linhas (Ruling T8-4: até 2). */
+function cellFits(cell: HTMLElement): boolean {
+  if (overflowsY(cell, FIT_MARGIN)) return false
+  for (const el of cell.querySelectorAll<HTMLElement>('[data-fit-lines]')) {
+    if (el.offsetHeight > lineHeightPx(el) * (Number(el.dataset.fitLines) + 0.5)) return false
+  }
+  return true
+}
+
 /**
- * Nada corta (regra do dono): o que pode não caber desce de tamanho, marcado em `data-fit`, que
- * as células leem nas classes (`small` e, se ainda não coube, `smaller`). Primeiro apaga tudo.
- * `data-fit-lines="N"` (nome da seção, título): passou de N linhas no tamanho grande (Ruling
- * T8-4: até 2). Depois, com esses textos no tamanho final, `data-fit-height` (célula): o conteúdo
- * saiu da altura útil da faixa; `data-fit-width` (botão do tom): passou da largura. Por fim,
- * `data-fit-cover` (capa sem imagem): o título de enfeite que não cabe no quadrado some (`hide`).
+ * Nada corta (regra do dono; Ruling T13-texto): o que não cabe desce de tamanho aos poucos. Cada
+ * célula com `data-fit-height` (tempo, seção, música) ganha `--ps-fit`, que as classes leem: o
+ * maior degrau em que nada chega a menos de 4 px da borda de cima ou de baixo (o conteúdo centralizado
+ * pode usar o padding até aí) e o nome da seção e o título ficam em até 2 linhas; se nem no mínimo
+ * couber, fica no mínimo (12 px de texto), sem cortar. O botão do
+ * tom (`data-fit-width`) que passa da largura perde a seta e desce o tom pra 30 px. Se no mínimo a
+ * célula ainda não couber e tiver algo que pode sair (`data-fit-drop`, a capa), ela ganha
+ * `data-fit="drop"` e mede de novo. Por fim, a capa sem imagem (`data-fit-cover`) esconde o título de
+ * enfeite que não cabe no quadrado, na altura ou na largura (palavra longa numa capa pequena).
  */
 function fitStrip(root: HTMLElement): void {
-  const lines = [...root.querySelectorAll<HTMLElement>('[data-fit-lines]')]
-  const height = [...root.querySelectorAll<HTMLElement>('[data-fit-height]')]
   const width = [...root.querySelectorAll<HTMLElement>('[data-fit-width]')]
+  const cells = [...root.querySelectorAll<HTMLElement>('[data-fit-height]')]
   const cover = [...root.querySelectorAll<HTMLElement>('[data-fit-cover]')]
-  for (const el of [...lines, ...height, ...width, ...cover]) delete el.dataset.fit
-  const tooManyLines = lines.filter((el) => el.offsetHeight > lineHeightPx(el) * (Number(el.dataset.fitLines) + 0.5))
-  for (const el of tooManyLines) el.dataset.fit = 'small'
+  for (const el of [...width, ...cover]) delete el.dataset.fit
+  for (const el of cells) {
+    el.style.removeProperty('--ps-fit')
+    delete el.dataset.fit
+  }
   const tooWide = width.filter((el) => el.scrollWidth > el.clientWidth + 1)
   for (const el of tooWide) el.dataset.fit = 'small'
-  for (const el of height) {
-    if (!overflowsY(el)) continue
-    el.dataset.fit = 'small'
-    if (overflowsY(el)) el.dataset.fit = 'smaller'
+  for (const cell of cells) {
+    let fits = false
+    for (let i = 0; i <= FIT_STEPS && !fits; i++) {
+      cell.style.setProperty('--ps-fit', String(1 - i / FIT_STEPS))
+      fits = cellFits(cell)
+    }
+    if (!fits && cell.querySelector('[data-fit-drop]')) cell.dataset.fit = 'drop'
   }
-  // Por último, com a capa no tamanho final: o título de enfeite que não cabe nela some.
-  for (const el of cover) if (overflowsY(el)) el.dataset.fit = 'hide'
+  for (const el of cover) if (overflowsY(el) || overflowsX(el)) el.dataset.fit = 'hide'
 }
 
 // v5 .mid: 12 px abaixo da botoeira, 16 px dos lados, altura clamp(168px,20vh,208px) (a capa lê
-// --ps-mid-h), as seis colunas do v5 e um fio entre as células. A linha tem a altura da faixa: o que
+// --ps-mid-h) e um fio entre as células. De 1280 pra cima, as seis colunas do v5 numa linha. Abaixo
+// (Ruling T13-1024): cinco colunas que somam 988 px (cabem nos 992 de 1024), as quatro primeiras
+// células nas duas linhas e PAD em cima de LETRA na última. As linhas têm a altura da faixa: o que
 // passar dela é medido (fitStrip), não empurra o mixer.
 const STRIP =
-  'relative z-10 mx-ps-gutter mt-3 grid h-(--ps-mid-h) shrink-0 grid-cols-[minmax(214px,1.1fr)_minmax(176px,.9fr)_minmax(280px,1.3fr)_minmax(316px,2fr)_minmax(120px,.75fr)_minmax(96px,.6fr)] grid-rows-[minmax(0,1fr)] rounded-ps-2xl bg-ps-s1 font-ps-sans text-ps-bone inset-ring inset-ring-ps-line [--ps-mid-h:clamp(168px,20vh,208px)] [&>*+*]:before:absolute [&>*+*]:before:inset-y-3.5 [&>*+*]:before:left-0 [&>*+*]:before:w-px [&>*+*]:before:bg-ps-line'
+  'relative z-10 mx-ps-gutter mt-3 grid h-(--ps-mid-h) shrink-0 grid-cols-[minmax(172px,1.1fr)_minmax(176px,.9fr)_minmax(268px,1.3fr)_minmax(268px,2fr)_minmax(104px,.6fr)] grid-rows-[minmax(0,1fr)] max-xl:grid-rows-[minmax(0,1fr)_minmax(0,1fr)] max-xl:[&>:nth-child(-n+4)]:row-span-2 xl:grid-cols-[minmax(214px,1.1fr)_minmax(176px,.9fr)_minmax(280px,1.3fr)_minmax(316px,2fr)_minmax(120px,.75fr)_minmax(96px,.6fr)] rounded-ps-2xl bg-ps-s1 font-ps-sans text-ps-bone inset-ring inset-ring-ps-line [--ps-mid-h:clamp(168px,20vh,208px)] [&>*+*]:before:absolute [&>*+*]:before:inset-y-3.5 [&>*+*]:before:left-0 [&>*+*]:before:w-px [&>*+*]:before:bg-ps-line'
 
 /**
  * Faixa do meio do palco novo (mockup v5): tempo, TOM, seção atual, música, PAD e LETRA. Só monta

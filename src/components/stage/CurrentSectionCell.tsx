@@ -44,12 +44,13 @@ function repeatCap(maxRepeats: number): number {
   return Math.min(MAX_SHOWN, Math.floor(maxRepeats))
 }
 
-// v5 .cell. A faixa mede o nome (data-fit-lines) e a célula (data-fit-height): passou de 2 linhas, ou
-// não coube na altura, o nome desce pra 16 px (nome de seção nunca é cortado, Ruling T8-4). @container: o ícone do
+// v5 .cell (12 px de lado abaixo de 1280). A faixa mede a célula (data-fit-height) e o nome
+// (data-fit-lines): passou de 2 linhas ou da altura útil, o nome desce aos poucos (--ps-fit) do tamanho
+// do v5 até 12 px; nome de seção nunca é cortado (Ruling T8-4, Ruling T13-texto). @container: o ícone do
 // REPETIR só aparece quando a célula tem largura pra ele (a fileira de 44 px não cabe com ele em 1280).
-const CELL = 'group/fit @container relative flex min-w-0 flex-col justify-center gap-2 px-4 py-3'
+const CELL = '@container relative flex min-w-0 flex-col justify-center gap-2 px-4 py-3 max-xl:px-3'
 const NAME =
-  'text-[clamp(22px,3vh,30px)] leading-[1.05] font-extrabold tracking-[0.02em] break-words data-[fit]:text-ps-md group-data-[fit]/fit:text-ps-md'
+  'text-[length:calc(12px_+_(clamp(22px,3vh,30px)_-_12px)_*_var(--ps-fit,1))] leading-[1.05] font-extrabold tracking-[0.02em] break-words'
 // v5 .chip.sm.rep: branco de armado (cheio) quando o REPETIR está armado na atual.
 const REPEAT =
   'inline-flex shrink-0 items-center justify-center gap-1.5 min-w-ps-touch min-h-ps-touch px-2.5 rounded-ps-md text-ps-sm font-extrabold tracking-[0.08em] whitespace-nowrap select-none transition-[background-color,box-shadow,color,transform] duration-150 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or disabled:opacity-35 disabled:pointer-events-none'
@@ -114,7 +115,7 @@ export function CurrentSectionCell({ sections, currentSection, intent, gates, cl
       <div className="h-1 overflow-hidden rounded-[2px] bg-ps-s3">
         <i ref={progressRef} data-section-progress="" className="block h-full origin-left rounded-[2px]" style={section ? { backgroundColor: section.color } : undefined} />
       </div>
-      <div className="flex items-center gap-1.5" title={disabled ? disabledHint : undefined}>
+      <div className="flex items-center gap-1.5 max-xl:gap-1" title={disabled ? disabledHint : undefined}>
         <button
           type="button" data-armed={repeatArmed ? 'true' : 'false'} disabled={disabled} onClick={() => onArmRepeat(n)}
           title={repeatArmed ? 'Repetição armada: ao fim da seção conta no click e volta pro começo dela' : 'Repete a seção atual: termina, conta no click e volta pro começo dela'}
