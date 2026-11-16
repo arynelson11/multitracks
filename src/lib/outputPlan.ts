@@ -27,8 +27,8 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 const isOutput = (o: unknown, channels: number): o is number => Number.isInteger(o) && (o as number) >= 0 && (o as number) < channels
 
 /**
- * Mapa de "4 ou mais" que cabe em `channels` saídas: VS num par que começa em saída par
- * (1/2, 3/4...), Click e Guia em saídas da placa fora desse par. Click e Guia podem dividir
+ * Mapa de "4 ou mais" que cabe em `channels` saídas: VS num par que começa em índice par
+ * (saídas 1/2, 3/4...), Click e Guia em saídas da placa fora desse par. Click e Guia podem dividir
  * a mesma saída ("os dois juntos", spec 5e).
  */
 function mapFits(m: OutputMap, channels: number): boolean {
