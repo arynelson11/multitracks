@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { FakeAudioBuffer, connectedTo, createFakeAudioContext, nodesOf, reaches, valueAt } from './fakeAudio'
+import { FakeAudioBuffer, FakeWorkletNode, connectedTo, createFakeAudioContext, nodesOf, reaches, valueAt } from './fakeAudio'
 
 const domError = (name: string) => expect.objectContaining({ name })
 
@@ -199,6 +199,29 @@ describe('ligações', () => {
     expect(reaches(src, out)).toBe(true)
     const d = ctx.createDelay(); const fb = ctx.createGain(); d.connect(fb); fb.connect(d)
     expect(reaches(d, out)).toBe(false); expect(reaches(d, d)).toBe(true)
+  })
+  it('nó opaco (sem connections, como o mock antigo do worklet) lança em vez de dizer "não" sem provar', () => {
+    const ctx = createFakeAudioContext(); const beeps = ctx.createOscillator(); const vs = ctx.createChannelMerger(4)
+    const opaque = { connectedTo: null as unknown, connect(dest: unknown) { opaque.connectedTo = dest } }
+    beeps.connect(opaque as unknown as AudioNode)
+    opaque.connect(vs)
+    expect(() => reaches(beeps, vs, 0)).toThrow(/nó opaco no grafo: use FakeWorkletNode/)
+    expect(() => connectedTo(opaque as unknown as AudioNode, vs)).toThrow(/nó opaco no grafo: use FakeWorkletNode/)
+  })
+  it('FakeWorkletNode no lugar do worklet de tom: ligações rastreadas e o caminho aparece', async () => {
+    const ctx = createFakeAudioContext(); const src = ctx.createBufferSource(); const panner = ctx.createStereoPanner()
+    // Como o vi.mock('signalsmith-stretch') do motor passa a devolver o nó.
+    const createPitchNode = async (c: BaseAudioContext) => Object.assign(new FakeWorkletNode(c, 'signalsmith-stretch'), {
+      start: async () => {}, stop: async () => {}, schedule: async () => {}, latency: async () => 0.12,
+    })
+    const w = await createPitchNode(ctx as unknown as BaseAudioContext)
+    src.connect(w); w.connect(panner); panner.connect(ctx.destination)
+    expect(w.kind).toBe('AudioWorkletNode'); expect([w.name, w.numberOfInputs, w.numberOfOutputs]).toEqual(['signalsmith-stretch', 1, 1])
+    expect(nodesOf(ctx, 'AudioWorkletNode')).toEqual([w])
+    expect(connectedTo(src, w)).toBe(true); expect(reaches(src, ctx.destination)).toBe(true)
+    w.disconnect(panner)
+    expect(reaches(src, ctx.destination)).toBe(false)
+    expect(() => new FakeWorkletNode({} as BaseAudioContext, 'x')).toThrow(TypeError)
   })
 })
 

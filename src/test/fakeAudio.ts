@@ -378,6 +378,22 @@ export class FakeOscillatorNode extends FakeScheduledSourceNode {
   }
 }
 
+/**
+ * Nó de worklet falso (o AudioWorkletNode), pra o vi.mock('signalsmith-stretch') dos testes
+ * do motor devolver no lugar de um objeto solto: as ligações ficam rastreadas como nos
+ * outros nós e o `reaches` segue por ele. Entra no `created` do contexto. O mock acrescenta
+ * os métodos do pacote (`Object.assign(new FakeWorkletNode(ctx, 'signalsmith-stretch'), { start, stop, schedule, latency })`).
+ */
+export class FakeWorkletNode extends FakeAudioNode {
+  readonly name: string
+  constructor(context: FakeAudioContext | BaseAudioContext, name: string, options: { numberOfInputs?: number; numberOfOutputs?: number } = {}) {
+    if (!(context instanceof FakeAudioContext)) throw new TypeError('FakeWorkletNode: o contexto não é o AudioContext falso')
+    super(context, 'AudioWorkletNode', { inputs: options.numberOfInputs ?? 1, outputs: options.numberOfOutputs ?? 1 })
+    this.name = name
+    context.created.push({ kind: this.kind, node: this })
+  }
+}
+
 // ---------- AudioBuffer ----------
 
 /** AudioBuffer falso. Os dados de cada canal nascem zerados no primeiro getChannelData (300 s não ocupam memória à toa). */
@@ -434,6 +450,7 @@ export interface FakeNodeKinds {
   ChannelMergerNode: FakeChannelMergerNode
   ChannelSplitterNode: FakeChannelSplitterNode
   AnalyserNode: FakeAnalyserNode
+  AudioWorkletNode: FakeWorkletNode
 }
 
 export class FakeAudioContext extends FakeEventTarget {
@@ -522,9 +539,16 @@ export function createFakeAudioContext(opts?: FakeAudioContextOptions): FakeAudi
 
 // ---------- Ajudantes de grafo ----------
 
+/**
+ * Saídas de um item do grafo. AudioParam não tem saída. Objeto sem `connections` (ex.: um
+ * mock que só guarda `connectedTo`) lança: sem saber pra onde ele manda o som, uma busca
+ * negativa ("nunca chega na VS") passaria sem provar nada.
+ */
 function connectionsOf(item: unknown): readonly FakeConnection[] {
+  if (item instanceof FakeAudioParam) return []
   const list = item !== null && typeof item === 'object' ? (item as { connections?: unknown }).connections : undefined
-  return Array.isArray(list) ? (list as FakeConnection[]) : []
+  if (!Array.isArray(list)) throw new TypeError('nó opaco no grafo: use FakeWorkletNode (o item não grava connections, então não dá pra seguir o som por ele)')
+  return list as FakeConnection[]
 }
 
 /** Todos os nós de um tipo ('GainNode', 'OscillatorNode'...), na ordem em que nasceram. */
@@ -543,12 +567,13 @@ type Carried = 'all' | number // canal que leva o sinal de `from` no fluxo daque
 
 /**
  * Busca no grafo inteiro: algum caminho leva o som de `from` até `to` (chegando na entrada
- * `input`, se pedida)? Segue ligações em nós, em AudioParam (o sinal que modula um parâmetro
- * sai pelo dono dele) e em qualquer objeto com `connections` (ex.: o mock do worklet).
- * Respeita merger e splitter: entrar no merger pela entrada i põe o sinal só no canal i;
- * o splitter só passa esse canal na saída de mesmo número. Um nó comum no meio pode
- * misturar canais (upmix), então dali pra frente o sinal conta em qualquer canal: a busca
- * erra pro lado seguro (acha caminho a mais, nunca a menos). Não trava em ciclo.
+ * `input`, se pedida)? Segue ligações em nós (inclusive o FakeWorkletNode do worklet de tom),
+ * em AudioParam (o sinal que modula um parâmetro sai pelo dono dele) e em objeto que grave
+ * `connections` no mesmo formato. Item opaco no caminho (sem `connections`) lança em vez de
+ * parar em silêncio. Respeita merger e splitter: entrar no merger pela entrada i põe o sinal
+ * só no canal i; o splitter só passa esse canal na saída de mesmo número. Um nó comum no
+ * meio pode misturar canais (upmix), então dali pra frente o sinal conta em qualquer canal.
+ * Com isso a busca erra pro lado seguro: acha caminho a mais, nunca a menos. Não trava em ciclo.
  */
 export function reaches(from: FakeGraphItem, to: FakeGraphItem, input?: number): boolean {
   const seen = new Map<unknown, Set<Carried>>([[from, new Set<Carried>(['all'])]])
