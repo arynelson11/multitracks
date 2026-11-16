@@ -4,13 +4,17 @@
 // bloco na tela com `markerIdForSpan`).
 import type { Marker } from '../types'
 import { colorForSection, normalizeSectionName } from './sectionTypes'
-import { barSeconds, sanitizeGrid, snapToBar } from './songGrid'
+import { barSeconds, markerIdForSpan, sanitizeGrid, sectionSpans, snapToBar } from './songGrid'
 import { gridHasPhase, type SongGrid } from './stageContracts'
 
 /** Sem fase (sem grade ou só o BPM salvo): marca nova a menos disso de outra troca o nome dela. */
 const NEAR_NO_PHASE_S = 0.5
-/** Folga entre uma seção ajustada e a vizinha, pra as duas nunca caírem no mesmo ponto. */
+/** Sem fase: folga entre uma seção ajustada e a vizinha, pra as duas nunca caírem no mesmo ponto. */
 const NEIGHBOR_GAP_S = 0.1
+/** Sem fase: a última seção fica com pelo menos isso antes do fim do áudio (com fase, 1 compasso). */
+const END_NO_PHASE_S = 1
+/** Folga de arredondamento nas comparações de tempo (1 microssegundo, a mesma do songGrid). */
+const EPS = 1e-6
 
 /** Marca com tempo de verdade. As marcas da nuvem chegam sem limpeza: item nulo ou sem tempo numérico não conta. */
 function hasTime(m: Marker | null | undefined): m is Marker {
@@ -59,39 +63,73 @@ export function addSectionAt(markers: readonly Marker[], time: number, label: st
 }
 
 /**
- * Anda a seção `bars` compassos (positivo pra frente). Com fase, compasso inteiro e o resultado
- * encaixado na barra; se o pedido passaria da vizinha, anda só os compassos que cabem (nunca um
- * pedaço de compasso). Sem fase, `bars` segundos sem encaixe, parando na vizinha. Nunca chega
- * a menos de 0,1 s da vizinha (com fase, contada onde ela encaixa no palco) nem antes de 0:00,
- * e nunca anda pro lado contrário do pedido. Só o tempo da marca muda.
+ * Seções como o palco mostra, com a marca de cada uma: o mesmo `sectionSpans` da T2 (início na
+ * barra, no pulso ou cru). Marca escondida (no mesmo ponto de outra, ou depois do fim) não entra.
  */
-export function nudgeSection(markers: readonly Marker[], markerId: string, bars: number, grid: SongGrid | null): Marker[] {
+function stageSections(markers: readonly Marker[], duration: number, grid: SongGrid | null): { id: string | null; start: number }[] {
+  return sectionSpans(markers, duration, grid).map((s) => ({ id: markerIdForSpan(markers, duration, grid, s.index), start: s.start }))
+}
+
+/**
+ * Anda a seção `bars` compassos (positivo pra frente), contando tudo pelo encaixe do palco
+ * (`sectionSpans`, Ruling T16-encaixe). Com fase, vai pra barra seguinte (ou anterior) de onde
+ * ela aparece no palco e dali mais `|bars| - 1` compassos; se o pedido passaria da vizinha, anda
+ * só os compassos que cabem (nunca um pedaço). Sem fase, `bars` segundos sem encaixe, parando a
+ * 0,1 s da vizinha. Nunca antes de 0:00, nunca pro lado contrário do pedido, e pra frente a
+ * última seção fica com pelo menos 1 compasso (sem fase, 1 s) antes do fim do áudio (Ruling
+ * T16-fim). Movimento que faria alguma seção sumir do palco ou trocar de ordem não acontece.
+ * Marca que não aparece no palco, ou `duration` que não é um número positivo: nada muda.
+ * Só o tempo da marca muda.
+ */
+export function nudgeSection(markers: readonly Marker[], markerId: string, bars: number, grid: SongGrid | null, duration: number): Marker[] {
   const sorted = byTime(markers)
-  const i = sorted.findIndex((m) => m != null && m.id === markerId)
-  const m = sorted[i]
-  if (i < 0 || !hasTime(m) || !Number.isFinite(bars) || bars === 0) return sorted
+  const steps = Math.round(Math.abs(bars))
+  if (!Number.isFinite(bars) || steps === 0 || !Number.isFinite(duration) || duration <= 0) return sorted
+  const m = sorted.find((x) => x != null && x.id === markerId)
+  if (!m || !hasTime(m)) return sorted
+
+  const before = stageSections(sorted, duration, grid)
+  const at = before.findIndex((s) => s.id === markerId)
+  if (at < 0) return sorted
+  const from = before[at].start
+  const prev = at > 0 ? before[at - 1].start : null
+  const next = at + 1 < before.length ? before[at + 1].start : null
+  const dir = bars > 0 ? 1 : -1
+  const order = before.map((s) => s.id)
+
+  const moved = (time: number) => byTime(sorted.map((x) => (x === m ? { ...x, time } : x)))
+  // Confere no próprio palco: as seções de antes continuam todas lá, na mesma ordem.
+  const keeps = (list: Marker[]) => {
+    const known = new Set(order)
+    const after = stageSections(list, duration, grid).map((s) => s.id).filter((id) => known.has(id))
+    return after.length === order.length && after.every((id, i) => id === order[i])
+  }
+  const accept = (t: number): Marker[] | null => {
+    if (dir > 0 ? t <= from + EPS : t >= from - EPS) return null
+    const list = moved(t)
+    return keeps(list) ? list : null
+  }
 
   const g = phaseGrid(grid)
-  const where = (x: Marker) => (g ? snapToBar(x.time, g) : x.time)
-  const prev = i > 0 && hasTime(sorted[i - 1]) ? sorted[i - 1] : null
-  const next = i + 1 < sorted.length && hasTime(sorted[i + 1]) ? sorted[i + 1] : null
-  const lo = prev ? where(prev) + NEIGHBOR_GAP_S : 0
-  const hi = next ? where(next) - NEIGHBOR_GAP_S : Infinity
-  const dir = Math.sign(bars)
-
-  let time = m.time
   if (g) {
     const bar = barSeconds(g)
-    for (let k = bars; Math.sign(k) === dir; k -= dir) {
-      const t = snapToBar(m.time + k * bar, g)
-      if (t >= lo && t <= hi) { time = t; break }
+    const pos = (from - g.firstDownbeat) / bar
+    // Barra seguinte (ou anterior) a onde a seção aparece; numa barra, a do lado.
+    const first = dir > 0 ? Math.floor(pos + 1e-9) + 1 : Math.ceil(pos - 1e-9) - 1
+    for (let k = steps; k >= 1; k--) {
+      const t = Math.max(0, g.firstDownbeat + (first + dir * (k - 1)) * bar)
+      if (dir > 0 && (next !== null ? t >= next - EPS : t > duration - bar + EPS)) continue
+      if (dir < 0 && prev !== null && t <= prev + EPS) continue
+      const list = accept(t)
+      if (list) return list
     }
-  } else {
-    const t = Math.min(hi, Math.max(lo, m.time + bars))
-    time = dir > 0 ? Math.max(m.time, t) : Math.min(m.time, t)
+    return sorted
   }
-  if (time === m.time) return sorted
-  return byTime(sorted.map((x) => (x === m ? { ...x, time } : x)))
+
+  const t = dir > 0
+    ? Math.min(next !== null ? next - NEIGHBOR_GAP_S : duration - END_NO_PHASE_S, from + bars)
+    : Math.max(prev !== null ? prev + NEIGHBOR_GAP_S : 0, from + bars)
+  return accept(t) ?? sorted
 }
 
 /** Tira a marca `markerId`; as outras ficam como estão (marca que não existe: a lista igual). */

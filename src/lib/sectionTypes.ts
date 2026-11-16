@@ -28,12 +28,13 @@ export function colorForSection(label: string): string {
 export const SECTION_NAME_MAX = 14
 
 /**
- * Nome dado agora a uma seção: espaços colapsados, trim, no máximo `SECTION_NAME_MAX`, sem
- * espaço sobrando no fim e sem partir um emoji (par de surrogates) ao meio. Mesma regra do
- * nome do canal (`normalizeCustomName`). Vazio quando não sobra nada.
+ * Nome dado agora a uma seção: acentos juntados (NFC, pra "é" decomposto contar 1), espaços
+ * colapsados, trim, no máximo `SECTION_NAME_MAX`, sem espaço sobrando no fim e sem partir um
+ * emoji (par de surrogates) ao meio. Mesma regra do nome do canal (`normalizeCustomName`), mais
+ * o NFC. Emoji conta 2. Vazio quando não sobra nada.
  */
 export function normalizeSectionName(raw: string): string {
-  let name = raw.replace(/\s+/g, ' ').trim().slice(0, SECTION_NAME_MAX)
+  let name = raw.normalize('NFC').replace(/\s+/g, ' ').trim().slice(0, SECTION_NAME_MAX)
   if (/[\uD800-\uDBFF]$/.test(name)) name = name.slice(0, -1)
   return name.trimEnd()
 }
