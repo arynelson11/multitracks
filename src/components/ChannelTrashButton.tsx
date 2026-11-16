@@ -11,6 +11,7 @@ interface ChannelTrashButtonProps {
 
 // Lixeira do EDITAR CANAIS. Apagar o canal não tem volta, então pede segundo toque:
 // armada, fica no âmbar do token de alerta (ps-alert) com "Apagar?". Largura pelo texto, alvo de 44px.
+// Repetição de tecla (Enter ou Espaço segurado) não conta como toque.
 const BASE =
   'inline-flex shrink-0 items-center justify-center gap-1 min-h-ps-touch min-w-ps-touch rounded-ps-pill font-ps-sans text-ps-sm font-bold whitespace-nowrap select-none cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
 const IDLE = 'bg-accent-red/20 text-accent-red hover:bg-accent-red/40'
@@ -24,6 +25,8 @@ export function ChannelTrashButton({ channelLabel, armed, onPress }: ChannelTras
       aria-label={label}
       title={label}
       onClick={(e) => { e.stopPropagation(); onPress() }}
+      // Tecla segurada repete o keydown e o navegador repete o clique: só o primeiro vale.
+      onKeyDown={(e) => { if (e.repeat && (e.key === 'Enter' || e.key === ' ')) e.preventDefault() }}
       className={cx(BASE, armed ? ARMED : IDLE)}
     >
       <Trash2 size={14} aria-hidden="true" />

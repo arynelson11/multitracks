@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, createEvent, fireEvent, render, screen } from '@testing-library/react'
 import { ChannelTrashButton } from './ChannelTrashButton'
-import { TWO_TAP_WINDOW_MS, useTwoTapConfirm } from '../hooks/useTwoTapConfirm'
+import { TWO_TAP_MIN_GAP_MS, TWO_TAP_WINDOW_MS, useTwoTapConfirm } from '../hooks/useTwoTapConfirm'
 
 // Mesma ligação do mixer no App: um estado só pra todas as lixeiras da música.
 const CHANNELS = [{ id: 'a', label: 'Guitarra' }, { id: 'b', label: 'Baixo' }]
@@ -42,6 +42,37 @@ describe('lixeira do canal pede segundo toque', () => {
     expect(removeChannel).not.toHaveBeenCalled()
     expect(screen.getByText('Apagar?')).toBeTruthy()
     expect(trashOf('Guitarra').getAttribute('aria-label')).toBe('Toque de novo para apagar o canal Guitarra')
+  })
+  // Junção (R2): duplo clique rápido ou Enter segurado não podem apagar num gesto só.
+  it('segundo toque antes de 350 ms é ignorado: continua armada e não apaga', () => {
+    expect(TWO_TAP_MIN_GAP_MS).toBe(350)
+    const removeChannel = setup()
+    fireEvent.click(trashOf('Guitarra'))
+    act(() => { vi.advanceTimersByTime(TWO_TAP_MIN_GAP_MS - 1) })
+    fireEvent.click(trashOf('Guitarra'))
+    expect(removeChannel).not.toHaveBeenCalled()
+    expect(isArmed('Guitarra')).toBe(true)
+    act(() => { vi.advanceTimersByTime(1) })
+    fireEvent.click(trashOf('Guitarra'))
+    expect(removeChannel).toHaveBeenCalledTimes(1)
+  })
+  it('duplo clique (dois cliques no mesmo instante) só arma', () => {
+    const removeChannel = setup()
+    fireEvent.click(trashOf('Guitarra'))
+    fireEvent.click(trashOf('Guitarra'))
+    expect(removeChannel).not.toHaveBeenCalled()
+    expect(isArmed('Guitarra')).toBe(true)
+  })
+  it('repetição de tecla (Enter segurado) não aciona a lixeira; o primeiro Enter sim', () => {
+    setup()
+    const first = createEvent.keyDown(trashOf('Guitarra'), { key: 'Enter' })
+    fireEvent(trashOf('Guitarra'), first)
+    expect(first.defaultPrevented).toBe(false)
+    for (const key of ['Enter', ' ']) {
+      const held = createEvent.keyDown(trashOf('Guitarra'), { key, repeat: true })
+      fireEvent(trashOf('Guitarra'), held)
+      expect(held.defaultPrevented).toBe(true)
+    }
   })
   it('segundo toque dentro da janela apaga uma vez só', () => {
     const removeChannel = setup()
