@@ -15,7 +15,8 @@
 -- 2. Funções: is_admin() (quem está logado), is_admin_user(id) (só o backend) e
 --    touch_last_seen() (o app grava a última abertura, no máximo 1 vez por hora).
 -- 3. Gatilho que recusa mudança em papel, bloqueio, plano e cota feita por quem
---    não é o backend, mesmo que alguém abra uma policy de update no painel.
+--    não é o backend, mesmo que alguém abra uma policy de update ou de insert no
+--    painel: linha nova criada fora do backend só nasce no padrão.
 -- 4. Policies de admin reescritas com is_admin() (cada uma só se a tabela existir).
 -- 5. get_admin_dashboard_stats() com a trava trocada por is_admin().
 -- 6. Primeiro admin (a conta do dono).
@@ -90,6 +91,7 @@ revoke execute on function public.touch_last_seen() from public, anon;
 grant  execute on function public.touch_last_seen() to authenticated;
 
 -- ─── 3. Gatilho que protege papel, bloqueio, plano e cota ───────────────────
+-- Vale no UPDATE (nenhum campo protegido muda) e no INSERT (linha nova só no padrão).
 -- Compara por jsonb pra funcionar mesmo antes de as colunas da cobrança e da cota
 -- existirem. Passa direto quem é o backend (service_role), o SQL Editor (postgres)
 -- e as funções SECURITY DEFINER (rodam como o dono, postgres).
@@ -97,6 +99,7 @@ create or replace function public.profiles_guard_protected() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
 declare
   k text;
+  j jsonb;
   keys text[] := array['is_admin','blocked_at','blocked_reason','blocked_by','last_seen_at','quota_bonus',
                        'quota_bonus_period','plan','plan_expires_at','tokens_used','tokens_period_start'];
 begin
@@ -104,12 +107,21 @@ begin
     return new;   -- backend, SQL Editor e funções security definer
   end if;
   if tg_op = 'INSERT' then
-    if coalesce((to_jsonb(new)->>'is_admin')::boolean, false)
-       or coalesce(to_jsonb(new)->>'plan', 'free') <> 'free'
-       or (to_jsonb(new)->>'blocked_at') is not null
-       or coalesce((to_jsonb(new)->>'quota_bonus')::int, 0) <> 0 then
-      raise exception 'campo protegido do perfil' using errcode = '42501';
-    end if;
+    -- Linha criada fora do backend nasce no padrão: sem admin, sem bloqueio, plano Livre
+    -- e cota padrão. Qualquer um dos campos protegidos fora disso recusa a criação
+    -- (Ruling ADM-T1-insert). O cadastro normal (handle_new_user) já grava só o padrão.
+    j := to_jsonb(new);
+    foreach k in array keys loop
+      if not (case k
+                when 'is_admin'    then coalesce((j->>k)::boolean, false) = false
+                when 'plan'        then coalesce(j->>k, 'free') = 'free'
+                when 'quota_bonus' then coalesce((j->>k)::int, 0) = 0
+                when 'tokens_used' then coalesce((j->>k)::int, 0) = 0
+                else (j->>k) is null
+              end) then
+        raise exception 'campo protegido do perfil: %', k using errcode = '42501';
+      end if;
+    end loop;
     return new;
   end if;
   foreach k in array keys loop
