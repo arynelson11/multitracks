@@ -48,6 +48,20 @@ describe('index.html', () => {
     expect(description.length).toBeLessThanOrEqual(160)
   })
 
+  it('a descrição não dá a entender que tom e voz guia vêm no Livre', () => {
+    for (const d of [PAGE_HEADS.home.description, PAGE_HEADS.home.ogDescription]) {
+      expect(d).toMatch(/Livre; troca de tom, BPM e voz guia no Pro e no Studio/)
+      expect(d).not.toMatch(/click/i)
+    }
+  })
+
+  it('o head do /download diz que o Modo Ao Vivo é do Pro e do Studio', () => {
+    for (const d of [PAGE_HEADS.download.description, PAGE_HEADS.download.ogDescription]) {
+      expect(d).toContain('Modo Ao Vivo no Pro e no Studio')
+    }
+    expect(PAGE_HEADS.download.description.length).toBeLessThanOrEqual(160)
+  })
+
   it('Open Graph completo, com imagem absoluta 1200x630', () => {
     expect(attr(indexHtml, /<meta property="og:url" content="([^"]+)"/)).toBe(`${SITE_URL}/`)
     expect(attr(indexHtml, /<meta property="og:site_name" content="([^"]+)"/)).toBe('Playback Studio')

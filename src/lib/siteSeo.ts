@@ -108,7 +108,7 @@ export function buildNoscript(): string {
     '<div style="max-width:720px;margin:0 auto;padding:32px 20px;font-family:system-ui,sans-serif;line-height:1.6;color:#E8E8EC;background:#121214">',
     `<h1>${escapeHtml(PAGE_HEADS.home.title)}</h1>`,
     `<p>${escapeHtml(PAGE_HEADS.home.description)}</p>`,
-    '<p>O Playback Studio separa qualquer música em multitracks (voz, bateria, baixo, guitarra, piano e outros instrumentos) pra banda da igreja ensaiar e tocar no domingo, com mixer, troca de tom, click e voz guia. Funciona no navegador, no celular e no tablet, e tem app pra Mac e Windows com Modo Ao Vivo.</p>',
+    '<p>O Playback Studio separa qualquer música em multitracks (voz, bateria, baixo, guitarra, piano e outros instrumentos) pra banda da igreja ensaiar e tocar no domingo, com mixer e, nos planos Pro e Studio, troca de tom, BPM e voz guia. Funciona no navegador, no celular e no tablet, e tem app pra Mac e Windows com Modo Ao Vivo.</p>',
     '<h2>Planos</h2>',
     '<ul>',
     plan('Livre', 'grátis', PLAN_SUMMARIES.livre),

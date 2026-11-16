@@ -412,7 +412,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             Planos pra sua banda chegar pronta no domingo.
           </h2>
           <p className="text-warm-200 text-[15px] mb-10 text-center">
-            Sem fidelidade, sem pegadinha. Começa de graça e cresce quando precisar.
+            Sem multa, sem pegadinha. Começa de graça e cresce quando precisar.
           </p>
 
           <div className="flex justify-center mb-12">
@@ -497,7 +497,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
               )
             })}
           </div>
-          <p className="text-center text-[12px] text-ps-mut mt-8">Preços em reais · Pagamento no cartão de crédito, com renovação automática · Cancele quando quiser · Sem fidelidade</p>
+          <p className="text-center text-[12px] text-ps-mut mt-8">Preços em reais · Pagamento no cartão de crédito, com renovação automática · Cancele quando quiser: a assinatura deixa de renovar, sem multa</p>
         </div>
       </section>
 

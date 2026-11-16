@@ -30,7 +30,7 @@ describe('LandingPage: textos', () => {
     expect((text().match(/stems/gi) ?? []).length).toBeLessThanOrEqual(1)
     const naFaq = FAQS.flatMap(f => `${f.q} ${f.a}`.match(/stems/gi) ?? [])
     expect(naFaq).toHaveLength(1)
-    expect(FAQS[0].a).toContain('também chamadas de multitracks ou stems')
+    expect(FAQS[0].a).toMatch(/^É separar a música nas faixas individuais, as multitracks \(também chamadas de stems\)/)
   })
 
   it('fala com a igreja e usa VS', () => {
@@ -61,6 +61,15 @@ describe('LandingPage: textos', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Mensal' }))
     expect(text()).toContain('49,90')
     expect(text()).toContain('119,90')
+  })
+
+  it('sem fidelidade não aparece (o anual é cobrado de uma vez); cancelar faz a assinatura deixar de renovar, sem multa', () => {
+    renderLanding()
+    expect(text()).not.toMatch(/fidelidade/i)
+    const cancelar = FAQS.find(f => f.q === 'Posso cancelar quando quiser?')?.a ?? ''
+    expect(cancelar).toMatch(/^Sim, sem multa: a assinatura deixa de renovar, no mensal e no anual\./)
+    expect(cancelar).toContain('7 dias')
+    expect(text()).toContain('Cancele quando quiser: a assinatura deixa de renovar, sem multa')
   })
 
   it('todas as perguntas da FAQ aparecem, inclusive a de VS e a de cancelamento pelo atendimento', () => {

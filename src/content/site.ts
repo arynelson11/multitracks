@@ -80,19 +80,19 @@ export const PAGE_HEADS: Record<'home' | 'download' | 'admin', PageHead> = {
     path: '/',
     title: 'Playback Studio: multitracks de qualquer música pra igreja',
     description:
-      'Separação de faixas com IA pra banda da igreja. Transforme qualquer música em multitracks pro VS, com mixer, tom, click e voz guia. Comece grátis no Livre.',
+      'Separação de faixas com IA pra banda da igreja: qualquer música vira multitracks pro VS. Grátis no Livre; troca de tom, BPM e voz guia no Pro e no Studio.',
     ogTitle: 'Playback Studio: multitracks de qualquer música pra igreja',
     ogDescription:
-      'Separe qualquer música em multitracks pro VS da igreja, com mixer, tom, click e voz guia. Comece grátis.',
+      'Separe qualquer música em multitracks pro VS da igreja. Grátis no Livre; troca de tom, BPM e voz guia no Pro e no Studio.',
   },
   download: {
     path: '/download',
     title: 'Baixar o Playback Studio pra Mac, Windows e celular',
     description:
-      'Baixe o app de multitracks pra Mac (Apple Silicon e Intel) e Windows, com Modo Ao Vivo e uso sem internet, ou instale no celular e no tablet.',
+      'App de multitracks pra Mac (Apple Silicon e Intel) e Windows, com uso sem internet e Modo Ao Vivo no Pro e no Studio. No celular, instale na tela de início.',
     ogTitle: 'Baixar o Playback Studio pra Mac, Windows e celular',
     ogDescription:
-      'App de multitracks pra Mac e Windows, com Modo Ao Vivo e uso sem internet. No celular e no tablet, instale na tela de início.',
+      'App de multitracks pra Mac e Windows, com uso sem internet e Modo Ao Vivo no Pro e no Studio. No celular e no tablet, instale na tela de início.',
   },
   admin: {
     path: '/admin',
@@ -113,7 +113,7 @@ export interface Faq {
 export const FAQS: Faq[] = [
   {
     q: 'O que é separação de faixas?',
-    a: 'São as faixas individuais de uma música, também chamadas de multitracks ou stems: a voz separada, a bateria separada, o baixo separado e assim por diante. Com o Playback Studio você sobe qualquer música e recebe as faixas separadas pra banda ensaiar e tocar como precisa.',
+    a: 'É separar a música nas faixas individuais, as multitracks (também chamadas de stems): a voz separada, a bateria separada, o baixo separado e assim por diante. Com o Playback Studio você sobe qualquer música e recebe as faixas separadas pra banda ensaiar e tocar como precisa.',
   },
   {
     q: 'Dá pra montar o VS da igreja com o Playback Studio?',
@@ -145,6 +145,6 @@ export const FAQS: Faq[] = [
   },
   {
     q: 'Posso cancelar quando quiser?',
-    a: `Sim, sem fidelidade. Por enquanto o cancelamento é feito pelo nosso atendimento: chame no WhatsApp ${CONTACT.whatsappDisplay} ou mande um email pra ${CONTACT.email} pedindo o cancelamento.${LEGAL_PAGES_LIVE ? ' As regras estão na página Cancelamento, no rodapé do site.' : ''}`,
+    a: `Sim, sem multa: a assinatura deixa de renovar, no mensal e no anual. Por enquanto o cancelamento é feito pelo nosso atendimento: chame no WhatsApp ${CONTACT.whatsappDisplay} ou mande um email pra ${CONTACT.email} pedindo o cancelamento. Se você contratou há até 7 dias, pode desistir e receber de volta o que pagou (é o direito de arrependimento do Código de Defesa do Consumidor).${LEGAL_PAGES_LIVE ? ' As regras estão na página Cancelamento, no rodapé do site.' : ''}`,
   },
 ]
