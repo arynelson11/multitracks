@@ -262,12 +262,25 @@ describe('SettingsProvider: saídas e palco na primeira carga', () => {
     expect((await load({ autoPan: false, stageVersion: 'v7' })).settings.stageVersion).toBe('novo')
   })
 
-  it('o pedido de zerar os pans fica gravado até o motor desligar', async () => {
-    const first = await load({ autoPan: false, outputs: SPLIT, legacyPanReset: true }, '1')
-    expect(first.settings.legacyPanReset).toBe(true)
-    await act(async () => { first.updateSetting('legacyPanReset', false) })
-    expect(seen().settings.legacyPanReset).toBe(false)
-    expect(storedNow().legacyPanReset).toBe(false)
+  it('o pedido de zerar os pans fica gravado nas cargas seguintes (cada conta zera uma vez no motor)', async () => {
+    await load({ autoPan: true })
+    expect(storedNow().legacyPanReset).toBe(true)
+    cleanup()
+    // Segunda carga: saídas válidas e marcador gravados, o pedido continua pras contas que ainda não abriram.
+    const second = await load()
+    expect(second.settings).toMatchObject({ outputs: SPLIT, legacyPanReset: true })
+  })
+
+  it('a migração já está gravada antes de qualquer efeito dos filhos', async () => {
+    let storedAtChildEffect: unknown = null
+    function Child() {
+      useEffect(() => { storedAtChildEffect = JSON.parse(localStorage.getItem(SETTINGS) ?? 'null') }, [])
+      return null
+    }
+    localStorage.setItem(SETTINGS, JSON.stringify({ autoPan: true }))
+    await act(async () => { render(<SettingsProvider><Child /></SettingsProvider>) })
+    expect(storedAtChildEffect).toMatchObject({ outputs: SPLIT, legacyPanReset: true })
+    expect(localStorage.getItem(MARKER)).toBe('1')
   })
 
   it('avisos da leitura somem quando o operador grava uma escolha de saídas', async () => {

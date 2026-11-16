@@ -11,7 +11,8 @@ export interface AppSettings {
     outputs: OutputSettings;
     // Palco novo ou antigo (R-25). Padrão: novo.
     stageVersion: StageVersion;
-    // Pede ao motor pra zerar, na primeira restauração, os pans ±1 que o pan automático gravou.
+    // O aparelho veio do pan automático (R-23): cada conta zera uma vez, na primeira
+    // restauração dela, os pans ±1 que ele gravou (o motor marca a conta; Ruling T25-legacy).
     legacyPanReset: boolean;
 }
 
@@ -59,7 +60,7 @@ function readStoredSettings(): { settings: AppSettings; warnings: OutputWarning[
             autoPan: migrated.autoPan,
             // Valor estranho vira o palco novo.
             stageVersion: raw.stageVersion === 'antigo' ? 'antigo' : 'novo',
-            // O pedido de zerar fica gravado até o motor fazer a primeira restauração.
+            // O pedido de zerar fica gravado: vale pra cada conta que ainda não abriu.
             legacyPanReset: migrated.resetLegacyPans || raw.legacyPanReset === true,
         },
         warnings: migrated.warnings,
@@ -80,17 +81,20 @@ function saveMigratedSettings(settings: AppSettings): void {
     }
 }
 
+// Lê e já grava a migração, antes de qualquer filho montar: um filho que mudar uma
+// configuração no próprio efeito de montagem nunca é sobrescrito pela gravação da migração.
+function loadAndSaveSettings(): { settings: AppSettings; warnings: OutputWarning[] } {
+    const loaded = readStoredSettings();
+    saveMigratedSettings(loaded.settings);
+    return loaded;
+}
+
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
-    const [initial] = useState(readStoredSettings);
+    const [initial] = useState(loadAndSaveSettings);
     const [settings, setSettings] = useState<AppSettings>(initial.settings);
     const [outputLoadWarnings, setOutputLoadWarnings] = useState<readonly OutputWarning[]>(initial.warnings);
     const [availableAudioDevices, setAvailableAudioDevices] = useState<MediaDeviceInfo[]>([]);
     const [canPickOutput] = useState(canPickAudioOutput);
-
-    // A migração vale já na primeira carga: grava antes de qualquer outra mudança.
-    useEffect(() => {
-        saveMigratedSettings(initial.settings);
-    }, [initial]);
 
     const updateSetting = useCallback(<K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
         // Escolha de saídas gravada pelo operador: os avisos da leitura antiga não valem mais.

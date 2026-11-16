@@ -79,6 +79,7 @@ const MULTI: OutputSettings = { ...SPLIT, mode: 'multi' }
 let warn: MockInstance<typeof console.warn>
 let error: MockInstance<typeof console.error>
 beforeEach(() => {
+  localStorage.clear()
   mem.db.clear()
   mem.updates.length = 0
   mem.metaGate = null
@@ -107,7 +108,7 @@ afterEach(() => {
 })
 
 const ctxOf = () => mem.ctx as FakeAudioContext
-const META = 'mt_meta_playlist_u1'
+const metaKey = (uid = 'u1') => `mt_meta_playlist_${uid}`
 const ch = (id: string, name: string, pan: number, extra: Partial<SavedSong['channels'][number]> = {}): SavedSong['channels'][number] =>
   ({ id, name, volume: 1, muted: false, soloed: false, pan, bus: '1/2', ...extra })
 // Click e Guia mono, Baixo e Teclado estéreo (L e R diferentes).
@@ -118,17 +119,18 @@ const song = (id: string, pans: { click?: number; guide?: number; bass?: number;
     ch(`${id}-bass`, 'BASS_1', pans.bass ?? 0), ch(`${id}-keys`, 'KEYS', pans.keys ?? 0),
   ],
 })
-function seed(...songs: SavedSong[]) {
-  mem.db.set(META, structuredClone(songs))
+function seedFor(uid: string, ...songs: SavedSong[]) {
+  mem.db.set(metaKey(uid), structuredClone(songs))
   for (const s of songs) for (const c of s.channels) {
-    mem.db.set(`mt_files_u1:ch:${c.id}`, new File([/BASS|KEYS/.test(c.name) ? 'stereo' : 'mono'], `${c.name}.wav`, { type: 'audio/wav' }))
+    mem.db.set(`mt_files_${uid}:ch:${c.id}`, new File([/BASS|KEYS/.test(c.name) ? 'stereo' : 'mono'], `${c.name}.wav`, { type: 'audio/wav' }))
   }
 }
+const seed = (...songs: SavedSong[]) => seedFor('u1', ...songs)
 
 // Abre o app como no aparelho: o render do motor pronto acontece antes de o IndexedDB
 // responder (sem isso o efeito do pan automático veria o repertório já restaurado).
-async function openApp() {
-  const hook = renderHook(() => useAudioEngine('u1'))
+async function openApp(uid = 'u1') {
+  const hook = renderHook(() => useAudioEngine(uid))
   let release!: () => void
   mem.metaGate = new Promise<void>((resolve) => { release = resolve })
   let init!: Promise<void>
@@ -140,7 +142,7 @@ async function openApp() {
 type Hook = Awaited<ReturnType<typeof openApp>>
 const chan = (hook: Hook, id: string) => hook.result.current.channels.find((c) => c.id === id)!
 const panOf = (hook: Hook, id: string) => valueAt(asFake(chan(hook, id).pannerNode).pan, ctxOf().currentTime + 1)
-const savedPans = (id: string) => (mem.db.get(META) as SavedSong[]).find((s) => s.id === id)!.channels.map((c) => [c.pan, c.bus])
+const savedPans = (id: string, uid = 'u1') => (mem.db.get(metaKey(uid)) as SavedSong[]).find((s) => s.id === id)!.channels.map((c) => [c.pan, c.bus])
 
 // Barramentos e principal da T12: os cinco primeiros GainNode que o initEngine cria (click,
 // guia, VS, principal, mudo geral), conferidos pela forma do grafo.
@@ -290,7 +292,7 @@ describe('pan efetivo', () => {
     close(sig, legacyMeasure([{ stereo: false, pan: 0.6 }, { stereo: false, pan: 0 }, { stereo: true, pan: 0.25 }, { stereo: true, pan: 0.2 }]))
   })
 
-  it('migração: pans ±1 gravados voltam a 0 uma vez e o flag desliga', async () => {
+  it('migração: pans ±1 gravados voltam a 0 uma vez por conta', async () => {
     mem.settings = { ...mem.settings, legacyPanReset: true }
     seed(song('s1', { click: -1, guide: -1, bass: 1, keys: 0.3 }), song('s2', { click: -1, bass: 1 }))
     const hook = await openApp()
@@ -298,20 +300,138 @@ describe('pan efetivo', () => {
     // Gravado já, nas duas músicas, e a aba Buses volta pro centro junto.
     expect(savedPans('s1')).toEqual([[0, '1/2'], [0, '1/2'], [0, '1/2'], [0.3, '1/2']])
     expect(savedPans('s2')).toEqual([[0, '1/2'], [0, '1/2'], [0, '1/2'], [0, '1/2']])
-    expect(mem.updates).toEqual([['legacyPanReset', false]])
+    // O pedido do aparelho fica (vale pra outras contas); a conta ganha a marca dela.
+    expect(mem.updates).toEqual([])
+    expect(localStorage.getItem('mt_legacy_pans_reset:u1')).toBe('1')
     // Os nós continuam no lado do papel (separados).
     expect(panOf(hook, 's1-click')).toBe(-1)
     expect(panOf(hook, 's1-bass')).toBe(1)
 
-    // Uma vez só: com o flag desligado, um pan ±1 escolhido depois fica.
+    // Uma vez só: na mesma conta, um pan ±1 escolhido depois fica.
     cleanup()
     mem.settings = { ...mem.settings, outputs: STEREO }
     seed(song('s3', { click: -1, bass: 1 }))
-    mem.updates.length = 0
     const again = await openApp()
     expect(again.result.current.channels.map((c) => c.pan)).toEqual([-1, 0, 1, 0])
     expect(savedPans('s3')[0]).toEqual([-1, '1/2'])
-    expect(mem.updates).toEqual([])
+  })
+
+  it('duas contas no mesmo aparelho: cada uma zera os pans antigos dela uma vez', async () => {
+    mem.settings = { ...mem.settings, legacyPanReset: true }
+    seedFor('u1', song('a1', { click: -1, bass: 1 }))
+    seedFor('u2', song('b1', { guide: -1, keys: 1, bass: 0.5 }))
+    const first = await openApp('u1')
+    expect(first.result.current.channels.map((c) => c.pan)).toEqual([0, 0, 0, 0])
+    expect(savedPans('b1', 'u2')).toEqual([[0, '1/2'], [-1, '1/2'], [0.5, '1/2'], [1, '1/2']]) // a outra conta não foi tocada
+    cleanup()
+    const second = await openApp('u2')
+    expect(second.result.current.channels.map((c) => c.pan)).toEqual([0, 0, 0.5, 0])
+    expect(savedPans('b1', 'u2')).toEqual([[0, '1/2'], [0, '1/2'], [0.5, '1/2'], [0, '1/2']])
+    expect(localStorage.getItem('mt_legacy_pans_reset:u2')).toBe('1')
+    cleanup()
+    // Sem conta (anônimo) é outra marca.
+    seedFor('anon', song('c1', { click: 1 }))
+    mem.db.set('mt_meta_playlist', mem.db.get(metaKey('anon')))
+    for (const id of ['c1-click', 'c1-guide', 'c1-bass', 'c1-keys']) mem.db.set(`mt_files:ch:${id}`, mem.db.get(`mt_files_anon:ch:${id}`))
+    const hook = renderHook(() => useAudioEngine())
+    await act(async () => { await hook.result.current.initEngine() })
+    expect(localStorage.getItem('mt_legacy_pans_reset:anonimo')).toBe('1')
+    expect((mem.db.get('mt_meta_playlist') as SavedSong[])[0].channels[0].pan).toBe(0)
+    // A u1 de volta não zera de novo.
+    cleanup()
+    seedFor('u1', song('a2', { click: -1 }))
+    const back = await openApp('u1')
+    expect(back.result.current.channels[0].pan).toBe(-1)
+  })
+})
+
+describe('pan automático (só no pan efetivo, nunca no ch.pan)', () => {
+  const AUTO = { autoPan: true }
+  it('em Tudo junto o panner vai pro lado do papel e nenhum ch.pan muda', async () => {
+    mem.settings = { ...mem.settings, ...AUTO, outputs: STEREO }
+    seed(song('s1', { click: 0.6, guide: 0.3, bass: -0.4, keys: 0.2 }))
+    const hook = await openApp()
+    expect([panOf(hook, 's1-click'), panOf(hook, 's1-guide'), panOf(hook, 's1-bass'), panOf(hook, 's1-keys')]).toEqual([-1, -1, 1, 1])
+    expect(hook.result.current.channels.map((c) => c.pan)).toEqual([0.6, 0.3, -0.4, 0.2])
+    // Nível igual ao da v1.4.15 com o pan automático.
+    const sig = await playAndMeasure(hook, IDS)
+    close(sig, legacyMeasure([{ stereo: false, pan: -1 }, { stereo: false, pan: -1 }, { stereo: true, pan: 1 }, { stereo: true, pan: 1 }]))
+    act(() => { hook.result.current.pause() })
+
+    // Troca de papel, arquivo novo, canal avulso e metrônomo: o pan gravado é só o knob.
+    await act(async () => { hook.result.current.setChannelMeta('s1-bass', { role: 'click' }) })
+    expect(chan(hook, 's1-bass').pan).toBe(-0.4)
+    expect(panOf(hook, 's1-bass')).toBe(-1)
+    // Na hora, sem rampa: numa rampa o Click novo passaria pelo lado da VS.
+    expect(asFake(chan(hook, 's1-bass').pannerNode).pan.events.at(-1)?.kind).toBe('set')
+    const files = ['Click.wav', 'BASS_2.wav'].map((n) => new File([n.startsWith('BASS') ? 'stereo' : 'mono'], n, { type: 'audio/wav' }))
+    await act(async () => { await hook.result.current.loadFiles(files as unknown as FileList, 'Nova') })
+    await act(async () => { hook.result.current.jumpToSong(1) })
+    await act(async () => { await hook.result.current.addChannelToActiveSong(new File(['mono'], 'GUIDE VOX.wav', { type: 'audio/wav' })) })
+    await act(async () => { await hook.result.current.createEndlessMetronomeSong(120) })
+    const all = hook.result.current.playlist.flatMap((s) => s.channels)
+    for (const name of ['Click', 'BASS_2', 'GUIDE VOX', 'Metronomo Loop']) expect(all.find((c) => c.name === name)).toMatchObject({ pan: 0, bus: '1/2' })
+    expect(valueAt(asFake(all.find((c) => c.name === 'BASS_2')!.pannerNode).pan, ctxOf().currentTime + 1)).toBe(1)
+    expect(valueAt(asFake(all.find((c) => c.name === 'Metronomo Loop')!.pannerNode).pan, ctxOf().currentTime + 1)).toBe(-1)
+    // Nada disso foi gravado com ±1 no repertório.
+    const savedById = Object.fromEntries((mem.db.get(metaKey()) as SavedSong[]).flatMap((s) => s.channels).map((c) => [c.name, c.pan]))
+    expect(savedById).toEqual({ CLICK: 0.6, 'Voz Guia': 0.3, BASS_1: -0.4, KEYS: 0.2, Click: 0, BASS_2: 0, 'GUIDE VOX': 0, 'Metronomo Loop': 0 })
+
+    // Desligar o pan automático volta o knob, sem regravar nada.
+    mem.settings = { ...mem.settings, autoPan: false }
+    await act(async () => { hook.rerender() })
+    expect(valueAt(asFake(all.find((c) => c.name === 'BASS_2')!.pannerNode).pan, ctxOf().currentTime)).toBe(0)
+    expect(valueAt(asFake(all.find((c) => c.id === 's1-click')!.pannerNode).pan, ctxOf().currentTime)).toBe(0.6)
+  })
+
+  it('de Tudo junto com pan automático pra 4 ou mais, a VS sai igual nas duas saídas do par', async () => {
+    mem.ctxOpts = { maxChannelCount: 8 }
+    mem.settings = { ...mem.settings, ...AUTO, outputs: STEREO }
+    seed(song('s1'))
+    const hook = await openApp()
+    expect(panOf(hook, 's1-bass')).toBe(1)
+    mem.settings = { ...mem.settings, outputs: MULTI }
+    await act(async () => { hook.rerender() })
+    expect(hook.result.current.outputPlan).toMatchObject({ mode: 'multi', channels: 8 })
+    expect([panOf(hook, 's1-bass'), panOf(hook, 's1-keys')]).toEqual([0, 0])
+    const sig = await playAndMeasure(hook, IDS)
+    const ref = legacyMeasure([{ stereo: false, pan: 0 }, { stereo: false, pan: 0 }, { stereo: true, pan: 0 }, { stereo: true, pan: 0 }])
+    for (const o of [0, 1]) for (const k of [4, 5, 6, 7]) expect(Math.abs(sig[o][k] - ref[o][k])).toBeLessThan(1e-12)
+    expect(part(sig, 0, 2)).toBeCloseTo(part(sig, 1, 2), 12)
+    expect(part(sig, 2, 0)).toBeCloseTo(1, 12)
+    for (const o of [0, 1]) expect(part(sig, o, 0)).toBe(0)
+  })
+
+  it('de separados com o lado trocado pra Tudo junto com pan automático: o Click vai pra esquerda na hora', async () => {
+    mem.settings = { ...mem.settings, autoPan: true, outputs: { ...SPLIT, earOnSecond: true } }
+    seed(song('s1'))
+    const hook = await openApp()
+    expect(panOf(hook, 's1-click')).toBe(1)
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    await act(async () => { hook.rerender() })
+    // Sem rampa: no mesmo instante o Click já está todo no lado do ouvido, nada no da VS.
+    const t = ctxOf().currentTime
+    for (const id of ['s1-click', 's1-guide']) expect(valueAt(asFake(chan(hook, id).pannerNode).pan, t)).toBe(-1)
+    for (const id of ['s1-bass', 's1-keys']) expect(valueAt(asFake(chan(hook, id).pannerNode).pan, t)).toBe(1)
+  })
+
+  it('em Click e Guia separados o pan automático não muda nada', async () => {
+    const run = async (autoPan: boolean) => {
+      mem.settings = { ...mem.settings, autoPan, outputs: SPLIT }
+      seed(song('s1', { click: 0.6, bass: -0.4 }))
+      const hook = await openApp()
+      const pans = [panOf(hook, 's1-click'), panOf(hook, 's1-guide'), panOf(hook, 's1-bass'), panOf(hook, 's1-keys')]
+      const sig = await playAndMeasure(hook, IDS)
+      const stored = hook.result.current.channels.map((c) => c.pan)
+      cleanup()
+      return { pans, sig, stored }
+    }
+    const on = await run(true)
+    const off = await run(false)
+    expect(on.pans).toEqual([-1, -1, 1, 1])
+    expect(on.pans).toEqual(off.pans)
+    close(on.sig, off.sig)
+    expect(on.stored).toEqual([0.6, 0, -0.4, 0])
   })
 })
 
@@ -472,6 +592,18 @@ describe('pré-contagem antiga', () => {
     for (const sig of await countIn(hook)) close(sig, legacyBeep(0))
   })
 
+  it('em tudo junto com o pan automático vai pro ouvido (-1) como na v1.4.16, nada no lado da VS', async () => {
+    mem.settings = { ...mem.settings, outputs: STEREO, autoPan: true }
+    seed(song('s1'))
+    const hook = await openApp()
+    const bus = graphOf(ctxOf())
+    for (const sig of await countIn(hook)) {
+      close(sig, legacyBeep(-1))
+      expect(sig[1][0]).toBe(0)
+    }
+    for (const osc of nodesOf(ctxOf(), 'OscillatorNode')) expect(onlyThrough(ctxOf(), osc, bus.click)).toBe(true)
+  })
+
   it('em 4 ou mais sai só na saída do Click, no nível do ouvido', async () => {
     mem.ctxOpts = { maxChannelCount: 8 }
     mem.settings = { ...mem.settings, outputs: MULTI }
@@ -515,4 +647,105 @@ describe('mudo geral', () => {
     expect(valueAt(bus.masterMute.gain, t + 1.2)).toBeGreaterThan(1 - 1e-6)
     expect(hook.result.current.getOutputLevels()).toEqual({ l: 0, r: 0 })
   })
+})
+
+describe('nunca sem som e nunca Click na VS nas trocas', () => {
+  it('troca de aparelho fica no mudo geral até o plano novo valer', async () => {
+    mem.ctxOpts = { maxChannelCount: 2, sinks: { placa: 8 } }
+    mem.settings = { ...mem.settings, outputs: MULTI }
+    seed(song('s1'))
+    const hook = await openApp()
+    const bus = graphOf(ctxOf())
+    const ctx = ctxOf()
+    const original = ctx.setSinkId.bind(ctx)
+    let muteDuringSwitch = -1
+    ctx.setSinkId = async (id: string) => {
+      muteDuringSwitch = valueAt(bus.masterMute.gain, ctx.currentTime)
+      await original(id)
+    }
+    mem.settings = { ...mem.settings, audioDeviceId: 'placa' }
+    await act(async () => { hook.rerender() })
+    await act(async () => { await Promise.resolve() })
+    expect(muteDuringSwitch).toBe(0)
+    expect(hook.result.current.outputPlan.mode).toBe('multi')
+    expect(valueAt(bus.masterMute.gain, ctx.currentTime + 1)).toBeGreaterThan(1 - 1e-6)
+    // Com o mudo geral ligado pelo operador, a troca não desfaz o mudo.
+    act(() => { hook.result.current.toggleMasterMute() })
+    mem.settings = { ...mem.settings, audioDeviceId: 'default' }
+    await act(async () => { hook.rerender() })
+    await act(async () => { await Promise.resolve() })
+    expect(valueAt(bus.masterMute.gain, ctx.currentTime + 1)).toBeLessThan(1e-6)
+  })
+
+  it('aparelho que recusa o plano ao ligar: cai em 2 canais com o Click fora da VS', async () => {
+    seed(song('s1'))
+    const hook = await openApp()
+    // O aparelho diz 8 canais na leitura do motor e 2 na hora de ligar (o grafo lança RangeError).
+    const dest = ctxOf().destination
+    let reads = 0
+    Object.defineProperty(dest, 'maxChannelCount', { configurable: true, get: () => (reads++ === 0 ? 8 : 2) })
+    mem.settings = { ...mem.settings, outputs: MULTI }
+    await act(async () => { hook.rerender() })
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('Usando 2 canais'))).toBe(true)
+    expect(hook.result.current.outputPlan).toMatchObject({ mode: 'split2' })
+    const sig = await playAndMeasure(hook, IDS)
+    close(sig, legacyMeasure([{ stereo: false, pan: -1 }, { stereo: false, pan: -1 }, { stereo: true, pan: 1 }, { stereo: true, pan: 1 }]))
+  })
+
+  it('erro do aparelho no meio da troca: a rota anterior volta, com som', async () => {
+    mem.ctxOpts = { maxChannelCount: 2, sinks: { placa: 8 } }
+    mem.settings = { ...mem.settings, outputs: MULTI }
+    seed(song('s1'))
+    const hook = await openApp()
+    // O destino recusa 8 canais (DOMException) depois de o grafo já ter soltado a rota velha.
+    const dest = ctxOf().destination
+    const proto = Object.getOwnPropertyDescriptor(FakeAudioNode.prototype, 'channelCount')!
+    Object.defineProperty(dest, 'channelCount', {
+      configurable: true,
+      get() { return proto.get!.call(dest) },
+      set(n: number) { if (n === 8) throw new DOMException('o aparelho recusou', 'NotSupportedError'); proto.set!.call(dest, n) },
+    })
+    mem.settings = { ...mem.settings, audioDeviceId: 'placa' }
+    await act(async () => { hook.rerender() })
+    await act(async () => { await Promise.resolve() })
+    expect(error.mock.calls.some((c) => String(c[0]).includes('a rota anterior volta'))).toBe(true)
+    error.mockClear()
+    expect(hook.result.current.outputPlan.mode).toBe('split2')
+    const sig = await playAndMeasure(hook, IDS)
+    close(sig, legacyMeasure([{ stereo: false, pan: -1 }, { stereo: false, pan: -1 }, { stereo: true, pan: 1 }, { stereo: true, pan: 1 }]))
+  })
+
+  it('grafo que não monta por erro do navegador: rota de reserva com som e o Click no ouvido', async () => {
+    const decode = async (data: ArrayBuffer) => new FakeAudioBuffer(new TextDecoder().decode(data).startsWith('stereo') ? 2 : 1, 4800, SR)
+    vi.stubGlobal('AudioContext', function () {
+      const ctx = createFakeAudioContext({ decode, maxChannelCount: 8 })
+      ctx.createChannelSplitter = () => { throw new TypeError('sem ChannelSplitter neste navegador') }
+      mem.ctx = ctx
+      return ctx
+    })
+    seed(song('s1'))
+    const hook = await openApp()
+    expect(error.mock.calls.some((c) => String(c[0]).includes('rota de reserva'))).toBe(true)
+    error.mockClear()
+    expect(hook.result.current.isReady).toBe(true)
+    expect(hook.result.current.outputPlan.mode).toBe('split2')
+    const sig = await playAndMeasure(hook, IDS)
+    close(sig, legacyMeasure([{ stereo: false, pan: -1 }, { stereo: false, pan: -1 }, { stereo: true, pan: 1 }, { stereo: true, pan: 1 }]))
+    // "4 ou mais" não existe na reserva (placa de 8): cai em separados com aviso.
+    mem.settings = { ...mem.settings, outputs: MULTI }
+    await act(async () => { hook.rerender() })
+    expect(hook.result.current.outputPlan.mode).toBe('split2')
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('Usando 2 canais'))).toBe(true)
+  })
+
+  it('pausar no fade da próxima música cancela a troca (a contagem seguinte não cai no meio dela)', async () => {
+    seed(song('s1'), song('s2'))
+    const hook = await openApp()
+    await act(async () => { await hook.result.current.play() })
+    act(() => { hook.result.current.nextSong() })
+    act(() => { hook.result.current.pause() })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1700)) })
+    expect(hook.result.current.activeSongIndex).toBe(0)
+    expect(hook.result.current.isPlaying).toBe(false)
+  }, 30000)
 })

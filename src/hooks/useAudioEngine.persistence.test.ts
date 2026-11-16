@@ -313,7 +313,7 @@ describe('setChannelMeta', () => {
   })
 
   it('papel novo reaplica o pan automático, o ganho do Solo e a ordem padrão', async () => {
-    // Pan automático só em "Tudo junto" (T25): nos outros modos o pan salvo não muda com o papel.
+    // Pan automático só em "Tudo junto" e só no panner (T25): o pan salvo é o knob e não muda com o papel.
     mem.settings.outputs = { mode: 'stereo', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } }
     seed(v1)
     const { result } = await openApp()
@@ -321,18 +321,19 @@ describe('setChannelMeta', () => {
     // Click vira Normal: vai pro PA, o Solo de c passa a calar e cai pro fim da ordem.
     await act(async () => { result.current.setChannelMeta('a', { role: 'normal' }) })
     const a = channel(result, 'a')
-    expect(a).toMatchObject({ role: 'normal', pan: 1, bus: '2' })
+    expect(a).toMatchObject({ role: 'normal', pan: -1, bus: '1' })
     expect(a.pannerNode.pan.value).toBe(1)
     expect(a.gainNode.gain.value).toBe(0)
     expect(ids(result, 's1')).toEqual(['b', 'c', 'a'])
     expect(savedSong('s1')).toMatchObject({ channelOrder: 'auto' })
     expect(savedSong('s1').channels.map((c) => [c.id, c.role, c.pan, c.bus])).toEqual([
-      ['b', undefined, 1, '2'], ['c', undefined, 0.3, '1/2'], ['a', 'normal', 1, '2'],
+      ['b', undefined, 1, '2'], ['c', undefined, 0.3, '1/2'], ['a', 'normal', -1, '1'],
     ])
 
     // Volta ao automático: Click de novo, no ouvido, tocando com o Solo.
     await act(async () => { result.current.setChannelMeta('a', { role: null }) })
     expect(channel(result, 'a')).toMatchObject({ pan: -1, bus: '1' })
+    expect(channel(result, 'a').pannerNode.pan.value).toBe(-1)
     expect(channel(result, 'a').gainNode.gain.value).toBe(0.7)
     expect(ids(result, 's1')).toEqual(['a', 'b', 'c'])
   })
