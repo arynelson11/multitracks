@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { asAudioContext, createFakeAudioContext, nodesOf, reaches, valueAt, type FakeGraphItem } from '../test/fakeAudio'
+import { asAudioContext, createFakeAudioContext, nodesOf, reaches, valueAt, type FakeAudioParam } from '../test/fakeAudio'
 import { COUNT_TONE, scheduleCount } from './countTones'
 
 describe('COUNT_TONE', () => {
@@ -95,54 +95,122 @@ describe('scheduleCount', () => {
 })
 
 describe('scheduleCount: cancel sem estalo', () => {
-  // Contagem de 4 em 6, 6,5, 7 e 7,5; cancelada em 6,55, com o bipe de 6,5 segurando o pico 0,68.
+  // Mesmo cenário do scripts/verify-audio/count-cancel.mjs (Chrome real): um bipe em 0,5 s a
+  // 48 kHz, cancelado em cada quantum de 128 amostras ao longo dele (82 instantes, do ataque
+  // até a parada).
+  const SR = 48000
+  const AT = 0.5
+  const MAX_STEP = 0.01
+  const instants: number[] = []
+  for (let k = Math.ceil((AT * SR) / 128); (k * 128) / SR < AT + 0.22; k++) instants.push((k * 128) / SR)
+
+  // cancelAndHoldAtTime como a especificação manda (e o Chrome e o Safari fazem), no lugar do
+  // da T1, que grava um 'set' em tc mesmo sem rampa cruzando (diverge; outra tarefa corrige o
+  // fake): os eventos em tc ficam; se o próximo depois de tc é rampa, ela passa a terminar em
+  // tc com o valor que teria ali; senão, depois de um setTarget, entra um set em tc; senão NADA
+  // entra em tc. O que vem depois de tc sai.
+  const specCancelAndHold = (p: FakeAudioParam) => (tc: number) => {
+    const held = valueAt(p, tc)
+    const line = p.events.filter((e) => e.kind !== 'cancel')
+    const atTc = line.filter((e) => e.time === tc)
+    const prev = line.filter((e) => e.time <= tc).at(-1)
+    const next = line.find((e) => e.time > tc)
+    p.cancelScheduledValues(tc) // o do fake tira também os de tempo igual: voltam abaixo
+    for (const e of atTc) {
+      if (e.kind === 'set') p.setValueAtTime(e.value!, tc)
+      else if (e.kind === 'linear') p.linearRampToValueAtTime(e.value!, tc)
+      else if (e.kind === 'exp') p.exponentialRampToValueAtTime(e.value!, tc)
+      else throw new Error(`evento ${e.kind} em tc: o cenário não tem`)
+    }
+    if (next?.kind === 'linear') p.linearRampToValueAtTime(held, tc)
+    else if (next?.kind === 'exp') p.exponentialRampToValueAtTime(held, tc)
+    else if (prev?.kind === 'target') p.setValueAtTime(held, tc)
+    return p
+  }
+
+  type Hold = 'especificação' | 'sem cancelAndHoldAtTime'
+  const setup = (label: number, now: number, hold: Hold) => {
+    const ctx = createFakeAudioContext({ sampleRate: SR }); const dest = ctx.createGain()
+    ctx.currentTime = 0.3
+    const count = scheduleCount(asAudioContext(ctx), dest, [{ at: AT, label }])
+    const [tri, sq] = nodesOf(ctx, 'OscillatorNode')
+    const env = nodesOf(ctx, 'GainNode').find((g) => tri.connections.some((c) => c.to === g))!
+    // Firefox não tem cancelAndHoldAtTime.
+    Object.defineProperty(env.gain, 'cancelAndHoldAtTime', { value: hold === 'especificação' ? specCancelAndHold(env.gain) : undefined })
+    const played = valueAt(env.gain, now - 1 / SR) // a amostra de antes do cancel já saiu
+    ctx.currentTime = now
+    return { ctx, dest, count, tri, sq, env, played }
+  }
+  type Setup = ReturnType<typeof setup>
+  // O que chega no destino em t: o envelope; zero antes do início, depois da parada dos
+  // osciladores ou depois de desligado (desligar vale na hora da chamada, em now).
+  const heard = (s: Setup, now: number) => {
+    const cutAt = reaches(s.tri, s.dest) ? Number.POSITIVE_INFINITY : now
+    const stopAt = Math.min(s.tri.stops.at(-1)!, s.sq.stops.at(-1)!)
+    return (t: number) => (t < s.tri.starts[0].when || t >= cutAt || t >= stopAt ? 0 : valueAt(s.env.gain, t))
+  }
+  // Maior mudança de uma amostra pra outra, da última que saiu antes do cancel até 21 ms depois.
+  const worstStep = (s: Setup, now: number, g = heard(s, now)) => {
+    let worst = 0; let prev = s.played
+    for (let k = 0; k <= 0.021 * SR; k++) { const v = g(now + k / SR); worst = Math.max(worst, Math.abs(v - prev)); prev = v }
+    return worst
+  }
+
+  for (const hold of ['especificação', 'sem cancelAndHoldAtTime'] as const) {
+    for (const label of [1, 2]) {
+      it(`${label === 1 ? 'acento' : 'tempo 2'}, cancelAndHoldAtTime ${hold === 'especificação' ? 'pela especificação' : 'ausente'}: em nenhum dos 82 instantes o envelope muda mais que 0,01 por amostra, e os osciladores param depois da descida`, () => {
+        expect(instants).toHaveLength(82)
+        const bad: string[] = []; const wrongStop: string[] = []
+        for (const now of instants) {
+          const s = setup(label, now, hold)
+          s.count.cancel(now)
+          const step = worstStep(s, now)
+          if (step > MAX_STEP) bad.push(`${now.toFixed(4)}: ${step.toFixed(4)}`)
+          const stops = [s.tri.stops.at(-1)!, s.sq.stops.at(-1)!]
+          if (stops.some((t) => Math.abs(t - (now + 0.02)) > 1e-12)) wrongStop.push(`${now.toFixed(4)}: ${stops.join('/')}`)
+          expect(valueAt(s.env.gain, now + 0.02)).toBeLessThan(1e-3) // a parada cai em silêncio
+          expect(reaches(s.tri, s.dest)).toBe(true) // quem desliga é o ended
+        }
+        expect(bad).toEqual([])
+        expect(wrongStop).toEqual([])
+      })
+    }
+  }
+  it('controle: a rampa linear depois do cancelAndHoldAtTime (rodada 1) dá degrau pela especificação, como no Chrome', () => {
+    const now = (210 * 128) / SR // sustentação do bipe
+    const s = setup(2, now, 'especificação')
+    s.env.gain.cancelAndHoldAtTime(now); s.env.gain.linearRampToValueAtTime(0, now + 0.005)
+    expect(worstStep(s, now, (t) => valueAt(s.env.gain, t))).toBeGreaterThan(0.5)
+  })
+  it('sem cancelAndHoldAtTime: rampa em curso volta a terminar em now com o valor da receita (não o do getter), fora de rampa um set', () => {
+    const cases = [[188, 'linear'], [210, 'set'], [230, 'exp'], [262, 'set']] as const // ataque, sustentação, queda e piso
+    for (const [k, kind] of cases) {
+      const now = (k * 128) / SR
+      const s = setup(1, now, 'sem cancelAndHoldAtTime')
+      const expected = valueAt(s.env.gain, now)
+      Object.defineProperty(s.env.gain, 'value', { get: () => 1 })
+      s.count.cancel(now)
+      const held = s.env.gain.events.filter((e) => e.time === now && e.kind !== 'cancel' && e.kind !== 'target')
+      expect(held).toHaveLength(1)
+      expect(held[0].kind).toBe(kind)
+      expect(held[0].value).toBeCloseTo(expected, 9)
+      expect(s.env.gain.events.at(-1)).toEqual(expect.objectContaining({ kind: 'target', value: 0, time: now }))
+    }
+  })
+
+  // Contagem de 4 em 6, 6,5, 7 e 7,5, cancelada em 6,55 (o bipe de 6,5 soando).
   const NOW = 6.55
-  const setup = (opts: { withoutHold?: boolean } = {}) => {
+  const setup4 = () => {
     const ctx = createFakeAudioContext(); const dest = ctx.createGain()
     ctx.currentTime = 5.8
     const count = scheduleCount(asAudioContext(ctx), dest, [{ at: 6, label: 1 }, { at: 6.5, label: 2 }, { at: 7, label: 3 }, { at: 7.5, label: 4 }])
     const oscs = nodesOf(ctx, 'OscillatorNode')
-    const beep = (i: number) => {
-      const tri = oscs[2 * i]; const sq = oscs[2 * i + 1]
-      const env = nodesOf(ctx, 'GainNode').find((g) => tri.connections.some((c) => c.to === g))!
-      return { tri, sq, env, lp: nodesOf(ctx, 'BiquadFilterNode')[i] }
-    }
-    // Firefox não tem cancelAndHoldAtTime: o cancel cai em cancelScheduledValues + setValueAtTime.
-    if (opts.withoutHold) for (const i of [0, 1, 2, 3]) Object.defineProperty(beep(i).env.gain, 'cancelAndHoldAtTime', { value: undefined })
+    const beep = (i: number) => ({ tri: oscs[2 * i], sq: oscs[2 * i + 1], lp: nodesOf(ctx, 'BiquadFilterNode')[i] })
     ctx.currentTime = NOW
     return { ctx, dest, count, beep }
   }
-  type Beep = ReturnType<ReturnType<typeof setup>['beep']>
-  // O que chega no destino no instante t: o envelope, mas zero depois que os osciladores param ou
-  // que o bipe é desligado (desligar vale na hora da chamada, ou seja, em NOW).
-  const heard = (b: Beep, dest: FakeGraphItem) => {
-    const cutAt = reaches(b.tri, dest) ? Number.POSITIVE_INFINITY : NOW
-    const stopAt = Math.min(b.tri.stops.at(-1)!, b.sq.stops.at(-1)!)
-    return (t: number) => (t < b.tri.starts[0].when || t >= cutAt || t >= stopAt ? 0 : valueAt(b.env.gain, t))
-  }
-  // Maior queda por amostra que a rampa de 5 ms permite (do pico do acento até 0).
-  const worstDrop = (g: (t: number) => number, sr: number) => {
-    let worst = 0; let prev = g(NOW - 1 / sr)
-    for (let k = 0; k <= 0.03 * sr; k++) { const v = g(NOW + k / sr); worst = Math.max(worst, prev - v); prev = v }
-    return worst
-  }
-
-  for (const withoutHold of [false, true]) {
-    it(`bipe soando desce até 0 em 5 ms, sem degrau, e só depois para${withoutHold ? ' (sem cancelAndHoldAtTime)' : ''}`, () => {
-      const { ctx, dest, count, beep } = setup({ withoutHold })
-      count.cancel(NOW)
-      const b = beep(1)
-      expect(reaches(b.tri, dest)).toBe(true) // continua ligado até o ended
-      const g = heard(b, dest)
-      expect(g(NOW)).toBeCloseTo(0.68, 10)
-      expect(valueAt(b.env.gain, NOW + 0.005)).toBe(0)
-      expect(worstDrop(g, ctx.sampleRate)).toBeLessThanOrEqual(COUNT_TONE.accentPeak / (0.005 * ctx.sampleRate) + 1e-12)
-      expect(b.tri.stops.at(-1)).toBeCloseTo(NOW + 0.01, 12); expect(b.sq.stops.at(-1)).toBeCloseTo(NOW + 0.01, 12)
-      expect(g(NOW + 0.01)).toBe(0)
-    })
-  }
   it('bipe que ainda não começou para em now e desliga na hora; o que já acabou só desliga', () => {
-    const { dest, count, beep } = setup()
+    const { dest, count, beep } = setup4()
     count.cancel(NOW)
     for (const i of [2, 3]) {
       const b = beep(i)
@@ -153,16 +221,9 @@ describe('scheduleCount: cancel sem estalo', () => {
     expect(passado.tri.stops).toHaveLength(1); expect(reaches(passado.tri, dest)).toBe(false)
   })
   it('depois do ended do bipe que descia nada fica ligado', () => {
-    const { ctx, count, beep } = setup()
+    const { ctx, count, beep } = setup4()
     count.cancel(NOW)
     beep(1).tri.dispatchEvent(new Event('ended'))
     expect(ctx.created.every((c) => (c.node as { connections: unknown[] }).connections.length === 0)).toBe(true)
-  })
-  it('o corte antigo (parar e desligar em now) seria um degrau: o teste de queda pega', () => {
-    const { ctx, dest, count, beep } = setup()
-    const b = beep(1)
-    const g = heard(b, dest) // antes do cancel: o bipe inteiro
-    expect(worstDrop((t) => (t >= NOW ? 0 : g(t)), ctx.sampleRate)).toBeGreaterThan(0.5)
-    count.cancel(NOW)
   })
 })
