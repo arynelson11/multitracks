@@ -1,0 +1,12 @@
+# Resultados das medições com multitracks reais: ficam só no Mac (nunca no git).
+results/
+dist/
+*.json
+*.log
+# Áudio nunca entra aqui (os pacotes são lidos direto da pasta do dono).
+*.wav
+*.mp3
+*.m4a
+*.aif
+*.aiff
+*.flac
