@@ -44,13 +44,18 @@ function wordsOf(ch: ChannelIdentity): Set<string> {
 
 const hasAnyWord = (words: ReadonlySet<string>, wanted: ReadonlySet<string>) => [...wanted].some((word) => words.has(word))
 
-// Bateria e percussão inteiras; com kit inteiro E algum loop ou virada, só o kit.
+// Bateria e percussão inteiras. Com algum loop ou virada: havendo kit inteiro, fica só
+// ele; sem kit inteiro mas com kit separado (peça sem loop nem virada), saem só o loop
+// e a virada, e peças e percussão ficam.
 function pickPulse<T extends ChannelIdentity>(percussive: readonly Candidate<T>[]): Candidate<T>[] {
   const words = percussive.map((c) => wordsOf(c.ch))
   const isPartial = words.map((w) => hasAnyWord(w, PARTIAL_KIT_WORDS))
-  const fullKit = percussive.filter((_, i) => hasAnyWord(words[i], FULL_KIT_WORDS) && !isPartial[i]
-    && ![...words[i]].some(isDrumPieceToken))
-  return fullKit.length > 0 && isPartial.some(Boolean) ? fullKit : [...percussive]
+  const isPiece = words.map((w) => [...w].some(isDrumPieceToken))
+  if (!isPartial.some(Boolean)) return [...percussive]
+  const fullKit = percussive.filter((_, i) => hasAnyWord(words[i], FULL_KIT_WORDS) && !isPartial[i] && !isPiece[i])
+  if (fullKit.length > 0) return fullKit
+  const hasSeparateKit = percussive.some((_, i) => isPiece[i] && !isPartial[i])
+  return hasSeparateKit ? percussive.filter((_, i) => !isPartial[i]) : [...percussive]
 }
 
 const isSourceFamily = (family: ChannelFamily): family is SourceFamily => family !== 'desconhecido'

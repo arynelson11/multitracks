@@ -25,13 +25,13 @@ describe('pacotes da seção 4 do relatório', () => {
     ['EN completo', ['CLICK', 'GUIDE', 'DRUMS', 'BASS', 'EG1', 'KEYS', 'PAD', 'VOX'],
       { click: 'CLICK', pulse: ['DRUMS'], bass: 'BASS', harmony: ['KEYS', 'PAD'], label: 'Bateria e Baixo' }],
     ['kit separado EN', ['Click', 'Cues', 'KICK', 'SNARE', 'HIHAT', 'OH', 'PERC', 'LOOP', 'BASS'],
-      { click: 'Click', pulse: ['KICK', 'SNARE', 'HIHAT', 'OH', 'PERC', 'LOOP'], bass: 'BASS', harmony: [],
+      { click: 'Click', pulse: ['KICK', 'SNARE', 'HIHAT', 'OH', 'PERC'], bass: 'BASS', harmony: [],
         label: 'Bateria, Percussão e Baixo' }],
     ['kit separado BR', ['Click', 'Guia', 'BUMBO', 'CAIXA', 'CHIMBAL', 'LOOP', 'PERCUSSÃO', 'BAIXO'],
-      { click: 'Click', pulse: ['BUMBO', 'CAIXA', 'CHIMBAL', 'LOOP', 'PERCUSSÃO'], bass: 'BAIXO', harmony: [],
+      { click: 'Click', pulse: ['BUMBO', 'CAIXA', 'CHIMBAL', 'PERCUSSÃO'], bass: 'BAIXO', harmony: [],
         label: 'Bateria, Percussão e Baixo' }],
     ['kit separado BR sem baixo, violão antes', ['Click', 'Guia', 'VIOLÃO', 'LOOP', 'BUMBO', 'CAIXA'],
-      { click: 'Click', pulse: ['LOOP', 'BUMBO', 'CAIXA'], bass: null, harmony: ['VIOLÃO'], label: 'Bateria e Percussão' }],
+      { click: 'Click', pulse: ['BUMBO', 'CAIXA'], bass: null, harmony: ['VIOLÃO'], label: 'Bateria' }],
     ['Drum Loop antes de Drums', ['Click', 'Drum Loop', 'Drums'],
       { click: 'Click', pulse: ['Drums'], bass: null, harmony: [], label: 'Bateria' }],
     ['só viradas antes de Drums', ['Click', 'Drum Fills', 'Drums'],
@@ -66,8 +66,16 @@ describe('pulso', () => {
     expect(pick(mk(['DRUMS', 'PERC', 'LOOP'])).pulse).toEqual(['DRUMS'])
     expect(pick(mk(['Bateria', 'Loops'])).pulse).toEqual(['Bateria'])
   })
-  it('sem kit inteiro, loop e virada ficam no pulso', () => {
-    expect(pick(mk(['Drum Loop', 'Drum Fills', 'KICK'])).pulse).toEqual(['Drum Loop', 'Drum Fills', 'KICK'])
+  it('sem kit inteiro nem peças, loop e virada ficam no pulso', () => {
+    expect(pick(mk(['Drum Loop', 'Drum Fills', 'PERC'])).pulse).toEqual(['Drum Loop', 'Drum Fills', 'PERC'])
+  })
+  // Decisão do coordenador na rodada 1 (opção b): com kit separado, saem só loop e virada.
+  it('com kit separado (peças sem kit inteiro), saem só loop e virada; peças e percussão ficam', () => {
+    expect(pick(mk(['Drum Loop', 'Drum Fills', 'KICK'])).pulse).toEqual(['KICK'])
+    expect(pick(mk(['KICK', 'SNARE', 'LOOP', 'PERC', 'SHAKER', 'Loop L'])).pulse).toEqual(['KICK', 'SNARE', 'PERC', 'SHAKER'])
+  })
+  it('peça com loop no nome não conta como kit separado pra ligar o filtro', () => {
+    expect(pick(mk(['Kick Loop', 'PERC'])).pulse).toEqual(['Kick Loop', 'PERC'])
   })
   // Rodada 1, item 4: loop em par estéreo não pode deixar o pacote sem pulso.
   it('loop em par estéreo entra no pulso', () => {
@@ -102,13 +110,12 @@ describe('pulso', () => {
   })
   // Rodada 1, item 1: peça com "Drum" no nome é peça, nunca kit inteiro.
   it('peça com "Drum" no nome não derruba o resto do kit separado', () => {
-    expect(pick(mk(['Snare Drum', 'Kick', 'HH', 'OH', 'Drum Loop'])).pulse)
-      .toEqual(['Snare Drum', 'Kick', 'HH', 'OH', 'Drum Loop'])
+    expect(pick(mk(['Snare Drum', 'Kick', 'HH', 'OH', 'Drum Loop'])).pulse).toEqual(['Snare Drum', 'Kick', 'HH', 'OH'])
     expect(pick(mk(['Click', 'Kick Drum', 'Snare Drum', 'Hi Hat', 'OH', 'Drum Loop', 'Bass']))).toEqual({
-      click: 'Click', pulse: ['Kick Drum', 'Snare Drum', 'Hi Hat', 'OH', 'Drum Loop'], bass: 'Bass', harmony: [],
+      click: 'Click', pulse: ['Kick Drum', 'Snare Drum', 'Hi Hat', 'OH'], bass: 'Bass', harmony: [],
       label: 'Bateria e Baixo',
     })
-    expect(pick(mk(['Tom Drum', 'Bass Drum', 'Drum Fills'])).pulse).toEqual(['Tom Drum', 'Bass Drum', 'Drum Fills'])
+    expect(pick(mk(['Tom Drum', 'Bass Drum', 'Drum Fills'])).pulse).toEqual(['Tom Drum', 'Bass Drum'])
   })
   it('com kit inteiro, peça com "Drum" no nome não é kit e sai junto com o loop', () => {
     expect(pick(mk(['DRUMS', 'Snare Drum', 'Drum Loop'])).pulse).toEqual(['DRUMS'])
