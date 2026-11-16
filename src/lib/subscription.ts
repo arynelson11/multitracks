@@ -39,6 +39,18 @@ export async function fetchMySubscription(): Promise<MySubscription | null> {
   }
 }
 
+// Todas as assinaturas da pessoa (a aba decide por elas, não pelo perfil).
+export async function fetchMySubscriptions(): Promise<MySubscription[] | null> {
+  if (!supabase) return null
+  try {
+    const { data, error } = await supabase.from('billing_subscriptions').select(COLS)
+    if (error || !Array.isArray(data)) return null
+    return (data as MySubscription[]).slice().sort((a, b) => (a.started_at < b.started_at ? 1 : -1))
+  } catch {
+    return null
+  }
+}
+
 export type CancelOutcome = {
   result: 'canceled' | 'already_canceled'
   accessUntil: string | null

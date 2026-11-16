@@ -2,25 +2,25 @@ import { useEffect, useState } from 'react'
 import { isPaidPlan, planDisplayName } from '../lib/plans'
 import { formatDateBR } from '../lib/separationUsage'
 import {
-  accessDateLabel, cancelMySubscription, cancelOutcomeLine, fetchCancelPreview, fetchMySubscription,
+  accessDateLabel, cancelMySubscription, cancelOutcomeLine, fetchCancelPreview, fetchMySubscriptions,
   type CancelOutcome, type CancelPreview, type MySubscription,
 } from '../lib/subscription'
 
-// Bloco da aba Assinatura pra quem tem plano pago: próxima renovação, botão
-// "Cancelar assinatura" com confirmação que mostra o desfecho certo pra esta
-// pessoa (prévia do servidor) e o resultado. Cortesia não é assinatura: não
-// tem botão de cancelar nem aparece como "cancelada".
+// Bloco da aba Assinatura: decide pelas LINHAS da assinatura (status e
+// access_until), nunca pelo plan_expires_at do perfil (COB-N6/Q9). Assinatura
+// paga ativa aparece sempre, com o botão de cancelar e a confirmação com o
+// desfecho certo (prévia do servidor); cancelada ainda no período mostra até
+// quando vale; cortesia aparece como uma linha à parte, sem botão.
 
 type Props = {
   plan: string
-  planExpiresAt: string | null
   onChanged: () => void
   onOpenPricing: () => void
 }
 
-export function SubscriptionPanel({ plan, planExpiresAt, onChanged, onOpenPricing }: Props) {
+export function SubscriptionPanel({ plan, onChanged, onOpenPricing }: Props) {
   // undefined = carregando (não mostra nada até saber o que é)
-  const [sub, setSub] = useState<MySubscription | null | undefined>(undefined)
+  const [subs, setSubs] = useState<{ rows: MySubscription[]; at: number } | undefined>(undefined)
   const [confirming, setConfirming] = useState(false)
   const [preview, setPreview] = useState<CancelPreview | null | undefined>(undefined)
   const [busy, setBusy] = useState(false)
@@ -29,61 +29,24 @@ export function SubscriptionPanel({ plan, planExpiresAt, onChanged, onOpenPricin
 
   useEffect(() => {
     let alive = true
-    fetchMySubscription().then((s) => { if (alive) setSub(s) })
+    fetchMySubscriptions().then((s) => { if (alive) setSubs({ rows: s ?? [], at: Date.now() }) })
     return () => { alive = false }
-  }, [plan, planExpiresAt])
+  }, [plan])
 
-  if (!isPaidPlan(plan) && !outcome) return null
-  if (sub === undefined && !outcome) return null
-  const planName = planDisplayName(outcome?.plan ?? plan)
+  if (outcome) return <Result outcome={outcome} planName={planDisplayName(outcome.plan)} />
+  if (subs === undefined) return null
 
-  if (outcome) return <Result outcome={outcome} planName={planName} />
-
-  // Cortesia ativa: plano dado pela equipe, sem cobrança.
-  if (sub?.kind === 'courtesy' && sub.status === 'active') {
-    return (
-      <div className="w-full bg-white/5 rounded-lg p-4 mb-4 border border-white/10 text-left">
-        <p className="text-white text-xs leading-relaxed">
-          Plano de cortesia, sem cobrança. {sub.access_until ? `Vale até ${accessDateLabel(sub.access_until)}.` : 'Sem data para acabar.'}
-        </p>
-      </div>
-    )
-  }
-
-  // Cortada por falta de pagamento e paga depois com atraso: vale até o fim
-  // daquele período, sem renovação.
-  if (planExpiresAt && sub?.kind === 'asaas' && sub.status === 'canceled' && sub.cancel_source === 'unpaid') {
-    return (
-      <div className="w-full bg-white/5 rounded-lg p-4 mb-4 border border-white/10 text-left">
-        <p className="text-white text-xs leading-relaxed">
-          A renovação não foi paga no vencimento, então a assinatura foi encerrada e não renova mais. O pagamento atrasado foi recebido: você continua com o {planName} até {accessDateLabel(planExpiresAt)}. Para continuar depois disso, assine de novo.
-        </p>
-        <button
-          onClick={onOpenPricing}
-          className="mt-3 px-4 py-2 rounded-lg bg-laranja text-bone text-xs font-bold uppercase tracking-wider cursor-pointer"
-        >
-          Assinar de novo
-        </button>
-      </div>
-    )
-  }
-
-  // Já cancelada, ainda dentro do período pago.
-  if (planExpiresAt && sub?.kind !== 'courtesy') {
-    return (
-      <div className="w-full bg-white/5 rounded-lg p-4 mb-4 border border-white/10 text-left">
-        <p className="text-white text-xs leading-relaxed">
-          Assinatura cancelada. Você continua com o {planName} até {accessDateLabel(planExpiresAt)}. Depois disso a conta volta para o Livre. Nada mais é cobrado e seus arquivos não são apagados.
-        </p>
-        <button
-          onClick={onOpenPricing}
-          className="mt-3 px-4 py-2 rounded-lg bg-laranja text-bone text-xs font-bold uppercase tracking-wider cursor-pointer"
-        >
-          Assinar de novo
-        </button>
-      </div>
-    )
-  }
+  // Decide pelas linhas da assinatura (status e access_until), nunca pelo perfil.
+  const now = subs.at
+  const rows = subs.rows
+  const paidActive = rows.find((r) => r.kind === 'asaas' && r.status === 'active')
+  const paidGrace = paidActive ? undefined : rows
+    .filter((r) => r.kind === 'asaas' && r.status === 'canceled' && r.access_until && Date.parse(r.access_until) > now)
+    .sort((a, b) => (a.access_until! < b.access_until! ? 1 : -1))[0]
+  const courtesy = rows.find((r) => r.kind === 'courtesy' && r.status === 'active' && (!r.access_until || Date.parse(r.access_until) > now))
+  // Assinou antes desta versão (sem linha): o servidor acha a assinatura ao cancelar.
+  const legacyPaid = rows.length === 0 && isPaidPlan(plan)
+  if (!paidActive && !paidGrace && !courtesy && !legacyPaid) return null
 
   const openConfirm = () => {
     setConfirming(true)
@@ -106,59 +69,91 @@ export function SubscriptionPanel({ plan, planExpiresAt, onChanged, onOpenPricin
     }
   }
 
-  const paidUntilLabel = sub?.status === 'active' && sub.paid_until ? ` (${accessDateLabel(sub.paid_until)})` : ''
+  const activeName = planDisplayName(paidActive?.plan_key ?? plan)
+  const paidUntilLabel = paidActive?.paid_until ? ` (${accessDateLabel(paidActive.paid_until)})` : ''
 
   return (
-    <div className="w-full mb-4 text-left">
-      {sub?.status === 'active' && sub.kind === 'asaas' && sub.next_due_date && (
-        <p className="text-text-muted text-[10px] font-mono mb-2">
-          Próxima renovação: {formatDateBR(`${sub.next_due_date}T12:00:00Z`)}
-        </p>
+    <div className="w-full mb-4 text-left flex flex-col gap-3">
+      {courtesy && (
+        <div className="bg-white/5 rounded-lg p-4 border border-white/10">
+          <p className="text-white text-xs leading-relaxed">
+            Plano de cortesia ({planDisplayName(courtesy.plan_key)}), sem cobrança. {courtesy.access_until ? `Vale até ${accessDateLabel(courtesy.access_until)}.` : 'Sem data para acabar.'}
+          </p>
+        </div>
       )}
 
-      {!confirming ? (
-        <button
-          onClick={openConfirm}
-          className="text-text-muted hover:text-white text-[11px] underline underline-offset-2 cursor-pointer"
-        >
-          Cancelar assinatura
-        </button>
-      ) : (
-        <div role="dialog" aria-label="Cancelar a assinatura?" className="bg-[#141416] rounded-lg p-4 border border-white/15">
-          <h4 className="text-white text-sm font-bold mb-2">Cancelar a assinatura?</h4>
-          <ul className="text-zinc-300 text-xs leading-relaxed space-y-1.5 mb-3 list-disc pl-4">
-            <li>A renovação automática para e nada mais é cobrado no cartão.</li>
-            {preview === undefined ? (
-              <li>Conferindo o que acontece com a sua assinatura...</li>
-            ) : preview && preview.outcome !== 'none' ? (
-              <li>{cancelOutcomeLine(preview, planName)}</li>
-            ) : (
-              <>
-                <li>Você continua com o {planName} até o fim do período que já pagou{paidUntilLabel}. Depois disso a conta volta para o Livre (5 separações por mês, em 2 faixas).</li>
-                <li>Se esta é sua primeira assinatura e faz até 7 dias da compra, devolvemos o valor integral no cartão e a conta volta para o Livre na hora. Nas assinaturas seguintes, o pedido de estorno vai para a nossa equipe.</li>
-              </>
-            )}
-            <li>Seus arquivos não são apagados. As separações guardadas na nuvem continuam lá e voltam a aparecer se você assinar de novo. No Livre, o app usa a biblioteca deste aparelho.</li>
-          </ul>
-          {error && (
-            <p role="alert" className="text-amber-300 text-xs leading-relaxed mb-3">{error}</p>
+      {paidGrace && (
+        <div className="bg-white/5 rounded-lg p-4 border border-white/10">
+          {paidGrace.cancel_source === 'unpaid' ? (
+            <p className="text-white text-xs leading-relaxed">
+              A renovação não foi paga no vencimento, então a assinatura foi encerrada e não renova mais. O pagamento atrasado foi recebido: você continua com o {planDisplayName(paidGrace.plan_key)} até {accessDateLabel(paidGrace.access_until!)}. Para continuar depois disso, assine de novo.
+            </p>
+          ) : (
+            <p className="text-white text-xs leading-relaxed">
+              Assinatura cancelada. Você continua com o {planDisplayName(paidGrace.plan_key)} até {accessDateLabel(paidGrace.access_until!)}. Depois disso a conta volta para o Livre. Nada mais é cobrado e seus arquivos não são apagados.
+            </p>
           )}
-          <div className="flex flex-wrap gap-2">
+          <button
+            onClick={onOpenPricing}
+            className="mt-3 px-4 py-2 rounded-lg bg-laranja text-bone text-xs font-bold uppercase tracking-wider cursor-pointer"
+          >
+            Assinar de novo
+          </button>
+        </div>
+      )}
+
+      {(paidActive || legacyPaid) && (
+        <div>
+          {paidActive?.next_due_date && (
+            <p className="text-text-muted text-[10px] font-mono mb-2">
+              {activeName}. Próxima renovação: {formatDateBR(`${paidActive.next_due_date}T12:00:00Z`)}
+            </p>
+          )}
+          {!confirming ? (
             <button
-              onClick={() => { setConfirming(false); setError(null) }}
-              disabled={busy}
-              className="px-4 py-2 rounded-lg bg-laranja text-bone text-xs font-bold cursor-pointer disabled:opacity-50"
+              onClick={openConfirm}
+              className="text-text-muted hover:text-white text-[11px] underline underline-offset-2 cursor-pointer"
             >
-              Manter assinatura
+              Cancelar assinatura
             </button>
-            <button
-              onClick={() => { void confirm() }}
-              disabled={busy}
-              className="px-4 py-2 rounded-lg border border-white/25 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
-            >
-              {busy ? 'Cancelando...' : 'Sim, cancelar'}
-            </button>
-          </div>
+          ) : (
+            <div role="dialog" aria-label="Cancelar a assinatura?" className="bg-[#141416] rounded-lg p-4 border border-white/15">
+              <h4 className="text-white text-sm font-bold mb-2">Cancelar a assinatura?</h4>
+              <ul className="text-zinc-300 text-xs leading-relaxed space-y-1.5 mb-3 list-disc pl-4">
+                <li>A renovação automática para e nada mais é cobrado no cartão.</li>
+                {preview === undefined ? (
+                  <li>Conferindo o que acontece com a sua assinatura...</li>
+                ) : preview && preview.outcome !== 'none' ? (
+                  <li>{cancelOutcomeLine(preview, activeName)}</li>
+                ) : (
+                  <>
+                    <li>Você continua com o {activeName} até o fim do período que já pagou{paidUntilLabel}. Depois disso a conta volta para o Livre (5 separações por mês, em 2 faixas).</li>
+                    <li>Se esta é sua primeira assinatura e faz até 7 dias da compra, devolvemos o valor integral no cartão e a conta volta para o Livre na hora. Nas assinaturas seguintes, o pedido de estorno vai para a nossa equipe.</li>
+                  </>
+                )}
+                <li>Seus arquivos não são apagados. As separações guardadas na nuvem continuam lá e voltam a aparecer se você assinar de novo. No Livre, o app usa a biblioteca deste aparelho.</li>
+              </ul>
+              {error && (
+                <p role="alert" className="text-amber-300 text-xs leading-relaxed mb-3">{error}</p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => { setConfirming(false); setError(null) }}
+                  disabled={busy}
+                  className="px-4 py-2 rounded-lg bg-laranja text-bone text-xs font-bold cursor-pointer disabled:opacity-50"
+                >
+                  Manter assinatura
+                </button>
+                <button
+                  onClick={() => { void confirm() }}
+                  disabled={busy}
+                  className="px-4 py-2 rounded-lg border border-white/25 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+                >
+                  {busy ? 'Cancelando...' : 'Sim, cancelar'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

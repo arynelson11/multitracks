@@ -3,12 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { MySubscription } from '../lib/subscription'
 
-const fetchSub = vi.fn()
+const fetchSubs = vi.fn()
 const cancelSub = vi.fn()
 const previewMock = vi.fn()
 vi.mock('../lib/subscription', async (orig) => ({
   ...(await orig<typeof import('../lib/subscription')>()),
-  fetchMySubscription: () => fetchSub(),
+  fetchMySubscriptions: () => fetchSubs(),
   cancelMySubscription: () => cancelSub(),
   fetchCancelPreview: () => previewMock(),
 }))
@@ -20,27 +20,35 @@ const active: MySubscription = {
   started_at: '2026-10-16T15:00:00Z', next_due_date: '2026-12-16', paid_until: '2026-12-17T03:00:00Z',
   access_until: null, cancel_source: null, canceled_at: null, created_at: '2026-10-16T15:00:00Z',
 }
+const courtesy = (until: string | null): MySubscription => ({
+  ...active, id: 'cortesia:1', kind: 'courtesy', plan_key: 'pro_anual', cycle: null, started_at: '2026-11-10T00:00:00Z',
+  next_due_date: null, paid_until: null, access_until: until,
+})
 
-beforeEach(() => { fetchSub.mockReset(); cancelSub.mockReset(); previewMock.mockReset(); previewMock.mockResolvedValue(null) })
-afterEach(cleanup)
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-11-16T15:00:00Z'))
+  fetchSubs.mockReset(); cancelSub.mockReset(); previewMock.mockReset(); previewMock.mockResolvedValue(null)
+})
+afterEach(() => { cleanup(); vi.useRealTimers() })
 
-const setup = (props: Partial<Parameters<typeof SubscriptionPanel>[0]> = {}) => {
+const setup = (plan = 'essencial_mensal') => {
   const onChanged = vi.fn()
   const onOpenPricing = vi.fn()
-  render(<SubscriptionPanel plan="essencial_mensal" planExpiresAt={null} onChanged={onChanged} onOpenPricing={onOpenPricing} {...props} />)
+  render(<SubscriptionPanel plan={plan} onChanged={onChanged} onOpenPricing={onOpenPricing} />)
   return { onChanged, onOpenPricing }
 }
 
 describe('SubscriptionPanel', () => {
   it('mostra a próxima renovação e o botão Cancelar assinatura', async () => {
-    fetchSub.mockResolvedValue(active)
+    fetchSubs.mockResolvedValue([active])
     setup()
     expect(await screen.findByText(/Próxima renovação: 16\/12\/2026/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Cancelar assinatura' })).toBeTruthy()
   })
 
   it('sem prévia: pede confirmação com as regras, sem travessão', async () => {
-    fetchSub.mockResolvedValue(active)
+    fetchSubs.mockResolvedValue([active])
     setup()
     fireEvent.click(await screen.findByRole('button', { name: 'Cancelar assinatura' }))
     const dialog = screen.getByRole('dialog', { name: 'Cancelar a assinatura?' })
@@ -54,7 +62,7 @@ describe('SubscriptionPanel', () => {
   })
 
   it('com prévia: mostra só o desfecho certo (ex.: pedido de estorno quando não é a primeira)', async () => {
-    fetchSub.mockResolvedValue(active)
+    fetchSubs.mockResolvedValue([active])
     previewMock.mockResolvedValue({ outcome: 'refund_request', plan: 'essencial_mensal', accessUntil: '2026-12-17T03:00:00Z', amount: 49.9 })
     setup()
     fireEvent.click(await screen.findByRole('button', { name: 'Cancelar assinatura' }))
@@ -63,25 +71,8 @@ describe('SubscriptionPanel', () => {
     expect(dialog.textContent).not.toContain('devolvemos o valor integral')
   })
 
-  it('cortesia: mostra até quando vale e não tem botão de cancelar', async () => {
-    fetchSub.mockResolvedValue({ ...active, kind: 'courtesy', cycle: null, access_until: '2027-01-31T03:00:00Z', next_due_date: null })
-    setup({ planExpiresAt: '2027-01-31T03:00:00Z' })
-    expect(await screen.findByText(/Plano de cortesia, sem cobrança\. Vale até 30\/01\/2027\./)).toBeTruthy()
-    expect(screen.queryByText(/Assinatura cancelada/)).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Cancelar assinatura' })).toBeNull()
-  })
-
-  it('estorno recusado: avisa que a equipe faz o estorno', async () => {
-    fetchSub.mockResolvedValue(active)
-    cancelSub.mockResolvedValue({ ok: true, data: { result: 'canceled', accessUntil: null, refunded: false, refundFailed: true, plan: 'essencial_mensal' } })
-    setup()
-    fireEvent.click(await screen.findByRole('button', { name: 'Cancelar assinatura' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Sim, cancelar' }))
-    expect(await screen.findByText(/a nossa equipe vai fazer e te avisa/)).toBeTruthy()
-  })
-
   it('"Manter assinatura" fecha sem cancelar', async () => {
-    fetchSub.mockResolvedValue(active)
+    fetchSubs.mockResolvedValue([active])
     setup()
     fireEvent.click(await screen.findByRole('button', { name: 'Cancelar assinatura' }))
     fireEvent.click(screen.getByRole('button', { name: 'Manter assinatura' }))
@@ -90,7 +81,7 @@ describe('SubscriptionPanel', () => {
   })
 
   it('confirma, cancela e mostra até quando continua com o plano', async () => {
-    fetchSub.mockResolvedValue(active)
+    fetchSubs.mockResolvedValue([active])
     cancelSub.mockResolvedValue({ ok: true, data: { result: 'canceled', accessUntil: '2026-12-17T03:00:00Z', refunded: false, plan: 'essencial_mensal' } })
     const { onChanged } = setup()
     fireEvent.click(await screen.findByRole('button', { name: 'Cancelar assinatura' }))
@@ -100,7 +91,7 @@ describe('SubscriptionPanel', () => {
   })
 
   it('arrependimento: avisa do estorno e que já está no Livre', async () => {
-    fetchSub.mockResolvedValue(active)
+    fetchSubs.mockResolvedValue([active])
     cancelSub.mockResolvedValue({ ok: true, data: { result: 'canceled', accessUntil: '2026-11-16T15:00:00Z', refunded: true, plan: 'essencial_mensal' } })
     setup()
     fireEvent.click(await screen.findByRole('button', { name: 'Cancelar assinatura' }))
@@ -109,8 +100,17 @@ describe('SubscriptionPanel', () => {
     expect(screen.getByText(/já está no Livre/)).toBeTruthy()
   })
 
+  it('estorno recusado: avisa que a equipe faz o estorno', async () => {
+    fetchSubs.mockResolvedValue([active])
+    cancelSub.mockResolvedValue({ ok: true, data: { result: 'canceled', accessUntil: null, refunded: false, refundFailed: true, plan: 'essencial_mensal' } })
+    setup()
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancelar assinatura' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, cancelar' }))
+    expect(await screen.findByText(/a nossa equipe vai fazer e te avisa/)).toBeTruthy()
+  })
+
   it('erro do servidor aparece claro e dá pra tentar de novo', async () => {
-    fetchSub.mockResolvedValue(active)
+    fetchSubs.mockResolvedValue([active])
     cancelSub.mockResolvedValue({ ok: false, error: 'Não conseguimos falar com o sistema de pagamento agora. Sua assinatura não foi cancelada e nada mudou.' })
     setup()
     fireEvent.click(await screen.findByRole('button', { name: 'Cancelar assinatura' }))
@@ -120,37 +120,58 @@ describe('SubscriptionPanel', () => {
     expect(screen.getByRole('button', { name: 'Sim, cancelar' })).toBeTruthy()
   })
 
-  it('já cancelada: mostra até quando vale e o botão de assinar de novo', async () => {
-    fetchSub.mockResolvedValue({ ...active, status: 'canceled', access_until: '2026-12-17T03:00:00Z' })
-    const { onOpenPricing } = setup({ planExpiresAt: '2026-12-17T03:00:00Z' })
+  it('já cancelada: mostra até quando vale (pela linha) e o botão de assinar de novo', async () => {
+    fetchSubs.mockResolvedValue([{ ...active, status: 'canceled', cancel_source: 'user', access_until: '2026-12-17T03:00:00Z' }])
+    const { onOpenPricing } = setup()
     expect(await screen.findByText(/Você continua com o Pro Mensal até 16\/12\/2026/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Cancelar assinatura' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Assinar de novo' }))
     expect(onOpenPricing).toHaveBeenCalled()
   })
 
-  it('no Livre não mostra nada', () => {
-    fetchSub.mockResolvedValue(null)
-    previewMock.mockResolvedValue(null)
-    const { container } = render(<SubscriptionPanel plan="free" planExpiresAt={null} onChanged={() => {}} onOpenPricing={() => {}} />)
+  it('cortada por falta de pagamento e paga com atraso: diz que não renova', async () => {
+    fetchSubs.mockResolvedValue([{ ...active, status: 'canceled', cancel_source: 'unpaid', access_until: '2027-01-06T03:00:00Z' }])
+    setup()
+    expect(await screen.findByText(/não renova mais/)).toBeTruthy()
+    expect(screen.getByText(/até 05\/01\/2027/)).toBeTruthy()
+  })
+
+  it('no Livre não mostra nada', async () => {
+    fetchSubs.mockResolvedValue([])
+    const { container } = render(<SubscriptionPanel plan="free" onChanged={() => {}} onOpenPricing={() => {}} />)
+    await Promise.resolve()
     expect(container.textContent).toBe('')
+  })
+
+  it('assinou antes desta versão (sem linha) com plano pago: ainda tem o botão de cancelar', async () => {
+    fetchSubs.mockResolvedValue([])
+    setup('pro_mensal')
+    expect(await screen.findByRole('button', { name: 'Cancelar assinatura' })).toBeTruthy()
   })
 })
 
-describe('SubscriptionPanel: rodada 2', () => {
-  it('N6: com cortesia e assinatura paga ativas, mostra a paga com o botão de cancelar', async () => {
-    // fetchMySubscription já escolhe a paga (src/lib/subscription.ts); aqui chega a paga
-    fetchSub.mockResolvedValue(active)
-    setup()
+describe('SubscriptionPanel: decide pelas linhas, não pelo perfil (COB-N6/Q9)', () => {
+  it('cortesia com data posterior à assinatura paga: a paga aparece com o botão e a cortesia à parte', async () => {
+    fetchSubs.mockResolvedValue([courtesy('2027-03-01T03:00:00Z'), active])
+    setup('pro_anual')
     expect(await screen.findByRole('button', { name: 'Cancelar assinatura' })).toBeTruthy()
-    expect(screen.queryByText(/Plano de cortesia/)).toBeNull()
+    expect(screen.getByText(/Pro Mensal\. Próxima renovação: 16\/12\/2026/)).toBeTruthy()
+    expect(screen.getByText(/Plano de cortesia \(Studio Anual\), sem cobrança\. Vale até 28\/02\/2027\./)).toBeTruthy()
+    expect(screen.queryByText(/Assinatura cancelada/)).toBeNull()
   })
 
-  it('N1: cortada por falta de pagamento e paga com atraso diz que não renova', async () => {
-    fetchSub.mockResolvedValue({ ...active, status: 'canceled', cancel_source: 'unpaid', access_until: '2027-01-06T03:00:00Z' })
-    setup({ planExpiresAt: '2027-01-06T03:00:00Z' })
-    expect(await screen.findByText(/não renova mais/)).toBeTruthy()
-    expect(screen.getByText(/até 05\/01\/2027/)).toBeTruthy()
-    expect(screen.queryByText(/Nada mais é cobrado/)).toBeNull()
+  it('só cortesia ativa: aparece sem botão de cancelar', async () => {
+    fetchSubs.mockResolvedValue([courtesy(null)])
+    setup('pro_anual')
+    expect(await screen.findByText(/Plano de cortesia \(Studio Anual\), sem cobrança\. Sem data para acabar\./)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Cancelar assinatura' })).toBeNull()
+  })
+
+  it('o texto de "pagamento atrasado recebido" só aparece pela linha cortada, não por outra assinatura', async () => {
+    // anual cancelada pelo botão ainda no período; nenhuma cortada por falta de pagamento
+    fetchSubs.mockResolvedValue([{ ...active, id: 'chk_anual', plan_key: 'essencial_anual', cycle: 'YEARLY', status: 'canceled', cancel_source: 'user', access_until: '2027-06-01T03:00:00Z' }])
+    setup('essencial_anual')
+    expect(await screen.findByText(/Assinatura cancelada\. Você continua com o Pro Anual até 31\/05\/2027/)).toBeTruthy()
+    expect(screen.queryByText(/pagamento atrasado/)).toBeNull()
   })
 })

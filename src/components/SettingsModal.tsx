@@ -30,7 +30,7 @@ type Tab = 'Perfil' | 'Geral' | 'Buses' | 'Novidades' | 'Assinatura' | 'Sobre';
 export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin, onReplayTour, desktopUpdate, onInstallUpdate }: SettingsModalProps) {
     const { settings, updateSetting, availableAudioDevices, refreshAudioDevices } = useSettings();
     // Plano efetivo (cancelado vale até a data de fim, depois é Livre).
-    const { user, userPlan, planExpiresAt, refreshPlan, updateProfile, updatePassword, signOutEverywhere, deleteAccount } = useAuth();
+    const { user, userPlan, refreshPlan, updateProfile, updatePassword, signOutEverywhere, deleteAccount } = useAuth();
     const [activeTab, setActiveTab] = useState<Tab>('Perfil');
     const [isPricingOpen, setIsPricingOpen] = useState(false);
 
@@ -268,7 +268,6 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
 
                                 <SubscriptionPanel
                                     plan={userPlan}
-                                    planExpiresAt={planExpiresAt}
                                     onChanged={() => { void refreshPlan(); }}
                                     onOpenPricing={() => setIsPricingOpen(true)}
                                 />
