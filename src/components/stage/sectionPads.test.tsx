@@ -6,7 +6,7 @@ import { FAMILY_COLOR } from '../../lib/channelNames'
 import type { StageGates, StageSection, TransitionView } from '../../lib/stageContracts'
 import { SectionPads } from './SectionPads'
 import type { SectionPadsProps } from './SectionPads'
-import { padMeta, padProgress, padTag } from './sectionPadMeta'
+import { padMeta, padProgress, padReserve, padTag } from './sectionPadMeta'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
 const PROIBIDAS = /\b(next|play|cancel|start|repeat|section|edit|settings|upgrade)\b/i
@@ -70,6 +70,23 @@ const renderPads = (patch: Partial<SectionPadsProps> = {}) => render(<SectionPad
 const pads = () => [...document.querySelectorAll('[data-section-pad]')] as HTMLButtonElement[]
 const pad = (i: number) => document.querySelector(`[data-section-pad="${i}"]`) as HTMLButtonElement
 const part = (i: number, name: string) => pad(i).querySelector(`[data-${name}]`) as HTMLElement | null
+const scroller = () => document.querySelector('[data-pads-scroller]') as HTMLElement
+const before = () => document.querySelector('[data-pads-more="antes"]') as HTMLButtonElement | null
+const after = () => document.querySelector('[data-pads-more="depois"]') as HTMLButtonElement | null
+
+// Régua falsa (o jsdom não mede): largura útil da fileira e o que cada botão pede na largura livre.
+function ruler(track: number, need: (pad: HTMLElement) => number = () => 104) {
+  const widthCalls = { n: 0 }
+  vi.spyOn(Element.prototype, 'clientWidth', 'get').mockImplementation(function (this: Element) {
+    return this.hasAttribute('data-pads-track') ? track : 0
+  })
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
+    if (!this.hasAttribute('data-section-pad')) return 0
+    widthCalls.n++
+    return need(this)
+  })
+  return widthCalls
+}
 
 describe('meta de cada botão (padMeta)', () => {
   type Ctx = Parameters<typeof padMeta>[2]
@@ -176,6 +193,16 @@ describe('botoeira de seções', () => {
     frame()
     expect(part(1, 'pad-big')?.textContent).toBe('')
     expect(part(1, 'pad-meta')?.textContent).toBe('comp. 1/7')
+  })
+
+  it('6/8 contado em tempos: o número segue o countState (1 e 2)', () => {
+    const SEIS_OITO: TransitionView = { ...T, countTimes: [21, 21.5], countLabels: [1, 2], countTotal: 2 }
+    heard = 21.1
+    renderPads({ intent: { target: 2, plays: 1 }, transition: SEIS_OITO })
+    expect(part(2, 'pad-big')?.textContent).toBe('1')
+    heard = 21.6
+    frame()
+    expect(part(2, 'pad-big')?.textContent).toBe('2')
   })
 
   it('número da contagem só na armada e só com a conta do mesmo alvo', () => {
@@ -296,7 +323,7 @@ describe('botoeira de seções', () => {
     }
   })
 
-  it('nome que não cabe em 2 linhas nem a 14 px alarga o botão (a fileira rola), em vez de quebrar em 3', () => {
+  it('nome que não cabe em 2 linhas nem a 14 px alarga a reserva do botão, em vez de quebrar em 3', () => {
     // Régua falsa: 5 caracteres por linha a 16 px; a 14 px, um caractere a cada 10 px de largura além de 48 px.
     const desc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
     Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
@@ -305,61 +332,138 @@ describe('botoeira de seções', () => {
         if (!this.hasAttribute('data-pad-name')) return 0
         const pad = this.closest('[data-section-pad]') as HTMLElement
         const small = this.dataset.fit === 'small'
-        const perLine = small ? Math.floor(((parseFloat(pad.style.minWidth) || 104) - 48) / 10) : 5
+        const perLine = small ? Math.floor(((parseFloat(pad.style.width) || 104) - 48) / 10) : 5
         return Math.ceil((this.textContent ?? '').length / perLine) * (small ? 14 : 16) * 1.1
       },
     })
     try {
+      ruler(300)
       renderPads({ sections: [{ ...SECTIONS[0], label: 'Verso Lento 12' }, SECTIONS[1]] })
+      // 104 -> 112 (6 por linha, 3 linhas) -> 120 (7 por linha, 2 linhas): a reserva comum vira 120.
+      expect(scroller().dataset.padMin).toBe('120')
+      // Cabe tudo: os dois dividem a sobra igual ((300 - 8) / 2).
+      expect(pad(0).style.width).toBe('146px')
+      expect(pad(1).style.width).toBe('146px')
       expect(part(0, 'pad-name')?.dataset.fit).toBe('small')
-      expect(pad(0).style.minWidth).toBe('120px') // 104 -> 112 (6 por linha, 3 linhas) -> 120 (7 por linha, 2 linhas)
-      expect(pad(1).style.minWidth).toBe('') // "Verso" cabe a 16 px: nada muda
       expect(part(1, 'pad-name')?.dataset.fit).toBeUndefined()
     } finally {
       if (desc) Object.defineProperty(HTMLElement.prototype, 'offsetHeight', desc)
     }
   })
 
-  it('tecla some quando a etiqueta não cabe ao lado dela (nunca uma por cima da outra)', () => {
-    // Régua falsa: tecla de 18 px no começo; etiqueta de 77 px encostada à direita de um botão de largura variável.
-    let inner = 200
-    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
-      if (this.hasAttribute('data-pad-key')) return new DOMRect(18, 6, 18, 18)
-      if (this.hasAttribute('data-pad-tag')) return new DOMRect(18 + inner - 77, 6, 77, 18)
-      return new DOMRect(0, 0, 0, 0)
-    })
-    const { rerender } = renderPads({ intent: { target: 1, plays: 9 }, transition: REPETE3 })
-    expect(pad(1).dataset.tight).toBe('false')
-    inner = 96 // 18 + 4 + 77 = 99 > 96
-    rerender(<SectionPads {...props({ intent: { target: 1, plays: 9 }, transition: { ...REPETE3, plays: 9 } })} />)
-    expect(pad(1).dataset.tight).toBe('true')
-    expect(part(1, 'pad-key')?.className).toContain('group-data-[tight=true]:hidden')
-    // Sem etiqueta a tecla sempre aparece.
-    expect(pad(3).dataset.tight).toBe('false')
+  it('reserva a largura do estado mais largo da música em cada botão (metas, REPETE 9x, LOOP e a tecla)', () => {
+    const longa = [SECTIONS[0], { ...SECTIONS[1], end: 248, bars: 120 }, { ...SECTIONS[2], start: 248, end: 264 }]
+    renderPads({ sections: longa })
+    for (const i of [0, 1, 2]) {
+      const sizer = part(i, 'pad-sizer') as HTMLElement
+      expect(sizer.getAttribute('aria-hidden')).toBe('true')
+      expect(sizer.className).toContain('invisible')
+      expect(sizer.className).toContain('h-0')
+      const t = sizer.textContent ?? ''
+      for (const w of ['no fim da seção', 'contagem', 'em 999 comp.', 'comp. 999/999', 'REPETE 9x', 'PRÓXIMA', 'AGORA']) expect(t).toContain(w)
+      // A tecla entra na mesma linha da etiqueta reservada: ela nunca precisa sair.
+      expect(sizer.querySelectorAll('kbd').length).toBeGreaterThan(0)
+      expect(sizer.querySelector('svg')).not.toBeNull() // AGORA com o ícone de loop
+    }
+    expect(padReserve(longa, 9)).toEqual({ metas: ['no fim da seção', 'em 999 comp.', 'comp. 999/999', '4:08'], tags: ['PRÓXIMA', 'REPETE', 'REPETE 9x'] })
+    // Seção sem compassos (Final, 14,1 s): entra o "m:ss/m:ss" dela.
+    expect(padReserve(SECTIONS, 9).metas).toEqual(['no fim da seção', 'em 99 comp.', 'comp. 99/99', '1:05', '0:14/0:14'])
+    expect(padReserve(SECTIONS.slice(0, 3), Infinity).tags).toEqual(['PRÓXIMA', 'REPETE', 'REPETE 99x'])
+    expect(padReserve(SECTIONS.slice(0, 3), 1).tags).toEqual(['PRÓXIMA', 'REPETE'])
+    expect(padReserve(SECTIONS.slice(0, 3), 9).metas).toEqual(['no fim da seção', 'em 99 comp.', 'comp. 99/99', '0:22'])
   })
 
-  it('a botoeira rola de lado e mantém a AGORA à vista', () => {
+  it('armar, contar, pousar, REPETE e LOOP (com e sem grade, seção de 120 comp.) não mudam a largura de nenhum botão nem medem de novo', () => {
+    const longa = SECTIONS.map((s, i) => (i === 3 ? { ...s, bars: 120 } : s))
+    const calls = ruler(1000)
+    const { rerender } = renderPads({ sections: longa })
+    const widths = () => pads().map((b) => b.style.width)
+    const w0 = widths()
+    const min0 = scroller().dataset.padMin
+    expect(w0.every((w) => w === '193.6px')).toBe(true) // (1000 - 4 x 8) / 5
+    const keys0 = pads().map((b) => b.querySelector('[data-pad-key]')?.className)
+    calls.n = 0
+    const SEIS_OITO: TransitionView = { ...T, countTimes: [21, 21.5], countLabels: [1, 2], countTotal: 2 }
+    const passos: Array<[Partial<SectionPadsProps>, number]> = [
+      [{ intent: { target: 2, plays: 1 }, transition: { ...T, barsLeft: 118 } }, 10],
+      [{ intent: { target: 2, plays: 1 }, transition: T }, 20.6],
+      [{ intent: { target: 2, plays: 1 }, transition: SEIS_OITO }, 21.6],
+      [{ intent: { target: 2, plays: 1 }, transition: NO_GRID }, 10],
+      [{ intent: { target: 1, plays: 9 }, transition: { ...REPETE3, plays: 9 } }, 20.6],
+      [{ intent: { target: 1, plays: 1 }, transition: { ...NO_GRID, to: 1, kind: 'repete' } }, 10],
+      [{ intent: { target: 1, plays: 'infinite' }, transition: { ...SELF_LOOP, hasGrid: false } }, 10],
+      [{ currentSection: 2, landed: { index: 2, at: 22 } }, 22.1],
+      [{ currentSection: 3 }, 60],
+      [{ currentSection: 2, isPlaying: false }, 22.1],
+    ]
+    for (const [patch, h] of passos) {
+      heard = h
+      position = h
+      rerender(<SectionPads {...props({ sections: longa, ...patch })} />)
+      frame()
+      expect(widths()).toEqual(w0)
+      expect(scroller().dataset.padMin).toBe(min0)
+      // A tecla fica nas 9 primeiras em todo estado.
+      expect(pads().map((b) => b.querySelector('[data-pad-key]')?.className)).toEqual(keys0)
+    }
+    expect(calls.n).toBe(0) // trocar de estado nunca mede de novo
+  })
+
+  it('parado nunca mostra botão pela metade: número inteiro de botões, encaixe obrigatório e indicadores nas pontas', () => {
     const doze = Array.from({ length: 12 }, (_, i): StageSection => ({ index: i, label: `S${i + 1}`, color: '#10b981', start: i * 8, end: i * 8 + 8, bars: 4 }))
-    // Régua falsa: botões de 104 px com 8 px entre eles, depois de 16 px de margem; janela de 400 px.
-    const leftOf = (el: HTMLElement) => 16 + Number(el.dataset.sectionPad) * 112
-    vi.spyOn(HTMLElement.prototype, 'offsetLeft', 'get').mockImplementation(function (this: HTMLElement) {
-      return this.hasAttribute('data-section-pad') ? leftOf(this) : 0
-    })
-    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
-      return this.hasAttribute('data-section-pad') ? 104 : 0
-    })
-    vi.spyOn(Element.prototype, 'clientWidth', 'get').mockImplementation(function (this: Element) {
-      return this.hasAttribute('data-tour') ? 400 : 0
-    })
-    const { rerender } = renderPads({ sections: doze, currentSection: 0 })
-    const group = document.querySelector('[data-tour="secoes"]') as HTMLElement
-    expect(group.className).toContain('overflow-x-auto')
-    expect(group.scrollLeft).toBe(0)
+    ruler(600)
+    renderPads({ sections: doze, currentSection: 1 })
+    // 600 - 2 x (52 + 8) = 480 úteis: 4 botões de 114 px ((480 - 3 x 8) / 4) e a janela de 480 px.
+    expect(pads().every((b) => b.style.width === '114px')).toBe(true)
+    expect(scroller().style.width).toBe('480px')
+    expect(scroller().className).toContain('snap-x')
+    expect(scroller().className).toContain('snap-mandatory')
+    expect(scroller().className).toContain('overflow-x-auto')
+    for (const b of pads()) expect(b.className).toContain('snap-start')
+    expect(scroller().scrollLeft).toBe(0)
+    expect(before()?.disabled).toBe(true)
+    expect(after()?.textContent).toBe('8')
+    expect(after()?.getAttribute('aria-label')).toBe('Ver 8 seções depois')
+    for (const b of [before(), after()]) expect(b?.className).toContain('min-w-[52px]')
+    fireEvent.click(after() as HTMLButtonElement) // pagina pela quantidade visível
+    expect(scroller().scrollLeft).toBe(4 * 122)
+    expect(before()?.textContent).toBe('4')
+    expect(after()?.textContent).toBe('4')
+    fireEvent.click(after() as HTMLButtonElement)
+    expect(scroller().scrollLeft).toBe(8 * 122)
+    expect(after()?.disabled).toBe(true)
+    expect(before()?.getAttribute('aria-label')).toBe('Ver 8 seções antes')
+    fireEvent.click(before() as HTMLButtonElement)
+    expect(scroller().scrollLeft).toBe(4 * 122)
+    // Rolar à mão: a conta segue o botão do começo da janela.
+    scroller().scrollLeft = 5 * 122
+    fireEvent.scroll(scroller())
+    expect(before()?.textContent).toBe('5')
+    expect(after()?.textContent).toBe('3')
+  })
+
+  it('AGORA trazida pra vista já encaixada; o alvo armado também, quando cabe junto com ela', () => {
+    const doze = Array.from({ length: 12 }, (_, i): StageSection => ({ index: i, label: `S${i + 1}`, color: '#10b981', start: i * 8, end: i * 8 + 8, bars: 4 }))
+    ruler(600)
+    const { rerender } = renderPads({ sections: doze, currentSection: 1 })
+    expect(scroller().scrollLeft).toBe(0)
+    rerender(<SectionPads {...props({ sections: doze, currentSection: 1, intent: { target: 4, plays: 1 } })} />)
+    expect(scroller().scrollLeft).toBe(122) // S2 a S5: atual e alvo à vista
+    rerender(<SectionPads {...props({ sections: doze, currentSection: 1, intent: { target: 8, plays: 1 } })} />)
+    expect(scroller().scrollLeft).toBe(122) // alvo longe: a AGORA manda
     rerender(<SectionPads {...props({ sections: doze, currentSection: 9 })} />)
-    // AGORA (S10) vai de 1024 a 1128: rola até ela caber inteira com a margem de 16 px.
-    expect(group.scrollLeft).toBe(16 + 9 * 112 + 104 + 16 - 400)
-    rerender(<SectionPads {...props({ sections: doze, currentSection: 2 })} />)
-    expect(group.scrollLeft).toBe(16 + 2 * 112 - 16)
+    expect(scroller().scrollLeft).toBe(6 * 122)
+    expect(before()?.textContent).toBe('6')
+    expect(after()?.textContent).toBe('2')
+  })
+
+  it('tudo cabe: sem indicadores, a sobra dividida igual e sem rolar', () => {
+    ruler(1000)
+    const { container } = renderPads()
+    expect(before()).toBeNull()
+    expect(after()).toBeNull()
+    expect(pads().every((b) => b.style.width === '193.6px')).toBe(true)
+    expect(container.querySelectorAll('button')).toHaveLength(5)
   })
 
   it('largura mínima de 104 px, largura pelo texto e altura de toque', () => {
@@ -370,8 +474,8 @@ describe('botoeira de seções', () => {
       expect(b.className).not.toMatch(FIXED_WIDTH)
       expect(b.className).toContain('min-h-[clamp(64px,8vh,82px)]')
     }
-    // Colunas iguais quando cabe; quando não cabe, cada botão fica com o que o texto pede e a fileira rola.
-    expect((container.querySelector('[data-tour="secoes"]') as HTMLElement).className).toContain('auto-cols-[minmax(min-content,1fr)]')
+    // Largura igual pra todos, vinda da reserva medida do texto (nunca uma classe de largura fixa).
+    expect(container.querySelectorAll('[data-pad-sizer]')).toHaveLength(SECTIONS.length)
   })
 
   it('sem palavra proibida em inglês e sem travessão', () => {

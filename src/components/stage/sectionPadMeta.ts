@@ -8,6 +8,9 @@ import { countState, transitionWaitText } from '../../lib/transitionView'
 
 export interface PadMetaContext { current: number; position: number; transition: TransitionView | null; heardNow: number }
 export interface PadTag { kind: 'agora' | 'proxima' | 'repete'; text: string; loop: boolean }
+/** Linha de baixo da armada no último compasso (ao lado dela entra o número grande da contagem). */
+export const PAD_COUNT_TEXT = 'contagem'
+const NO_GRID_TEXT = 'no fim da seção'
 
 /** "m:ss" sem arredondar pra cima (65,9 s é "1:05"); negativo ou inválido vira "0:00". */
 function clockText(seconds: number): string {
@@ -44,10 +47,10 @@ export function padMeta(s: StageSection, i: number, ctx: PadMetaContext): string
   const t = ctx.transition
   if (t !== null && t.to === i && !isSelfLoop({ target: t.to, plays: t.plays }, ctx.current)) {
     if (t.switchAt !== null && ctx.heardNow >= t.switchAt) return progressText(s, ctx.position)
-    if (!t.hasGrid) return transitionWaitText(t, ctx.heardNow) ?? 'no fim da seção'
+    if (!t.hasGrid) return transitionWaitText(t, ctx.heardNow) ?? NO_GRID_TEXT
     const count = countState(t, ctx.heardNow)
     const wait = transitionWaitText({ ...t, clickAudible: true }, ctx.heardNow)
-    if (count.inLastBar || count.counting || wait === null || wait === 'último comp.') return 'contagem'
+    if (count.inLastBar || count.counting || wait === null || wait === 'último comp.') return PAD_COUNT_TEXT
     return wait
   }
   if (i === ctx.current) return progressText(s, ctx.position)
@@ -70,4 +73,28 @@ export function padTag(intent: ArmIntent | null, index: number, current: number)
   }
   if (index === current) return { kind: 'agora', text: 'AGORA', loop }
   return null
+}
+
+export interface PadReserve { metas: string[]; tags: string[] }
+
+/**
+ * Textos mais largos que um botão pode mostrar NESTA música (Ruling T10-largura): cada botão
+ * reserva a largura deles, então armar, contar, pousar, REPETE e LOOP nunca mudam a largura.
+ * Metas (fonte mono, então só conta o número de caracteres): sem grade, "em N comp." e
+ * "comp. N/N" com o maior número de dígitos de compasso da música (no mínimo 2), o início mais
+ * tardio e, se alguma seção não tem compassos, o "m:ss/m:ss" da maior delas. A "contagem" entra à
+ * parte, com o espaço do número grande. Etiquetas: PRÓXIMA, REPETE e REPETE Nx com o teto do
+ * plano (99 quando não há teto).
+ */
+export function padReserve(sections: StageSection[], maxRepeats: number): PadReserve {
+  const bars = sections.map((s) => (s.bars !== null && s.bars >= 1 ? Math.floor(s.bars) : 0))
+  const nines = '9'.repeat(Math.max(2, String(Math.max(0, ...bars)).length))
+  const metas = [NO_GRID_TEXT, `em ${nines} comp.`, `comp. ${nines}/${nines}`, clockText(Math.max(0, ...sections.map((s) => s.start)))]
+  const noBars = sections.filter((_, k) => bars[k] === 0)
+  if (noBars.length > 0) {
+    const len = clockText(Math.max(0, ...noBars.map((s) => s.end - s.start)))
+    metas.push(`${len}/${len}`)
+  }
+  const cap = !(maxRepeats >= 1) ? 1 : Number.isFinite(maxRepeats) ? Math.floor(maxRepeats) : 99 // mesmo teto do clampPlays da T4
+  return { metas, tags: cap > 1 ? ['PRÓXIMA', 'REPETE', `REPETE ${cap}x`] : ['PRÓXIMA', 'REPETE'] }
 }
