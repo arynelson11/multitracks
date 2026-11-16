@@ -136,3 +136,21 @@ describe('SubscriptionPanel', () => {
     expect(container.textContent).toBe('')
   })
 })
+
+describe('SubscriptionPanel: rodada 2', () => {
+  it('N6: com cortesia e assinatura paga ativas, mostra a paga com o botão de cancelar', async () => {
+    // fetchMySubscription já escolhe a paga (src/lib/subscription.ts); aqui chega a paga
+    fetchSub.mockResolvedValue(active)
+    setup()
+    expect(await screen.findByRole('button', { name: 'Cancelar assinatura' })).toBeTruthy()
+    expect(screen.queryByText(/Plano de cortesia/)).toBeNull()
+  })
+
+  it('N1: cortada por falta de pagamento e paga com atraso diz que não renova', async () => {
+    fetchSub.mockResolvedValue({ ...active, status: 'canceled', cancel_source: 'unpaid', access_until: '2027-01-06T03:00:00Z' })
+    setup({ planExpiresAt: '2027-01-06T03:00:00Z' })
+    expect(await screen.findByText(/não renova mais/)).toBeTruthy()
+    expect(screen.getByText(/até 05\/01\/2027/)).toBeTruthy()
+    expect(screen.queryByText(/Nada mais é cobrado/)).toBeNull()
+  })
+})

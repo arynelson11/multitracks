@@ -22,14 +22,18 @@ export type MySubscription = {
 
 const COLS = 'id, kind, plan_key, cycle, status, started_at, next_due_date, paid_until, access_until, cancel_source, canceled_at, created_at'
 
-// A assinatura que vale: a ativa mais recente; senão, a mais recente.
+// A assinatura que vale pra tela: a PAGA ativa mais recente (uma cortesia não
+// esconde uma assinatura que segue cobrando); senão a cortesia ativa; senão a
+// mais recente.
 export async function fetchMySubscription(): Promise<MySubscription | null> {
   if (!supabase) return null
   try {
     const { data, error } = await supabase.from('billing_subscriptions').select(COLS)
     if (error || !Array.isArray(data) || data.length === 0) return null
-    const rows = (data as MySubscription[]).slice().sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
-    return rows.find((r) => r.status === 'active') ?? rows[0]
+    const rows = (data as MySubscription[]).slice().sort((a, b) => (a.started_at < b.started_at ? 1 : -1))
+    return rows.find((r) => r.status === 'active' && r.kind === 'asaas')
+      ?? rows.find((r) => r.status === 'active')
+      ?? rows[0]
   } catch {
     return null
   }

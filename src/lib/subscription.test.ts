@@ -110,3 +110,17 @@ describe('textos de cancelamento e exclusão (I8, I9)', () => {
     expect(end).toContain('até 16/12/2026')
   })
 })
+
+describe('fetchMySubscription (N6)', () => {
+  it('a assinatura paga ativa vem antes da cortesia ativa', async () => {
+    vi.resetModules()
+    const rows = [
+      { id: 'cortesia:1', kind: 'courtesy', status: 'active', started_at: '2026-11-10T00:00:00Z', created_at: '2026-11-10T00:00:00Z' },
+      { id: 'chk_1', kind: 'asaas', status: 'active', started_at: '2026-10-01T00:00:00Z', created_at: '2026-10-01T00:00:00Z' },
+    ]
+    vi.doMock('./supabase', () => ({ supabase: { from: () => ({ select: async () => ({ data: rows, error: null }) }) }, getAuthHeaders: async () => ({}) }))
+    const mod = await import('./subscription')
+    expect((await mod.fetchMySubscription())!.id).toBe('chk_1')
+    vi.doUnmock('./supabase')
+  })
+})

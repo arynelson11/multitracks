@@ -61,7 +61,7 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
 
     if (!isOpen) return null;
 
-    const handleSubscribe = async (plan: typeof PLANS[0]) => {
+    const handleSubscribe = async (plan: typeof PLANS[0], confirmedSwitch = false) => {
         if (!user) {
             alert('Por favor, faça login para assinar um plano.');
             return;
@@ -72,7 +72,7 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
             const response = await fetch(apiUrl('/api/checkout'), {
                 method: 'POST',
                 headers: await getAuthHeaders(),
-                body: JSON.stringify({ planKey: plan.planKey })
+                body: JSON.stringify({ planKey: plan.planKey, confirmedSwitch })
             });
 
             const rawText = await response.text();
@@ -142,7 +142,7 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
                                     Voltar
                                 </button>
                                 <button
-                                    onClick={() => { const p = pendingPlan; setPendingPlan(null); void handleSubscribe(p); }}
+                                    onClick={() => { const p = pendingPlan; setPendingPlan(null); void handleSubscribe(p, true); }}
                                     className="px-4 py-2 rounded-lg bg-primary text-black text-xs font-bold cursor-pointer"
                                 >
                                     Confirmar troca

@@ -50,6 +50,24 @@ export function SubscriptionPanel({ plan, planExpiresAt, onChanged, onOpenPricin
     )
   }
 
+  // Cortada por falta de pagamento e paga depois com atraso: vale até o fim
+  // daquele período, sem renovação.
+  if (planExpiresAt && sub?.kind === 'asaas' && sub.status === 'canceled' && sub.cancel_source === 'unpaid') {
+    return (
+      <div className="w-full bg-white/5 rounded-lg p-4 mb-4 border border-white/10 text-left">
+        <p className="text-white text-xs leading-relaxed">
+          A renovação não foi paga no vencimento, então a assinatura foi encerrada e não renova mais. O pagamento atrasado foi recebido: você continua com o {planName} até {accessDateLabel(planExpiresAt)}. Para continuar depois disso, assine de novo.
+        </p>
+        <button
+          onClick={onOpenPricing}
+          className="mt-3 px-4 py-2 rounded-lg bg-laranja text-bone text-xs font-bold uppercase tracking-wider cursor-pointer"
+        >
+          Assinar de novo
+        </button>
+      </div>
+    )
+  }
+
   // Já cancelada, ainda dentro do período pago.
   if (planExpiresAt && sub?.kind !== 'courtesy') {
     return (

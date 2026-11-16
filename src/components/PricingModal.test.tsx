@@ -49,7 +49,7 @@ describe('PricingModal: Alterar Plano', () => {
     fireEvent.click(within(card('Studio Mensal')).getByRole('button', { name: 'Assinar Agora' }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar troca' }))
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ planKey: 'pro_mensal' })
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ planKey: 'pro_mensal', confirmedSwitch: true })
   })
 
   it('o plano atual aparece como atual e não dá pra assinar de novo por cima', () => {
