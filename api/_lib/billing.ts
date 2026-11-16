@@ -50,12 +50,21 @@ export class BillingError extends Error {
 const MSG_ASAAS_DOWN_NOTHING_CHANGED =
   'Não conseguimos falar com o sistema de pagamento agora. Sua assinatura não foi cancelada e nada mudou. Tente de novo em alguns minutos.'
 
-// ── Datas (o Asaas trabalha com datas de Brasília, UTC-3 sem horário de verão) ──
+// ── Datas: sempre o dia no fuso America/Sao_Paulo (o Asaas trabalha com datas
+// de Brasília). Nunca a data de UTC: 21:30 em Brasília já é o dia seguinte em UTC.
 
-const BRT_OFFSET_MS = 3 * 3600_000
+const BRT_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' })
 const DATE_RE = /^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}(?::\d{2})?)(?:\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/
 
+// Dia (AAAA-MM-DD) em Brasília de um instante.
+export function brtToday(now: Date): string {
+  const parts = BRT_DAY.formatToParts(now)
+  const get = (type: string) => parts.find((x) => x.type === type)?.value ?? ''
+  return `${get('year')}-${get('month')}-${get('day')}`
+}
+
 // "2026-11-16", "2026-11-16 15:02:38" ou "2026-11-16T03:00:00+0000" → "2026-11-16" em Brasília.
+// Sem fuso, o Asaas já manda a data de Brasília.
 export function toBrtDate(v: unknown): string | null {
   if (typeof v !== 'string') return null
   const m = DATE_RE.exec(v.trim())
@@ -64,11 +73,7 @@ export function toBrtDate(v: unknown): string | null {
   const zone = m[3] === 'Z' ? 'Z' : m[3].replace(/^([+-]\d{2}):?(\d{2})$/, '$1:$2')
   const t = Date.parse(`${m[1]}T${m[2] ?? '00:00:00'}${zone}`)
   if (Number.isNaN(t)) return null
-  return new Date(t - BRT_OFFSET_MS).toISOString().slice(0, 10)
-}
-
-export function brtToday(now: Date): string {
-  return new Date(now.getTime() - BRT_OFFSET_MS).toISOString().slice(0, 10)
+  return brtToday(new Date(t))
 }
 
 export function addDays(date: string, days: number): string {

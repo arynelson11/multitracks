@@ -6,7 +6,7 @@ vi.mock('./supabase', () => ({
 }))
 vi.mock('./api', () => ({ apiUrl: (p: string) => `https://app.test${p}` }))
 
-import { accessDateLabel, cancelMySubscription, renewalNotice, type MySubscription } from './subscription'
+import { accessDateLabel, brtTodayKey, cancelMySubscription, renewalNotice, type MySubscription } from './subscription'
 
 const base: MySubscription = {
   id: 'chk_1', kind: 'asaas', plan_key: 'essencial_mensal', cycle: 'MONTHLY', status: 'active',
@@ -31,6 +31,14 @@ describe('renewalNotice (aviso de vencimento do mensal)', () => {
     expect(renewalNotice({ ...base, next_due_date: '2026-11-15' }, now)).toBeNull()
     expect(renewalNotice({ ...base, next_due_date: null }, now)).toBeNull()
     expect(renewalNotice(null, now)).toBeNull()
+  })
+})
+
+describe('fuso de Brasília', () => {
+  it('21:30 de Brasília (já 17/11 em UTC) ainda conta como 16/11', () => {
+    const late = new Date('2026-11-17T00:30:00Z')
+    expect(brtTodayKey(late)).toBe('2026-11-16')
+    expect(renewalNotice(base, late)).toEqual({ daysLeft: 3, dueDate: '2026-11-19' })
   })
 })
 

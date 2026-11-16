@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CalendarClock, X } from 'lucide-react'
 import { isPaidPlan } from '../lib/plans'
-import { fetchMySubscription, renewalNotice } from '../lib/subscription'
+import { brtTodayKey, fetchMySubscription, renewalNotice } from '../lib/subscription'
 
 // Aviso de vencimento do plano MENSAL: aparece de 3 dias antes até o dia da
 // renovação. Se a renovação não for paga, a conta volta pro Livre no mesmo
@@ -10,9 +10,6 @@ import { fetchMySubscription, renewalNotice } from '../lib/subscription'
 
 const DISMISS_KEY = 'renewal_notice_dismissed_on'
 
-function todayKey(): string {
-  return new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10)
-}
 
 function label(daysLeft: number, dueDate: string): string {
   const ddmm = `${dueDate.slice(8, 10)}/${dueDate.slice(5, 7)}`
@@ -27,7 +24,7 @@ export function RenewalNoticeBanner({ userId, plan }: { userId: string | null | 
   useEffect(() => {
     if (!eligible) return
     let dismissedToday = false
-    try { dismissedToday = localStorage.getItem(DISMISS_KEY) === todayKey() } catch { /* sem storage: mostra */ }
+    try { dismissedToday = localStorage.getItem(DISMISS_KEY) === brtTodayKey() } catch { /* sem storage: mostra */ }
     if (dismissedToday) return
     let alive = true
     fetchMySubscription().then((sub) => { if (alive) setNotice(renewalNotice(sub)) })
@@ -37,7 +34,7 @@ export function RenewalNoticeBanner({ userId, plan }: { userId: string | null | 
   if (!eligible || !notice) return null
 
   const dismiss = () => {
-    try { localStorage.setItem(DISMISS_KEY, todayKey()) } catch { /* ignora */ }
+    try { localStorage.setItem(DISMISS_KEY, brtTodayKey()) } catch { /* ignora */ }
     setNotice(null)
   }
 

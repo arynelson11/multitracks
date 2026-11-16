@@ -5,7 +5,7 @@ import { applyCors } from './_lib/cors.js';
 import { verifyUser } from './_lib/auth.js';
 import { PLAN_PRICING, isPlanKey } from './_lib/pricing.js';
 import { asaasBaseUrl, asaasFromEnv } from './_lib/asaas.js';
-import { BillingError, cancelSubscriptionForUser } from './_lib/billing.js';
+import { BillingError, brtToday, cancelSubscriptionForUser } from './_lib/billing.js';
 
 // Ações de cobrança do usuário logado:
 //   POST /api/checkout                 cria o checkout hospedado do Asaas (padrão)
@@ -66,8 +66,9 @@ export default async function handler(req: any, res: any) {
       || req.headers.origin
       || 'http://localhost:5173';
 
-    // Data da 1ª cobrança = hoje (o cliente paga ao concluir o checkout).
-    const today = new Date().toISOString().slice(0, 10);
+    // Data da 1ª cobrança = hoje EM BRASÍLIA (o cliente paga ao concluir o
+    // checkout). Antes era a data de UTC: depois das 21:00 ia a de amanhã.
+    const today = brtToday(new Date());
 
     // Checkout hospedado do Asaas: coleta os dados do pagador (inclui CPF) na
     // própria página, cobra no cartão e cria a assinatura recorrente sozinho.

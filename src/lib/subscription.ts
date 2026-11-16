@@ -60,8 +60,13 @@ export function accessDateLabel(accessUntil: string): string {
   return formatDateBR(new Date(Date.parse(accessUntil) - 1000))
 }
 
-function brtToday(now: Date): string {
-  return new Date(now.getTime() - 3 * 3600_000).toISOString().slice(0, 10)
+const BRT_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' })
+
+// Dia (AAAA-MM-DD) no fuso America/Sao_Paulo, nunca o de UTC.
+export function brtTodayKey(now: Date = new Date()): string {
+  const parts = BRT_DAY.formatToParts(now)
+  const get = (type: string) => parts.find((x) => x.type === type)?.value ?? ''
+  return `${get('year')}-${get('month')}-${get('day')}`
 }
 
 function daysBetween(from: string, to: string): number {
@@ -73,7 +78,7 @@ export const RENEWAL_NOTICE_DAYS = 3
 // Aviso dentro do app pro plano MENSAL: de 3 dias antes até o dia do vencimento.
 export function renewalNotice(sub: MySubscription | null, now: Date = new Date()): { daysLeft: number; dueDate: string } | null {
   if (!sub || sub.kind !== 'asaas' || sub.status !== 'active' || sub.cycle !== 'MONTHLY' || !sub.next_due_date) return null
-  const daysLeft = daysBetween(brtToday(now), sub.next_due_date)
+  const daysLeft = daysBetween(brtTodayKey(now), sub.next_due_date)
   if (daysLeft < 0 || daysLeft > RENEWAL_NOTICE_DAYS) return null
   return { daysLeft, dueDate: sub.next_due_date }
 }
