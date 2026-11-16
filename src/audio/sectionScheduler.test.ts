@@ -2,14 +2,16 @@ import { describe, expect, it, vi } from 'vitest'
 import { asAudioContext, asFake, createFakeAudioContext, nodesOf, valueAt, type FakeAudioContext, type FakeOscillatorNode } from '../test/fakeAudio'
 import type { ArmIntent, SectionSpan, SongGrid, TimelineSegment, TransitionView } from '../lib/stageContracts'
 import { startVoice, startVoicesForSwitch, type Voice } from './voices'
-import { CANCEL_GUARD, FADE, HORIZON, HORIZON_INTERVAL, RELEASE_AFTER, SectionScheduler, type SchedulerDeps } from './sectionScheduler'
+import { sectionSpans } from '../lib/songGrid'
+import { CANCEL_GUARD, FADE, HORIZON, HORIZON_INTERVAL, RELEASE_AFTER, SectionScheduler, sameTransitionView, type SchedulerDeps } from './sectionScheduler'
 
 // A constante da guia passa por um getter: o planTransition real continua lendo a dele (true)
 // e devolve guideMuteFrom, então só o próprio agendador conferindo a constante cala a guia.
-const flags = vi.hoisted(() => ({ guideMute: true }))
+// A folga mínima também: o agendador passa a dele ao planTransition, então "folga 0" vale nos dois.
+const flags = vi.hoisted(() => ({ guideMute: true, minLead: 0.05 }))
 vi.mock('../lib/sectionTransition', async (importOriginal) => {
   const real = await importOriginal<typeof import('../lib/sectionTransition')>()
-  return { ...real, get GUIDE_MUTE_ON_JUMP() { return flags.guideMute } }
+  return { ...real, get GUIDE_MUTE_ON_JUMP() { return flags.guideMute }, get MIN_LEAD() { return flags.minLead } }
 })
 
 // Grade 120 em 4/4 com o 1 em 0:00 (pulso 0,5 s, compasso 2 s); seções [0,8] e [8,16];
@@ -76,6 +78,30 @@ const triangles = (ctx: FakeAudioContext): FakeOscillatorNode[] => nodesOf(ctx, 
 const beepTimes = (ctx: FakeAudioContext) => triangles(ctx).map((n) => n.starts[0].when)
 const near = (xs: readonly number[]) => xs.map((x) => Number(x.toFixed(6)))
 const guideEvents = (g: AudioParam) => asFake(g).events.map((e) => [e.kind, e.value, Number(e.time.toFixed(6))])
+// Bipes que soam de verdade (parar antes de começar não soa), com o acento marcado: "2(1)".
+const sounding = (ctx: FakeAudioContext) => triangles(ctx)
+  .filter((n) => Math.min(...n.stops) > n.starts[0].when)
+  .map((n) => `${Number(n.starts[0].when.toFixed(3))}${n.frequency.value === 1319 ? '(1)' : ''}`)
+// Instantes (de 1 em 1 ms) em que a guia não está calada.
+const openAt = (g: AudioParam, from: number, to: number) => {
+  const out: number[] = []
+  for (let k = Math.round(from * 1000); k <= Math.round(to * 1000); k++) if (valueAt(g, k / 1000) > 0) out.push(k / 1000)
+  return out
+}
+
+interface PlayOptions extends Options { intent: ArmIntent; armAt: number; until: number; tick?: number; phase?: number }
+// Arma em `armAt` e roda o tique de `tick` em `tick` (a partir de `phase`) até `until`.
+function play(o: PlayOptions) {
+  const h = setup(o)
+  h.arm(o.armAt, o.intent)
+  const tick = o.tick ?? 0.025
+  for (let k = 0; ; k++) {
+    const t = (o.phase ?? 0) + k * tick
+    if (t > o.until + 1e-9) break
+    if (t > o.armAt) h.at(t)
+  }
+  return h
+}
 
 describe('constantes', () => {
   it('horizonte 0,3 s, fade 5 ms, guarda 30 ms, soltura 30 ms; no setInterval o horizonte passa de 1 s', () => {
@@ -507,5 +533,237 @@ describe('reset, linha do tempo vazia e bordas', () => {
     at(8.1)
     expect(deps.startSwitchVoices).toHaveBeenCalledTimes(1)
     expect(deps.onLanded).not.toHaveBeenCalled()
+  })
+})
+
+// Ruling T17-volta: os bipes da volta seguinte que caem antes do pouso mais um tique saem junto
+// com o pulo, e a guia não reabre entre voltas quando a contagem da próxima já começa no pouso.
+describe('volta seguinte do REPETIR', () => {
+  const oneBar: SectionSpan[] = [{ index: 0, start: 0, end: 2 }, { index: 1, start: 2, end: 4 }, { index: 2, start: 4, end: 20 }]
+  const g68: SongGrid = { bpm: 180, firstDownbeat: 0, signature: '6/8', countEvery: 3, source: 'click', meterSource: 'acento' }
+  const g34: SongGrid = { bpm: 180, firstDownbeat: 0, signature: '3/4', countEvery: 1, source: 'click', meterSource: 'acento' }
+
+  it('1 compasso em 4/4: o 1 com acento soa em toda volta e a guia fica calada de uma volta pra outra', () => {
+    for (const phase of [0, 0.01, 0.02]) {
+      const h = play({ spans: oneBar, intent: { target: 0, plays: 3 }, armAt: 0.1, until: 7, phase })
+      expect(sounding(h.ctx)).toEqual(['0.5', '1', '1.5', '2(1)', '2.5', '3', '3.5', '4(1)', '4.5', '5', '5.5'])
+      expect(h.deps.onLanded.mock.calls).toEqual([[0, 2], [0, 4], [0, 6]])
+      expect(openAt(h.guide, 0.51, 6)).toEqual([])
+      expect(valueAt(h.guide, 6.01)).toBe(1)
+      expect(h.s.intent).toBeNull()
+    }
+  })
+
+  it('BPMs quebrados com seções encaixadas pelo sectionSpans: o acento soa em toda volta', () => {
+    for (const bpm of [78, 87.3, 133, 147.25]) {
+      const g: SongGrid = { bpm, firstDownbeat: 0.37, signature: '4/4', countEvery: 1, source: 'click', meterSource: 'acento' }
+      const bar = (60 / bpm) * 4
+      const marks = [0.37, 0.37 + bar, 0.37 + 2 * bar, 0.37 + 10 * bar].map((time, i) => ({ id: `m${i}`, time: time + 0.004, label: `S${i}` }))
+      const spans = sectionSpans(marks, 0.37 + 30 * bar, g)
+      const h = play({ spans, grid: g, intent: { target: 0, plays: 3 }, armAt: spans[0].start + 0.01, until: spans[0].start + 3 * bar + 0.5 })
+      const accents = sounding(h.ctx).filter((b) => b.endsWith('(1)'))
+      expect(accents, `bpm ${bpm}`).toHaveLength(2) // o 1 da 1ª volta passou antes de armar; as duas voltas seguintes têm
+      expect(h.deps.onLanded, `bpm ${bpm}`).toHaveBeenCalledTimes(3)
+    }
+  })
+
+  it('a tela da volta seguinte mostra a contagem inteira, com o 1 que já soou no pouso', () => {
+    const h = play({ spans: oneBar, intent: { target: 0, plays: 2 }, armAt: 0.1, until: 2.05 })
+    expect(h.deps.onLanded).toHaveBeenCalledWith(0, 2)
+    expect(h.s.view).toMatchObject({ committed: false, from: 0, to: 0, kind: 'repete', switchAt: 4, countTimes: [2, 2.5, 3, 3.5], countLabels: [1, 2, 3, 4] })
+    h.at(2.2)
+    expect(h.s.view).toMatchObject({ committed: true, countTimes: [2, 2.5, 3, 3.5], countLabels: [1, 2, 3, 4] })
+    expect(sounding(h.ctx)).toEqual(['0.5', '1', '1.5', '2(1)', '2.5', '3', '3.5']) // nada agendado duas vezes
+  })
+
+  it('1 compasso em 6/8 contando 2: o acento soa em toda volta', () => {
+    const h = play({ spans: oneBar, grid: g68, intent: { target: 0, plays: 3 }, armAt: 0.1, until: 7 })
+    expect(sounding(h.ctx)).toEqual(['1', '2(1)', '3', '4(1)', '5'])
+    expect(openAt(h.guide, 1.01, 6)).toEqual([])
+  })
+
+  it('folga 0: o acento da volta seguinte também soa (a causa era o pouso tardio, não a folga)', () => {
+    flags.minLead = 0
+    try {
+      const h = play({ spans: oneBar, intent: { target: 0, plays: 3 }, armAt: 0.1, until: 7 })
+      expect(sounding(h.ctx)).toEqual(['0.5', '1', '1.5', '2(1)', '2.5', '3', '3.5', '4(1)', '4.5', '5', '5.5'])
+      expect(openAt(h.guide, 0.51, 6)).toEqual([])
+    } finally {
+      flags.minLead = 0.05
+    }
+  })
+
+  it('seção crua de 1 compasso + 0,1 s: o 1 da volta seguinte (0,1 s depois do pouso) soa e a guia segue calada', () => {
+    const spans: SectionSpan[] = [{ index: 0, start: 0, end: 2.1 }, { index: 1, start: 2.1, end: 20 }]
+    const h = play({ spans, intent: { target: 0, plays: 2 }, armAt: 0.04, until: 5 })
+    expect(sounding(h.ctx)).toEqual(['0.1(1)', '0.6', '1.1', '1.6', '2.2(1)', '2.7', '3.2', '3.7'])
+    expect(h.deps.onLanded.mock.calls.map(([to, at]) => [to, Number(at.toFixed(6))])).toEqual([[0, 2.1], [0, 4.2]])
+    expect(openAt(h.guide, 0.111, 4.2)).toEqual([])
+    expect(valueAt(h.guide, 4.211)).toBe(1)
+  })
+
+  it('2 compassos com o relógio no setInterval e compasso abaixo de 1,1 s: o acento soa em toda volta', () => {
+    for (const phase of [0.1, 0.5, 0.97]) {
+      const h = play({ spans: [{ index: 0, start: 0, end: 2 }, { index: 1, start: 2, end: 20 }], grid: g34, clockMode: 'interval', intent: { target: 0, plays: 3 }, armAt: 0.05, until: 8, tick: 1, phase })
+      expect(sounding(h.ctx)).toEqual(['1(1)', '1.333', '1.667', '3(1)', '3.333', '3.667', '5(1)', '5.333', '5.667'])
+      // A contagem da volta seguinte começa um compasso depois do pouso: o primeiro compasso da volta tem guia.
+      expect([1.5, 2.5, 3.5, 4.5, 5.5, 6.5].map((t) => valueAt(h.guide, t))).toEqual([0, 1, 0, 1, 0, 1])
+    }
+  })
+
+  it('com 2 compassos e o relógio no Worker nada é adiantado: a volta seguinte agenda a própria contagem', () => {
+    const h = play({ spans: [{ index: 0, start: 0, end: 4 }, { index: 1, start: 4, end: 20 }], intent: { target: 0, plays: 2 }, armAt: 0.1, until: 2.1 })
+    expect(sounding(h.ctx)).toEqual(['2(1)', '2.5', '3', '3.5'])
+  })
+
+  it('cancelar logo depois do pouso, com o 1 da volta seguinte soando: o bipe desce e a guia volta', () => {
+    const h = play({ spans: oneBar, intent: { target: 0, plays: 3 }, armAt: 0.1, until: 2.05 })
+    h.arm(2.06, null)
+    const accent = triangles(h.ctx).find((n) => n.starts[0].when === 2)!
+    expect(near(accent.stops)).toEqual([2.22, 2.08])
+    expect(valueAt(h.guide, 2.06)).toBe(0)
+    expect(valueAt(h.guide, 2.07)).toBe(1)
+    for (const t of [2.2, 3, 3.9, 4.1]) h.at(t)
+    expect(sounding(h.ctx)).toEqual(['0.5', '1', '1.5', '2(1)'])
+    expect(valueAt(h.guide, 4.005)).toBe(1)
+  })
+
+  it('mudar o pedido antes da guarda refaz os bipes da volta seguinte', () => {
+    const h = play({ spans: oneBar, intent: { target: 0, plays: 3 }, armAt: 0.1, until: 1.2 })
+    h.arm(1.2, { target: 0, plays: 1 }) // sem volta seguinte: o 1 dela não sai e a guia volta no 1 deste pulo
+    for (let t = 1.225; t <= 4.5; t += 0.025) h.at(t)
+    expect(sounding(h.ctx)).toEqual(['0.5', '1', '1.5'])
+    expect(valueAt(h.guide, 2.01)).toBe(1)
+    expect(h.s.intent).toBeNull()
+  })
+
+  it('pausa com a volta seguinte agendada derruba os bipes dela e devolve a guia', () => {
+    const h = play({ spans: oneBar, intent: { target: 0, plays: 3 }, armAt: 0.1, until: 2.3 })
+    h.ctx.currentTime = 2.3
+    h.s.reset()
+    h.state.timeline = []
+    for (const t of [2.4, 3.9, 4.1, 5]) h.at(t)
+    expect(sounding(h.ctx)).toEqual(['0.5', '1', '1.5', '2(1)'])
+    expect(valueAt(h.guide, 2.31)).toBe(1)
+    expect(valueAt(h.guide, 4.5)).toBe(1)
+    expect(h.s.intent).toEqual({ target: 0, plays: 2 })
+  })
+})
+
+describe('volta seguinte: pausa entre o pouso e o agendamento, e tique atrasado', () => {
+  const oneBar: SectionSpan[] = [{ index: 0, start: 0, end: 2 }, { index: 1, start: 2, end: 4 }, { index: 2, start: 4, end: 20 }]
+  const g34: SongGrid = { bpm: 180, firstDownbeat: 0, signature: '3/4', countEvery: 1, source: 'click', meterSource: 'acento' }
+
+  it('pausa logo depois do pouso, antes de a volta seguinte agendar o resto: o 1 dela desce e a guia volta', () => {
+    for (const when of ['tique pousou', 'reset pousa']) {
+      const h = play({ spans: oneBar, intent: { target: 0, plays: 3 }, armAt: 0.1, until: when === 'tique pousou' ? 2.05 : 2.025 })
+      h.ctx.currentTime = 2.06
+      h.s.reset()
+      h.state.timeline = []
+      const accent = triangles(h.ctx).find((n) => n.starts[0].when === 2)!
+      expect(near(accent.stops), when).toEqual([2.22, 2.08])
+      expect(valueAt(h.guide, 2.07), when).toBe(1)
+      expect(valueAt(h.guide, 3), when).toBe(1)
+      expect(h.deps.onLanded, when).toHaveBeenCalledWith(0, 2)
+    }
+  })
+
+  it('com o tique do pouso atrasado, a guia calada a partir dele não reabre se o pedido muda na mesma volta', () => {
+    const h = play({ spans: [{ index: 0, start: 0, end: 2 }, { index: 1, start: 2, end: 20 }], grid: g34, clockMode: 'interval', intent: { target: 0, plays: 3 }, armAt: 0.05, until: 3.02, tick: 1, phase: 0.02 })
+    expect(sounding(h.ctx)).toEqual(['1(1)', '1.333', '1.667', '3(1)', '3.333', '3.667', '5(1)'])
+    h.arm(3.5, { target: 0, plays: 1 }) // a volta seguinte sai; esta continua contando
+    expect(valueAt(h.guide, 3.6)).toBe(0)
+    expect(valueAt(h.guide, 4.01)).toBe(1)
+    expect(sounding(h.ctx)).toEqual(['1(1)', '1.333', '1.667', '3(1)', '3.333', '3.667'])
+  })
+})
+
+describe('tique que perde a janela inteira', () => {
+  it('a próxima natural alcançada sozinha conta como passagem, não vira REPETE', () => {
+    const { s, deps, arm, at } = setup({ grid: null, spans: threeSections })
+    arm(7.5, { target: 1, plays: 1 })
+    expect(s.view).toMatchObject({ committed: false, to: 1, switchAt: 8 })
+    at(7.96) // o fio principal travou 460 ms: a música entrou na seção 1 sozinha
+    expect(s.intent).toBeNull()
+    expect(s.view).toBeNull()
+    for (const t of [10, 15.8, 16.1]) at(t)
+    expect(deps.startSwitchVoices).not.toHaveBeenCalled()
+  })
+
+  it('REPETE e LOOP perdidos desarmam em vez de virar um pulo pra trás', () => {
+    for (const plays of [1, 'infinite'] as const) {
+      const { s, deps, arm, at } = setup({ grid: null, spans: threeSections })
+      arm(7.5, { target: 0, plays })
+      at(7.96)
+      expect(s.intent).toBeNull()
+      at(15.8)
+      expect(deps.startSwitchVoices).not.toHaveBeenCalled()
+    }
+  })
+
+  it('pulo pra outra seção perdido continua armado, mais tarde', () => {
+    const { s, arm, at } = setup({ grid: null, spans: threeSections })
+    arm(7.5, { target: 2, plays: 1 })
+    at(7.96)
+    expect(s.intent).toEqual({ target: 2, plays: 1 })
+    expect(s.view).toMatchObject({ from: 1, to: 2, switchAt: 16 })
+  })
+})
+
+describe('pré-contagem e reset no cruzamento', () => {
+  it('na pré-contagem do play o bipe que cai no ponto de retomada não fica de fora', () => {
+    const { ctx, s, arm, at } = setup({ timeline: [{ ctxStart: 3, songStart: 6 }] })
+    arm(0.5, { target: 1, plays: 1 }) // retoma no 1 do último compasso, 2,5 s depois
+    expect(s.view).toMatchObject({ switchAt: 5, countTimes: [3, 3.5, 4, 4.5], countLabels: [1, 2, 3, 4] })
+    at(2.75)
+    expect(beepTimes(ctx)).toEqual([3, 3.5, 4, 4.5])
+  })
+
+  it('reset entre T - FADE e T: a voz nova que já subia desce em rampa, como a antiga volta', () => {
+    const { ctx, s, deps, started, arm, at, original } = setup()
+    arm(1, { target: 1, plays: 1 })
+    at(5.8)
+    const fresh = started[0][0]
+    ctx.currentTime = 7.9975
+    s.reset()
+    expect(valueAt(fresh.env.gain, 7.9975)).toBeCloseTo(0.5, 9)
+    expect(valueAt(fresh.env.gain, 8.0025)).toBeCloseTo(0, 9)
+    expect(near(asFake(fresh.source).stops)).toEqual([8.0025])
+    expect(valueAt(original.env.gain, 7.9975)).toBeCloseTo(0.5, 9)
+    expect(valueAt(original.env.gain, 8.0025)).toBe(1)
+    for (const t of [7.9985, 8.0005, 8.002]) expect(valueAt(original.env.gain, t) + valueAt(fresh.env.gain, t)).toBeCloseTo(1, 9)
+    expect(deps.onLanded).not.toHaveBeenCalled()
+  })
+
+  it('reset entre T - FADE e T com o alvo em 0:00: a voz nova ainda não começou e só para', () => {
+    const { ctx, s, started, arm, at } = setup()
+    arm(1, { target: 0, plays: 1 })
+    at(5.8)
+    ctx.currentTime = 7.9975
+    s.reset()
+    expect(near(asFake(started[0][0].source).stops)).toEqual([7.9975])
+  })
+})
+
+describe('comparação da view', () => {
+  it('qualquer campo da TransitionView que muda conta como mudança visível; listas iguais não', () => {
+    const sample: TransitionView = {
+      from: 0, to: 1, kind: 'proxima', plays: 2, switchAt: 8, countTimes: [6, 6.5], countLabels: [3, 4], countTotal: 4,
+      barsLeft: 1, committed: false, clickAudible: true, hasGrid: true,
+    }
+    const changed = (v: unknown): unknown => {
+      if (Array.isArray(v)) return [...v, 99]
+      if (typeof v === 'number') return v + 1
+      if (typeof v === 'boolean') return !v
+      if (typeof v === 'string') return v + 'x'
+      return 0
+    }
+    expect(sameTransitionView(sample, { ...sample, countTimes: [...sample.countTimes], countLabels: [...sample.countLabels] })).toBe(true)
+    for (const key of Object.keys(sample) as (keyof TransitionView)[]) {
+      expect(sameTransitionView(sample, { ...sample, [key]: changed(sample[key]) } as TransitionView), key).toBe(false)
+    }
+    expect(sameTransitionView(sample, { ...sample, switchAt: null })).toBe(false)
+    expect(sameTransitionView(null, null)).toBe(true)
+    expect(sameTransitionView(sample, null)).toBe(false)
   })
 })
