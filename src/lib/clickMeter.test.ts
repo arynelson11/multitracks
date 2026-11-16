@@ -463,6 +463,25 @@ describe('analyzeClickTrack: o resto do contrato', () => {
     expect(a.firstDownbeat).toBeNull(); expect(a.accent).toBeNull()
     expect(Math.abs(a.firstPulse - 0.5)).toBeLessThan(0.002)
   })
+  it('7/8 com acento só no 1: o tempo contado é a colcheia e o BPM sai na semínima (metade)', () => {
+    const x = synthClick({ bpm: 150, seconds: 40, pulsesPerBar: 7, accent: 'loud', firstPulse: 0.2 })
+    const a = analyzeClickTrack(x, 48000)!
+    expect(a).toMatchObject({ pulsesPerBar: 7, subdivision: 1, compound: false, downbeatSource: 'accent' })
+    expect(Math.abs(a.bpm - 75)).toBeLessThan(0.01); expect(Math.abs(a.pulseBpm - 150)).toBeLessThan(0.02)
+    const grid = gridFromClick(a)
+    expect(grid.signature).toBe('7/8'); expect(Math.abs(grid.bpm - 150)).toBeLessThan(0.02)
+    expect(Math.abs(barSeconds(grid) - 2.8)).toBeLessThan(0.001); expect(countPulses(grid.signature, grid.countEvery)).toBe(7)
+    expect(Math.abs(displayBpmFromPulseBpm(grid.bpm, grid.signature) - 75)).toBeLessThan(0.01)
+  })
+  it('7/8 salvo e click em colcheias sem acento: BPM na semínima; semicolcheias só com o BPM salvo', () => {
+    const colcheias = analyzeClickTrack(synthClick({ bpm: 140, seconds: 30, pulsesPerBar: 7, accent: 'none', firstPulse: 0 }), 48000, '7/8')!
+    expect(colcheias).toMatchObject({ subdivision: 1, compound: false, pulsesPerBar: null })
+    expect(Math.abs(colcheias.bpm - 70)).toBeLessThan(0.01)
+    expect(Math.abs(gridFromClick(colcheias, '7/8').bpm - 140)).toBeLessThan(0.02)
+    const semi = analyzeClickTrack(synthClick({ bpm: 280, seconds: 30, pulsesPerBar: 14, accent: 'none', firstPulse: 0 }), 48000, '7/8', 70)!
+    expect(semi).toMatchObject({ subdivision: 2, compound: false })
+    expect(Math.abs(semi.bpm - 70)).toBeLessThan(0.01); expect(Math.abs(barSeconds(gridFromClick(semi, '7/8')) - 3)).toBeLessThan(0.001)
+  })
   it('5/4, 7/8 e 12/8 com acento só no 1', () => {
     expect(analyzeClickTrack(synthClick({ bpm: 110, seconds: 40, pulsesPerBar: 5, accent: 'loud', firstPulse: 0 }), 48000)!.pulsesPerBar).toBe(5)
     expect(analyzeClickTrack(synthClick({ bpm: 150, seconds: 40, pulsesPerBar: 7, accent: 'bright', firstPulse: 0 }), 48000)!.pulsesPerBar).toBe(7)

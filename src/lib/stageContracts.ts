@@ -35,19 +35,25 @@ export function signatureForPulses(n: number): TimeSignature | null {
 
 // ---------- BPM do pulso e BPM exibido ----------
 // Conversão única (Ruling T3-BPM): o BPM que a tela mostra e que o `bpm_exact` grava é sempre o
-// da semínima, como no Ableton, na MultiTracks e no nome das pastas ("Fé" em 6/8 = 78). O pulso
-// da grade (o `SongGrid.bpm`, e a grade do metrônomo no composto) é a colcheia no 6/8 e no 12/8.
+// da semínima, como no Ableton, na MultiTracks e no nome das pastas ("Fé" em 6/8 = 78). Decide o
+// DENOMINADOR do compasso (Ruling D1-denominador): no x/8 (6/8, 7/8, 12/8) o pulso da grade é a
+// colcheia, no x/4 é a semínima.
 
-/** BPM exibido e salvo (semínima) a partir do BPM do pulso: metade no composto, o mesmo no simples. NaN com entrada não finita ou <= 0. */
-export function displayBpmFromPulseBpm(pulseBpm: number, signature: TimeSignature): number {
-  if (!Number.isFinite(pulseBpm) || pulseBpm <= 0) return NaN
-  return isCompound(signature) ? pulseBpm / 2 : pulseBpm
+/** Compasso de colcheia (x/8: 6/8, 7/8, 12/8): o pulso da grade é a colcheia, metade da semínima. */
+export function isEighthPulse(sig: TimeSignature): boolean {
+  return sig.endsWith('/8')
 }
 
-/** BPM do pulso a partir do BPM exibido e salvo (semínima): o dobro no composto, o mesmo no simples. NaN com entrada não finita ou <= 0. */
+/** BPM exibido e salvo (semínima) a partir do BPM do pulso: metade no x/8, o mesmo no x/4. NaN com entrada não finita ou <= 0. */
+export function displayBpmFromPulseBpm(pulseBpm: number, signature: TimeSignature): number {
+  if (!Number.isFinite(pulseBpm) || pulseBpm <= 0) return NaN
+  return isEighthPulse(signature) ? pulseBpm / 2 : pulseBpm
+}
+
+/** BPM do pulso a partir do BPM exibido e salvo (semínima): o dobro no x/8, o mesmo no x/4. NaN com entrada não finita ou <= 0. */
 export function pulseBpmFromDisplayBpm(displayBpm: number, signature: TimeSignature): number {
   if (!Number.isFinite(displayBpm) || displayBpm <= 0) return NaN
-  return isCompound(signature) ? displayBpm * 2 : displayBpm
+  return isEighthPulse(signature) ? displayBpm * 2 : displayBpm
 }
 
 // ---------- Grade da música ----------
@@ -57,12 +63,11 @@ export type MeterSource = 'manual' | 'salvo' | 'acento' | 'padrao'  // de onde v
 
 /**
  * Grade da música. `bpm` = pulsos da GRADE por minuto, com decimais (é o que o pulso e o
- * compasso usam): o tempo do compasso no simples (a semínima no 3/4, 4/4 e 5/4; no 7/8 o pulso
- * contado) e a colcheia no 6/8 e no 12/8. Não é a taxa do click (um click em colcheias no 4/4
- * dá a grade na semínima) nem, no composto, o BPM da música: o BPM exibido e salvo
- * (`bpm_exact`) é sempre a semínima, `displayBpmFromPulseBpm(g.bpm, g.signature)` (78 no "Fé"
- * em 6/8, com a grade em 156), e a volta é `pulseBpmFromDisplayBpm`. `firstDownbeat` é o
- * primeiro "1" em segundos da música (só vale com `source: 'click'`).
+ * compasso usam): a semínima no 3/4, 4/4 e 5/4 e a colcheia no 6/8, 7/8 e 12/8. Não é a taxa
+ * do click (um click em colcheias no 4/4 dá a grade na semínima) nem, no x/8, o BPM da música:
+ * o BPM exibido e salvo (`bpm_exact`) é sempre a semínima, `displayBpmFromPulseBpm(g.bpm,
+ * g.signature)` (78 no "Fé" em 6/8, com a grade em 156), e a volta é `pulseBpmFromDisplayBpm`.
+ * `firstDownbeat` é o primeiro "1" em segundos da música (só vale com `source: 'click'`).
  */
 export interface SongGrid { bpm: number; firstDownbeat: number; signature: TimeSignature; countEvery: 1 | 3; source: GridSource; meterSource: MeterSource }
 

@@ -393,6 +393,15 @@ describe('BPM da música na semínima (Ruling T3-BPM)', () => {
     expect(relida).toMatchObject({ bpm: 156, signature: '6/8', countEvery: 3, meterSource: 'manual', source: 'click' })
     expect(Math.abs(barSeconds(relida) - 2.308)).toBeLessThan(0.001)
   })
+  it('7/8 conta colcheias (Ruling D1-denominador): a grade é o dobro do BPM salvo, contando os 7 pulsos', () => {
+    const sete = gridFromBpm(70, '7/8')!
+    expect(sete).toMatchObject({ bpm: 140, signature: '7/8', countEvery: 1 }); expectTime(barSeconds(sete), 3)
+    expect(bpmOf(sete)).toBe(70); expect(countPulses(sete.signature, sete.countEvery)).toBe(7)
+    const ida = withMeter(g, '7/8', 1)
+    expect(ida.bpm).toBe(240); expect(bpmOf(ida)).toBe(120)
+    expect(withMeter(ida, '4/4', 1)).toEqual({ ...g, meterSource: 'manual' })
+    expect(withMeter(ida, '6/8', 3).bpm).toBe(240) // entre compassos de colcheia a grade não muda de unidade
+  })
   it('a faixa [30, 300] vale no BPM exibido, não nas colcheias do composto', () => {
     expect(gridFromBpm(300, '6/8')!.bpm).toBe(600); expect(gridFromBpm(30, '12/8')!.bpm).toBe(60)
     for (const bpm of [29.9, 300.1]) expect(gridFromBpm(bpm, '6/8')).toBeNull()

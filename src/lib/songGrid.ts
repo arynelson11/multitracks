@@ -10,7 +10,7 @@ import { DOTTED_PULSE_MAX_BPM } from './clickMeter'
 
 /** Folga de arredondamento nas comparações de tempo (1 microssegundo). */
 const EPS = 1e-6
-/** Faixa do BPM exibido e salvo (Ruling T2), sempre na semínima: no composto a grade vai de 60 a 600 colcheias. */
+/** Faixa do BPM exibido e salvo (Ruling T2), sempre na semínima: no x/8 a grade vai de 60 a 600 colcheias. */
 const MIN_BPM = 30
 const MAX_BPM = 300
 const GRID_SOURCES: readonly GridSource[] = ['click', 'bpm']
@@ -203,8 +203,9 @@ export function sectionIndexAt(spans: readonly SectionSpan[], t: number): number
 
 /**
  * Grade só com o BPM salvo (sem fase: a contagem fica ancorada no 1 de destino). `bpm` é o BPM
- * salvo, na semínima; no 6/8 e no 12/8 a grade conta colcheias (o dobro) e a contagem vai de 3
- * em 3 (2 tempos no 6/8, 4 no 12/8), como no `gridFromClick`. Nula com bpm fora de [30, 300].
+ * salvo, na semínima; no 6/8, no 7/8 e no 12/8 a grade conta colcheias (o dobro), e no composto
+ * a contagem vai de 3 em 3 (2 tempos no 6/8, 4 no 12/8), como no `gridFromClick`. Nula com bpm
+ * fora de [30, 300].
  */
 export function gridFromBpm(bpm: number, savedSignature?: TimeSignature | null): SongGrid | null {
   if (!displayBpmInRange(bpm)) return null
@@ -227,11 +228,11 @@ export interface ClickAnalysisLike {
 }
 
 /**
- * Pulsos da grade por minuto no compasso que vale: a semínima no simples e as colcheias no 6/8
- * e no 12/8 (o dobro, pela conversão única `pulseBpmFromDisplayBpm`). Leitura feita no simples
- * com o compasso salvo composto (a T27 deve ler o click já com o compasso salvo): o BPM dela
- * não é a semínima do composto, então o click é colcheia ou pontuada pelo andamento, como no
- * clickMeter.
+ * Pulsos da grade por minuto no compasso que vale: a semínima no x/4 e as colcheias no 6/8, 7/8
+ * e 12/8 (o dobro, pela conversão única `pulseBpmFromDisplayBpm`). A T27 lê o click já com o
+ * compasso salvo; no 7/8 a leitura tem de vir no quadro dele (acento a cada 7 ou o 7/8 passado
+ * ao clickMeter). Leitura feita no simples com o compasso salvo composto: o BPM dela não é a
+ * semínima do composto, então o click é colcheia ou pontuada pelo andamento, como no clickMeter.
  */
 function gridPulseBpm(a: ClickAnalysisLike, signature: TimeSignature): number {
   if (!isCompound(signature) || a.compound) return pulseBpmFromDisplayBpm(a.bpm, signature)
@@ -276,8 +277,8 @@ export function gridFromClick(a: ClickAnalysisLike, savedSignature?: TimeSignatu
 
 /**
  * Compasso escolhido no modo EDITAR. Contar de 3 em 3 só vale no composto; o BPM exibido (a
- * semínima), a fase e a origem ficam: entrar no composto dobra os pulsos da grade (colcheias) e
- * sair divide por 2, então a semínima não muda. O 1 volta pra dentro do primeiro compasso do
+ * semínima), a fase e a origem ficam: entrar num compasso de colcheia (x/8) dobra os pulsos da
+ * grade e sair divide por 2, então a semínima não muda. O 1 volta pra dentro do primeiro compasso do
  * compasso novo (as barras são as mesmas), pra `barIndexAt` de 0:00 em diante nunca passar da
  * anacruse (-1).
  */

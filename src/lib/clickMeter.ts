@@ -22,26 +22,27 @@
 //    outras com no máximo 20%, e pelo menos 4 ataques (4 compassos) nessa fase. A mesma regra
 //    com m = 2 mostra o acento em cada tempo de um click em colcheias.
 // 5. Tempo e subdivisão (ver interpret): `subdivision` diz quantos pulsos do click cabem num
-//    tempo do compasso (a semínima pontuada no 6/8 e no 12/8) e o BPM sai sempre na semínima
-//    (Ruling T3-BPM: "Fé" em 6/8 = 78); o compasso composto só muda a contagem. `pulseBpm` é a
-//    taxa do click. O compasso e o BPM salvos da música (o BPM salvo também na semínima)
+//    tempo do compasso (a semínima pontuada no 6/8 e no 12/8, a colcheia no 7/8) e o BPM sai
+//    sempre na semínima, pela conversão única do stageContracts (Ruling T3-BPM: "Fé" em 6/8 =
+//    78); o compasso composto só muda a contagem. `pulseBpm` é a taxa do click. O compasso e o BPM salvos da música (o BPM salvo também na semínima)
 //    desempatam quando o acento deixa duas leituras.
-import { isCompound, pulsesPerBar as signaturePulses, type TimeSignature } from './stageContracts'
+import { displayBpmFromPulseBpm, isCompound, isEighthPulse, pulsesPerBar as signaturePulses, type TimeSignature } from './stageContracts'
 
 export interface ClickAnalysis {
   /**
    * BPM da música, com decimais, sempre na semínima (Ruling T3-BPM): é o que a tela mostra e o
-   * `bpm_exact` grava. No 6/8 e no 12/8 é metade das colcheias ("Fé": colcheias a 156, BPM 78);
-   * o compasso composto só muda a contagem (tempos pontuados).
+   * `bpm_exact` grava. No 6/8, no 7/8 e no 12/8 é metade das colcheias ("Fé": colcheias a 156,
+   * BPM 78); o compasso composto só muda a contagem (tempos pontuados).
    */
   bpm: number
   /** Pulsos do click por minuto, como tocam no arquivo (o que "Ler o click de novo" mede). */
   pulseBpm: number
   /**
    * Pulsos do click por tempo do compasso: 1 (o click toca o tempo), 2 (colcheias no simples),
-   * 3 (colcheias no composto, ou tercinas no simples) ou 4 (semicolcheias). No simples,
+   * 3 (colcheias no composto, ou tercinas no simples) ou 4 (semicolcheias). No x/4,
    * `bpm * subdivision` é o `pulseBpm`; no composto o tempo é a pontuada (1,5 semínima) e o
-   * `pulseBpm` é `bpm * subdivision / 1,5`.
+   * `pulseBpm` é `bpm * subdivision / 1,5`; no 7/8 o tempo é a colcheia e o `pulseBpm` é
+   * `bpm * 2 * subdivision`.
    */
   subdivision: 1 | 2 | 3 | 4
   /** O tempo é a semínima pontuada (leitura em 6/8 ou 12/8). */
@@ -474,6 +475,8 @@ interface Interpretation {
   /** Pulso do click (índice mod subdivisão) que cai no tempo. */
   beatPhase: number
   ambiguous: boolean
+  /** O tempo é a colcheia de um compasso simples de colcheia (7/8). */
+  eighthBeat: boolean
 }
 
 /**
@@ -503,6 +506,7 @@ interface InterpretationParts {
   /** Acento que marca os tempos quando não é o do "1" (o acento a cada 2, ou em cada tempo subdividido). */
   beat?: MeterReading | null
   ambiguous?: boolean
+  eighthBeat?: boolean
 }
 
 function interpretation(o: InterpretationParts): Interpretation {
@@ -510,8 +514,20 @@ function interpretation(o: InterpretationParts): Interpretation {
   return {
     subdivision: o.subdivision, compound: o.compound, meter: o.meter, downbeat: o.downbeat,
     downbeatProven: o.downbeat !== null && (o.downbeatProven ?? true),
-    beatPhase: beat ? beat.phase % o.subdivision : 0, ambiguous: o.ambiguous ?? false,
+    beatPhase: beat ? beat.phase % o.subdivision : 0, ambiguous: o.ambiguous ?? false, eighthBeat: o.eighthBeat ?? false,
   }
+}
+
+/**
+ * Compasso simples de colcheia (o 7/8, salvo ou lido no acento a cada 7): o tempo contado é a
+ * colcheia. O click toca colcheias (subdivisão 1) e o acento a cada `eighths` colcheias dá o
+ * compasso e o "1"; semicolcheias (subdivisão 2) só quando o BPM salvo aponta 4 pulsos por
+ * semínima.
+ */
+function eighthFrame(bar: MeterReading | null, two: MeterReading | null, eighths: number, k: KnownRatio | null): Interpretation {
+  if (k === 4) return interpretation({ subdivision: 2, compound: false, eighthBeat: true, meter: null, downbeat: null, beat: two })
+  const fits = bar?.m === eighths
+  return interpretation({ subdivision: 1, compound: false, eighthBeat: true, meter: fits ? eighths : null, downbeat: fits ? bar : null })
 }
 
 /**
@@ -571,6 +587,8 @@ function fromBar(pulseBpm: number, bar: MeterReading, two: MeterReading | null, 
     }
     case 12:
       return compound(12)
+    case 7:
+      return eighthFrame(bar, two, 7, null)
     default:
       return simple(1, bar.m)
   }
@@ -578,7 +596,7 @@ function fromBar(pulseBpm: number, bar: MeterReading, two: MeterReading | null, 
 
 /**
  * Etapa 5. Ordem: compasso composto conhecido, ou o click em pontuada pelo BPM salvo
- * (compoundFrame); acento em cada tempo de um click em tercinas ou semicolcheias, pelo BPM
+ * (compoundFrame); 7/8 conhecido (eighthFrame); acento em cada tempo de um click em tercinas ou semicolcheias, pelo BPM
  * salvo; compasso simples conhecido com o acento fechando 1, 2 ou 3 pulsos por tempo; o acento
  * sozinho (fromBar), com o BPM salvo desempatando; sem acento de compasso, o acento a cada 2
  * pulsos (colcheias com cada tempo acentuado) e o BPM salvo dizem a subdivisão.
@@ -589,6 +607,7 @@ function interpret(
 ): Interpretation {
   const k = knownRatio(pulseBpm, knownBpm)
   if (knownSignature && isCompound(knownSignature)) return compoundFrame(pulseBpm, bar, two, signaturePulses(knownSignature), k)
+  if (knownSignature && isEighthPulse(knownSignature)) return eighthFrame(bar, two, signaturePulses(knownSignature), k)
   // Click na pontuada pelo BPM salvo: 12/8 com o acento fechando 4 pulsos, senão 6/8.
   if (k === 'dotted') return compoundFrame(pulseBpm, bar, two, bar?.m === 4 ? 12 : 6, k)
   if (bar) {
@@ -642,9 +661,11 @@ export function analyzeClickTrack(
   // "1" = tempo (na reta) do primeiro ataque com índice ≡ fase (mod m).
   const downbeat = it.downbeat
   const firstDownbeat = downbeat ? timeOf(grid.find((o) => o.index % downbeat.m === downbeat.phase)!.index) : null
+  // Pulso da grade no quadro da leitura (colcheia no composto e no 7/8, o tempo no x/4); a
+  // conversão única dá a semínima.
+  const gridPulseBpm = ((it.compound ? 3 : 1) * pulseBpm) / it.subdivision
   return {
-    // Semínima: no composto o tempo (a pontuada) vale 1,5 semínima.
-    bpm: (it.compound ? 1.5 * pulseBpm : pulseBpm) / it.subdivision,
+    bpm: displayBpmFromPulseBpm(gridPulseBpm, it.compound ? '6/8' : it.eighthBeat ? '7/8' : '4/4'),
     pulseBpm,
     subdivision: it.subdivision,
     compound: it.compound,

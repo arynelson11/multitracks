@@ -1,8 +1,8 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import type { TimeSignatureType } from './AudioAnalyzer'
 import {
-  GRID_WARNING_TEXT, TIME_SIGNATURES, countPulses, displayBpmFromPulseBpm, gridHasPhase, isCompound, pulseBpmFromDisplayBpm,
-  pulsesPerBar, signatureForPulses, type SongGrid, type TimeSignature,
+  GRID_WARNING_TEXT, TIME_SIGNATURES, countPulses, displayBpmFromPulseBpm, gridHasPhase, isCompound, isEighthPulse,
+  pulseBpmFromDisplayBpm, pulsesPerBar, signatureForPulses, type SongGrid, type TimeSignature,
 } from './stageContracts'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
@@ -29,13 +29,16 @@ describe('compasso', () => {
 })
 
 describe('BPM do pulso e BPM exibido (Ruling T3-BPM: o exibido e o salvo são sempre na semínima)', () => {
-  it('no composto o pulso é a colcheia: 156 de pulso em 6/8 é 78, e 78 em 6/8 é 156', () => {
+  // Ruling D1-denominador: decide o denominador do compasso, não o composto.
+  it('em compasso de colcheia (x/8) o pulso é a colcheia: 156 em 6/8 é 78, 140 em 7/8 é 70, e a volta', () => {
     expect(displayBpmFromPulseBpm(156, '6/8')).toBe(78); expect(pulseBpmFromDisplayBpm(78, '6/8')).toBe(156)
     expect(displayBpmFromPulseBpm(150, '12/8')).toBe(75); expect(pulseBpmFromDisplayBpm(75, '12/8')).toBe(150)
+    expect(displayBpmFromPulseBpm(140, '7/8')).toBe(70); expect(pulseBpmFromDisplayBpm(70, '7/8')).toBe(140)
+    expect(TIME_SIGNATURES.filter(isEighthPulse)).toEqual(['6/8', '7/8', '12/8'])
   })
-  it('no simples os dois devolvem o próprio valor', () => {
+  it('em compasso de semínima (x/4) os dois devolvem o próprio valor', () => {
     expect(displayBpmFromPulseBpm(120, '4/4')).toBe(120); expect(pulseBpmFromDisplayBpm(120, '4/4')).toBe(120)
-    for (const s of TIME_SIGNATURES.filter((x) => !isCompound(x))) {
+    for (const s of ['3/4', '4/4', '5/4'] as const) {
       expect(displayBpmFromPulseBpm(72.5, s)).toBe(72.5); expect(pulseBpmFromDisplayBpm(72.5, s)).toBe(72.5)
     }
   })
