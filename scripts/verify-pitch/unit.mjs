@@ -62,14 +62,21 @@ if (k2s) {
   const want = { C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, F: 5, 'F#': 6, Gb: 6, G: 7, 'G#': 8, Ab: 8, A: 9, 'A#': 10, Bb: 10, B: 11,
     c: 0, bb: 10, 'f#': 6, Am: 9, 'F#m': 6, Ebm: 3, 'C#m': 1, 'C♯': 1, 'B♭': 10, ' G ': 7, Cb: 11, 'E#': 5, 'B#': 0 };
   for (const [k, v] of Object.entries(want)) check(6, `tom "${k}"`, k2s(k), v);
-  for (const k of ['Xyz', 'H', 'Do', '', '#', 'Cm7b5x']) check(6, `tom "${k}" não reconhecido`, k2s(k), null);
+  for (const k of ['Xyz', 'H', '', '#', 'Cm7b5x']) check(6, `tom "${k}" não reconhecido`, k2s(k), null);
+  // Rodada 1, item 6: solfejo, com ou sem acento, sustenido/bemol e menor.
+  const solf = { 'Dó': 0, Do: 0, 'dó': 0, DO: 0, 'Ré': 2, Re: 2, Mi: 4, 'Fá': 5, Fa: 5, Sol: 7, SOL: 7, 'Lá': 9, La: 9, Si: 11,
+    'Lá m': 9, 'Rém': 2, 'Sol#': 8, Sib: 10, 'Si b': 10, Mib: 3, 'Fá#m': 6, 'Dó#': 1, 'Ré♭': 1, 'Dó maior': 0, 'Lá menor': 9, 'Mi m': 4, Dob: 11, 'Si#': 0, ' Sol ': 7 };
+  for (const [k, v] of Object.entries(solf)) check('R1-6', `tom "${k}"`, k2s(k), v);
+  for (const k of ['Sole', 'Lam7', 'Dó#x', 'Ut', 'Sold']) check('R1-6', `tom "${k}" não reconhecido`, k2s(k), null);
 }
 const between = need('semitonesBetweenKeys');
 if (between) {
   const cases = [['C', 'D', 2], ['C', 'G', -5], ['A', 'C', 3], ['Bb', 'C', 2], ['Db', 'Eb', 2], ['Am', 'C', 3], ['F#m', 'A', 3],
     ['c', 'd', 2], ['bb', 'c', 2], ['B♭', 'C', 2], ['Eb', 'A', 6], ['G', 'Db', -6], ['G', 'C#', -6], ['Xyz', 'C', 0], ['', 'C', 0], [null, 'C', 0], ['C', 'Xyz', 0]];
   for (const [a, b, v] of cases) check(6, `de "${a}" para "${b}"`, between(a, b), v);
-  const odd = [null, undefined, '', 'Xyz', 'H', 'Bb', 'Am', 'c#', 'B♭', '123'];
+  for (const [a, b, v] of [['Lá m', 'C', 3], ['Sib', 'C', 2], ['Dó', 'D', 2], ['Sol#', 'A', 1], ['Fá', 'Sol', 2], ['Xyz', 'Ré', 0]])
+    check('R1-6', `de "${a}" para "${b}"`, between(a, b), v);
+  const odd = [null, undefined, '', 'Xyz', 'H', 'Bb', 'Am', 'c#', 'B♭', '123', 'Lá m', 'Sib', 'Dó', 'Sole'];
   let finite = true;
   for (const a of odd) for (const b of ['C', 'Bb', 'F#', 'Xyz', null]) if (!Number.isFinite(between(a, b))) finite = false;
   check(6, 'nenhuma combinação de tons gera NaN', finite, true);
