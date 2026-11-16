@@ -8,7 +8,7 @@ const CHANNELS = [
   { id: 'bateria',  name: 'Bateria',  color: '#f59e0b' },
   { id: 'baixo',    name: 'Baixo',    color: '#10b981' },
   { id: 'guitarra', name: 'Guitarra', color: '#ef4444' },
-  { id: 'teclado',  name: 'Teclado',  color: '#8b5cf6' },
+  { id: 'teclado',  name: 'Teclado',  color: '#a78bfa' },
   { id: 'outros',   name: 'Outros',   color: '#ec4899' },
   { id: 'master',   name: 'Master',   color: '#f97316' },
 ] as const
@@ -174,7 +174,7 @@ export function DemoMixer() {
         <div className="w-2.5 h-2.5 rounded-full bg-red-500/50" />
         <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/50" />
         <div className="w-2.5 h-2.5 rounded-full bg-green-500/50" />
-        <span className="ml-auto text-[10px] text-white/15 font-mono tracking-wider hidden sm:block">
+        <span className="ml-auto text-[10px] text-white/60 font-mono tracking-wider hidden sm:block">
           PLAYBACK STUDIO · MIXER AO VIVO
         </span>
       </div>
@@ -223,28 +223,33 @@ export function DemoMixer() {
                 </div>
 
                 {/* M / S buttons */}
-                <div className="flex gap-1 w-full">
+                {/* Alvo de pelo menos 24px: no celular M e S ficam um embaixo do outro. */}
+                <div className="flex flex-col sm:flex-row gap-1 w-full">
                   {id !== 'master' ? (
                     <>
                       <button
                         onClick={() => toggleMute(id)}
-                        className={`flex-1 h-4 rounded text-[7px] font-bold flex items-center justify-center cursor-pointer transition-all ${
+                        aria-label={`Mute ${name}`}
+                        aria-pressed={isMuted}
+                        className={`w-full sm:w-auto sm:flex-1 h-6 shrink-0 rounded text-[9px] font-bold flex items-center justify-center cursor-pointer transition-all ${
                           isMuted
                             ? 'bg-red-500/30 border border-red-500/50 text-red-400'
-                            : 'bg-white/[0.05] text-white/25 hover:text-white/50'
+                            : 'bg-white/[0.05] text-white/60 hover:text-white/80'
                         }`}
                       >M</button>
                       <button
                         onClick={() => toggleSolo(id)}
-                        className={`flex-1 h-4 rounded text-[7px] font-bold flex items-center justify-center cursor-pointer transition-all ${
+                        aria-label={`Solo ${name}`}
+                        aria-pressed={isSoloed}
+                        className={`w-full sm:w-auto sm:flex-1 h-6 shrink-0 rounded text-[9px] font-bold flex items-center justify-center cursor-pointer transition-all ${
                           isSoloed
                             ? 'bg-yellow-500/30 border border-yellow-500/50 text-yellow-400'
-                            : 'bg-white/[0.05] text-white/25 hover:text-white/50'
+                            : 'bg-white/[0.05] text-white/60 hover:text-white/80'
                         }`}
                       >S</button>
                     </>
                   ) : (
-                    <div className="h-4 w-full" />
+                    <div className="h-6 w-full" aria-hidden="true" />
                   )}
                 </div>
               </div>
@@ -269,6 +274,7 @@ export function DemoMixer() {
             <button
               onClick={playing ? stop : start}
               disabled={loading}
+              aria-label={loading ? 'Carregando a demonstração' : playing ? 'Parar a demonstração' : 'Tocar a demonstração'}
               className={`w-11 h-11 rounded-full flex items-center justify-center transition-colors cursor-pointer disabled:opacity-60 ${
                 playing ? 'bg-red-500 hover:bg-red-400' : 'bg-orange-500 hover:bg-orange-400'
               }`}
@@ -288,12 +294,12 @@ export function DemoMixer() {
             </div>
           </div>
           {!playing && !loading && (
-            <p className="text-center text-[10px] text-white/20 mt-3">
-              Pressione ▶ para tocar · <span className="text-white/30">M</span> = Mute · <span className="text-white/30">S</span> = Solo · experimente antes de criar conta
+            <p className="text-center text-[10px] text-white/60 mt-3">
+              Pressione ▶ para tocar · <span className="text-white/80">M</span> = Mute · <span className="text-white/80">S</span> = Solo · experimente antes de criar conta
             </p>
           )}
           {loading && (
-            <p className="text-center text-[10px] text-white/20 mt-3">Carregando as faixas...</p>
+            <p className="text-center text-[10px] text-white/60 mt-3">Carregando as faixas...</p>
           )}
           {error && (
             <p className="text-center text-[10px] text-red-400/70 mt-3">Não deu pra carregar o áudio. Tente de novo.</p>

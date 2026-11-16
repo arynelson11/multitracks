@@ -58,7 +58,7 @@ export function DownloadPage() {
       <div className="relative max-w-5xl mx-auto px-5 sm:px-8 py-10">
         {/* Topo */}
         <header className="flex items-center justify-between mb-12">
-          <a href="/" className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors text-sm">
+          <a href="/" className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors text-sm py-2 min-h-11">
             <ArrowLeft className="w-4 h-4" /> Voltar
           </a>
           <PlaybackStudioWordmark size="sm" />
@@ -103,7 +103,7 @@ export function DownloadPage() {
 
         {/* Dica de qual Mac */}
         {isMac && (
-          <p className="text-center text-zinc-500 text-xs max-w-2xl mx-auto mb-4">
+          <p className="text-center text-zinc-400 text-xs max-w-2xl mx-auto mb-4">
             Não sabe qual Mac você tem? <strong className="text-zinc-300">Menu </strong> → <strong className="text-zinc-300">Sobre Este Mac</strong>.
             Se aparecer <strong className="text-zinc-300">Apple M1/M2/M3</strong>, use Apple Silicon. Se aparecer <strong className="text-zinc-300">Intel</strong>, use a versão Intel.
           </p>
@@ -142,7 +142,7 @@ export function DownloadPage() {
                   <code className="block bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-orange-300 overflow-x-auto select-all my-2">
                     xattr -cr "/Applications/Playback Studio.app"
                   </code>
-                  <p className="text-zinc-500 text-[13px]">Se pedir a senha do seu Mac, digite ela e aperte Enter (é normal a tela não mostrar nenhuma letra enquanto você digita a senha, é assim mesmo no Terminal). Depois disso, abra o Playback Studio normalmente pela pasta Applications: ele nunca mais vai pedir isso de novo.</p>
+                  <p className="text-zinc-400 text-[13px]">Se pedir a senha do seu Mac, digite ela e aperte Enter (é normal a tela não mostrar nenhuma letra enquanto você digita a senha, é assim mesmo no Terminal). Depois disso, abra o Playback Studio normalmente pela pasta Applications: ele nunca mais vai pedir isso de novo.</p>
                 </div>
               </div>
             ) : (
@@ -152,13 +152,13 @@ export function DownloadPage() {
                   <li>Nessa tela, clique no linkzinho <strong>Mais informações</strong>.</li>
                   <li>Vai aparecer um botão novo, <strong>Executar assim mesmo</strong>. Clique nele.</li>
                 </ol>
-                <p className="text-zinc-500 text-[13px]">Só precisa fazer isso na primeira vez que instalar. Depois é só seguir o instalador normal.</p>
+                <p className="text-zinc-400 text-[13px]">Só precisa fazer isso na primeira vez que instalar. Depois é só seguir o instalador normal.</p>
               </div>
             )}
           </div>
         )}
 
-        <p className="text-center text-zinc-600 text-xs mb-16">
+        <p className="text-center text-zinc-400 text-xs mb-16">
           Grátis pra instalar. As funções seguem o seu plano (Livre, Pro ou Studio).
         </p>
 
@@ -168,7 +168,7 @@ export function DownloadPage() {
         {/* Funcionalidades */}
         <div className="mb-14">
           <h2 className="text-center font-display font-bold text-2xl sm:text-3xl mb-2">Tudo o que o app faz</h2>
-          <p className="text-center text-zinc-500 text-sm mb-8">Do ensaio em casa ao culto no domingo.</p>
+          <p className="text-center text-zinc-400 text-sm mb-8">Do ensaio em casa ao culto no domingo.</p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {FEATURES.map((f) => (
               <div key={f.title} className="bg-white/[0.03] border border-white/10 rounded-2xl p-5 hover:border-orange-500/30 transition-colors">
@@ -212,7 +212,7 @@ function DownloadButton({ href, icon, platform, label, sub, highlighted, onHelp 
         <div className="text-white">{icon}</div>
         <div className="min-w-0">
           <p className="font-bold text-white leading-tight">{platform}</p>
-          <p className="text-zinc-500 text-xs truncate">{sub}</p>
+          <p className="text-zinc-400 text-xs truncate">{sub}</p>
         </div>
       </div>
       <a
@@ -221,7 +221,7 @@ function DownloadButton({ href, icon, platform, label, sub, highlighted, onHelp 
       >
         <Download className="w-4 h-4" /> {label}
       </a>
-      <button onClick={onHelp} className="w-full text-center text-[11px] text-zinc-500 hover:text-zinc-300 mt-2 transition-colors">
+      <button onClick={onHelp} aria-label={`Como instalar no ${platform}`} className="w-full text-center text-[12px] text-zinc-400 hover:text-zinc-200 mt-1 py-2 min-h-11 transition-colors">
         Como instalar?
       </button>
     </div>

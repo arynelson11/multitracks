@@ -154,19 +154,19 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <div className="flex items-center gap-2">
             <a
               href="/download"
-              className="hidden sm:flex items-center gap-1.5 text-[13px] text-warm-400 hover:text-bone px-3 py-1.5 transition-colors cursor-pointer font-medium"
+              className="hidden sm:flex items-center gap-1.5 text-[13px] text-ps-mut hover:text-bone px-3 py-1.5 transition-colors cursor-pointer font-medium"
             >
               <Download size={14} /> Baixar app
             </a>
             <button
               onClick={goToApp}
-              className="hidden sm:block text-[13px] text-warm-400 hover:text-bone px-3 py-1.5 transition-colors cursor-pointer font-medium"
+              className="hidden sm:block text-[13px] text-ps-mut hover:text-bone px-3 py-1.5 transition-colors cursor-pointer font-medium"
             >
               Entrar
             </button>
             <button
               onClick={goToApp}
-              className="text-[13px] bg-laranja hover:bg-laranja-dark text-bone px-5 py-2 rounded-lg font-semibold transition-colors cursor-pointer"
+              className="text-[13px] bg-laranja hover:bg-laranja-light text-ps-on-or px-5 py-2 rounded-lg font-semibold transition-colors cursor-pointer"
             >
               Começa de graça
             </button>
@@ -187,7 +187,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         <div className="relative text-center max-w-4xl mx-auto">
           {/* Visual Hammer */}
           <div className="mb-6 inline-flex items-baseline gap-3 select-none">
-            <span className="text-warm-400 text-[14px] font-medium tracking-wide">pronto pro</span>
+            <span className="text-ps-mut text-[14px] font-medium tracking-wide">pronto pro</span>
             <DomingoMark size="md" tone="laranja" />
           </div>
 
@@ -209,7 +209,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button
               onClick={goToApp}
-              className="inline-flex items-center justify-center gap-2.5 bg-laranja hover:bg-laranja-dark text-bone px-8 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-laranja/25"
+              className="inline-flex items-center justify-center gap-2.5 bg-laranja hover:bg-laranja-light text-ps-on-or px-8 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-laranja/25"
             >
               Começa de graça
             </button>
@@ -227,7 +227,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             </a>
           </div>
 
-          <p className="text-[12px] text-warm-400 mt-5">Sem cartão de crédito · Cancele quando quiser</p>
+          <p className="text-[12px] text-ps-mut mt-5">Sem cartão de crédito · Cancele quando quiser</p>
         </div>
 
         {/* Product preview: DAW preserved (dual aesthetic) */}
@@ -235,14 +235,14 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <div className="rounded-2xl overflow-hidden border border-tinta-border shadow-2xl shadow-black/40">
             <DemoMixer />
           </div>
-          <p className="text-center text-[11px] text-warm-400 mt-3 font-mono">o estúdio dentro do Playback Studio</p>
+          <p className="text-center text-[11px] text-ps-mut mt-3 font-mono">o estúdio dentro do Playback Studio</p>
         </div>
       </section>
 
       {/* ════════ STAKES: problema + empatia ════════ */}
       <section className="py-24 px-5 sm:px-8 bg-tinta-soft">
         <div className="max-w-3xl mx-auto">
-          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o sábado que a gente conhece</p>
+          <p className="text-ps-mut text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o sábado que a gente conhece</p>
           <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-8 text-center">
             Domingo não tem que ser correria.
           </h2>
@@ -262,7 +262,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       {/* ════════ GUIDE: 3 benefícios ════════ */}
       <section id="como-funciona" className="py-24 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto">
-          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o que o Playback Studio entrega</p>
+          <p className="text-ps-mut text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o que o Playback Studio entrega</p>
           <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-16 text-center">
             Construída por quem toca.
             <br />
@@ -289,7 +289,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       {/* ════════ PLAN: 3 passos ════════ */}
       <section className="py-24 px-5 sm:px-8 bg-tinta-soft">
         <div className="max-w-4xl mx-auto">
-          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o domingo em 3 passos</p>
+          <p className="text-ps-mut text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o domingo em 3 passos</p>
           <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-16 text-center">
             Como você chega pronto.
           </h2>
@@ -301,7 +301,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
               { n: '3', title: 'Sua banda chega pronta no domingo', desc: 'Faixas separadas no mixer, com click e voz guia. No Pro, você marca as seções (intro, verso, refrão) pra repetir trechos ao vivo, e a banda acompanha pelo celular no Modo Ao Vivo.' },
             ].map(step => (
               <div key={step.n} className="bg-tinta-raised border border-tinta-border rounded-2xl p-6 sm:p-8 flex items-start gap-6">
-                <div className="w-14 h-14 rounded-full bg-laranja text-bone flex items-center justify-center font-display font-semibold text-[24px] shrink-0">
+                <div className="w-14 h-14 rounded-full bg-laranja text-ps-on-or flex items-center justify-center font-display font-semibold text-[24px] shrink-0">
                   {step.n}
                 </div>
                 <div className="flex-1 pt-1">
@@ -315,7 +315,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <div className="text-center mt-12">
             <button
               onClick={goToApp}
-              className="inline-flex items-center justify-center gap-2.5 bg-laranja hover:bg-laranja-dark text-bone px-8 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-laranja/25"
+              className="inline-flex items-center justify-center gap-2.5 bg-laranja hover:bg-laranja-light text-ps-on-or px-8 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-laranja/25"
             >
               Sobe sua primeira música <ArrowRight size={17} />
             </button>
@@ -326,7 +326,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       {/* ════════ AUDIENCE: pra quem é ════════ */}
       <section className="py-24 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto">
-          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">feito pra</p>
+          <p className="text-ps-mut text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">feito pra</p>
           <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-16 text-center">
             Quem toca todo fim de semana.
           </h2>
@@ -347,7 +347,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       {/* ════════ FEATURES: tudo que vem junto ════════ */}
       <section className="py-24 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto">
-          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">tudo que vem junto</p>
+          <p className="text-ps-mut text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">tudo que vem junto</p>
           <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-4 text-center">
             Mais do que separar faixas.
           </h2>
@@ -367,7 +367,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                 <h3 className="font-display font-semibold text-[16px] text-bone mb-2">
                   {f.title}
                   {f.pro && (
-                    <span className="ml-2 align-middle text-[10px] font-sans font-bold uppercase tracking-wider text-laranja bg-laranja/15 border border-laranja/30 px-1.5 py-0.5 rounded">Pro</span>
+                    <span className="ml-2 align-middle text-[10px] font-sans font-bold uppercase tracking-wider text-laranja-light bg-laranja/15 border border-laranja/30 px-1.5 py-0.5 rounded">Pro</span>
                   )}
                 </h3>
                 <p className="text-[13px] text-warm-200 leading-relaxed">{f.desc}</p>
@@ -380,7 +380,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       {/* ════════ SUCCESS: transformação ════════ */}
       <section className="py-24 px-5 sm:px-8 bg-tinta-soft">
         <div className="max-w-3xl mx-auto">
-          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">seu próximo domingo, diferente</p>
+          <p className="text-ps-mut text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">seu próximo domingo, diferente</p>
           <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-12 text-center">
             Sexta separa. Sábado ensaia.
             <br />
@@ -405,7 +405,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
       {/* ════════ PRICING ════════ */}
       <section className="py-24 px-5 sm:px-8 bg-tinta-soft" id="precos">
         <div className="max-w-5xl mx-auto">
-          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">planos</p>
+          <p className="text-ps-mut text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">planos</p>
           <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-3 text-center">
             Planos pra sua banda chegar pronta no domingo.
           </h2>
@@ -426,7 +426,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                 className={`px-5 py-2 rounded-lg text-[13px] font-semibold transition-all cursor-pointer flex items-center gap-2 ${billing === 'annual' ? 'bg-bone text-tinta' : 'text-warm-200 hover:text-bone'}`}
               >
                 Anual
-                <span className="text-[10px] font-bold text-musgo-light bg-musgo/20 px-1.5 py-0.5 rounded">até −{MAX_ANNUAL_DISCOUNT}%</span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${billing === 'annual' ? 'text-musgo-dark bg-musgo/25' : 'text-musgo-light bg-musgo/20'}`}>até −{MAX_ANNUAL_DISCOUNT}%</span>
               </button>
             </div>
           </div>
@@ -444,13 +444,13 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                     }`}
                 >
                   {plan.badge && (
-                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-laranja text-bone text-[10px] font-bold px-4 py-1 rounded-full uppercase tracking-widest whitespace-nowrap">
+                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-laranja text-ps-on-or text-[10px] font-bold px-4 py-1 rounded-full uppercase tracking-widest whitespace-nowrap">
                       {plan.badge}
                     </div>
                   )}
                   <div className="mb-5">
                     <h3 className="font-display font-semibold text-[22px] text-bone mb-1">{plan.name}</h3>
-                    <p className="text-warm-400 text-[13px]">{plan.desc}</p>
+                    <p className="text-ps-mut text-[13px]">{plan.desc}</p>
                   </div>
                   <div className="mb-7">
                     {price === 0 ? (
@@ -458,9 +458,9 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                     ) : (
                       <>
                         <div className="flex items-baseline gap-1">
-                          <span className="text-[14px] text-warm-400">R$</span>
+                          <span className="text-[14px] text-ps-mut">R$</span>
                           <span className="font-display font-semibold text-[40px] text-bone leading-none">{formatReais(price)}</span>
-                          <span className="text-warm-400 text-[14px]">/mês</span>
+                          <span className="text-ps-mut text-[14px]">/mês</span>
                         </div>
                         {billing === 'annual' && (
                           <p className="text-[11px] text-musgo-light mt-2">
@@ -468,7 +468,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                           </p>
                         )}
                         {billing === 'monthly' && (
-                          <p className="text-[11px] text-warm-400 mt-2">ou R$ {formatReais(annualPerMonth(plan.annualTotal))}/mês no anual ({savings.percent}% a menos)</p>
+                          <p className="text-[11px] text-ps-mut mt-2">ou R$ {formatReais(annualPerMonth(plan.annualTotal))}/mês no anual ({savings.percent}% a menos)</p>
                         )}
                       </>
                     )}
@@ -485,7 +485,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                   <button
                     onClick={() => goToCheckout(plan.id, price)}
                     className={`w-full py-3 rounded-xl text-[13px] font-semibold transition-all cursor-pointer ${plan.highlight
-                        ? 'bg-laranja hover:bg-laranja-dark text-bone shadow-lg shadow-laranja/25'
+                        ? 'bg-laranja hover:bg-laranja-light text-ps-on-or shadow-lg shadow-laranja/25'
                         : 'bg-tinta hover:bg-tinta-border border border-tinta-border text-bone'
                       }`}
                   >
@@ -495,7 +495,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
               )
             })}
           </div>
-          <p className="text-center text-[12px] text-warm-400 mt-8">Preços em reais · Pagamento no cartão de crédito, com renovação automática · Cancele quando quiser · Sem fidelidade</p>
+          <p className="text-center text-[12px] text-ps-mut mt-8">Preços em reais · Pagamento no cartão de crédito, com renovação automática · Cancele quando quiser · Sem fidelidade</p>
         </div>
       </section>
 
@@ -519,7 +519,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                       className="w-full flex items-center justify-between px-5 py-4 text-left cursor-pointer hover:bg-tinta-border/40 transition-colors"
                     >
                       <span className="font-semibold text-[14px] text-bone pr-4">{faq.q}</span>
-                      <ChevronDown size={15} aria-hidden="true" className={`text-warm-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+                      <ChevronDown size={15} aria-hidden="true" className={`text-ps-mut shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
                     </button>
                   </h3>
                   {/* A resposta fica sempre no HTML (o Google lê); fechada, só some da tela. */}
@@ -546,9 +546,9 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-72 h-36 bg-laranja/15 blur-3xl rounded-full pointer-events-none" />
             <div className="relative">
               <div className="inline-flex items-baseline gap-3 mb-6">
-                <span className="text-warm-400 text-[14px] font-medium tracking-wide">pronto pro</span>
+                <span className="text-ps-mut text-[14px] font-medium tracking-wide">pronto pro</span>
                 <DomingoMark size="lg" tone="laranja" />
-                <span className="text-warm-400 text-[14px] font-medium tracking-wide">?</span>
+                <span className="text-ps-mut text-[14px] font-medium tracking-wide">?</span>
               </div>
               <h2 className="font-display font-semibold text-[clamp(1.8rem,5vw,2.8rem)] text-bone mb-4 leading-tight">
                 Sua próxima semana,
@@ -560,11 +560,11 @@ export function LandingPage({ onEnter }: LandingPageProps) {
               </p>
               <button
                 onClick={goToApp}
-                className="inline-flex items-center gap-2.5 bg-laranja hover:bg-laranja-dark text-bone px-9 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-laranja/25"
+                className="inline-flex items-center gap-2.5 bg-laranja hover:bg-laranja-light text-ps-on-or px-9 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-laranja/25"
               >
                 Começa de graça <ArrowRight size={18} />
               </button>
-              <p className="text-[11px] text-warm-400 mt-5">Sem cartão de crédito · Cancele quando quiser</p>
+              <p className="text-[11px] text-ps-mut mt-5">Sem cartão de crédito · Cancele quando quiser</p>
             </div>
           </div>
         </div>
@@ -577,7 +577,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-5">
           <div className="flex items-center gap-3">
             <PlaybackStudioWordmark size="sm" tone="light" />
-            <span className="text-warm-400 text-[11px]">a plataforma do domingo</span>
+            <span className="text-ps-mut text-[11px]">a plataforma do domingo</span>
           </div>
           <div className="flex items-center gap-6 text-[12px] text-warm-200">
             <button onClick={goToApp} className="hover:text-bone transition-colors cursor-pointer">Entrar</button>
@@ -585,7 +585,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             <a href="#precos" className="hover:text-bone transition-colors">Planos</a>
             <a href="/download" className="hover:text-bone transition-colors">Baixar app</a>
           </div>
-          <p className="text-[11px] text-warm-400">© {new Date().getFullYear()} Playback Studio · Feito por quem toca.</p>
+          <p className="text-[11px] text-ps-mut">© {new Date().getFullYear()} Playback Studio · Feito por quem toca.</p>
         </div>
         <SiteLegalInfo className="max-w-5xl mx-auto mt-8 pt-6 border-t border-tinta-border" />
       </footer>
@@ -595,8 +595,8 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         href={WHATSAPP_URL}
         target="_blank"
         rel="noopener noreferrer"
-        aria-label="Falar no WhatsApp"
-        className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full bg-[#25D366] px-4 py-3 text-white shadow-lg shadow-black/30 transition-transform hover:scale-105 active:scale-95"
+        aria-label="Fale com a gente pelo WhatsApp"
+        className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full bg-[#25D366] px-4 py-3 text-tinta shadow-lg shadow-black/30 transition-transform hover:scale-105 active:scale-95"
       >
         <WhatsappIcon className="w-6 h-6" />
         <span className="hidden sm:block short:hidden text-sm font-semibold pr-1">Fale com a gente</span>
