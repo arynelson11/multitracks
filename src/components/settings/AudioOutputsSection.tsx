@@ -29,11 +29,20 @@ const SIDE_OPTIONS: SegmentedOption<Side>[] = [
   { value: '2', label: '2' },
 ]
 
+const MODE_LABEL: Record<OutputMode, string> = {
+  stereo: 'Tudo junto',
+  split2: 'Click e Guia separados',
+  multi: '4 ou mais saídas',
+}
+
 // O Segmented base não apaga a opção desligada; aqui ela fica clara de que não dá pra tocar.
+// A marcada continua com cara de escolhida mesmo desligada (1 canal: só leitura).
 // flex-wrap: em tela estreita as opções descem de linha em vez de vazar ou cortar texto.
-const SEGMENTED = 'self-start max-w-full flex-wrap [&>button:disabled]:opacity-35 [&>button:disabled]:cursor-not-allowed'
-const NOTE = 'text-ps-base leading-snug text-ps-mut'
-const ALERT = 'rounded-ps-md bg-ps-alert-soft px-3 py-2 text-ps-base leading-snug font-semibold text-ps-alert inset-ring inset-ring-ps-alert-line'
+const SEGMENTED =
+  'self-start max-w-full flex-wrap [&>button:disabled]:cursor-not-allowed [&>button:disabled:not([aria-checked=true])]:opacity-35'
+// text-pretty: o navegador evita deixar uma palavra sozinha na última linha.
+const NOTE = 'text-ps-base leading-snug text-pretty text-ps-mut'
+const ALERT = 'rounded-ps-md bg-ps-alert-soft px-3 py-2 text-ps-base leading-snug text-pretty font-semibold text-ps-alert inset-ring inset-ring-ps-alert-line'
 const SELECT = 'min-h-ps-touch rounded-ps-md bg-ps-s2 px-3 text-ps-md text-ps-bone inset-ring inset-ring-ps-line cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
 const OPTION = 'bg-ps-s2 text-ps-bone'
 
@@ -75,14 +84,22 @@ export function AudioOutputsSection({ outputs, maxChannels, supportsDevicePick, 
   const emit = (patch: Partial<OutputSettings>) =>
     onChange({ mode: outputs.mode, earOnSecond: outputs.earOnSecond, multi: { ...outputs.multi }, ...patch })
 
+  // A escolha mostra o modo que VALE nesta placa (o plano), não o gravado (Ruling T19-mono-tela):
+  // com 1 canal é Tudo junto, só leitura; na queda de 4 ou mais é separados, e a parada do Tab
+  // fica nele em vez de em Tudo junto. O gravado nunca muda sozinho e volta com a placa certa.
+  const shownMode = plan.mode
   const modeOptions: SegmentedOption<OutputMode>[] = [
-    { value: 'stereo', label: 'Tudo junto' },
-    { value: 'split2', label: 'Click e Guia separados', disabled: mono },
-    { value: 'multi', label: '4 ou mais saídas', disabled: !canMulti },
+    { value: 'stereo', label: MODE_LABEL.stereo, disabled: mono },
+    { value: 'split2', label: MODE_LABEL.split2, disabled: mono },
+    // Com 3 canais e a VS em 1 e 2, 4 ou mais é o que vale: fica ligada (marcada e parada do
+    // Tab, tocar nela não grava), pra a parada não cair em Tudo junto.
+    { value: 'multi', label: MODE_LABEL.multi, disabled: mono || (!canMulti && shownMode !== 'multi') },
   ]
+  const savedLabel: string | undefined = MODE_LABEL[outputs.mode]
+  const waiting = shownMode !== outputs.mode && savedLabel !== undefined
 
   const setMode = (m: OutputMode) => {
-    if (m !== outputs.mode) emit({ mode: m })
+    if (!mono && m !== shownMode) emit({ mode: m })
   }
   const setSide = (s: Side) => {
     const earOnSecond = s === '2'
@@ -110,9 +127,14 @@ export function AudioOutputsSection({ outputs, maxChannels, supportsDevicePick, 
     <section aria-labelledby={titleId} className="flex flex-col gap-3">
       <h3 id={titleId} className="text-ps-base font-bold text-ps-bone">Saídas de áudio</h3>
       <div className="flex flex-col gap-2">
-        <Segmented aria-label="Saídas de áudio" options={modeOptions} value={outputs.mode} onChange={setMode} className={SEGMENTED} />
+        <Segmented aria-label="Saídas de áudio" options={modeOptions} value={shownMode} onChange={setMode} className={SEGMENTED} />
         {/* Na queda de 4 ou mais e com 1 canal o aviso âmbar já diz quantos canais a placa tem. */}
         {!canMulti && !mono && plan.fellBackFrom === null && <p className={NOTE}>Esta saída tem {channelsText(channels)}.</p>}
+        {waiting && (
+          <p className={NOTE}>
+            Vale enquanto esta saída tiver {channelsText(channels)}. Sua escolha ({savedLabel}) volta quando a placa tiver {outputs.mode === 'multi' ? 4 : 2} canais.
+          </p>
+        )}
       </div>
 
       {plan.mode === 'split2' && (

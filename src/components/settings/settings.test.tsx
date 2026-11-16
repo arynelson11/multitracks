@@ -36,6 +36,15 @@ const modeRadio = (name: string) => within(modeGroup()).getByRole('radio', { nam
 const alerts = (root: HTMLElement) => Array.from(root.querySelectorAll('[data-output-alert]')).map((e) => e.textContent)
 const select = (name: string) => screen.getByRole('combobox', { name }) as HTMLSelectElement
 const optionTexts = (s: HTMLSelectElement) => Array.from(s.options).map((o) => o.textContent)
+const KEYS = ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'Home', 'End', ' ', 'Enter']
+/** Toda interação de toque e teclado que um radio aceita. */
+function pokeAll(radios: HTMLElement[]) {
+  for (const r of radios) {
+    fireEvent.click(r)
+    for (const key of KEYS) { fireEvent.keyDown(r, { key }); fireEvent.keyUp(r, { key }) }
+  }
+}
+const modeRadios = () => within(modeGroup()).getAllByRole('radio') as HTMLButtonElement[]
 
 describe('AudioOutputsSection', () => {
   it('4 ou mais saídas desabilitado em placa de 2 canais', () => {
@@ -56,12 +65,15 @@ describe('AudioOutputsSection', () => {
     expect(tres.container.textContent).toContain('Esta saída tem 3 canais.')
   })
 
-  it('aparelho de 1 canal: separados e 4 ou mais desligados, aviso mono e resumo sem saída 2 (Ruling T6-mono)', () => {
+  it('aparelho de 1 canal: mostra Tudo junto (o que vale), só leitura, com aviso mono e resumo sem saída 2 (Rulings T6-mono e T19-mono-tela)', () => {
     for (const outputs of [STEREO, SPLIT, { ...SPLIT, earOnSecond: true }, MULTI]) {
       const { onChange, container } = renderOutputs({ outputs, maxChannels: 1 })
-      expect(modeRadio('Tudo junto').disabled).toBe(false)
-      expect(modeRadio('Click e Guia separados').disabled).toBe(true)
-      expect(modeRadio('4 ou mais saídas').disabled).toBe(true)
+      // O escolhido é o modo que vale (vem do plano), nunca o gravado.
+      expect(modeRadio('Tudo junto').getAttribute('aria-checked')).toBe('true')
+      expect(modeRadio('Click e Guia separados').getAttribute('aria-checked')).toBe('false')
+      expect(modeRadio('4 ou mais saídas').getAttribute('aria-checked')).toBe('false')
+      // Só leitura: nenhuma opção ligada nem parada do Tab.
+      for (const r of modeRadios()) { expect(r.disabled).toBe(true); expect(r.tabIndex).toBe(-1) }
       expect(alerts(container)).toEqual(['Esta saída tem 1 canal: Click, Guia e VS saem juntos.'])
       expect(container.querySelector('[data-output-alert]')!.className).toContain('text-ps-alert')
       const t = container.textContent!
@@ -72,15 +84,80 @@ describe('AudioOutputsSection', () => {
       // Sem chave de lado nem seletores: não há o que separar.
       expect(screen.queryByRole('radiogroup', { name: 'Click e Guia na saída' })).toBeNull()
       expect(screen.queryByRole('combobox')).toBeNull()
-      fireEvent.click(modeRadio('Click e Guia separados'))
-      fireEvent.click(modeRadio('4 ou mais saídas'))
+      pokeAll(modeRadios())
       expect(onChange).not.toHaveBeenCalled()
       cleanup()
     }
-    // Com separados gravado, voltar pra Tudo junto continua possível.
-    const { onChange } = renderOutputs({ outputs: SPLIT, maxChannels: 1 })
-    fireEvent.click(modeRadio('Tudo junto'))
-    expect(onChange).toHaveBeenLastCalledWith({ mode: 'stereo', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } })
+  })
+
+  it('em 1 canal nenhum toque nem tecla grava, e a escolha gravada aparece como o que volta', () => {
+    const casos: [OutputSettings, string | null][] = [
+      [STEREO, null],
+      [SPLIT, 'Vale enquanto esta saída tiver 1 canal. Sua escolha (Click e Guia separados) volta quando a placa tiver 2 canais.'],
+      [{ ...SPLIT, earOnSecond: true }, 'Vale enquanto esta saída tiver 1 canal. Sua escolha (Click e Guia separados) volta quando a placa tiver 2 canais.'],
+      [MULTI, 'Vale enquanto esta saída tiver 1 canal. Sua escolha (4 ou mais saídas) volta quando a placa tiver 4 canais.'],
+    ]
+    for (const [outputs, nota] of casos) {
+      const { onChange, container } = renderOutputs({ outputs, maxChannels: 1 })
+      pokeAll(modeRadios())
+      expect(onChange).not.toHaveBeenCalled()
+      if (nota) expect(container.textContent).toContain(nota)
+      else expect(container.textContent).not.toContain('Sua escolha')
+      cleanup()
+    }
+  })
+
+  it('quando o aparelho volta a ter 2 canais (ou mais), vale o valor gravado', () => {
+    const onChange = vi.fn<(next: OutputSettings) => void>()
+    const { container, rerender } = render(<AudioOutputsSection outputs={SPLIT} maxChannels={1} supportsDevicePick onChange={onChange} />)
+    expect(modeRadio('Tudo junto').getAttribute('aria-checked')).toBe('true')
+    rerender(<AudioOutputsSection outputs={SPLIT} maxChannels={2} supportsDevicePick onChange={onChange} />)
+    expect(modeRadio('Click e Guia separados').getAttribute('aria-checked')).toBe('true')
+    expect(modeRadio('Tudo junto').getAttribute('aria-checked')).toBe('false')
+    expect(container.textContent).toContain('Click e Guia na saída 1 · VS na saída 2')
+    expect(container.textContent).not.toContain('Sua escolha')
+    expect(alerts(container)).toEqual([])
+    // 4 ou mais gravado: em 2 canais vale separados (Ruling T6-2); com 8 canais volta o mapa.
+    rerender(<AudioOutputsSection outputs={MULTI} maxChannels={1} supportsDevicePick onChange={onChange} />)
+    expect(modeRadio('Tudo junto').getAttribute('aria-checked')).toBe('true')
+    rerender(<AudioOutputsSection outputs={MULTI} maxChannels={8} supportsDevicePick onChange={onChange} />)
+    expect(modeRadio('4 ou mais saídas').getAttribute('aria-checked')).toBe('true')
+    expect(container.textContent).toContain('VS nas saídas 1 e 2 · Click na 3 · Guia na 4')
+    expect(container.textContent).not.toContain('Sua escolha')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('3 canais com a VS em 1 e 2: 4 ou mais vale, aparece escolhida e é a parada do Tab', () => {
+    const { onChange } = renderOutputs({ outputs: MULTI, maxChannels: 3 })
+    const multi = modeRadio('4 ou mais saídas')
+    expect(multi.getAttribute('aria-checked')).toBe('true')
+    expect(multi.disabled).toBe(false)
+    expect(multi.tabIndex).toBe(0)
+    expect(modeRadio('Tudo junto').tabIndex).toBe(-1)
+    // Tocar no que já vale não grava; os seletores do mapa só aparecem com 4 ou mais canais.
+    fireEvent.click(multi)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(screen.queryByRole('combobox')).toBeNull()
+    cleanup()
+    // Com separados gravado na mesma placa, 4 ou mais continua desligada (só 3 canais).
+    renderOutputs({ outputs: SPLIT, maxChannels: 3 })
+    expect(modeRadio('4 ou mais saídas').disabled).toBe(true)
+  })
+
+  it('teclado nunca escolhe opção desligada', () => {
+    // 2 canais: a parada do Tab é a opção que vale; setas, Home e End pulam 4 ou mais.
+    for (const [outputs, maxChannels] of [[STEREO, 2], [SPLIT, 2], [MULTI, 2], [SPLIT, 3], [MULTI, 3]] as const) {
+      const { onChange } = renderOutputs({ outputs, maxChannels })
+      const stop = modeRadios().filter((r) => r.tabIndex === 0)
+      expect(stop).toHaveLength(1)
+      expect(stop[0].disabled).toBe(false)
+      expect(stop[0].getAttribute('aria-checked')).toBe('true')
+      for (const r of modeRadios().filter((x) => !x.disabled)) for (const key of KEYS) fireEvent.keyDown(r, { key })
+      expect(onChange.mock.calls.length).toBeGreaterThan(0)
+      // 4 ou mais só pode sair do teclado onde ela vale (3 canais com a VS em 1 e 2), e aí nem grava.
+      for (const [next] of onChange.mock.calls) expect(next.mode).not.toBe('multi')
+      cleanup()
+    }
   })
 
   it('4 ou mais saídas liberado em placa de 8 canais, com os seletores de multiChoices', () => {
@@ -193,7 +270,15 @@ describe('AudioOutputsSection', () => {
     expect(aviso.className).toContain('bg-ps-alert-soft')
     // O aviso âmbar já diz quantos canais: a nota da opção desligada não repete.
     expect(queda.container.textContent).not.toContain('Esta saída tem')
-    expect(modeRadio('4 ou mais saídas').getAttribute('aria-checked')).toBe('true')
+    // O escolhido é o que vale (separados) e a parada do Tab fica nele, não em Tudo junto.
+    expect(modeRadio('Click e Guia separados').getAttribute('aria-checked')).toBe('true')
+    expect(modeRadio('Click e Guia separados').tabIndex).toBe(0)
+    expect(modeRadio('Tudo junto').tabIndex).toBe(-1)
+    expect(modeRadio('4 ou mais saídas').getAttribute('aria-checked')).toBe('false')
+    expect(queda.container.textContent).toContain('Vale enquanto esta saída tiver 2 canais. Sua escolha (4 ou mais saídas) volta quando a placa tiver 4 canais.')
+    // Tocar no que já vale não troca a escolha gravada.
+    fireEvent.click(modeRadio('Click e Guia separados'))
+    expect(queda.onChange).not.toHaveBeenCalled()
     cleanup()
 
     // Com o lado trocado a queda segue o lado escolhido.
