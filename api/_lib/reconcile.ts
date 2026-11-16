@@ -16,8 +16,16 @@ import { BillingError, PAID_STATUSES, brtToday, toBrtDate, type BillingDeps } fr
 // * Folga contra alarme falso: linha mexida nas últimas 2 h não é conferida;
 //   pendência ainda tentando há menos de 48 h explica o desencontro; pagamento
 //   do dia fica pra amanhã (a data do Asaas não tem hora).
-// * Corte de tempo próprio (45 s, dentro dos 60 s da função). Começa num ponto
-//   diferente a cada dia, pra que todas sejam conferidas ao longo dos dias.
+// * Corte de tempo próprio (45 s, dentro dos 60 s da função). A unidade de
+//   trabalho é o CLIENTE do Asaas (as assinaturas dele e a lista de assinaturas
+//   dele) e cada checkout antigo sem linha. Cada unidade tem um dia fixo numa volta
+//   de RECONCILE_EVERY_DAYS dias (pelo id): as do dia vêm primeiro (parte
+//   garantida) e, com o tempo que sobrar, as outras, começando num ponto
+//   diferente a cada dia. Assim cada cliente é conferido pelo menos a cada 7 dias.
+//   Conta: no pior caso 3 GET de 0,5 s por cliente, 1,5 s; 45 s cobrem uns 30
+//   clientes por dia, então a volta de 7 dias fecha até uns 210 clientes (menos,
+//   se o sorteio dos dias ficar desigual). Se a parte garantida do dia não couber,
+//   a conferência parcial vira marcação pro admin (caso admin_review do dia).
 // * Notas sempre com o mesmo texto pro mesmo caso (billing_flag_review não repete).
 // Confere as assinaturas ativas e as encerradas que ainda têm acesso, que não
 // têm a parada confirmada ou que foram encerradas ou paradas nos últimos 45 dias.
@@ -33,6 +41,7 @@ import { BillingError, PAID_STATUSES, brtToday, toBrtDate, type BillingDeps } fr
 
 export const RECONCILE_CRON = '0 11 * * *'   // vercel.json (08:00 a 08:59 de Brasília, depois do job)
 export const RECONCILE_BUDGET_MS = 45_000
+export const RECONCILE_EVERY_DAYS = 7
 const RECENT_MS = 2 * 3600_000
 const PENDING_GRACE_MS = 48 * 3600_000
 const STOPPED_LOOKBACK_MS = 45 * 86400_000
@@ -68,13 +77,15 @@ type Action = {
 }
 
 export type ReconcileResult = {
-  total: number
-  checked: number
+  total: number            // assinaturas na conferência
+  checked: number          // assinaturas conferidas hoje
   skippedRecent: number
+  customers: { total: number; checked: number; guaranteed: number }
   flagged: number
   reviews: number
   asaasErrors: number
-  partial: boolean
+  partial: boolean         // o tempo acabou antes de conferir todas as unidades
+  guaranteeMissed: boolean // nem as unidades do dia (parte garantida) couberam
   skipped?: string
   summary: { exhaustedEvents: number; stuckPending: number }
 }
@@ -83,11 +94,20 @@ function br(d: string): string {
   return `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`
 }
 
+// FNV-1a: dia fixo de cada unidade na volta de N dias.
+function slotOf(key: string): number {
+  let h = 0x811c9dc5
+  for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 }
+  return h % RECONCILE_EVERY_DAYS
+}
+
 async function select<T>(q: PromiseLike<{ data: unknown; error: { message: string } | null }>, table: string): Promise<T[]> {
   const { data, error } = await q
   if (error) throw new BillingError('db_error', `Falha no banco (${table}): ${error.message}`, 500)
   return (data as T[] | null) ?? []
 }
+
+type Unit = { key: string; customer: string | null; rows: Row[] } | { key: string; checkout: string; userId: string | null }
 
 export async function runReconcile(deps: BillingDeps, opts: { budgetMs?: number; clock?: () => number } = {}): Promise<ReconcileResult> {
   const { db, asaas } = deps
@@ -96,10 +116,14 @@ export async function runReconcile(deps: BillingDeps, opts: { budgetMs?: number;
   const budget = opts.budgetMs ?? RECONCILE_BUDGET_MS
   const nowMs = (deps.now ?? (() => new Date()))().getTime()
   const today = brtToday(new Date(nowMs))
+  const dayNumber = Math.floor(nowMs / 86400_000)
   const ms = (v: string | null | undefined) => (v ? Date.parse(v) : Number.NaN)
   const recent = (v: string | null | undefined) => nowMs - ms(v) < RECENT_MS
   const stillTrying = (a: Action) => a.status === 'pending' && nowMs - ms(a.created_at) < PENDING_GRACE_MS
-  const out: ReconcileResult = { total: 0, checked: 0, skippedRecent: 0, flagged: 0, reviews: 0, asaasErrors: 0, partial: false, summary: { exhaustedEvents: 0, stuckPending: 0 } }
+  const out: ReconcileResult = {
+    total: 0, checked: 0, skippedRecent: 0, customers: { total: 0, checked: 0, guaranteed: 0 },
+    flagged: 0, reviews: 0, asaasErrors: 0, partial: false, guaranteeMissed: false, summary: { exhaustedEvents: 0, stuckPending: 0 },
+  }
 
   const flag = async (id: string, note: string) => {
     const { error } = await db.rpc('billing_flag_review', { p_id: id, p_note: note })
@@ -113,10 +137,7 @@ export async function runReconcile(deps: BillingDeps, opts: { budgetMs?: number;
     if (error) throw new BillingError('db_error', `Falha no banco (billing_enqueue_action): ${error.message}`, 500)
     out.reviews++
   }
-  const overBudget = () => {
-    if (clock() - started > budget) out.partial = true
-    return out.partial
-  }
+  const overBudget = () => clock() - started > budget
 
   // 5. Resumo do próprio banco (sem Asaas).
   const events = await select<{ id: string }>(db.from('asaas_webhook_events').select('id').eq('status', 'exhausted'), 'asaas_webhook_events')
@@ -130,120 +151,164 @@ export async function runReconcile(deps: BillingDeps, opts: { budgetMs?: number;
   if (!asaas) return { ...out, skipped: 'sem ASAAS_API_KEY' }
 
   const rows = await select<Row>(db.from('billing_subscriptions').select(ROW_COLS).eq('kind', 'asaas'), 'billing_subscriptions')
-  const appIds = new Set(rows.map((r) => r.id))
-  const knownSubs = new Set(rows.map((r) => r.asaas_subscription_id).filter((x): x is string => !!x))
-  const conferidas = rows.filter((r) => r.status === 'active' || !r.asaas_stopped_at
-    || (r.access_until && ms(r.access_until) > nowMs)
-    || [r.canceled_at, r.asaas_stopped_at].some((v) => !!v && nowMs - ms(v) < STOPPED_LOOKBACK_MS))
-    .sort((a, b) => (a.id < b.id ? -1 : 1))
-  out.total = conferidas.length
-  const start = conferidas.length ? Math.floor(nowMs / 86400_000) % conferidas.length : 0
-  const ordem = [...conferidas.slice(start), ...conferidas.slice(0, start)]
+  const rowsById = new Map(rows.map((r) => [r.id, r]))
+  const rowBySub = new Map<string, Row>()
+  for (const r of rows) if (r.asaas_subscription_id) rowBySub.set(r.asaas_subscription_id, r)
+  const stopTryingFor = (rowId: string) => actions.some((a) => a.subscription_ref === rowId && STOP_ACTIONS.has(a.action) && stillTrying(a))
+  const isConferida = (r: Row) => r.status === 'active' || !r.asaas_stopped_at
+    || (!!r.access_until && ms(r.access_until) > nowMs)
+    || [r.canceled_at, r.asaas_stopped_at].some((v) => !!v && nowMs - ms(v) < STOPPED_LOOKBACK_MS)
+  out.total = rows.filter(isConferida).length
 
-  // 1 e 2. Cada assinatura.
-  for (const row of ordem) {
-    if (overBudget()) break
-    if (recent(row.updated_at)) { out.skippedRecent++; continue }
-    try {
-      const subId = row.asaas_subscription_id ?? await findSubscriptionIdByCheckout(asaas, row.id)
-      out.checked++
-      if (!subId) continue
-      knownSubs.add(subId)
-      const mine = actions.filter((a) => a.subscription_ref === row.id)
-      const stopTrying = mine.some((a) => STOP_ACTIONS.has(a.action) && stillTrying(a))
-      const removalTrying = mine.some((a) => a.action === 'delete_future_payments' && stillTrying(a))
-
-      const sub = await getSubscription(asaas, subId)
-      const asaasActive = !!sub && sub.deleted !== true && sub.status === 'ACTIVE'
-      if (row.status === 'active' && !asaasActive) {
-        await flag(row.id, `conferencia: ativa no app, mas a assinatura ${subId} esta ${!sub || sub.deleted ? 'removida' : sub.status ?? 'sem status'} no Asaas: a renovacao nao vai ser cobrada`)
-      }
-      if (row.status === 'canceled' && asaasActive && !stopTrying) {
-        await flag(row.id, `conferencia: encerrada no app e ainda ATIVA no Asaas (${subId}): parar a recorrencia a mao`)
-      }
-
-      const live = (await listSubscriptionPayments(asaas, subId)).filter((p) => !p.deleted)
-      const cycle = (p: AsaasPayment) => toBrtDate(p.originalDueDate) ?? toBrtDate(p.dueDate) ?? ''
-      const lastPaid = row.last_paid_due_date ?? ''
-
-      // cobrança futura em aberto numa assinatura parada (menos a vencida guardada)
-      if ((row.status === 'canceled' || !asaasActive) && !stopTrying && !removalTrying) {
-        const kept = mine.filter((a) => a.action === 'inactivate_subscription').sort((a, b) => b.id - a.id)[0]
-        const futures = live.filter((p) => {
-          const due = toBrtDate(p.dueDate)
-          return p.status === 'PENDING' && !!due && due > today && p.id !== kept?.asaas_payment_id
-            && !(kept?.due_date && toBrtDate(p.originalDueDate) === kept.due_date)
-        }).map((p) => p.id).sort()
-        if (futures.length > 0) await flag(row.id, `conferencia: cobranca futura em aberto numa assinatura parada (${futures.join(', ')}): remover a mao antes de cobrar`)
-      }
-
-      // pagamento no Asaas que o app não contou (linha antiga adotada sem último
-      // pago conhecido fica fora: pagou antes desta versão)
-      if (row.last_paid_due_date || !row.first_paid_at) {
-        for (const p of live) {
-          const paidDay = toBrtDate(p.confirmedDate ?? p.paymentDate ?? p.clientPaymentDate)
-          if (!PAID_STATUSES.has(p.status ?? '') || cycle(p) <= lastPaid || !paidDay || paidDay >= today) continue
-          await flag(row.id, `conferencia: pagamento ${p.id} no Asaas (ciclo ${br(cycle(p))}) que o app nao contou`)
-        }
-      }
-
-      // vencimento desencontrado do ciclo em aberto
-      if (row.status === 'active' && row.next_due_date) {
-        const open = live.filter((p) => OPEN.has(p.status ?? '') && cycle(p) > lastPaid).sort((a, b) => (cycle(a) < cycle(b) ? -1 : 1))[0]
-        const due = open ? toBrtDate(open.dueDate) : null
-        if (open && due && due !== row.next_due_date) {
-          await flag(row.id, `conferencia: vencimento desencontrado: no app ${br(row.next_due_date)}, no Asaas ${br(due)} (cobranca ${open.id})`)
-        }
-      }
-    } catch (e) {
-      if (!(e instanceof AsaasError)) throw e
-      out.asaasErrors++
-    }
-  }
-
-  // 3. Por cliente: mais de uma ATIVA; ATIVA sem registro no app.
+  // Unidades: cada cliente do Asaas (linha sem cliente vira unidade própria) e
+  // cada checkout antigo (payments) sem linha.
   const byCustomer = new Map<string, Row[]>()
-  for (const r of rows) if (r.asaas_customer_id) byCustomer.set(r.asaas_customer_id, [...(byCustomer.get(r.asaas_customer_id) ?? []), r])
-  for (const [customer, mine] of [...byCustomer.entries()].sort()) {
-    if (overBudget()) break
-    if (mine.some((r) => recent(r.updated_at))) continue
-    try {
-      const active = (await listCustomerSubscriptions(asaas, customer)).filter((s) => s.deleted !== true && s.status === 'ACTIVE')
-      if (active.length > 1) {
-        const ids = active.map((s) => s.id).sort()
-        for (const r of mine) {
-          if (r.asaas_subscription_id && ids.includes(r.asaas_subscription_id)) {
-            await flag(r.id, `conferencia: ${ids.length} assinaturas ATIVAS no Asaas pro mesmo cliente (${ids.join(', ')}): deixar so uma`)
-          }
-        }
-      }
-      for (const s of active) {
-        if (knownSubs.has(s.id) || (s.checkoutSession && appIds.has(s.checkoutSession))) continue
-        await review(`asaas:${s.id}`, `conferencia: assinatura ${s.id} ATIVA no Asaas sem registro no app (cliente ${customer})`, mine[0].user_id)
-      }
-    } catch (e) {
-      if (!(e instanceof AsaasError)) throw e
-      out.asaasErrors++
-    }
+  for (const r of rows) {
+    const key = r.asaas_customer_id ? `cliente:${r.asaas_customer_id}` : `linha:${r.id}`
+    byCustomer.set(key, [...(byCustomer.get(key) ?? []), r])
   }
-
-  // 4. Checkouts antigos (payments) sem linha: a assinatura ainda cobra?
+  const units: Unit[] = [...byCustomer.entries()].map(([key, rs]) => ({ key, customer: rs[0].asaas_customer_id, rows: rs }))
   const legacy = await select<{ asaas_checkout_id: unknown; user_id: string | null }>(db.from('payments').select('asaas_checkout_id, user_id'), 'payments')
   for (const p of legacy) {
     const checkout = typeof p.asaas_checkout_id === 'string' ? p.asaas_checkout_id : null
-    if (!checkout || appIds.has(checkout)) continue
-    if (overBudget()) break
+    if (checkout && !rowsById.has(checkout)) units.push({ key: `checkout:${checkout}`, checkout, userId: p.user_id })
+  }
+  units.sort((a, b) => (a.key < b.key ? -1 : 1))
+  const todaySlot = dayNumber % RECONCILE_EVERY_DAYS
+  const guaranteed = units.filter((u) => slotOf(u.key) === todaySlot)
+  const rest = units.filter((u) => slotOf(u.key) !== todaySlot)
+  const start = rest.length ? (dayNumber * 7919) % rest.length : 0
+  const ordem = [...guaranteed, ...rest.slice(start), ...rest.slice(0, start)]
+  out.customers = { total: units.length, checked: 0, guaranteed: guaranteed.length }
+
+  // 1 e 2. Cada assinatura conferida.
+  const checkRow = async (row: Row) => {
+    const subId = row.asaas_subscription_id ?? await findSubscriptionIdByCheckout(asaas, row.id)
+    out.checked++
+    if (!subId) return
+    rowBySub.set(subId, row)
+    const mine = actions.filter((a) => a.subscription_ref === row.id)
+    const stopTrying = stopTryingFor(row.id)
+    const removalTrying = mine.some((a) => a.action === 'delete_future_payments' && stillTrying(a))
+
+    const sub = await getSubscription(asaas, subId)
+    const asaasActive = !!sub && sub.deleted !== true && sub.status === 'ACTIVE'
+    if (row.status === 'active' && !asaasActive) {
+      await flag(row.id, `conferencia: ativa no app, mas a assinatura ${subId} esta ${!sub || sub.deleted ? 'removida' : sub.status ?? 'sem status'} no Asaas: a renovacao nao vai ser cobrada`)
+    }
+    if (row.status === 'canceled' && asaasActive && !stopTrying) {
+      await flag(row.id, `conferencia: encerrada no app e ainda ATIVA no Asaas (${subId}): parar a recorrencia a mao`)
+    }
+
+    const live = (await listSubscriptionPayments(asaas, subId)).filter((p) => !p.deleted)
+    const cycle = (p: AsaasPayment) => toBrtDate(p.originalDueDate) ?? toBrtDate(p.dueDate) ?? ''
+    const lastPaid = row.last_paid_due_date ?? ''
+
+    // cobrança futura em aberto numa assinatura parada (menos a vencida guardada)
+    if ((row.status === 'canceled' || !asaasActive) && !stopTrying && !removalTrying) {
+      const kept = mine.filter((a) => a.action === 'inactivate_subscription').sort((a, b) => b.id - a.id)[0]
+      const futures = live.filter((p) => {
+        const due = toBrtDate(p.dueDate)
+        return p.status === 'PENDING' && !!due && due > today && p.id !== kept?.asaas_payment_id
+          && !(kept?.due_date && toBrtDate(p.originalDueDate) === kept.due_date)
+      }).map((p) => p.id).sort()
+      if (futures.length > 0) await flag(row.id, `conferencia: cobranca futura em aberto numa assinatura parada (${futures.join(', ')}): remover a mao antes de cobrar`)
+    }
+
+    // pagamento no Asaas que o app não contou (linha antiga adotada sem último
+    // pago conhecido fica fora: pagou antes desta versão)
+    const uncounted = live.filter((p) => PAID_STATUSES.has(p.status ?? '') && cycle(p) > lastPaid)
+    if (row.last_paid_due_date || !row.first_paid_at) {
+      for (const p of uncounted) {
+        const paidDay = toBrtDate(p.confirmedDate ?? p.paymentDate ?? p.clientPaymentDate)
+        if (!paidDay || paidDay >= today) continue
+        await flag(row.id, `conferencia: pagamento ${p.id} no Asaas (ciclo ${br(cycle(p))}) que o app nao contou`)
+      }
+    }
+
+    // vencimento desencontrado do ciclo em aberto. Com pagamento ainda não
+    // contado (inclusive o do dia), espera: o vencimento do app anda quando o
+    // aviso for contado (COB-FINAL, T3).
+    if (row.status === 'active' && row.next_due_date && uncounted.length === 0) {
+      const open = live.filter((p) => OPEN.has(p.status ?? '') && cycle(p) > lastPaid).sort((a, b) => (cycle(a) < cycle(b) ? -1 : 1))[0]
+      const due = open ? toBrtDate(open.dueDate) : null
+      if (open && due && due !== row.next_due_date) {
+        await flag(row.id, `conferencia: vencimento desencontrado: no app ${br(row.next_due_date)}, no Asaas ${br(due)} (cobranca ${open.id})`)
+      }
+    }
+  }
+
+  // 3. A lista de assinaturas do cliente: mais de uma ATIVA da MESMA conta do
+  // app; ATIVA sem registro no app. Tira da conta a que tem pendência de parar
+  // ainda tentando (folga de 48 h) e não junta contas diferentes que pagaram com
+  // o mesmo CPF (COB-FINAL, T4).
+  const checkCustomer = async (customer: string, mine: Row[]) => {
+    const rowOf = (s: { id: string; checkoutSession?: string | null }) => rowBySub.get(s.id) ?? (s.checkoutSession ? rowsById.get(s.checkoutSession) : undefined)
+    const active = (await listCustomerSubscriptions(asaas, customer))
+      .filter((s) => s.deleted !== true && s.status === 'ACTIVE')
+      .filter((s) => { const r = rowOf(s); return !(r && stopTryingFor(r.id)) })
+    const byUser = new Map<string, { sub: string; row: Row }[]>()
+    for (const s of active) {
+      const r = rowOf(s)
+      if (!r || !r.user_id) continue
+      byUser.set(r.user_id, [...(byUser.get(r.user_id) ?? []), { sub: s.id, row: r }])
+    }
+    for (const list of byUser.values()) {
+      if (list.length < 2) continue
+      const ids = list.map((x) => x.sub).sort()
+      for (const x of list) await flag(x.row.id, `conferencia: ${ids.length} assinaturas ATIVAS no Asaas pro mesmo cliente (${ids.join(', ')}): deixar so uma`)
+    }
+    const users = [...new Set(mine.map((r) => r.user_id).filter((u): u is string => !!u))]
+    for (const s of active) {
+      if (rowOf(s)) continue
+      await review(`asaas:${s.id}`, `conferencia: assinatura ${s.id} ATIVA no Asaas sem registro no app (cliente ${customer})`, users.length === 1 ? users[0] : null)
+    }
+  }
+
+  // 4. Checkout antigo sem linha: a assinatura ainda cobra?
+  const checkLegacy = async (checkout: string, userId: string | null) => {
+    const subId = await findSubscriptionIdByCheckout(asaas, checkout)
+    if (!subId || rowBySub.has(subId)) return
+    const sub = await getSubscription(asaas, subId)
+    if (sub && sub.deleted !== true && sub.status === 'ACTIVE') {
+      await review(`asaas:${subId}`, `conferencia: assinatura antiga ${subId} (checkout ${checkout}) ATIVA no Asaas sem registro no app`, userId)
+    }
+  }
+
+  let guaranteedDone = 0
+  const stop = (i: number) => {
+    out.partial = true
+    if (i < guaranteed.length) out.guaranteeMissed = true
+  }
+  for (const [i, u] of ordem.entries()) {
+    if (overBudget()) { stop(i); break }
+    let cut = false
     try {
-      const subId = await findSubscriptionIdByCheckout(asaas, checkout)
-      if (!subId || knownSubs.has(subId)) continue
-      const sub = await getSubscription(asaas, subId)
-      if (sub && sub.deleted !== true && sub.status === 'ACTIVE') {
-        await review(`asaas:${subId}`, `conferencia: assinatura antiga ${subId} (checkout ${checkout}) ATIVA no Asaas sem registro no app`, p.user_id)
+      if ('checkout' in u) {
+        await checkLegacy(u.checkout, u.userId)
+      } else {
+        for (const r of u.rows.filter(isConferida)) {
+          if (overBudget()) { cut = true; break }
+          if (recent(r.updated_at)) { out.skippedRecent++; continue }
+          await checkRow(r)
+        }
+        if (!cut && u.customer && !u.rows.some((r) => recent(r.updated_at))) await checkCustomer(u.customer, u.rows)
       }
     } catch (e) {
       if (!(e instanceof AsaasError)) throw e
       out.asaasErrors++
     }
+    if (cut) { stop(i); break }
+    out.customers.checked++
+    if (i < guaranteed.length) guaranteedDone++
+  }
+
+  // Parcial na parte garantida: a volta de 7 dias não fecha. Vira marcação pro
+  // admin (um caso por dia), não só linha de log.
+  if (out.guaranteeMissed) {
+    await review(`conferencia:parcial:${today}`,
+      `conferencia diaria parcial: o tempo acabou com ${guaranteedDone} de ${guaranteed.length} clientes do dia conferidos (${out.customers.checked} de ${units.length} no total); a volta de ${RECONCILE_EVERY_DAYS} dias nao fecha, ver o tempo da funcao ou dividir a conferencia`,
+      null)
   }
   return out
 }

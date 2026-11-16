@@ -258,6 +258,107 @@ describe('conferência diária com o Asaas (COB-RECONCILE)', () => {
   })
 })
 
+describe('ajuste final da conferência (COB-FINAL 4, 5 e 6)', () => {
+  it('T3: renovação paga hoje e ainda não contada não vira "vencimento desencontrado"', async () => {
+    db.tables.billing_subscriptions.push(row({ id: 'chk_1', user_id: USER_A, asaas_subscription_id: 'sub_1', last_paid_due_date: '2026-11-14', next_due_date: '2026-12-14' }))
+    asaas = fakeAsaas({
+      subs: { sub_1: { id: 'sub_1', status: 'ACTIVE', customer: 'cus_1', checkoutSession: 'chk_1' } },
+      payments: { sub_1: [
+        payment({ id: 'p_dez', dueDate: '2026-12-14', originalDueDate: '2026-12-14', confirmedDate: '2026-11-16', status: 'CONFIRMED' }),
+        payment({ id: 'p_jan', dueDate: '2027-01-14', originalDueDate: '2027-01-14', confirmedDate: null, status: 'PENDING' }),
+      ] },
+      byCustomer: { cus_1: [{ id: 'sub_1', status: 'ACTIVE', checkoutSession: 'chk_1' }] },
+    })
+    await reconcile()
+    expect(note('chk_1')).toBe('')
+  })
+
+  it('T4: troca com a pendência de parar a antiga ainda tentando (menos de 48 h) não marca "duas ativas"', async () => {
+    db.tables.billing_subscriptions.push(
+      row({ id: 'chk_1', user_id: USER_A, asaas_subscription_id: 'sub_1', status: 'canceled', cancel_source: 'superseded', access_until: '2026-11-15T00:00:00.000Z', canceled_at: '2026-11-15T00:00:00.000Z' }),
+      row({ id: 'chk_2', user_id: USER_A, asaas_subscription_id: 'sub_2' }),
+    )
+    db.tables.billing_pending_actions.push({ id: 9, subscription_ref: 'chk_1', user_id: USER_A, action: 'delete_subscription', reason: 'superseded', status: 'pending', attempts: 4, auto_retry: true, created_at: '2026-11-15T00:00:00.000Z', next_attempt_at: '2026-11-16T12:00:00.000Z' })
+    const active = { status: 'ACTIVE', customer: 'cus_1' }
+    asaas = fakeAsaas({
+      subs: { sub_1: { id: 'sub_1', ...active, checkoutSession: 'chk_1' }, sub_2: { id: 'sub_2', ...active, checkoutSession: 'chk_2' } },
+      byCustomer: { cus_1: [{ id: 'sub_1', ...active, checkoutSession: 'chk_1' }, { id: 'sub_2', ...active, checkoutSession: 'chk_2' }] },
+    })
+    await reconcile()
+    expect(note('chk_1')).toBe('')
+    expect(note('chk_2')).toBe('')
+  })
+
+  it('T4: contas diferentes do app pagas com o mesmo CPF (mesmo cliente no Asaas) não viram "duas ativas"', async () => {
+    db.tables.billing_subscriptions.push(
+      row({ id: 'chk_1', user_id: USER_A, asaas_subscription_id: 'sub_1' }),
+      row({ id: 'chk_2', user_id: USER_B, asaas_subscription_id: 'sub_2' }),
+    )
+    const active = { status: 'ACTIVE', customer: 'cus_1' }
+    asaas = fakeAsaas({
+      subs: { sub_1: { id: 'sub_1', ...active, checkoutSession: 'chk_1' }, sub_2: { id: 'sub_2', ...active, checkoutSession: 'chk_2' } },
+      byCustomer: { cus_1: [{ id: 'sub_1', ...active, checkoutSession: 'chk_1' }, { id: 'sub_2', ...active, checkoutSession: 'chk_2' }, { id: 'sub_9', ...active, checkoutSession: 'chk_9' }] },
+    })
+    await reconcile()
+    expect(note('chk_1')).toBe('')
+    expect(note('chk_2')).toBe('')
+    // a sem registro vai pro admin sem chutar a conta (o cliente tem duas)
+    expect(reviews()).toContainEqual(expect.objectContaining({ subscription_ref: 'asaas:sub_9', user_id: null }))
+  })
+})
+
+describe('rodízio quando o tempo não dá (COB-FINAL 6)', () => {
+  // Asaas falso com relógio: cada GET custa 1 s; 50 clientes, uma assinatura cada.
+  function bigWorld(n: number) {
+    db = createBillingDb({ profiles: [] }, () => new Date())
+    const subs: Record<string, unknown> = {}
+    const byCustomer: Record<string, unknown[]> = {}
+    for (let i = 1; i <= n; i++) {
+      db.tables.billing_subscriptions.push(row({ id: `chk_${i}`, user_id: USER_A, asaas_subscription_id: `sub_${i}`, asaas_customer_id: `cus_${i}` }))
+      subs[`sub_${i}`] = { id: `sub_${i}`, status: 'ACTIVE', customer: `cus_${i}`, checkoutSession: `chk_${i}` }
+      byCustomer[`cus_${i}`] = [subs[`sub_${i}`]]
+    }
+    const fake = fakeAsaas({ subs, byCustomer })
+    let t = 0
+    const inner = fake.get.getMockImplementation() as (path: string, params?: Record<string, unknown>) => Promise<unknown>
+    fake.get.mockImplementation(async (path: string, params?: Record<string, unknown>) => { t += 1000; return inner(path, params) })
+    return { fake, clock: () => t }
+  }
+
+  it(`com 50 assinaturas e 45 s por dia, cada cliente é conferido pelo menos a cada RECONCILE_EVERY_DAYS dias e o dia não fica parcial na parte garantida`, async () => {
+    const { runReconcile, RECONCILE_EVERY_DAYS } = await import('../_lib/reconcile.js')
+    const { fake, clock } = bigWorld(50)
+    asaas = fake
+    const seen = new Set<string>()
+    for (let d = 0; d < RECONCILE_EVERY_DAYS; d++) {
+      const day = new Date(Date.UTC(2026, 10, 16 + d, 11, 0, 0))
+      fake.get.mockClear()
+      const out = await runReconcile({ db: db as never, asaas: fake, now: () => day }, { clock })
+      expect(out.partial).toBe(true)
+      expect(out.guaranteeMissed).toBe(false)
+      for (const [path] of fake.get.mock.calls as [string][]) { const m = /^\/subscriptions\/(sub_\d+)$/.exec(path); if (m) seen.add(m[1]) }
+    }
+    expect(seen.size).toBe(50)
+    expect(reviews()).toEqual([])
+    expect(fake.put).not.toHaveBeenCalled()
+    expect(fake.post).not.toHaveBeenCalled()
+    expect(fake.del).not.toHaveBeenCalled()
+  })
+
+  it('quando nem a parte garantida do dia cabe no tempo, a conferência parcial vira marcação pro admin', async () => {
+    const { runReconcile } = await import('../_lib/reconcile.js')
+    const { fake, clock } = bigWorld(50)
+    asaas = fake
+    const out = await runReconcile({ db: db as never, asaas: fake, now: () => new Date('2026-11-16T11:00:00Z') }, { clock, budgetMs: 5_000 })
+    expect(out).toMatchObject({ partial: true, guaranteeMissed: true })
+    const mark = reviews().find((a) => a.subscription_ref === 'conferencia:parcial:2026-11-16')!
+    expect(mark).toMatchObject({ auto_retry: false, user_id: null })
+    expect(String(mark.reason)).toContain('conferencia diaria parcial')
+    expect(fake.put).not.toHaveBeenCalled()
+    expect(fake.del).not.toHaveBeenCalled()
+  })
+})
+
 describe('corte de tempo próprio', () => {
   it('para antes do limite e diz que ficou parcial', async () => {
     const { runReconcile } = await import('../_lib/reconcile.js')
