@@ -123,6 +123,20 @@ describe('webhook do Asaas: CHECKOUT_PAID', () => {
   })
 })
 
+describe('webhook do Asaas: CHECKOUT_PAID antigo reprocessado', () => {
+  it('não encerra a assinatura mais nova', async () => {
+    db.tables.billing_subscriptions.push(
+      subRow({ id: 'chk_1', user_id: USER_A, status: 'canceled', cancel_source: 'superseded', created_at: '2026-10-01T00:00:00Z' }),
+      subRow({ id: 'chk_new', user_id: USER_A, plan_key: 'pro_mensal', asaas_subscription_id: 'sub_new', created_at: '2026-11-10T00:00:00Z' }),
+    )
+    const res = await post(checkoutPaid('evt_old_replay'))
+    expect(res.statusCode).toBe(200)
+    expect(db.rpcCalls.some((c) => c.name === 'billing_end_subscription')).toBe(false)
+    expect(asaas!.del).not.toHaveBeenCalled()
+    expect(db.tables.billing_subscriptions.find((r) => r.id === 'chk_new')!.status).toBe('active')
+  })
+})
+
 describe('webhook do Asaas: assinatura e cobranças', () => {
   beforeEach(() => {
     db.tables.profiles[0].plan = 'essencial_mensal'

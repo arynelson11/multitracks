@@ -179,6 +179,16 @@ describe('cancelar assinatura: Asaas fora do ar (erro claro, nada pela metade)',
     expect(db.tables.billing_subscriptions.find((r) => r.id === 'chk_a')!.status).toBe('canceled')
   })
 
+  it('assinatura não achada no Asaas: recusa sem marcar cancelada (senão seguiria cobrando) e avisa o admin', async () => {
+    db.tables.billing_subscriptions[0].asaas_subscription_id = null
+    asaas!.get.mockResolvedValue({ data: [], hasMore: false })
+    const res = await cancel()
+    expect(res.statusCode).toBe(502)
+    expect((res.body as { error: string }).error).toContain('Nada foi alterado')
+    expect(db.rpcCalls.some((c) => c.name === 'billing_end_subscription')).toBe(false)
+    expect(db.tables.billing_subscriptions[0]).toMatchObject({ status: 'active', needs_admin_review: true })
+  })
+
   it('servidor sem a chave do Asaas: erro claro', async () => {
     asaas = null
     const res = await cancel()

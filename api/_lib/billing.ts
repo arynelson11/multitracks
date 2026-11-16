@@ -266,9 +266,13 @@ export async function activateFromCheckout(
   if (payErr) console.error('[billing] payments upsert falhou:', payErr.message)
 
   // Comprou um plano novo tendo outro ativo: encerra o anterior (sem cobrar duas vezes).
+  // Só as ANTERIORES a esta e só se esta estiver ativa: um CHECKOUT_PAID antigo
+  // reprocessado nunca derruba uma assinatura mais nova.
   let superseded = 0
-  for (const old of await activeRowsForUser(db, input.userId)) {
-    if (old.id === input.checkoutId) continue
+  const current = await getSubBy(db, 'id', input.checkoutId)
+  const others = current?.status === 'active' ? await activeRowsForUser(db, input.userId) : []
+  for (const old of others) {
+    if (old.id === input.checkoutId || old.created_at >= current!.created_at) continue
     const end = await rpc<EndResult>(db, 'billing_end_subscription', { p_id: old.id, p_source: 'superseded', p_paid_due_date: null, p_immediate: true })
     await finishAsaasRemoval(deps, old.id, end)
     superseded++
@@ -344,12 +348,18 @@ export async function cancelSubscriptionForUser(
   }
 
   // 2. Lê tudo no Asaas ANTES de mudar qualquer coisa.
-  type Plan = { row: SubRow; subId: string | null; lastPaid: string | null; withdrawal: ReturnType<typeof withdrawalStatus> }
+  type Plan = { row: SubRow; subId: string; lastPaid: string | null; withdrawal: ReturnType<typeof withdrawalStatus> }
   const plans: Plan[] = []
   try {
     for (const row of rows) {
       const subId = row.asaas_subscription_id ?? await findSubscriptionIdByCheckout(asaas, row.id)
-      const payments = subId ? await listSubscriptionPayments(asaas, subId) : []
+      if (!subId) {
+        // Sem o id não dá pra parar a cobrança: não marca nada como cancelado.
+        await rpc<null>(db, 'billing_flag_review', { p_id: row.id, p_note: 'cancelamento pedido no app, mas a assinatura nao foi achada no Asaas' })
+        throw new BillingError('asaas_rejected',
+          'Não achamos sua assinatura no sistema de pagamento para cancelar. Nada foi alterado. Fale com a gente pelo WhatsApp que a gente resolve por lá.', 502)
+      }
+      const payments = await listSubscriptionPayments(asaas, subId)
       plans.push({ row, subId, lastPaid: latestPaidDueDate(payments), withdrawal: input.source === 'user' ? withdrawalStatus(payments, now) : null })
     }
   } catch (e) {
@@ -374,7 +384,7 @@ export async function cancelSubscriptionForUser(
         refundedNow = true
       }
       stage = 'delete'
-      if (subId) await deleteSubscription(asaas, subId)
+      await deleteSubscription(asaas, subId)
       stage = 'record'
       const end = await rpc<EndResult>(db, 'billing_end_subscription', {
         p_id: row.id,
@@ -382,7 +392,7 @@ export async function cancelSubscriptionForUser(
         p_paid_due_date: plan.lastPaid,
         p_immediate: isWithdrawal || !!input.immediate,
       })
-      if (subId) await rpc<null>(db, 'billing_mark_asaas_deleted', { p_id: row.id, p_subscription_id: subId })
+      await rpc<null>(db, 'billing_mark_asaas_deleted', { p_id: row.id, p_subscription_id: subId })
       refunded = refunded || isWithdrawal
       const a = end.access_until ?? null
       if (a && (!accessUntil || a > accessUntil)) accessUntil = a
