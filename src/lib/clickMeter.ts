@@ -6,10 +6,11 @@
 // 1. Ataques: envelope do valor absoluto; ataque é a subida do envelope acima de 30% do pico
 //    global, com no mínimo 60 ms entre ataques. O tempo é a primeira amostra acima do limiar.
 // 2. Período: mediana dos intervalos vizinhos. Cada ataque ganha o índice
-//    round((t - t0) / mediana) e sai da conta se cai a mais de 15% da grade. BPM e fase
-//    saem de mínimos quadrados (índice x tempo). Isso vale nos primeiros 16 períodos; dali
-//    em diante a reta ajustada refaz os índices em trechos que dobram até o fim do arquivo
-//    (ver fitGrid).
+//    round((t - t0) / mediana) e sai da conta se cai a mais de 15% da grade; t0 é o ataque
+//    do começo que mais ataques confirma (não o primeiro do arquivo, que pode ser um estalo
+//    ou a voz da guia). BPM e fase saem de mínimos quadrados (índice x tempo). Isso vale nos
+//    primeiros 16 períodos; dali em diante a reta ajustada refaz os índices em trechos que
+//    dobram até o fim do arquivo (ver fitGrid).
 // 3. Traços de cada ataque nos primeiros 15 ms: pico (acento mais forte, `loud`) e
 //    cruzamentos por zero (acento mais agudo, `bright`). Cada traço é dividido em 2 grupos
 //    (2-médias) com o limiar no meio das médias. Médias a menos de 10% uma da outra quer
@@ -182,23 +183,55 @@ function snapToGrid(onsets: number[], phase: number, period: number, until: numb
  * nos clicks reais): em 16 períodos o erro acumulado fica bem abaixo dos 15%.
  */
 const FIRST_SPAN_PERIODS = 16
+/**
+ * Ataques do começo do arquivo testados como semente da fase. Cobre uns segundos de ataques
+ * soltos antes do click (estalo, voz da guia, contagem falada fora do tempo).
+ */
+const SEED_CANDIDATES = 64
 
 /**
- * Grade dos ataques (etapa 2). O índice começa como round((t - t0) / mediana) nos primeiros
- * 16 períodos; a reta ajustada ali refaz os índices num trecho com o dobro do tamanho, e assim
- * por diante até o fim do arquivo. Sem isso, num click de 5 min o índice escorrega da grade
- * no meio do arquivo e os ataques do fim saem da conta.
+ * Semente da fase: entre os primeiros ataques, o que põe mais ataques na grade nos 16 períodos
+ * seguintes (cada índice conta uma vez); no empate, o mais cedo. Um ataque solto antes do
+ * click confirma só a si mesmo e perde pro primeiro click.
+ */
+function phaseSeed(onsets: number[], period: number): number {
+  const tolerance = GRID_TOLERANCE * period
+  let best = onsets[0]
+  let bestCount = 0
+  for (let i = 0; i < Math.min(onsets.length, SEED_CANDIDATES); i++) {
+    const seed = onsets[i]
+    const until = seed + FIRST_SPAN_PERIODS * period
+    let count = 0
+    let lastIndex = -1
+    for (let j = i; j < onsets.length && onsets[j] <= until; j++) {
+      const index = Math.round((onsets[j] - seed) / period)
+      if (index === lastIndex || Math.abs(onsets[j] - seed - index * period) > tolerance) continue
+      count++
+      lastIndex = index
+    }
+    if (count > bestCount) { best = seed; bestCount = count }
+  }
+  return best
+}
+
+/**
+ * Grade dos ataques (etapa 2). A fase começa no ataque que mais ataques confirma (phaseSeed)
+ * e o índice é round((t - semente) / mediana) nos primeiros 16 períodos; a reta ajustada ali
+ * refaz os índices num trecho com o dobro do tamanho, e assim por diante até o fim do arquivo.
+ * Sem isso, num click de 5 min o índice escorrega da grade no meio do arquivo e os ataques do
+ * fim saem da conta. Ataques antes da semente entram só se caem na grade.
  */
 function fitGrid(onsets: number[]): { grid: GridOnset[]; period: number; phase: number } | null {
   const intervals: number[] = []
   for (let i = 1; i < onsets.length; i++) intervals.push(onsets[i] - onsets[i - 1])
   let period = median(intervals)
-  let phase = onsets[0]
+  const seed = phaseSeed(onsets, period)
+  let phase = seed
   const last = onsets[onsets.length - 1]
   let span = FIRST_SPAN_PERIODS * period
   let grid: GridOnset[] = []
   for (;;) {
-    const until = onsets[0] + span
+    const until = seed + span
     grid = snapToGrid(onsets, phase, period, until)
     if (grid.length >= 2) ({ period, phase } = fitLine(grid))
     if (!(period > 0)) return null

@@ -77,6 +77,23 @@ function synthClickWithTimes(o: SynthClickOptions): { samples: Float32Array; tim
   return { samples: out, times }
 }
 
+/** Soma em `x` o mesmo bipe do click em `t` segundos: um ataque solto, um estalo ou uma sílaba. */
+function addBeep(x: Float32Array, t: number, amp = BASE_AMP, freq = 1200): void {
+  const start = Math.round(t * SR)
+  const beepLen = Math.round(BEEP_S * SR)
+  for (let i = 0; i < beepLen && start + i < x.length; i++) {
+    const s = i / SR
+    x[start + i] += amp * Math.exp(-s / 0.008) * Math.sin(2 * Math.PI * freq * s)
+  }
+}
+
+/** Click com os pulsos nos tempos dados (acento 1,8x a cada 4): andamento que muda ou deriva. */
+function clickAt(times: number[], seconds: number): Float32Array {
+  const x = new Float32Array(Math.round(seconds * SR))
+  times.forEach((t, k) => addBeep(x, t, k % 4 === 0 ? BASE_AMP * 1.8 : BASE_AMP))
+  return x
+}
+
 describe('analyzeClickTrack: casos do plano', () => {
   it('4/4 com acento mais forte, BPM com decimais', () => {
     const a = analyzeClickTrack(synthClick({ bpm: 72.5, seconds: 40, pulsesPerBar: 4, accent: 'loud', firstPulse: 0.31 }), 48000)!
@@ -93,6 +110,30 @@ describe('analyzeClickTrack: casos do plano', () => {
   it('tolera variação de 1 ms e um trecho sem click', () => { const a = analyzeClickTrack(synthClick({ bpm: 76, seconds: 60, pulsesPerBar: 4, accent: 'loud', firstPulse: 0.4, jitterMs: 1, gap: [20, 26] }), 48000)!; expect(Math.abs(a.bpm - 76)).toBeLessThan(0.05); expect(a.pulsesPerBar).toBe(4) })
   it('silêncio e áudio curto', () => { expect(analyzeClickTrack(new Float32Array(48000 * 10), 48000)).toBeNull(); expect(analyzeClickTrack(synthClick({ bpm: 120, seconds: 3, pulsesPerBar: 4, accent: 'loud', firstPulse: 0 }), 48000)).toBeNull() })
   it('5 minutos analisados em menos de 2 s', () => { const x = synthClick({ bpm: 120, seconds: 300, pulsesPerBar: 4, accent: 'loud', firstPulse: 0 }); const t0 = performance.now(); analyzeClickTrack(x, 48000); expect(performance.now() - t0).toBeLessThan(2000) })
+})
+
+describe('analyzeClickTrack: a fase vem do conjunto dos ataques', () => {
+  // Achado I1 da revisão: a fase não pode depender do primeiro ataque do arquivo.
+  it('um ataque solto antes do primeiro click (0,2 a 0,8 do período antes) não muda a grade', () => {
+    const limpo = analyzeClickTrack(synthClick({ bpm: 120, seconds: 30, pulsesPerBar: 4, accent: 'loud', firstPulse: 1 }), SR)!
+    for (const frac of [0.2, 0.37, 0.5, 0.8]) {
+      const x = synthClick({ bpm: 120, seconds: 30, pulsesPerBar: 4, accent: 'loud', firstPulse: 1 })
+      addBeep(x, 1 - frac * 0.5)
+      const a = analyzeClickTrack(x, SR)
+      expect(a).not.toBeNull()
+      expect(a).toEqual(limpo)
+      expect(Math.abs(a!.firstDownbeat! - 1)).toBeLessThan(0.002)
+    }
+  })
+  it('vários ataques fora do tempo antes do click (voz da guia, contagem falada) não mudam a grade', () => {
+    const limpo = analyzeClickTrack(synthClick({ bpm: 132, seconds: 40, pulsesPerBar: 4, accent: 'every2', firstPulse: 3 }), SR)!
+    const x = synthClick({ bpm: 132, seconds: 40, pulsesPerBar: 4, accent: 'every2', firstPulse: 3 })
+    for (const t of [0.13, 0.45, 0.95, 1.4, 1.86, 2.32, 2.78]) addBeep(x, t, BASE_AMP * 0.9, 600)
+    const a = analyzeClickTrack(x, SR)
+    expect(a).not.toBeNull()
+    expect(a).toEqual(limpo)
+    expect(Math.abs(a!.firstPulse - 3)).toBeLessThan(0.002)
+  })
 })
 
 describe('analyzeClickTrack: compasso composto', () => {
