@@ -42,7 +42,7 @@ export const parseKey = (key: string | null | undefined): { semitone: number; mi
     const plain = normalizeChannelName(k);
     const s = /^(do|re|mi|fa|sol|la|si)\s*([#b]?)(.*)$/.exec(plain);
     if (s && KEY_QUALITY.test(s[3].trim())) {
-        const cased = k.normalize('NFD').replace(/[̀-ͯ]/g, '');
+        const cased = k.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         const quality = cased.length === plain.length ? cased.slice(plain.length - s[3].length) : s[3];
         return parsed(SOLFEGE_SEMITONE[s[1]], s[2], quality.trim());
     }

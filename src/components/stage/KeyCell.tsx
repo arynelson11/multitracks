@@ -9,7 +9,7 @@ export interface KeyCellProps { originalKey: string | null; pitch: number; gridO
 
 const UNKNOWN = 'Tom original desconhecido'
 /** Sinal de menos tipográfico (U+2212), como no v5. */
-const MINUS = '−'
+const MINUS = '\u2212'
 
 /** "+2" ou "−1" (sinal de menos); vazio no tom original. */
 const shiftText = (s: number): string => (s > 0 ? `+${s}` : s < 0 ? `${MINUS}${-s}` : '')

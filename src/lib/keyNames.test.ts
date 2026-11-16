@@ -25,7 +25,7 @@ const UNIT_CASES = [
   'C', 'C#', 'Db', 'D', 'D#', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'G#', 'Ab', 'A', 'A#', 'Bb', 'B', 'c', 'bb', 'f#', 'Am', 'F#m', 'Ebm',
   'C#m', 'C♯', 'B♭', ' G ', 'Cb', 'E#', 'B#', 'Xyz', 'H', '', '#', 'Cm7b5x', 'Dó', 'Do', 'dó', 'DO', 'Ré', 'Re', 'Mi', 'Fá', 'Fa',
   'Sol', 'SOL', 'Lá', 'La', 'Si', 'Lá m', 'Rém', 'Sol#', 'Sib', 'Si b', 'Mib', 'Fá#m', 'Dó#', 'Ré♭', 'Dó maior', 'Lá menor', 'Mi m',
-  'Dob', 'Si#', ' Sol ', 'Sole', 'Lam7', 'Dó#x', 'Ut', 'Sold', '123', 'c#', 'Lá m', 'RÉ',
+  'Dob', 'Si#', ' Sol ', 'Sole', 'Lam7', 'Dó#x', 'Ut', 'Sold', '123', 'c#', 'La\u0301 m', 'RE\u0301',
 ]
 const TONICS = [
   ...'ABCDEFGabcdefg'.split(''),
