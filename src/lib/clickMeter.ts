@@ -127,6 +127,13 @@ const DEVIATION_PERCENTILE = 0.9
 const TRAIT_WINDOW_S = 0.015
 /** Médias do 2-médias mais perto que isto (fração da maior) = ataques iguais. */
 const MIN_CLUSTER_SPREAD = 0.1
+/**
+ * O 2-médias começa nestes percentis dos valores, não no mínimo e no máximo (Ruling
+ * R3-semente): uns poucos ataques extremos na grade (sílabas da guia ou da contagem antes do
+ * click, um estalo) não viram um grupo sozinho que deixa todos os clicks do outro lado.
+ */
+const CLUSTER_SEED_LOW = 0.02
+const CLUSTER_SEED_HIGH = 0.98
 /** A fase do "1" tem pelo menos isto de acentuados. */
 const DOWNBEAT_MIN_SHARE = 0.8
 /** As outras fases têm no máximo isto de acentuados. */
@@ -254,6 +261,13 @@ const FIRST_SPAN_PERIODS = 16
  * soltos antes do click (estalo, voz da guia, contagem falada fora do tempo).
  */
 const SEED_CANDIDATES = 64
+/**
+ * O click começa no primeiro ataque da grade seguido destes pulsos todos presentes. Sílabas da
+ * guia, da contagem falada ou um estalo antes dele que caem na grade aqui e ali ficam de fora da
+ * conta (do 1, do primeiro tempo e do acento). Limite: sílabas que caem em pulsos seguidos logo
+ * antes do click não se separam dele.
+ */
+const RUN_START = 4
 
 /**
  * Semente da fase: entre os primeiros ataques, o que põe mais ataques na grade nos 16 períodos
@@ -285,7 +299,8 @@ function phaseSeed(onsets: number[], period: number): number {
  * e o índice é round((t - semente) / mediana) nos primeiros 16 períodos; a reta ajustada ali
  * refaz os índices num trecho com o dobro do tamanho, e assim por diante até o fim do arquivo.
  * Sem isso, num click de 5 min o índice escorrega da grade no meio do arquivo e os ataques do
- * fim saem da conta. Ataques antes da semente entram só se caem na grade.
+ * fim saem da conta. No fim, a grade começa no primeiro ataque seguido de RUN_START pulsos
+ * presentes (os soltos antes dele saem e a reta é refeita sem eles).
  */
 function fitGrid(onsets: number[]): { grid: GridOnset[]; period: number; phase: number } | null {
   const intervals: number[] = []
@@ -303,6 +318,12 @@ function fitGrid(onsets: number[]): { grid: GridOnset[]; period: number; phase: 
     if (!(period > 0)) return null
     if (until >= last) break
     span *= 2
+  }
+  let start = 0
+  while (start + RUN_START < grid.length && grid[start + RUN_START].index - grid[start].index !== RUN_START) start++
+  if (start > 0 && start + RUN_START < grid.length) {
+    grid = grid.slice(start)
+    ;({ period, phase } = fitLine(grid))
   }
   // Índices a partir de 0 no primeiro ataque da grade.
   const first = grid[0]?.index ?? 0
@@ -358,19 +379,18 @@ function onsetTraits(x: Float32Array, onsets: GridOnset[], sampleRate: number): 
 }
 
 /**
- * Acentuados por 2-médias (limiar no meio das duas médias). Nulo quando as médias ficam a
- * menos de 10% uma da outra: todos os ataques são iguais e o traço não marca acento.
+ * Acentuados por 2-médias (limiar no meio das duas médias), começando nos percentis 2% e 98%.
+ * Nulo quando as médias ficam a menos de 10% uma da outra (ou os percentis são iguais): os
+ * ataques são iguais e o traço não marca acento.
  */
 function accentMarks(values: number[]): boolean[] | null {
-  let lo = Infinity
-  let hi = -Infinity
-  for (const v of values) {
-    if (v < lo) lo = v
-    if (v > hi) hi = v
-  }
+  const sorted = [...values].sort((a, b) => a - b)
+  const at = (q: number) => sorted[Math.floor(q * (sorted.length - 1))]
+  let lo = at(CLUSTER_SEED_LOW)
+  let hi = at(CLUSTER_SEED_HIGH)
   if (!(hi > lo)) return null
-  // Começando no mínimo e no máximo, nenhum grupo fica vazio: cada média fica entre o
-  // extremo do seu lado e o limiar seguinte.
+  // Nenhum grupo fica vazio: o valor do percentil baixo fica abaixo do primeiro limiar e o do
+  // alto acima; depois, cada média é de valores do seu lado do limiar seguinte.
   for (let iter = 0; iter < 100; iter++) {
     const mid = (lo + hi) / 2
     let sumLo = 0
@@ -658,9 +678,13 @@ export function analyzeClickTrack(
   const marks: TraitMarks = [['loud', accentMarks(traits.loud)], ['bright', accentMarks(traits.bright)]]
   const pulseBpm = (60 * sampleRate) / period
   const it = interpret(pulseBpm, readMeter(grid, traits, marks), readTwoPulseBar(grid, marks), knownSignature, knownBpm)
-  // "1" = tempo (na reta) do primeiro ataque com índice ≡ fase (mod m).
+  // "1" = tempo (na reta) do primeiro ataque ACENTUADO com índice ≡ fase (mod m): uma sílaba ou
+  // um estalo solto que caiu na grade na fase do 1, sem o acento, não vira o 1.
   const downbeat = it.downbeat
-  const firstDownbeat = downbeat ? timeOf(grid.find((o) => o.index % downbeat.m === downbeat.phase)!.index) : null
+  const accented = downbeat ? marks.find(([trait]) => trait === downbeat.trait)?.[1] ?? null : null
+  const inPhase = (o: GridOnset) => downbeat !== null && o.index % downbeat.m === downbeat.phase
+  const one = grid.find((o, i) => inPhase(o) && accented?.[i]) ?? grid.find(inPhase)
+  const firstDownbeat = one ? timeOf(one.index) : null
   // Pulso da grade no quadro da leitura (colcheia no composto e no 7/8, o tempo no x/4); a
   // conversão única dá a semínima.
   const gridPulseBpm = ((it.compound ? 3 : 1) * pulseBpm) / it.subdivision

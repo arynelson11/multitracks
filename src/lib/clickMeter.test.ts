@@ -7,7 +7,8 @@ import { countPulses, displayBpmFromPulseBpm } from './stageContracts'
 // `loud` = acento com 1,8x a amplitude; `bright` = acento com a mesma amplitude em 2400 Hz
 // (o normal é 1200 Hz); `every2` = acento forte a cada 2 pulsos; `none` = todos iguais;
 // `compound` = 1 com 2x e o meio do compasso (o 4 do 6/8) com 1,6x; `beatsAndOne` = pulsos
-// pares com 1,8x (as semínimas de um click em colcheias) e o 1 em 2400 Hz.
+// pares com 1,8x (as semínimas de um click em colcheias) e o 1 em 2400 Hz; `every2Bright` =
+// pulsos pares em 2400 Hz com a mesma amplitude (as semínimas pelo timbre, como nos MultiTracks).
 // `bpm` aqui é a taxa de pulsos do click (colcheias, num click em colcheias).
 // `pickupPulses` = pulsos de anacruse antes do primeiro "1"; `jitterMs` = desvio sorteado
 // (uniforme, semente fixa) de cada pulso; `gap` = trecho [início, fim) em segundos sem click.
@@ -19,7 +20,7 @@ interface SynthClickOptions {
   bpm: number
   seconds: number
   pulsesPerBar: number
-  accent: 'loud' | 'bright' | 'none' | 'every2' | 'compound' | 'beatsAndOne'
+  accent: 'loud' | 'bright' | 'none' | 'every2' | 'compound' | 'beatsAndOne' | 'every2Bright'
   firstPulse: number
   pickupPulses?: number
   jitterMs?: number
@@ -69,6 +70,7 @@ function synthClickWithTimes(o: SynthClickOptions): { samples: Float32Array; tim
     if ((o.accent === 'every2' || o.accent === 'beatsAndOne') && isEven) amp *= 1.8
     if (o.accent === 'beatsAndOne' && isOne) freq = 2400
     if (o.accent === 'bright' && isOne) freq = 2400
+    if (o.accent === 'every2Bright' && isEven) freq = 2400
     if (o.accent === 'compound') amp *= isOne ? 2 : beat === o.pulsesPerBar / 2 ? 1.6 : 1
     const start = Math.round(t * SR)
     for (let i = 0; i < beepLen && start + i < out.length; i++) {
@@ -149,6 +151,89 @@ describe('analyzeClickTrack: a fase vem do conjunto dos ataques', () => {
     const a = analyzeClickTrack(x, SR)
     expectSameReading(a, limpo)
     expect(Math.abs(a!.firstPulse - 3)).toBeLessThan(0.002)
+  })
+})
+
+/**
+ * Sílaba da guia ou da contagem falada: rajada aguda (5 kHz) e mais fraca que o click, como as
+ * falas medidas na revisão (pico 0,15 a 0,46 e 150 a 219 cruzamentos por zero nos 15 ms, contra
+ * 0,51 a 0,69 e 49 a 68 dos clicks).
+ */
+function addSyllable(x: Float32Array, t: number, amp = BASE_AMP * 0.6): void {
+  const start = Math.round(t * SR)
+  for (let i = 0; i < Math.round(0.04 * SR) && start + i < x.length; i++) {
+    if (start + i >= 0) x[start + i] += amp * Math.exp(-i / SR / 0.02) * Math.sin(2 * Math.PI * 5000 * i / SR)
+  }
+}
+/**
+ * Voz da guia antes do click: 7 sílabas soltas. 3 caem na grade, espalhadas (5, 3 e 1 pulso antes
+ * do 1º click, uma delas na posição do acento); as outras ficam no meio entre dois pulsos.
+ */
+function vozDaGuia(x: Float32Array, firstClick: number, period: number): void {
+  for (const k of [5, 3, 1, 7.5, 6.5, 4.5, 2.5]) addSyllable(x, firstClick - k * period)
+}
+/** Contagem falada ("um, dois, três, quatro") fora do andamento do click, mais forte que a voz; 2 sílabas caem na grade. */
+function contagemFalada(x: Float32Array, firstClick: number, period: number): void {
+  for (const k of [8.4, 7, 3.4, 1]) addSyllable(x, firstClick - k * period, BASE_AMP * 0.8)
+}
+
+/**
+ * A mesma grade: o mesmo pulso, compasso, subdivisão, quadro e origem do 1, com o primeiro tempo
+ * e o 1 a um número inteiro de tempos e de compassos dos da referência.
+ */
+function expectSameGrid(a: ClickAnalysis | null, ref: ClickAnalysis): void {
+  expect(a).not.toBeNull()
+  const { pulseBpm, subdivision, compound, pulsesPerBar, downbeatSource, ambiguous } = a!
+  expect({ subdivision, compound, pulsesPerBar, downbeatSource, ambiguous }).toEqual({
+    subdivision: ref.subdivision, compound: ref.compound, pulsesPerBar: ref.pulsesPerBar, downbeatSource: ref.downbeatSource, ambiguous: ref.ambiguous,
+  })
+  expect(Math.abs(pulseBpm - ref.pulseBpm)).toBeLessThan(1e-4 * ref.pulseBpm)
+  const beat = (60 / ref.pulseBpm) * ref.subdivision
+  const off = (a!.firstPulse - ref.firstPulse) / beat
+  expect(Math.abs(off - Math.round(off)) * beat).toBeLessThan(0.002)
+  if (ref.firstDownbeat !== null) {
+    const bar = (60 / ref.pulseBpm) * ref.pulsesPerBar!
+    const offBar = (a!.firstDownbeat! - ref.firstDownbeat) / bar
+    expect(Math.abs(offBar - Math.round(offBar)) * bar).toBeLessThan(0.002)
+  }
+}
+
+describe('analyzeClickTrack: fala antes do click não muda a leitura (Ruling R3-semente)', () => {
+  // Achado I1 da re-revisão: sílabas que caem na grade antes do click viravam os extremos do
+  // 2-médias do acento, um grupo sozinho, e o acento sumia. Casos reais que mudavam: Redentor
+  // (meio tempo fora), "Fé" (virava 4/4) e "Maravilhosa graça" (perdia o compasso).
+  const casos = [
+    { nome: 'colcheias com cada semínima mais aguda, 66 salvo (Redentor)', o: { bpm: 132, pulsesPerBar: 4, accent: 'every2Bright' as const }, bpm: 66 },
+    { nome: '6/8 em colcheias com o 1 e o 4 mais agudos, 78 salvo ("Fé")', o: { bpm: 156, pulsesPerBar: 3, accent: 'bright' as const }, bpm: 78 },
+    { nome: '4/4 com o 1 mais agudo, sem BPM salvo ("Maravilhosa graça")', o: { bpm: 98, pulsesPerBar: 4, accent: 'bright' as const }, bpm: null },
+  ]
+  for (const { nome, o, bpm } of casos) {
+    for (const [fala, falar] of [['voz da guia', vozDaGuia], ['contagem falada', contagemFalada]] as const) {
+      it(`${fala} antes do click: ${nome}`, () => {
+        const limpo = analyzeClickTrack(synthClick({ ...o, seconds: 120, firstPulse: 5 }), SR, null, bpm)!
+        const x = synthClick({ ...o, seconds: 120, firstPulse: 5 })
+        falar(x, 5, 60 / o.bpm)
+        expectSameGrid(analyzeClickTrack(x, SR, null, bpm), limpo)
+      })
+    }
+  }
+  it('contagem falada em pulsos seguidos logo antes do click, uma sílaba na fase do 1 sem acento: o 1 fica no click', () => {
+    // Visto no "Fé" real com a contagem no nível do click: 4 sílabas na grade, seguidas, logo antes do 1º click.
+    const o = { bpm: 156, seconds: 120, pulsesPerBar: 3, accent: 'loud' as const, firstPulse: 5 }
+    const limpo = analyzeClickTrack(synthClick(o), SR, null, 78)!
+    const x = synthClick(o)
+    for (const k of [4, 3, 2, 1]) addSyllable(x, 5 - k * (60 / 156), BASE_AMP * 0.5)
+    const a = analyzeClickTrack(x, SR, null, 78)
+    expectSameGrid(a, limpo)
+    expect(Math.abs(a!.firstDownbeat! - 5)).toBeLessThan(0.002)
+  })
+  it('estalo 4x mais forte caindo na grade (num buraco do click) não tira o compasso', () => {
+    const o = { bpm: 136, seconds: 120, pulsesPerBar: 4, accent: 'loud' as const, firstPulse: 0.2, gap: [60, 61] as [number, number] }
+    const limpo = analyzeClickTrack(synthClick(o), SR)!
+    const x = synthClick(o)
+    addBeep(x, 0.2 + 136 * (60 / 136) * 1, BASE_AMP * 1.8 * 4) // pulso 136, em 60,2 s, dentro do buraco
+    expectSameGrid(analyzeClickTrack(x, SR), limpo)
+    expect(limpo.pulsesPerBar).toBe(4)
   })
 })
 
