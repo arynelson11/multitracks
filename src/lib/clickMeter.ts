@@ -643,12 +643,13 @@ function interpret(
   pulseBpm: number, bar: MeterReading | null, two: MeterReading | null,
   knownSignature: TimeSignature | null | undefined, knownBpm: number | null | undefined,
 ): Interpretation {
-  const k = knownRatio(pulseBpm, knownBpm)
-  if (knownSignature && isCompound(knownSignature)) return compoundFrame(pulseBpm, bar, two, signaturePulses(knownSignature), k)
-  if (knownSignature && isEighthPulse(knownSignature)) return eighthFrame(bar, two, signaturePulses(knownSignature), k)
-  // Click na pontuada pelo BPM salvo, sem compasso salvo (o simples salvo vence): 12/8 com o
-  // acento fechando 4 pulsos, senão 6/8.
-  if (!knownSignature && k === 'dotted') return compoundFrame(pulseBpm, bar, two, bar?.m === 4 ? 12 : 6, k)
+  const ratio = knownRatio(pulseBpm, knownBpm)
+  if (knownSignature && isCompound(knownSignature)) return compoundFrame(pulseBpm, bar, two, signaturePulses(knownSignature), ratio)
+  if (knownSignature && isEighthPulse(knownSignature)) return eighthFrame(bar, two, signaturePulses(knownSignature), ratio)
+  // Click na pontuada pelo BPM salvo, sem compasso salvo: 12/8 com o acento fechando 4 pulsos,
+  // senão 6/8. Com compasso simples salvo, ele vence e a razão 2/3 não desempata nada.
+  if (ratio === 'dotted' && !knownSignature) return compoundFrame(pulseBpm, bar, two, bar?.m === 4 ? 12 : 6, ratio)
+  const k = ratio === 'dotted' ? null : ratio
   if (bar) {
     // Tercinas ou semicolcheias com cada tempo acentuado: o tempo vem, o compasso e o "1" não.
     if (k !== null && k > 2 && bar.m === k) return interpretation({ subdivision: k, compound: false, meter: null, downbeat: null, beat: bar })
