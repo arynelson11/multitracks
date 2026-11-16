@@ -351,6 +351,22 @@ describe('compatibilidade com o detector antigo: o antigo pegava, o novo tem que
   })
 })
 
+// Junção (R6): recognizeChannel sem ignoreRoleFamilies diz o mesmo que o papel e a
+// família do canal, então quem chamar direto não cai na armadilha de "vozguia bass" = Baixo.
+describe('recognizeChannel segue o teste antigo de Click e Guia', () => {
+  it.each([
+    ['vozguia bass', 'guia', 'Guia'], ['vozguia', 'guia', 'Guia'], ['clicktrk', 'click', 'Click'],
+    ['GUIDEVOX', 'guia', 'Guia'], ['MTR Guia', 'click', 'Click'], ['CUE clicktrk', 'guia', 'Guia'],
+  ])('%s: família %s, rótulo %s, igual ao channelFamily', (name, family, label) => {
+    expect(recognizeChannel(name)).toEqual({ family, label })
+    expect(recognizeChannel(name).family).toBe(channelFamily({ id: '1', name }))
+  })
+  it('com ignoreRoleFamilies continua só o instrumento (rótulo de canal Normal)', () => {
+    expect(recognizeChannel('vozguia bass', { ignoreRoleFamilies: true })).toEqual({ family: 'baixo', label: 'Baixo' })
+    expect(recognizeChannel('vozguia', { ignoreRoleFamilies: true }).family).toBe('desconhecido')
+  })
+})
+
 // Revisão final (N1): canal sem nome (ZIP, repertório ou stem com jsonb estragado) não pode derrubar a tela.
 describe('nome ausente', () => {
   it.each([[undefined], [null]])('name %s: rótulo e família não lançam e o rótulo cai em "Canal"', (missing) => {

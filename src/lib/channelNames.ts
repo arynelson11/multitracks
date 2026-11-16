@@ -292,8 +292,17 @@ export function cleanChannelName(raw: string): string {
   return fitWholeWords(words, UNRECOGNIZED_LABEL_MAX) || 'Canal'
 }
 
+// Sem ignoreRoleFamilies, segue o mesmo papel do roleFromName (com o teste antigo de
+// Click e Guia): "vozguia bass" é Guia aqui também, não Baixo. Com ignoreRoleFamilies
+// (rótulo e família de canal Normal) fica só o instrumento.
 export function recognizeChannel(raw: string, opts: { ignoreRoleFamilies?: boolean } = {}): ChannelRecognition {
-  const match = matchFamily(raw, opts.ignoreRoleFamilies ?? false)
+  const ignoreRoleFamilies = opts.ignoreRoleFamilies ?? false
+  const match = matchFamily(raw, ignoreRoleFamilies)
+  if (!ignoreRoleFamilies && !(match && ROLE_FAMILIES.has(match.familyRule.family))) {
+    const legacy = legacyRoleFromName(raw)
+    if (legacy === 'click') return { family: 'click', label: FAMILY_LABEL.click }
+    if (legacy === 'guide') return { family: 'guia', label: FAMILY_LABEL.guia }
+  }
   if (!match) return { family: 'desconhecido', label: cleanChannelName(raw) }
   const { familyRule, tokens, hits } = match
   const base = familyBaseLabel(familyRule, tokens)
