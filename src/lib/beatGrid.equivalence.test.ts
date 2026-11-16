@@ -23,9 +23,15 @@ interface Caso {
   nome: string;
   song: SongOptions;
   beatsPerBar: number;
+  /** Taxa da faixa. Padrão 48 kHz. */
+  sr?: number;
+  /** BPM em que o detector antigo trava, quando não é o da música (6/8 sai no pulso de semínima pontuada). */
+  bpmTravado?: number;
 }
 
-// Os 8 casos do relatório que a M1 congela (tabela da seção 2).
+// Os 8 casos do relatório que a M1 congela (tabela da seção 2), mais os que a
+// revisão da M1 pediu antes de mudar o detector: 44,1 kHz (hop de 221, fps não
+// inteiro) e os compassos 5, 6, 7 e 12 (ramos par e ímpar da regra do "1").
 const CASOS: Caso[] = [
   { nome: 'b: 1º tempo em 1,37 s, 120 BPM', song: { bpm: 120, firstBeat: 1.37 }, beatsPerBar: 4 },
   { nome: 'c: BPM decimal 72,5', song: { bpm: 72.5, firstBeat: 0.43 }, beatsPerBar: 4 },
@@ -35,10 +41,16 @@ const CASOS: Caso[] = [
   { nome: 'f: valsa 3/4, 90 BPM, compasso pedido 3/4', song: { bpm: 90, firstBeat: 0.3, pattern: 'waltz34' }, beatsPerBar: 3 },
   { nome: 'g: bateria a -40 dB', song: { bpm: 120, firstBeat: 0.8, gain: 0.01 }, beatsPerBar: 4 },
   { nome: 'humanizado (±5 ms), 118 BPM', song: { bpm: 118, firstBeat: 0.8, jitterMs: 5 }, beatsPerBar: 4 },
+  { nome: 'b a 44,1 kHz', song: { bpm: 120, firstBeat: 1.37 }, beatsPerBar: 4, sr: 44100 },
+  { nome: 'c 72,5 a 44,1 kHz', song: { bpm: 72.5, firstBeat: 0.43 }, beatsPerBar: 4, sr: 44100 },
+  { nome: '6/8 (colcheia 180), compasso pedido 6/8', song: { bpm: 180, firstBeat: 0.3, pattern: 'sixeight' }, beatsPerBar: 6, bpmTravado: 60 },
+  { nome: '6/8 (colcheia 180), compasso pedido 12/8', song: { bpm: 180, firstBeat: 0.3, pattern: 'sixeight' }, beatsPerBar: 12, bpmTravado: 60 },
+  { nome: 'rock 110 BPM, compasso pedido 5/4', song: { bpm: 110, firstBeat: 0.45 }, beatsPerBar: 5 },
+  { nome: 'pop sincopado 84 BPM, compasso pedido 7/8', song: { bpm: 84, firstBeat: 0.5, pattern: 'popsync44' }, beatsPerBar: 7 },
 ];
 
 // Pad e baixo não sorteiam nada, então tirar os dois não muda a bateria (e corta 2/3 do tempo).
-const bateria = (song: SongOptions) => makeSong({ sr: SR, duration: DURACAO, withPad: false, withBass: false, ...song }).tracks.drums;
+const bateria = (song: SongOptions, sr = SR) => makeSong({ sr, duration: DURACAO, withPad: false, withBass: false, ...song }).tracks.drums;
 
 function expectMesmaGrade(novo: BeatGrid, antigo: BeatGrid) {
   expect(Object.keys(novo).sort()).toEqual(['bpm', 'confidence', 'downbeat', 'firstBeat']);
@@ -49,14 +61,14 @@ function expectMesmaGrade(novo: BeatGrid, antigo: BeatGrid) {
 }
 
 describe('detectBeatGrid em etapas dá o mesmo resultado do detector antigo', () => {
-  it.each(CASOS)('$nome', ({ song, beatsPerBar }) => {
-    const ch = bateria(song);
+  it.each(CASOS)('$nome', ({ song, beatsPerBar, sr = SR, bpmTravado }) => {
+    const ch = bateria(song, sr);
     const opts: BeatGridOptions = { beatsPerBar };
-    const antigo = legacyDetectBeatGrid(ch, SR, opts);
+    const antigo = legacyDetectBeatGrid(ch, sr, opts);
     // O caso trava no tempo certo (é o que o relatório mediu): a comparação não é vazia.
-    expect(antigo.bpm).toBeCloseTo(song.bpm, 1);
+    expect(antigo.bpm).toBeCloseTo(bpmTravado ?? song.bpm, 1);
     expect(antigo.confidence).toBeGreaterThan(0.1);
-    expectMesmaGrade(detectBeatGrid(ch, SR, opts), antigo);
+    expectMesmaGrade(detectBeatGrid(ch, sr, opts), antigo);
   });
 
   // O Separador chama com o BPM digitado (busca fina de ±0,8% em volta dele).
@@ -64,10 +76,11 @@ describe('detectBeatGrid em etapas dá o mesmo resultado do detector antigo', ()
     { nome: 'b com BPM de referência 119', song: CASOS[0].song, nearBpm: 119, beatsPerBar: 4 },
     { nome: 'c 72,5 com BPM de referência 72', song: CASOS[1].song, nearBpm: 72, beatsPerBar: 4 },
     { nome: 'f 3/4 com BPM de referência 90', song: CASOS[5].song, nearBpm: 90, beatsPerBar: 3 },
-  ])('$nome', ({ song, nearBpm, beatsPerBar }) => {
-    const ch = bateria(song);
+    { nome: 'b a 44,1 kHz com BPM de referência 119', song: CASOS[0].song, nearBpm: 119, beatsPerBar: 4, sr: 44100 },
+  ])('$nome', ({ song, nearBpm, beatsPerBar, sr = SR }) => {
+    const ch = bateria(song, sr);
     const opts: BeatGridOptions = { nearBpm, beatsPerBar };
-    expectMesmaGrade(detectBeatGrid(ch, SR, opts), legacyDetectBeatGrid(ch, SR, opts));
+    expectMesmaGrade(detectBeatGrid(ch, sr, opts), legacyDetectBeatGrid(ch, sr, opts));
   });
 
   it('sem áudio que dê pra medir, devolve a mesma grade de reserva', () => {
@@ -77,7 +90,8 @@ describe('detectBeatGrid em etapas dá o mesmo resultado do detector antigo', ()
       [[new Float32Array(0)], SR, {}],
       [curto, SR, {}],
       [curto, SR, { nearBpm: 97 }],
-      [bateria(CASOS[0].song), 0, {}],
+      // Taxa inválida: a reserva sai antes de olhar o áudio, então 5 s de silêncio bastam.
+      [[new Float32Array(SR * 5)], 0, {}],
     ];
     for (const [ch, sr, opts] of entradas) {
       const novo = detectBeatGrid(ch, sr, opts);
@@ -120,10 +134,10 @@ describe('detectSongGrid', () => {
     expect(r.firstBeat).toBe(detectBeatGrid(s.tracks.drums, SR).firstBeat);
   });
 
-  it('sem faixa de pulso, devolve a grade de reserva sem confiança', () => {
-    const s = makeSong({ sr: SR, duration: DURACAO, withBass: false, ...CASOS[0].song });
-    const r = detectSongGrid([{ id: 'pad', label: 'Pad', use: 'harmony', channels: s.tracks.pad }], SR, { nearBpm: 120 });
-    expect(r).toEqual({ bpm: 120, firstBeat: 0, downbeat: 0, confidence: 0, offbeatRisk: false, alternatives: [], tracksUsed: [] });
+  it('sem faixa de pulso, devolve a grade de reserva sem confiança (no BPM de referência)', () => {
+    // A reserva sai antes de olhar o áudio: 5 s bastam. O 97 (não o padrão 120) prova que o nearBpm é usado.
+    const r = detectSongGrid([{ id: 'pad', label: 'Pad', use: 'harmony', channels: [new Float32Array(SR * 5)] }], SR, { nearBpm: 97 });
+    expect(r).toEqual({ bpm: 97, firstBeat: 0, downbeat: 0, confidence: 0, offbeatRisk: false, alternatives: [], tracksUsed: [] });
   });
 });
 
@@ -179,6 +193,15 @@ async function clicksGerados(bpm: number, duration: number, grid: { firstBeat: n
 describe('fumaça: synthMusic + clickProbe', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('rampMs 0 dá ataque instantâneo, sem NaN no áudio', () => {
+    const s = makeSong({ sr: SR, duration: 6, bpm: 120, firstBeat: 0.5, withPad: false, withBass: false, rampMs: 0 });
+    const drums = s.tracks.drums[0];
+    expect(drums.some(Number.isNaN)).toBe(false);
+    // Sem rampa, a amostra seguinte ao golpe já soa perto do pico do bumbo (0,9, mais
+    // ou menos 0,36 do chimbal); com a rampa padrão de 0,3 ms ela ficaria em ~0,06.
+    expect(Math.abs(drums[Math.round(0.5 * SR) + 1])).toBeGreaterThan(0.5);
   });
 
   it('caso b: o 1º golpe da bateria cai em 1,37 s e o click com a grade certa fica a menos de 4 ms', async () => {

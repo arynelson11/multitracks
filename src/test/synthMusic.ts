@@ -210,7 +210,7 @@ export interface SongOptions {
   crashEvery?: number;
   /** Virada de caixa em semicolcheias no compasso antes da entrada, a partir deste tempo (1 = do início). */
   fillBeforeEntry?: number | null;
-  /** Rampa de ataque de cada golpe, em ms. Padrão 0,3 (a variável RAMP_MS do synth.mjs). */
+  /** Rampa de ataque de cada golpe, em ms. Padrão 0,3 (a variável RAMP_MS do synth.mjs). 0 = ataque instantâneo. */
   rampMs?: number;
 }
 
@@ -235,7 +235,9 @@ export function makeSong(opts: SongOptions): SynthSong {
   const { sr = 48000, duration = 300, bpm, firstBeat = 0, pattern = 'rock44', introBars = 0,
     gain = 1, noiseDb = null, jitterMs = 0, seed = 1, withPad = true, withBass = true,
     crashEvery = 0, fillBeforeEntry = null, rampMs = 0.3 } = opts;
-  const ramp = rampMs / 1000;
+  // Rampa 0 dividia por zero (t / 0 = NaN na 1ª amostra de cada golpe); um piso
+  // de 1 ns deixa a 1ª amostra em 0 e a seguinte já no pico (ataque instantâneo).
+  const ramp = Math.max(rampMs, 1e-6) / 1000;
   const P: DrumPattern = PATTERNS[pattern];
   const rnd = rng(seed);
   const n = Math.round(duration * sr);
