@@ -34,6 +34,8 @@ describe('tapSection', () => {
     ['Livre tocando pede upgrade sem mudar nada', null, 1, { gates: livre }, upgrade(null)],
     ['Livre parado também pede upgrade', null, 1, { gates: livre, ...parado }, upgrade(null)],
     ['cancelar nunca pede plano', i(3, 1), 3, { gates: livre }, armed(null)],
+    ['Livre parado, tocar na armada que sobrou (troca de plano) desarma sem pedir plano nem buscar', i(3, 1), 3, { gates: livre, ...parado }, armed(null)],
+    ['Livre parado, tocar em outra com a armada que sobrou pede upgrade sem mudar nada', i(3, 1), 1, { gates: livre, ...parado }, upgrade(i(3, 1))],
     ['índice depois do fim: nada muda', i(3, 1), 6, {}, armed(i(3, 1))],
     ['índice negativo: nada muda', i(3, 1), -1, {}, armed(i(3, 1))],
     ['índice quebrado: nada muda', null, 2.5, {}, armed(null)],

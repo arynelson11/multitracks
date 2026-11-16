@@ -36,12 +36,14 @@ function clampPlays(plays: number, maxRepeats: number): Plays {
 /**
  * Tocar numa seção. Tocando: na armada cancela (inclusive REPETIR e loop infinito); em outra,
  * ou na atual (REPETE), arma com 1 passagem. Parado: leva pro início dela e desarma. Sem o
- * portão de seções pede upgrade sem mudar nada; cancelar nunca pede plano.
+ * portão de seções pede upgrade sem mudar nada; cancelar nunca pede plano (no Livre, tocar
+ * na armada que sobrou de uma troca de plano só desarma, tocando ou parado).
  */
 export function tapSection(intent: ArmIntent | null, index: number, c: ArmContext): ArmResult {
   if (!inList(index, c)) return withIntent(intent)
-  if (c.isPlaying && intent !== null && intent.target === index) return withIntent(null)
-  if (!c.gates.sections) return askUpgrade(intent)
+  const onArmed = intent !== null && intent.target === index
+  if (onArmed && c.isPlaying) return withIntent(null)
+  if (!c.gates.sections) return onArmed ? withIntent(null) : askUpgrade(intent)
   if (!c.isPlaying) return seekTo(index)
   return withIntent({ target: index, plays: 1 })
 }
