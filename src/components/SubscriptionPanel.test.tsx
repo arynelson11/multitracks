@@ -160,10 +160,26 @@ describe('SubscriptionPanel: decide pelas linhas, não pelo perfil (COB-N6/Q9)',
     expect(screen.queryByText(/Assinatura cancelada/)).toBeNull()
   })
 
-  it('só cortesia ativa: aparece sem botão de cancelar', async () => {
+  it('COB-R6: sem assinatura paga na lista e com cortesia, o botão de cancelar continua (pode haver assinatura de antes desta versão, sem linha)', async () => {
     fetchSubs.mockResolvedValue([courtesy(null)])
     setup('pro_anual')
     expect(await screen.findByText(/Plano de cortesia \(Studio Anual\), sem cobrança\. Sem data para acabar\./)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Cancelar assinatura' })).toBeTruthy()
+    // a cortesia em si não tem botão: ele fica fora do bloco dela
+    expect(screen.getByText(/Plano de cortesia/).closest('div')!.querySelector('button')).toBeNull()
+  })
+
+  it('COB-R6: assinante antigo (sem linha paga) que recebe cortesia com data continua com o botão de cancelar', async () => {
+    fetchSubs.mockResolvedValue([courtesy('2027-03-01T03:00:00Z')])
+    setup('pro_anual')
+    expect(await screen.findByText(/Vale até 28\/02\/2027/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Cancelar assinatura' })).toBeTruthy()
+  })
+
+  it('com a assinatura paga cancelada na lista, a cortesia não traz o botão de volta', async () => {
+    fetchSubs.mockResolvedValue([courtesy(null), { ...active, status: 'canceled', cancel_source: 'user', access_until: '2026-11-10T03:00:00Z' }])
+    setup('pro_anual')
+    expect(await screen.findByText(/Plano de cortesia/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Cancelar assinatura' })).toBeNull()
   })
 

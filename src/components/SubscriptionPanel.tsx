@@ -44,8 +44,9 @@ export function SubscriptionPanel({ plan, onChanged, onOpenPricing }: Props) {
     .filter((r) => r.kind === 'asaas' && r.status === 'canceled' && r.access_until && Date.parse(r.access_until) > now)
     .sort((a, b) => (a.access_until! < b.access_until! ? 1 : -1))[0]
   const courtesy = rows.find((r) => r.kind === 'courtesy' && r.status === 'active' && (!r.access_until || Date.parse(r.access_until) > now))
-  // Assinou antes desta versão (sem linha): o servidor acha a assinatura ao cancelar.
-  const legacyPaid = rows.length === 0 && isPaidPlan(plan)
+  // Assinou antes desta versão (sem linha paga): o servidor acha a assinatura ao
+  // cancelar. Uma cortesia na lista não esconde o botão (COB-R6).
+  const legacyPaid = !rows.some((r) => r.kind === 'asaas') && isPaidPlan(plan)
   if (!paidActive && !paidGrace && !courtesy && !legacyPaid) return null
 
   const openConfirm = () => {
