@@ -78,6 +78,14 @@ describe('noscript', () => {
   })
 })
 
+describe('noscript e os planos', () => {
+  it('diz que o Modo Ao Vivo, no app de computador, é dos planos Pro e Studio', () => {
+    const html = buildNoscript()
+    expect(html).toContain('O Modo Ao Vivo, aberto pelo app de computador, é dos planos Pro e Studio.')
+    expect(html).not.toContain('tem app pra Mac e Windows com Modo Ao Vivo')
+  })
+})
+
 describe('injectSiteSeo', () => {
   it('põe o JSON-LD no fim do head e o noscript logo depois do root', () => {
     const out = injectSiteSeo(indexHtml)
