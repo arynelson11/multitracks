@@ -52,6 +52,20 @@ describe('padrão', () => {
   })
 })
 
+describe('padrão compartilhado', () => {
+  it('nem uma cópia rasa muda o padrão: ele é congelado até o mapa', () => {
+    const original = JSON.stringify(DEFAULT_OUTPUTS)
+    const raso = { ...DEFAULT_OUTPUTS }
+    expect(raso.multi).toBe(DEFAULT_OUTPUTS.multi)
+    expect(() => { (raso.multi as OutputSettings['multi']).click = 9 }).toThrow(TypeError)
+    expect(() => { (DEFAULT_OUTPUTS as OutputSettings).mode = 'stereo' }).toThrow(TypeError)
+    expect(() => { (DEFAULT_OUTPUTS.multi as OutputSettings['multi']).vsPair = 4 }).toThrow(TypeError)
+    expect(Object.isFrozen(DEFAULT_OUTPUTS)).toBe(true)
+    expect(Object.isFrozen(DEFAULT_OUTPUTS.multi)).toBe(true)
+    expect(JSON.stringify(DEFAULT_OUTPUTS)).toBe(original)
+  })
+})
+
 describe('planOutputs', () => {
   it('nenhum plano separado põe click ou guia do lado ou na saída da VS', () => {
     for (const mode of ['split2', 'multi'] as const) for (const max of [0, 1, 2, 3, 4, 6, 8, 18, 64]) for (const earOnSecond of [false, true])
@@ -337,9 +351,12 @@ describe('avisos da leitura', () => {
     expect(migrateOutputs({ outputs: { mode: 'split2' }, outputsMigrated: true }).warnings).toEqual(['lado-assumido'])
   })
 
-  it('lado estragado fora de separados não avisa (ele não vale agora)', () => {
+  it('lado estragado em 4 ou mais avisa (a queda pra separados em 1 a 3 canais usa o lado); em tudo junto não', () => {
     expect(migrateOutputs({ outputs: { ...STEREO, earOnSecond: 'x' } }).warnings).toEqual([])
-    expect(migrateOutputs({ outputs: { ...MULTI, earOnSecond: null } }).warnings).toEqual([])
+    for (const earOnSecond of [null, undefined, 'true', 1]) expect(migrateOutputs({ outputs: { ...MULTI, earOnSecond } }).warnings).toEqual(['lado-assumido'])
+    expect(migrateOutputs({ outputs: { ...MULTI, earOnSecond: null, multi: { vsPair: 2, click: 0, guide: 'x' } } }).warnings).toEqual(['lado-assumido', 'mapa-ajustado'])
+    const m = migrateOutputs({ outputs: { ...MULTI, earOnSecond: 'x' } })
+    expect(planOutputs(m.outputs, 2)).toMatchObject({ mode: 'split2', click: [0], vs: [1], fellBackFrom: 'multi' })
   })
 
   it('mapa de 4 ou mais corrigido na leitura avisa; texto de select com número não', () => {

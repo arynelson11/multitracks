@@ -23,7 +23,7 @@ export const OUTPUT_WARNING_TEXT: Record<OutputWarning, string> = {
   'sem-saida-ouvido': 'Click e Guia sem saída: as saídas livres desta placa são da VS. Ligue a placa de 4 ou mais canais ou escolha outro modo.',
   'mapa-ajustado': 'Parte do mapa salvo não vale nesta placa: as saídas foram ajustadas, com Click e Guia fora da VS. Confira o resumo.',
   'modo-assumido': 'Não deu pra ler o modo de saída gravado. Usando Click e Guia separados: confira o resumo e o lado do ouvido.',
-  'lado-assumido': 'Não deu pra ler o lado gravado de Click e Guia. Usando a saída 1 pra eles: confira antes de tocar.',
+  'lado-assumido': 'Não deu pra ler o lado gravado de Click e Guia. Quando eles ficam separados da VS (inclusive numa placa de 2 canais), vão pra saída 1: confira antes de tocar.',
 }
 
 /** Plano com o aviso pra tela. O motor e o roteador usam só os campos de `OutputPlan`. */
@@ -34,10 +34,14 @@ export type ReadonlyOutputSettings = Readonly<Omit<OutputSettings, 'multi'>> & {
 
 /**
  * Padrão (R-23): Click e Guia separados, ouvido na saída 1; com 4 ou mais, VS em 1/2, Click
- * na 3, Guia na 4. Só de leitura no tipo; quem precisa de um objeto pra mexer usa as cópias
- * que `migrateOutputs` e `sanitizeOutputs` devolvem.
+ * na 3, Guia na 4. Só de leitura no tipo e congelado de verdade, até o mapa: nem uma cópia
+ * rasa (`{ ...DEFAULT_OUTPUTS }`, que divide o `multi`) consegue mudar o padrão de todo mundo
+ * (escrever nele lança TypeError). Quem precisa de um objeto pra mexer usa as cópias que
+ * `migrateOutputs` e `sanitizeOutputs` devolvem.
  */
-export const DEFAULT_OUTPUTS: ReadonlyOutputSettings = { mode: 'split2', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } }
+export const DEFAULT_OUTPUTS: ReadonlyOutputSettings = Object.freeze({
+  mode: 'split2', earOnSecond: false, multi: Object.freeze({ vsPair: 0, click: 2, guide: 3 }),
+})
 
 const copyOutputs = (s: ReadonlyOutputSettings): OutputSettings => ({ mode: s.mode, earOnSecond: s.earOnSecond, multi: { ...s.multi } })
 
@@ -112,7 +116,10 @@ function splitPlan(earOnSecond: boolean, fellBackFrom: OutputMode | null, warnin
  * desplugada, saída do sistema): cai em "Click e Guia separados" no lado escolhido
  * (`earOnSecond`), com `fellBackFrom`, porque o fone nunca pode ficar sem click no meio do
  * culto. Com 3 canais: cai igual se a VS gravada não usa as saídas 1 e 2; se usa, a VS fica
- * nelas e Click e Guia vão juntos pra saída 3. Dentro do modo multi, sem saída livre, Click e
+ * nelas e Click e Guia vão juntos pra saída 3. Atenção: esse caso é `mode: 'multi'` com
+ * `channels: 3` E `fellBackFrom: 'multi'`, então a T12 monta o merger de 3 entradas e a T19 não
+ * pode ler `fellBackFrom` como "virou separados" (quem diz o modo é `mode`; o aviso é
+ * `warning`). Dentro do modo multi, sem saída livre, Click e
  * Guia ficariam sem saída com o aviso `sem-saida-ouvido` (guarda; nenhuma placa de hoje chega
  * nele). Não mexe em `s` e devolve sempre listas novas.
  */
@@ -178,8 +185,9 @@ export function sanitizeOutputs(raw: unknown, opts: { migrated?: boolean } = {})
 
 /**
  * Leitura com os avisos do que precisou ser assumido: modo (só depois da migração), lado do
- * ouvido estragado quando o modo é separados (vale agora; nos outros modos ele não decide
- * nada) e mapa de "4 ou mais" corrigido quando o modo é esse.
+ * ouvido estragado em separados e em "4 ou mais" (a queda pra separados em placa de 1 a 3
+ * canais usa o lado; só em "Tudo junto" ele não decide nada) e mapa de "4 ou mais" corrigido
+ * quando o modo é esse.
  */
 function readOutputs(raw: unknown, migrated: boolean): { outputs: OutputSettings | null; warnings: OutputWarning[] } {
   const rec = isRecord(raw) ? raw : {}
@@ -190,7 +198,7 @@ function readOutputs(raw: unknown, migrated: boolean): { outputs: OutputSettings
   const multi: OutputMap = { vsPair: m.vsPair, click: m.click ?? DEFAULT_OUTPUTS.multi.click, guide: m.guide ?? DEFAULT_OUTPUTS.multi.guide }
   const warnings: OutputWarning[] = []
   if (!known) warnings.push('modo-assumido')
-  else if (mode === 'split2' && typeof rec.earOnSecond !== 'boolean') warnings.push('lado-assumido')
+  else if (mode !== 'stereo' && typeof rec.earOnSecond !== 'boolean') warnings.push('lado-assumido')
   if (mode === 'multi' && m.changed) warnings.push('mapa-ajustado')
   return { outputs: { mode, earOnSecond: rec.earOnSecond === true, multi }, warnings }
 }
