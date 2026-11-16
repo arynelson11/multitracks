@@ -342,9 +342,12 @@ export async function runPendingActions(
           const ofCycle = live.filter((p) => toBrtDate(p.originalDueDate) === a.due_date)
           const candidates = ofCycle.length > 0 ? ofCycle : live.filter((p) => toBrtDate(p.dueDate) === a.due_date)
           const paid = candidates.find((p) => PAID_STATUSES.has(p.status ?? ''))
-          // Q3/S1: cobrança já vencida sem pagamento, em qualquer status (removida
-          // não conta; estornada também não: não é dívida, COB-FINAL)
-          const unpaidPast = live.some((p) => {
+          // COB-PRE: a cobrança do PRÓPRIO ciclo cortado estornada conta como não
+          // paga (sem desfazer); estornada de outro ciclo não é dívida (COB-FINAL).
+          const cycleRefunded = !paid && candidates.some((p) => REFUNDED_STATUSES.has(p.status ?? ''))
+          // Q3/S1: cobrança já vencida sem pagamento, em qualquer status (removida e
+          // estornada de outro ciclo não contam)
+          const unpaidPast = cycleRefunded || live.some((p) => {
             const d = toBrtDate(p.dueDate)
             return !!d && d < today && !PAID_STATUSES.has(p.status ?? '') && !REFUNDED_STATUSES.has(p.status ?? '')
           })
@@ -394,6 +397,8 @@ export async function runPendingActions(
             if (!unpaidPast && next) {
               const r = await rpc<EndResult>(deps.db, 'billing_undo_safety_cut', { p_id: a.subscription_ref, p_real_due: next })
               if (r.result === 'undone') { out.done++; continue }
+            } else if (cycleRefunded) {
+              await rpc<null>(deps.db, 'billing_flag_review', { p_id: a.subscription_ref, p_note: `rede de seguranca: corte mantido, a cobranca do ciclo ${a.due_date} foi estornada` })
             } else if (unpaidPast) {
               await rpc<null>(deps.db, 'billing_flag_review', { p_id: a.subscription_ref, p_note: 'rede de seguranca: corte mantido, ha cobranca vencida sem pagamento' })
             } else {

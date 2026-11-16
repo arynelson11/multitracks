@@ -795,6 +795,19 @@ describe('rodada 5: a rede só desfaz o corte com pagamento EM DIA e sem vencida
     expect(db.tables.profiles[0].plan).toBe('essencial_mensal')
   })
 
+  it('COB-PRE (a): cobrança do PRÓPRIO ciclo cortado estornada conta como não paga: não desfaz, inativa e marca', async () => {
+    asaas!.get.mockResolvedValue({ data: [
+      payment({ id: 'p_x', subscription: 'sub_1', dueDate: '2026-11-14', originalDueDate: '2026-11-14', confirmedDate: '2026-11-10', status: 'REFUNDED' }),
+      payment({ id: 'p_next', subscription: 'sub_1', dueDate: '2026-12-14', originalDueDate: '2026-12-14', confirmedDate: null, status: 'PENDING' }),
+    ], hasMore: false })
+    await cron()
+    expect(db.rpcCalls.some((c) => c.name === 'billing_undo_safety_cut' || c.name === 'billing_payment_confirmed')).toBe(false)
+    expect(stopCalls()).toEqual([['/subscriptions/sub_1', { status: 'INACTIVE' }]])
+    expect(db.tables.billing_subscriptions[0]).toMatchObject({ status: 'canceled', needs_admin_review: true })
+    expect(String(db.tables.billing_subscriptions[0].admin_note)).toContain('a cobranca do ciclo 2026-11-14 foi estornada')
+    expect(db.tables.profiles[0].plan).toBe('free')
+  })
+
   it('S2: cobrança de um ciclo antigo adiada pra data do ciclo cortado não faz desfazer: vale a do ciclo pelo vencimento original', async () => {
     asaas!.get.mockResolvedValue({ data: [
       // ciclo 14/10, adiado no painel pra 14/11 e pago (já contado)

@@ -817,7 +817,8 @@ $$;
 -- de verdade é outra (data mudada no painel ou cobrança removida), ainda não
 -- venceu e não há cobrança vencida sem pagamento (o backend confere antes).
 -- Volta ativa com o vencimento real e marca pro admin. Recusa (e marca) se a
--- pessoa já tem outra assinatura paga ativa.
+-- pessoa já tem outra assinatura paga ativa ou se a cobrança do ciclo cortado
+-- foi estornada (COB-PRE).
 drop function if exists public.billing_undo_safety_cut(text, date);
 create or replace function public.billing_undo_safety_cut(p_id text, p_real_due date)
 returns jsonb
@@ -831,6 +832,15 @@ begin
   select * into r from public.billing_subscriptions where id = p_id for update;
   if not found or r.status <> 'canceled' or r.cancel_source <> 'unpaid' or r.asaas_stopped_at is not null then
     return jsonb_build_object('result', 'not_applicable');
+  end if;
+  -- COB-PRE: cobrança do PRÓPRIO ciclo cortado estornada conta como não paga
+  -- (o estorno não muda o motivo do corte): nada a desfazer.
+  if exists (select 1 from public.billing_payments b
+              where b.subscription_ref = p_id
+                and b.status in ('REFUNDED', 'REFUND_REQUESTED', 'REFUND_IN_PROGRESS')
+                and (coalesce(b.original_due_date, b.due_date) = r.next_due_date or b.due_date = r.next_due_date)) then
+    perform public.billing_flag_review(p_id, 'rede de seguranca: corte mantido, a cobranca do ciclo ' || to_char(r.next_due_date, 'DD/MM/YYYY') || ' foi estornada');
+    return jsonb_build_object('result', 'refused_refunded');
   end if;
   if exists (select 1 from public.billing_subscriptions o
               where o.user_id = r.user_id and o.id <> p_id and o.kind = 'asaas' and o.status = 'active') then

@@ -241,6 +241,12 @@ export function createBillingDb(tables: Record<string, Row[]> = {}, now: () => D
       billing_undo_safety_cut: (a) => {
         const r = sub(a.p_id)
         if (!r || r.status !== 'canceled' || r.cancel_source !== 'unpaid' || r.asaas_stopped_at) return { result: 'not_applicable' }
+        // COB-PRE: cobrança do próprio ciclo cortado estornada: nada a desfazer
+        if (db.tables.billing_payments.some((b) => b.subscription_ref === r.id && ['REFUNDED', 'REFUND_REQUESTED', 'REFUND_IN_PROGRESS'].includes(String(b.status))
+          && (b.original_due_date === r.next_due_date || b.due_date === r.next_due_date))) {
+          flag(r.id, `rede de seguranca: corte mantido, a cobranca do ciclo ${String(r.next_due_date)} foi estornada`)
+          return { result: 'refused_refunded' }
+        }
         if (subs().some((o) => o.user_id === r.user_id && o.id !== r.id && o.kind === 'asaas' && o.status === 'active')) {
           flag(r.id, 'rede de seguranca: corte mantido porque ja existe outra assinatura paga ativa')
           return { result: 'refused_other_active' }
