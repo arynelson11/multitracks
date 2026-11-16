@@ -4,7 +4,9 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import electron from 'vite-plugin-electron/simple'
 import type { Plugin } from 'vite'
-import { dropUnsetSearchConsoleTag, stripHtmlComments } from './src/lib/siteHtml'
+import { applyPageHead, dropUnsetSearchConsoleTag, stripHtmlComments } from './src/lib/siteHtml'
+import { PAGE_HEADS } from './src/content/site'
+import { SW_NAVIGATION_ALLOWLIST } from './src/content/routes'
 
 // DESKTOP=1 ativa o variante Electron (scripts *:desktop).
 // Sem a flag, é o build normal do site (idêntico ao de antes).
@@ -23,13 +25,30 @@ const isDesktop = !!process.env.DESKTOP
 //   safe-area, então VOLTAR/SALVAR do topo ficariam escondidos atrás do relógio.
 // - google-site-verification: troque COLE_AQUI_O_CODIGO_DO_SEARCH_CONSOLE pelo código que
 //   o Search Console mostra no método "Tag HTML" (só o valor do content).
-function siteHtml(): Plugin {
+//
+// No site (não no desktop) também escreve download.html e admin.html: o mesmo app, com
+// título, descrição, canonical e compartilhamento de cada página (o /admin com noindex).
+// Com o cleanUrls do vercel.json, /download serve download.html e endereço que não existe
+// cai no public/404.html com status 404 (antes toda URL devolvia a home com 200).
+function siteHtml({ desktop }: { desktop: boolean }): Plugin {
   return {
     name: 'playback-site-html',
     enforce: 'post',
     transformIndexHtml: {
       order: 'post',
       handler: (html) => dropUnsetSearchConsoleTag(stripHtmlComments(html)),
+    },
+    generateBundle: {
+      order: 'post',
+      handler(_options, bundle) {
+        if (desktop) return
+        const index = bundle['index.html']
+        if (!index || index.type !== 'asset') this.error('siteHtml: index.html não saiu no build')
+        const html = typeof index.source === 'string' ? index.source : new TextDecoder().decode(index.source)
+        for (const page of [PAGE_HEADS.download, PAGE_HEADS.admin]) {
+          this.emitFile({ type: 'asset', fileName: `${page.path.slice(1)}.html`, source: applyPageHead(html, page) })
+        }
+      },
     },
   }
 }
@@ -88,6 +107,10 @@ export default defineConfig({
               skipWaiting: true,
               clientsClaim: true,
               cleanupOutdatedCaches: true,
+              // O app guardado só responde às rotas do app ('/', '/download', '/admin').
+              // Sem isso, quem já visitou o site veria a landing em /privacidade, /termos,
+              // /cancelamento e em endereço que não existe (o 404 tem que vir da rede).
+              navigateFallbackAllowlist: SW_NAVIGATION_ALLOWLIST,
               globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
               runtimeCaching: [
                 {
@@ -132,6 +155,6 @@ export default defineConfig({
           }),
         ]
       : []),
-    siteHtml(),
+    siteHtml({ desktop: isDesktop }),
   ],
 })
