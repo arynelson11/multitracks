@@ -1,13 +1,15 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  FakeAnalyserNode, FakeAudioDestinationNode, FakeAudioNode, FakeAudioParam, FakeChannelMergerNode, FakeChannelSplitterNode,
-  FakeDelayNode, FakeGainNode, FakeStereoPannerNode, asAudioContext, asFake, connectedTo, createFakeAudioContext, nodesOf, reaches, valueAt,
+  FakeAudioNode, FakeAudioParam, FakeGainNode, asAudioContext, asFake, connectedTo, createFakeAudioContext, nodesOf, reaches, valueAt,
   type FakeAudioContext,
 } from '../test/fakeAudio'
+import { measure, panSignal, signalNorm, signalPeak, type Sig } from '../test/signalMeasure'
 import type { ChannelRole } from '../types'
 import { DEFAULT_OUTPUTS, effectivePan, planOutputs } from '../lib/outputPlan'
 import type { OutputPlan } from '../lib/stageContracts'
 import { createOutputGraph, type OutputGraph } from './outputGraph'
+
+afterEach(() => { vi.restoreAllMocks() })
 
 const ROLES: ChannelRole[] = ['click', 'guide', 'normal']
 const LEAK = 10 ** (-90 / 20) // -90 dBFS: teto do que pode sobrar de Click, Guia ou contagem na saída da VS
@@ -31,79 +33,6 @@ const panOf = (ctx: FakeAudioContext, node: AudioNode) => valueAt(pannerAfter(ct
 /** Quem liga em `target` (pra provar que o merger antigo ficou sem entrada). */
 const feeders = (ctx: FakeAudioContext, target: unknown) => ctx.created.filter(({ node }) => (node as FakeAudioNode).connections.some((c) => c.to === target))
 
-// ---------- Medida do sinal no grafo do fake ----------
-// O fake não processa som; esta medida segue as regras da especificação do Web Audio pra um
-// sinal linear: cada canal é uma lista de coeficientes sobre os canais da fonte (mono: 1; estéreo:
-// L e R). Ganho multiplica, atraso não muda o nível, o StereoPanner segue a fórmula da
-// especificação (a mesma que o Chrome mostrou, ver scripts/verify-audio/output-graph.mjs),
-// splitter e merger separam e juntam canais, e a mistura de canais segue channelCountMode e
-// channelInterpretation (em 'speakers' só 1 <-> 2, os únicos casos deste grafo; outro lança).
-type Sig = number[][]
-
-const zeros = (width: number) => new Array<number>(width).fill(0)
-function mixTo(sig: Sig, n: number, interpretation: ChannelInterpretation, width: number): Sig {
-  if (sig.length === n) return sig
-  if (interpretation === 'discrete') return Array.from({ length: n }, (_, c) => sig[c] ?? zeros(width))
-  if (sig.length === 1 && n === 2) return [sig[0], sig[0]]
-  if (sig.length === 2 && n === 1) return [sig[0].map((v, k) => 0.5 * (v + sig[1][k]))]
-  throw new Error(`mistura speakers de ${sig.length} pra ${n} canais não simulada`)
-}
-function panned(sig: Sig, pan: number): Sig {
-  const p = Math.min(1, Math.max(-1, pan))
-  if (sig.length === 1) {
-    const x = ((p + 1) / 2) * (Math.PI / 2)
-    return [sig[0].map((v) => v * Math.cos(x)), sig[0].map((v) => v * Math.sin(x))]
-  }
-  const [l, r] = sig
-  if (p <= 0) {
-    const x = (p + 1) * (Math.PI / 2)
-    return [l.map((v, k) => v + r[k] * Math.cos(x)), r.map((v) => v * Math.sin(x))]
-  }
-  const x = p * (Math.PI / 2)
-  return [l.map((v) => v * Math.cos(x)), r.map((v, k) => v + l[k] * Math.sin(x))]
-}
-
-/** O que chega em cada canal do destino vindo das fontes (`sources`: nó sem entrada -> sinal dele). */
-function measure(ctx: FakeAudioContext, sources: Map<unknown, Sig>, width: number): Sig {
-  const incoming = new Map<unknown, { from: FakeAudioNode; output: number; input: number }[]>()
-  for (const { node } of ctx.created) {
-    const from = node as FakeAudioNode
-    for (const c of from.connections) {
-      if (c.to instanceof FakeAudioParam) continue
-      incoming.set(c.to, [...(incoming.get(c.to) ?? []), { from, output: c.output, input: c.input }])
-    }
-  }
-  const memo = new Map<unknown, Sig>()
-  const outputOf = (node: FakeAudioNode, output: number): Sig => {
-    const sig = processed(node)
-    return node instanceof FakeChannelSplitterNode ? [sig[output] ?? zeros(width)] : sig
-  }
-  const inputOf = (node: FakeAudioNode, input: number): Sig => {
-    const parts = (incoming.get(node) ?? []).filter((c) => c.input === input).map((c) => outputOf(c.from, c.output))
-    const widest = Math.max(1, ...parts.map((s) => s.length))
-    const n = node.channelCountMode === 'explicit' ? node.channelCount : node.channelCountMode === 'clamped-max' ? Math.min(widest, node.channelCount) : widest
-    const sum: Sig = Array.from({ length: n }, () => zeros(width))
-    for (const part of parts) mixTo(part, n, node.channelInterpretation, width).forEach((ch, c) => ch.forEach((v, k) => { sum[c][k] += v }))
-    return sum
-  }
-  const processed = (node: FakeAudioNode): Sig => {
-    const known = sources.get(node) ?? memo.get(node)
-    if (known) return known
-    let out: Sig
-    if (node instanceof FakeChannelMergerNode) out = Array.from({ length: node.numberOfInputs }, (_, i) => inputOf(node, i)[0])
-    else {
-      const sig = inputOf(node, 0)
-      if (node instanceof FakeGainNode) { const k = valueAt(node.gain, ctx.currentTime); out = sig.map((ch) => ch.map((v) => v * k)) }
-      else if (node instanceof FakeStereoPannerNode) out = panned(sig, valueAt(node.pan, ctx.currentTime))
-      else if (node instanceof FakeDelayNode || node instanceof FakeChannelSplitterNode || node instanceof FakeAnalyserNode || node instanceof FakeAudioDestinationNode) out = sig
-      else throw new Error(`${node.kind} não simulado`)
-    }
-    memo.set(node, out)
-    return out
-  }
-  return processed(ctx.destination)
-}
-
 interface FakeChannel { src: FakeGainNode; sig: Sig }
 /** Canal como o motor monta: fonte -> panner (mono com 1 canal, como o setupPannerForBuffer) -> fader -> `into`. */
 function channel(ctx: FakeAudioContext, into: AudioNode, { mono, pan, gain = 0.8 }: { mono: boolean; pan: number; gain?: number }): FakeChannel {
@@ -126,9 +55,8 @@ function legacy(opts: { mono: boolean; pan: number; gain?: number; master?: numb
   return measure(ctx, new Map([[ch.src, ch.sig]]), ch.sig.length)
 }
 function measureChannel(ctx: FakeAudioContext, ch: FakeChannel): Sig { return measure(ctx, new Map([[ch.src, ch.sig]]), ch.sig.length) }
-/** Pico possível no canal (soma dos módulos dos coeficientes, fonte de pico 1). */
-const peak = (coefs: number[] | undefined) => (coefs ?? []).reduce((a, v) => a + Math.abs(v), 0)
-const norm = (coefs: number[]) => Math.hypot(...coefs)
+const peak = signalPeak
+const norm = signalNorm
 /** Mesmo nível (erro <= 0,1 dB) e mesmos coeficientes; lado em silêncio (abaixo de -120 dB) só confere o silêncio. */
 function expectSameLevel(got: number[], ref: number[]) {
   got.forEach((v, k) => expect(Math.abs(v - ref[k])).toBeLessThan(1e-9))
@@ -258,6 +186,7 @@ describe('createOutputGraph: rota por modo', () => {
   })
 
   it('em 4 ou mais, Click ou Guia sem saída não ligam o barramento', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const semClick: OutputPlan = { mode: 'multi', channels: 4, vs: [0, 1], click: [], guide: [3], panByRole: true, fellBackFrom: null }
     const { ctx, g } = setup(semClick, 4)
     const merger = nodesOf(ctx, 'ChannelMergerNode')[0]
@@ -265,9 +194,12 @@ describe('createOutputGraph: rota por modo', () => {
     expect(reaches(g.countDelay, ctx.destination)).toBe(false)
     expect(reaches(g.input('guide'), merger, 3)).toBe(true)
     expect(reaches(g.input('normal'), merger, 0)).toBe(true)
+    // Lista vazia é decisão do plano (aviso sem-saida-ouvido da T6), não plano malformado: sem console.warn.
+    expect(warn).not.toHaveBeenCalled()
   })
 
   it('plano malformado com Click ou Guia no lugar da VS não liga esse barramento', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const noPar: OutputPlan = { mode: 'multi', channels: 4, vs: [0, 1], click: [1], guide: [7], panByRole: true, fellBackFrom: null }
     const a = setup(noPar, 4)
     expect(reaches(a.g.input('click'), a.ctx.destination)).toBe(false)
@@ -282,10 +214,46 @@ describe('createOutputGraph: rota por modo', () => {
     expect(reaches(c.g.input('click'), c.ctx.destination)).toBe(false)
     expect(reaches(c.g.countDelay, c.ctx.destination)).toBe(false)
     expect(reaches(c.g.input('guide'), c.ctx.destination)).toBe(true)
+    expect(warn).toHaveBeenCalledTimes(3) // um por montagem
+  })
+
+  it('a guarda avisa com o motivo, uma vez por apply, e plano válido não avisa', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    for (const [plan, max] of [[stereo(), 2], [split2(), 2], [split2(true), 2], [multi(), 8], [multi(3), 3], [multi(18, { vsPair: 16, click: 1, guide: 0 }), 18]] as const) {
+      setup(plan, max).g.apply(plan)
+    }
+    expect(warn).not.toHaveBeenCalled()
+
+    const { g } = setup(split2(), 4)
+    g.apply({ mode: 'multi', channels: 4, vs: [0, 1], click: [1, 2], guide: [9], panByRole: true, fellBackFrom: null })
+    expect(warn).toHaveBeenCalledTimes(1)
+    const msg = String(warn.mock.calls[0][0])
+    expect(msg).toContain('Click na saída 2, que é da VS')
+    expect(msg).toContain('Guia na saída 10, que não existe nesta placa (4 canais)')
+    expect(msg).toContain('nunca na PA')
+    expect(msg.includes(String.fromCharCode(0x2014))).toBe(false)
+    g.apply({ mode: 'split2', channels: 2, vs: [0], click: [0], guide: [1], panByRole: true, fellBackFrom: null })
+    expect(warn).toHaveBeenCalledTimes(2)
+    expect(String(warn.mock.calls[1][0])).toContain('Click no mesmo lado da VS (saída 1)')
+    g.apply(split2())
+    expect(warn).toHaveBeenCalledTimes(2)
   })
 })
 
 describe('createOutputGraph: sinal medido (R-24 e nada na PA)', () => {
+  it('a medida do fake bate com o StereoPanner medido no Chrome 157', () => {
+    // Valores renderizados num OfflineAudioContext do Chrome 157 (entrada constante, saída [L, R]).
+    const casos: [Sig, number, [number, number]][] = [
+      [[[0.5], [0.25]], 0, [0.5, 0.25]], [[[0], [0.5]], 0, [3.0616171314629196e-17, 0.5]],
+      [[[0.5], [0.25]], -1, [0.75, 0]], [[[0.5], [0.25]], 1, [3.0616171314629196e-17, 0.75]],
+      [[[0.5]], 0, [0.3535533845424652, 0.3535533845424652]], [[[0.5]], -1, [0.5, 0]], [[[0.5]], 1, [3.0616171314629196e-17, 0.5]],
+    ]
+    for (const [sig, pan, [l, r]] of casos) {
+      const [outL, outR] = panSignal(sig, pan)
+      expect(outL[0]).toBeCloseTo(l, 7); expect(outR[0]).toBeCloseTo(r, 7)
+    }
+  })
+
   it('separados: na saída da VS nada do Click, da Guia ou da contagem passa de -90 dBFS, nem com o pan do canal errado', () => {
     for (const earOnSecond of [false, true]) {
       const plan = split2(earOnSecond); const vsOut = plan.vs[0]; const earOut = plan.click[0]
@@ -426,6 +394,22 @@ describe('createOutputGraph: apply, levels e dispose', () => {
     expect(g.plan).toMatchObject({ vs: [1], click: [0] })
   })
 
+  it('montar com plano que não cabe no aparelho lança RangeError antes de criar qualquer nó', () => {
+    const bad: OutputPlan[] = [
+      multi(8),
+      { mode: 'multi', channels: 0, vs: [0, 1], click: [], guide: [], panByRole: true, fellBackFrom: null },
+      { mode: 'multi', channels: 40, vs: [0, 1], click: [2], guide: [3], panByRole: true, fellBackFrom: null },
+      { mode: 'multi', channels: Number.NaN, vs: [0, 1], click: [2], guide: [3], panByRole: true, fellBackFrom: null },
+    ]
+    for (const plan of bad) {
+      const ctx = createFakeAudioContext({ maxChannelCount: plan.channels === 40 ? 64 : 2 })
+      expect(() => createOutputGraph(asAudioContext(ctx), plan)).toThrow(RangeError)
+      expect(ctx.created).toHaveLength(0)
+      expect(feeders(ctx, ctx.destination)).toHaveLength(0)
+      expect([ctx.destination.channelCount, ctx.destination.channelInterpretation]).toEqual([2, 'speakers'])
+    }
+  })
+
   it('apply com plano maior que o aparelho lança antes de mexer na rota', () => {
     const { ctx, g } = setup(split2(), 2)
     const created = ctx.created.length
@@ -435,6 +419,40 @@ describe('createOutputGraph: apply, levels e dispose', () => {
     expect(ctx.destination.channelCount).toBe(2)
     for (const role of ROLES) expect(reaches(g.input(role), ctx.destination)).toBe(true)
     expect(panOf(ctx, g.input('click'))).toBe(-1)
+  })
+
+  it('apply desliga a rota velha e acerta pans e destino antes de ligar qualquer coisa', () => {
+    // O suspend do Chrome offline deixa o apply atômico; aqui a ORDEM fica travada: nenhum
+    // connect antes do último disconnect, dos 3 pans dos barramentos e do destino.
+    const trocas = [
+      [multi(), split2(true), 8], [split2(), multi(), 8], [stereo(), split2(), 2], [split2(), split2(true), 2],
+      [multi(), multi(8, { vsPair: 2, click: 0, guide: 5 }), 8], [stereo(), multi(4), 4], [multi(3), split2(), 3],
+    ] as const
+    for (const [from, to, max] of trocas) {
+      const { ctx, g } = setup(from, max)
+      const busPans: unknown[] = [g.input('click'), g.input('guide'), g.countDelay].map((n) => pannerAfter(ctx, n).pan)
+      const connect = vi.spyOn(FakeAudioNode.prototype, 'connect')
+      const disconnect = vi.spyOn(FakeAudioNode.prototype, 'disconnect')
+      const setValue = vi.spyOn(FakeAudioParam.prototype, 'setValueAtTime')
+      const destSetters = [
+        vi.spyOn(FakeAudioNode.prototype, 'channelCount', 'set'),
+        vi.spyOn(FakeAudioNode.prototype, 'channelCountMode', 'set'),
+        vi.spyOn(FakeAudioNode.prototype, 'channelInterpretation', 'set'),
+      ]
+      g.apply(to)
+      const orderOf = (spy: { mock: { contexts: unknown[]; invocationCallOrder: number[] } }, keep: (self: unknown) => boolean) =>
+        spy.mock.invocationCallOrder.filter((_, i) => keep(spy.mock.contexts[i]))
+      const pans = orderOf(setValue, (self) => busPans.includes(self))
+      const dest = destSetters.flatMap((spy) => orderOf(spy, (self) => self === ctx.destination))
+      const cuts = disconnect.mock.invocationCallOrder
+      const links = connect.mock.invocationCallOrder
+      expect(pans).toHaveLength(3)
+      expect(dest.length).toBeGreaterThanOrEqual(2)
+      expect(cuts.length).toBeGreaterThan(0)
+      expect(links.length).toBeGreaterThan(0)
+      expect(Math.max(...cuts, ...pans, ...dest)).toBeLessThan(Math.min(...links))
+      vi.restoreAllMocks()
+    }
   })
 
   it('levels lê o pico das saídas 1 e 2, de 0 a 1, sem criar nada', () => {

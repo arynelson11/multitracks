@@ -13,7 +13,8 @@
 //   estéreo, no mesmo nível com ou sem outro canal tocando. Em "4 ou mais" o pan é -1 e só o
 //   lado esquerdo do barramento vai pra saída própria.
 // - O barramento da VS não ganha panner: o som dela fica exatamente o da v1.4.15.
-// - Saída de Click ou Guia que cairia na VS (plano malformado) não é ligada: fica mudo, nunca na PA.
+// - Saída de Click ou Guia que cairia na VS (plano malformado) não é ligada: fica mudo, nunca na PA,
+//   e um console.warn por `apply` diz o motivo.
 //
 // Nível igual ao da v1.4.15 (R-24): StereoPanner em ±1 deixa a faixa mono inteira, e a estéreo
 // como L+R, no lado escolhido; um segundo panner no mesmo lado não muda esse nível. Em pan 0
@@ -24,13 +25,28 @@ import { effectivePan } from '../lib/outputPlan'
 import type { OutputPlan } from '../lib/stageContracts'
 
 export interface OutputGraph {
-  input(role: ChannelRole): GainNode // barramento do papel
+  /**
+   * Barramento do papel. Espera sinal ESTÉREO: o fader do canal, que vem depois do StereoPanner
+   * dele. Fonte mono ligada direto aqui muda de nível: no barramento do Click sai +6 dB (o
+   * panner da contagem deixa o barramento sempre em 2 canais, a mono é copiada nos dois lados e
+   * o pan ±1 soma os dois); na Guia o nível depende do que mais estiver ligado; em "4 ou mais",
+   * mono direto no barramento da VS sai só na saída esquerda do par. Som mono (bipe, oscilador)
+   * entra pelo `countDelay` ou por um StereoPanner próprio antes do barramento.
+   */
+  input(role: ChannelRole): GainNode
   readonly guideGain: AudioParam     // calar a guia no último compasso
   readonly countDelay: DelayNode     // contagem sem canal de click (R-35): liga no barramento do click; o motor ajusta delayTime = L
   readonly master: GainNode          // volume principal: FADE e AUTO continuam aqui
   readonly masterMute: GainNode      // mudo geral
   readonly plan: OutputPlan
-  apply(plan: OutputPlan): void      // religa barramentos -> roteador -> principal; barramentos e canais ficam
+  /**
+   * Religa barramentos -> roteador -> principal com o plano novo; barramentos, panners, atraso,
+   * principal, mudo e canais ficam. Lança RangeError, SEM mexer na rota de agora, se o plano tem
+   * mais canais que o aparelho (`destination.maxChannelCount`) ou um "4 ou mais" fora de 1 a 32
+   * saídas: refaça o plano com `planOutputs(config, destination.maxChannelCount)` e chame de
+   * novo. Depois de `dispose` não faz nada.
+   */
+  apply(plan: OutputPlan): void
   levels(): { l: number; r: number } // pico das saídas 1 e 2 (0..1) pro medidor do PRINCIPAL
   dispose(): void
 }
@@ -39,11 +55,16 @@ export interface OutputGraph {
 const COUNT_MAX_DELAY = 1
 /** Janela do medidor: 1024 amostras (21 ms a 48 kHz) cobrem um quadro de tela. */
 const METER_FFT = 1024
+/** Entradas que um ChannelMerger aceita (e o teto de saídas do plano, MAX_OUTPUTS da T6). */
+const MAX_ROUTER_OUTPUTS = 32
 
 /** Uma ligação do roteador (saída e entrada só no splitter e no merger). */
 interface Wire { from: AudioNode; to: AudioNode; output?: number; input?: number }
-/** Roteador de um plano: nós dele (somem no próximo `apply`), ligações internas e as que saem dos barramentos. */
-interface Route { nodes: AudioNode[]; inner: Wire[]; fromBuses: Wire[] }
+/**
+ * Roteador de um plano: nós dele (somem no próximo `apply`), ligações internas, as que saem dos
+ * barramentos e o que a guarda deixou de fora num plano malformado (motivos pro aviso).
+ */
+interface Route { nodes: AudioNode[]; inner: Wire[]; fromBuses: Wire[]; refused: string[] }
 
 const copyPlan = (p: OutputPlan): OutputPlan => ({ ...p, vs: [...p.vs], click: [...p.click], guide: [...p.guide] })
 const wire = (w: Wire): void => { w.from.connect(w.to, w.output ?? 0, w.input ?? 0) }
@@ -52,11 +73,29 @@ function unwire(w: Wire): void {
   try { w.from.disconnect(w.to) } catch { /* já desligado */ }
 }
 
+/** Lança RangeError se o plano não cabe no aparelho (ou no roteador). Não mexe em nada. */
+function checkChannels(ctx: AudioContext, p: OutputPlan): void {
+  const channels = p.mode === 'multi' ? p.channels : 2
+  if (p.mode === 'multi' && !(Number.isInteger(channels) && channels >= 1 && channels <= MAX_ROUTER_OUTPUTS)) {
+    throw new RangeError(`plano de "4 ou mais" com ${channels} saídas: o roteador aceita de 1 a ${MAX_ROUTER_OUTPUTS}`)
+  }
+  const dest = ctx.destination
+  if (channels !== dest.channelCount && channels > dest.maxChannelCount) {
+    throw new RangeError(`plano de ${channels} saídas num aparelho de ${dest.maxChannelCount}: refaça o plano com os canais do aparelho`)
+  }
+}
+
+/** Saída contada a partir de 1 pro texto do aviso (valor estranho aparece como veio). */
+const outputName = (o: number) => (Number.isInteger(o) ? String(o + 1) : String(o))
+
 /**
  * Monta os barramentos, o principal, o mudo e o medidor uma vez, e o roteador de `initial`.
- * Os barramentos nascem com ganho 1 e o atraso da contagem com 0.
+ * Os barramentos nascem com ganho 1 e o atraso da contagem com 0. Lança RangeError ANTES de
+ * criar qualquer nó, nas mesmas condições do `apply` (plano com mais canais que o aparelho):
+ * nada fica meio montado nem ligado no destino.
  */
 export function createOutputGraph(ctx: AudioContext, initial: OutputPlan): OutputGraph {
+  checkChannels(ctx, initial)
   const buses: Record<ChannelRole, GainNode> = { click: ctx.createGain(), guide: ctx.createGain(), normal: ctx.createGain() }
   const clickPan = ctx.createStereoPanner()
   const guidePan = ctx.createStereoPanner()
@@ -73,7 +112,6 @@ export function createOutputGraph(ctx: AudioContext, initial: OutputPlan): Outpu
   countDelay.connect(countPan)
   countPan.connect(buses.click)
   master.connect(masterMute)
-  masterMute.connect(ctx.destination)
   masterMute.connect(meterSplit)
   meters.forEach((m, side) => {
     m.fftSize = METER_FFT
@@ -83,40 +121,48 @@ export function createOutputGraph(ctx: AudioContext, initial: OutputPlan): Outpu
 
   const owned: AudioNode[] = [...Object.values(buses), clickPan, guidePan, countPan, countDelay, master, masterMute, meterSplit, ...meters]
   let plan = copyPlan(initial)
-  let route: Route = { nodes: [], inner: [], fromBuses: [] }
+  let route: Route = { nodes: [], inner: [], fromBuses: [], refused: [] }
   let disposed = false
 
-  /** Saídas de um papel de ouvido que dá pra ligar: existem na placa e não são da VS. */
-  const earOutputs = (p: OutputPlan, outputs: readonly number[]) =>
-    outputs.filter((o) => Number.isInteger(o) && o >= 0 && o < p.channels && !p.vs.includes(o))
+  const onBoard = (p: OutputPlan, o: number) => Number.isInteger(o) && o >= 0 && o < p.channels
 
+  /** Só cria os nós do roteador novo e diz o que ligar; nada é ligado aqui. */
   function buildRoute(p: OutputPlan): Route {
+    const refused: string[] = []
     if (p.mode !== 'multi') {
       const fromBuses: Wire[] = [{ from: buses.normal, to: master }]
       // Em separados o lado sai do pan; papel de ouvido com o mesmo lado da VS (plano malformado) não liga.
       const vsSide = effectivePan(0, 'normal', p)
-      if (p.mode === 'stereo' || effectivePan(0, 'click', p) !== vsSide) fromBuses.push({ from: clickPan, to: master })
-      if (p.mode === 'stereo' || effectivePan(0, 'guide', p) !== vsSide) fromBuses.push({ from: guidePan, to: master })
-      return { nodes: [], inner: [], fromBuses }
+      for (const [role, pan, label] of [['click', clickPan, 'Click'], ['guide', guidePan, 'Guia']] as const) {
+        if (p.mode === 'stereo' || effectivePan(0, role, p) !== vsSide) fromBuses.push({ from: pan, to: master })
+        else refused.push(`${label} no mesmo lado da VS (saída ${outputName(p.vs[0])})`)
+      }
+      return { nodes: [], inner: [], fromBuses, refused }
     }
     const merger = ctx.createChannelMerger(p.channels)
     const vsSplit = ctx.createChannelSplitter(2)
     const nodes: AudioNode[] = [merger, vsSplit]
     const inner: Wire[] = [{ from: merger, to: master }]
     p.vs.slice(0, 2).forEach((o, side) => {
-      if (Number.isInteger(o) && o >= 0 && o < p.channels) inner.push({ from: vsSplit, to: merger, output: side, input: o })
+      if (onBoard(p, o)) inner.push({ from: vsSplit, to: merger, output: side, input: o })
+      else refused.push(`VS na saída ${outputName(o)}, que não existe nesta placa (${p.channels} canais)`)
     })
     const fromBuses: Wire[] = [{ from: buses.normal, to: vsSplit }]
-    for (const [pan, outputs] of [[clickPan, p.click], [guidePan, p.guide]] as const) {
-      const ear = earOutputs(p, outputs)
-      if (ear.length === 0) continue // sem saída (aviso sem-saida-ouvido): o barramento não liga
+    for (const [pan, outputs, label] of [[clickPan, p.click, 'Click'], [guidePan, p.guide, 'Guia']] as const) {
+      // Saída de ouvido que dá pra ligar: existe na placa e não é da VS.
+      const ear = outputs.filter((o) => onBoard(p, o) && !p.vs.includes(o))
+      for (const o of outputs) {
+        if (!onBoard(p, o)) refused.push(`${label} na saída ${outputName(o)}, que não existe nesta placa (${p.channels} canais)`)
+        else if (p.vs.includes(o)) refused.push(`${label} na saída ${outputName(o)}, que é da VS`)
+      }
+      if (ear.length === 0) continue // sem saída (aviso sem-saida-ouvido do plano, ou tudo recusado): o barramento não liga
       const split = ctx.createChannelSplitter(2)
       nodes.push(split)
       // Pan -1: o barramento inteiro está no lado esquerdo; só ele vai pra saída própria.
       for (const o of ear) inner.push({ from: split, to: merger, output: 0, input: o })
       fromBuses.push({ from: pan, to: split })
     }
-    return { nodes, inner, fromBuses }
+    return { nodes, inner, fromBuses, refused }
   }
 
   function configureDestination(p: OutputPlan): void {
@@ -128,17 +174,15 @@ export function createOutputGraph(ctx: AudioContext, initial: OutputPlan): Outpu
   }
 
   /**
-   * Ordem pensada pro ao vivo: tudo que pode lançar (plano maior que o aparelho, merger
-   * inválido) acontece antes de mexer na rota de agora. Depois desliga a rota velha (um
-   * instante de silêncio, nunca Click na PA), acerta os pans e o destino e só então liga a nova.
+   * Ordem pensada pro ao vivo: tudo que pode lançar (plano maior que o aparelho, roteador
+   * inválido) acontece antes de mexer na rota de agora, e os nós novos só nascem, sem ligação.
+   * Depois desliga a rota velha inteira (um instante de silêncio, nunca Click na PA), acerta os
+   * pans e o destino e só então liga o roteador novo e os barramentos nele. Nenhum quantum
+   * renderizado no meio mistura a rota velha com a nova.
    */
   function reroute(p: OutputPlan): void {
-    const channels = p.mode === 'multi' ? p.channels : 2
-    if (channels !== ctx.destination.channelCount && channels > ctx.destination.maxChannelCount) {
-      throw new RangeError(`plano de ${channels} saídas num aparelho de ${ctx.destination.maxChannelCount}: refaça o plano com os canais do aparelho`)
-    }
+    checkChannels(ctx, p)
     const next = buildRoute(p)
-    next.inner.forEach(wire)
     route.fromBuses.forEach(unwire)
     for (const n of route.nodes) n.disconnect()
     const now = ctx.currentTime
@@ -146,9 +190,13 @@ export function createOutputGraph(ctx: AudioContext, initial: OutputPlan): Outpu
     guidePan.pan.setValueAtTime(effectivePan(0, 'guide', p), now)
     countPan.pan.setValueAtTime(effectivePan(0, 'click', p), now)
     configureDestination(p)
+    next.inner.forEach(wire)
     next.fromBuses.forEach(wire)
     route = next
     plan = copyPlan(p)
+    if (next.refused.length > 0) {
+      console.warn(`[saídas] plano de saídas com erro (${p.mode}): ${next.refused.join('; ')}. Isso fica de fora, mudo, nunca na PA: refaça o plano com planOutputs.`)
+    }
   }
 
   function peakOf(meter: AnalyserNode): number {
@@ -162,6 +210,8 @@ export function createOutputGraph(ctx: AudioContext, initial: OutputPlan): Outpu
   }
 
   reroute(initial)
+  // O som só chega no destino com o roteador pronto.
+  masterMute.connect(ctx.destination)
 
   return {
     input: (role) => buses[role],
@@ -181,7 +231,7 @@ export function createOutputGraph(ctx: AudioContext, initial: OutputPlan): Outpu
       if (disposed) return
       disposed = true
       for (const n of [...route.nodes, ...owned]) n.disconnect()
-      route = { nodes: [], inner: [], fromBuses: [] }
+      route = { nodes: [], inner: [], fromBuses: [], refused: [] }
     },
   }
 }
