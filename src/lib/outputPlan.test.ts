@@ -16,7 +16,7 @@ const rawMulti = (m: Record<string, unknown>): OutputSettings => ({ ...MULTI, mu
 
 // Planos variados: os três modos, aparelhos de 0 a 64 canais, os dois lados e mapas válidos e inválidos.
 const planosVariados: (OutputPlan & { warning: string | null })[] = []
-for (const mode of ['stereo', 'split2', 'multi'] as const) for (const max of [0, 2, 3, 4, 8, 18, 64]) for (const earOnSecond of [false, true])
+for (const mode of ['stereo', 'split2', 'multi'] as const) for (const max of [0, 1, 2, 3, 4, 8, 18, 64]) for (const earOnSecond of [false, true])
   for (const [vsPair, click, guide] of [[0, 2, 3], [4, 0, 1], [2, 5, 5], [1, 2, 3], [30, 0, 31]])
     planosVariados.push(planOutputs({ mode, earOnSecond, multi: { vsPair, click, guide } }, max))
 
@@ -68,9 +68,11 @@ describe('padrão compartilhado', () => {
 
 describe('planOutputs', () => {
   it('nenhum plano separado põe click ou guia do lado ou na saída da VS', () => {
-    for (const mode of ['split2', 'multi'] as const) for (const max of [0, 1, 2, 3, 4, 6, 8, 18, 64]) for (const earOnSecond of [false, true])
+    for (const mode of ['split2', 'multi'] as const) for (const max of [0, 1, 1.5, 2, 3, 4, 6, 8, 18, 64]) for (const earOnSecond of [false, true])
       for (const vsPair of [-2, 0, 1, 2, 4, 30]) for (const click of [-1, 0, 1, 2, 3, 5, 40]) for (const guide of [0, 1, 3, 7]) {
         const p = planOutputs({ mode, earOnSecond, multi: { vsPair, click, guide } }, max)
+        // Ruling T6-mono: só o aparelho de 1 canal junta tudo, e sempre com o aviso.
+        if (p.mode === 'stereo') { expect(Math.floor(max)).toBe(1); expect(p.warning).toBe('mono'); continue }
         for (const o of [...p.click, ...p.guide]) expect(p.vs).not.toContain(o)
         for (const o of [...p.vs, ...p.click, ...p.guide]) { expect(o).toBeGreaterThanOrEqual(0); expect(o).toBeLessThan(p.channels) }
         if (p.mode === 'split2') for (const pan of [-1, -0.3, 0, 1]) {
@@ -79,13 +81,13 @@ describe('planOutputs', () => {
           expect(effectivePan(pan, 'normal', p)).toBe(-effectivePan(pan, 'guide', p))
         }
       }
-  })
+  }, 30000)
 
   it('2 canais com 4 ou mais escolhido cai em separados e avisa', () => expect(planOutputs({ ...DEFAULT_OUTPUTS, mode: 'multi' }, 2)).toMatchObject({ mode: 'split2', fellBackFrom: 'multi', click: [0], vs: [1] }))
 
   it('2 canais: 4 ou mais sempre cai em separados no lado escolhido, nunca deixa o fone sem click', () => {
     const lado = (earOnSecond: boolean) => (earOnSecond ? { vs: [0], click: [1], guide: [1] } : { vs: [1], click: [0], guide: [0] })
-    for (const max of [NaN, Infinity, -Infinity, -1, 0, 1, 2, 2.9]) for (const earOnSecond of [false, true])
+    for (const max of [NaN, Infinity, -Infinity, -1, 0, 2, 2.9]) for (const earOnSecond of [false, true])
       for (const m of [MULTI, multi(2, 0, 1), multi(4, 2, 3), multi(30, 0, 0), rawMulti({ vsPair: null, click: 2, guide: 3 }), rawMulti({})])
         expect(planOutputs({ ...m, earOnSecond }, max)).toEqual({ mode: 'split2', channels: 2, ...lado(earOnSecond), panByRole: true, fellBackFrom: 'multi', warning: 'poucos-canais' })
   })
@@ -114,6 +116,25 @@ describe('planOutputs', () => {
         if (valido && cabe && (p.vs[0] !== vsPair || p.click[0] !== click || p.guide[0] !== guide || p.warning !== null)) falhas.push(`${nome}: mapa trocado`)
       }
     expect(falhas).toEqual([])
+  }, 30000)
+
+  it('1 canal: qualquer modo salvo vira tudo junto na saída 1, com o aviso mono (Ruling T6-mono)', () => {
+    const salvos: OutputSettings[] = [STEREO, DEFAULT_OUTPUTS, MULTI, multi(4, 2, 3), multi(0, 0, 1), rawMulti({})]
+    for (const max of [1, 1.5, 1.99]) for (const earOnSecond of [false, true]) for (const m of salvos) {
+      const p = planOutputs({ ...m, earOnSecond }, max)
+      expect(p).toEqual({ mode: 'stereo', channels: 1, vs: [0], click: [0], guide: [0], panByRole: false, fellBackFrom: m.mode === 'stereo' ? null : m.mode, warning: 'mono' })
+      // Sem pan pelo papel: o knob vale, como em tudo junto.
+      for (const role of ROLES) for (const k of KNOBS) expect(effectivePan(k, role, p)).toBe(k)
+    }
+    expect(OUTPUT_WARNING_TEXT.mono).toBe('Esta saída tem 1 canal: Click, Guia e VS saem juntos.')
+  })
+
+  it('2 canais ou mais (e valor estranho, que conta como 2) nunca dão o aviso mono', () => {
+    for (const mode of ['stereo', 'split2', 'multi'] as const) for (const max of [NaN, Infinity, -1, 0, 2, 2.9, 3, 4, 8, 64]) {
+      const p = planOutputs({ ...DEFAULT_OUTPUTS, mode }, max)
+      expect(p.warning).not.toBe('mono')
+      expect(p.channels).toBeGreaterThanOrEqual(2)
+    }
   })
 
   it('placa menor com o mesmo cabeamento: Click e Guia vão pra saídas livres, fora do par da VS', () => {
@@ -371,7 +392,7 @@ describe('avisos da leitura', () => {
   })
 
   it('todo aviso tem texto em português, sem travessão', () => {
-    expect(Object.keys(OUTPUT_WARNING_TEXT).sort()).toEqual(['lado-assumido', 'mapa-ajustado', 'modo-assumido', 'poucos-canais', 'sem-saida-ouvido'])
+    expect(Object.keys(OUTPUT_WARNING_TEXT).sort()).toEqual(['lado-assumido', 'mapa-ajustado', 'modo-assumido', 'mono', 'poucos-canais', 'sem-saida-ouvido'])
   })
 })
 
@@ -416,6 +437,14 @@ describe('outputSummary', () => {
     expect(outputSummary({ mode: 'multi', channels: 3, vs: [0, 1], click: [], guide: [], panByRole: true, fellBackFrom: 'multi' })).toBe('VS nas saídas 1 e 2 · Click e Guia sem saída')
   })
 
+  it('1 canal: o resumo nunca fala em saída 2', () => {
+    for (const m of [STEREO, DEFAULT_OUTPUTS, MULTI, { ...MULTI, earOnSecond: true }]) {
+      const s = outputSummary(planOutputs(m, 1))
+      expect(s).toBe('Tudo junto na saída 1')
+      expect(s).not.toMatch(/2|saídas/)
+    }
+  })
+
   it('resumo em português sem travessão', () => {
     expect(planosVariados.length).toBeGreaterThan(100)
     for (const p of planosVariados) {
@@ -428,7 +457,7 @@ describe('outputSummary', () => {
 
   it('aviso de cada plano tem texto em português, sem travessão', () => {
     const vistos = new Set(planosVariados.map((p) => p.warning).filter((w) => w !== null))
-    expect([...vistos].sort()).toEqual(['mapa-ajustado', 'poucos-canais'])
+    expect([...vistos].sort()).toEqual(['mapa-ajustado', 'mono', 'poucos-canais'])
     for (const text of Object.values(OUTPUT_WARNING_TEXT)) {
       expect(text.length).toBeGreaterThan(0)
       expect(text).not.toContain(TRAVESSAO)

@@ -48,11 +48,39 @@ describe('AudioOutputsSection', () => {
     expect(container.textContent).toContain('Esta saída tem 2 canais.')
     fireEvent.click(multi)
     expect(onChange).not.toHaveBeenCalled()
-    // Placa de 1 canal (fone em modo de chamada): singular, e a opção continua desligada.
+    // 3 canais: separados continua ligado e a nota diz quantos canais.
     cleanup()
-    const one = renderOutputs({ maxChannels: 1 })
+    const tres = renderOutputs({ maxChannels: 3 })
+    expect(modeRadio('Click e Guia separados').disabled).toBe(false)
     expect(modeRadio('4 ou mais saídas').disabled).toBe(true)
-    expect(one.container.textContent).toContain('Esta saída tem 1 canal.')
+    expect(tres.container.textContent).toContain('Esta saída tem 3 canais.')
+  })
+
+  it('aparelho de 1 canal: separados e 4 ou mais desligados, aviso mono e resumo sem saída 2 (Ruling T6-mono)', () => {
+    for (const outputs of [STEREO, SPLIT, { ...SPLIT, earOnSecond: true }, MULTI]) {
+      const { onChange, container } = renderOutputs({ outputs, maxChannels: 1 })
+      expect(modeRadio('Tudo junto').disabled).toBe(false)
+      expect(modeRadio('Click e Guia separados').disabled).toBe(true)
+      expect(modeRadio('4 ou mais saídas').disabled).toBe(true)
+      expect(alerts(container)).toEqual(['Esta saída tem 1 canal: Click, Guia e VS saem juntos.'])
+      expect(container.querySelector('[data-output-alert]')!.className).toContain('text-ps-alert')
+      const t = container.textContent!
+      expect(t).toContain('Tudo junto na saída 1')
+      expect(t).not.toMatch(/saídas? [2-9]|saídas \d/)
+      // O aviso já diz o canal: a nota da opção desligada não repete.
+      expect(t.split('Esta saída tem').length - 1).toBe(1)
+      // Sem chave de lado nem seletores: não há o que separar.
+      expect(screen.queryByRole('radiogroup', { name: 'Click e Guia na saída' })).toBeNull()
+      expect(screen.queryByRole('combobox')).toBeNull()
+      fireEvent.click(modeRadio('Click e Guia separados'))
+      fireEvent.click(modeRadio('4 ou mais saídas'))
+      expect(onChange).not.toHaveBeenCalled()
+      cleanup()
+    }
+    // Com separados gravado, voltar pra Tudo junto continua possível.
+    const { onChange } = renderOutputs({ outputs: SPLIT, maxChannels: 1 })
+    fireEvent.click(modeRadio('Tudo junto'))
+    expect(onChange).toHaveBeenLastCalledWith({ mode: 'stereo', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } })
   })
 
   it('4 ou mais saídas liberado em placa de 8 canais, com os seletores de multiChoices', () => {

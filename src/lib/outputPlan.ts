@@ -13,12 +13,13 @@ type OutputMap = OutputSettings['multi']
 
 /**
  * Aviso âmbar das saídas (as Configurações da T19 mostram o texto de `OUTPUT_WARNING_TEXT`).
- * Os três primeiros vêm do plano (`planOutputs`, placa de agora); `modo-assumido`,
+ * `mono` e os três seguintes vêm do plano (`planOutputs`, placa de agora); `modo-assumido`,
  * `lado-assumido` e também `mapa-ajustado` vêm da leitura do que estava gravado (`migrateOutputs`).
  */
-export type OutputWarning = 'poucos-canais' | 'sem-saida-ouvido' | 'mapa-ajustado' | 'modo-assumido' | 'lado-assumido'
+export type OutputWarning = 'mono' | 'poucos-canais' | 'sem-saida-ouvido' | 'mapa-ajustado' | 'modo-assumido' | 'lado-assumido'
 
 export const OUTPUT_WARNING_TEXT: Record<OutputWarning, string> = {
+  mono: 'Esta saída tem 1 canal: Click, Guia e VS saem juntos.',
   'poucos-canais': 'Esta placa tem menos de 4 canais. O mapa de 4 ou mais saídas fica guardado pra quando a placa maior voltar.',
   'sem-saida-ouvido': 'Click e Guia sem saída: as saídas livres desta placa são da VS. Ligue a placa de 4 ou mais canais ou escolha outro modo.',
   'mapa-ajustado': 'Parte do mapa salvo não vale nesta placa: as saídas foram ajustadas, com Click e Guia fora da VS. Confira o resumo.',
@@ -50,6 +51,13 @@ function deviceChannels(maxChannelCount: number): number {
   const n = Number.isFinite(maxChannelCount) ? Math.floor(maxChannelCount) : 2
   return Math.min(Math.max(n, 2), MAX_OUTPUTS)
 }
+
+/**
+ * Aparelho de 1 canal (Ruling T6-mono): nele Click, Guia e VS saem misturados, então nada pode
+ * ser separado. Valor estranho (não finito, 0, negativo) continua contando como 2, como em
+ * `deviceChannels`.
+ */
+const isMono = (maxChannelCount: number): boolean => Number.isFinite(maxChannelCount) && Math.floor(maxChannelCount) === 1
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
@@ -110,8 +118,10 @@ function splitPlan(earOnSecond: boolean, fellBackFrom: OutputMode | null, warnin
 }
 
 /**
- * Plano do modo escolhido no aparelho de agora. "Tudo junto" e "Click e Guia separados" usam
- * 2 canais em qualquer placa. "4 ou mais" usa o mapa gravado quando ele cabe; senão corrige
+ * Plano do modo escolhido no aparelho de agora. Aparelho de 1 canal (Ruling T6-mono): qualquer
+ * modo vira "Tudo junto" na saída 1 (`channels: 1`), com o aviso `mono` e, se o modo gravado
+ * era outro, `fellBackFrom` com ele; a tela não pode sugerir separação que não existe. Nos
+ * outros aparelhos, "Tudo junto" e "Click e Guia separados" usam 2 canais em qualquer placa. "4 ou mais" usa o mapa gravado quando ele cabe; senão corrige
  * campo a campo (Click e Guia nunca no par da VS) e avisa. Aparelho de 2 canais (placa grande
  * desplugada, saída do sistema): cai em "Click e Guia separados" no lado escolhido
  * (`earOnSecond`), com `fellBackFrom`, porque o fone nunca pode ficar sem click no meio do
@@ -124,6 +134,9 @@ function splitPlan(earOnSecond: boolean, fellBackFrom: OutputMode | null, warnin
  * nele). Não mexe em `s` e devolve sempre listas novas.
  */
 export function planOutputs(s: ReadonlyOutputSettings, maxChannelCount: number): PlannedOutputs {
+  if (isMono(maxChannelCount)) {
+    return { mode: 'stereo', channels: 1, vs: [0], click: [0], guide: [0], panByRole: false, fellBackFrom: s.mode === 'split2' || s.mode === 'multi' ? s.mode : null, warning: 'mono' }
+  }
   if (s.mode === 'stereo') return { mode: 'stereo', channels: 2, vs: [0, 1], click: [0, 1], guide: [0, 1], panByRole: false, fellBackFrom: null, warning: null }
   if (s.mode !== 'multi') return splitPlan(s.earOnSecond === true, null, null)
 
@@ -231,11 +244,11 @@ export function multiChoices(maxChannelCount: number): { vsPairs: number[]; sing
   return { vsPairs: singles.filter((o) => o % 2 === 0 && o + 1 < channels), singles }
 }
 
-/** Resumo de uma linha pras Configurações, com as saídas contadas a partir de 1. */
+/** Resumo de uma linha pras Configurações, com as saídas contadas a partir de 1 (com 1 canal, só a saída 1). */
 export function outputSummary(plan: OutputPlan): string {
   const n = (output: number | undefined) => String((output ?? 0) + 1)
   const at = (output: number | undefined) => (output === undefined ? 'sem saída' : `na ${n(output)}`)
-  if (plan.mode === 'stereo') return 'Tudo junto nas saídas 1 e 2'
+  if (plan.mode === 'stereo') return plan.channels === 1 ? 'Tudo junto na saída 1' : 'Tudo junto nas saídas 1 e 2'
   if (plan.mode === 'split2') return `Click e Guia na saída ${n(plan.click[0])} · VS na saída ${n(plan.vs[0])}`
   const vs = `VS nas saídas ${n(plan.vs[0])} e ${n(plan.vs[1])}`
   if (plan.click[0] === plan.guide[0]) return `${vs} · Click e Guia ${at(plan.click[0])}`

@@ -68,6 +68,8 @@ export function AudioOutputsSection({ outputs, maxChannels, supportsDevicePick, 
   const plan = planOutputs(outputs, maxChannels)
   const channels = shownChannels(maxChannels)
   const canMulti = maxChannels >= 4
+  // Aparelho de 1 canal (Ruling T6-mono): o plano já é Tudo junto, com o aviso mono.
+  const mono = plan.warning === 'mono'
   const alerts = alertTexts(plan, channels, loadWarnings)
 
   const emit = (patch: Partial<OutputSettings>) =>
@@ -75,7 +77,7 @@ export function AudioOutputsSection({ outputs, maxChannels, supportsDevicePick, 
 
   const modeOptions: SegmentedOption<OutputMode>[] = [
     { value: 'stereo', label: 'Tudo junto' },
-    { value: 'split2', label: 'Click e Guia separados' },
+    { value: 'split2', label: 'Click e Guia separados', disabled: mono },
     { value: 'multi', label: '4 ou mais saídas', disabled: !canMulti },
   ]
 
@@ -109,8 +111,8 @@ export function AudioOutputsSection({ outputs, maxChannels, supportsDevicePick, 
       <h3 id={titleId} className="text-ps-base font-bold text-ps-bone">Saídas de áudio</h3>
       <div className="flex flex-col gap-2">
         <Segmented aria-label="Saídas de áudio" options={modeOptions} value={outputs.mode} onChange={setMode} className={SEGMENTED} />
-        {/* Na queda de 4 ou mais o aviso âmbar já diz quantos canais a placa tem. */}
-        {!canMulti && plan.fellBackFrom === null && <p className={NOTE}>Esta saída tem {channelsText(channels)}.</p>}
+        {/* Na queda de 4 ou mais e com 1 canal o aviso âmbar já diz quantos canais a placa tem. */}
+        {!canMulti && !mono && plan.fellBackFrom === null && <p className={NOTE}>Esta saída tem {channelsText(channels)}.</p>}
       </div>
 
       {plan.mode === 'split2' && (
