@@ -26,19 +26,49 @@ export function computePeaks(data: Float32Array, buckets: number): Float32Array 
   return peaks
 }
 
+/** A curva termina 7 px acima da base, onde fica a ponta da seta. */
+const ARC_END = 7
+
 /**
  * Curva da seta do pulo (v6 `drawArc`): sai de `x1` (fim da seção atual) na altura `baseY`,
  * sobe `lift` e desce no começo da armada (`x2`), 7 px acima da base, onde fica a ponta.
- * `lift` = 24 + 22% da distância, entre 26 e `max(30, maxLift)`. Perto demais (até 6 px)
- * não tem curva: devolve texto vazio e fica só a bolinha e a ponta.
+ * `lift` = 24 + 22% da distância, no mínimo 26 (v6), e nunca acima de `maxLift`: com selo no
+ * caminho quem chama baixa o teto e a curva achata abaixo de 26 (o v6 usa `max(30, altura - 60)`).
+ * Perto demais (até 6 px) não tem curva: devolve texto vazio e fica só a bolinha e a ponta.
  */
 export function arcPath(x1: number, x2: number, baseY: number, maxLift: number): string {
   const dx = x2 - x1
   if (!(Math.abs(dx) > 6)) return ''
-  const top = Math.max(30, Number.isFinite(maxLift) ? maxLift : 30)
-  const lift = Math.min(top, Math.max(26, 24 + Math.abs(dx) * 0.22))
+  const cap = Number.isNaN(maxLift) ? 0 : Math.max(0, maxLift)
+  const lift = Math.min(cap, Math.max(26, 24 + Math.abs(dx) * 0.22))
   const f = (n: number) => n.toFixed(1)
-  return `M${f(x1)} ${f(baseY)} C${f(x1)} ${f(baseY - lift)} ${f(x2)} ${f(baseY - lift)} ${f(x2)} ${f(baseY - 7)}`
+  return `M${f(x1)} ${f(baseY)} C${f(x1)} ${f(baseY - lift)} ${f(x2)} ${f(baseY - lift)} ${f(x2)} ${f(baseY - ARC_END)}`
+}
+
+/**
+ * Quanto a curva do `arcPath` sobe acima da base, no ponto mais alto, com subida `lift`.
+ * A altura em t é 3t(1-t)·lift + 7t³; até lift 7 o ponto mais alto é a ponta (7 px).
+ */
+export function arcRise(lift: number): number {
+  const L = Math.max(0, lift)
+  if (L <= ARC_END) return ARC_END
+  const t = (6 * L - Math.sqrt(36 * L * L - 252 * L)) / 42 // derivada zero: 21t² - 6Lt + 3L = 0
+  return Math.max(ARC_END, 3 * t * (1 - t) * L + ARC_END * t ** 3)
+}
+
+/** Maior subida cuja curva fica até `rise` px acima da base. Abaixo de 7 nem a ponta cabe: 0 (sem curva). Sem limite: sem limite. */
+export function liftForRise(rise: number): number {
+  if (!(rise >= ARC_END)) return 0
+  if (rise === Infinity) return Infinity
+  let lo = 0
+  let hi = Math.max(ARC_END, rise * 2)
+  while (arcRise(hi) <= rise) hi *= 2
+  for (let i = 0; i < 50; i++) {
+    const mid = (lo + hi) / 2
+    if (arcRise(mid) <= rise) lo = mid
+    else hi = mid
+  }
+  return lo
 }
 
 /**

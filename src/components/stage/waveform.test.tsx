@@ -8,7 +8,7 @@ import { FAMILY_COLOR } from '../../lib/channelNames'
 import type { StageSection } from '../../lib/stageContracts'
 import { SECTION_SHORTCUTS } from '../SectionBar'
 import { WaveformSections } from './WaveformSections'
-import { arcPath, computePeaks, lighter, placeLabels } from './wavePeaks'
+import { arcPath, arcRise, computePeaks, liftForRise, lighter, placeLabels } from './wavePeaks'
 import type { LabelBox, LabelSpot } from './wavePeaks'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
@@ -117,12 +117,30 @@ describe('wavePeaks', () => {
     }
   })
 
-  it('seta: curva do v6 com subida entre 26 e o teto', () => {
+  it('seta: curva do v6 com subida de 24 + 22% da distância, no mínimo 26, até o teto', () => {
     expect(arcPath(100, 300, 100, 60)).toBe('M100.0 100.0 C100.0 40.0 300.0 40.0 300.0 93.0')
     expect(arcPath(300, 100, 100, 60)).toBe('M300.0 100.0 C300.0 40.0 100.0 40.0 100.0 93.0')
     expect(arcPath(100, 110, 100, 60)).toBe('M100.0 100.0 C100.0 73.8 110.0 73.8 110.0 93.0')
-    expect(arcPath(0, 1000, 100, 10)).toBe('M0.0 100.0 C0.0 70.0 1000.0 70.0 1000.0 93.0') // teto nunca abaixo de 30
     expect(arcPath(100, 106, 100, 60)).toBe('') // perto demais: sem curva
+  })
+
+  it('seta achata abaixo de 26 quando o teto é menor (selo no caminho)', () => {
+    expect(arcPath(0, 1000, 100, 10)).toBe('M0.0 100.0 C0.0 90.0 1000.0 90.0 1000.0 93.0')
+    expect(arcPath(0, 1000, 100, -5)).toBe('M0.0 100.0 C0.0 100.0 1000.0 100.0 1000.0 93.0')
+  })
+
+  it('altura exata da curva acima da base e a subida que cabe numa altura', () => {
+    // Curva: 3t(1-t) * subida + 7t³ (a ponta termina 7 px acima da base).
+    const sampled = (lift: number) => Math.max(...Array.from({ length: 10_001 }, (_, i) => { const t = i / 10_000; return 3 * t * (1 - t) * lift + 7 * t ** 3 }))
+    for (const lift of [0, 5, 7, 10, 26, 40, 120]) expect(arcRise(lift)).toBeCloseTo(sampled(lift), 3)
+    expect(arcRise(26)).toBeCloseTo(20.49, 1)
+    for (const rise of [7, 9, 13, 20, 60]) {
+      const lift = liftForRise(rise)
+      expect(arcRise(lift)).toBeLessThanOrEqual(rise + 1e-6)
+      expect(arcRise(lift + 0.05)).toBeGreaterThan(rise)
+    }
+    expect(liftForRise(6.9)).toBe(0) // nem a ponta cabe: sem curva
+    expect(liftForRise(Infinity)).toBe(Infinity) // nada no caminho: vale a subida do v6
   })
 
   it('parte tocada: cor da seção com 28% de branco', () => {
@@ -242,11 +260,30 @@ describe('WaveformSections', () => {
     expect(r.className).toContain('touch-none') // arrastar com o dedo não rola a tela
   })
 
-  it('faixa de toque da régua tem 44 px; sair dela sem captura solta o arrasto', () => {
+  it('blocos terminam onde a faixa de toque da régua começa, e a faixa inteira tem a cara da régua', () => {
     const { container, p } = renderWave()
     const r = regua(container)
-    expect(r.className).toContain('h-ps-touch')
-    expect(r.className).toContain('bottom-0')
+    const area = container.querySelector<HTMLElement>('[role="group"]')!
+    const look = container.querySelector<HTMLElement>('[data-ruler]')!
+    // Faixa de toque: 44 px a partir do fundo. Blocos: do topo até 44 px do fundo. Nenhum pixel com dois sentidos.
+    expect(r.className).toMatch(/(^| )bottom-0( |$)/)
+    expect(r.className).toMatch(/(^| )h-ps-touch( |$)/)
+    expect(area.className).toMatch(/(^| )bottom-ps-touch( |$)/)
+    expect(area.className).toMatch(/(^| )top-0( |$)/)
+    // O que se vê bate com o que o toque faz: o fundo da régua cobre os 44 px, com a fronteira em cima.
+    expect(look.className).toMatch(/(^| )bottom-0( |$)/)
+    expect(look.className).toMatch(/(^| )h-ps-touch( |$)/)
+    expect(look.className).toContain('border-t')
+    expect(look.className).toContain('bg-ps-line/35')
+    // Toque no pé do bloco arma (o botão vai até a fronteira); a régua é a única que busca.
+    fireEvent.click(blocks(container)[2])
+    expect(p.onTapSection).toHaveBeenCalledWith(2)
+    expect(p.onSeek).not.toHaveBeenCalled()
+  })
+
+  it('sair da régua sem captura solta o arrasto', () => {
+    const { container, p } = renderWave()
+    const r = regua(container)
     vi.spyOn(r, 'getBoundingClientRect').mockReturnValue(rect(0, 1000))
     pointer(r, 'pointerdown', 100)
     fireEvent.pointerLeave(r)
@@ -276,10 +313,57 @@ describe('WaveformSections', () => {
     fakeLayout(1000, 140, { selo: 60, tag: 60, ruler: 30 })
     const { container } = renderWave({ intent: { target: 3, plays: 1 } })
     const svg = container.querySelector('[data-arc]')!
-    // Verso acaba em 25 s (250 px); a Ponte começa em 50 s (500 px). Base 12 px acima da régua (140 - 22 - 12).
-    expect(svg.querySelector('[data-arc-dash]')!.getAttribute('d')).toMatch(/^M250\.0 106\.0 C250\.0 [\d.]+ 500\.0 [\d.]+ 500\.0 99\.0$/)
+    // Verso acaba em 25 s (250 px); a Ponte começa em 50 s (500 px). Base 32 px acima do fundo, na faixa da régua.
+    expect(svg.querySelector('[data-arc-dash]')!.getAttribute('d')).toMatch(/^M250\.0 108\.0 C250\.0 [\d.]+ 500\.0 [\d.]+ 500\.0 101\.0$/)
     expect(svg.querySelector('[data-arc-dot]')!.getAttribute('cx')).toBe('250.0')
-    expect(svg.querySelector('[data-arc-head]')!.getAttribute('d')).toContain('L500.0 105.0')
+    expect(svg.querySelector('[data-arc-head]')!.getAttribute('d')).toContain('L500.0 107.0')
+  })
+
+  it('bolinha e ponta da seta a 12 px da borda', () => {
+    fakeLayout(1000, 140, { selo: 60, tag: 60, ruler: 30 })
+    const { container } = renderWave({ currentSection: 4, intent: { target: 0, plays: 1 } }) // Final (até 100 s) volta pra Intro (0 s)
+    expect(container.querySelector('[data-arc-dot]')!.getAttribute('cx')).toBe('988.0')
+    expect(container.querySelector('[data-arc-head]')!.getAttribute('d')).toContain('L12.0 107.0')
+  })
+
+  it('onda de 140 px: a seta passa abaixo do selo da 3ª linha, sem encostar', () => {
+    // 10 seções de 10 s (blocos de 100 px), selos de 120 px: a Interlúdio (7) cai na 3ª linha, entre a atual e a armada.
+    const many: StageSection[] = Array.from({ length: 10 }, (_, i) => ({ index: i, label: `Seção ${i + 1}`, color: '#10b981', start: i * 10, end: i * 10 + 10, bars: 4 }))
+    fakeLayout(1000, 140, { selo: 120, tag: 60, ruler: 30 })
+    const { container } = renderWave({ sections: many, currentSection: 1, intent: { target: 8, plays: 1 } })
+    const selos = blocks(container).map((b, k) => ({ k, el: b.querySelector<HTMLElement>('[data-selo]')! }))
+    const bottoms = selos.filter(({ el }) => el.dataset.fit !== 'none').map(({ k, el }) => ({ k, l: k * 100 + parseFloat(el.style.left), b: parseFloat(el.style.top) + 22 }))
+    const third = bottoms.filter((x) => x.b === 10 + 2 * 28 + 22)
+    expect(third.length).toBeGreaterThan(0)
+    const nums = container.querySelector('[data-arc-dash]')!.getAttribute('d')!.match(/-?[\d.]+/g)!.map(Number)
+    expect(nums).toHaveLength(8)
+    const [mx, my, c1x, c1y, c2x, c2y, ex, ey] = nums
+    expect([mx, my, c1x, c2x, ex, ey]).toEqual([200, 108, 200, 800, 800, 101]) // fim do 2º bloco ao começo do 9º
+    expect(c1y).toBe(c2y)
+    // Ponto mais alto da curva, com o meio-traço de 3 px do contorno escuro.
+    const lift = 108 - c1y
+    const top = 108 - arcRise(lift) - 3
+    for (const s of bottoms) if (s.l < 808 && s.l + 120 > 192) expect(top - s.b).toBeGreaterThanOrEqual(4)
+    expect(arcRise(lift)).toBeGreaterThan(7) // ainda é curva, só mais rasa
+  })
+
+  it('layout só quando mudam seções, nomes, intenção, compassos ou tamanho; nunca por renderização igual nem por quadro', () => {
+    fakeLayout(1000, 140, { selo: 60, tag: 60, ruler: 30 })
+    const measure = vi.mocked(HTMLElement.prototype.getBoundingClientRect)
+    const { rerenderWith } = renderWave({ barLines: [0, 10, 20, 30] })
+    const first = measure.mock.calls.length
+    expect(first).toBeGreaterThan(0)
+    // O App renderiza a cada quadro tocando, com arrays novos de mesmo conteúdo.
+    for (let i = 0; i < 5; i++) {
+      rerenderWith({ sections: SECTIONS.map((s) => ({ ...s })), barLines: [0, 10, 20, 30], intent: null })
+      frame()
+    }
+    expect(measure.mock.calls.length).toBe(first)
+    rerenderWith({ sections: SECTIONS.map((s) => (s.index === 2 ? { ...s, label: 'Refrão Final' } : { ...s })), barLines: [0, 10, 20, 30] })
+    const renamed = measure.mock.calls.length
+    expect(renamed).toBeGreaterThan(first)
+    rerenderWith({ sections: SECTIONS.map((s) => (s.index === 2 ? { ...s, label: 'Refrão Final' } : { ...s })), barLines: [0, 10, 20, 30], intent: { target: 3, plays: 1 } })
+    expect(measure.mock.calls.length).toBeGreaterThan(renamed) // armou: etiqueta e seta mudam
   })
 
   it('Livre: sem blocos', () => {
@@ -396,8 +480,29 @@ describe('WaveformSections', () => {
     const { container } = renderWave({ sections: tail, currentSection: 0 })
     const selo = blocks(container)[1].querySelector<HTMLElement>('[data-selo]')!
     expect(970 + parseFloat(selo.style.left) + 80).toBeLessThanOrEqual(994)
-    expect(blocks(container)[1].dataset.narrow).toBe('true') // bloco de 30 px: área de toque alargada pra 44
+    // Bloco de 30 px: marcado pro verificador (exceção aceita), com a área de toque igual ao próprio retângulo.
+    expect(blocks(container)[1].dataset.narrow).toBe('true')
     expect(blocks(container)[0].dataset.narrow).toBe('false')
+    for (const b of blocks(container)) expect(b.className).not.toMatch(/(^| )([a-z-]+\[[^\]]*\]:)*before:/)
+  })
+
+  it('toque perto da divisa arma o bloco em que caiu (nada alarga um bloco por cima do vizinho)', () => {
+    const tail: StageSection[] = [
+      { index: 0, label: 'Verso', color: '#10b981', start: 0, end: 97, bars: 8 },
+      { index: 1, label: 'Final', color: '#ec4899', start: 97, end: 100, bars: 1 },
+    ]
+    fakeLayout(1000, 140, { selo: 80, tag: 60, ruler: 30 })
+    const { container, p } = renderWave({ sections: tail, currentSection: 0 })
+    const [verso, final] = blocks(container)
+    // Nenhum filho do bloco ocupa área fora dele além do selo (que mostra o nome da própria seção).
+    for (const b of [verso, final]) for (const el of b.querySelectorAll<HTMLElement>('*')) {
+      if (el.closest('[data-selo],[data-tag]')) continue
+      expect(el.getAttribute('class') ?? '').not.toMatch(/absolute|fixed/)
+    }
+    fireEvent.click(final)
+    expect(p.onTapSection).toHaveBeenLastCalledWith(1)
+    fireEvent.click(verso)
+    expect(p.onTapSection).toHaveBeenLastCalledWith(0)
   })
 
   it('rótulos da régua a cada 30 s, sem encostar um no outro nem na borda', () => {

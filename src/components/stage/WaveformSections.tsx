@@ -6,7 +6,7 @@ import { cx } from '../ui'
 import { Icon } from './icons'
 import { setFlag } from './stageDom'
 import { useFrame } from './useFrame'
-import { arcPath, INLINE_TAG_GAP, lighter, placeLabels } from './wavePeaks'
+import { arcPath, arcRise, INLINE_TAG_GAP, liftForRise, lighter, placeLabels } from './wavePeaks'
 import type { LabelBox } from './wavePeaks'
 
 export interface WaveformSectionsProps {
@@ -15,8 +15,14 @@ export interface WaveformSectionsProps {
   clock: Pick<StageClock, 'position'>; onTapSection(i: number): void; onSeek(t: number): void
 }
 
-/** Régua embaixo da onda (v5). */
+/** Rótulos da régua nos 22 px de baixo da onda (v5). */
 const RULER = 22
+/**
+ * Faixa da régua: 44 px a partir do fundo (alvo de toque). Os blocos terminam onde ela começa e
+ * ela inteira tem a cara da régua, com a fronteira em cima: cada pixel com um sentido só
+ * (tocar num bloco arma; só a régua busca). Mesmo valor de `h-ps-touch`/`bottom-ps-touch`.
+ */
+const ZONE = 44
 /** Rótulo da régua a cada 30 s. */
 const RULER_STEP = 30
 /** Rótulo da régua longe dos cantos arredondados (raio de 16 px) e a 10 px do vizinho. */
@@ -30,10 +36,16 @@ const LABEL_X = 7
 /** Folga do selo até a borda da onda e até o selo vizinho na mesma linha. */
 const EDGE = 6
 const GAP = 8
-/** Fundo da área dos blocos fica pra bolinha e ponta da seta (e acima da faixa de toque da régua). */
-const ARC_BAND = 30
+/** Selo termina pelo menos 8 px acima da faixa da régua. */
+const ROWS_END = ZONE + 8
 const MAX_ROWS = 4
-/** Alvo de toque mínimo: bloco mais estreito ganha área de toque de 44 px. */
+/** Seta: base 32 px acima do fundo (bolinha e ponta dentro da faixa da régua), a 12 px das bordas. */
+const ARC_BASE = 32
+const ARC_EDGE = 12
+/** A curva passa a 4 px ou mais de qualquer selo, contando o meio-traço (3 px) do contorno escuro. */
+const ARC_CLEAR = 4
+const ARC_STROKE = 3
+/** Bloco mais estreito que o alvo de toque: só marcado (`data-narrow`) pro verificador da T20; a área de toque é o próprio retângulo. */
 const TOUCH = 44
 
 type BlockState = 'atual' | 'armada' | 'repete'
@@ -64,9 +76,6 @@ const TINT: Record<BlockState | 'outra', string> = {
 }
 const ARMED =
   'bg-[repeating-linear-gradient(-45deg,color-mix(in_srgb,var(--color-ps-arm)_10%,transparent)_0_7px,transparent_7px_14px)] inset-ring-2 inset-ring-ps-arm animate-[var(--animate-ps-stripes),var(--animate-ps-armglow)]'
-// Bloco mais estreito que 44 px: área de toque invisível de 44 px centrada nele, por cima dos vizinhos.
-const NARROW =
-  "data-[narrow=true]:before:absolute data-[narrow=true]:before:inset-y-0 data-[narrow=true]:before:left-1/2 data-[narrow=true]:before:z-[1] data-[narrow=true]:before:w-ps-touch data-[narrow=true]:before:-translate-x-1/2 data-[narrow=true]:before:content-['']"
 // v5 .blk.looping:before: barrinha clara no topo do bloco com loop.
 const LOOP_BAR =
   "data-[loop=true]:after:absolute data-[loop=true]:after:inset-x-0.5 data-[loop=true]:after:top-0 data-[loop=true]:after:h-[3px] data-[loop=true]:after:rounded-b-[2px] data-[loop=true]:after:bg-ps-bone data-[loop=true]:after:content-['']"
@@ -149,8 +158,11 @@ export function WaveformSections({
     if (!ph || !played) return
     const pos = clock.position()
     const f = dur > 0 && Number.isFinite(pos) ? clamp01(pos / dur) : 0
-    if (f === lastFracRef.current) return
-    lastFracRef.current = f
+    // Só escreve quando o playhead anda um pixel do aparelho (tocando, ~0,07 px por quadro numa música de 5 min).
+    const w = widthRef.current
+    const step = w > 0 ? Math.round(f * w * (window.devicePixelRatio || 1)) : f
+    if (step === lastFracRef.current) return
+    lastFracRef.current = step
     ph.style.transform = `translateX(${(f * widthRef.current).toFixed(1)}px)`
     played.style.clipPath = `inset(0 ${((1 - f) * 100).toFixed(3)}% 0 0)`
   }
@@ -176,7 +188,7 @@ export function WaveformSections({
     p.setTransform(dpr, 0, 0, dpr, 0, 0)
     a.clearRect(0, 0, w, h)
     p.clearRect(0, 0, w, h)
-    const hb = h - RULER
+    const blocksBottom = h - ZONE
     const line = token(root, '--color-ps-bone')
     const neutral = token(root, '--color-ps-mut')
 
@@ -190,15 +202,15 @@ export function WaveformSections({
         const strong = i % 4 === 0
         if (!strong && dense) return
         a.globalAlpha = strong ? 0.07 : 0.025
-        a.fillRect(Math.round((t / dur) * w), 0, 1, hb)
+        a.fillRect(Math.round((t / dur) * w), 0, 1, blocksBottom)
       })
       a.globalAlpha = 1
     }
 
     // Onda: uma barra de 2 px a cada 3 px, com o maior pico do trecho; cor da seção no meio da barra.
     if (peaks && peaks.length > 0 && dur > 0) {
-      const top = showBlocks ? 44 : 12
-      const bottom = hb - 8
+      const top = showBlocks ? 40 : 12
+      const bottom = blocksBottom - 6
       const mid = (top + bottom) / 2
       const amp = Math.max(8, (bottom - top) / 2)
       const n = peaks.length
@@ -230,7 +242,7 @@ export function WaveformSections({
     const container = blocksRef.current
     if (!container || !(w > 0 && h > 0)) return []
     const els = [...container.querySelectorAll<HTMLElement>('[data-block]')]
-    const rows = clamp(Math.floor((h - RULER - ARC_BAND - ROW_TOP - 22) / ROW) + 1, 1, MAX_ROWS)
+    const rows = clamp(Math.floor((h - ROWS_END - ROW_TOP - 22) / ROW) + 1, 1, MAX_ROWS)
     // Largura exata (offsetWidth arredonda e o selo podia passar meio pixel da folga).
     const widthOf = (el: HTMLElement | null) => (el ? el.getBoundingClientRect().width : 0)
     const measured = els.map((el, k) => {
@@ -288,18 +300,27 @@ export function WaveformSections({
     }
   }
 
-  /** Seta (v6 drawArc), baixa o bastante pra passar por baixo dos selos que ela cruza. */
+  /**
+   * Seta (v6 drawArc). Nunca passa por cima nem por baixo de selo: a subida é a do v6 até o
+   * ponto em que a curva (com o contorno) fica 4 px abaixo do selo mais baixo no caminho; com
+   * pouco espaço ela achata abaixo de 26. Os selos terminam 8 px acima da faixa da régua, então
+   * sempre sobra curva (13 px ou mais de altura).
+   */
   const drawArc = (w: number, h: number, placed: Placed[]) => {
     const svg = arcRef.current
     if (!svg || !arcFrom || !arcTo || !(w > 0 && h > 0)) return
-    const hb = h - RULER
-    const baseY = hb - 12
-    const x1 = clamp((arcFrom.end / dur) * w, 6, w - 6)
-    const x2 = clamp((arcTo.start / dur) * w, 8, w - 8)
-    const lo = Math.min(x1, x2)
-    const hi = Math.max(x1, x2)
-    const under = placed.reduce((m, p) => (p.r > lo && p.l < hi ? Math.max(m, p.bottom) : m), 0)
-    const d = arcPath(x1, x2, baseY, Math.min(hb - 60, (baseY - under - 7) / 0.75))
+    const baseY = h - ARC_BASE
+    const x1 = clamp((arcFrom.end / dur) * w, ARC_EDGE, w - ARC_EDGE)
+    const x2 = clamp((arcTo.start / dur) * w, ARC_EDGE, w - ARC_EDGE)
+    // Bolinha (raio 4,5), ponta (6,5 pra cada lado) e traço passam um pouco das pontas da curva.
+    const lo = Math.min(x1, x2) - 8
+    const hi = Math.max(x1, x2) + 8
+    const under = placed.reduce((m, p) => (p.r > lo && p.l < hi ? Math.max(m, p.bottom) : m), -Infinity)
+    const v6Top = Math.max(30, h - RULER - 60)
+    const room = baseY - under - ARC_CLEAR - ARC_STROKE
+    // Décimo pra baixo: o caminho escreve a subida com uma casa e não pode subir além da conta.
+    const cap = Math.floor(Math.min(v6Top, liftForRise(room)) * 10) / 10
+    const d = arcRise(cap) <= room ? arcPath(x1, x2, baseY, cap) : ''
     const f = (n: number) => n.toFixed(1)
     svg.querySelector('[data-arc-bg]')?.setAttribute('d', d)
     svg.querySelector('[data-arc-dash]')?.setAttribute('d', d)
@@ -322,11 +343,16 @@ export function WaveformSections({
     drawArc(w, h, placed)
     paint()
   }
-  // Depois de cada renderização (antes de pintar a tela): desenha, acomoda os selos e pinta.
-  useLayoutEffect(() => {
-    layoutRef.current = layout
-    layout()
-  })
+  // O ResizeObserver e as fontes chamam sempre a conta mais nova (só troca a referência).
+  useLayoutEffect(() => { layoutRef.current = layout })
+  // A conta (medir selos, desenhar, seta) só roda quando muda o que ela usa, antes de pintar a
+  // tela; nunca numa renderização igual (o App renderiza a cada quadro tocando, com arrays novos
+  // de mesmo conteúdo) nem por quadro. Tamanho e fontes: ResizeObserver e fonts.ready abaixo.
+  const sectionsKey = sections.map((s) => `${s.index}|${s.start}|${s.end}|${s.color}|${s.label}`).join(';')
+  const barsKey = barLines ? `${barLines.length}|${barLines[0]}|${barLines[barLines.length >> 1]}|${barLines[barLines.length - 1]}` : '-'
+  const intentKey = intent ? `${intent.target}|${intent.plays}` : '-'
+  const layoutKey = `${dur}#${sectionsAllowed}#${currentSection}#${loopOn}#${intentKey}#${barsKey}#${sectionsKey}`
+  useLayoutEffect(() => { layoutRef.current() }, [layoutKey, peaks])
   useFrame(paint) // a posição muda tocando e também parado (busca pela régua, ir pro início)
   // Janela mudou de tamanho ou as fontes chegaram: refaz a conta (sem renderizar o React).
   useEffect(() => {
@@ -372,7 +398,7 @@ export function WaveformSections({
       <canvas ref={baseRef} data-wave="base" aria-hidden="true" className="pointer-events-none absolute inset-0 size-full" />
       <canvas ref={playedRef} data-wave="tocada" aria-hidden="true" className="pointer-events-none absolute inset-0 size-full [clip-path:inset(0_100%_0_0)]" />
       {showBlocks && (
-        <div ref={blocksRef} role="group" aria-label="Seções na onda" className="absolute inset-x-0 top-0 bottom-[22px]">
+        <div ref={blocksRef} role="group" aria-label="Seções na onda" className="absolute inset-x-0 top-0 bottom-ps-touch">
           {blocks.map((b) => {
             const name = isPlaying ? `Armar ${b.s.label}` : `Ir para ${b.s.label}`
             const armed = b.state === 'armada' || b.state === 'repete'
@@ -387,7 +413,7 @@ export function WaveformSections({
                 aria-pressed={isPlaying ? armed : undefined}
                 title={name}
                 onClick={() => onTapSection(b.s.index)}
-                className={cx(BLOCK, TINT[b.state ?? 'outra'], armed && ARMED, NARROW, LOOP_BAR)}
+                className={cx(BLOCK, TINT[b.state ?? 'outra'], armed && ARMED, LOOP_BAR)}
                 style={{ left: pct(b.left), width: pct(b.width), '--ps-c': b.s.color } as CSSProperties}
               >
                 <span data-selo="" className={cx(SELO, b.state && b.state !== 'armada' && SELO_CURRENT)}>{b.s.label}</span>
@@ -410,7 +436,8 @@ export function WaveformSections({
           <path data-arc-head="" className="fill-ps-arm stroke-ps-ink-0/60 [stroke-width:1]" />
         </svg>
       )}
-      <div ref={rulerRef} aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-[22px] border-t border-ps-line bg-ps-line/35">
+      <div ref={rulerRef} data-ruler="" aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-ps-touch border-t border-ps-line bg-ps-line/35">
+        <div className="absolute inset-x-0 bottom-0 h-[22px]">
         {rulerTimes.map((t) => (
           <Fragment key={t}>
             <span className="absolute -top-px h-1.5 w-px bg-ps-line-2" style={{ left: pct(t / dur) }} />
@@ -423,8 +450,9 @@ export function WaveformSections({
             </span>
           </Fragment>
         ))}
+        </div>
       </div>
-      {/* Faixa de toque da régua: os 22 px dela e mais 22 acima (44 px), por cima do pé dos blocos. */}
+      {/* Faixa de toque da régua: os mesmos 44 px da faixa que se vê; os blocos terminam em cima dela. */}
       <div
         data-testid="regua"
         title="Arraste pra buscar"
