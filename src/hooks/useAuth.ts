@@ -78,6 +78,19 @@ export function useAuth() {
         return () => window.removeEventListener(PLAN_CHANGED_EVENT, onChanged);
     }, [user, fetchPlan]);
 
+    // Volta pro app (ex.: pagou no navegador pelo app de computador): relê o plano.
+    useEffect(() => {
+        if (!user) return;
+        let last = 0;
+        const onFocus = () => {
+            if (Date.now() - last < 30_000) return;
+            last = Date.now();
+            void fetchPlan(user.id);
+        };
+        window.addEventListener('focus', onFocus);
+        return () => window.removeEventListener('focus', onFocus);
+    }, [user, fetchPlan]);
+
     const refreshPlan = useCallback(async () => {
         window.dispatchEvent(new Event(PLAN_CHANGED_EVENT));
     }, []);

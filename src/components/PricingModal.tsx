@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { X, Check } from 'lucide-react';
 import { isPaidPlan, planDisplayName } from '../lib/plans';
+import { isElectron, openExternalUrl } from '../lib/desktop';
 
 interface PricingModalProps {
     isOpen: boolean;
@@ -54,6 +55,7 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
     // atual termina assim que o novo é pago (o webhook encerra a assinatura
     // antiga no Asaas), sem desconto proporcional.
     const [pendingPlan, setPendingPlan] = useState<typeof PLANS[0] | null>(null);
+    const [openedExternally, setOpenedExternally] = useState(false);
     const isSwitching = isPaidPlan(userPlan);
     const currentName = planDisplayName(userPlan);
 
@@ -78,6 +80,13 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
             try { data = rawText ? JSON.parse(rawText) : null; } catch { /* não-JSON */ }
 
             if (response.ok && data?.url) {
+                // No app de computador o pagamento abre no navegador do sistema
+                // (cartão e 3D Secure funcionam lá; o app relê o plano ao voltar).
+                if (isElectron) {
+                    openExternalUrl(data.url);
+                    setOpenedExternally(true);
+                    return;
+                }
                 window.location.href = data.url;
                 return;
             }
@@ -114,6 +123,11 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
 
                 {/* Content */}
                 <div className="p-8 bg-[#0e0e10] overflow-y-auto max-h-[80vh]">
+                    {openedExternally && (
+                        <div role="status" className="mb-6 rounded-xl border border-white/15 bg-[#1c1c1e] p-4 text-zinc-300 text-xs leading-relaxed">
+                            Abrimos o pagamento no seu navegador. Depois de pagar, volte para o app: o plano atualiza sozinho em alguns instantes.
+                        </div>
+                    )}
                     {pendingPlan && (
                         <div role="dialog" aria-label="Trocar de plano?" className="mb-6 rounded-xl border border-amber-400/40 bg-[#1c1c1e] p-4">
                             <h3 className="text-white text-sm font-bold mb-1">Trocar de plano?</h3>

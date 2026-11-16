@@ -6,11 +6,18 @@ const auth = { user: { id: 'u1' }, userPlan: 'essencial_mensal', planExpiresAt: 
 vi.mock('../hooks/useAuth', () => ({ useAuth: () => auth }))
 vi.mock('../lib/supabase', () => ({ getAuthHeaders: async () => ({ Authorization: 'Bearer t' }) }))
 vi.mock('../lib/api', () => ({ apiUrl: (p: string) => p }))
+const desktop = { isElectron: false, openExternalUrl: vi.fn() }
+vi.mock('../lib/desktop', () => ({
+  get isElectron() { return desktop.isElectron },
+  openExternalUrl: (url: string) => desktop.openExternalUrl(url),
+}))
 
 import { PricingModal } from './PricingModal'
 
 const fetchMock = vi.fn()
 beforeEach(() => {
+  desktop.isElectron = false
+  desktop.openExternalUrl.mockReset()
   auth.userPlan = 'essencial_mensal'
   auth.planExpiresAt = null
   fetchMock.mockReset()
@@ -57,5 +64,19 @@ describe('PricingModal: Alterar Plano', () => {
     fireEvent.click(within(card('Pro Mensal')).getByRole('button', { name: 'Assinar Agora' }))
     expect(screen.queryByRole('dialog')).toBeNull()
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
+  })
+})
+
+describe('PricingModal: app de computador', () => {
+  it('abre o pagamento no navegador do sistema, não dentro da janela do app', async () => {
+    desktop.isElectron = true
+    auth.userPlan = 'free'
+    fetchMock.mockResolvedValue({ ok: true, status: 200, statusText: 'OK', text: async () => '{"url":"https://asaas.test/c/chk_9"}' })
+    const before = window.location.href
+    render(<PricingModal isOpen onClose={() => {}} />)
+    fireEvent.click(within(card('Pro Mensal')).getByRole('button', { name: 'Assinar Agora' }))
+    await vi.waitFor(() => expect(desktop.openExternalUrl).toHaveBeenCalledWith('https://asaas.test/c/chk_9'))
+    expect(window.location.href).toBe(before)
+    expect(await screen.findByText(/Abrimos o pagamento no seu navegador/)).toBeTruthy()
   })
 })
