@@ -1664,7 +1664,12 @@ export function useAudioEngine(userId?: string) {
 
         // Click e Guia ficam fora da troca de tom. Com tom diferente de 0, entrar ou
         // sair dela solta o worklet (parado) ou reinicia curto (tocando, efeito abaixo).
-        const action = pitchChangeAction(before, after, { isPlaying, pitch: currentPitchRef.current });
+        // Play pendente conta como tocando: o 1º play transposto espera o worklet
+        // nascer ainda sem isPlaying e, sem reiniciar, agendaria a lista antiga com o
+        // ganho antigo (com Solo ligado, o Click que virou Normal tocava sem transpor
+        // e o Normal que virou Click ficava calado). O reinício cancela esse play.
+        const playingOrPending = isPlaying || playPendingRef.current;
+        const action = pitchChangeAction(before, after, { isPlaying: playingOrPending, pitch: currentPitchRef.current });
         if (action === 'release') releasePitchNode(after.id);
         else if (action === 'restart') restartAfterMetaRef.current = true;
 
@@ -1737,12 +1742,13 @@ export function useAudioEngine(userId?: string) {
     // getPlaybackPosition (com um play ainda pendente, é a de onde ele ia retomar;
     // a conta direta somava o tempo do play anterior e a música pulava pra frente)
     // e o play() novo pega outro número em playGenRef: um play antigo que ainda
-    // esperava o worklet nascer desiste sem agendar fontes.
+    // esperava o worklet nascer desiste sem agendar fontes. Vale também com a música
+    // parada e o 1º play transposto pendente (isPlaying ainda falso).
     useEffect(() => {
         if (!restartAfterMetaRef.current) return;
         restartAfterMetaRef.current = false;
         const ctx = audioCtxRef.current;
-        if (!isPlaying || !ctx) return;
+        if ((!isPlaying && !playPendingRef.current) || !ctx) return;
         const elapsed = getPlaybackPosition(ctx);
         pausedAtRef.current = Math.min(Math.max(elapsed, 0), duration || elapsed);
         stopAllNodes();

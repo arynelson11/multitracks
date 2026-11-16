@@ -422,6 +422,51 @@ describe('setChannelMeta', () => {
     expect(mem.pitchNodes.some((n) => sourceOf(result, 'b').dest === n)).toBe(true)
   })
 
+  // Revisão da junção, M2: com a música parada e tom diferente de 0, o 1º play espera
+  // o worklet nascer sem estar tocando (isPlaying falso). Papel trocado nessa janela
+  // também refaz a lista e o ganho do Solo: o play antigo usava a lista da hora do
+  // clique e o Click que virou Normal tocava (sem transpor) mesmo com o Solo de outro.
+  it('papel trocado enquanto o 1º play transposto espera o worklet refaz a lista e o ganho do Solo', async () => {
+    seed({
+      ...v1,
+      channels: [
+        { id: 'a', name: 'CLICK 13', volume: 0.7, muted: false, soloed: false, pan: -1, bus: '1', srcId: 'cloud-1', srcIdx: 0 },
+        { id: 'b', name: 'BASS_1', volume: 1.1, muted: false, soloed: false, pan: 1, bus: '2', srcId: 'cloud-1', srcIdx: 1 },
+        { id: 'c', name: 'GTR SOLO_1', volume: 0.5, muted: false, soloed: true, pan: 1, bus: '2', srcId: 'cloud-1', srcIdx: 2 },
+        { id: 'd', name: 'DRUMS', volume: 0.9, muted: false, soloed: false, pan: 1, bus: '2', srcId: 'cloud-1', srcIdx: 3 },
+      ],
+    })
+    const { result } = await openApp()
+    let releaseWorklets!: () => void
+    mem.pitchGate = new Promise<void>((resolve) => { releaseWorklets = resolve })
+    // Parado, tom -2: o play fica pendente esperando os worklets.
+    act(() => { void result.current.play() })
+    expect(result.current.isPlaying).toBe(false)
+    expect(mem.sources).toHaveLength(0)
+
+    // Nessa janela o Click vira Normal e a bateria vira Click, com o Solo na guitarra.
+    await act(async () => { result.current.setChannelMeta('a', { role: 'normal' }) })
+    await act(async () => { result.current.setChannelMeta('d', { role: 'click' }) })
+    await act(async () => {
+      releaseWorklets()
+      for (let i = 0; i < 10; i++) await Promise.resolve()
+    })
+
+    expect(result.current.isPlaying).toBe(true)
+    // Uma leva só de fontes (os plays antigos desistiram), do começo da música.
+    expect(mem.sources).toHaveLength(4)
+    for (const s of mem.sources) expect(s.offset).toBe(0)
+    // O Normal novo transpõe com a banda e cala no Solo da guitarra; o Click novo
+    // fica fora do worklet e continua tocando no Solo.
+    expect(mem.pitchNodes.some((n) => sourceOf(result, 'a').dest === n)).toBe(true)
+    expect(channel(result, 'a').gainNode.gain.value).toBe(0)
+    expect(mem.pitchNodes.some((n) => sourceOf(result, 'd').dest === n)).toBe(false)
+    expect(sourceOf(result, 'd').dest).toMatchObject({ delayTime: { value: PITCH_LATENCY } })
+    expect(channel(result, 'd').gainNode.gain.value).toBe(0.9)
+    expect(channel(result, 'c').gainNode.gain.value).toBe(0.5)
+    expect(channel(result, 'b').gainNode.gain.value).toBe(0)
+  })
+
   it('papel trocado durante a pré-contagem já vale no play que ela dispara', async () => {
     localStorage.setItem('precount_enabled', 'true')
     localStorage.setItem('precount_beats', '1')
