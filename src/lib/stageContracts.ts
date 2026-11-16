@@ -63,7 +63,7 @@ export type Plays = number | 'infinite'
 export interface ArmIntent { target: number; plays: Plays }
 /** Trecho da linha do tempo: a partir de `ctxStart` (tempo do AudioContext) a música anda de `songStart`. */
 export interface TimelineSegment { ctxStart: number; songStart: number }
-export interface SectionSpan { index: number; start: number; end: number } // segundos da música, encaixados; index = posição na lista de spans
+export interface SectionSpan { index: number; start: number; end: number; snappedTo?: 'bar' | 'pulse' | 'raw' } // segundos da música, encaixados; index = posição na lista de spans; snappedTo = como o início caiu na grade (sectionSpans)
 
 // ---------- Saídas de áudio ----------
 
