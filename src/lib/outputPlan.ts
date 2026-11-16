@@ -134,10 +134,14 @@ const sideOf = (output: number | undefined): number => (output === 1 ? 1 : -1)
 /**
  * Pan que o motor põe no `StereoPannerNode` do canal (R-24). "Tudo junto" usa o knob. Em
  * "Click e Guia separados" o papel decide o lado e o knob não vale: pan ±1 põe a faixa mono
- * inteira (ou a estéreo como L+R) de um lado e deixa o outro em silêncio, o mesmo nível do
- * pan automático da v1.4.15. Em "4 ou mais", Click e Guia vão inteiros pro lado esquerdo (o
- * roteador leva só esse lado pra saída própria) e a VS usa o knob. Knob inválido vira 0 e
- * fora da faixa fica em ±1, pra nunca chegar valor estranho no panner.
+ * inteira (ou a estéreo como L+R) de um lado, o mesmo nível do pan automático da v1.4.15. O
+ * outro lado só fica em silêncio exato em -1; em +1 sobra um resto numérico inaudível
+ * (cos(π/2) vezes o sinal: perto de 6e-17 no Chromium e 4e-8 no Gecko, abaixo de -140 dB),
+ * igual à v1.4.15. Por isso a T30 (cenário SPLIT) e todo teste de sinal com o lado trocado
+ * medem esse lado com limiar (ex.: abaixo de 1e-6), nunca com igual a 0. Em "4 ou mais",
+ * Click e Guia vão inteiros pro lado esquerdo (-1, silêncio exato no direito; o roteador leva
+ * só o esquerdo pra saída própria) e a VS usa o knob. Knob inválido vira 0 e fora da faixa
+ * fica em ±1, pra nunca chegar valor estranho no panner.
  */
 export function effectivePan(pan: number, role: ChannelRole, plan: OutputPlan): number {
   if (plan.mode === 'split2') return sideOf(role === 'click' ? plan.click[0] : role === 'guide' ? plan.guide[0] : plan.vs[0])
