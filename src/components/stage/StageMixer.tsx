@@ -11,15 +11,17 @@ export interface StageMixerProps { view: Pick<StageView, 'channels' | 'channelEd
 
 /** Largura mínima do canal: 14 canais inteiros em 1280 px (mockup v5). */
 const STRIP_MIN_PX = 76
-/** No EDITAR CANAIS o canal fica mais largo, pra lixeira armada ("Apagar?") caber sem encostar nas bordas. */
-const EDIT_STRIP_MIN_PX = 92
+/** No EDITAR CANAIS o canal fica mais largo, pra lixeira armada ("Apagar?", 80 px medidos no Chrome) caber com 4 px de cada lado. */
+const EDIT_STRIP_MIN_PX = 88
 /** Folga de cada lado por dentro da caixa do mixer (px-1). */
 const SCROLL_PAD_X_PX = 4
+/** Folga de baixo da caixa do mixer (pb-2). Com a barra de rolagem de lado, a barra ocupa parte dela. */
+const SCROLL_PAD_BOTTOM_PX = 8
 
 // Classes literais por largura mínima (o Tailwind só gera o que aparece escrito).
 const FILL_SLOT: Record<number, string> = {
   [STRIP_MIN_PX]: 'min-w-[76px] flex-1 basis-0',
-  [EDIT_STRIP_MIN_PX]: 'min-w-[92px] flex-1 basis-0',
+  [EDIT_STRIP_MIN_PX]: 'min-w-[88px] flex-1 basis-0',
 }
 const SLOT =
   'h-full shrink-0 snap-start rounded-ps-md transition-opacity duration-150 not-first:shadow-[-1px_0_0_var(--color-ps-line)] data-[dragging=true]:opacity-40 data-[drop-target=true]:inset-ring-2 data-[drop-target=true]:inset-ring-ps-line-3'
@@ -42,6 +44,8 @@ export function StageMixer({ view, actions, clock }: StageMixerProps) {
   const { channels, channelEditMode, outputs, click, transition, master } = view
   const scrollRef = useRef<HTMLDivElement>(null)
   const [innerWidth, setInnerWidth] = useState(0)
+  // Altura da barra de rolagem de lado (5 px no Chrome e no app, pelo index.css; 0 no Safari).
+  const [scrollbar, setScrollbar] = useState(0)
   const dragRef = useRef<Drag | null>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
 
@@ -52,7 +56,10 @@ export function StageMixer({ view, actions, clock }: StageMixerProps) {
   useEffect(() => {
     const el = scrollRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(() => setInnerWidth(Math.max(0, el.clientWidth - 2 * SCROLL_PAD_X_PX)))
+    const ro = new ResizeObserver(() => {
+      setInnerWidth(Math.max(0, el.clientWidth - 2 * SCROLL_PAD_X_PX))
+      setScrollbar(Math.max(0, el.offsetHeight - el.clientHeight))
+    })
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
@@ -114,6 +121,8 @@ export function StageMixer({ view, actions, clock }: StageMixerProps) {
       <div
         ref={scrollRef}
         data-mixer-scroll=""
+        // A barra de rolagem entra na folga de baixo: os faders dos canais continuam na linha do fader do PRINCIPAL.
+        style={scrollbar > 0 ? { paddingBottom: Math.max(0, SCROLL_PAD_BOTTOM_PX - scrollbar) } : undefined}
         className="flex min-w-0 flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden rounded-ps-2xl bg-ps-well px-1 pt-2.5 pb-2 inset-ring inset-ring-ps-line"
       >
         {channels.length === 0 && <p className="m-auto px-4 text-center text-ps-sm text-ps-mut">Os canais da música aparecem aqui.</p>}

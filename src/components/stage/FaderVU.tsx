@@ -73,7 +73,8 @@ const CAP =
 // Balão com o valor em dB, só durante o arrasto.
 const DB =
   'ps-num pointer-events-none absolute bottom-[calc(100%+6px)] left-1/2 -translate-x-1/2 rounded-[5px] bg-ps-bone px-1.5 py-[3px] text-ps-micro leading-none font-bold whitespace-nowrap text-ps-ink opacity-0 transition-opacity duration-100 group-data-[dragging=true]:opacity-100'
-const SCALE_BOX = 'ps-num pointer-events-none absolute inset-y-3 left-0 w-[22px] text-ps-micro leading-none font-semibold text-ps-dim'
+// 18 px: o número mais largo (−12) cabe e fica a 4 px da tampa de 56 px (que começa em 22 px).
+const SCALE_BOX = 'ps-num pointer-events-none absolute inset-y-3 left-0 w-[18px] text-ps-micro leading-none font-semibold text-ps-dim'
 
 /**
  * Fader do mixer novo (v5 .fd): a tampa só anda ARRASTANDO (o arrasto começa depois de 3 px;

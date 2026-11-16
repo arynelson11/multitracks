@@ -537,6 +537,43 @@ describe('mixer inteiro', () => {
     expect(scroller.className).toContain('overflow-x-auto')
     expect(scroller.className).toContain('snap-x')
     expect(scroller.className).toContain('snap-mandatory')
+
+    // EDITAR CANAIS: mínimo de 88 px pra lixeira armada caber; em 1280 px ficam 12 inteiros e o resto rola.
+    rerenderWith(view({ channels: many(14), channelEditMode: true }))
+    for (const s of slots()) expect(parseFloat(s.style.width)).toBeCloseTo(1114 / 12, 3)
+    rerenderWith(view({ channels: many(12), channelEditMode: true }))
+    for (const s of slots()) {
+      expect(s.style.width).toBe('')
+      expect(s.className).toContain('min-w-[88px]')
+    }
+  })
+
+  it('a barra de rolagem de lado entra na folga de baixo: os faders ficam na linha do PRINCIPAL', () => {
+    const observers: Array<() => void> = []
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(cb: ResizeObserverCallback) { observers.push(() => cb([], this as unknown as ResizeObserver)) }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    })
+    let bar = 0
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.dataset.mixerScroll !== undefined ? 220 : 0
+    })
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.dataset.mixerScroll !== undefined ? 220 - bar : 0
+    })
+    const { container } = renderMixer()
+    const scroller = container.querySelector<HTMLElement>('[data-mixer-scroll]')!
+    act(() => { for (const o of observers) o() })
+    expect(scroller.style.paddingBottom).toBe('') // sem barra: a folga de 8 px da classe
+    expect(scroller.className).toContain('pb-2')
+    bar = 5 // barra de 5 px do index.css (Chrome e app)
+    act(() => { for (const o of observers) o() })
+    expect(scroller.style.paddingBottom).toBe('3px')
+    bar = 12 // barra mais grossa que a folga: folga zero, nunca negativa
+    act(() => { for (const o of observers) o() })
+    expect(scroller.style.paddingBottom).toBe('0px')
   })
 
   it('alvos de toque: pan, lápis, alça, lixeira, EDITAR CANAIS e mudo geral com 44 px', () => {
