@@ -12,8 +12,8 @@ import { detectBeatGrid, detectSongGrid, type SongGridDetection, type TempoTrack
 import { legacyDetectBeatGrid } from '../../test/legacyBeatGrid';
 import { makeSong, type PatternName, type SynthSong } from '../../test/synthMusic';
 import { caseBeatsPerBar, caseTracks, tempoCase, type TempoCase } from '../../test/tempoCases';
-import { chooseDownbeat } from './downbeat';
-import type { OnsetBands } from './onsets';
+import { chooseDownbeat, type DownbeatVotes } from './downbeat';
+import { onsetBands, type OnsetBands } from './onsets';
 
 const SR = 48000;
 const LENTO = 30_000;
@@ -35,6 +35,24 @@ function musicaDoCenario({ pattern, firstBeat, intro }: Cenario): SynthSong {
     sr: SR, duration: 30, bpm: BPM_DA_LEVADA[pattern] ?? 120, firstBeat, pattern, withExtras: false,
     introBars: intro === 'sem' ? 0 : 4, fillBeforeEntry: intro === 'intro4+virada' ? 4 : null,
   });
+}
+
+/**
+ * Pad sustentado (drone): um acorde só do começo ao fim, ataque de 2 s e volume
+ * oscilando 20% a 0,15 Hz. Não marca compasso nenhum.
+ */
+function padDrone(duration: number): Float32Array[] {
+  const n = Math.round(duration * SR);
+  const out = new Float32Array(n);
+  const notas = [261.6, 329.6, 392.0];
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    const env = Math.min(1, t / 2) * (1 + 0.2 * Math.sin(2 * Math.PI * 0.15 * t));
+    let v = 0;
+    for (const f of notas) v += Math.sin(2 * Math.PI * f * t) + 0.3 * Math.sin(2 * Math.PI * 2 * f * t + 0.5);
+    out[i] = (0.25 * env * v) / notas.length;
+  }
+  return [out, Float32Array.from(out)];
 }
 
 /** Pulso, Baixo e Pad (os dois votam no "1"), como um pacote de multitracks. */
@@ -63,16 +81,56 @@ function downbeatCerto(c: TempoCase): boolean {
 describe('o "1" nos casos do relatório (Bateria + Baixo + Pad)', () => {
   const errados: string[] = [];
   let acertos = 0;
-  // Cada cenário: 30 s sintetizados e uma detecção com 3 faixas (~1 s cada).
+  // Sem baixo (rodada 1 da M3): o mesmo cenário com só a bateria, com bateria + pad
+  // do catálogo (um acorde por compasso, ataque de 250 ms) e com bateria + pad drone.
+  // A grade é a da detecção completa (os votos não mudam a grade); o "1" de cada
+  // combinação sai do chooseDownbeat com as faixas de cada uma.
+  const semBaixo = new Map<string, { soBateria: number[]; comPad: number[]; comDrone: number[] }>();
+  // Cada cenário: 30 s sintetizados, uma detecção com 3 faixas e os ataques da
+  // bateria e do pad (~1,5 s cada).
   beforeAll(() => {
+    const drone = onsetBands(padDrone(30), SR);
+    if (!drone) throw new Error('drone sem ataques');
     for (const c of cenarios54) {
       const song = musicaDoCenario(c);
       const pulso: TempoTrack = { id: 'bateria', label: 'Bateria', use: 'pulse', channels: song.tracks.drums };
-      const pos = posicaoDoUm(song, detectSongGrid(faixasComVotos(song, [pulso]), SR, { beatsPerBar: 4 }), 4);
+      const grid = detectSongGrid(faixasComVotos(song, [pulso]), SR, { beatsPerBar: 4 });
+      const pos = posicaoDoUm(song, grid, 4);
       if (pos === 0) acertos++;
       else errados.push(`${c.pattern}/${c.firstBeat}s/${c.intro}: no ${pos + 1}`);
+
+      const b = onsetBands(song.tracks.drums, SR);
+      const pad = onsetBands(song.tracks.pad, SR);
+      if (!b || !pad) throw new Error('cenário sem ataques');
+      const um = (votes?: DownbeatVotes) =>
+        posicaoDoUm(song, { ...grid, downbeat: chooseDownbeat(b, 60 / grid.pulseBpm, grid.firstBeat, 4, votes) }, 4);
+      const linha = semBaixo.get(c.pattern) ?? { soBateria: [], comPad: [], comDrone: [] };
+      linha.soBateria.push(um());
+      linha.comPad.push(um({ harmony: [pad] }));
+      linha.comDrone.push(um({ harmony: [drone] }));
+      semBaixo.set(c.pattern, linha);
     }
-  }, 240_000);
+  }, 300_000);
+
+  const certos = (posicoes: readonly number[]) => posicoes.filter(p => p === 0).length;
+
+  // O acorde do pad sobe de 10 a 100 ms depois do tempo: lido no ponto do bumbo, ele
+  // votava contra o 1 (0/18 nas 3 levadas). Lido na janela depois do tempo, ele não
+  // tira nenhum acerto da bateria.
+  it.each(['rock44', 'disco44', 'popsync44'])('%s: bateria + pad do catálogo, sem baixo, nunca erra onde a bateria sozinha acerta', (pattern) => {
+    const linha = semBaixo.get(pattern);
+    if (!linha) throw new Error(`sem a levada ${pattern}`);
+    const perdidos = linha.soBateria.filter((p, i) => p === 0 && linha.comPad[i] !== 0).length;
+    expect({ perdidos, comPad: certos(linha.comPad) >= certos(linha.soBateria) }).toEqual({ perdidos: 0, comPad: true });
+  });
+
+  // Pad sustentado (drone): perfil plano não é voto e não desliga o desempate por
+  // onde a bateria começa (era 6/18, 0/18 e 10/18 contra 14, 12 e 16 só com a bateria).
+  it.each(['rock44', 'disco44', 'popsync44'])('%s: pad drone sem baixo não vota, o 1 sai igual ao de só a bateria', (pattern) => {
+    const linha = semBaixo.get(pattern);
+    if (!linha) throw new Error(`sem a levada ${pattern}`);
+    expect(linha.comDrone).toEqual(linha.soBateria);
+  });
 
   it('acerta o 1 em pelo menos 50 dos 54 cenários 4/4 (hoje 31)', () => {
     expect(acertos, errados.join('; ')).toBeGreaterThanOrEqual(50);
@@ -187,6 +245,27 @@ describe('chooseDownbeat: a ordem dos votos', () => {
   it('o golpe em 0,000 conta (o 1º tempo cai antes do atraso da onset)', () => {
     // Sem o golpe do quadro 0, o bumbo do 3 venceria e a bateria "começaria" no 2.
     expect(chooseDownbeat(rock(0), PERIODO, 0, 4)).toBe(0);
+  });
+
+  it('troca de acorde com ataque lento (pico de 40 a 90 ms depois do tempo) vota no 1', () => {
+    // Bumbo mais forte no 3; o pad troca no 1 e só sobe depois do tempo.
+    const bumboNo3 = bandas({ full: onset(porTempo([1, 1, 1, 1])), kick: onset(porTempo([0.6, 0, 1, 0])) });
+    const lento = new Float32Array(QUADROS);
+    for (let k = 0; k < TEMPOS; k += 4) {
+      const x = k * PERIODO * FPS;
+      for (let d = 8; d <= 18; d++) lento[x + d] = 1;
+    }
+    expect(chooseDownbeat(bumboNo3, PERIODO, 0, 4, { harmony: [bandas({ full: lento })] })).toBe(0);
+  });
+
+  it('voto plano (desvio de até 0,2) não vota e o desempate por onde a bateria começa continua', () => {
+    // Bumbo igual no 1 e no 3 desde o tempo 4; a bateria toda começa no tempo 6 (o 3).
+    const entraNo3 = bandas({ full: onset(porTempo([1, 1, 1, 1], 6)), kick: onset(porTempo([1, 0, 1, 0], 4)) });
+    const quasePlano = bandas({ full: onset(porTempo([1.15, 0.95, 0.95, 0.95])) });
+    const baixoQuasePlano = bandas({ full: onset(porTempo([0.9, 1.1, 1, 1])) });
+    expect(chooseDownbeat(entraNo3, PERIODO, 0, 4)).toBe(2);
+    expect(chooseDownbeat(entraNo3, PERIODO, 0, 4, { harmony: [quasePlano] })).toBe(2);
+    expect(chooseDownbeat(entraNo3, PERIODO, 0, 4, { bass: baixoQuasePlano, harmony: [quasePlano] })).toBe(2);
   });
 
   it('faixa de voto em silêncio não vota', () => {
