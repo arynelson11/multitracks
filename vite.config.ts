@@ -7,7 +7,7 @@ import type { Plugin } from 'vite'
 import { applyPageHead, dropUnsetSearchConsoleTag, stripHtmlComments } from './src/lib/siteHtml'
 import { buildSitemap, injectSiteSeo, withoutFaqJsonLd } from './src/lib/siteSeo'
 import { PAGE_HEADS } from './src/content/site'
-import { SW_NAVIGATION_ALLOWLIST } from './src/content/routes'
+import { SW_NAVIGATION_ALLOWLIST, SW_PRECACHE_IGNORES } from './src/content/routes'
 
 // DESKTOP=1 ativa o variante Electron (scripts *:desktop).
 // Sem a flag, é o build normal do site (idêntico ao de antes).
@@ -127,9 +127,8 @@ export default defineConfig({
               // /cancelamento e em endereço que não existe (o 404 tem que vir da rede).
               navigateFallbackAllowlist: SW_NAVIGATION_ALLOWLIST,
               globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-              // A imagem de compartilhamento (1200x630, ~240 KB) só serve pro WhatsApp e
-              // redes sociais: não entra no cache do app de quem visita.
-              globIgnores: ['**/node_modules/**/*', '**/og-image.png'],
+              // Sem a imagem de compartilhamento e o 404 (src/content/routes.ts).
+              globIgnores: SW_PRECACHE_IGNORES,
               runtimeCaching: [
                 {
                   urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,

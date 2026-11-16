@@ -14,8 +14,15 @@ export const SITEMAP_PATHS: string[] = ['/', '/download', ...LEGAL_LINKS.map(l =
 // do app. O resto (páginas legais, 404, arquivos) vai pra rede, senão quem já visitou o
 // site veria a landing no lugar de /privacidade ou de um endereço que não existe.
 // O Workbox testa pathname + search, por isso a query (?payment=success, ?s=CODIGO) é aceita.
+// Com barra no fim (/download/) fica de fora: vai pra rede e a Vercel responde 308 pro caminho
+// sem barra (o App.tsx compara o caminho exato e mostraria a landing no lugar).
 export const SW_NAVIGATION_ALLOWLIST: RegExp[] = [
   /^\/(?:\?.*)?$/,
-  /^\/download\/?(?:\?.*)?$/,
-  /^\/admin\/?(?:\?.*)?$/,
+  /^\/download(?:\?.*)?$/,
+  /^\/admin(?:\?.*)?$/,
 ]
+
+// Fora do precache do service worker: o 404 (não serve offline e deixaria a instalação do
+// SW dependendo de /404 responder 200) e a imagem de compartilhamento (~240 KB, só pra redes).
+// O node_modules é o padrão do plugin, mantido.
+export const SW_PRECACHE_IGNORES = ['**/node_modules/**/*', '**/og-image.png', '**/404.html']

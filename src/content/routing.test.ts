@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { APP_ROUTES, SW_NAVIGATION_ALLOWLIST } from './routes'
+import { APP_ROUTES, SW_NAVIGATION_ALLOWLIST, SW_PRECACHE_IGNORES } from './routes'
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), 'utf8')
 
@@ -53,6 +53,16 @@ describe('service worker', () => {
     expect(served('/?s=ABC123')).toBe(true)
     expect(served('/download?origem=whatsapp')).toBe(true)
   })
+  it('com barra no fim vai pra rede (a Vercel faz o 308; o app compara o caminho exato)', () => {
+    for (const p of ['/download/', '/admin/', '/download/?x=1', '/admin/?x=1']) expect(served(p)).toBe(false)
+  })
+
+  it('o 404 e a imagem de compartilhamento não entram no precache', () => {
+    expect(SW_PRECACHE_IGNORES).toContain('**/404.html')
+    expect(SW_PRECACHE_IGNORES).toContain('**/og-image.png')
+    expect(SW_PRECACHE_IGNORES).toContain('**/node_modules/**/*')
+  })
+
   it('deixa páginas legais, 404 e arquivos irem pra rede', () => {
     for (const p of ['/privacidade', '/termos', '/cancelamento', '/pagina-que-nao-existe', '/robots.txt', '/sitemap.xml', '/downloads', '/admin/x']) {
       expect(served(p)).toBe(false)
