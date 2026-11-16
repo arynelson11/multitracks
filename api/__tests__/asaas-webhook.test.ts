@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRes, type FakeDb } from './fakeSupabase.js'
-import { USER_A, asaasDown, createBillingDb, createFakeAsaas, payment, subRow, type FakeAsaas } from './billingHarness.js'
+import { USER_A, asaasDown, asaasRejected, createBillingDb, createFakeAsaas, payment, subRow, type FakeAsaas } from './billingHarness.js'
 
 // Webhook do Asaas com Supabase e Asaas falsos: autenticidade, evento gravado
 // antes de processar (200 mesmo com o Asaas fora; 500 só se não gravar),
@@ -299,5 +299,169 @@ describe('job diário (I6/I10)', () => {
     expect(stopCalls()).toEqual([])
     expect(db.tables.billing_subscriptions.find((r) => r.id === 'chk_7')!.status).toBe('active')
     expect(db.tables.billing_pending_actions.find((a) => a.id === 99)!.status).toBe('canceled')
+  })
+})
+
+describe('rodada 2: compra duplicada (I7)', () => {
+  const twoTabs = (planB: string) => {
+    db.tables.pending_checkouts.push({ id: 'chk_b', user_id: USER_A, plan_key: planB })
+  }
+  const paidAt = (id: string, when: string) => ({ id: `evt_${id}`, event: 'CHECKOUT_PAID', dateCreated: when, checkout: { id, customer: 'cus_1' } })
+
+  it('duas abas no Livre, mesmo plano: fica a primeira, a segunda é cancelada e estornada, e o admin é avisado', async () => {
+    twoTabs('essencial_mensal')
+    asaas!.get.mockImplementation(async (path: string, params?: Record<string, unknown>) =>
+      path === '/payments' && params?.checkoutSession === 'chk_b' ? { data: [payment({ id: 'pay_b', subscription: 'sub_b', status: 'CONFIRMED', value: 49.9 })] } : { data: [] })
+    await post(paidAt('chk_1', '2026-11-16 12:00:00'))
+    const res = await post(paidAt('chk_b', '2026-11-16 12:00:40'))
+    expect(res.body).toMatchObject({ result: 'duplicate' })
+    expect(db.tables.billing_subscriptions.find((r) => r.id === 'chk_1')!.status).toBe('active')
+    const dup = db.tables.billing_subscriptions.find((r) => r.id === 'chk_b')!
+    expect(dup).toMatchObject({ status: 'canceled', cancel_source: 'duplicate', needs_admin_review: true })
+    expect(String(dup.admin_note)).toContain('compra duplicada estornada')
+    expect(asaas!.post).toHaveBeenCalledWith('/payments/pay_b/refund', expect.any(Object))
+    expect(db.tables.profiles[0].plan).toBe('essencial_mensal')
+    expect(db.tables.billing_pending_actions.find((a) => a.subscription_ref === 'chk_b' && a.action === 'delete_subscription')).toBeTruthy()
+  })
+
+  it('mesmo plano com o estorno recusado: vira pedido pro admin', async () => {
+    twoTabs('essencial_mensal')
+    asaas!.get.mockImplementation(async (path: string, params?: Record<string, unknown>) =>
+      path === '/payments' && params?.checkoutSession === 'chk_b' ? { data: [payment({ id: 'pay_b', status: 'CONFIRMED' })] } : { data: [] })
+    asaas!.post.mockRejectedValue(asaasRejected('saldo insuficiente'))
+    await post(paidAt('chk_1', '2026-11-16 12:00:00'))
+    await post(paidAt('chk_b', '2026-11-16 12:00:40'))
+    expect(db.tables.billing_pending_actions.find((a) => a.action === 'refund_payment')).toMatchObject({ subscription_ref: 'chk_b', reason: 'compra_duplicada', asaas_payment_id: 'pay_b', auto_retry: false })
+    expect(String(db.tables.billing_subscriptions.find((r) => r.id === 'chk_b')!.admin_note)).toContain('estorno pendente pro admin')
+  })
+
+  it('a ordem vem da hora do pagamento: o aviso da segunda chegando antes não derruba a primeira', async () => {
+    twoTabs('essencial_mensal')
+    await post(paidAt('chk_b', '2026-11-16 12:00:40'))
+    await post(paidAt('chk_1', '2026-11-16 12:00:00'))
+    expect(db.tables.billing_subscriptions.find((r) => r.id === 'chk_1')!.status).toBe('active')
+    expect(db.tables.billing_subscriptions.find((r) => r.id === 'chk_b')!.cancel_source).toBe('duplicate')
+  })
+
+  it('plano diferente fora do Alterar Plano: fica a nova e o admin recebe o valor do período antigo', async () => {
+    twoTabs('pro_mensal')
+    await post(paidAt('chk_1', '2026-11-16 12:00:00'))
+    await post(paidAt('chk_b', '2026-11-16 12:01:00'))
+    const old = db.tables.billing_subscriptions.find((r) => r.id === 'chk_1')!
+    expect(old).toMatchObject({ status: 'canceled', cancel_source: 'superseded', needs_admin_review: true })
+    expect(String(old.admin_note)).toContain('fora do Alterar Plano')
+    expect(String(old.admin_note)).toContain('R$ 49,90')
+    expect(db.tables.profiles[0].plan).toBe('pro_mensal')
+    expect(asaas!.post).not.toHaveBeenCalled()
+  })
+
+  it('plano diferente pelo Alterar Plano confirmado: encerra a antiga sem marcar', async () => {
+    db.tables.pending_checkouts.push({ id: 'chk_b', user_id: USER_A, plan_key: 'pro_mensal', switch_confirmed: true })
+    await post(paidAt('chk_1', '2026-11-16 12:00:00'))
+    await post(paidAt('chk_b', '2026-11-20 12:00:00'))
+    expect(db.tables.billing_subscriptions.find((r) => r.id === 'chk_1')).toMatchObject({ cancel_source: 'superseded', needs_admin_review: false })
+  })
+})
+
+describe('rodada 2: vencida paga com atraso antes da inativação (N1)', () => {
+  beforeEach(() => {
+    db.tables.profiles[0].plan = 'essencial_mensal'
+    db.tables.billing_subscriptions.push(subRow({ id: 'chk_1', user_id: USER_A, asaas_subscription_id: 'sub_1', last_paid_due_date: '2026-11-16', paid_until: '2026-12-17T03:00:00.000Z' }))
+  })
+
+  it('aviso de vencida com o Asaas fora, pagamento atrasado chega, o job inativa mesmo assim e a pendência termina', async () => {
+    asaas!.put.mockRejectedValue(asaasDown())
+    await post(payEvent('evt_o', 'PAYMENT_OVERDUE', { status: 'OVERDUE', dueDate: '2026-12-16' }))
+    const late = await post(payEvent('evt_l', 'PAYMENT_RECEIVED', { status: 'RECEIVED', dueDate: '2026-12-16', confirmedDate: '2026-12-19', paymentDate: '2026-12-19', billingType: 'PIX' }, '2026-12-19 10:00:00'))
+    expect(late.body).toMatchObject({ result: 'late_payment' })
+    expect(db.tables.billing_pending_actions[0].status).toBe('pending')
+    asaas!.put.mockResolvedValue({})
+    db.tables.billing_pending_actions[0].next_attempt_at = '2026-11-16T00:00:00.000Z'
+    await cron()
+    expect(stopCalls()).toContainEqual(['/subscriptions/sub_1', { status: 'INACTIVE' }])
+    expect(db.tables.billing_pending_actions[0].status).toBe('done')
+    expect(db.tables.billing_subscriptions[0].asaas_stopped_at).toBeTruthy()
+  })
+
+  it('rede de segurança com pagamento ATRASADO: plano até o fim do período, inativa no Asaas e fecha a pendência', async () => {
+    Object.assign(db.tables.billing_subscriptions[0], { status: 'canceled', cancel_source: 'unpaid', access_until: '2026-11-16T00:00:00.000Z' })
+    db.tables.billing_pending_actions.push({ id: 50, subscription_ref: 'chk_1', user_id: USER_A, action: 'inactivate_subscription', reason: 'rede_de_seguranca', asaas_subscription_id: 'sub_1', due_date: '2026-12-16', auto_retry: true, status: 'pending', attempts: 0, next_attempt_at: '2026-11-16T00:00:00.000Z' })
+    asaas!.get.mockResolvedValue({ data: [payment({ id: 'p_l', subscription: 'sub_1', dueDate: '2026-12-16', confirmedDate: '2026-12-19', status: 'CONFIRMED' })], hasMore: false })
+    await cron()
+    expect(db.rpcCalls.find((c) => c.name === 'billing_payment_confirmed')!.args).toMatchObject({ p_due_date: '2026-12-16', p_paid_on: '2026-12-19' })
+    expect(stopCalls()).toEqual([['/subscriptions/sub_1', { status: 'INACTIVE' }]])
+    expect(db.tables.billing_pending_actions.find((a) => a.id === 50)!.status).toBe('done')
+  })
+
+  it('rede de segurança quando o vencimento mudou no painel: desfaz o corte sem inativar', async () => {
+    Object.assign(db.tables.billing_subscriptions[0], { status: 'canceled', cancel_source: 'unpaid' })
+    db.tables.billing_pending_actions.push({ id: 51, subscription_ref: 'chk_1', user_id: USER_A, action: 'inactivate_subscription', reason: 'rede_de_seguranca', asaas_subscription_id: 'sub_1', due_date: '2026-11-14', auto_retry: true, status: 'pending', attempts: 0, next_attempt_at: '2026-11-16T00:00:00.000Z' })
+    asaas!.get.mockResolvedValue({ data: [payment({ id: 'p_n', subscription: 'sub_1', dueDate: '2026-11-25', confirmedDate: null, status: 'PENDING' })], hasMore: false })
+    await cron()
+    expect(stopCalls()).toEqual([])
+    expect(db.tables.billing_subscriptions[0]).toMatchObject({ status: 'active', next_due_date: '2026-11-25' })
+    expect(db.tables.billing_pending_actions.find((a) => a.id === 51)!.status).toBe('canceled')
+  })
+})
+
+describe('rodada 2: cobrança removida (N2) e eventos esgotados (N5)', () => {
+  beforeEach(() => {
+    db.tables.billing_subscriptions.push(subRow({ id: 'chk_1', user_id: USER_A, asaas_subscription_id: 'sub_1', last_paid_due_date: '2026-11-16' }))
+  })
+
+  it('PAYMENT_DELETED grava a cobrança como apagada', async () => {
+    await post(payEvent('evt_d1', 'PAYMENT_DELETED', { id: 'pay_d', status: 'PENDING', dueDate: '2026-12-16' }))
+    expect(db.tables.billing_payments.find((r) => r.asaas_payment_id === 'pay_d')).toMatchObject({ status: 'DELETED', last_event: 'PAYMENT_DELETED' })
+  })
+
+  it('payload com deleted: true (em outro evento) também grava como apagada', async () => {
+    await post(payEvent('evt_d2', 'PAYMENT_UPDATED', { id: 'pay_e', status: 'PENDING', dueDate: '2026-12-16', deleted: true }))
+    expect(db.tables.billing_payments.find((r) => r.asaas_payment_id === 'pay_e')!.status).toBe('DELETED')
+  })
+
+  it('PAYMENT_RESTORED depois volta a contar como em aberto', async () => {
+    await post(payEvent('evt_d3', 'PAYMENT_DELETED', { id: 'pay_f', status: 'PENDING', dueDate: '2026-12-16' }, '2026-11-20 10:00:00'))
+    await post(payEvent('evt_d4', 'PAYMENT_RESTORED', { id: 'pay_f', status: 'PENDING', dueDate: '2026-12-16', deleted: false }, '2026-11-21 10:00:00'))
+    expect(db.tables.billing_payments.find((r) => r.asaas_payment_id === 'pay_f')!.status).toBe('PENDING')
+  })
+
+  it('job não pega evento que já esgotou as tentativas e marca o que esgota', async () => {
+    db.tables.asaas_webhook_events.push(
+      { id: 'evt_velho', event: 'SUBSCRIPTION_DELETED', status: 'failed', attempts: 20, received_at: '2026-11-15T00:00:00.000Z', payload: { event: 'SUBSCRIPTION_DELETED', subscription: { id: 'sub_z' } } },
+      { id: 'evt_quase', event: 'SUBSCRIPTION_DELETED', status: 'failed', attempts: 19, received_at: '2026-11-15T00:00:00.000Z', payload: { event: 'SUBSCRIPTION_DELETED', subscription: { id: 'sub_z' } } },
+    )
+    asaas!.get.mockRejectedValue(asaasDown())
+    const job = await cron()
+    expect(job.body).toMatchObject({ events: { done: 0, failed: 1 } })
+    expect(db.tables.asaas_webhook_events.find((e) => e.id === 'evt_quase')!.status).toBe('exhausted')
+    expect(db.tables.asaas_webhook_events.find((e) => e.id === 'evt_velho')!.attempts).toBe(20)
+  })
+})
+
+describe('rodada 2: adoção de assinatura antiga (N7) e perfil no extended (N3)', () => {
+  it('não achou a assinatura antiga no Asaas: caso pro admin', async () => {
+    db.tables.payments.push({ id: 'chk_old', user_id: USER_A, plan_key: 'essencial_mensal', asaas_checkout_id: 'chk_old', paid_at: '2026-08-01T12:00:00Z' })
+    db.tables.pending_checkouts.push({ id: 'chk_new', user_id: USER_A, plan_key: 'pro_mensal' })
+    await post({ id: 'evt_n', event: 'CHECKOUT_PAID', checkout: { id: 'chk_new', customer: 'cus_1' } })
+    expect(db.tables.billing_pending_actions.find((a) => a.action === 'admin_review')).toMatchObject({ subscription_ref: 'chk_old', user_id: USER_A, auto_retry: false })
+  })
+
+  it('assinatura antiga removida no Asaas (deleted: true) não é adotada', async () => {
+    db.tables.payments.push({ id: 'chk_old', user_id: USER_A, plan_key: 'essencial_mensal', asaas_checkout_id: 'chk_old' })
+    db.tables.pending_checkouts.push({ id: 'chk_new', user_id: USER_A, plan_key: 'pro_mensal' })
+    asaas!.get.mockImplementation(async (path: string, params?: Record<string, unknown>) => {
+      if (path === '/payments' && params?.checkoutSession === 'chk_old') return { data: [payment({ id: 'p_old', subscription: 'sub_old' })] }
+      if (path === '/subscriptions/sub_old') return { id: 'sub_old', status: 'ACTIVE', deleted: true }
+      return { data: [] }
+    })
+    await post({ id: 'evt_n2', event: 'CHECKOUT_PAID', checkout: { id: 'chk_new', customer: 'cus_1' } })
+    expect(db.tables.billing_subscriptions.find((r) => r.id === 'chk_old')).toBeUndefined()
+    expect(asaas!.del).not.toHaveBeenCalled()
+  })
+
+  it('PAYMENT_CONFIRMED que cria a linha antes do CHECKOUT_PAID já dá o plano no perfil', async () => {
+    const res = await post(payEvent('evt_pc', 'PAYMENT_CONFIRMED', { id: 'pay_1', subscription: 'sub_1', checkoutSession: 'chk_1', dueDate: '2026-11-16', confirmedDate: '2026-11-16' }))
+    expect(res.body).toMatchObject({ result: 'extended' })
+    expect(db.tables.profiles[0].plan).toBe('essencial_mensal')
   })
 })

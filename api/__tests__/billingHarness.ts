@@ -161,7 +161,7 @@ export function createBillingDb(tables: Record<string, Row[]> = {}, now: () => D
         if (r.last_paid_due_date && due <= String(r.last_paid_due_date)) return { result: 'already_counted' }
         const end = periodEnd(due, r.cycle as string)
         Object.assign(r, { last_paid_due_date: due, paid_until: end })
-        if (r.status === 'active') return { result: 'extended', paid_until: end }
+        if (r.status === 'active') { sync(r.user_id); return { result: 'extended', paid_until: end } }
         if (r.cancel_source === 'unpaid') {
           if (a.p_paid_on && String(a.p_paid_on) <= due && !r.asaas_stopped_at) {
             Object.assign(r, { status: 'active', cancel_source: null, access_until: null })
@@ -181,7 +181,16 @@ export function createBillingDb(tables: Record<string, Row[]> = {}, now: () => D
       },
       billing_enqueue_action: (a) => enqueue(a.p_ref, a.p_action as string, a.p_reason as string, {
         asaas_payment_id: a.p_payment_id ?? null, due_date: a.p_due_date ?? null, amount: a.p_amount ?? null, auto_retry: a.p_auto_retry ?? true,
+        user_id: sub(a.p_ref)?.user_id ?? a.p_user_id ?? null,
       }),
+      billing_undo_safety_cut: (a) => {
+        const r = sub(a.p_id)
+        if (!r || r.status !== 'canceled' || r.cancel_source !== 'unpaid' || r.asaas_stopped_at) return { result: 'not_applicable' }
+        Object.assign(r, { status: 'active', cancel_source: null, access_until: null, next_due_date: a.p_real_due })
+        for (const x of db.tables.billing_pending_actions) if (x.subscription_ref === r.id && x.status === 'pending' && x.action === 'inactivate_subscription') x.status = 'canceled'
+        sync(r.user_id)
+        return { result: 'undone' }
+      },
       billing_action_done: (a) => {
         const x = db.tables.billing_pending_actions.find((y) => y.id === a.p_action_id && y.status === 'pending')
         if (!x) return null

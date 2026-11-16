@@ -119,7 +119,10 @@ export default async function handler(req: any, res: any) {
         // isso pelo id do checkout (o Asaas não propaga nosso externalReference
         // pro pagamento/assinatura, então guardamos do nosso lado).
         // Sem o vínculo o pagamento não liga ao usuário: não entrega o link.
-        const { error: linkErr } = await db.from('pending_checkouts').insert({ id: checkoutId, user_id: userId, plan_key: planKey });
+        // switch_confirmed: a pessoa confirmou "Trocar de plano?" (sem proporcional).
+        const { error: linkErr } = await db.from('pending_checkouts').insert({
+          id: checkoutId, user_id: userId, plan_key: planKey, switch_confirmed: body.confirmedSwitch === true,
+        });
         if (linkErr) {
           console.error('[checkout] failed to save pending_checkout:', linkErr.message);
           return res.status(500).json({ error: MSG_CHECKOUT_DOWN });
@@ -168,7 +171,7 @@ async function cancelForUser(userId: string, res: any) { // eslint-disable-line 
   }
   try {
     const result = await cancelSubscriptionForUser(
-      { db: createClient(supaUrl, serviceKey), asaas: asaasFromEnv() },
+      { db: createClient(supaUrl, serviceKey), asaas: asaasFromEnv(5000) },
       { userId, source: 'user' },
     );
     console.log('[checkout:cancel] ok', { result: result.result, refunded: result.refunded });

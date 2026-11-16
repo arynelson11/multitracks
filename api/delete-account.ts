@@ -33,7 +33,7 @@ export default async function handler(req: any, res: any) { // eslint-disable-li
     let canceled: CancelResult | null = null;
     try {
         canceled = await cancelSubscriptionForUser(
-            { db: supabase, asaas: asaasFromEnv() },
+            { db: supabase, asaas: asaasFromEnv(5000) },
             { userId: auth.userId, source: 'account_deleted', immediate: true },
         );
     } catch (e) {

@@ -123,7 +123,7 @@ export async function findSubscriptionIdByCheckout(api: AsaasApi, checkoutId: st
   return hit?.subscription ?? null
 }
 
-export async function getSubscription(api: AsaasApi, subscriptionId: string): Promise<{ id: string; checkoutSession?: string | null; customer?: string | null; status?: string } | null> {
+export async function getSubscription(api: AsaasApi, subscriptionId: string): Promise<{ id: string; checkoutSession?: string | null; customer?: string | null; status?: string; deleted?: boolean } | null> {
   try {
     return await api.get(`/subscriptions/${encodeURIComponent(subscriptionId)}`)
   } catch (e) {

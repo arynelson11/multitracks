@@ -200,22 +200,22 @@ async function activeRowsForUser(db: SupabaseClient, userId: string): Promise<Su
   return ((data as SubRow[] | null) ?? []).sort((a, b) => (a.started_at < b.started_at ? 1 : -1))
 }
 
-type Owner = { userId: string; planKey: PlanKey; startedAt: string | null; legacy: boolean }
+type Owner = { userId: string; planKey: PlanKey; startedAt: string | null; legacy: boolean; switchConfirmed: boolean }
 
 // Dono de um checkout: o vínculo gravado pelo api/checkout.ts e, pra quem
 // assinou antes desta versão (vínculo já apagado), a tabela payments.
 async function checkoutOwner(db: SupabaseClient, checkoutId: string): Promise<Owner | null> {
-  const pending = await db.from('pending_checkouts').select('user_id, plan_key').eq('id', checkoutId).maybeSingle()
+  const pending = await db.from('pending_checkouts').select('user_id, plan_key, switch_confirmed').eq('id', checkoutId).maybeSingle()
   if (pending.error) throw new BillingError('db_error', `Falha no banco (pending_checkouts): ${pending.error.message}`, 500)
-  const p = pending.data as { user_id?: unknown; plan_key?: unknown } | null
+  const p = pending.data as { user_id?: unknown; plan_key?: unknown; switch_confirmed?: unknown } | null
   if (p && typeof p.user_id === 'string' && UUID_RE.test(p.user_id) && isPlanKey(p.plan_key)) {
-    return { userId: p.user_id, planKey: p.plan_key, startedAt: null, legacy: false }
+    return { userId: p.user_id, planKey: p.plan_key, startedAt: null, legacy: false, switchConfirmed: p.switch_confirmed === true }
   }
   const paid = await db.from('payments').select('user_id, plan_key, paid_at').eq('asaas_checkout_id', checkoutId).maybeSingle()
   if (paid.error) throw new BillingError('db_error', `Falha no banco (payments): ${paid.error.message}`, 500)
   const q = paid.data as { user_id?: unknown; plan_key?: unknown; paid_at?: unknown } | null
   if (q && typeof q.user_id === 'string' && UUID_RE.test(q.user_id) && isPlanKey(q.plan_key)) {
-    return { userId: q.user_id, planKey: q.plan_key, startedAt: str(q.paid_at), legacy: true }
+    return { userId: q.user_id, planKey: q.plan_key, startedAt: str(q.paid_at), legacy: true, switchConfirmed: false }
   }
   return null
 }
@@ -266,7 +266,7 @@ export async function resolveSubscription(
   // ainda está ativa no Asaas (evento de cobrança antiga não ressuscita plano).
   if (owner.legacy && ref.subscriptionId && deps.asaas) {
     const sub = asaasSub !== undefined ? asaasSub : await getSubscription(deps.asaas, ref.subscriptionId)
-    if (!sub || sub.status !== 'ACTIVE') {
+    if (!sub || sub.deleted === true || sub.status !== 'ACTIVE') {
       await rpc<EndResult>(db, 'billing_end_subscription', {
         p_id: checkoutId, p_source: 'asaas', p_paid_due_date: null, p_immediate: false,
         p_stop: sub?.status === 'INACTIVE' ? 'inactivate' : 'delete', p_already_stopped: true,
@@ -316,14 +316,31 @@ export async function runPendingActions(
         continue
       }
       if (a.action === 'inactivate_subscription') {
-        // Rede de segurança (sem o evento do Asaas): confere se a cobrança foi paga.
+        // Rede de segurança (sem o evento do Asaas): confere no Asaas antes.
         if (a.reason === 'rede_de_seguranca' && a.due_date) {
-          const paid = (await listSubscriptionPayments(asaas, subId))
-            .find((p) => toBrtDate(p.dueDate) === a.due_date && PAID_STATUSES.has(p.status ?? '') && !p.deleted)
+          const payments = await listSubscriptionPayments(asaas, subId)
+          const paid = payments.find((p) => toBrtDate(p.dueDate) === a.due_date && PAID_STATUSES.has(p.status ?? '') && !p.deleted)
           if (paid) {
-            await rpc<EndResult>(deps.db, 'billing_payment_confirmed', { p_id: a.subscription_ref, p_due_date: a.due_date, p_paid_on: paidOn(paid) })
-            out.done++
-            continue
+            const r = await rpc<EndResult>(deps.db, 'billing_payment_confirmed', { p_id: a.subscription_ref, p_due_date: a.due_date, p_paid_on: paidOn(paid) })
+            // Pago em dia (o aviso é que atrasou): corte desfeito, nada a inativar.
+            if (r.result === 'reactivated') { out.done++; continue }
+            // Pago depois do vencimento: plano até o fim daquele período, mas a
+            // inativação acontece mesmo assim (regra do dono: sem renovação).
+          } else {
+            // A cobrança daquele vencimento não existe mais (data mudada no
+            // painel ou cobrança removida) e a próxima de verdade ainda não
+            // venceu: a rede cortou à toa, desfaz.
+            const today = brtToday(nowOf(deps))
+            const overdue = payments.some((p) => !p.deleted && p.status === 'OVERDUE')
+            const next = payments
+              .filter((p) => !p.deleted && (p.status === 'PENDING' || p.status === 'AWAITING_RISK_ANALYSIS'))
+              .map((p) => toBrtDate(p.dueDate))
+              .filter((d): d is string => !!d && d >= today && d !== a.due_date)
+              .sort()[0]
+            if (!overdue && next) {
+              const r = await rpc<EndResult>(deps.db, 'billing_undo_safety_cut', { p_id: a.subscription_ref, p_real_due: next })
+              if (r.result === 'undone') { out.done++; continue }
+            }
           }
         }
         await inactivateSubscription(asaas, subId)
@@ -374,9 +391,16 @@ async function legacyCandidates(db: SupabaseClient, userId: string): Promise<Leg
 async function adoptLegacySubscriptions(db: SupabaseClient, asaas: AsaasApi, userId: string, candidates: LegacyCandidate[]): Promise<void> {
   for (const c of candidates) {
     const subId = await findSubscriptionIdByCheckout(asaas, c.checkoutId)
-    if (!subId) continue
+    if (!subId) {
+      // Não achou: pode seguir cobrando junto sem ninguém saber. Caso pro admin.
+      await rpc<number>(db, 'billing_enqueue_action', {
+        p_ref: c.checkoutId, p_action: 'admin_review', p_reason: 'assinatura antiga nao achada no Asaas: conferir se ainda cobra',
+        p_auto_retry: false, p_user_id: userId,
+      })
+      continue
+    }
     const sub = await getSubscription(asaas, subId)
-    if (!sub || sub.status !== 'ACTIVE') continue
+    if (!sub || sub.deleted === true || sub.status !== 'ACTIVE') continue
     await rpc<string>(db, 'billing_upsert_subscription', {
       p_id: c.checkoutId, p_user_id: userId, p_plan_key: c.planKey, p_cycle: PLAN_PRICING[c.planKey].cycle,
       p_subscription_id: subId, p_customer_id: str(sub.customer), p_started_at: c.paidAt,
@@ -403,8 +427,12 @@ async function isFirstSubscription(db: SupabaseClient, userId: string): Promise<
 
 export async function activateFromCheckout(
   deps: BillingDeps,
-  input: { checkoutId: string; userId: string; planKey: PlanKey; customerId?: string | null; firstDueDate?: string | null },
-): Promise<{ result: 'activated' | 'owner_mismatch'; superseded: number }> {
+  input: {
+    checkoutId: string; userId: string; planKey: PlanKey; customerId?: string | null; firstDueDate?: string | null
+    startedAt?: string | null      // hora do pagamento (dateCreated do evento): decide qual compra veio primeiro
+    switchConfirmed?: boolean      // a pessoa confirmou "Trocar de plano?" na tela
+  },
+): Promise<{ result: 'activated' | 'owner_mismatch' | 'duplicate'; superseded: number }> {
   const { db } = deps
   const price = PLAN_PRICING[input.planKey]
   const due = input.firstDueDate ?? brtToday(nowOf(deps))
@@ -412,6 +440,7 @@ export async function activateFromCheckout(
   const linked = await rpc<string>(db, 'billing_upsert_subscription', {
     p_id: input.checkoutId, p_user_id: input.userId, p_plan_key: input.planKey, p_cycle: price.cycle,
     p_subscription_id: null, p_customer_id: input.customerId ?? null, p_paid_due_date: due, p_activate: true,
+    p_started_at: input.startedAt ?? null,
   })
   if (linked === 'owner_mismatch') {
     console.error('[billing] checkout pago ligado a outro usuario; nada ativado', { checkoutId: input.checkoutId })
@@ -435,17 +464,41 @@ export async function activateFromCheckout(
     else await rpc<null>(db, 'billing_flag_review', { p_id: input.checkoutId, p_note: 'troca de plano: conferir assinatura antiga no Asaas (servidor sem ASAAS_API_KEY)' })
   }
 
-  // Encerra as assinaturas ANTERIORES a esta (por data de início), só se esta
-  // estiver ativa: um CHECKOUT_PAID antigo reprocessado nunca derruba uma nova.
+  // Uma assinatura paga por vez (só se esta estiver ativa: um CHECKOUT_PAID
+  // antigo reprocessado nunca derruba uma nova).
+  // * MESMO plano duas vezes (duas abas, app antigo): fica a primeira; a nova
+  //   é cancelada e o pagamento dela estornado (falhou: pedido pro admin).
+  // * Plano DIFERENTE: fica a nova; as anteriores são encerradas. Fora do
+  //   "Alterar Plano" confirmado, o admin recebe o valor do período antigo pra
+  //   decidir um estorno proporcional à mão.
   let superseded = 0
+  let duplicate = false
   const current = await getSubBy(db, 'id', input.checkoutId)
   const actionIds: (number | null | undefined)[] = []
   if (current?.status === 'active') {
-    for (const old of await activeRowsForUser(db, input.userId)) {
-      if (old.id === current.id || old.started_at >= current.started_at) continue
-      const end = await rpc<EndResult>(db, 'billing_end_subscription', { p_id: old.id, p_source: 'superseded', p_paid_due_date: null, p_immediate: true })
-      actionIds.push(end?.action_id)
-      superseded++
+    const rows = await activeRowsForUser(db, input.userId)
+    const samePlan = rows.filter((r) => r.plan_key === current.plan_key)
+      .sort((a, b) => (a.started_at < b.started_at ? -1 : a.started_at > b.started_at ? 1 : a.created_at < b.created_at ? -1 : 1))
+    for (const dup of samePlan.slice(1)) {
+      actionIds.push(...await endDuplicatePurchase(deps, dup))
+      if (dup.id === current.id) duplicate = true
+    }
+    if (!duplicate) {
+      for (const old of rows) {
+        if (old.id === current.id || old.plan_key === current.plan_key || old.started_at >= current.started_at) continue
+        const end = await rpc<EndResult>(db, 'billing_end_subscription', { p_id: old.id, p_source: 'superseded', p_paid_due_date: null, p_immediate: true })
+        actionIds.push(end?.action_id)
+        if (!input.switchConfirmed) {
+          const label = PLAN_PRICING[old.plan_key as PlanKey]?.label ?? old.plan_key
+          const value = PLAN_PRICING[old.plan_key as PlanKey]?.value
+          const until = old.paid_until ? ` ate ${brDate(old.paid_until)}` : ''
+          await rpc<null>(db, 'billing_flag_review', {
+            p_id: old.id,
+            p_note: `troca de plano fora do Alterar Plano: periodo antigo do ${label}${value != null ? ` (R$ ${value.toFixed(2).replace('.', ',')})` : ''} pago${until}; avaliar estorno proporcional`,
+          })
+        }
+        superseded++
+      }
     }
   }
   await tryPending(deps, actionIds)
@@ -456,7 +509,45 @@ export async function activateFromCheckout(
       console.warn('[billing] nao deu pra conferir as notificacoes do cliente:', errMsg(e))
     }
   }
-  return { result: 'activated', superseded }
+  return { result: duplicate ? 'duplicate' : 'activated', superseded }
+}
+
+// dd/mm/aaaa do último dia com acesso (o fim guardado é o começo do dia seguinte).
+function brDate(accessEnd: string): string {
+  const d = brtToday(new Date(Date.parse(accessEnd) - 1000))
+  return `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`
+}
+
+// Compra repetida do mesmo plano: cancela esta e estorna o pagamento dela
+// (mesmo caminho do I4: se o estorno falhar, pedido pro admin).
+async function endDuplicatePurchase(deps: BillingDeps, row: SubRow): Promise<(number | null | undefined)[]> {
+  const { db, asaas } = deps
+  const end = await rpc<EndResult>(db, 'billing_end_subscription', { p_id: row.id, p_source: 'duplicate', p_paid_due_date: null, p_immediate: true })
+  let payment: AsaasPayment | undefined
+  let refunded = false
+  if (asaas) {
+    try {
+      const res = await asaas.get<{ data?: AsaasPayment[] }>('/payments', { checkoutSession: row.id, limit: 10 })
+      payment = (Array.isArray(res?.data) ? res.data : []).find((p) => !p.deleted && PAID_STATUSES.has(p.status ?? ''))
+      if (payment) {
+        await refundPayment(asaas, payment.id, 'Compra duplicada do mesmo plano (estorno automatico)')
+        refunded = true
+      }
+    } catch (e) {
+      if (!(e instanceof AsaasError)) throw e
+      console.warn('[billing] estorno da compra duplicada ficou pro admin:', e.message)
+    }
+  }
+  if (refunded) {
+    await rpc<null>(db, 'billing_flag_review', { p_id: row.id, p_note: `compra duplicada estornada (cobranca ${payment!.id})` })
+  } else {
+    await rpc<number>(db, 'billing_enqueue_action', {
+      p_ref: row.id, p_action: 'refund_payment', p_reason: 'compra_duplicada', p_payment_id: payment?.id ?? null,
+      p_due_date: toBrtDate(payment?.dueDate), p_amount: num(payment?.value), p_auto_retry: false,
+    })
+    await rpc<null>(db, 'billing_flag_review', { p_id: row.id, p_note: 'compra duplicada: estorno pendente pro admin' })
+  }
+  return [end?.action_id]
 }
 
 // ── Cancelamento (botão do app, exclusão da conta e admin) ──
@@ -523,7 +614,7 @@ export async function cancelSubscriptionForUser(
   const now = nowOf(deps)
 
   // Pendências velhas deste usuário primeiro (tentativa a cada ação dele).
-  try { await runPendingActions(deps, { userId: input.userId, limit: 5 }) } catch (e) {
+  try { await runPendingActions(deps, { userId: input.userId, limit: 1 }) } catch (e) {
     console.warn('[billing] pendencias do usuario ficam pro proximo ciclo:', errMsg(e))
   }
 
@@ -756,19 +847,19 @@ export function sanitizeAsaasPayload(v: unknown): unknown {
 
 export async function handleAsaasEvent(deps: BillingDeps, payload: Record<string, unknown>): Promise<{ result: string }> {
   const event = str(payload.event) ?? ''
-  if (event === 'CHECKOUT_PAID') return onCheckoutPaid(deps, obj(payload.checkout))
+  if (event === 'CHECKOUT_PAID') return onCheckoutPaid(deps, obj(payload.checkout), asaasInstant(payload.dateCreated))
   if (SUBSCRIPTION_EVENTS_KEPT.has(event)) return onSubscriptionEvent(deps, event, obj(payload.subscription))
   if (PAYMENT_EVENTS_KEPT.has(event)) return onPaymentEvent(deps, event, obj(payload.payment), asaasInstant(payload.dateCreated))
   return { result: 'ignored' }
 }
 
-async function onCheckoutPaid(deps: BillingDeps, checkout: Record<string, unknown>): Promise<{ result: string }> {
+async function onCheckoutPaid(deps: BillingDeps, checkout: Record<string, unknown>, paidAt: string | null): Promise<{ result: string }> {
   const checkoutId = str(checkout.id)
   let owner = checkoutId ? await checkoutOwner(deps.db, checkoutId) : null
   // Bônus: se o Asaas tiver propagado nosso externalReference ("<user>::<plano>").
   if (!owner && typeof checkout.externalReference === 'string' && checkout.externalReference.includes('::')) {
     const [u, p] = checkout.externalReference.split('::')
-    if (UUID_RE.test(u) && isPlanKey(p)) owner = { userId: u, planKey: p, startedAt: null, legacy: false }
+    if (UUID_RE.test(u) && isPlanKey(p)) owner = { userId: u, planKey: p, startedAt: null, legacy: false, switchConfirmed: false }
   }
   if (!owner || !checkoutId) {
     console.warn('[asaas-webhook] could not resolve user/plan', { checkoutId })
@@ -778,6 +869,7 @@ async function onCheckoutPaid(deps: BillingDeps, checkout: Record<string, unknow
   const out = await activateFromCheckout(deps, {
     checkoutId, userId: owner.userId, planKey: owner.planKey,
     customerId: str(checkout.customer), firstDueDate: toBrtDate(sub.nextDueDate),
+    startedAt: paidAt, switchConfirmed: owner.switchConfirmed,
   })
   return { result: out.result }
 }
@@ -821,7 +913,9 @@ async function recordPayment(deps: BillingDeps, row: SubRow, event: string, p: R
     p_subscription_id: str(p.subscription) ?? row.asaas_subscription_id,
     p_checkout_id: str(p.checkoutSession) ?? (row.kind === 'asaas' ? row.id : null),
     p_customer_id: str(p.customer) ?? row.asaas_customer_id,
-    p_status: str(p.status) ?? event.replace(/^PAYMENT_/, ''),
+    // Cobrança removida no Asaas (evento PAYMENT_DELETED ou deleted: true no
+    // payload): sai das "em aberto" e da rede de segurança.
+    p_status: event === 'PAYMENT_DELETED' || p.deleted === true ? 'DELETED' : str(p.status) ?? event.replace(/^PAYMENT_/, ''),
     p_billing_type: str(p.billingType),
     p_value: num(p.value),
     p_net_value: num(p.netValue),
@@ -887,10 +981,10 @@ export async function retryWebhookEvents(deps: BillingDeps, limit = 20): Promise
   const out = { done: 0, failed: 0 }
   const olderThan = new Date(nowOf(deps).getTime() - 2 * 60_000).toISOString()
   const { data, error } = await deps.db.from('asaas_webhook_events').select('id, event, payload, attempts')
-    .in('status', ['pending', 'failed']).lte('received_at', olderThan).order('received_at', { ascending: true }).limit(limit)
+    .in('status', ['pending', 'failed']).lt('attempts', MAX_EVENT_ATTEMPTS).lte('received_at', olderThan)
+    .order('received_at', { ascending: true }).limit(limit)
   if (error) throw new BillingError('db_error', `Falha no banco (asaas_webhook_events): ${error.message}`, 500)
   for (const ev of (data as { id: string; event: string; payload: unknown; attempts: number }[] | null) ?? []) {
-    if (ev.attempts >= MAX_EVENT_ATTEMPTS) continue
     if ((await processStoredEvent(deps, ev.id, obj(ev.payload), ev.attempts)).ok) out.done++
     else out.failed++
   }
@@ -904,8 +998,10 @@ export async function processStoredEvent(deps: BillingDeps, id: string, payload:
     await deps.db.from('asaas_webhook_events').update({ status: 'done', processed_at: nowOf(deps).toISOString(), attempts: attempts + 1, last_error: null }).eq('id', id)
     return { ok: true, result: out.result }
   } catch (e) {
-    console.warn('[asaas-webhook] evento fica pra nova tentativa', { id, message: errMsg(e) })
-    await deps.db.from('asaas_webhook_events').update({ status: 'failed', attempts: attempts + 1, last_error: errMsg(e).slice(0, 500) }).eq('id', id)
+    // Esgotou as tentativas: fica 'exhausted' (o admin vê) e o job para de tentar.
+    const exhausted = attempts + 1 >= MAX_EVENT_ATTEMPTS
+    console.warn('[asaas-webhook] evento fica pra nova tentativa', { id, exhausted, message: errMsg(e) })
+    await deps.db.from('asaas_webhook_events').update({ status: exhausted ? 'exhausted' : 'failed', attempts: attempts + 1, last_error: errMsg(e).slice(0, 500) }).eq('id', id)
     return { ok: false }
   }
 }

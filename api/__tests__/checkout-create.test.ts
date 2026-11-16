@@ -13,10 +13,10 @@ vi.mock('../_lib/auth.js', () => ({
   verifyUser: vi.fn(async () => ({ ok: true, userId: USER_A, email: 'quem@igreja.com', isAdmin: false })),
 }))
 
-async function create(planKey: string) {
+async function create(planKey: string, extra: Record<string, unknown> = {}) {
   const { default: handler } = await import('../checkout.js')
   const res = createRes()
-  await handler({ method: 'POST', headers: { authorization: 'Bearer x' }, body: { planKey } }, res)
+  await handler({ method: 'POST', headers: { authorization: 'Bearer x' }, body: { planKey, ...extra } }, res)
   return res
 }
 
@@ -59,6 +59,17 @@ describe('checkout: compra duplicada (I7)', () => {
     db.tables.billing_subscriptions.push(subRow({ id: 'chk_1', user_id: USER_A, status: 'canceled', access_until: '2026-12-17T03:00:00Z' }))
     Object.assign(db.tables.profiles[0], { plan: 'essencial_mensal', plan_expires_at: '2026-12-17T03:00:00Z' })
     expect((await create('essencial_mensal')).statusCode).toBe(200)
+  })
+})
+
+describe('checkout: troca confirmada na tela (I7)', () => {
+  it('grava se a pessoa confirmou o "Trocar de plano?"', async () => {
+    await create('pro_mensal', { confirmedSwitch: true })
+    expect(db.tables.pending_checkouts[0]).toMatchObject({ id: 'chk_9', plan_key: 'pro_mensal', switch_confirmed: true })
+  })
+  it('sem confirmação (Livre, app antigo) grava falso', async () => {
+    await create('pro_mensal')
+    expect(db.tables.pending_checkouts[0].switch_confirmed).toBe(false)
   })
 })
 

@@ -127,6 +127,15 @@ describe('arrependimento só automático na primeira assinatura da conta (I9)', 
     expect(asaas!.post).not.toHaveBeenCalled()
   })
 
+  it('N9: o cancelamento tenta só 1 pendência velha antes (não estoura o tempo da função)', async () => {
+    for (const id of [21, 22, 23]) {
+      db.tables.billing_pending_actions.push({ id, subscription_ref: `velha_${id}`, user_id: USER_A, action: 'delete_subscription', reason: 'user', asaas_subscription_id: `sub_v${id}`, auto_retry: true, status: 'pending', attempts: 1, next_attempt_at: '2026-11-16T00:00:00.000Z' })
+    }
+    await cancel()
+    const velhas = (asaas!.del.mock.calls as [string][]).filter(([p]) => p.startsWith('/subscriptions/sub_v'))
+    expect(velhas).toHaveLength(1)
+  })
+
   it('login do usuário tenta de novo as pendências dele (sync)', async () => {
     db.tables.billing_pending_actions.push({ id: 7, subscription_ref: 'chk_a', user_id: USER_A, action: 'delete_subscription', reason: 'user', asaas_subscription_id: 'sub_a', auto_retry: true, status: 'pending', attempts: 2, next_attempt_at: '2026-11-16T00:00:00.000Z' })
     db.tables.billing_pending_actions.push({ id: 8, subscription_ref: 'chk_b', user_id: USER_B, action: 'delete_subscription', reason: 'user', asaas_subscription_id: 'sub_b', auto_retry: true, status: 'pending', attempts: 0, next_attempt_at: '2026-11-16T00:00:00.000Z' })

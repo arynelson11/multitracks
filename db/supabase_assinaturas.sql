@@ -46,6 +46,8 @@ create table if not exists public.pending_checkouts (
   created_at timestamptz not null default now()
 );
 alter table public.pending_checkouts enable row level security;
+-- true quando a pessoa confirmou "Trocar de plano?" na tela (Alterar Plano).
+alter table public.pending_checkouts add column if not exists switch_confirmed boolean;
 
 -- ─── 3. Registro antigo de pagamentos fica depois da exclusão da conta ──────
 -- (guarda fiscal): o vínculo com o usuário vira null em vez de apagar a linha.
@@ -97,7 +99,7 @@ create table if not exists public.billing_subscriptions (
   next_due_date         date,              -- próxima renovação (do Asaas quando conhecida)
   paid_until            timestamptz,       -- fim do período pago (fim do dia do próximo vencimento, Brasília)
   access_until          timestamptz,       -- até quando o plano vale depois de cancelada
-  cancel_source         text check (cancel_source in ('user', 'user_refund', 'unpaid', 'refund', 'asaas', 'superseded', 'admin', 'account_deleted')),
+  cancel_source         text check (cancel_source in ('user', 'user_refund', 'unpaid', 'refund', 'asaas', 'superseded', 'duplicate', 'admin', 'account_deleted')),
   canceled_at           timestamptz,
   asaas_stopped_at      timestamptz,       -- quando o Asaas confirmou que a recorrência parou
   asaas_stop_kind       text check (asaas_stop_kind in ('deleted', 'inactivated')),
@@ -157,12 +159,13 @@ revoke all on table public.billing_payments from anon, authenticated;
 
 -- ─── 6. Eventos do webhook: gravados antes de processar ─────────────────────
 -- O webhook grava o evento (sem dados de cartão), responde 200 e processa.
--- O que falhar por Asaas ou rede fica 'failed' e o job tenta de novo.
+-- O que falhar por Asaas ou rede fica 'failed' e o job tenta de novo; depois
+-- de 20 tentativas fica 'exhausted' (o admin vê).
 create table if not exists public.asaas_webhook_events (
   id           text primary key,          -- "evt_..." do Asaas
   event        text not null,
   payload      jsonb,
-  status       text not null default 'pending' check (status in ('pending', 'done', 'failed')),
+  status       text not null default 'pending' check (status in ('pending', 'done', 'failed', 'exhausted')),
   attempts     integer not null default 0,
   last_error   text,
   received_at  timestamptz not null default now(),
@@ -177,11 +180,13 @@ revoke all on table public.asaas_webhook_events from anon, authenticated;
 -- delete_subscription / inactivate_subscription: tentadas de novo sozinhas
 -- (próximo webhook, próximo login do usuário, job diário) até dar certo.
 -- refund_payment: estorno que o admin precisa fazer ou aprovar (não automático).
+-- admin_review: caso pro admin olhar (ex.: assinatura antiga não achada no Asaas).
+-- Antes de qualquer estorno manual, o admin confere o status da cobrança no Asaas.
 create table if not exists public.billing_pending_actions (
   id                    bigserial primary key,
   subscription_ref      text not null,     -- billing_subscriptions.id (sem FK: o histórico fica)
   user_id               uuid references auth.users(id) on delete set null,
-  action                text not null check (action in ('delete_subscription', 'inactivate_subscription', 'refund_payment')),
+  action                text not null check (action in ('delete_subscription', 'inactivate_subscription', 'refund_payment', 'admin_review')),
   reason                text not null,
   asaas_subscription_id text,
   asaas_payment_id      text,
@@ -306,6 +311,7 @@ end;
 $$;
 
 -- ─── 10. Pendências: criar, concluir, registrar falha ───────────────────────
+drop function if exists public.billing_enqueue_action(text, text, text, text, date, numeric, boolean);
 create or replace function public.billing_enqueue_action(
   p_ref text,
   p_action text,
@@ -313,7 +319,8 @@ create or replace function public.billing_enqueue_action(
   p_payment_id text default null,
   p_due_date date default null,
   p_amount numeric default null,
-  p_auto_retry boolean default true
+  p_auto_retry boolean default true,
+  p_user_id uuid default null
 )
 returns bigint
 language plpgsql
@@ -328,7 +335,7 @@ begin
   insert into public.billing_pending_actions
     (subscription_ref, user_id, action, reason, asaas_subscription_id, asaas_payment_id, due_date, amount, auto_retry)
   values
-    (p_ref, r.user_id, p_action, p_reason, r.asaas_subscription_id, p_payment_id, p_due_date, p_amount, p_auto_retry)
+    (p_ref, coalesce(r.user_id, p_user_id), p_action, p_reason, r.asaas_subscription_id, p_payment_id, p_due_date, p_amount, p_auto_retry)
   on conflict (subscription_ref, action) where status = 'pending' do nothing
   returning id into v_id;
   if v_id is null then
@@ -528,6 +535,8 @@ begin
    where id = p_id;
 
   if r.status = 'active' then
+    -- a linha pode ter nascido do evento de cobrança antes do CHECKOUT_PAID
+    perform public.billing_sync_profile(r.user_id);
     return jsonb_build_object('result', 'extended', 'paid_until', greatest(r.paid_until, v_end));
   end if;
 
@@ -545,7 +554,8 @@ begin
     v_note := 'cobranca vencida paga depois (vencimento ' || to_char(p_due_date, 'DD/MM/YYYY')
               || coalesce(', pago em ' || to_char(p_paid_on, 'DD/MM/YYYY'), '')
               || '): plano devolvido ate ' || to_char(v_end at time zone 'America/Sao_Paulo' - interval '1 second', 'DD/MM/YYYY')
-              || '; a assinatura segue inativa no Asaas';
+              || '; sem renovacao: a inativacao no Asaas acontece mesmo assim'
+              || case when r.asaas_stopped_at is null then ' (pendente)' else ' (feita)' end;
     update public.billing_subscriptions
        set access_until = greatest(coalesce(access_until, '-infinity'::timestamptz), v_end), updated_at = now()
      where id = p_id;
@@ -659,6 +669,34 @@ begin
 end;
 $$;
 
+-- Corte da rede de segurança desfeito: o Asaas mostra que a próxima cobrança
+-- de verdade é outra (data mudada no painel ou cobrança removida) e ainda não
+-- venceu. Volta ativa com o vencimento real, sem marcar nada.
+create or replace function public.billing_undo_safety_cut(p_id text, p_real_due date)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  r public.billing_subscriptions%rowtype;
+begin
+  select * into r from public.billing_subscriptions where id = p_id for update;
+  if not found or r.status <> 'canceled' or r.cancel_source <> 'unpaid' or r.asaas_stopped_at is not null then
+    return jsonb_build_object('result', 'not_applicable');
+  end if;
+  update public.billing_subscriptions
+     set status = 'active', cancel_source = null, canceled_at = null, access_until = null,
+         next_due_date = p_real_due, paid_until = greatest(paid_until, public.billing_access_end(p_real_due)), updated_at = now()
+   where id = p_id;
+  update public.billing_pending_actions
+     set status = 'canceled', done_at = now(), done_note = 'rede de seguranca desfeita: proxima cobranca real em ' || to_char(p_real_due, 'DD/MM/YYYY')
+   where subscription_ref = p_id and status = 'pending' and action = 'inactivate_subscription';
+  perform public.billing_sync_profile(r.user_id);
+  return jsonb_build_object('result', 'undone');
+end;
+$$;
+
 -- ─── 15. Encerrar uma assinatura (botão, painel, troca, admin, exclusão) ────
 -- p_immediate: perde o plano agora. Senão vale até o fim do período pago (o
 -- maior entre o guardado e o que o backend confirmou no Asaas).
@@ -765,9 +803,12 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_rows integer;
-  v_real date;
-  r      public.billing_subscriptions%rowtype;
+  v_rows  integer;
+  v_real  date;
+  v_calc  date;
+  v_new   date;
+  v_guard integer;
+  r       public.billing_subscriptions%rowtype;
 begin
   insert into public.billing_payments as b
     (asaas_payment_id, user_id, subscription_ref, asaas_subscription_id, asaas_checkout_id, asaas_customer_id,
@@ -794,17 +835,30 @@ begin
    where excluded.last_event_at >= b.last_event_at;
   get diagnostics v_rows = row_count;
 
-  -- Próximo vencimento de verdade: a cobrança em aberto mais antiga depois da última paga.
+  -- Próximo vencimento: o calculado pela âncora, pulando cobrança removida no
+  -- Asaas (status DELETED), ou a cobrança em aberto mais antiga se for ANTES
+  -- (a cobrança real nunca empurra o vencimento pra depois do calculado: se o
+  -- aviso de uma cobrança se perdeu, a rede de segurança continua vendo ela).
   select * into r from public.billing_subscriptions where id = p_ref;
-  if found and r.status = 'active' and r.kind = 'asaas' then
+  if found and r.status = 'active' and r.kind = 'asaas' and r.last_paid_due_date is not null then
+    v_calc := public.billing_next_due(coalesce(r.anchor_due_date, r.last_paid_due_date), r.last_paid_due_date, r.cycle);
+    v_guard := 0;
+    while v_guard < 12 and exists (
+      select 1 from public.billing_payments
+       where subscription_ref = p_ref and status = 'DELETED' and due_date = v_calc
+    ) loop
+      v_calc := public.billing_next_due(coalesce(r.anchor_due_date, r.last_paid_due_date), v_calc, r.cycle);
+      v_guard := v_guard + 1;
+    end loop;
     select min(due_date) into v_real
       from public.billing_payments
      where subscription_ref = p_ref
        and status in ('PENDING', 'OVERDUE', 'AWAITING_RISK_ANALYSIS')
-       and due_date > coalesce(r.last_paid_due_date, '-infinity'::date);
-    if v_real is not null and v_real is distinct from r.next_due_date then
+       and due_date > r.last_paid_due_date;
+    v_new := case when v_real is not null then least(v_real, v_calc) else v_calc end;
+    if v_new is distinct from r.next_due_date then
       update public.billing_subscriptions
-         set next_due_date = v_real, paid_until = public.billing_access_end(v_real), updated_at = now()
+         set next_due_date = v_new, paid_until = greatest(public.billing_access_end(v_new), public.billing_access_end(r.last_paid_due_date)), updated_at = now()
        where id = p_ref;
     end if;
   end if;
@@ -905,6 +959,11 @@ begin
      where status = 'active' and kind = 'asaas'
        and next_due_date is not null
        and next_due_date < public.billing_today() - 1
+       and not exists (
+         select 1 from public.billing_payments b
+          where b.subscription_ref = billing_subscriptions.id
+            and b.due_date = billing_subscriptions.next_due_date
+            and b.status = 'DELETED')
   loop
     perform public.billing_payment_overdue(r.id, r.next_due_date, 'rede_de_seguranca');
     v_cut := v_cut + 1;
@@ -942,7 +1001,8 @@ declare
 begin
   foreach f in array array[
     'public.billing_sync_profile(uuid)',
-    'public.billing_enqueue_action(text, text, text, text, date, numeric, boolean)',
+    'public.billing_enqueue_action(text, text, text, text, date, numeric, boolean, uuid)',
+    'public.billing_undo_safety_cut(text, date)',
     'public.billing_action_done(bigint, text, text)',
     'public.billing_action_failed(bigint, text, boolean)',
     'public.billing_mark_asaas_stopped(text, text, text)',
@@ -966,7 +1026,36 @@ begin
 end;
 $$;
 
--- ─── 21. Agenda o job diário (03:15 de Brasília) ────────────────────────────
+-- ─── 21. Conferência: as colunas que o código usa existem ────────────────────
+-- (create table if not exists não muda tabela criada por uma versão antiga
+-- deste arquivo; se faltar coluna, para aqui e nada é gravado)
+do $$
+declare
+  c   text;
+  faltando text := '';
+begin
+  foreach c in array array[
+    'asaas_webhook_events.status', 'asaas_webhook_events.payload', 'asaas_webhook_events.attempts', 'asaas_webhook_events.last_error',
+    'billing_subscriptions.started_at', 'billing_subscriptions.anchor_due_date', 'billing_subscriptions.asaas_stopped_at',
+    'billing_subscriptions.asaas_stop_kind', 'billing_subscriptions.needs_admin_review',
+    'billing_payments.last_event_at', 'billing_pending_actions.auto_retry', 'billing_pending_actions.next_attempt_at',
+    'pending_checkouts.switch_confirmed', 'profiles.plan_expires_at', 'profiles.tokens_period_start'
+  ]
+  loop
+    if not exists (
+      select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = split_part(c, '.', 1) and column_name = split_part(c, '.', 2)
+    ) then
+      faltando := faltando || ' ' || c;
+    end if;
+  end loop;
+  if faltando <> '' then
+    raise exception 'Colunas faltando (tabela criada por versao antiga deste arquivo?):%', faltando;
+  end if;
+end;
+$$;
+
+-- ─── 22. Agenda o job diário (03:15 de Brasília) ────────────────────────────
 -- Se der erro aqui, ligue a extensão pg_cron no painel (Database > Extensions)
 -- e rode este arquivo de novo. Agendar pelo nome substitui o anterior.
 create extension if not exists pg_cron;
