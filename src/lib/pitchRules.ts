@@ -18,20 +18,30 @@ export const normalizeChannelName = (name: string): string =>
 const NOTE_SEMITONE: Record<string, number> = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
 const SOLFEGE_SEMITONE: Record<string, number> = { do: 0, re: 2, mi: 4, fa: 5, sol: 7, la: 9, si: 11 };
 const KEY_QUALITY = /^(m|min|minor|menor|maj|major|maior)?$/i;
+// Menor: as qualidades de KEY_QUALITY que dizem menor, sem diferenciar caixa (a mesma regra
+// que aceita o tom): "Am", "Ebmin", "C minor", "Lá m", "Dó menor". O resto é maior.
+const MINOR_QUALITY = /^(m|min|minor|menor)$/i;
 
 const withAccidental = (semitone: number, accidental: string): number =>
     (semitone + (accidental === '#' ? 1 : accidental === 'b' ? -1 : 0) + 12) % 12;
 
-export const keyToSemitone = (key: string | null | undefined): number | null => {
+const parsed = (semitone: number, accidental: string, quality: string) =>
+    ({ semitone: withAccidental(semitone, accidental), minor: MINOR_QUALITY.test(quality) });
+
+// Tom escrito -> tônica (semitom) e se é menor. Mesma regra de keyToSemitone (que só lê o
+// semitom daqui): o que um não reconhece o outro também não.
+export const parseKey = (key: string | null | undefined): { semitone: number; minor: boolean } | null => {
     if (typeof key !== 'string') return null;
     const k = key.trim().replace(/♯/g, '#').replace(/♭/g, 'b');
     const m = /^([A-Ga-g])([#b]?)(.*)$/.exec(k);
-    if (m && KEY_QUALITY.test(m[3].trim())) return withAccidental(NOTE_SEMITONE[m[1].toLowerCase()], m[2]);
+    if (m && KEY_QUALITY.test(m[3].trim())) return parsed(NOTE_SEMITONE[m[1].toLowerCase()], m[2], m[3].trim());
     // Solfejo, sem acento e em minúsculas: "Lá m" -> "la m", "Rém" -> "rem".
     const s = /^(do|re|mi|fa|sol|la|si)\s*([#b]?)(.*)$/.exec(normalizeChannelName(k));
-    if (s && KEY_QUALITY.test(s[3].trim())) return withAccidental(SOLFEGE_SEMITONE[s[1]], s[2]);
+    if (s && KEY_QUALITY.test(s[3].trim())) return parsed(SOLFEGE_SEMITONE[s[1]], s[2], s[3].trim());
     return null;
 };
+
+export const keyToSemitone = (key: string | null | undefined): number | null => parseKey(key)?.semitone ?? null;
 
 // Semitons do tom original até o tom escolhido, pelo caminho mais curto
 // (-6..+6). Tom não reconhecido de qualquer lado: 0 (não transpõe, nunca NaN).
