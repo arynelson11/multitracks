@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { FAMILY_COLOR, channelFamily, resolveChannelRole } from '../../lib/channelNames'
 import { channelFaderFill } from '../../lib/channelRoles'
-import { dragPan, faderToGain } from '../../lib/faderScale'
+import { FADER_MAX_GAIN, dragPan, faderToGain } from '../../lib/faderScale'
 import type { OutputMode, OutputPlan, StageActions, StageChannel, StageClock, TransitionView } from '../../lib/stageContracts'
 import { StageMixer } from './StageMixer'
 import type { StageMixerProps } from './StageMixer'
@@ -93,6 +93,13 @@ function renderMixer(v: StageMixerProps['view'] = view(), actions: StageActions 
 }
 
 const pointer = (el: Element, type: string, init: MouseEventInit = {}) => fireEvent(el, new MouseEvent(type, { bubbles: true, cancelable: true, ...init }))
+// O jsdom não tem PointerEvent: MouseEvent com o pointerId posto à mão (dois dedos).
+const finger = (el: Element, type: string, pointerId: number, init: MouseEventInit = {}) => {
+  const ev = new MouseEvent(type, { bubbles: true, cancelable: true, ...init })
+  Object.defineProperty(ev, 'pointerId', { value: pointerId })
+  return fireEvent(el, ev)
+}
+const dbOf = (g: number) => 20 * Math.log10(g)
 const strip = (label: string) => screen.getByRole('group', { name: `Canal ${label}` })
 const fader = (label: string) => screen.getByRole('slider', { name: `Volume ${label}` })
 const panOf = (label: string) => screen.getByRole('slider', { name: `Pan ${label}` })
@@ -223,6 +230,169 @@ describe('pan', () => {
 
     rerenderWith(view({ outputs: plan('stereo') }))
     for (const ch of CHANNELS) expect(panOf(ch.label).getAttribute('aria-disabled')).toBeNull()
+  })
+})
+
+describe('gesto (Ruling T14-gesto)', () => {
+  it('arrasto de lado não muda o volume nem o pan: o gesto fica com a rolagem', () => {
+    const { actions } = renderMixer(view({ channels: [stageChannel('d1', 'Bateria', { pan: 0.5 })] }))
+    for (const el of [fader('Bateria'), panOf('Bateria')]) {
+      pointer(el, 'pointerdown', { clientX: 100, clientY: 200 })
+      pointer(el, 'pointermove', { clientX: 120, clientY: 196 }) // 20 px de lado, 4 na vertical: rolagem
+      pointer(el, 'pointermove', { clientX: 122, clientY: 150 }) // depois disso nem a vertical vale
+      pointer(el, 'pointerup', { clientX: 122, clientY: 150 })
+      expect(el.className).toContain('touch-pan-x')
+    }
+    // Empate (5 de cada lado) também fica com a rolagem.
+    pointer(fader('Bateria'), 'pointerdown', { clientX: 100, clientY: 200 })
+    pointer(fader('Bateria'), 'pointermove', { clientX: 105, clientY: 195 })
+    pointer(fader('Bateria'), 'pointermove', { clientX: 105, clientY: 150 })
+    expect(actions.setVolume).not.toHaveBeenCalled()
+    expect(actions.setPan).not.toHaveBeenCalled()
+  })
+
+  it('arrasto vertical com um pouco de lado muda', () => {
+    const { actions } = renderMixer()
+    const fd = fader('Bateria')
+    pointer(fd, 'pointerdown', { clientX: 100, clientY: 200 })
+    pointer(fd, 'pointermove', { clientX: 102, clientY: 190 })
+    expect(actions.setVolume).toHaveBeenLastCalledWith('d1', faderToGain(1))
+    pointer(fd, 'pointermove', { clientX: 140, clientY: 190 }) // já arrastando: o lado não interrompe
+    pointer(fd, 'pointermove', { clientX: 140, clientY: 210 })
+    expect(actions.setVolume).toHaveBeenLastCalledWith('d1', faderToGain(0.5))
+  })
+
+  it('cancelamento do navegador devolve o valor de antes do gesto', () => {
+    const before = view({ channels: [stageChannel('d1', 'Bateria', { volume: 0.5, pan: 0.5 })] })
+    const { actions, rerenderWith } = renderMixer(before)
+    pointer(fader('Bateria'), 'pointerdown', { clientX: 100, clientY: 200 })
+    pointer(fader('Bateria'), 'pointermove', { clientX: 100, clientY: 190 })
+    expect(actions.setVolume).toHaveBeenCalledTimes(1)
+    // O App já aplicou o valor do arrasto (o ganho do canal mudou na view) antes do cancelamento.
+    const moved = vi.mocked(actions.setVolume).mock.lastCall![1]
+    rerenderWith(view({ channels: [stageChannel('d1', 'Bateria', { volume: moved, pan: 0.5 })] }))
+    pointer(fader('Bateria'), 'pointercancel', { clientX: 100, clientY: 190 })
+    expect(actions.setVolume).toHaveBeenLastCalledWith('d1', 0.5)
+    expect(fader('Bateria').dataset.dragging).toBe('false')
+    pointer(fader('Bateria'), 'lostpointercapture')
+    expect(actions.setVolume).toHaveBeenCalledTimes(2) // a captura perdida depois do cancelamento não devolve de novo
+
+    rerenderWith(before)
+    pointer(panOf('Bateria'), 'pointerdown', { clientX: 100, clientY: 100 })
+    pointer(panOf('Bateria'), 'pointermove', { clientX: 100, clientY: 90 })
+    expect(actions.setPan).toHaveBeenLastCalledWith('d1', dragPan(0.5, 10))
+    rerenderWith(view({ channels: [stageChannel('d1', 'Bateria', { volume: 0.5, pan: dragPan(0.5, 10) })] }))
+    pointer(panOf('Bateria'), 'pointercancel', { clientX: 100, clientY: 90 })
+    expect(actions.setPan).toHaveBeenLastCalledWith('d1', 0.5)
+    expect(actions.setPan).toHaveBeenCalledTimes(2)
+  })
+
+  it('dois dedos: soltar um não encerra o arrasto do outro; dois faders andam juntos', () => {
+    const { actions } = renderMixer()
+    const fd = fader('Bateria')
+    finger(fd, 'pointerdown', 1, { clientY: 200 })
+    finger(fd, 'pointerdown', 2, { clientY: 200 }) // o segundo dedo assume o fader
+    finger(fd, 'pointerup', 1, { clientY: 200 })
+    finger(fd, 'pointermove', 2, { clientY: 190 })
+    expect(actions.setVolume).toHaveBeenLastCalledWith('d1', faderToGain(1))
+    finger(fd, 'pointerup', 2, { clientY: 190 })
+
+    finger(fader('Baixo'), 'pointerdown', 3, { clientY: 200 })
+    finger(fader('Guia'), 'pointerdown', 4, { clientY: 200 })
+    finger(fader('Baixo'), 'pointermove', 3, { clientY: 190 })
+    finger(fader('Guia'), 'pointermove', 4, { clientY: 210 })
+    expect(actions.setVolume).toHaveBeenCalledWith('b1', faderToGain(1))
+    expect(actions.setVolume).toHaveBeenCalledWith('g1', faderToGain(0.5))
+  })
+})
+
+describe('teclado (Ruling T14-teclado)', () => {
+  it('fader, PRINCIPAL e pan pegam foco pelo Tab; pan travado não', () => {
+    const { rerenderWith } = renderMixer()
+    for (const el of [fader('Bateria'), fader('principal'), panOf('Bateria')]) {
+      expect(el.tabIndex).toBe(0)
+      el.focus()
+      expect(document.activeElement).toBe(el)
+      expect(el.className).toContain('focus-visible:outline-ps-or')
+    }
+    // Ordem do Tab dentro do canal: pan, fader, M, S.
+    const s = strip('Bateria')
+    const order = [...s.querySelectorAll<HTMLElement>('[tabindex="0"], button')]
+    expect(order.map((e) => e.getAttribute('aria-label') ?? e.textContent)).toEqual(['Pan Bateria', 'Volume Bateria', 'M', 'S'])
+    rerenderWith(view({ outputs: plan('split2') }))
+    expect(panOf('Bateria').hasAttribute('tabindex')).toBe(false)
+  })
+
+  it('setas ±1 dB, PageUp e PageDown ±6 dB, Home e End no mínimo e no máximo', () => {
+    const { actions } = renderMixer(view({ channels: [stageChannel('d1', 'Bateria'), stageChannel('b1', 'Baixo', { volume: 0.5 })] }))
+    const fd = fader('Bateria')
+    const press = (key: string) => fireEvent.keyDown(fd, { key })
+    press('ArrowUp')
+    expect(dbOf(vi.mocked(actions.setVolume).mock.lastCall![1])).toBeCloseTo(1, 9)
+    press('ArrowDown')
+    expect(dbOf(vi.mocked(actions.setVolume).mock.lastCall![1])).toBeCloseTo(-1, 9)
+    press('PageUp')
+    expect(dbOf(vi.mocked(actions.setVolume).mock.lastCall![1])).toBeCloseTo(6, 9)
+    press('PageDown')
+    expect(dbOf(vi.mocked(actions.setVolume).mock.lastCall![1])).toBeCloseTo(-6, 9)
+    press('Home')
+    expect(actions.setVolume).toHaveBeenLastCalledWith('d1', 0)
+    press('End')
+    expect(actions.setVolume).toHaveBeenLastCalledWith('d1', FADER_MAX_GAIN)
+    expect(vi.mocked(actions.setVolume).mock.calls.every(([id]) => id === 'd1')).toBe(true)
+    // Do -6,02 dB do Baixo, a seta pra cima dá -5,0 dB.
+    fireEvent.keyDown(fader('Baixo'), { key: 'ArrowUp' })
+    expect(vi.mocked(actions.setVolume).mock.lastCall![0]).toBe('b1')
+    expect(dbOf(vi.mocked(actions.setVolume).mock.lastCall![1])).toBeCloseTo(-5, 9)
+
+    fireEvent.keyDown(fader('principal'), { key: 'ArrowUp' })
+    expect(dbOf(vi.mocked(actions.setMasterVolume).mock.lastCall![0])).toBeCloseTo(1, 9)
+    fireEvent.keyDown(fader('principal'), { key: 'Home' })
+    expect(actions.setMasterVolume).toHaveBeenLastCalledWith(0)
+  })
+
+  it('valor acessível em dB (valuenow, valuetext, mínimo e máximo)', () => {
+    renderMixer(view({ channels: [stageChannel('d1', 'Bateria', { volume: 0.5 }), stageChannel('b1', 'Baixo', { volume: 0 })] }))
+    const fd = fader('Bateria')
+    expect(fd.getAttribute('aria-valuemin')).toBe('-63')
+    expect(fd.getAttribute('aria-valuemax')).toBe('6')
+    expect(fd.getAttribute('aria-valuenow')).toBe('-6')
+    expect(fd.getAttribute('aria-valuetext')).toBe('−6.0 dB')
+    expect(fader('Baixo').getAttribute('aria-valuenow')).toBe('-63')
+    expect(fader('Baixo').getAttribute('aria-valuetext')).toBe('−∞ dB')
+    expect(fader('principal').getAttribute('aria-valuenow')).toBe('0')
+  })
+
+  it('pan: setas pra esquerda e pra direita; travado ignora', () => {
+    const { actions, rerenderWith } = renderMixer(view({ channels: [stageChannel('d1', 'Bateria', { pan: 0.5 })] }))
+    fireEvent.keyDown(panOf('Bateria'), { key: 'ArrowRight' })
+    expect(actions.setPan).toHaveBeenLastCalledWith('d1', 0.55)
+    fireEvent.keyDown(panOf('Bateria'), { key: 'ArrowLeft' })
+    expect(actions.setPan).toHaveBeenLastCalledWith('d1', 0.45)
+    rerenderWith(view({ channels: [stageChannel('d1', 'Bateria', { pan: 0.5 })], outputs: plan('split2') }))
+    fireEvent.keyDown(panOf('Bateria'), { key: 'ArrowRight' })
+    expect(actions.setPan).toHaveBeenCalledTimes(2)
+  })
+
+  it('a seta com foco no fader ou no pan não chega no atalho global de buscar na música', () => {
+    renderMixer()
+    const onWindowKey = vi.fn()
+    window.addEventListener('keydown', onWindowKey)
+    try {
+      for (const key of ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End']) {
+        const ev = fireEvent.keyDown(fader('Bateria'), { key })
+        expect(ev, key).toBe(false) // preventDefault: a página não rola
+        fireEvent.keyDown(fader('principal'), { key })
+      }
+      fireEvent.keyDown(panOf('Bateria'), { key: 'ArrowLeft', code: 'ArrowLeft' })
+      fireEvent.keyDown(panOf('Bateria'), { key: 'ArrowRight', code: 'ArrowRight' })
+      expect(onWindowKey).not.toHaveBeenCalled()
+      // Tecla que o controle não trata (Espaço = tocar) continua chegando no atalho.
+      fireEvent.keyDown(fader('Bateria'), { key: ' ', code: 'Space' })
+      expect(onWindowKey).toHaveBeenCalledTimes(1)
+    } finally {
+      window.removeEventListener('keydown', onWindowKey)
+    }
   })
 })
 
@@ -470,7 +640,7 @@ describe('PRINCIPAL', () => {
     expect([...m.querySelectorAll('[data-scale] span')].map((s) => s.textContent)).toEqual(['+6', '0', '−12', '−24', '−∞'])
 
     const edit = within(m).getByRole('button', { name: 'EDITAR CANAIS' })
-    expect(edit.getAttribute('aria-pressed')).toBe('false')
+    expect(edit.dataset.on).toBe('false')
     fireEvent.click(edit)
     expect(actions.toggleChannelEditMode).toHaveBeenCalledTimes(1)
     const mute = within(m).getByRole('button', { name: 'Mudo geral' })
@@ -478,7 +648,14 @@ describe('PRINCIPAL', () => {
     fireEvent.click(mute)
     expect(actions.toggleMasterMute).toHaveBeenCalledTimes(1)
     rerenderWith(view({ channelEditMode: true, master: { volume: 1, muted: true } }))
-    expect(within(m).getByRole('button', { name: 'EDITAR CANAIS' }).getAttribute('aria-pressed')).toBe('true')
+    // Ruling T14-pronto: ligado, o botão diz PRONTO em laranja, como na Parte 1 (o texto muda, então sem aria-pressed).
+    expect(within(m).queryByRole('button', { name: 'EDITAR CANAIS' })).toBeNull()
+    const done = within(m).getByRole('button', { name: 'PRONTO' })
+    expect(done.dataset.on).toBe('true')
+    expect(done.className).toContain('text-ps-or')
+    expect(done.hasAttribute('aria-pressed')).toBe(false)
+    fireEvent.click(done)
+    expect(actions.toggleChannelEditMode).toHaveBeenCalledTimes(2)
     expect(within(m).getByRole('button', { name: 'Mudo geral' }).getAttribute('aria-pressed')).toBe('true')
     expect(fader('principal').dataset.quiet).toBe('true')
 
@@ -537,6 +714,7 @@ describe('mixer inteiro', () => {
     expect(scroller.className).toContain('overflow-x-auto')
     expect(scroller.className).toContain('snap-x')
     expect(scroller.className).toContain('snap-mandatory')
+    expect(scroller.className).toContain('scroll-px-1') // encaixe com a mesma folga de 4 px dos lados
 
     // EDITAR CANAIS: mínimo de 88 px pra lixeira armada caber; em 1280 px ficam 12 inteiros e o resto rola.
     rerenderWith(view({ channels: many(14), channelEditMode: true }))
@@ -576,10 +754,10 @@ describe('mixer inteiro', () => {
     expect(scroller.style.paddingBottom).toBe('0px')
   })
 
-  it('alvos de toque: pan, lápis, alça, lixeira, EDITAR CANAIS e mudo geral com 44 px', () => {
+  it('alvos de toque: pan, lápis, alça, lixeira, PRONTO (EDITAR CANAIS ligado) e mudo geral com 44 px', () => {
     renderMixer(view({ channelEditMode: true }))
     expect(panOf('Bateria').className).toContain('min-h-ps-touch')
-    for (const name of ['Renomear e escolher papel de Bateria', 'Mover Bateria', 'Apagar o canal Bateria', 'EDITAR CANAIS', 'Mudo geral']) {
+    for (const name of ['Renomear e escolher papel de Bateria', 'Mover Bateria', 'Apagar o canal Bateria', 'PRONTO', 'Mudo geral']) {
       const b = screen.getByRole('button', { name })
       expect(b.className, name).toMatch(/min-h-ps-touch|size-ps-touch/)
       expect(b.dataset.touchException, name).toBeUndefined()

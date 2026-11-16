@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent } from 'react'
-import { DRAG_START_PX, dragPan, panText } from '../../lib/faderScale'
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
+import { dragPan, gestureIntent, panText, stepPan } from '../../lib/faderScale'
 import { cx } from '../ui'
 
 export interface PanKnobProps {
@@ -16,6 +16,11 @@ export interface PanKnobProps {
 const NO_PAN = 'Com Click e Guia separados o pan não decide a saída'
 /** Giro máximo do knob pra cada lado, em graus (v6 knobSVG). */
 const SWEEP_DEG = 135
+/** Passo das setas do teclado (direita soma, esquerda subtrai): 5 no valor mostrado. */
+const KEY_STEP = 0.05
+
+/** `p0`: de onde o arrasto conta; `orig`: o pan de antes do toque (volta nele se o navegador cancela). */
+interface Drag { id: number; x0: number; y0: number; p0: number; orig: number; moving: boolean; sent: number }
 
 /** Ponto do círculo de raio `r` em volta do centro do knob (14, 14), `deg` graus a partir do topo. */
 function pt(deg: number, r: number): string {
@@ -25,17 +30,20 @@ function pt(deg: number, r: number): string {
 
 // v5 .pan: alvo de 44 px de altura (o v5 tinha 30), knob de 28 px e o valor ao lado em largura fixa
 // de 4 caracteres (L100), pro knob não andar quando o valor muda.
-const ROOT = 'flex min-h-ps-touch w-full shrink-0 items-center justify-center gap-1 touch-pan-x select-none'
+const ROOT =
+  'flex min-h-ps-touch w-full shrink-0 items-center justify-center gap-1 touch-pan-x select-none rounded-ps-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ps-or'
 const VALUE = 'ps-num min-w-[4ch] text-left text-ps-micro leading-none font-bold text-ps-bone data-[center=true]:text-ps-dim'
 
 /**
  * Knob de pan do v5/v6: arco na cor do grupo do canal (--c, posto pelo canal), centro marcado
- * no topo e o valor L/C/R ao lado. Arrasta na vertical (sobe = direita) depois de 3 px; duplo
- * clique centraliza. Sem edição fica apagado, não arrasta e explica no title.
+ * no topo e o valor L/C/R ao lado. Arrasta na vertical (sobe = direita) depois de 3 px, só se a
+ * vertical domina (de lado é a rolagem do mixer); cancelado pelo navegador, volta ao de antes;
+ * duplo clique centraliza; com foco, setas pra esquerda e pra direita. Sem edição fica apagado,
+ * sem foco, não arrasta e explica no title.
  */
 export function PanKnob({ pan, editable, label, onChange }: PanKnobProps) {
   const [dragP, setDragP] = useState<number | null>(null)
-  const dragRef = useRef<{ id: number; y0: number; p0: number; moving: boolean; sent: number } | null>(null)
+  const dragRef = useRef<Drag | null>(null)
   const p = dragP ?? (Number.isFinite(pan) ? Math.min(1, Math.max(-1, pan)) : 0)
   const text = panText(p)
   const a = p * SWEEP_DEG
@@ -44,6 +52,10 @@ export function PanKnob({ pan, editable, label, onChange }: PanKnobProps) {
     dragRef.current = null
     setDragP(null)
   }
+  /** Fim do gesto só pelo dedo que está arrastando. */
+  const endOwn = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (dragRef.current && e.pointerId === dragRef.current.id) endDrag()
+  }
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!editable || e.button > 0) return
     try {
@@ -51,14 +63,26 @@ export function PanKnob({ pan, editable, label, onChange }: PanKnobProps) {
     } catch {
       // Sem captura o arrasto vale enquanto o dedo estiver em cima do knob.
     }
-    dragRef.current = { id: e.pointerId, y0: e.clientY, p0: p, moving: false, sent: pan }
+    dragRef.current = { id: e.pointerId, x0: e.clientX, y0: e.clientY, p0: p, orig: pan, moving: false, sent: pan }
   }
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const d = dragRef.current
     if (!d || e.pointerId !== d.id) return
     const dy = d.y0 - e.clientY
-    if (!d.moving && Math.abs(dy) < DRAG_START_PX) return
-    d.moving = true
+    if (!d.moving) {
+      const intent = gestureIntent(e.clientX - d.x0, dy)
+      if (intent === 'espera') return
+      if (intent === 'rolagem') {
+        try {
+          e.currentTarget.releasePointerCapture?.(d.id)
+        } catch {
+          // Já sem captura.
+        }
+        endDrag()
+        return
+      }
+      d.moving = true
+    }
     const next = dragPan(d.p0, dy)
     setDragP(next)
     if (next !== d.sent) {
@@ -66,10 +90,25 @@ export function PanKnob({ pan, editable, label, onChange }: PanKnobProps) {
       onChange(next)
     }
   }
+  const onPointerCancel = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current
+    if (!d || e.pointerId !== d.id) return
+    endDrag()
+    if (d.moving && d.sent !== d.orig) onChange(d.orig)
+  }
   const onDoubleClick = () => {
     if (!editable) return
     endDrag()
     onChange(0)
+  }
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!editable || e.altKey || e.ctrlKey || e.metaKey) return
+    const delta = e.key === 'ArrowRight' ? KEY_STEP : e.key === 'ArrowLeft' ? -KEY_STEP : null
+    if (delta === null) return
+    // A seta é do pan: o atalho do palco (buscar 5 s na música) não recebe.
+    e.preventDefault()
+    e.stopPropagation()
+    onChange(stepPan(p, delta))
   }
 
   return (
@@ -81,13 +120,15 @@ export function PanKnob({ pan, editable, label, onChange }: PanKnobProps) {
       aria-valuenow={Math.round(p * 100)}
       aria-valuetext={text}
       aria-disabled={editable ? undefined : true}
+      tabIndex={editable ? 0 : undefined}
       title={editable ? 'Pan: arraste para cima ou para baixo. Duplo clique centraliza.' : NO_PAN}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
-      onLostPointerCapture={endDrag}
+      onPointerUp={endOwn}
+      onPointerCancel={onPointerCancel}
+      onLostPointerCapture={endOwn}
       onDoubleClick={onDoubleClick}
+      onKeyDown={onKeyDown}
       className={cx(ROOT, editable ? 'group/pan cursor-ns-resize' : 'cursor-default opacity-35')}
     >
       <svg viewBox="0 0 28 28" width="28" height="28" aria-hidden="true" focusable="false" className="size-7 shrink-0 overflow-visible" fill="none" strokeLinecap="round">

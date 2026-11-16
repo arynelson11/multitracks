@@ -9,8 +9,8 @@ export const FADER_ZERO = 0.75
 export const DRAG_START_PX = 3
 /** Abaixo disso o fader é silêncio (−∞ dB). */
 const FADER_FLOOR = 0.02
-/** Topo do fader. */
-const MAX_DB = 6
+/** Topo do fader (+6 dB, decisão 11 do plano). Constante única: o celular da banda (T29) usa o mesmo teto. */
+export const FADER_MAX_DB = 6
 /** dB por década na parte de baixo do curso (40 x log10: −12 dB na metade do caminho até o 0). */
 const LOW_SLOPE = 40
 /** Curso mínimo do arrasto, pra um fader baixinho não ficar sensível demais. */
@@ -24,10 +24,15 @@ const MINUS = '−'
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))
 
+/** Ganho linear do topo do fader (+6 dB, perto de 2). */
+export const FADER_MAX_GAIN = 10 ** (FADER_MAX_DB / 20)
+/** dB mais baixo que o fader ainda toca (o pé do curso, 0,02): perto de −63 dB. Abaixo disso é silêncio. */
+export const FADER_MIN_DB = LOW_SLOPE * Math.log10(FADER_FLOOR / FADER_ZERO)
+
 /** dB da posição do fader: abaixo de 0,02 é −∞; de 0,75 pra cima, linear até +6 dB; no meio, 40 x log10(f / 0,75). */
 export function faderToDb(f: number): number {
   if (!(f >= FADER_FLOOR)) return -Infinity
-  if (f >= FADER_ZERO) return ((Math.min(f, 1) - FADER_ZERO) / (1 - FADER_ZERO)) * MAX_DB
+  if (f >= FADER_ZERO) return ((Math.min(f, 1) - FADER_ZERO) / (1 - FADER_ZERO)) * FADER_MAX_DB
   return LOW_SLOPE * Math.log10(f / FADER_ZERO)
 }
 
@@ -40,8 +45,10 @@ export function faderToGain(f: number): number {
 /** Posição do fader de um ganho: 0 ou inválido no pé, 1 em 0,75, teto no topo (+6 dB). */
 export function gainToFader(g: number): number {
   if (!(g > 0)) return 0
+  // No teto (ou acima) é o topo exato: a conta de ida e volta do log daria 0,9999999999999999.
+  if (g >= FADER_MAX_GAIN) return 1
   const db = 20 * Math.log10(g)
-  if (db >= 0) return Math.min(1, FADER_ZERO + (db / MAX_DB) * (1 - FADER_ZERO))
+  if (db >= 0) return Math.min(1, FADER_ZERO + (db / FADER_MAX_DB) * (1 - FADER_ZERO))
   return FADER_ZERO * 10 ** (db / LOW_SLOPE)
 }
 
@@ -70,12 +77,50 @@ export function dragFader(f0: number, dyPx: number, travelPx: number): number {
 }
 
 /**
+ * O que um gesto que começou em cima do fader ou do pan está virando, pelo deslocamento desde o
+ * toque (`dxPx` pro lado, `dyPx` na vertical): 'arrasto' quando a vertical passou de
+ * DRAG_START_PX e é maior que o lateral; 'rolagem' quando o lateral passou do limiar e não é
+ * menor que a vertical (o gesto fica com a rolagem do mixer, e um empate também); senão 'espera'.
+ * Rolar o mixer com o dedo em cima de um fader nunca muda o volume (Ruling T14-gesto).
+ */
+export function gestureIntent(dxPx: number, dyPx: number): 'arrasto' | 'rolagem' | 'espera' {
+  const ax = Number.isFinite(dxPx) ? Math.abs(dxPx) : 0
+  const ay = Number.isFinite(dyPx) ? Math.abs(dyPx) : 0
+  if (ay >= DRAG_START_PX && ay > ax) return 'arrasto'
+  if (ax >= DRAG_START_PX) return 'rolagem'
+  return 'espera'
+}
+
+/**
  * Pan depois de arrastar `dyPx` pra cima (sobe = direita): 0,014 por px, preso entre −1 e 1,
  * em passos de 0,01 (o que o knob mostra); |p| < 0,04 vira 0.
  */
 export function dragPan(p0: number, dyPx: number): number {
-  const p = Math.round(clamp(p0 + dyPx * PAN_PER_PX, -1, 1) * 100) / 100
-  return Math.abs(p) < PAN_SNAP ? 0 : p
+  return snapPan(p0 + dyPx * PAN_PER_PX)
+}
+
+/** Pan preso entre −1 e 1, em passos de 0,01, com o centro que gruda (|p| < 0,04 vira 0). */
+function snapPan(p: number): number {
+  const v = Math.round(clamp(p, -1, 1) * 100) / 100
+  return Math.abs(v) < PAN_SNAP ? 0 : v
+}
+
+/** Pan depois de um passo do teclado (seta pra direita soma, pra esquerda subtrai). Inválido conta como centro. */
+export function stepPan(p0: number, delta: number): number {
+  return snapPan((Number.isFinite(p0) ? p0 : 0) + delta)
+}
+
+/**
+ * Ganho depois de somar `deltaDb` ao ganho `g` (teclado do fader: setas ±1 dB, PageUp e
+ * PageDown ±6 dB). Arredonda em 0,1 dB; teto em +6 dB; abaixo do pé (−63 dB) vira silêncio;
+ * do silêncio, subir parte do pé. Ganho inválido conta como silêncio.
+ */
+export function stepGainDb(g: number, deltaDb: number): number {
+  const db = g > 0 ? 20 * Math.log10(g) : deltaDb > 0 ? FADER_MIN_DB : -Infinity
+  const next = Math.round((db + deltaDb) * 10) / 10
+  if (!(next >= FADER_MIN_DB)) return 0
+  if (next >= FADER_MAX_DB) return FADER_MAX_GAIN
+  return 10 ** (next / 20)
 }
 
 /**

@@ -44,7 +44,8 @@ export function StageMixer({ view, actions, clock }: StageMixerProps) {
   const { channels, channelEditMode, outputs, click, transition, master } = view
   const scrollRef = useRef<HTMLDivElement>(null)
   const [innerWidth, setInnerWidth] = useState(0)
-  // Altura da barra de rolagem de lado (5 px no Chrome e no app, pelo index.css; 0 no Safari).
+  // Altura da barra de rolagem de lado, medida: 5 px onde vale o ::-webkit-scrollbar do index.css
+  // (Chrome, Edge, app, Safari de mesa); 0 com barra por cima do conteúdo (iPad).
   const [scrollbar, setScrollbar] = useState(0)
   const dragRef = useRef<Drag | null>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
@@ -122,8 +123,10 @@ export function StageMixer({ view, actions, clock }: StageMixerProps) {
         ref={scrollRef}
         data-mixer-scroll=""
         // A barra de rolagem entra na folga de baixo: os faders dos canais continuam na linha do fader do PRINCIPAL.
+        // scroll-px-1: o encaixe respeita a folga de 4 px dos lados, então o canal encaixado não fica rente
+        // à borda e nenhum pedaço do canal vizinho aparece.
         style={scrollbar > 0 ? { paddingBottom: Math.max(0, SCROLL_PAD_BOTTOM_PX - scrollbar) } : undefined}
-        className="flex min-w-0 flex-1 snap-x snap-mandatory overflow-x-auto overflow-y-hidden rounded-ps-2xl bg-ps-well px-1 pt-2.5 pb-2 inset-ring inset-ring-ps-line"
+        className="flex min-w-0 flex-1 snap-x snap-mandatory scroll-px-1 overflow-x-auto overflow-y-hidden rounded-ps-2xl bg-ps-well px-1 pt-2.5 pb-2 inset-ring inset-ring-ps-line"
       >
         {channels.length === 0 && <p className="m-auto px-4 text-center text-ps-sm text-ps-mut">Os canais da música aparecem aqui.</p>}
         {channels.map((ch, i) => (

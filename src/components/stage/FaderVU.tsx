@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react'
-import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
-import { DRAG_START_PX, dbText, dragFader, faderToGain, gainToFader } from '../../lib/faderScale'
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
+import {
+  FADER_MAX_DB, FADER_MAX_GAIN, FADER_MIN_DB, dbText, dragFader, faderToGain, gainToFader, gestureIntent, stepGainDb,
+} from '../../lib/faderScale'
 import { cx } from '../ui'
 import { useFrame } from './useFrame'
 
@@ -52,13 +54,27 @@ function writeVar(el: HTMLElement | null, name: string, value: number): void {
   if (el.style.getPropertyValue(name) !== s) el.style.setProperty(name, s)
 }
 
+/** Teclado (Ruling T14-teclado): setas ±1 dB, PageUp e PageDown ±6 dB; Home e End vão ao silêncio e ao topo. */
+const KEY_DB: Partial<Record<string, number>> = { ArrowUp: 1, ArrowDown: -1, PageUp: 6, PageDown: -6 }
+/** Valor acessível em dB, de −63 (o pé; o silêncio também fica aqui, com "−∞ dB" no texto) a +6. */
+const ARIA_MIN_DB = Math.round(FADER_MIN_DB)
+
+function ariaDb(g: number): number {
+  if (!(g > 0)) return ARIA_MIN_DB
+  return Math.min(FADER_MAX_DB, Math.max(ARIA_MIN_DB, Math.round(20 * Math.log10(g) * 10) / 10))
+}
+
+interface Drag { id: number; x0: number; y0: number; f0: number; g0: number; moving: boolean; sent: number }
+
 /** Escala do PRINCIPAL: posição do fader (1 no topo) e o texto, com sinal de menos tipográfico. */
 const SCALE: ReadonlyArray<{ f: number; text: string }> = [
   { f: 1, text: '+6' }, { f: 0.75, text: '0' }, { f: 0.375, text: '−12' }, { f: 0.1875, text: '−24' }, { f: 0, text: '−∞' },
 ]
 
 // v5 .fd: área inteira é o alvo do arrasto (vertical); de lado, o navegador rola o mixer (touch-pan-x).
-const ROOT = 'group relative min-h-[60px] w-full flex-1 cursor-ns-resize touch-pan-x select-none'
+// Pega foco (teclado) com o anel laranja por dentro, pra não ser cortado pela caixa do mixer.
+const ROOT =
+  'group relative min-h-[60px] w-full flex-1 cursor-ns-resize touch-pan-x select-none rounded-ps-sm focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ps-or'
 const TICKS = 'pointer-events-none absolute inset-y-3 left-1/2 -translate-x-1/2 bg-[image:repeating-linear-gradient(to_bottom,var(--color-ps-line)_0_1px,transparent_1px_12.5%)]'
 const FILL = 'pointer-events-none absolute bottom-3 left-1/2 h-[calc((100%-24px)*var(--f))] w-[30px] -translate-x-1/2 rounded-t-[3px] bg-(image:--fill)'
 const ZERO = 'pointer-events-none absolute top-[calc(12px+(100%-24px)*0.25)] left-1/2 h-px w-[38px] -translate-x-1/2 bg-ps-line-3'
@@ -77,15 +93,16 @@ const DB =
 const SCALE_BOX = 'ps-num pointer-events-none absolute inset-y-3 left-0 w-[18px] text-ps-micro leading-none font-semibold text-ps-dim'
 
 /**
- * Fader do mixer novo (v5 .fd): a tampa só anda ARRASTANDO (o arrasto começa depois de 3 px;
- * tocar sem arrastar não muda nada) e o duplo clique volta a 0 dB; o balão mostra o valor
- * durante o arrasto. O nível acende segmentado DENTRO do trilho, com marca de pico, lido a
+ * Fader do mixer novo (v5 .fd): a tampa só anda ARRASTANDO na vertical (o arrasto começa depois
+ * de 3 px, e só se a vertical domina: de lado é a rolagem do mixer; tocar sem arrastar não muda
+ * nada; se o navegador cancela o gesto, o valor de antes volta) e o duplo clique volta a 0 dB; o
+ * balão mostra o valor durante o arrasto. Com foco, o teclado ajusta em dB. O nível acende segmentado DENTRO do trilho, com marca de pico, lido a
  * cada quadro e escrito direto no DOM (sem estado do React). Marca de 0 dB em 3/4 do curso.
  */
 export function FaderVU({ gain, variant, fill, quiet, readLevel, label, onChange, className, children }: FaderVUProps) {
   const master = variant === 'principal'
   const [dragF, setDragF] = useState<number | null>(null)
-  const dragRef = useRef<{ id: number; y0: number; f0: number; moving: boolean; sent: number } | null>(null)
+  const dragRef = useRef<Drag | null>(null)
   const meters = useRef<Meter[]>([{ v: 0, pk: 0, pt: 0 }, { v: 0, pk: 0, pt: 0 }])
   const lastTick = useRef(-Infinity)
   const vuEls = useRef<Array<HTMLElement | null>>([null, null])
@@ -116,6 +133,10 @@ export function FaderVU({ gain, variant, fill, quiet, readLevel, label, onChange
     dragRef.current = null
     setDragF(null)
   }
+  /** Fim do gesto só pelo dedo que está arrastando (com dois dedos, soltar o outro não encerra). */
+  const endOwn = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (dragRef.current && e.pointerId === dragRef.current.id) endDrag()
+  }
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button > 0) return
     try {
@@ -123,14 +144,27 @@ export function FaderVU({ gain, variant, fill, quiet, readLevel, label, onChange
     } catch {
       // Sem captura o arrasto vale enquanto o dedo estiver em cima do fader.
     }
-    dragRef.current = { id: e.pointerId, y0: e.clientY, f0: f, moving: false, sent: gain }
+    dragRef.current = { id: e.pointerId, x0: e.clientX, y0: e.clientY, f0: f, g0: gain, moving: false, sent: gain }
   }
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const d = dragRef.current
     if (!d || e.pointerId !== d.id) return
     const dy = d.y0 - e.clientY
-    if (!d.moving && Math.abs(dy) < DRAG_START_PX) return
-    d.moving = true
+    if (!d.moving) {
+      const intent = gestureIntent(e.clientX - d.x0, dy)
+      if (intent === 'espera') return
+      if (intent === 'rolagem') {
+        // O gesto é da rolagem do mixer: larga o dedo e não mexe no volume.
+        try {
+          e.currentTarget.releasePointerCapture?.(d.id)
+        } catch {
+          // Já sem captura.
+        }
+        endDrag()
+        return
+      }
+      d.moving = true
+    }
     const next = dragFader(d.f0, dy, e.currentTarget.clientHeight - 2 * PAD_PX)
     setDragF(next)
     const g = faderToGain(next)
@@ -139,9 +173,29 @@ export function FaderVU({ gain, variant, fill, quiet, readLevel, label, onChange
       onChange(g)
     }
   }
+  // O navegador tomou o gesto (rolagem, outro app): o volume volta ao de antes do toque.
+  const onPointerCancel = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current
+    if (!d || e.pointerId !== d.id) return
+    endDrag()
+    if (d.moving && d.sent !== d.g0) onChange(d.g0)
+  }
   const onDoubleClick = () => {
     endDrag()
     onChange(1)
+  }
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.altKey || e.ctrlKey || e.metaKey) return
+    const delta = KEY_DB[e.key]
+    let next: number
+    if (delta !== undefined) next = stepGainDb(gain, delta)
+    else if (e.key === 'Home') next = 0
+    else if (e.key === 'End') next = FADER_MAX_GAIN
+    else return
+    // A tecla é do fader: nem a página rola nem o atalho do palco (setas buscam na música) recebe.
+    e.preventDefault()
+    e.stopPropagation()
+    onChange(next)
   }
 
   const meterSlots = master ? (['l', 'r'] as const) : (['c'] as const)
@@ -150,10 +204,11 @@ export function FaderVU({ gain, variant, fill, quiet, readLevel, label, onChange
       role="slider"
       aria-label={label}
       aria-orientation="vertical"
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={Math.round(f * 100)}
+      aria-valuemin={ARIA_MIN_DB}
+      aria-valuemax={FADER_MAX_DB}
+      aria-valuenow={ariaDb(shownGain)}
       aria-valuetext={dbText(shownGain)}
+      tabIndex={0}
       title="Arraste para ajustar. Duplo clique volta para 0 dB."
       data-fader={variant}
       data-quiet={quiet}
@@ -161,10 +216,11 @@ export function FaderVU({ gain, variant, fill, quiet, readLevel, label, onChange
       style={{ '--f': f.toFixed(4), ...(fill ? { '--fill': fill } : null) } as CSSProperties}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
-      onLostPointerCapture={endDrag}
+      onPointerUp={endOwn}
+      onPointerCancel={onPointerCancel}
+      onLostPointerCapture={endOwn}
       onDoubleClick={onDoubleClick}
+      onKeyDown={onKeyDown}
       className={cx(ROOT, className)}
     >
       {master && (

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { FADER_ZERO, dbText, dragFader, dragPan, faderToDb, faderToGain, fitStrips, gainToFader, panText } from './faderScale'
+import {
+  FADER_MAX_DB, FADER_MAX_GAIN, FADER_MIN_DB, FADER_ZERO, dbText, dragFader, dragPan, faderToDb, faderToGain, fitStrips, gainToFader,
+  gestureIntent, panText, stepGainDb, stepPan,
+} from './faderScale'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
 const MENOS = '−'
@@ -80,6 +83,18 @@ describe('arrasto', () => {
     expect(dragFader(0.9, 500, 200)).toBe(1)
   })
 
+  it('gesto: vertical passou de 3 px e domina = arrasto; lateral chegou primeiro (ou empata) = rolagem; senão espera', () => {
+    expect(gestureIntent(0, 2)).toBe('espera')
+    expect(gestureIntent(2, -2)).toBe('espera')
+    expect(gestureIntent(1, 3)).toBe('arrasto')
+    expect(gestureIntent(-2, -10)).toBe('arrasto')
+    expect(gestureIntent(20, 4)).toBe('rolagem')
+    expect(gestureIntent(-3, 1)).toBe('rolagem')
+    expect(gestureIntent(5, 5)).toBe('rolagem')
+    expect(gestureIntent(5, -5)).toBe('rolagem')
+    expect(gestureIntent(Number.NaN, 10)).toBe('arrasto')
+  })
+
   it('pan: 0,014 por px, preso entre -1 e 1, perto do centro vira 0', () => {
     expect(dragPan(0, 10)).toBeCloseTo(0.14, 9)
     expect(dragPan(0, -10)).toBeCloseTo(-0.14, 9)
@@ -87,6 +102,48 @@ describe('arrasto', () => {
     expect(dragPan(0.5, -34)).toBe(0) // 0,024 também
     expect(dragPan(0.5, 1000)).toBe(1)
     expect(dragPan(-0.5, -1000)).toBe(-1)
+  })
+})
+
+describe('teto e piso (constantes únicas, a T29 usa no celular da banda)', () => {
+  it('topo em +6 dB, ganho perto de 2; pé audível perto de -63 dB', () => {
+    expect(FADER_MAX_DB).toBe(6)
+    expect(FADER_MAX_GAIN).toBeCloseTo(10 ** (6 / 20), 12)
+    expect(FADER_MAX_GAIN).toBe(faderToGain(1))
+    expect(gainToFader(FADER_MAX_GAIN)).toBe(1)
+    expect(FADER_MIN_DB).toBeCloseTo(40 * Math.log10(0.02 / 0.75), 9)
+    expect(faderToDb(0.02)).toBeCloseTo(FADER_MIN_DB, 9)
+  })
+})
+
+describe('teclado', () => {
+  const db = (g: number) => 20 * Math.log10(g)
+
+  it('passo em dB a partir do ganho, arredondado em 0,1 dB', () => {
+    expect(db(stepGainDb(1, 1))).toBeCloseTo(1, 9)
+    expect(db(stepGainDb(1, -1))).toBeCloseTo(-1, 9)
+    expect(db(stepGainDb(1, 6))).toBeCloseTo(6, 9)
+    expect(db(stepGainDb(1, -6))).toBeCloseTo(-6, 9)
+    expect(db(stepGainDb(0.5, 1))).toBeCloseTo(-5, 9) // -6,02 + 1 = -5,02, fica -5,0
+  })
+
+  it('teto em +6 dB; abaixo do pé vira silêncio; do silêncio, subir sai do pé', () => {
+    expect(stepGainDb(1.9, 1)).toBe(FADER_MAX_GAIN)
+    expect(stepGainDb(FADER_MAX_GAIN, 6)).toBe(FADER_MAX_GAIN)
+    expect(stepGainDb(10 ** (-62 / 20), -1)).toBe(0)
+    expect(stepGainDb(0, -1)).toBe(0)
+    expect(stepGainDb(Number.NaN, -6)).toBe(0)
+    expect(db(stepGainDb(0, 1))).toBeCloseTo(-62, 9)
+    expect(db(stepGainDb(0, 6))).toBeCloseTo(-57, 9)
+    expect(gainToFader(stepGainDb(0, 1))).toBeGreaterThanOrEqual(0.02) // aparece no fader, não é silêncio
+  })
+
+  it('pan pelo teclado: soma o passo, preso em ±1, passos de 0,01 e centro que gruda', () => {
+    expect(stepPan(0, 0.05)).toBeCloseTo(0.05, 9)
+    expect(stepPan(0.5, 0.05)).toBeCloseTo(0.55, 9)
+    expect(stepPan(-0.98, -0.05)).toBe(-1)
+    expect(stepPan(0.03, -0.05)).toBe(0) // -0,02 gruda no centro
+    expect(stepPan(Number.NaN, 0.05)).toBeCloseTo(0.05, 9)
   })
 })
 
