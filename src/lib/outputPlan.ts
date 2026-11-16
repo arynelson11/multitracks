@@ -20,7 +20,7 @@ export type OutputWarning = 'poucos-canais' | 'sem-saida-ouvido' | 'mapa-ajustad
 
 export const OUTPUT_WARNING_TEXT: Record<OutputWarning, string> = {
   'poucos-canais': 'Esta placa tem menos de 4 canais. O mapa de 4 ou mais saídas fica guardado pra quando a placa maior voltar.',
-  'sem-saida-ouvido': 'Click e Guia sem saída: as saídas 1 e 2 são da VS e esta placa não tem outra. Ligue a placa de 4 ou mais canais ou escolha outro modo.',
+  'sem-saida-ouvido': 'Click e Guia sem saída: as saídas livres desta placa são da VS. Ligue a placa de 4 ou mais canais ou escolha outro modo.',
   'mapa-ajustado': 'Parte do mapa salvo não vale nesta placa: as saídas foram ajustadas, com Click e Guia fora da VS. Confira o resumo.',
   'modo-assumido': 'Não deu pra ler o modo de saída gravado. Usando Click e Guia separados: confira o resumo e o lado do ouvido.',
   'lado-assumido': 'Não deu pra ler o lado gravado de Click e Guia. Usando a saída 1 pra eles: confira antes de tocar.',
@@ -108,10 +108,13 @@ function splitPlan(earOnSecond: boolean, fellBackFrom: OutputMode | null, warnin
 /**
  * Plano do modo escolhido no aparelho de agora. "Tudo junto" e "Click e Guia separados" usam
  * 2 canais em qualquer placa. "4 ou mais" usa o mapa gravado quando ele cabe; senão corrige
- * campo a campo (Click e Guia nunca no par da VS) e avisa. Com menos de 4 canais: se a VS
- * gravada não usa as saídas 1 e 2, cai em separados com o ouvido na saída 1; se usa, a VS
- * fica nelas e Click e Guia vão pro que sobrar (numa placa de 2 canais, sem saída). Não mexe
- * em `s` e devolve sempre listas novas.
+ * campo a campo (Click e Guia nunca no par da VS) e avisa. Aparelho de 2 canais (placa grande
+ * desplugada, saída do sistema): cai em "Click e Guia separados" no lado escolhido
+ * (`earOnSecond`), com `fellBackFrom`, porque o fone nunca pode ficar sem click no meio do
+ * culto. Com 3 canais: cai igual se a VS gravada não usa as saídas 1 e 2; se usa, a VS fica
+ * nelas e Click e Guia vão juntos pra saída 3. Dentro do modo multi, sem saída livre, Click e
+ * Guia ficariam sem saída com o aviso `sem-saida-ouvido` (guarda; nenhuma placa de hoje chega
+ * nele). Não mexe em `s` e devolve sempre listas novas.
  */
 export function planOutputs(s: ReadonlyOutputSettings, maxChannelCount: number): PlannedOutputs {
   if (s.mode === 'stereo') return { mode: 'stereo', channels: 2, vs: [0, 1], click: [0, 1], guide: [0, 1], panByRole: false, fellBackFrom: null, warning: null }
@@ -119,7 +122,7 @@ export function planOutputs(s: ReadonlyOutputSettings, maxChannelCount: number):
 
   const channels = deviceChannels(maxChannelCount)
   const read = readMap(s.multi)
-  if (channels < 4 && choosePair(read, MAX_OUTPUTS) >= 2) return splitPlan(false, 'multi', 'poucos-canais')
+  if (channels === 2 || (channels < 4 && choosePair(read, MAX_OUTPUTS) >= 2)) return splitPlan(s.earOnSecond === true, 'multi', 'poucos-canais')
   const m = resolveMap(read, channels)
   const warning: OutputWarning | null = m.click === null || m.guide === null ? 'sem-saida-ouvido' : channels < 4 ? 'poucos-canais' : m.changed ? 'mapa-ajustado' : null
   return {

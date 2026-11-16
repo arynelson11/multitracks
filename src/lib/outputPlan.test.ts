@@ -60,40 +60,41 @@ describe('planOutputs', () => {
         for (const o of [...p.click, ...p.guide]) expect(p.vs).not.toContain(o)
         for (const o of [...p.vs, ...p.click, ...p.guide]) { expect(o).toBeGreaterThanOrEqual(0); expect(o).toBeLessThan(p.channels) }
         if (p.mode === 'split2') for (const pan of [-1, -0.3, 0, 1]) {
-          expect(Math.sign(effectivePan(pan, 'click', p))).toBe(earOnSecond && !p.fellBackFrom ? 1 : -1)
+          // Decisão do coordenador (rodada 1): a queda de 4 ou mais pra separados segue o lado escolhido.
+          expect(Math.sign(effectivePan(pan, 'click', p))).toBe(earOnSecond ? 1 : -1)
           expect(effectivePan(pan, 'normal', p)).toBe(-effectivePan(pan, 'guide', p))
         }
       }
   })
 
-  // Rodada 1: o literal do brief (mapa padrão em 2 canais vira separados com Click na saída 1)
-  // punha o Click na saída 1, que era da VS no mapa salvo. Ele só cai em separados quando a VS
-  // salva não usa as saídas 1 e 2.
-  it('2 canais com 4 ou mais escolhido cai em separados e avisa quando a VS salva não usa as saídas 1 e 2', () =>
-    expect(planOutputs(multi(2, 0, 1), 2)).toMatchObject({ mode: 'split2', fellBackFrom: 'multi', click: [0], vs: [1], warning: 'poucos-canais' }))
+  it('2 canais com 4 ou mais escolhido cai em separados e avisa', () => expect(planOutputs({ ...DEFAULT_OUTPUTS, mode: 'multi' }, 2)).toMatchObject({ mode: 'split2', fellBackFrom: 'multi', click: [0], vs: [1] }))
 
-  it('a queda pra separados põe o ouvido na saída 1 mesmo com o lado trocado', () => {
-    for (const max of [NaN, Infinity, -Infinity, -1, 0, 1, 2, 3, 3.9]) for (const earOnSecond of [false, true]) for (const m of [multi(2, 0, 1), multi(4, 2, 3), multi(30, 0, 0)])
-      expect(planOutputs({ ...m, earOnSecond }, max)).toEqual({ mode: 'split2', channels: 2, vs: [1], click: [0], guide: [0], panByRole: true, fellBackFrom: 'multi', warning: 'poucos-canais' })
+  it('2 canais: 4 ou mais sempre cai em separados no lado escolhido, nunca deixa o fone sem click', () => {
+    const lado = (earOnSecond: boolean) => (earOnSecond ? { vs: [0], click: [1], guide: [1] } : { vs: [1], click: [0], guide: [0] })
+    for (const max of [NaN, Infinity, -Infinity, -1, 0, 1, 2, 2.9]) for (const earOnSecond of [false, true])
+      for (const m of [MULTI, multi(2, 0, 1), multi(4, 2, 3), multi(30, 0, 0), rawMulti({ vsPair: null, click: 2, guide: 3 }), rawMulti({})])
+        expect(planOutputs({ ...m, earOnSecond }, max)).toEqual({ mode: 'split2', channels: 2, ...lado(earOnSecond), panByRole: true, fellBackFrom: 'multi', warning: 'poucos-canais' })
   })
 
-  it('mapa padrão num aparelho de 2 canais: a VS fica nas saídas 1 e 2 e Click e Guia ficam sem saída, com aviso', () => {
-    for (const max of [NaN, Infinity, -1, 0, 1, 2]) for (const earOnSecond of [false, true])
-      expect(planOutputs({ ...MULTI, earOnSecond }, max)).toEqual({ mode: 'multi', channels: 2, vs: [0, 1], click: [], guide: [], panByRole: true, fellBackFrom: 'multi', warning: 'sem-saida-ouvido' })
+  it('3 canais com a VS salva fora das saídas 1 e 2: cai em separados no lado escolhido', () => {
+    expect(planOutputs(multi(2, 0, 1), 3)).toEqual({ mode: 'split2', channels: 2, vs: [1], click: [0], guide: [0], panByRole: true, fellBackFrom: 'multi', warning: 'poucos-canais' })
+    expect(planOutputs({ ...multi(4, 2, 3), earOnSecond: true }, 3.9)).toMatchObject({ mode: 'split2', vs: [0], click: [1], guide: [1], fellBackFrom: 'multi' })
   })
 
   it('3 canais com a VS salva nas saídas 1 e 2: Click e Guia juntos na saída 3', () => {
     expect(planOutputs(MULTI, 3)).toEqual({ mode: 'multi', channels: 3, vs: [0, 1], click: [2], guide: [2], panByRole: true, fellBackFrom: 'multi', warning: 'poucos-canais' })
   })
 
-  it('Click e Guia nunca caem no par da VS salvo, em placa nenhuma; mapa que cabe vale inteiro', () => {
+  it('em 4 ou mais (3 canais ou mais) Click e Guia nunca caem no par da VS salvo; nunca ficam sem saída; mapa que cabe vale inteiro', () => {
     const falhas: string[] = []
     for (const vsPair of [0, 2, 4, 6, 30]) for (const click of [0, 1, 2, 3, 4, 5, 6, 7, 8, 29, 30, 31]) for (const guide of [0, 1, 2, 3, 5, 7, 31])
       for (const max of [0, 2, 3, 4, 5, 6, 8, 18, 32, 64]) for (const earOnSecond of [false, true]) {
         const p = planOutputs({ mode: 'multi', earOnSecond, multi: { vsPair, click, guide } }, max)
         const nome = `VS ${vsPair}, Click ${click}, Guia ${guide}, ${max} canais`
-        for (const o of [...p.click, ...p.guide]) if (o === vsPair || o === vsPair + 1 || p.vs.includes(o) || o >= p.channels) falhas.push(`${nome}: ouvido na ${o}`)
-        if (p.channels >= 4 && (p.click.length !== 1 || p.guide.length !== 1)) falhas.push(`${nome}: sem saída com ${p.channels} canais`)
+        for (const o of [...p.click, ...p.guide]) if (p.vs.includes(o) || o >= p.channels) falhas.push(`${nome}: ouvido na ${o}, saída da VS`)
+        if (p.mode === 'multi') for (const o of [...p.click, ...p.guide]) if (o === vsPair || o === vsPair + 1) falhas.push(`${nome}: ouvido na ${o}, par da VS salvo`)
+        if (p.mode !== (max >= 4 || (max >= 3 && vsPair === 0) ? 'multi' : 'split2')) falhas.push(`${nome}: modo ${p.mode}`)
+        if (p.click.length !== 1 || p.guide.length !== 1) falhas.push(`${nome}: sem saída`)
         const valido = ![click, guide].some((o) => o === vsPair || o === vsPair + 1)
         const cabe = p.channels >= 4 && Math.max(vsPair + 1, click, guide) < p.channels
         if (valido && cabe && (p.vs[0] !== vsPair || p.click[0] !== click || p.guide[0] !== guide || p.warning !== null)) falhas.push(`${nome}: mapa trocado`)
@@ -116,7 +117,7 @@ describe('planOutputs', () => {
   it('par da VS ilegível: assume o par que não pega Click e Guia legíveis (de preferência 1/2)', () => {
     expect(planOutputs(rawMulti({ vsPair: 'x', click: 0, guide: 1 }), 8)).toMatchObject({ vs: [2, 3], click: [0], guide: [1], warning: 'mapa-ajustado' })
     expect(planOutputs(rawMulti({ vsPair: null, click: 2, guide: 3 }), 8)).toMatchObject({ vs: [0, 1], click: [2], guide: [3], warning: 'mapa-ajustado' })
-    expect(planOutputs(rawMulti({ vsPair: null, click: 2, guide: 3 }), 2)).toMatchObject({ vs: [0, 1], click: [], guide: [], warning: 'sem-saida-ouvido' })
+    expect(planOutputs(rawMulti({ vsPair: null, click: 2, guide: 3 }), 3)).toMatchObject({ mode: 'multi', vs: [0, 1], click: [2], guide: [2], warning: 'poucos-canais' })
     expect(planOutputs(rawMulti({ vsPair: null, click: 0, guide: 1 }), 2)).toMatchObject({ mode: 'split2', vs: [1], click: [0], warning: 'poucos-canais' })
     expect(planOutputs(rawMulti({}), 8)).toMatchObject({ vs: [0, 1], click: [2], guide: [3], warning: 'mapa-ajustado' })
     expect(planOutputs({ ...MULTI, multi: undefined as unknown as OutputSettings['multi'] }, 8)).toMatchObject({ vs: [0, 1], click: [2], guide: [3] })
@@ -184,7 +185,7 @@ describe('effectivePan', () => {
     for (const pan of KNOBS) {
       expect([effectivePan(pan, 'click', ear1), effectivePan(pan, 'guide', ear1), effectivePan(pan, 'normal', ear1)]).toEqual([-1, -1, 1])
       expect([effectivePan(pan, 'click', ear2), effectivePan(pan, 'guide', ear2), effectivePan(pan, 'normal', ear2)]).toEqual([1, 1, -1])
-      expect([effectivePan(pan, 'click', caiu), effectivePan(pan, 'guide', caiu), effectivePan(pan, 'normal', caiu)]).toEqual([-1, -1, 1])
+      expect([effectivePan(pan, 'click', caiu), effectivePan(pan, 'guide', caiu), effectivePan(pan, 'normal', caiu)]).toEqual([1, 1, -1])
     }
   })
 
@@ -392,7 +393,10 @@ describe('outputSummary', () => {
     expect(outputSummary(planOutputs(multi(4, 0, 1), 8))).toBe('VS nas saídas 5 e 6 · Click na 1 · Guia na 2')
     expect(outputSummary(planOutputs(multi(0, 2, 2), 4))).toBe('VS nas saídas 1 e 2 · Click e Guia na 3')
     expect(outputSummary(planOutputs(multi(2, 0, 1), 2))).toBe('Click e Guia na saída 1 · VS na saída 2')
-    expect(outputSummary(planOutputs(MULTI, 2))).toBe('VS nas saídas 1 e 2 · Click e Guia sem saída')
+    expect(outputSummary(planOutputs(MULTI, 2))).toBe('Click e Guia na saída 1 · VS na saída 2')
+    expect(outputSummary(planOutputs({ ...MULTI, earOnSecond: true }, 2))).toBe('Click e Guia na saída 2 · VS na saída 1')
+    // Sem saída livre dentro do modo multi (guarda; nenhuma placa de hoje chega nele).
+    expect(outputSummary({ mode: 'multi', channels: 3, vs: [0, 1], click: [], guide: [], panByRole: true, fellBackFrom: 'multi' })).toBe('VS nas saídas 1 e 2 · Click e Guia sem saída')
   })
 
   it('resumo em português sem travessão', () => {
@@ -407,7 +411,7 @@ describe('outputSummary', () => {
 
   it('aviso de cada plano tem texto em português, sem travessão', () => {
     const vistos = new Set(planosVariados.map((p) => p.warning).filter((w) => w !== null))
-    expect([...vistos].sort()).toEqual(['mapa-ajustado', 'poucos-canais', 'sem-saida-ouvido'])
+    expect([...vistos].sort()).toEqual(['mapa-ajustado', 'poucos-canais'])
     for (const text of Object.values(OUTPUT_WARNING_TEXT)) {
       expect(text.length).toBeGreaterThan(0)
       expect(text).not.toContain(TRAVESSAO)
