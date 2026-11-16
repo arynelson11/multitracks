@@ -41,6 +41,8 @@ const mem = vi.hoisted(() => ({
   pitchGate: null as Promise<void> | null,
   sources: [] as FakeSource[],
   pitchNodes: [] as FakePitchNode[],
+  // Chamado em cada start() de fonte (simula o relógio andando no meio do laço).
+  onStart: null as (() => void) | null,
 }))
 
 const isMetaKey = (key: string) => key.startsWith('mt_meta_playlist')
@@ -119,7 +121,7 @@ class FakeAudioContext {
       offset: -1, dest: null as unknown, buffer: null as unknown, loop: false, playbackRate: param(1),
       connect(dest: unknown) { source.dest = dest },
       disconnect() {}, stop() {},
-      start(_when: number, offset: number) { source.offset = offset },
+      start(_when: number, offset: number) { source.offset = offset; mem.onStart?.() },
     }
     mem.sources.push(source)
     return source
@@ -151,6 +153,7 @@ beforeEach(() => {
   mem.pitchNodes.length = 0
   mem.metaGate = null
   mem.pitchGate = null
+  mem.onStart = null
   mem.settings.autoPan = true
   vi.stubGlobal('AudioContext', FakeAudioContext)
   vi.stubGlobal('requestAnimationFrame', () => 0)
@@ -534,6 +537,38 @@ describe('remover a música ativa', () => {
     expect(result.current.isPlaying).toBe(false)
     // Os worklets que nasceram depois foram pra reserva, parados.
     expect(mem.pitchNodes.every((n) => !n.active && n.connectedTo === null)).toBe(true)
+  })
+})
+
+// Revisão da v1.4.16, Menor 3: a rede de segurança do reinício (relógio passou do
+// instante comum antes de o laço de start() terminar) deixa um aviso curto no console,
+// pra contar os tropeços no teste em aparelho fraco. O comportamento não muda.
+describe('rede de segurança do reinício', () => {
+  it('reagenda todas as faixas com a folga de reserva e avisa no console', async () => {
+    seed({ ...v1, pitch: 0 })
+    const { result } = await openApp()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      // No 1º start() o relógio pula 10 ms, além do instante comum (2 blocos).
+      mem.onStart = () => { mem.onStart = null; mem.ctx!.currentTime = 0.01 }
+      await act(async () => { await result.current.play() })
+
+      // A 1ª leva (3 fontes) foi descartada e a 2ª saiu inteira, do mesmo ponto.
+      expect(mem.sources).toHaveLength(6)
+      for (const s of mem.sources) expect(s.offset).toBe(0)
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0][0])).toMatch(/^\[tom\] reinício reagendado com a folga de reserva \(1\)$/)
+
+      // Sem trava, nenhum aviso.
+      warn.mockClear()
+      mem.sources.length = 0
+      act(() => { result.current.pause() })
+      await act(async () => { await result.current.play() })
+      expect(mem.sources).toHaveLength(3)
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
   })
 })
 

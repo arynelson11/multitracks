@@ -124,6 +124,8 @@ export function useAudioEngine(userId?: string) {
     // Marca do setChannelMeta: o papel mudou tocando com tom diferente de 0 e o
     // áudio precisa reiniciar com os canais novos (efeito depois do changePitch).
     const restartAfterMetaRef = useRef(false);
+    // Quantas vezes a rede de segurança do play() reagendou com a folga de reserva.
+    const leadRetriesRef = useRef(0);
 
     // === Pré-contagem ===
     const [precountEnabled, setPrecountEnabled] = useState<boolean>(() =>
@@ -672,6 +674,8 @@ export function useAudioEngine(userId?: string) {
                 liveSourcesRef.current.delete(source);
             }
             scheduled = scheduleAll(Math.ceil(RETRY_LEAD_S * ctx.sampleRate / 128));
+            // Rastro pro teste em aparelho fraco: quantos reinícios ganharam os 40 ms.
+            console.warn(`[tom] reinício reagendado com a folga de reserva (${++leadRetriesRef.current})`);
         }
 
         startTimeRef.current = scheduled.when;
