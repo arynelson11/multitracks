@@ -56,7 +56,12 @@ export type GridSource = 'click' | 'bpm'                            // de onde v
 export type MeterSource = 'manual' | 'salvo' | 'acento' | 'padrao'  // de onde vem o compasso
 
 /**
- * Grade da música. `bpm` em pulsos do click por minuto, com decimais; `firstDownbeat` é o
+ * Grade da música. `bpm` = pulsos da GRADE por minuto, com decimais (é o que o pulso e o
+ * compasso usam): o tempo do compasso no simples (a semínima no 3/4, 4/4 e 5/4; no 7/8 o pulso
+ * contado) e a colcheia no 6/8 e no 12/8. Não é a taxa do click (um click em colcheias no 4/4
+ * dá a grade na semínima) nem, no composto, o BPM da música: o BPM exibido e salvo
+ * (`bpm_exact`) é sempre a semínima, `displayBpmFromPulseBpm(g.bpm, g.signature)` (78 no "Fé"
+ * em 6/8, com a grade em 156), e a volta é `pulseBpmFromDisplayBpm`. `firstDownbeat` é o
  * primeiro "1" em segundos da música (só vale com `source: 'click'`).
  */
 export interface SongGrid { bpm: number; firstDownbeat: number; signature: TimeSignature; countEvery: 1 | 3; source: GridSource; meterSource: MeterSource }

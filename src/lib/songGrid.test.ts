@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { Marker } from '../types'
-import { TIME_SIGNATURES, countPulses, pulsesPerBar, type SongGrid, type TimeSignature } from './stageContracts'
+import { TIME_SIGNATURES, countPulses, displayBpmFromPulseBpm, pulsesPerBar, type SongGrid, type TimeSignature } from './stageContracts'
 import {
   barIndexAt, barSeconds, gridFromBpm, gridFromClick, gridWarning, keepManualMeter, markerIdForSpan, nearestBarLine,
   pulseSeconds, sanitizeGrid, sectionIndexAt, sectionSpans, snapToBar, withMeter,
 } from './songGrid'
+import { planTransition } from './sectionTransition'
 
 /** Tempo exato a menos de arredondamento: tolerância de 1 microssegundo. */
 const TOL = 1e-6
@@ -33,7 +34,7 @@ it('grade a partir do bpm salvo e do click, com a origem do compasso', () => {
   expect(gridFromClick({ bpm: 90, subdivision: 1, compound: false, firstPulse: 0.3, pulsesPerBar: null, firstDownbeat: null })).toMatchObject({ signature: '4/4', meterSource: 'padrao' })
   expect(gridFromClick({ bpm: 90, subdivision: 1, compound: false, firstPulse: 0.3, pulsesPerBar: 3, firstDownbeat: 0.97 }, '6/8')).toMatchObject({ signature: '6/8', meterSource: 'salvo' })
 })
-it('compasso manual sobrevive a reler o click', () => expect(keepManualMeter(g, withMeter(g, '6/8', 3))).toMatchObject({ signature: '6/8', countEvery: 3, meterSource: 'manual', bpm: 120 }))
+it('compasso manual sobrevive a reler o click', () => expect(keepManualMeter(g, withMeter(g, '6/8', 3))).toMatchObject({ signature: '6/8', countEvery: 3, meterSource: 'manual', bpm: 240 })) // 6/8 conta colcheias: semínima 120 = 240 colcheias
 it('aviso da grade nunca some em silêncio', () => {
   expect(gridWarning(null)).toBe('sem-grade'); expect(gridWarning(gridFromBpm(80))).toBe('sem-click-lido')
   expect(gridWarning({ ...g, meterSource: 'padrao' })).toBe('compasso-assumido'); expect(gridWarning(g)).toBeNull()
@@ -225,7 +226,7 @@ describe('grade da música', () => {
     expect(gridFromBpm(30)!.bpm).toBe(30); expect(gridFromBpm(300)!.bpm).toBe(300)
     expect(gridFromBpm(100, null)).toMatchObject({ signature: '4/4', meterSource: 'padrao' })
     expect(gridFromBpm(100, '9/8' as unknown as TimeSignature)).toMatchObject({ signature: '4/4', meterSource: 'padrao' })
-    expect(gridFromBpm(100, '12/8')).toMatchObject({ signature: '12/8', meterSource: 'salvo', countEvery: 1 })
+    expect(gridFromBpm(100, '12/8')).toMatchObject({ bpm: 200, signature: '12/8', meterSource: 'salvo', countEvery: 3 })
   })
   it('click: o primeiro 1 vai pra dentro do primeiro compasso, pelo compasso que vale', () => {
     const base = { bpm: 120, subdivision: 1 as const, compound: false, firstPulse: 0.1, pulsesPerBar: 4 }
@@ -296,8 +297,8 @@ describe('grade do click com subdivisão (T3: BPM em tempos)', () => {
 })
 
 describe('compasso manual', () => {
-  it('troca só o compasso: BPM, fase e origem ficam', () => {
-    expect(withMeter(gridFromBpm(100)!, '12/8', 3)).toEqual({ bpm: 100, firstDownbeat: 0, signature: '12/8', countEvery: 3, source: 'bpm', meterSource: 'manual' })
+  it('troca só o compasso: BPM exibido, fase e origem ficam (no composto a grade conta colcheias)', () => {
+    expect(withMeter(gridFromBpm(100)!, '12/8', 3)).toEqual({ bpm: 200, firstDownbeat: 0, signature: '12/8', countEvery: 3, source: 'bpm', meterSource: 'manual' })
   })
   it('reler o click sem compasso manual antes fica com o que o click leu', () => {
     const lida = gridFromClick({ bpm: 96, subdivision: 1, compound: false, firstPulse: 0.4, pulsesPerBar: 4, firstDownbeat: 0.4 })
@@ -351,5 +352,52 @@ describe('aviso e sanitização', () => {
     expect(limpa).toStrictEqual(g); expect(limpa).not.toBe(g)
     expect(sanitizeGrid({ ...g, countEvery: 3 })!.countEvery).toBe(1)
     expect(sanitizeGrid({ ...g, signature: '6/8', countEvery: 3 })!.countEvery).toBe(3)
+  })
+})
+
+describe('BPM da música na semínima (Ruling T3-BPM)', () => {
+  // A grade conta colcheias no 6/8 e no 12/8; o BPM exibido e salvo (bpm_exact) é a semínima.
+  const bpmOf = (grid: SongGrid) => displayBpmFromPulseBpm(grid.bpm, grid.signature)
+  it('gridFromBpm(78, "6/8"): compasso de 2,308 s contando 2 tempos', () => {
+    const fe = gridFromBpm(78, '6/8')!
+    expect(fe).toMatchObject({ bpm: 156, signature: '6/8', countEvery: 3, source: 'bpm', meterSource: 'salvo' })
+    expect(Math.abs(barSeconds(fe) - 2.308)).toBeLessThan(0.001); expect(countPulses(fe.signature, fe.countEvery)).toBe(2)
+    expect(bpmOf(fe)).toBe(78)
+    const doze = gridFromBpm(50, '12/8')!
+    expect(doze).toMatchObject({ bpm: 100, countEvery: 3 }); expectTime(barSeconds(doze), 7.2); expect(countPulses(doze.signature, doze.countEvery)).toBe(4)
+    expect(gridFromBpm(78, '4/4')).toMatchObject({ bpm: 78, countEvery: 1 }); expectTime(barSeconds(gridFromBpm(78, '4/4')!), 4 * 60 / 78)
+  })
+  it('o plano do pulo com gridFromBpm(78, "6/8") conta 2 tempos pontuados', () => {
+    const bar = 6 * 60 / 156
+    const spans = [{ index: 0, start: 0, end: 4 * bar }, { index: 1, start: 4 * bar, end: 8 * bar }]
+    const p = planTransition({ spans, grid: gridFromBpm(78, '6/8'), position: 1, intent: { target: 1, plays: 1 } })!
+    expect(p.countTotal).toBe(2); expect(p.countLabels).toEqual([1, 2]); expect(p.countTimes).toHaveLength(2)
+    expectTime(p.countTimes[1] - p.countTimes[0], 3 * 60 / 156)
+  })
+  it('4/4 -> 6/8 -> 4/4 pelo withMeter volta ao mesmo BPM e ao mesmo compasso; a semínima não muda', () => {
+    const seis = withMeter(g, '6/8', 3)
+    expect(seis).toMatchObject({ bpm: 240, signature: '6/8', countEvery: 3 }); expect(bpmOf(seis)).toBe(120)
+    expectTime(pulseSeconds(seis) * 2, pulseSeconds(g)); expectTime(barSeconds(seis), 1.5)
+    const volta = withMeter(seis, '4/4', 1)
+    expect(volta).toEqual({ ...g, meterSource: 'manual' }); expect(barSeconds(volta)).toBe(barSeconds(g))
+    // Entre compostos e entre simples a grade não muda de unidade.
+    expect(withMeter(seis, '12/8', 3).bpm).toBe(240); expect(withMeter(g, '3/4', 1).bpm).toBe(120)
+  })
+  it('reler o click em 4/4 com o 6/8 manual: a grade nova também conta colcheias', () => {
+    const lida = gridFromClick({ bpm: 78, subdivision: 2, compound: false, firstPulse: 0.001, pulsesPerBar: null, firstDownbeat: null })
+    const manual = withMeter(gridFromBpm(78)!, '6/8', 3)
+    const relida = keepManualMeter(lida, manual)
+    expect(relida).toMatchObject({ bpm: 156, signature: '6/8', countEvery: 3, meterSource: 'manual', source: 'click' })
+    expect(Math.abs(barSeconds(relida) - 2.308)).toBeLessThan(0.001)
+  })
+  it('a faixa [30, 300] vale no BPM exibido, não nas colcheias do composto', () => {
+    expect(gridFromBpm(300, '6/8')!.bpm).toBe(600); expect(gridFromBpm(30, '12/8')!.bpm).toBe(60)
+    for (const bpm of [29.9, 300.1]) expect(gridFromBpm(bpm, '6/8')).toBeNull()
+    const seis: SongGrid = { ...g, signature: '6/8', countEvery: 3 }
+    for (const bpm of [60, 500, 600]) expect(sanitizeGrid({ ...seis, bpm })).toMatchObject({ bpm })
+    for (const bpm of [59, 601]) expect(sanitizeGrid({ ...seis, bpm })).toBeNull()
+    expect(snapToBar(4.6, { ...seis, bpm: 480, firstDownbeat: 0 })).toBe(4.5) // compasso de 0,75 s: grade usável
+    expect(gridWarning({ ...seis, bpm: 50 })).toBe('sem-grade')
+    expect(gridWarning({ ...seis, bpm: 500 })).toBeNull()
   })
 })

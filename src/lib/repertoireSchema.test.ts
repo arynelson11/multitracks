@@ -170,8 +170,9 @@ describe('repertório v3: grade e compasso da música', () => {
     expect(reaberto.timeSignature).toBe('4/4')
     expect(migrateSavedSong(reaberto)).toStrictEqual(reaberto)
     // "Ler o click de novo" depois de reabrir: BPM e fase da leitura nova, o compasso manual fica.
+    // A leitura nova veio em 4/4 (semínima 73); no 6/8 manual a grade conta colcheias: 146.
     const relido = keepManualMeter({ ...clickGrid, bpm: 73, firstDownbeat: 0.4 }, reaberto.grid ?? null)
-    expect(relido).toMatchObject({ bpm: 73, firstDownbeat: 0.4, signature: '6/8', countEvery: 3, meterSource: 'manual' })
+    expect(relido).toMatchObject({ bpm: 146, firstDownbeat: 0.4, signature: '6/8', countEvery: 3, meterSource: 'manual' })
   })
 
   it('registro v1 real da Parte 1 chega em v3 igual', () => {

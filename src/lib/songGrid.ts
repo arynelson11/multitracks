@@ -3,13 +3,14 @@
 // Puro: sem React e sem Web Audio. Tempos em segundos da música.
 import type { Marker } from '../types'
 import {
-  TIME_SIGNATURES, gridHasPhase, isCompound, pulsesPerBar, signatureForPulses,
+  TIME_SIGNATURES, displayBpmFromPulseBpm, gridHasPhase, isCompound, pulseBpmFromDisplayBpm, pulsesPerBar, signatureForPulses,
   type GridSource, type GridWarning, type MeterSource, type SectionSpan, type SongGrid, type TimeSignature,
 } from './stageContracts'
 import { DOTTED_PULSE_MAX_BPM } from './clickMeter'
 
 /** Folga de arredondamento nas comparações de tempo (1 microssegundo). */
 const EPS = 1e-6
+/** Faixa do BPM exibido e salvo (Ruling T2), sempre na semínima: no composto a grade vai de 60 a 600 colcheias. */
 const MIN_BPM = 30
 const MAX_BPM = 300
 const GRID_SOURCES: readonly GridSource[] = ['click', 'bpm']
@@ -48,10 +49,21 @@ function knownSignature(s: unknown): TimeSignature | null {
   return TIME_SIGNATURES.find((x) => x === s) ?? null
 }
 
+/** BPM exibido (semínima) finito e dentro de [30, 300]. */
+function displayBpmInRange(bpm: number): boolean {
+  return Number.isFinite(bpm) && bpm >= MIN_BPM && bpm <= MAX_BPM
+}
+
+/** Pulsos da grade por minuto cujo BPM exibido no compasso `signature` está na faixa. */
+function gridBpmInRange(bpm: unknown, signature: TimeSignature): bpm is number {
+  return typeof bpm === 'number' && displayBpmInRange(displayBpmFromPulseBpm(bpm, signature))
+}
+
 /** Mesma regra do `sanitizeGrid`, sem montar objeto: grade quebrada conta como sem grade. */
 function isUsableGrid(g: SongGrid): boolean {
-  return Number.isFinite(g.bpm) && g.bpm >= MIN_BPM && g.bpm <= MAX_BPM
-    && Number.isFinite(g.firstDownbeat) && g.firstDownbeat >= 0 && knownSignature(g.signature) !== null
+  const signature = knownSignature(g.signature)
+  return signature !== null && gridBpmInRange(g.bpm, signature)
+    && Number.isFinite(g.firstDownbeat) && g.firstDownbeat >= 0
 }
 
 /**
@@ -189,11 +201,19 @@ export function sectionIndexAt(spans: readonly SectionSpan[], t: number): number
 
 // ---------- Grade a partir do BPM salvo e do click ----------
 
-/** Grade só com o BPM salvo (sem fase: a contagem fica ancorada no 1 de destino). Nula com bpm fora de [30, 300]. */
+/**
+ * Grade só com o BPM salvo (sem fase: a contagem fica ancorada no 1 de destino). `bpm` é o BPM
+ * salvo, na semínima; no 6/8 e no 12/8 a grade conta colcheias (o dobro) e a contagem vai de 3
+ * em 3 (2 tempos no 6/8, 4 no 12/8), como no `gridFromClick`. Nula com bpm fora de [30, 300].
+ */
 export function gridFromBpm(bpm: number, savedSignature?: TimeSignature | null): SongGrid | null {
-  if (!Number.isFinite(bpm) || bpm < MIN_BPM || bpm > MAX_BPM) return null
+  if (!displayBpmInRange(bpm)) return null
   const saved = knownSignature(savedSignature)
-  return { bpm, firstDownbeat: 0, signature: saved ?? '4/4', countEvery: 1, source: 'bpm', meterSource: saved ? 'salvo' : 'padrao' }
+  const signature = saved ?? '4/4'
+  return {
+    bpm: pulseBpmFromDisplayBpm(bpm, signature), firstDownbeat: 0, signature, countEvery: isCompound(signature) ? 3 : 1,
+    source: 'bpm', meterSource: saved ? 'salvo' : 'padrao',
+  }
 }
 
 /**
@@ -258,16 +278,22 @@ export function gridFromClick(a: ClickAnalysisLike, savedSignature?: TimeSignatu
 // ---------- Compasso manual ----------
 
 /**
- * Compasso escolhido no modo EDITAR. Contar de 3 em 3 só vale no composto; BPM, fase e origem
- * ficam. O 1 volta pra dentro do primeiro compasso do compasso novo (as barras são as mesmas),
- * pra `barIndexAt` de 0:00 em diante nunca passar da anacruse (-1).
+ * Compasso escolhido no modo EDITAR. Contar de 3 em 3 só vale no composto; o BPM exibido (a
+ * semínima), a fase e a origem ficam: entrar no composto dobra os pulsos da grade (colcheias) e
+ * sair divide por 2, então a semínima não muda. O 1 volta pra dentro do primeiro compasso do
+ * compasso novo (as barras são as mesmas), pra `barIndexAt` de 0:00 em diante nunca passar da
+ * anacruse (-1).
  */
 export function withMeter(g: SongGrid, signature: TimeSignature, countEvery: 1 | 3): SongGrid {
-  const next: SongGrid = { ...g, signature, countEvery: isCompound(signature) ? countEvery : 1, meterSource: 'manual' }
+  const bpm = pulseBpmFromDisplayBpm(displayBpmFromPulseBpm(g.bpm, g.signature), signature)
+  const next: SongGrid = { ...g, bpm, signature, countEvery: isCompound(signature) ? countEvery : 1, meterSource: 'manual' }
   return { ...next, firstDownbeat: intoFirstBar(g.firstDownbeat, barSeconds(next)) }
 }
 
-/** "Ler o click de novo": BPM e fase vêm da leitura nova; o compasso manual de antes, se havia, continua. */
+/**
+ * "Ler o click de novo": BPM e fase vêm da leitura nova; o compasso manual de antes, se havia,
+ * continua (pelo `withMeter`, que converte os pulsos da grade entre simples e composto).
+ */
 export function keepManualMeter(next: SongGrid, previous: SongGrid | null): SongGrid {
   return previous?.meterSource === 'manual' ? withMeter(next, previous.signature, previous.countEvery) : next
 }
@@ -283,8 +309,9 @@ export function gridWarning(g: SongGrid | null): GridWarning | null {
 }
 
 /**
- * Grade vinda de fora (repertório salvo, cache): bpm finito em [30, 300], `firstDownbeat` finito
- * e `>= 0`, compasso, `countEvery`, `source` e `meterSource` conhecidos; senão nula. Devolve uma
+ * Grade vinda de fora (repertório salvo, cache): BPM exibido finito em [30, 300] (no composto,
+ * 60 a 600 colcheias), `firstDownbeat` finito e `>= 0`, compasso, `countEvery`, `source` e
+ * `meterSource` conhecidos; senão nula. Devolve uma
  * grade nova só com os campos dela, com as mesmas regras do `withMeter`: 3 em 3 fora do composto
  * vira 1 e o 1 volta pra dentro do primeiro compasso (`[0, compasso)`, mesmas barras).
  */
@@ -295,10 +322,10 @@ export function sanitizeGrid(raw: unknown): SongGrid | null {
   const signature = knownSignature(r.signature)
   const source = GRID_SOURCES.find((x) => x === r.source)
   const meterSource = METER_SOURCES.find((x) => x === r.meterSource)
-  if (typeof bpm !== 'number' || !Number.isFinite(bpm) || bpm < MIN_BPM || bpm > MAX_BPM) return null
+  if (!signature || !gridBpmInRange(bpm, signature)) return null
   if (typeof firstDownbeat !== 'number' || !Number.isFinite(firstDownbeat) || firstDownbeat < 0) return null
   if (countEvery !== 1 && countEvery !== 3) return null
-  if (!signature || !source || !meterSource) return null
+  if (!source || !meterSource) return null
   const bar = (60 / bpm) * pulsesPerBar(signature)
   return { bpm, firstDownbeat: intoFirstBar(firstDownbeat, bar), signature, countEvery: isCompound(signature) ? countEvery : 1, source, meterSource }
 }
