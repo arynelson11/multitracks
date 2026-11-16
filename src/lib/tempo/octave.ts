@@ -15,12 +15,15 @@
 //   áudio: decide a oitava; na proporção 3:2 só desempata quando os terços são
 //   ambíguos. Se nenhum candidato admitido bate com ele (5%), vale a evidência e o
 //   resultado avisa (`preferConflict`);
-// - compasso composto: o pulso de semínima pontuada vira colcheia (vezes 3).
-// Tudo aqui é em BPM do pulso (a colcheia no composto); a conversão pra semínima
-// (o BPM que se mostra e salva) é do beatGrid, pela conversão única dos contratos.
+//   Quando o salvo decide a família 3:2 nesse desempate, `preferChoseFamily` avisa
+//   (a M7 e a T27 pedem pra conferir o andamento);
+// - compasso x/8: o pulso vai pra faixa da colcheia; no composto (6/8, 12/8) o pulso
+//   de semínima pontuada vira colcheia (vezes 3).
+// Tudo aqui é em BPM do pulso (a colcheia em x/8); a conversão pra semínima (o BPM
+// que se mostra e salva) é do beatGrid, pela conversão única dos contratos.
 // O `nearBpm` (BPM digitado no Separador) continua o refino rígido de ±0,8%: um
 // candidato só, sem trocar de nível.
-import { isCompound, type TimeSignature } from '../stageContracts';
+import { isCompound, isEighthPulse, type TimeSignature } from '../stageContracts';
 import { combScore, type OnsetBands } from './onsets';
 
 /** Proporções do tempo aproximado testadas na busca fina (o 1 primeiro). */
@@ -54,8 +57,13 @@ const THIRDS_WRONG = 0.5;
 const THIRDS_CLEAN = 0.25;
 /** Na troca de proporção pela evidência, o parente precisa de pelo menos isto da pontuação do aproximado. */
 const RATIO_MIN_SCORE = 0.8;
-/** No desempate pelo BPM da música (terços ambíguos), o parente precisa de pelo menos isto (Fé real: 77%). */
-const PREFER_RATIO_MIN_SCORE = 0.6;
+/**
+ * No desempate pelo BPM da música (terços ambíguos), o parente precisa de pelo menos
+ * isto da pontuação do aproximado. Medido: Fé real 77% (78 contra 104); tercina
+ * sintética 58% (108 contra 72, o pulso de 2 tercinas). Quem passa vem com
+ * `preferChoseFamily`.
+ */
+const PREFER_RATIO_MIN_SCORE = 0.5;
 /**
  * Backbeat (bumbo x caixa, 0 a 1) que já conta como evidência clara de oitava. Nos
  * sintéticos o nível certo dá de 0,55 a 0,58 e os outros, no máximo 0,35 (o dobro do
@@ -73,7 +81,7 @@ const BACKBEAT_RATIO = 2;
  * (sintético 6/8 e os três 6/8 reais), pulso já em colcheia até 0,14.
  */
 const THIRDS_COMPOUND = 0.2;
-/** Colcheia plausível no 6/8 e no 12/8 (semínima pontuada de 30 a 80). */
+/** Colcheia plausível em x/8 (no 6/8 e no 12/8, semínima pontuada de 30 a 80). */
 const MIN_EIGHTH_BPM = 90;
 const MAX_EIGHTH_BPM = 240;
 
@@ -202,7 +210,8 @@ const isOctaveRelative = (c: TempoCandidate, base: TempoCandidate) => sameBpm(c.
 //   comuns (a oitava fica pra depois);
 // - aproximado limpo: nenhuma troca, nem pedida pelo BPM da música;
 // - no meio (ambíguo): só o BPM da música desempata, pelo parente limpo perto dele.
-function fixRatio(base: TempoCandidate, cands: readonly TempoCandidate[], prefer: number | null): TempoCandidate {
+// `byPrefer`: a família saiu desse desempate (o salvo escolheu, não a evidência).
+function fixRatio(base: TempoCandidate, cands: readonly TempoCandidate[], prefer: number | null): { cand: TempoCandidate; byPrefer: boolean } {
   if (base.thirds >= THIRDS_WRONG) {
     let best: TempoCandidate | null = null;
     let bestValue = -Infinity;
@@ -214,13 +223,14 @@ function fixRatio(base: TempoCandidate, cands: readonly TempoCandidate[], prefer
         best = c;
       }
     }
-    return best ?? base;
+    return { cand: best ?? base, byPrefer: false };
   }
-  if (base.thirds < THIRDS_CLEAN || prefer === null) return base;
+  const keep = { cand: base, byPrefer: false };
+  if (base.thirds < THIRDS_CLEAN || prefer === null) return keep;
   const clean = cands.filter(c => isRatioRelative(c, base) && c.thirds < THIRDS_CLEAN && c.score >= PREFER_RATIO_MIN_SCORE * base.score);
-  if (!clean.length) return base;
+  if (!clean.length) return keep;
   const near = nearestTo(clean, prefer, c => c.bpm);
-  return withinPrefer(near.bpm, prefer) ? near : base;
+  return withinPrefer(near.bpm, prefer) ? { cand: near, byPrefer: true } : keep;
 }
 
 // Troca de oitava: o dobro ou a metade com backbeat claro e bem maior que o do atual.
@@ -249,42 +259,45 @@ export function halfAndDouble(bpm: number): number[] {
  *   depois a oitava: com `preferBpm`, o candidato da oitava (o escolhido, a metade ou
  *   o dobro) a até 5% dele; sem, ou se nenhum bate, o backbeat. Sem evidência clara
  *   fica o tempo aproximado.
- * @returns o BPM escolhido (como veio no candidato), a metade e o dobro dele e
- *   `preferConflict`: veio `preferBpm` e nenhum candidato admitido ficou a até 5% dele
- *   (o BPM salvo não bate com o áudio; vale o do áudio)
+ * @returns o BPM escolhido (como veio no candidato), a metade e o dobro dele,
+ *   `preferConflict` (veio `preferBpm` e nenhum candidato admitido ficou a até 5%
+ *   dele: o BPM salvo não bate com o áudio e vale o do áudio) e `preferChoseFamily`
+ *   (a família 3:2 saiu do `preferBpm` no desempate de terços ambíguos, não da
+ *   evidência: conferir o andamento)
  */
 export function pickTempo(
   cands: readonly TempoCandidate[],
   opts: { nearBpm?: number; preferBpm?: number },
-): { bpm: number; alternatives: number[]; preferConflict: boolean } {
+): { bpm: number; alternatives: number[]; preferConflict: boolean; preferChoseFamily: boolean } {
   if (!cands.length) throw new Error('pickTempo: nenhum candidato de andamento');
-  const result = (c: TempoCandidate, preferConflict: boolean) => ({ bpm: c.bpm, alternatives: halfAndDouble(c.bpm), preferConflict });
+  const result = (c: TempoCandidate, preferConflict: boolean, preferChoseFamily = false) =>
+    ({ bpm: c.bpm, alternatives: halfAndDouble(c.bpm), preferConflict, preferChoseFamily });
   if (opts.nearBpm && opts.nearBpm > 0) return result(nearestTo(cands, opts.nearBpm, c => c.bpm), false);
   const prefer = opts.preferBpm && opts.preferBpm > 0 ? opts.preferBpm : null;
-  const base = fixRatio(cands[0], cands, prefer);
+  const { cand: base, byPrefer } = fixRatio(cands[0], cands, prefer);
   if (prefer === null) return result(fixOctave(base, cands), false);
   const octave = nearestTo(cands.filter(c => c === base || isOctaveRelative(c, base)), prefer, c => c.bpm);
-  return withinPrefer(octave.bpm, prefer) ? result(octave, false) : result(fixOctave(base, cands), true);
+  return withinPrefer(octave.bpm, prefer) ? result(octave, false, byPrefer) : result(fixOctave(base, cands), true, byPrefer);
 }
 
 /**
- * Compasso composto (6/8, 12/8): a grade da música é em colcheia. Se o pulso
- * escolhido tem ataque nos terços (é a semínima pontuada ou a metade dela), a
- * colcheia é 3 vezes ele; senão ele já é a colcheia. Depois o nível vai pra faixa
- * plausível da colcheia (90 a 240) e, com o BPM salvo, pra oitava a até 5% dele.
- * Compasso simples (ou sem compasso): o pulso como veio (lá o BPM salvo já entrou
- * na escolha do pulso).
- * @param preferPulseBpm o BPM salvo já convertido pro pulso (a colcheia no composto)
- * @returns o BPM do pulso (a colcheia no composto) e `preferConflict`: veio BPM salvo
- *   e nenhuma oitava da colcheia ficou a até 5% dele (vale a colcheia do áudio)
+ * Compasso x/8 (Ruling M4-x8): a grade da música é em colcheia. No composto (6/8,
+ * 12/8), se o pulso escolhido tem ataque nos terços (é a semínima pontuada ou a
+ * metade dela), a colcheia é 3 vezes ele; senão ele já é a colcheia (no 7/8 sempre).
+ * Depois o nível vai pra faixa plausível da colcheia (90 a 240) e, com o BPM salvo,
+ * pra oitava a até 5% dele. Compasso x/4 (ou sem compasso): o pulso como veio (lá o
+ * BPM salvo já entrou na escolha do pulso).
+ * @param preferPulseBpm o BPM salvo já convertido pro pulso (a colcheia em x/8)
+ * @returns o BPM do pulso (a colcheia em x/8) e `preferConflict`: veio BPM salvo e
+ *   nenhuma oitava da colcheia ficou a até 5% dele (vale a colcheia do áudio)
  */
-export function compoundPulseBpm(
+export function eighthPulseBpm(
   pulse: { bpm: number; thirds: number },
   signature: TimeSignature | undefined,
   preferPulseBpm?: number,
 ): { bpm: number; preferConflict: boolean } {
-  if (!signature || !isCompound(signature)) return { bpm: pulse.bpm, preferConflict: false };
-  let eighth = pulse.thirds >= THIRDS_COMPOUND ? pulse.bpm * 3 : pulse.bpm;
+  if (!signature || !isEighthPulse(signature)) return { bpm: pulse.bpm, preferConflict: false };
+  let eighth = isCompound(signature) && pulse.thirds >= THIRDS_COMPOUND ? pulse.bpm * 3 : pulse.bpm;
   while (eighth > MAX_EIGHTH_BPM) eighth /= 2;
   while (eighth < MIN_EIGHTH_BPM) eighth *= 2;
   if (!preferPulseBpm || !(preferPulseBpm > 0)) return { bpm: eighth, preferConflict: false };

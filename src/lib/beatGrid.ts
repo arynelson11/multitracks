@@ -19,21 +19,21 @@
 // banda, andamento, tempo x contratempo, confiança e o "1") e pode ser trocada
 // sozinha, com o teste de equivalência (beatGrid.equivalence.test.ts) segurando
 // o que não mudou.
-import { displayBpmFromPulseBpm, isCompound, pulseBpmFromDisplayBpm, pulsesPerBar, type TimeSignature } from './stageContracts';
+import { displayBpmFromPulseBpm, isCompound, isEighthPulse, pulseBpmFromDisplayBpm, pulsesPerBar, type TimeSignature } from './stageContracts';
 import { measureConfidence } from './tempo/confidence';
 import { chooseDownbeat, type DownbeatVotes } from './tempo/downbeat';
-import { candidateEvidence, compoundPulseBpm, halfAndDouble, pickTempo, roughTempo, tempoCandidates, type TempoCandidate } from './tempo/octave';
+import { candidateEvidence, eighthPulseBpm, halfAndDouble, pickTempo, roughTempo, tempoCandidates, type TempoCandidate } from './tempo/octave';
 import { combScore, ONSET_LAG_FRAMES, onsetBands, sumOnsetBands, type OnsetBands } from './tempo/onsets';
 import { choosePhase } from './tempo/phase';
 
 export interface BeatGrid {
   /**
-   * BPM preciso em semínima (ex.: 119.87): o que mostrar e salvar (Ruling T3-BPM). No
-   * compasso simples é o BPM da grade; no composto (`signature` 6/8 ou 12/8 no
-   * `detectSongGrid`) é a metade da colcheia (`pulseBpm`).
+   * BPM preciso em semínima (ex.: 119.87): o que mostrar e salvar (Ruling T3-BPM). Em
+   * x/4 é o BPM da grade; em x/8 (`signature` com denominador 8 no `detectSongGrid`)
+   * é a metade da colcheia (`pulseBpm`).
    */
   bpm: number;
-  /** Segundos do primeiro pulso da grade, sempre em [0, 60/pulso) (o pulso é o `bpm` no compasso simples). */
+  /** Segundos do primeiro pulso da grade, sempre em [0, 60/pulso) (o pulso é o `bpm` em x/4). */
   firstBeat: number;
   /** Qual pulso (contado a partir de firstBeat, 0..beatsPerBar-1) é o "1" do compasso. */
   downbeat: number;
@@ -71,9 +71,9 @@ export interface TempoTrack {
 
 export interface SongGridDetection extends BeatGrid {
   /**
-   * BPM do pulso da grade (os tiques do click): a colcheia no composto, igual ao `bpm`
-   * no compasso simples. `firstBeat` e `downbeat` contam este pulso. Não é pra mostrar
-   * nem salvar (isso é o `bpm`, pela conversão única dos contratos).
+   * BPM do pulso da grade (os tiques do click): a colcheia em x/8 (Ruling M4-x8),
+   * igual ao `bpm` em x/4. `firstBeat` e `downbeat` contam este pulso. Não é pra
+   * mostrar nem salvar (isso é o `bpm`, pela conversão única dos contratos).
    */
   pulseBpm: number;
   /** A grade pode estar no contratempo (meio tempo fora): bumbo e caixa não decidem, ou não há nenhum dos dois. */
@@ -83,6 +83,12 @@ export interface SongGridDetection extends BeatGrid {
    * salvo não bate com o áudio e a grade é a do áudio (a M7 e a T27 avisam).
    */
   preferConflict: boolean;
+  /**
+   * Só aparece (sempre `true`) quando o `preferBpm` escolheu a família 3:2 da grade no
+   * desempate de terços ambíguos, sem a evidência do áudio confirmar: a M7 e a T27
+   * pedem pra conferir o andamento. Ausente nos outros casos.
+   */
+  preferChoseFamily?: true;
   /** Metade e dobro do `bpm` (em semínima), pra oferecer (vazio na grade de reserva). */
   alternatives: number[];
   /** Ids das faixas que entraram na conta: as de pulso primeiro, depois as que votam no "1". */
@@ -167,8 +173,8 @@ function halfOf(b: OnsetBands, f: FittedCandidate): FittedCandidate {
  * conta inteiro); `bass` (a primeira) e `harmony` vão pra etapa do "1" como votos.
  * Sem faixa de pulso que dê pra medir, devolve a grade de reserva com confiança 0.
  * O andamento sai da etapa da oitava (metade, dobro, 3:2, `preferBpm`). Com
- * `signature` 6/8 ou 12/8 a grade fica em colcheia (`pulseBpm`) e o `bpm` em
- * semínima; `nearBpm` e `preferBpm` são sempre lidos em semínima. O "1" usa
+ * `signature` x/8 a grade fica em colcheia (`pulseBpm`) e o `bpm` em semínima;
+ * `nearBpm` e `preferBpm` são sempre lidos em semínima. O "1" usa
  * `beatsPerBar`, que sem valor vem dos pulsos do compasso (`signature`), senão 4.
  */
 export function detectSongGrid(
@@ -218,12 +224,13 @@ export function detectSongGrid(
 
   const { fps } = b;
   const o = b.full;
-  // As referências vêm em semínima e a busca anda no pulso (a colcheia no composto).
+  // As referências vêm em semínima e a busca anda no pulso (a colcheia em x/8).
   const nearPulse = nearBpm !== undefined ? pulseBpmFromDisplayBpm(nearBpm, sig) : undefined;
   const preferPulse = preferBpm !== undefined ? pulseBpmFromDisplayBpm(preferBpm, sig) : undefined;
-  // No composto o BPM salvo é lido na colcheia (depois do pulso), não no pulso.
-  const compound = nearPulse === undefined && isCompound(sig);
-  const pulsePrefer = compound ? undefined : preferPulse;
+  // Em x/8 o pulso vai pra faixa da colcheia depois da escolha (Ruling M4-x8). No
+  // composto o BPM salvo só entra aí (o pulso achado pode ser a semínima pontuada).
+  const eighthStage = nearPulse === undefined && isEighthPulse(sig);
+  const pulsePrefer = isCompound(sig) ? undefined : preferPulse;
   const roughBpm = nearPulse ?? roughTempo(o, fps);
   const range = nearPulse ? 0.008 : 0.025;
   const fits = tempoCandidates(roughBpm, { nearBpm: nearPulse, signature: opts.signature })
@@ -233,8 +240,8 @@ export function detectSongGrid(
   let fit = fits.find(f => f.bpm === tempo.bpm) ?? fits[0];
   // A metade do tempo aproximado sai dele (grade com o dobro de ataques, BPM mais preciso).
   if (fit !== fits[0] && Math.abs((2 * fit.bpm) / fits[0].bpm - 1) < 0.03) fit = halfOf(b, fits[0]);
-  if (compound) {
-    const eighth = compoundPulseBpm(fit, sig, preferPulse);
+  if (eighthStage) {
+    const eighth = eighthPulseBpm(fit, sig, preferPulse);
     preferConflict = eighth.preferConflict;
     // Refino curto em volta da colcheia: a fase da grade do pulso nem sempre cai numa colcheia (pulso 3:2).
     if (Math.abs(eighth.bpm / fit.bpm - 1) > 1e-9) fit = fitCandidate(b, eighth.bpm, 0.008);
@@ -251,7 +258,11 @@ export function detectSongGrid(
   firstBeat = ((firstBeat % period) + period) % period;
   const downbeat = chooseDownbeat(b, period, firstBeat, beatsPerBar, votes);
 
-  return { bpm, pulseBpm, firstBeat, downbeat, confidence, offbeatRisk, preferConflict, alternatives: halfAndDouble(bpm), tracksUsed };
+  return {
+    bpm, pulseBpm, firstBeat, downbeat, confidence, offbeatRisk, preferConflict,
+    ...(tempo.preferChoseFamily ? { preferChoseFamily: true as const } : {}),
+    alternatives: halfAndDouble(bpm), tracksUsed,
+  };
 }
 
 export function detectBeatGrid(

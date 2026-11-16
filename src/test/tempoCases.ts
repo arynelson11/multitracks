@@ -127,6 +127,8 @@ export const TEMPO_CASES: readonly TempoCase[] = [
     knownIssue: 'a grade fica no contratempo e sem aviso de risco: o ruído da caixa (todo "e") vence o bumbo (só no 3)' },
   { id: 'f1', group: 'calibracao', positive: true, song: synth({ bpm: 90, firstBeat: 0.3, pattern: 'waltz34' }), beatsPerBar: 3,
     note: 'valsa 3/4, 90 BPM, compasso pedido 3/4' },
+  { id: 'tercina-72', group: 'validacao', positive: true, song: synth({ bpm: 216, firstBeat: 0.3, pattern: 'sixeight' }), beatsPerBar: 4, pulseEvery: 3,
+    note: 'tercina: semínima a 72 com colcheias de tercina a 216 (a levada do 6/8 a 216, bumbo e caixa alternando na semínima). O 3:2 dela (108, duas tercinas) é limpo: com o BPM salvo 108, ele escolhe a família e o resultado pede pra conferir' },
   { id: 'f3', group: 'validacao', positive: true, song: synth({ bpm: 180, firstBeat: 0.3, pattern: 'sixeight' }), beatsPerBar: 6, pulseEvery: 3,
     note: '6/8 com colcheia a 180 (semínima pontuada a 60), compasso pedido 6/8; a grade sai na semínima pontuada' },
   { id: 'g1', group: 'calibracao', positive: true, song: synth({ bpm: 120, firstBeat: 0.8, gain: 0.01 }),

@@ -8,6 +8,8 @@ import type { SynthSong } from '../../test/synthMusic';
 import { choosePhase } from './phase';
 import { combScore, onsetBands, type OnsetBands } from './onsets';
 
+// Desde a M4 a detecção ajusta 7 candidatos de andamento (cerca de 2 vezes mais lenta);
+// com a máquina carregada um caso de 60 s passava dos 5 s padrão.
 const LENTO = 60_000;
 
 function detect(c: TempoCase): { song: SynthSong; grid: SongGridDetection } {
@@ -25,7 +27,7 @@ function erroDoPrimeiroClick(c: TempoCase): number {
 describe('tempo x contratempo nos casos do relatório', () => {
   it.each(['x_popsync', 'x_kicksync', 'x_sync16even', 'e1'])('%s: click no tempo, não no contratempo', (id) => {
     expect(Math.abs(erroDoPrimeiroClick(tempoCase(id)))).toBeLessThan(0.010);
-  });
+  }, LENTO);
 
   // Os dois avisam o risco, por caminhos diferentes (o teste confere qual).
   it('loop-shaker: sem bumbo nem caixa, avisa o risco de meio tempo', () => {
@@ -34,7 +36,7 @@ describe('tempo x contratempo nos casos do relatório', () => {
     const b = onsetBands(caseTracks(c, song)[0].channels, song.sr);
     expect({ bumbo: b?.hasKick, caixa: b?.hasSnare }).toEqual({ bumbo: false, caixa: false });
     expect(grid.offbeatRisk).toBe(true);
-  });
+  }, LENTO);
 
   it('bass-colcheias: o baixo acende a banda grave, mas tempo e contratempo empatam (menos de 15%) e avisa o risco', () => {
     const c = tempoCase('bass-colcheias');
@@ -43,11 +45,11 @@ describe('tempo x contratempo nos casos do relatório', () => {
     // O baixo passa por "tem grave" (hasKick); o risco vem do empate, não da ausência.
     expect({ grave: b?.hasKick, caixa: b?.hasSnare }).toEqual({ grave: true, caixa: false });
     expect(grid.offbeatRisk).toBe(true);
-  });
+  }, LENTO);
 
   it('levada comum (rock no b) não avisa risco', () => {
     expect(detect(tempoCase('b')).grid.offbeatRisk).toBe(false);
-  });
+  }, LENTO);
 
   // Antes da M2 estes já saíam no tempo certo (detector congelado da v1.4.15):
   // a decisão de bumbo e caixa não pode tirar nenhum do lugar. O relatório mediu
@@ -59,7 +61,8 @@ describe('tempo x contratempo nos casos do relatório', () => {
   // é cara ou coroa pros dois detectores (entre 30 e 45 s o antigo cai no
   // contratempo); em 20 s, como em 60 s, os dois acertam.
   const DAVAM_CERTO = ['a', 'b', 'b44k', 'c1', 'c2', 'd', 'f1', 'f3', 'g1', 'h', 'x_disco', 'x_popsync', 'x_kicksync',
-    'x_hat16on', 'x_a_crash', 'x_a_popsync0', 'x_d_fill4', 'x_d_fill3', 'x_d_pickup', 't_64', 't_68_16', 't_58', 'n_kicksplit', 'bass-colcheias'];
+    'x_hat16on', 'x_a_crash', 'x_a_popsync0', 'x_d_fill4', 'x_d_fill3', 'x_d_pickup', 't_64', 't_68_16', 't_58', 'n_kicksplit', 'bass-colcheias',
+    'tercina-72'];
   const ANTIGO_ERRAVA = ['e1', 'e2', 'x_sync16even', 't_160', 't_176', 'loop-shaker'];
 
   it('todo positivo de uma faixa está numa das duas listas', () => {
@@ -107,7 +110,7 @@ describe('falhas conhecidas do catálogo (comportamento de hoje)', () => {
     expect(grid.bpm).toBeCloseTo(song.bpm, 1);
     expect(Math.abs(Math.abs(firstBeatError(c, song, grid.firstBeat)) - meioPeriodo)).toBeLessThan(0.010);
     expect(grid.offbeatRisk).toBe(risco);
-  });
+  }, LENTO);
 });
 
 // ── choosePhase com ataques montados à mão (sem áudio) ──
