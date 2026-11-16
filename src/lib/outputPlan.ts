@@ -29,10 +29,17 @@ export const OUTPUT_WARNING_TEXT: Record<OutputWarning, string> = {
 /** Plano com o aviso pra tela. O motor e o roteador usam só os campos de `OutputPlan`. */
 export interface PlannedOutputs extends OutputPlan { warning: OutputWarning | null }
 
-/** Padrão (R-23): Click e Guia separados, ouvido na saída 1; com 4 ou mais, VS em 1/2, Click na 3, Guia na 4. */
-export const DEFAULT_OUTPUTS: OutputSettings = { mode: 'split2', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } }
+/** Configuração de saídas só de leitura, inclusive o mapa. */
+export type ReadonlyOutputSettings = Readonly<Omit<OutputSettings, 'multi'>> & { readonly multi: Readonly<OutputMap> }
 
-const copyOutputs = (s: OutputSettings): OutputSettings => ({ mode: s.mode, earOnSecond: s.earOnSecond, multi: { ...s.multi } })
+/**
+ * Padrão (R-23): Click e Guia separados, ouvido na saída 1; com 4 ou mais, VS em 1/2, Click
+ * na 3, Guia na 4. Só de leitura no tipo; quem precisa de um objeto pra mexer usa as cópias
+ * que `migrateOutputs` e `sanitizeOutputs` devolvem.
+ */
+export const DEFAULT_OUTPUTS: ReadonlyOutputSettings = { mode: 'split2', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } }
+
+const copyOutputs = (s: ReadonlyOutputSettings): OutputSettings => ({ mode: s.mode, earOnSecond: s.earOnSecond, multi: { ...s.multi } })
 
 /** Canais do aparelho: valor não finito ou menor que 2 conta como 2; placa grande para no teto. */
 function deviceChannels(maxChannelCount: number): number {
@@ -103,9 +110,10 @@ function splitPlan(earOnSecond: boolean, fellBackFrom: OutputMode | null, warnin
  * 2 canais em qualquer placa. "4 ou mais" usa o mapa gravado quando ele cabe; senão corrige
  * campo a campo (Click e Guia nunca no par da VS) e avisa. Com menos de 4 canais: se a VS
  * gravada não usa as saídas 1 e 2, cai em separados com o ouvido na saída 1; se usa, a VS
- * fica nelas e Click e Guia vão pro que sobrar (numa placa de 2 canais, sem saída).
+ * fica nelas e Click e Guia vão pro que sobrar (numa placa de 2 canais, sem saída). Não mexe
+ * em `s` e devolve sempre listas novas.
  */
-export function planOutputs(s: OutputSettings, maxChannelCount: number): PlannedOutputs {
+export function planOutputs(s: ReadonlyOutputSettings, maxChannelCount: number): PlannedOutputs {
   if (s.mode === 'stereo') return { mode: 'stereo', channels: 2, vs: [0, 1], click: [0, 1], guide: [0, 1], panByRole: false, fellBackFrom: null, warning: null }
   if (s.mode !== 'multi') return splitPlan(s.earOnSecond === true, null, null)
 

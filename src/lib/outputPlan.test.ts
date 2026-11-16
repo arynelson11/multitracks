@@ -24,6 +24,32 @@ describe('padrão', () => {
   it('Click e Guia separados, ouvido na saída 1, mapa VS 1/2, Click 3, Guia 4', () => {
     expect(DEFAULT_OUTPUTS).toEqual({ mode: 'split2', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } })
   })
+
+  it('padrão só de leitura até o mapa, e nenhuma conta muda o padrão nem o que recebeu', () => {
+    // O tipo é conferido pelo tsc (npm run typecheck): escrever no padrão não compila.
+    const escreverNoPadrao = () => {
+      // @ts-expect-error o padrão é só de leitura
+      DEFAULT_OUTPUTS.mode = 'stereo'
+      // @ts-expect-error o mapa do padrão também
+      DEFAULT_OUTPUTS.multi.click = 7
+    }
+    expect(typeof escreverNoPadrao).toBe('function')
+
+    const antes = JSON.stringify(DEFAULT_OUTPUTS)
+    for (const s of [DEFAULT_OUTPUTS, STEREO, MULTI, multi(2, 4, 5), multi(1, 0, 0), rawMulti({ vsPair: '2', click: 'x' })]) {
+      const recebido = JSON.stringify(s)
+      for (const max of [2, 3, 4, 5, 8]) {
+        const p = planOutputs(s, max)
+        p.vs.push(9); p.click.push(9); p.guide.push(9)
+      }
+      const lido = sanitizeOutputs(s)
+      if (lido) lido.multi.click = 9
+      migrateOutputs({ outputs: s }).outputs.multi.guide = 9
+      expect(JSON.stringify(s)).toBe(recebido)
+    }
+    expect(JSON.stringify(DEFAULT_OUTPUTS)).toBe(antes)
+    expect(planOutputs(MULTI, 8)).toMatchObject({ vs: [0, 1], click: [2], guide: [3] })
+  })
 })
 
 describe('planOutputs', () => {
