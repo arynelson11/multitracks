@@ -126,6 +126,9 @@ describe('meta de cada botão (padMeta)', () => {
     expect(padTag({ target: 1, plays: 3 }, 1, 1)).toEqual({ kind: 'repete', text: 'REPETE 3x', loop: false })
     expect(padTag({ target: 1, plays: 'infinite' }, 1, 1)).toEqual({ kind: 'agora', text: 'AGORA', loop: true })
     expect(padTag({ target: 2, plays: 'infinite' }, 2, 1)).toEqual({ kind: 'proxima', text: 'PRÓXIMA', loop: false })
+    // Sem teto no plano a etiqueta mostra no máximo 99 (como o REPETIR da faixa do meio): cabe na reserva.
+    expect(padTag({ target: 1, plays: 150 }, 1, 1, Infinity)?.text).toBe('REPETE 99x')
+    expect(padTag({ target: 1, plays: 9 }, 1, 1, 9)?.text).toBe('REPETE 9x')
   })
 })
 
@@ -386,6 +389,9 @@ describe('botoeira de seções', () => {
     expect(padReserve(SECTIONS[4], SECTIONS, 9, true).metas).toEqual(['1:05', '0:14/0:14', 'em 99 comp.'])
     expect(padReserve(SECTIONS[0], SECTIONS, Infinity, true).tags).toEqual(['PRÓXIMA', 'REPETE', 'REPETE 99x'])
     expect(padReserve(SECTIONS[0], SECTIONS, 1, true).tags).toEqual(['PRÓXIMA', 'REPETE'])
+    // A espera é arredondada pra cima: com 99 compassos pode aparecer "em 100 comp.".
+    const cem = SECTIONS.map((x, i) => (i === 1 ? { ...x, bars: 99 } : x))
+    expect(padReserve(cem[0], cem, 9, true).metas).toContain('em 999 comp.')
   })
 
   it('armar, contar, pousar, REPETE e LOOP (com e sem grade, seção de 120 comp.) não mudam a largura de nenhum botão nem medem de novo', () => {
@@ -435,8 +441,11 @@ describe('botoeira de seções', () => {
     for (const b of pads()) expect(b.className).toContain('snap-start')
     expect(pads().map((b) => b.dataset.out)).toEqual(['false', 'false', 'false', 'false', ...Array(8).fill('true')])
     for (const b of pads()) expect(b.className).toContain('data-[out=true]:invisible')
-    // Folga no fim pra a última página começar num botão: 480 - 440 - 8.
-    expect((document.querySelector('[data-pads-spacer]') as HTMLElement).style.width).toBe('32px')
+    // Folga no fim pra a última página começar EXATAMENTE num botão (Ruling T10-espaçador): 480 - 440, e a
+    // margem de -8 px anula o espaço entre itens que a fileira põe antes dela.
+    const spacer = document.querySelector('[data-pads-spacer]') as HTMLElement
+    expect(spacer.style.width).toBe('40px')
+    expect(spacer.style.marginLeft).toBe('-8px')
     expect(scroller().scrollLeft).toBe(0)
     expect(before()?.disabled).toBe(true)
     expect(after()?.textContent).toBe('8')
@@ -479,7 +488,7 @@ describe('botoeira de seções', () => {
     fireEvent.click(after() as HTMLButtonElement) // última página: 8 a 11 (a 12ª termina a 440 px do começo)
     expect(scroller().scrollLeft).toBe(1048)
     expect(after()?.disabled).toBe(true)
-    expect((document.querySelector('[data-pads-spacer]') as HTMLElement).style.width).toBe('32px')
+    expect((document.querySelector('[data-pads-spacer]') as HTMLElement).style.width).toBe('40px')
     fireEvent.click(before() as HTMLButtonElement) // volta a página que termina logo antes do 8
     expect(scroller().scrollLeft).toBe(656)
     expect(out()).toBe('000001110000')
@@ -487,19 +496,91 @@ describe('botoeira de seções', () => {
     expect(after()?.textContent).toBe('4')
   })
 
-  it('AGORA trazida pra vista já encaixada; o alvo armado também, quando cabe junto com ela', () => {
+  it('folga do fim menor que o espaço entre botões: o fim da rolagem cai no começo exato do botão (caso do revisor)', () => {
+    // 1024x768, 8 curtas com grade: janela de 992 - 120 = 872 px; botões de 117 ("Refrão 2" 118, "Refrão 3" 119),
+    // 995 px no total. A última página (do 2º ao 8º, 870 px) sobra 2 px: o fim da rolagem tem de ser 125, não 131.
+    const oito = Array.from({ length: 8 }, (_, i): StageSection => ({ index: i, label: `S${i + 1}`, color: '#10b981', start: i * 8, end: i * 8 + 8, bars: 4 }))
+    ruler(992, (b) => (b.dataset.sectionPad === '5' ? 118 : b.dataset.sectionPad === '7' ? 119 : 117))
+    renderPads({ sections: oito, currentSection: 1, hasGrid: true })
+    const total = 6 * 117 + 118 + 119 + 7 * 8
+    const spacer = document.querySelector('[data-pads-spacer]') as HTMLElement
+    expect(scroller().style.width).toBe('872px')
+    expect(spacer.style.width).toBe('2px')
+    // Conteúdo = botões + espaço antes da folga (8) + margem dela (-8) + folga; rolagem máxima = conteúdo - janela.
+    const maxScroll = total + 8 + parseFloat(spacer.style.marginLeft) + parseFloat(spacer.style.width) - 872
+    expect(maxScroll).toBe(125) // começo exato do 2º botão (117 + 8)
+    expect(pads().filter((b) => b.dataset.out === 'false')).toHaveLength(7)
+  })
+
+  it('ao carregar a música a fileira vai pra AGORA, já encaixada', () => {
     const doze = Array.from({ length: 12 }, (_, i): StageSection => ({ index: i, label: `S${i + 1}`, color: '#10b981', start: i * 8, end: i * 8 + 8, bars: 4 }))
     ruler(600)
-    const { rerender } = renderPads({ sections: doze, currentSection: 1 })
-    expect(scroller().scrollLeft).toBe(0)
-    rerender(<SectionPads {...props({ sections: doze, currentSection: 1, intent: { target: 4, plays: 1 } })} />)
-    expect(scroller().scrollLeft).toBe(112) // S2 a S5: atual e alvo à vista
-    rerender(<SectionPads {...props({ sections: doze, currentSection: 1, intent: { target: 8, plays: 1 } })} />)
-    expect(scroller().scrollLeft).toBe(112) // alvo longe: a AGORA manda
-    rerender(<SectionPads {...props({ sections: doze, currentSection: 9 })} />)
-    expect(scroller().scrollLeft).toBe(6 * 112)
+    renderPads({ sections: doze, currentSection: 9 })
+    expect(scroller().scrollLeft).toBe(6 * 112) // S7 a S10
     expect(before()?.textContent).toBe('6')
     expect(after()?.textContent).toBe('2')
+  })
+
+  it('paginar, armar e cancelar no mesmo ponto acerta a mesma seção (armar nunca rola a fileira)', () => {
+    const doze = Array.from({ length: 12 }, (_, i): StageSection => ({ index: i, label: `S${i + 1}`, color: '#10b981', start: i * 8, end: i * 8 + 8, bars: 4 }))
+    ruler(600)
+    const onTap = vi.fn()
+    const { rerender } = renderPads({ sections: doze, currentSection: 1, onTap })
+    fireEvent.click(after() as HTMLButtonElement) // AGORA sai de vista: S5 a S8
+    expect(scroller().scrollLeft).toBe(448)
+    fireEvent.pointerDown(pad(5))
+    fireEvent.click(pad(5))
+    expect(onTap).toHaveBeenLastCalledWith(5)
+    rerender(<SectionPads {...props({ sections: doze, currentSection: 1, onTap, intent: { target: 5, plays: 1 } })} />)
+    expect(scroller().scrollLeft).toBe(448)
+    expect(pad(5).dataset.out).toBe('false')
+    // Segundo toque no mesmo ponto: o mesmo botão, que cancela.
+    fireEvent.click(pad(5))
+    expect(onTap).toHaveBeenLastCalledWith(5)
+    rerender(<SectionPads {...props({ sections: doze, currentSection: 1, onTap, intent: null })} />)
+    expect(scroller().scrollLeft).toBe(448)
+    // Armar pela tecla uma seção fora da janela também não rola.
+    rerender(<SectionPads {...props({ sections: doze, currentSection: 1, onTap, intent: { target: 10, plays: 1 } })} />)
+    expect(scroller().scrollLeft).toBe(448)
+  })
+
+  it('a seção atual mudar com toque recente na fileira não rola; com 4 s sem toque rola até a AGORA', () => {
+    const doze = Array.from({ length: 12 }, (_, i): StageSection => ({ index: i, label: `S${i + 1}`, color: '#10b981', start: i * 8, end: i * 8 + 8, bars: 4 }))
+    ruler(600)
+    let t = 1000
+    vi.spyOn(performance, 'now').mockImplementation(() => t)
+    const { rerender } = renderPads({ sections: doze, currentSection: 1 })
+    expect(scroller().scrollLeft).toBe(0)
+    fireEvent.pointerDown(pad(2)) // operador tocou na fileira em t = 1000
+    t = 4900 // 3,9 s depois
+    rerender(<SectionPads {...props({ sections: doze, currentSection: 9 })} />)
+    expect(scroller().scrollLeft).toBe(0)
+    t = 9000 // 4 s ou mais sem toque
+    rerender(<SectionPads {...props({ sections: doze, currentSection: 10 })} />)
+    expect(scroller().scrollLeft).toBe(7 * 112) // S8 a S11
+    // A roda (ou o arrasto) na fileira também conta como toque.
+    fireEvent.wheel(scroller())
+    t = 10000
+    rerender(<SectionPads {...props({ sections: doze, currentSection: 1 })} />)
+    expect(scroller().scrollLeft).toBe(7 * 112)
+  })
+
+  it('grade que chega com a música tocando só muda as larguras com a música parada (ou na próxima música)', () => {
+    // Régua falsa: com "no fim da seção" na reserva o botão pede 123; sem, 117.
+    const calls = ruler(1000, (b) => (b.querySelector('[data-pad-sizer]')?.textContent?.includes('no fim da seção') ? 123 : 117))
+    const { rerender } = renderPads()
+    expect(pads().every((b) => b.style.width === '123px')).toBe(true)
+    calls.n = 0
+    rerender(<SectionPads {...props({ hasGrid: true })} />)
+    expect(pads().every((b) => b.style.width === '123px')).toBe(true)
+    expect(calls.n).toBe(0) // tocando: nem mede
+    rerender(<SectionPads {...props({ hasGrid: true, isPlaying: false })} />)
+    expect(pads().every((b) => b.style.width === '117px')).toBe(true)
+    cleanup()
+    // Próxima música já tocando, com a grade conhecida: entra com a dela.
+    const r = renderPads()
+    r.rerender(<SectionPads {...props({ sections: SECTIONS.slice(0, 4), hasGrid: true })} />)
+    expect(pads().every((b) => b.style.width === '117px')).toBe(true)
   })
 
   it('tudo cabe: sem indicadores, sem esticar e sem rolar (a sobra fica vazia à direita)', () => {

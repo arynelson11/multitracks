@@ -58,16 +58,26 @@ export function padMeta(s: StageSection, i: number, ctx: PadMetaContext): string
 }
 
 /**
+ * Maior número de passagens que a etiqueta mostra: o teto do plano (regra do clampPlays da T4) e, sem
+ * teto, 99, como o REPETIR da faixa do meio. Assim "REPETE Nx" nunca passa da reserva.
+ */
+function tagCap(maxRepeats: number): number {
+  if (!(maxRepeats >= 1)) return 1
+  return Math.min(99, Math.floor(maxRepeats))
+}
+
+/**
  * Etiqueta do canto do botão da seção `index`. No alvo armado: "PRÓXIMA", "REPETE" ou
  * "REPETE 3x" (regra da T4; REPETE fica no lugar do AGORA). Na atual: "AGORA", com o ícone de
  * loop quando o loop infinito dela está ligado (esse não é pulo: sem listras nem contagem).
  */
-export function padTag(intent: ArmIntent | null, index: number, current: number): PadTag | null {
+export function padTag(intent: ArmIntent | null, index: number, current: number, maxRepeats = Infinity): PadTag | null {
   const loop = isSelfLoop(intent, current)
   if (intent !== null && intent.target === index && !loop) {
     const l = armLabel(intent, current)
     if (l && l.kind === 'repete') {
-      return { kind: 'repete', text: typeof l.plays === 'number' && l.plays > 1 ? `REPETE ${l.plays}x` : 'REPETE', loop: false }
+      const n = typeof l.plays === 'number' ? Math.min(l.plays, tagCap(maxRepeats)) : 1
+      return { kind: 'repete', text: n > 1 ? `REPETE ${n}x` : 'REPETE', loop: false }
     }
     return { kind: 'proxima', text: 'PRÓXIMA', loop: false }
   }
@@ -83,17 +93,18 @@ export interface PadReserve { metas: string[]; tags: string[] }
  * (fonte mono, só conta o número de caracteres): o início dele; como atual, "comp. M/M" com os
  * compassos DELE (ou o "m:ss/m:ss" dele, sem compassos); como armado, "em N comp." com o maior
  * número de dígitos de compasso da música (N é o que falta da seção que estiver tocando, qualquer
- * uma; no mínimo 2 dígitos); "no fim da seção" só em música sem grade. A "contagem" entra à parte,
+ * uma, arredondado pra cima; no mínimo 2 dígitos); "no fim da seção" só em música sem grade. A "contagem" entra à parte,
  * com o espaço do número grande. Etiquetas (qualquer botão pode ser a atual ou o alvo): PRÓXIMA,
- * REPETE e REPETE Nx com o teto do plano (99 quando não há teto).
+ * REPETE e REPETE Nx com o maior número que a etiqueta mostra (`tagCap`).
  */
 export function padReserve(s: StageSection, sections: StageSection[], maxRepeats: number, hasGrid: boolean): PadReserve {
   const barsOf = (x: StageSection) => (x.bars !== null && x.bars >= 1 ? Math.floor(x.bars) : 0)
-  const nines = '9'.repeat(Math.max(2, String(Math.max(0, ...sections.map(barsOf))).length))
+  // N vem arredondado pra cima: pode ter um compasso a mais que a maior seção ("em 100 comp." com 99).
+  const nines = '9'.repeat(Math.max(2, String(Math.max(0, ...sections.map(barsOf)) + 1).length))
   const own = barsOf(s)
   const len = clockText(s.end - s.start)
   const metas = [clockText(s.start), own > 0 ? `comp. ${own}/${own}` : `${len}/${len}`, `em ${nines} comp.`]
   if (!hasGrid) metas.push(NO_GRID_TEXT)
-  const cap = !(maxRepeats >= 1) ? 1 : Number.isFinite(maxRepeats) ? Math.floor(maxRepeats) : 99 // mesmo teto do clampPlays da T4
+  const cap = tagCap(maxRepeats)
   return { metas, tags: cap > 1 ? ['PRÓXIMA', 'REPETE', `REPETE ${cap}x`] : ['PRÓXIMA', 'REPETE'] }
 }
