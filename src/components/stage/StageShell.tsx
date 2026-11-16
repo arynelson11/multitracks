@@ -1,10 +1,11 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type React from 'react'
 import { OUTPUT_WARNING_TEXT, outputSummary } from '../../lib/outputPlan'
 import { isSelfLoop } from '../../lib/sectionArm'
 import { barSeconds, nearestBarLine, pulseSeconds } from '../../lib/songGrid'
 import { gridHasPhase } from '../../lib/stageContracts'
 import type { OutputPlan, SongGrid, StageActions, StageClock, StageView } from '../../lib/stageContracts'
+import { Led, cx } from '../ui'
 import { MeterEditor } from './MeterEditor'
 import { MidStrip } from './MidStrip'
 import { PadPanel } from './PadPanel'
@@ -70,18 +71,10 @@ function outputAlertText(plan: OutputPlan): string | null {
   return `Esta placa tem só ${channelsText(plan.channels)}: ${outputSummary(plan)}.`
 }
 
-// Âmbar = alerta. Dentro da área da onda: aparecer (a placa mudou tocando) só encolhe a onda, nada mais anda.
-function OutputAlert({ text }: { text: string }) {
-  return (
-    <div
-      role="status" data-output-alert=""
-      className="flex shrink-0 items-baseline gap-2.5 rounded-ps-lg bg-ps-alert-soft px-3 py-2 text-ps-sm leading-snug text-ps-alert inset-ring inset-ring-ps-alert-line"
-    >
-      <span className="shrink-0 text-ps-label font-bold tracking-[0.14em] whitespace-nowrap">SAÍDAS</span>
-      <span className="min-w-0 text-ps-bone">{text}</span>
-    </div>
-  )
-}
+/** Vão entre o selo ONLINE e o aviso de saídas, e do aviso até o menu (o gap-3 da barra). */
+const ALERT_GAP = 12
+/** Folga do conteúdo da barra de edição até a botoeira acima (o pt-2.5 da SectionPads). */
+const EDIT_TOP = 10
 
 interface EditAreaProps { view: StageView; actions: StageActions; adminTools: React.ReactNode }
 
@@ -89,19 +82,42 @@ interface EditAreaProps { view: StageView; actions: StageActions; adminTools: Re
  * Modo EDITAR no lugar da botoeira: a barra de edição das seções e, embaixo, as ferramentas do
  * admin. Monta só no EDITAR e com a chave da música, então a seleção começa vazia a cada entrada
  * e a cada música. `hasPhase` é a grade COM FASE (o ajuste anda compasso); só com o BPM salvo, 1 s.
+ *
+ * A altura fica reservada pela maior que a barra já teve nesta entrada (112 a 216 px, quebrando
+ * linha): apagar uma seção não puxa a faixa do meio e o mixer pra cima; uma linha a mais só
+ * cresce pra baixo (a onda em cima fica parada, ver `StageShell`). Janela redimensionada mede de novo.
  */
 function EditArea({ view, actions, adminTools }: EditAreaProps) {
   const [selected, setSelected] = useState<number | null>(null)
+  const boxRef = useRef<HTMLDivElement>(null)
+  const [reserve, setReserve] = useState(0)
+  useEffect(() => {
+    const box = boxRef.current
+    if (!box || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      const h = box.getBoundingClientRect().height
+      setReserve((r) => (h > r ? h : r))
+    })
+    ro.observe(box)
+    const onResize = () => setReserve(box.getBoundingClientRect().height)
+    window.addEventListener('resize', onResize)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', onResize)
+    }
+  }, [])
   const hasPhase = view.grid !== null && gridHasPhase(view.grid)
   return (
-    <div data-stage-sections="" className="shrink-0 px-ps-gutter pt-2.5">
-      <SectionEditBar
-        sections={view.sections} selected={selected} hasPhase={hasPhase}
-        onSelect={(i) => setSelected(i)} onMark={(label) => actions.markSection(label)}
-        onNudge={(i, dir) => actions.nudgeSection(i, dir)}
-        onRemove={(i) => { setSelected(null); actions.removeSection(i) }}
-      />
-      {adminTools && <div data-stage-admin="" className="pt-2">{adminTools}</div>}
+    <div data-stage-sections="" className="shrink-0 px-ps-gutter pt-2.5" style={reserve > 0 ? { minHeight: reserve + EDIT_TOP } : undefined}>
+      <div ref={boxRef}>
+        <SectionEditBar
+          sections={view.sections} selected={selected} hasPhase={hasPhase}
+          onSelect={(i) => setSelected(i)} onMark={(label) => actions.markSection(label)}
+          onNudge={(i, dir) => actions.nudgeSection(i, dir)}
+          onRemove={(i) => { setSelected(null); actions.removeSection(i) }}
+        />
+        {adminTools && <div data-stage-admin="" className="pt-2">{adminTools}</div>}
+      </div>
     </div>
   )
 }
@@ -113,14 +129,25 @@ function EditArea({ view, actions, adminTools }: EditAreaProps) {
  * esquerda; o menu FAIXAS abre embaixo do botão. A casca só monta as peças, guarda o que é dela
  * (grade de tons aberta, compasso aberto, seção selecionada no EDITAR) e liga o teclado.
  *
- * Alturas: barra 44 px, transporte clamp(72px,9vh,88px), faixa do meio clamp(168px,20vh,208px);
- * a onda (1,15) e o mixer (1, no mínimo 220 px) dividem o resto. A botoeira e a barra de edição
- * têm a altura do que mostram (a botoeira guarda a dela com a música tocando); a diferença sai da
- * onda e do mixer. Se a tela não tiver altura pra tudo, o palco rola na vertical em vez de cortar.
+ * Alturas (v5): barra 44 px, transporte clamp(72px,9vh,88px), faixa do meio clamp(168px,20vh,208px);
+ * a onda (1,15) e o mixer (1, no mínimo 220 px) dividem o resto. A botoeira tem a altura dos nomes
+ * da música (64 a 81 px) e guarda a dela com a música tocando.
+ *
+ * EDITAR: ao entrar, a onda fica no máximo com a altura que tinha fora dele e encolhe só o que
+ * precisar pra barra de edição caber (até 88 px de onda, blocos com 44 px de toque); depois fica
+ * parada. Marcar uma seção que abre uma linha nova na barra empurra só o que está embaixo dela
+ * (tira do mixer acima de 220 px): MARCAR e o que está acima nunca andam enquanto se marca. Janela
+ * redimensionada ou outra música encaixam de novo. Se não couber, o palco rola na vertical em vez
+ * de cortar (EDITAR com duas linhas de seções em 1024x768, telas abaixo de 760 px de altura).
+ *
+ * O aviso de saídas (Ruling T6-2) fica na barra do app, ao lado do ONLINE, e abre as Configurações:
+ * aparecer com a música tocando não muda a altura de nada.
  */
 export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardEnabled }: StageShellProps) {
   const headerRef = useRef<HTMLDivElement>(null)
   const tracksRef = useRef<HTMLDivElement>(null)
+  const alertRef = useRef<HTMLButtonElement>(null)
+  const waveRef = useRef<HTMLDivElement>(null)
   // A grade de tons entra na pilha do Esc dos painéis: o último aberto fecha primeiro e o Esc que
   // fecha a grade não chega ao atalho global (não cancela o pulo). O KeyCell cuida do foco dela.
   const keyGridRef = useRef<HTMLElement | null>(null)
@@ -128,11 +155,16 @@ export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardE
   const songKey = view.song?.id ?? null
   const [keyGridOpen, setKeyGridOpen] = useState(false)
   const [meterOpen, setMeterOpen] = useState(false)
-  // Trocar de música fecha a grade de tons e o compasso; sair do EDITAR fecha o compasso.
+  // Altura da onda fora do EDITAR e a que ela ficou no EDITAR depois de encaixar (medidas).
+  const [normalWave, setNormalWave] = useState<number | null>(null)
+  const [editWave, setEditWave] = useState<number | null>(null)
+  // Trocar de música fecha a grade de tons e o compasso e encaixa a onda do EDITAR de novo; sair do
+  // EDITAR fecha o compasso.
   const [seen, setSeen] = useState({ song: songKey, edit: view.editMode })
   if (seen.song !== songKey || seen.edit !== view.editMode) {
     if (seen.song !== songKey) setKeyGridOpen(false)
     setMeterOpen(false)
+    setEditWave(null)
     setSeen({ song: songKey, edit: view.editMode })
   }
   usePanelDismiss(keyGridOpen, () => setKeyGridOpen(false), keyGridRef)
@@ -147,21 +179,62 @@ export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardE
   const hasTracksMenu = slots.tracksMenu !== undefined && slots.tracksMenu !== null && slots.tracksMenu !== false
   const showAdmin = view.app.isAdmin ? slots.adminTools : null
 
-  // O menu FAIXAS abre embaixo do botão FAIXAS da barra (a posição dele depende da largura da tela).
+  // Mede a onda fora do EDITAR (sempre) e no EDITAR até ela encaixar; redimensionar no EDITAR encaixa de novo.
+  const measureWave = !view.editMode || editWave === null
+  useEffect(() => {
+    const wave = waveRef.current
+    if (!wave || !measureWave || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      const h = wave.getBoundingClientRect().height
+      if (!(h > 0)) return
+      if (view.editMode) setEditWave(h)
+      else setNormalWave(h)
+    })
+    ro.observe(wave)
+    return () => ro.disconnect()
+  }, [measureWave, view.editMode])
+  useEffect(() => {
+    if (!view.editMode) return
+    const onResize = () => setEditWave(null)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [view.editMode])
+  let waveStyle: React.CSSProperties | undefined
+  if (view.editMode && editWave !== null) waveStyle = { flex: 'none', height: editWave }
+  else if (view.editMode && normalWave !== null) waveStyle = { flex: '0 1 auto', height: normalWave }
+
+  // O menu FAIXAS abre embaixo do botão FAIXAS; o aviso de saídas fica depois do selo ONLINE e, se
+  // não couber até o menu, mostra só a luz (o texto continua no nome e na dica). As posições
+  // dependem da largura da tela e das fontes.
   useLayoutEffect(() => {
-    if (!hasTracksMenu) return
+    if (!hasTracksMenu && !alert) return
     const place = () => {
       const header = headerRef.current
-      const layer = tracksRef.current
-      const button = header?.querySelector<HTMLElement>('[data-tour="faixas"]')
-      if (!header || !layer || !button) return
-      const left = button.getBoundingClientRect().left - header.getBoundingClientRect().left
-      layer.style.left = `${Number.isFinite(left) ? Math.max(0, Math.round(left)) : 0}px`
+      if (!header) return
+      const box = header.getBoundingClientRect()
+      const tracks = tracksRef.current
+      const faixas = header.querySelector<HTMLElement>('[data-tour="faixas"]')
+      if (tracks && faixas) tracks.style.left = `${Math.max(0, Math.round(faixas.getBoundingClientRect().left - box.left))}px`
+      const chip = alertRef.current
+      const badge = header.querySelector<HTMLElement>('[data-online]')
+      if (chip && badge) {
+        const left = Math.round(badge.getBoundingClientRect().right - box.left + ALERT_GAP)
+        chip.style.left = `${left}px`
+        delete chip.dataset.fit
+        const nav = header.querySelector<HTMLElement>('nav')
+        const room = nav ? nav.getBoundingClientRect().left - box.left - ALERT_GAP - left : Infinity
+        if (chip.getBoundingClientRect().width > room) chip.dataset.fit = 'luz'
+      }
     }
     place()
+    let alive = true
+    document.fonts?.ready.then(() => { if (alive) place() }, () => {})
     window.addEventListener('resize', place)
-    return () => window.removeEventListener('resize', place)
-  }, [hasTracksMenu])
+    return () => {
+      alive = false
+      window.removeEventListener('resize', place)
+    }
+  }, [hasTracksMenu, alert])
 
   const closePads = () => { if (view.padPanelOpen) actions.togglePadPanel() }
 
@@ -169,15 +242,29 @@ export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardE
     <div data-stage-shell="" className="relative flex h-dvh w-full min-w-0 flex-col overflow-hidden bg-ps-ink font-ps-sans text-ps-bone">
       <div ref={headerRef} className="relative z-30 shrink-0">
         <StageAppBar app={view.app} editMode={view.editMode} actions={actions} />
+        {alert && (
+          <button
+            ref={alertRef} type="button" data-output-alert="" title={alert} aria-label={`Saídas: ${alert} Abre as Configurações.`}
+            onClick={() => actions.openSettings()}
+            className="group absolute top-0 left-0 inline-flex h-11 min-w-ps-touch items-center justify-center rounded-ps-sm select-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ps-or"
+          >
+            <span className="inline-flex h-[22px] items-center gap-1.5 rounded-ps-pill bg-ps-alert-soft px-[9px] text-ps-micro leading-none font-extrabold tracking-[0.14em] whitespace-nowrap text-ps-alert inset-ring inset-ring-ps-alert-line">
+              <Led state="alert" size="sm" />
+              <span className="group-data-[fit=luz]:hidden">SAÍDAS</span>
+            </span>
+          </button>
+        )}
         {hasTracksMenu && <div ref={tracksRef} data-stage-tracks-menu="" className="absolute top-full left-0 z-50">{slots.tracksMenu}</div>}
       </div>
 
       <div data-stage-scroll="" className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
-        <main aria-label="Palco" className="flex flex-[1_0_auto] flex-col">
+        <main aria-label="Palco" className="flex min-h-0 flex-1 flex-col">
           <TransportBar view={view} actions={actions} clock={clock} pulse={pulse} />
 
-          <div data-stage-wave="" className="flex min-h-[112px] flex-[1.15_1_0px] flex-col gap-2 px-ps-gutter pt-3">
-            {alert && <OutputAlert text={alert} />}
+          <div
+            ref={waveRef} data-stage-wave="" style={waveStyle}
+            className={cx('flex flex-[1.15_1_0px] flex-col px-ps-gutter', view.editMode ? 'min-h-[96px] pt-2' : 'min-h-[112px] pt-3')}
+          >
             <div className="min-h-0 flex-1">
               <WaveformSections
                 peaks={peaks} duration={duration} sections={view.sections} currentSection={view.currentSection} isPlaying={view.isPlaying}
@@ -216,7 +303,10 @@ export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardE
             />
           </div>
 
-          <div data-stage-mixer="" className="relative z-10 mx-ps-gutter mt-3 mb-3.5 flex min-h-[220px] flex-[1_1_0px]">
+          <div
+            data-stage-mixer=""
+            className={cx('relative z-10 mx-ps-gutter mt-3 flex min-h-[220px] flex-[1_1_0px]', view.editMode ? 'mb-2.5' : 'mb-3.5')}
+          >
             <StageMixer view={view} actions={actions} clock={clock} />
             <div data-stage-pads-layer="" className="absolute inset-y-0 z-20 flex" style={{ right: PADS_RIGHT }}>
               <PadPanel {...pads} open={view.padPanelOpen} onClose={closePads} />

@@ -24,11 +24,12 @@ export function useStageShortcuts(view: StageView, actions: StageActions, opts: 
     if (!opts.enabled) return
     const onKey = (e: KeyboardEvent) => {
       const { view: v, actions: a } = latest.current
-      if (!v.song) return
+      // Sem música não há o que tocar; tecla no meio de uma composição (acento) é do campo de texto.
+      if (!v.song || e.isComposing) return
       const target = e.target instanceof Element ? e.target : null
       const action = stageKeyAction({
         code: e.code, key: e.key, shiftKey: e.shiftKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, repeat: e.repeat,
-        defaultPrevented: e.defaultPrevented || e.isComposing, targetTag: target?.tagName, targetEditable: target ? isEditable(target) : false,
+        defaultPrevented: e.defaultPrevented, targetTag: target?.tagName, targetEditable: target ? isEditable(target) : false,
         targetRole: target?.getAttribute('role') ?? undefined,
       }, { editMode: v.editMode, sectionCount: v.sections.length })
       if (!action) return

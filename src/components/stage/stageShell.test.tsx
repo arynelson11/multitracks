@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react'
 import { OUTPUT_WARNING_TEXT } from '../../lib/outputPlan'
 import type {
   OutputPlan, SongGrid, StageActions, StageChannel, StageClock, StageSection, StageSong, StageView,
@@ -296,29 +296,99 @@ describe('casca do palco', () => {
     expect(screen.queryByRole('dialog', { name: 'Compasso da música' })).toBeNull()
   })
 
-  it('aviso âmbar das saídas fica dentro da área da onda, sem faixa nova', () => {
-    const { rerender } = renderShell()
+  it('aviso âmbar das saídas na barra do app, sem faixa nova, e o toque abre as Configurações', () => {
+    const { rerender, actions } = renderShell()
     expect(q('[data-output-alert]')).toBeNull()
+    const below = q('[data-stage-scroll]')!.innerHTML
 
     rerender({ outputs: { ...SPLIT, fellBackFrom: 'multi' } })
     const alert = q('[data-output-alert]')!
-    expect(alert.getAttribute('role')).toBe('status')
-    expect(alert.textContent).toContain('Esta placa tem só 2 canais: Click e Guia na saída 1 · VS na saída 2.')
-    expect(alert.className).toContain('text-ps-alert')
-    expect(q('[data-stage-wave]')!.contains(alert)).toBe(true)
+    const text = 'Esta placa tem só 2 canais: Click e Guia na saída 1 · VS na saída 2.'
+    expect(alert.tagName).toBe('BUTTON')
+    expect(alert.textContent).toBe('SAÍDAS')
+    expect(alert.getAttribute('title')).toBe(text)
+    expect(alert.getAttribute('aria-label')).toContain(text)
+    expect(alert.querySelector('.text-ps-alert')).not.toBeNull()
+    // Fica na barra do app, fora do palco: aparecer com a música tocando não muda nada embaixo.
+    expect(q('[data-stage-scroll]')!.contains(alert)).toBe(false)
+    expect(q('[data-stage-scroll]')!.innerHTML).toBe(below)
+    expect(alert.className).toContain('h-11')
+    expect(alert.className).toContain('min-w-ps-touch')
+    fireEvent.click(alert)
+    expect(actions.openSettings).toHaveBeenCalledTimes(1)
 
     rerender({ outputs: { mode: 'stereo', channels: 1, vs: [0], click: [0], guide: [0], panByRole: false, fellBackFrom: 'split2' } })
-    expect(q('[data-output-alert]')!.textContent).toContain(OUTPUT_WARNING_TEXT.mono)
+    expect(q('[data-output-alert]')!.getAttribute('title')).toBe(OUTPUT_WARNING_TEXT.mono)
 
     rerender({ outputs: { mode: 'multi', channels: 3, vs: [0, 1], click: [2], guide: [2], panByRole: true, fellBackFrom: 'multi' } })
-    expect(q('[data-output-alert]')!.textContent).toContain('Esta placa tem só 3 canais: VS nas saídas 1 e 2 · Click e Guia na 3.')
+    expect(q('[data-output-alert]')!.getAttribute('title')).toBe('Esta placa tem só 3 canais: VS nas saídas 1 e 2 · Click e Guia na 3.')
 
     rerender({ outputs: { mode: 'multi', channels: 8, vs: [0, 1], click: [], guide: [], panByRole: true, fellBackFrom: null } })
-    expect(q('[data-output-alert]')!.textContent).toContain(OUTPUT_WARNING_TEXT['sem-saida-ouvido'])
+    expect(q('[data-output-alert]')!.getAttribute('title')).toBe(OUTPUT_WARNING_TEXT['sem-saida-ouvido'])
 
     // Tudo junto escolhido de propósito: sem aviso.
     rerender({ outputs: { mode: 'stereo', channels: 2, vs: [0, 1], click: [0, 1], guide: [0, 1], panByRole: false, fellBackFrom: null } })
     expect(q('[data-output-alert]')).toBeNull()
+  })
+
+  it('no EDITAR a onda encaixa ao entrar e fica parada; a barra reserva a maior altura que já teve', () => {
+    // ResizeObserver de teste: cada elemento observado guarda quem avisar; `resize(el, h)` muda a altura e avisa.
+    const watchers = new Map<Element, Set<ResizeObserverCallback>>()
+    const heights = new Map<Element, number>()
+    vi.stubGlobal('ResizeObserver', class {
+      private readonly cb: ResizeObserverCallback
+      private readonly mine = new Set<Element>()
+      constructor(cb: ResizeObserverCallback) { this.cb = cb }
+      observe(el: Element) {
+        this.mine.add(el)
+        if (!watchers.has(el)) watchers.set(el, new Set())
+        watchers.get(el)!.add(this.cb)
+      }
+      unobserve() {}
+      disconnect() { for (const el of this.mine) watchers.get(el)?.delete(this.cb) }
+    })
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const h = heights.get(this) ?? 0
+      return { top: 0, left: 0, right: 100, bottom: h, width: 100, height: h, x: 0, y: 0, toJSON: () => ({}) } as DOMRect
+    })
+    const resize = (el: Element, h: number) => {
+      heights.set(el, h)
+      act(() => { for (const cb of [...(watchers.get(el) ?? [])]) cb([], {} as ResizeObserver) })
+    }
+    const { rerender } = renderShell()
+    const wave = q('[data-stage-wave]')!
+    resize(wave, 160)
+    expect(wave.style.height).toBe('')
+
+    // Entra no EDITAR: no máximo a altura de fora, podendo encolher pra caber; encaixou, fica parada.
+    rerender({ editMode: true })
+    expect(wave.style.height).toBe('160px')
+    expect(wave.style.flex).toBe('0 1 auto')
+    resize(wave, 132)
+    expect(wave.style.height).toBe('132px')
+    expect(['none', '0 0 auto']).toContain(wave.style.flex)
+    resize(wave, 120)
+    expect(wave.style.height).toBe('132px')
+
+    // A barra cresce com uma linha nova e não volta quando a seção sai (o que está embaixo não sobe).
+    const area = q('[data-stage-sections]')!
+    const box = area.firstElementChild!
+    resize(box, 112)
+    expect(area.style.minHeight).toBe('122px')
+    resize(box, 164)
+    expect(area.style.minHeight).toBe('174px')
+    resize(box, 112)
+    expect(area.style.minHeight).toBe('174px')
+
+    // Janela redimensionada: encaixa de novo (a barra pela altura de agora, a onda pela de fora).
+    act(() => { window.dispatchEvent(new Event('resize')) })
+    expect(area.style.minHeight).toBe('122px')
+    expect(wave.style.height).toBe('160px')
+    expect(wave.style.flex).toBe('0 1 auto')
+
+    // Sair do EDITAR: a onda volta a dividir com o mixer.
+    rerender({ editMode: false })
+    expect(wave.style.height).toBe('')
   })
 
   it('REPERTÓRIOS, menu FAIXAS e Editar canal entram pelos slots', () => {
