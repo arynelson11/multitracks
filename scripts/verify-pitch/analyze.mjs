@@ -14,13 +14,23 @@ const LEVEL_MATCH_DB = 0.1; // LEVELS: nível transposto x tom 0, por faixa
 const CH_LEVEL_DB = -70;   // SONGS: nível mínimo de cada faixa da música tocando (silêncio = -180)
 // Rodada 1, item 2: referência da v1.4.9 (5e051c2, start(0) sem folga) medida neste
 // harness. Seek no tom 0: mediana 0,0 ms. Loop: buraco na emenda, sem o atraso do
-// rAF, mediana 0,0 ms. Aceite: a folga de 2 blocos de áudio (5,33 ms a 48 kHz, a
-// mínima que não separa faixas sob carga) + 0,5 ms de medição; transposto, só a
-// latência compensada a mais. O alvo pedido era 5 ms acima da v1.4.9: 1 bloco
-// (2,67 ms) cumpria, mas separou faixas com 22 worklets.
+// rAF, mediana 0,0 ms. O código promete a folga de 2 blocos de áudio (5,33 ms a
+// 48 kHz, a mínima que não separa faixas sob carga) contada do relógio lido no FIM
+// da preparação das fontes; isso é conferido exato no `when` instrumentado (critério
+// "folga agendada"). O tempo de reação (da chamada até o som) é medido do relógio
+// lido na CHAMADA, e entre os dois o motor pode virar 1 bloco (a preparação com
+// worklets posta mensagens pra cada um): por isso a MEDIANA do tempo de reação no
+// RESTART e no LOOP aceita 2 blocos + 1 bloco de tolerância + 0,5 ms de medição
+// (revisão da v1.4.16, seção 6); transposto, só a latência compensada a mais. Os
+// critérios de alinhamento entre faixas (START_EPS_MS, SPREAD_MS) não mudam.
 const V149_SEEK_MS = 0.0;
 const V149_LOOP_HOLE_MS = 0.0;
-const RESTART_SLACK_MS = 2 * 128 / 48 + 0.5;
+const START_LEAD_QUANTA = 2;
+const REACTION_SLACK_QUANTA = 1;
+const RESTART_SLACK_MS = (START_LEAD_QUANTA + REACTION_SLACK_QUANTA) * 128 / 48 + 0.5;
+// Folga de reserva da rede de segurança do play() (RETRY_LEAD_S = 40 ms).
+const RETRY_LEAD_S = 0.04;
+const LEAD_EPS_MS = 0.01;  // `when` - relógio no start(), gravado com 10 µs de resolução
 const LATENCY_MS = 120;
 
 const fmt = (x, d = 2) => (x === null || x === undefined || Number.isNaN(x) ? String(x) : (+x).toFixed(d));
@@ -335,8 +345,28 @@ export function analyze(key, R) {
     const async = restarts.filter((e) => e.syncStarts !== e.nChannels);
     add('R1-2', 'reinício sem await (fontes agendadas na própria chamada)', async.length === 0,
       `${restarts.length} reinícios; ${async.length} com await${async.length ? ': ' + async.slice(0, 4).map((e) => `${e.type}@${fmt(e.ctx, 2)} (${e.syncStarts}/${e.nChannels})`).join(', ') : ''}`);
-    const lead = R.sources.filter((r) => r.when > 0).map((r) => (r.when - r.ctxAtStart) * 1000);
-    if (lead.length) checks.push({ item: 'R1-2', scenario: key, name: 'folga agendada (when - relógio na chamada)', pass: true, info: true, detail: `mediana ${fmt(stats(lead).med, 2)} ms, até ${fmt(stats(lead).max, 2)} ms` });
+  }
+  if (seq === 'RESTART' || seq === 'SEEKS' || seq === 'STALL' || seq === 'LOOP') {
+    // O que o código promete, exato: o `when` de cada play cai na grade de blocos de
+    // 128 amostras, 2 blocos depois do relógio que o 1º start() do grupo lê (o mesmo
+    // lido no fim da preparação). O play que a rede de segurança reagendou (grupo
+    // seguinte a um descartado) usa a folga de reserva, também em blocos inteiros.
+    const qMs = 128 / cfg.sampleRate * 1000;
+    const retryQ = Math.ceil(RETRY_LEAD_S * cfg.sampleRate / 128);
+    const retried = new Set(allGroups.filter((g, i) => i > 0 && redone.includes(allGroups[i - 1])));
+    const bad = [];
+    let n = 0;
+    for (const g of allGroups) {
+      const first = g[0];
+      if (!(first.when > 0)) continue;
+      n++;
+      const want = retried.has(g) ? retryQ : START_LEAD_QUANTA;
+      const leadMs = (first.when - first.ctxAtStart) * 1000;
+      const grid = first.when * cfg.sampleRate / 128;
+      if (Math.abs(leadMs - want * qMs) > LEAD_EPS_MS || Math.abs(grid - Math.round(grid)) > 1e-6) bad.push(`${fmt(leadMs, 3)} ms (esperado ${want} blocos)`);
+    }
+    add('R1-2', `folga agendada exata: when na grade, ${START_LEAD_QUANTA} blocos depois do relógio no start() (reagendado: ${retryQ} blocos)`, n > 0 && bad.length === 0,
+      `${n} plays, ${retried.size} reagendados; fora: ${bad.length ? bad.slice(0, 4).join(', ') : 'nenhum'}`);
   }
 
   const errs = R.events.filter((e) => /error|rejection/.test(e.type));

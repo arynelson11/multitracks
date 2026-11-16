@@ -38,7 +38,12 @@ transposto no R. Sai com código 1 se algum critério falhar. JSON em
 Critérios por item: worklets ativos (0 no tom 0, 1 por canal transposto), nenhum
 duplicado, fontes sem órfãs, relógio de áudio em tempo real, posição contínua,
 todas as faixas no mesmo instante, click x instrumento em ±2 ms, click/guia fora
-do worklet, formantes só em voz, saída sem NaN e com som.
+do worklet, formantes só em voz, saída sem NaN e com som. No RESTART, LOOP, SEEKS
+e STALL, a folga agendada é conferida exata (`when` na grade de blocos, 2 blocos
+depois do relógio no `start()`; reagendado pela rede de segurança, 15 blocos a
+48 kHz). O tempo de reação (da chamada até o som) no RESTART e no LOOP aceita, na
+mediana, 1 bloco a mais: ele é medido do relógio na chamada, e o motor pode virar
+um bloco antes do fim da preparação das fontes.
 
 ## Regras puras (Node)
 
