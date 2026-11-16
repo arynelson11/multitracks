@@ -116,6 +116,13 @@ const GRID_TOLERANCE = 0.15
  */
 const MIN_ON_GRID_SHARE = 0.9
 /**
+ * A fração conta só os ataques com pico de pelo menos esta fração do nível típico do click
+ * (Ruling R3-vazamento): bateria ou guia vazando mais fraca que o click, entre os pulsos, não
+ * derruba a leitura. Medido nos pacotes reais com o vazamento misturado: 0,6 devolve a fração da
+ * grade certa até -6 dB (bateria e guia) e não muda nenhuma das leituras dos clicks reais.
+ */
+const SHARE_MIN_LEVEL = 0.6
+/**
  * Sem pulso regular: o percentil 90 do desvio dos ataques até o pulso da grade passa disto, em
  * segundos (Ruling R2-desvio). Nos clicks reais bons fica em até 4,3 ms; um click feito à mão
  * com deriva ("Eu era Órfão") dá 29 ms, e o pulo e a contagem errariam isso sem aviso.
@@ -202,9 +209,10 @@ function onsetsAbove(x: Float32Array, sampleRate: number, threshold: number): nu
 /**
  * Amostras dos ataques (etapa 1): subida do envelope acima de 30% do nível típico do click, que
  * é a mediana dos picos (nos primeiros 15 ms) dos ataques acima de 20% do pico global. O nível
- * sai do resumo por blocos (LEVEL_BLOCK), montado na mesma passada que acha o pico global.
+ * sai do resumo por blocos (LEVEL_BLOCK), montado na mesma passada que acha o pico global, e
+ * volta junto (a fração na grade usa).
  */
-function detectOnsets(x: Float32Array, sampleRate: number): number[] {
+function detectOnsets(x: Float32Array, sampleRate: number): { onsets: number[]; typical: number } {
   const blocks = new Float32Array(Math.ceil(x.length / LEVEL_BLOCK))
   let peak = 0
   for (let b = 0, i = 0; b < blocks.length; b++) {
@@ -216,7 +224,7 @@ function detectOnsets(x: Float32Array, sampleRate: number): number[] {
     blocks[b] = m
     if (m > peak) peak = m
   }
-  if (!(peak > 0) || !Number.isFinite(peak)) return []
+  if (!(peak > 0) || !Number.isFinite(peak)) return { onsets: [], typical: 0 }
   const blockRate = sampleRate / LEVEL_BLOCK
   const len = Math.max(1, Math.round(TRAIT_WINDOW_S * blockRate))
   const levels = onsetsAbove(blocks, blockRate, PROBE_THRESHOLD * peak).map((start) => {
@@ -224,7 +232,15 @@ function detectOnsets(x: Float32Array, sampleRate: number): number[] {
     for (let b = start; b < Math.min(blocks.length, start + len); b++) level = Math.max(level, blocks[b])
     return level
   })
-  return onsetsAbove(x, sampleRate, ONSET_THRESHOLD * median(levels))
+  const typical = median(levels)
+  return { onsets: onsetsAbove(x, sampleRate, ONSET_THRESHOLD * typical), typical }
+}
+
+/** Pico do valor absoluto nos primeiros 15 ms a partir da amostra `start` (o traço `loud`). */
+function peakAfter(x: Float32Array, start: number, sampleRate: number): number {
+  let peak = 0
+  for (let i = start; i < Math.min(x.length, start + Math.round(TRAIT_WINDOW_S * sampleRate)); i++) peak = Math.max(peak, Math.abs(x[i]))
+  return peak
 }
 
 function median(values: number[]): number {
@@ -666,12 +682,15 @@ export function analyzeClickTrack(
   samples: Float32Array, sampleRate: number, knownSignature?: TimeSignature | null, knownBpm?: number | null,
 ): ClickAnalysis | null {
   if (!(sampleRate > 0) || samples.length < MIN_SECONDS * sampleRate) return null
-  const detected = detectOnsets(samples, sampleRate)
+  const { onsets: detected, typical } = detectOnsets(samples, sampleRate)
   if (detected.length < MIN_ONSETS) return null
   const fit = fitGrid(detected)
   if (!fit) return null
   const { grid, period, phase } = fit
-  if (grid.length < MIN_ONSETS || grid.length < MIN_ON_GRID_SHARE * detected.length) return null
+  // Fração na grade só com os ataques no nível do click (o vazamento mais fraco fica de fora).
+  const clickLevel = new Set(detected.filter((s) => peakAfter(samples, s, sampleRate) >= SHARE_MIN_LEVEL * typical))
+  const onGridAtLevel = grid.filter((o) => clickLevel.has(o.sample)).length
+  if (grid.length < MIN_ONSETS || onGridAtLevel < MIN_ON_GRID_SHARE * clickLevel.size) return null
   if (deviationP90(grid, phase, period) > MAX_DEVIATION_P90_S * sampleRate) return null
   const timeOf = (index: number) => (phase + period * index) / sampleRate
   const traits = onsetTraits(samples, grid, sampleRate)

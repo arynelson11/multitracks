@@ -263,6 +263,15 @@ describe('analyzeClickTrack: sem pulso regular a leitura é nula (SEM GRADE)', (
     expect(a).not.toBeNull()
     expect(Math.abs(a!.bpm - 120)).toBeLessThan(0.1)
   })
+  it('vazamento mais fraco que o click entre os pulsos (bateria ou guia): a fração conta só o nível do click (Ruling R3-vazamento)', () => {
+    const o = { bpm: 120, seconds: 60, pulsesPerBar: 4, accent: 'loud' as const, firstPulse: 0.2 }
+    const limpo = analyzeClickTrack(synthClick(o), SR)!
+    const x = synthClick(o)
+    // Um golpe grave a 0,4 do click por compasso, entre o 2º e o 3º tempo, em posições que variam
+    // (30% a 50% do pulso depois do 2º): 1 ataque fora da grade pra cada 4 clicks (fração 0,8).
+    for (let k = 0; 0.2 + 2 * k + 1.25 < 59.5; k++) addBeep(x, 0.2 + 2 * k + 0.5 + 0.5 * (0.3 + 0.1 * (k % 3)), BASE_AMP * 0.4, 300)
+    expectSameGrid(analyzeClickTrack(x, SR), limpo)
+  })
   it('click irregular, quantizado em 20 ms com deriva (como "Eu era Órfão"): nulo', () => {
     expect(analyzeClickTrack(deriva(25, 0.02), SR)).toBeNull()
   })
