@@ -3,6 +3,7 @@ import { getAuthHeaders } from '../lib/supabase';
 import { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { X, Check } from 'lucide-react';
+import { isPaidPlan, planDisplayName } from '../lib/plans';
 
 interface PricingModalProps {
     isOpen: boolean;
@@ -47,8 +48,14 @@ const PLANS = [
 ];
 
 export function PricingModal({ isOpen, onClose }: PricingModalProps) {
-    const { user } = useAuth();
+    const { user, userPlan, planExpiresAt } = useAuth();
     const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+    // Quem já paga confirma a troca antes: o plano novo é cobrado cheio e o
+    // atual termina assim que o novo é pago (o webhook encerra a assinatura
+    // antiga no Asaas), sem desconto proporcional.
+    const [pendingPlan, setPendingPlan] = useState<typeof PLANS[0] | null>(null);
+    const isSwitching = isPaidPlan(userPlan);
+    const currentName = planDisplayName(userPlan);
 
     if (!isOpen) return null;
 
@@ -97,7 +104,11 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
                 <div className="flex items-center justify-between p-4 border-b border-border bg-[#141416]">
                     <div>
                         <h2 className="text-white text-lg font-bold uppercase tracking-wider">Escolha seu Plano</h2>
-                        <p className="text-text-muted text-xs font-mono">Desbloqueie todo o poder do seu estúdio em nuvem</p>
+                        <p className="text-text-muted text-xs font-mono">
+                            {isSwitching
+                                ? 'Trocar de plano: o novo é cobrado cheio e o atual termina na hora, sem proporcional.'
+                                : 'Desbloqueie todo o poder do seu estúdio em nuvem'}
+                        </p>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-md text-text-muted transition-all cursor-pointer">
                         <X size={20} />
@@ -106,6 +117,28 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
 
                 {/* Content */}
                 <div className="p-8 bg-[#0e0e10] overflow-y-auto max-h-[80vh]">
+                    {pendingPlan && (
+                        <div role="dialog" aria-label="Trocar de plano?" className="mb-6 rounded-xl border border-amber-400/40 bg-[#1c1c1e] p-4">
+                            <h3 className="text-white text-sm font-bold mb-1">Trocar de plano?</h3>
+                            <p className="text-zinc-300 text-xs leading-relaxed mb-3">
+                                O {pendingPlan.name} é cobrado cheio agora ({pendingPlan.priceStr}{pendingPlan.period}). O {currentName} termina na hora, assim que o novo for pago, sem desconto proporcional do que já foi pago.
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    onClick={() => setPendingPlan(null)}
+                                    className="px-4 py-2 rounded-lg bg-white/10 text-white text-xs font-bold cursor-pointer"
+                                >
+                                    Voltar
+                                </button>
+                                <button
+                                    onClick={() => { const p = pendingPlan; setPendingPlan(null); void handleSubscribe(p); }}
+                                    className="px-4 py-2 rounded-lg bg-primary text-black text-xs font-bold cursor-pointer"
+                                >
+                                    Confirmar troca
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         {PLANS.map((plan) => (
                             <div 
@@ -139,15 +172,17 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
                                 
                                 <div className="p-4 border-t border-border/50 bg-[#141416]">
                                     <button
-                                        onClick={() => handleSubscribe(plan)}
-                                        disabled={loadingPlan === plan.planKey}
+                                        onClick={() => (isSwitching ? setPendingPlan(plan) : handleSubscribe(plan))}
+                                        disabled={loadingPlan === plan.planKey || (plan.planKey === userPlan && !planExpiresAt)}
                                         className={`w-full py-2.5 rounded textxs font-bold uppercase tracking-wider transition-all active:scale-[0.98] ${
                                             plan.isPopular 
                                             ? 'bg-primary text-black hover:bg-[#b0f545] disabled:opacity-50' 
                                             : 'bg-white/10 text-white hover:bg-white/20 disabled:opacity-50'
                                         }`}
                                     >
-                                        {loadingPlan === plan.planKey ? 'Processando...' : 'Assinar Agora'}
+                                        {loadingPlan === plan.planKey
+                                            ? 'Processando...'
+                                            : plan.planKey === userPlan && !planExpiresAt ? 'Seu plano atual' : 'Assinar Agora'}
                                     </button>
                                 </div>
                             </div>
