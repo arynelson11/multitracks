@@ -136,6 +136,42 @@ describe('analyzeClickTrack: a fase vem do conjunto dos ataques', () => {
   })
 })
 
+describe('analyzeClickTrack: sem pulso regular a leitura é nula (SEM GRADE)', () => {
+  /** 120 por minuto até `at` segundos e 124 depois, num arquivo de 120 s. */
+  const trocaDeAndamento = (at: number, depois = 124, seconds = 120) => {
+    const times: number[] = []
+    for (let t = 0.2; t < at; t += 0.5) times.push(t)
+    for (let t = times[times.length - 1] + 60 / depois; t < seconds - 0.1; t += 60 / depois) times.push(t)
+    return clickAt(times, seconds)
+  }
+  /** Click a 71 com o pulso desviado por uma senoide de `ms` e, se pedido, quantizado em 20 ms. */
+  const deriva = (ms: number, quantum: number | null) => {
+    const times: number[] = []
+    for (let k = 0; ; k++) {
+      const t = 0.3 + k * (60 / 71) + (ms / 1000) * Math.sin((2 * Math.PI * k) / 48)
+      if (t > 119.5) break
+      times.push(quantum ? Math.round(t / quantum) * quantum : t)
+    }
+    return clickAt(times, 120)
+  }
+  it('troca de andamento com metade ou mais do arquivo fora da grade (medley): nulo', () => {
+    for (const at of [60, 72]) expect(analyzeClickTrack(trocaDeAndamento(at), SR)).toBeNull()
+  })
+  it('ritardando curto no fim (mais de 90% dos ataques na grade): a grade fica', () => {
+    const a = analyzeClickTrack(trocaDeAndamento(100, 112, 108), SR)
+    expect(a).not.toBeNull()
+    expect(Math.abs(a!.bpm - 120)).toBeLessThan(0.1)
+  })
+  it('click irregular, quantizado em 20 ms com deriva (como "Eu era Órfão"): nulo', () => {
+    expect(analyzeClickTrack(deriva(25, 0.02), SR)).toBeNull()
+  })
+  it('deriva de até 4 ms (o pior dos clicks reais bons) continua com grade', () => {
+    const a = analyzeClickTrack(deriva(4, null), SR)
+    expect(a).not.toBeNull()
+    expect(Math.abs(a!.bpm - 71)).toBeLessThan(0.05)
+  })
+})
+
 describe('analyzeClickTrack: compasso composto', () => {
   // No 6/8 e no 12/8 o tempo é a semínima pontuada: o BPM sai nela, e o click toca colcheias
   // (subdivisão 3, 6 ou 12 por compasso) ou o próprio tempo (subdivisão 1, 2 ou 4 por compasso).

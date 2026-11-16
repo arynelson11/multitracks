@@ -74,10 +74,18 @@ const ENVELOPE_RELEASE_S = 0.01
 /** Ataque fora da grade por mais que esta fração do período sai da conta. */
 const GRID_TOLERANCE = 0.15
 /**
- * Sem pulso regular: menos da metade dos ataques cai na grade. O plano não fixa o número;
- * metade é o mínimo pra dizer que a grade explica o arquivo.
+ * Sem pulso regular: menos que esta fração dos ataques cai na grade (Ruling R2-fração). Nos
+ * clicks reais bons fica em 0,947 ou mais; troca de andamento no meio (medley) fica em 0,66.
  */
-const MIN_ON_GRID_SHARE = 0.5
+const MIN_ON_GRID_SHARE = 0.9
+/**
+ * Sem pulso regular: o percentil 90 do desvio dos ataques até o pulso da grade passa disto, em
+ * segundos (Ruling R2-desvio). Nos clicks reais bons fica em até 4,3 ms; um click feito à mão
+ * com deriva ("Eu era Órfão") dá 29 ms, e o pulo e a contagem errariam isso sem aviso.
+ */
+const MAX_DEVIATION_P90_S = 0.01
+/** Percentil do desvio que decide o pulso regular. */
+const DEVIATION_PERCENTILE = 0.9
 /** Janela dos traços do acento, a partir do ataque, em segundos. */
 const TRAIT_WINDOW_S = 0.015
 /** Médias do 2-médias mais perto que isto (fração da maior) = ataques iguais. */
@@ -241,6 +249,12 @@ function fitGrid(onsets: number[]): { grid: GridOnset[]; period: number; phase: 
   // Índices a partir de 0 no primeiro ataque da grade.
   const first = grid[0]?.index ?? 0
   return { grid: grid.map((o) => ({ sample: o.sample, index: o.index - first })), period, phase: phase + first * period }
+}
+
+/** Percentil `DEVIATION_PERCENTILE` do desvio absoluto dos ataques até a reta, em amostras. */
+function deviationP90(grid: GridOnset[], phase: number, period: number): number {
+  const devs = grid.map((o) => Math.abs(o.sample - (phase + period * o.index))).sort((a, b) => a - b)
+  return devs[Math.min(devs.length - 1, Math.floor(DEVIATION_PERCENTILE * devs.length))]
 }
 
 /** Reta de mínimos quadrados tempo = fase + período * índice, em amostras. */
@@ -533,6 +547,7 @@ export function analyzeClickTrack(
   if (!fit) return null
   const { grid, period, phase } = fit
   if (grid.length < MIN_ONSETS || grid.length < MIN_ON_GRID_SHARE * detected.length) return null
+  if (deviationP90(grid, phase, period) > MAX_DEVIATION_P90_S * sampleRate) return null
   const timeOf = (index: number) => (phase + period * index) / sampleRate
   const traits = onsetTraits(samples, grid, sampleRate)
   const marks: TraitMarks = [['loud', accentMarks(traits.loud)], ['bright', accentMarks(traits.bright)]]
