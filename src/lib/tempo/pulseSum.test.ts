@@ -25,6 +25,21 @@ describe('kit separado somado', () => {
     for (const t of tracks) expect({ peca: t.id, acha: acha(detectSongGrid([t], SR, { beatsPerBar: 4 })) }).toEqual({ peca: t.id, acha: false });
   }, LENTO);
 
+  it('uma faixa de pulso de 6 s não corta a bateria de 4 min: mesma grade e mesma confiança', () => {
+    // 22,05 kHz pra caber 4 min na memória do teste; a análise trabalha em ~200 quadros/s em qualquer taxa.
+    const sr = 22050;
+    const s = makeSong({ sr, duration: 240, bpm: 120, firstBeat: 1.37, withPad: false, withBass: false });
+    const bateria = { id: 'bat', label: 'Bateria', use: 'pulse' as const, channels: s.tracks.drums };
+    const curta = { id: 'loop', label: 'Loop', use: 'pulse' as const, channels: s.tracks.shaker.map(c => c.slice(0, sr * 6)) };
+    const so = detectSongGrid([bateria], sr);
+    const somado = detectSongGrid([bateria, curta], sr);
+    expect(somado.tracksUsed).toEqual(['bat', 'loop']);
+    expect(somado.bpm).toBe(so.bpm);
+    expect(Math.abs(somado.firstBeat - so.firstBeat)).toBeLessThanOrEqual(0.001);
+    expect(somado.confidence).toBeGreaterThanOrEqual(so.confidence - 0.05);
+    expect(so.bpm).toBe(120);
+  }, LENTO);
+
   it('a faixa de pulso que não dá pra medir fica de fora e a seguinte vale', () => {
     const c = tempoCase('b');
     const song = c.song({ votes: false });
@@ -68,15 +83,15 @@ describe('sumOnsetBands', () => {
     expect(sumOnsetBands([uma])).toBe(uma);
   });
 
-  it('divide cada banda pelo próprio máximo e soma banda a banda, no tamanho da mais curta', () => {
+  it('divide cada banda pelo próprio máximo e soma banda a banda, no tamanho da mais longa (a curta completa com zeros)', () => {
     const r = sumOnsetBands([
       b({ full: banda([2, 4, 0, 8]), kick: banda([0, 10, 0, 0]), hasKick: true }),
       b({ full: banda([0.1, 0, 0.1]), snare: banda([3, 0, 0]), hasSnare: true }),
     ]);
-    expect(Array.from(r.full)).toEqual([1.5, 1, 1]);
-    expect(Array.from(r.kick)).toEqual([0, 1, 0]);
-    expect(Array.from(r.snare)).toEqual([1, 0, 0]);
-    expect(Array.from(r.low)).toEqual([0, 0, 0]);
+    expect(Array.from(r.full)).toEqual([1.25, 0.5, 1, 1]);
+    expect(Array.from(r.kick)).toEqual([0, 1, 0, 0]);
+    expect(Array.from(r.snare)).toEqual([1, 0, 0, 0]);
+    expect(Array.from(r.low)).toEqual([0, 0, 0, 0]);
     expect(r.hasKick).toBe(true);
     expect(r.hasSnare).toBe(true);
     expect(r.fps).toBe(200);

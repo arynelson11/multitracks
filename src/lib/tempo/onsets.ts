@@ -258,27 +258,29 @@ export function onsetBands(channels: Float32Array[], sampleRate: number): OnsetB
   return { fps, full, low, kick, snare, hasKick, hasSnare };
 }
 
-// Divide pelo máximo (array zerado continua zerado).
+// Divide pelo máximo, no tamanho `n` (o que falta fica em zero; array zerado continua zerado).
 function normalized(o: Float32Array, n: number): Float32Array {
+  const len = Math.min(o.length, n);
   let max = 0;
-  for (let i = 0; i < n; i++) if (o[i] > max) max = o[i];
+  for (let i = 0; i < len; i++) if (o[i] > max) max = o[i];
   const out = new Float32Array(n);
-  if (max > 0) for (let i = 0; i < n; i++) out[i] = o[i] / max;
+  if (max > 0) for (let i = 0; i < len; i++) out[i] = o[i] / max;
   return out;
 }
 
 /**
  * Junta os ataques de várias faixas de pulso (kit separado: KICK, SNARE, HIHAT):
  * cada banda de cada faixa dividida pelo próprio máximo e somadas banda a banda,
- * no tamanho da mais curta. Com uma faixa só, devolve ela mesma (sem dividir).
- * Todas precisam ter a mesma taxa (`fps`).
+ * no tamanho da MAIS LONGA (a mais curta completa com zeros depois do fim: uma
+ * faixa de 6 s não pode cortar a análise da música inteira). Com uma faixa só,
+ * devolve ela mesma (sem dividir). Todas precisam ter a mesma taxa (`fps`).
  */
 export function sumOnsetBands(list: readonly OnsetBands[]): OnsetBands {
   if (!list.length) throw new Error('sumOnsetBands: nenhuma faixa');
   if (list.length === 1) return list[0];
   const { fps } = list[0];
   if (list.some(b => b.fps !== fps)) throw new Error('sumOnsetBands: faixas com taxas diferentes');
-  const n = Math.min(...list.map(b => b.full.length));
+  const n = Math.max(...list.map(b => b.full.length));
   const sum = (pick: (b: OnsetBands) => Float32Array) => {
     const out = new Float32Array(n);
     for (const b of list) {
