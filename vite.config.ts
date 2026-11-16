@@ -5,6 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 import electron from 'vite-plugin-electron/simple'
 import type { Plugin } from 'vite'
 import { applyPageHead, dropUnsetSearchConsoleTag, stripHtmlComments } from './src/lib/siteHtml'
+import { injectSiteSeo, withoutFaqJsonLd } from './src/lib/siteSeo'
 import { PAGE_HEADS } from './src/content/site'
 import { SW_NAVIGATION_ALLOWLIST } from './src/content/routes'
 
@@ -26,7 +27,8 @@ const isDesktop = !!process.env.DESKTOP
 // - google-site-verification: troque COLE_AQUI_O_CODIGO_DO_SEARCH_CONSOLE pelo código que
 //   o Search Console mostra no método "Tag HTML" (só o valor do content).
 //
-// No site (não no desktop) também escreve download.html e admin.html: o mesmo app, com
+// No site (não no desktop) também põe o JSON-LD (Organization, WebSite, SoftwareApplication
+// e FAQPage) e um resumo do produto no <noscript>, e escreve download.html e admin.html: o mesmo app, com
 // título, descrição, canonical e compartilhamento de cada página (o /admin com noindex).
 // Com o cleanUrls do vercel.json, /download serve download.html e endereço que não existe
 // cai no public/404.html com status 404 (antes toda URL devolvia a home com 200).
@@ -36,7 +38,10 @@ function siteHtml({ desktop }: { desktop: boolean }): Plugin {
     enforce: 'post',
     transformIndexHtml: {
       order: 'post',
-      handler: (html) => dropUnsetSearchConsoleTag(stripHtmlComments(html)),
+      handler: (html) => {
+        const clean = dropUnsetSearchConsoleTag(stripHtmlComments(html))
+        return desktop ? clean : injectSiteSeo(clean)
+      },
     },
     generateBundle: {
       order: 'post',
@@ -46,7 +51,7 @@ function siteHtml({ desktop }: { desktop: boolean }): Plugin {
         if (!index || index.type !== 'asset') this.error('siteHtml: index.html não saiu no build')
         const html = typeof index.source === 'string' ? index.source : new TextDecoder().decode(index.source)
         for (const page of [PAGE_HEADS.download, PAGE_HEADS.admin]) {
-          this.emitFile({ type: 'asset', fileName: `${page.path.slice(1)}.html`, source: applyPageHead(html, page) })
+          this.emitFile({ type: 'asset', fileName: `${page.path.slice(1)}.html`, source: applyPageHead(withoutFaqJsonLd(html), page) })
         }
       },
     },
