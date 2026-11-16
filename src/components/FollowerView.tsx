@@ -59,13 +59,18 @@ function pitchDelta(pitch: number): string | null {
 // número absurdo vindo da rede.
 const MAX_COUNT_DOTS = 12;
 
+// Reserva quando a seção chega sem cor: bone neutro (laranja quer dizer "ligado").
+const ARMED_FALLBACK_COLOR = '#E8E8EC';
+
 // Faixa do pulo armado no host: "PRÓXIMA: <seção>" ou "REPETE: <seção>" na cor
 // da seção, com as bolinhas da contagem. A contagem é aproximada (a rede atrasa;
 // o tempo exato é o click no ouvido).
 function ArmedStrip({ armed, countBeat, countTotal }: { armed: LiveArmed; countBeat: number | null; countTotal: number | null }) {
-  const color = armed.color || '#FF6B35';
+  const color = armed.color || ARMED_FALLBACK_COLOR;
   const total = countTotal ? Math.min(MAX_COUNT_DOTS, Math.max(0, Math.floor(countTotal))) : 0;
-  const lit = countBeat ?? 0;
+  const lit = Math.floor(countBeat ?? 0);
+  const kindLabel = armed.kind === 'repete' ? 'REPETE' : 'PRÓXIMA';
+  const label = armed.label.trim();
   const Icon = armed.kind === 'repete' ? Repeat : FastForward;
   return (
     <div
@@ -75,7 +80,7 @@ function ArmedStrip({ armed, countBeat, countTotal }: { armed: LiveArmed; countB
     >
       <Icon className="w-4 h-4 shrink-0" />
       <span className="min-w-0 break-words text-sm sm:text-base font-bold">
-        <span className="tracking-widest">{armed.kind === 'repete' ? 'REPETE:' : 'PRÓXIMA:'}</span> {armed.label}
+        <span className="tracking-widest">{label ? `${kindLabel}:` : kindLabel}</span>{label && ` ${label}`}
       </span>
       {total > 0 && (
         <span

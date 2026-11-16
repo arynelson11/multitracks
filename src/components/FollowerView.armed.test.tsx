@@ -69,6 +69,26 @@ describe('celular vê o pulo armado e a contagem aproximada', () => {
     expect(litDots()).toHaveLength(dots().length)
   })
 
+  it('tempo fracionário da contagem arredonda pra baixo (bolinhas e aria-label)', () => {
+    show({ ...BASE, armed: { index: 1, label: 'Refrão', color: '#FF6B35', kind: 'proxima', plays: 1 }, countBeat: 2.5, countTotal: 4 })
+    expect(litDots()).toHaveLength(2)
+    expect(screen.getByRole('img', { name: 'Contagem 2 de 4' })).toBeTruthy()
+  })
+
+  it('sem cor na seção a faixa usa o bone neutro, não o laranja de ligado', () => {
+    show({ ...BASE, armed: { index: 1, label: 'Refrão', color: '', kind: 'proxima', plays: 1 }, countBeat: 1, countTotal: 4 })
+    expect(strip()?.style.color).toBe('rgb(232, 232, 236)')
+    expect(litDots()[0].style.backgroundColor).toBe('rgb(232, 232, 236)')
+  })
+
+  it('sem nome na seção a faixa mostra só PRÓXIMA ou REPETE, sem os dois pontos', () => {
+    show({ ...BASE, armed: { index: 1, label: '', color: '#FF6B35', kind: 'proxima', plays: 1 }, countBeat: null, countTotal: null })
+    expect(strip()?.textContent?.trim()).toBe('PRÓXIMA')
+    cleanup()
+    show({ ...BASE, armed: { index: 0, label: '  ', color: '#10b981', kind: 'repete', plays: 2 }, countBeat: null, countTotal: null })
+    expect(strip()?.textContent?.trim()).toBe('REPETE')
+  })
+
   it('host antigo sem os campos vira null e não mostra a faixa', () => {
     // O que chega de um host da versão anterior: os três campos não existem.
     const antigo: Record<string, unknown> = { ...BASE }

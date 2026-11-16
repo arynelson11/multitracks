@@ -130,6 +130,18 @@ describe('protocolo do pulo armado e da contagem', () => {
     expect(lido.countTotal).toBeNull()
   })
 
+  it('leitura descarta pulo armado com kind desconhecido (o resto certo)', () => {
+    const armed = { ...ARMED, kind: 'outro' } as unknown as typeof ARMED
+    expect(readHostState({ ...oldHostPayload(), armed }, false).armed).toBeNull()
+  })
+
+  it('leitura descarta pulo armado com plays inválido (o resto certo)', () => {
+    const armed = { ...ARMED, plays: '2' } as unknown as typeof ARMED
+    expect(readHostState({ ...oldHostPayload(), armed }, false).armed).toBeNull()
+    // Controle: os mesmos campos com plays válido passam.
+    expect(readHostState({ ...oldHostPayload(), armed: { ...ARMED, plays: 'infinite' } }, false).armed).toEqual({ ...ARMED, plays: 'infinite' })
+  })
+
   it('host antigo sem os campos vira null pela rede local', () => {
     vi.stubGlobal('WebSocket', FakeWebSocket)
     const { result } = renderHook(() => useLiveSync(INITIAL_STATE))
