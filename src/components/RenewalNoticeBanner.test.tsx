@@ -30,7 +30,7 @@ describe('RenewalNoticeBanner', () => {
     fetchSub.mockResolvedValue(monthly('2026-11-19'))
     render(<RenewalNoticeBanner userId="u1" plan="essencial_mensal" />)
     expect(await screen.findByText('Sua assinatura vence em 3 dias (19/11).')).toBeTruthy()
-    expect(screen.getByText(/volta para o Livre no mesmo dia/)).toBeTruthy()
+    expect(screen.getByText(/no dia seguinte a conta volta para o Livre/)).toBeTruthy()
   })
 
   it('no dia: "Sua assinatura vence hoje"', async () => {

@@ -6,7 +6,7 @@ vi.mock('./supabase', () => ({
 }))
 vi.mock('./api', () => ({ apiUrl: (p: string) => `https://app.test${p}` }))
 
-import { accessDateLabel, brtTodayKey, cancelMySubscription, renewalNotice, syncBillingOnLogin, type MySubscription } from './subscription'
+import { accessDateLabel, brtTodayKey, cancelMySubscription, cancelOutcomeLine, deleteAccountNotice, renewalNotice, syncBillingOnLogin, type MySubscription } from './subscription'
 
 const base: MySubscription = {
   id: 'chk_1', kind: 'asaas', plan_key: 'essencial_mensal', cycle: 'MONTHLY', status: 'active',
@@ -78,5 +78,35 @@ describe('cancelMySubscription', () => {
     const out = await cancelMySubscription()
     expect(out.ok).toBe(false)
     expect(!out.ok && out.error).toContain('nada mudou')
+  })
+})
+
+describe('textos de cancelamento e exclusão (I8, I9)', () => {
+  it('excluir conta fora dos 7 dias: diz que o período pago é perdido, com data e valor', () => {
+    const t = deleteAccountNotice({ outcome: 'until_period_end', plan: 'essencial_anual', accessUntil: '2027-11-11T03:00:00Z', amount: 454.8 }, 'essencial_anual')
+    expect(t).toContain('perdido, sem devolução')
+    expect(t).toContain('10/11/2027')
+    expect(t).toContain('R$ 454,80')
+    expect(t).not.toContain('—')
+  })
+  it('excluir conta na 1ª assinatura em até 7 dias: devolve o valor', () => {
+    expect(deleteAccountNotice({ outcome: 'refund_auto', plan: 'essencial_mensal', accessUntil: null, amount: 49.9 }, 'essencial_mensal')).toContain('devolvemos R$ 49,90')
+  })
+  it('excluir conta em até 7 dias sem ser a 1ª: pedido de estorno pra equipe', () => {
+    expect(deleteAccountNotice({ outcome: 'refund_request', plan: 'pro_mensal', accessUntil: null, amount: 119.9 }, 'pro_mensal')).toContain('pedido de estorno')
+  })
+  it('sem prévia: avisa a regra geral, inclusive o anual', () => {
+    const t = deleteAccountNotice(null, 'essencial_anual')
+    expect(t).toContain('perdido, sem devolução')
+    expect(t).toContain('no anual, o resto do ano')
+  })
+  it('confirmação do cancelamento mostra só o desfecho daquela pessoa', () => {
+    const auto = cancelOutcomeLine({ outcome: 'refund_auto', plan: 'essencial_mensal', accessUntil: null, amount: 49.9 }, 'Pro Mensal')
+    expect(auto).toContain('primeira assinatura')
+    expect(auto).toContain('devolvemos R$ 49,90')
+    const req = cancelOutcomeLine({ outcome: 'refund_request', plan: 'essencial_mensal', accessUntil: '2026-12-17T03:00:00Z', amount: 49.9 }, 'Pro Mensal')
+    expect(req).toContain('não é automático')
+    const end = cancelOutcomeLine({ outcome: 'until_period_end', plan: 'essencial_mensal', accessUntil: '2026-12-17T03:00:00Z', amount: 49.9 }, 'Pro Mensal')
+    expect(end).toContain('até 16/12/2026')
   })
 })

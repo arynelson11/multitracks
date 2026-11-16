@@ -5,10 +5,12 @@ import type { MySubscription } from '../lib/subscription'
 
 const fetchSub = vi.fn()
 const cancelSub = vi.fn()
+const previewMock = vi.fn()
 vi.mock('../lib/subscription', async (orig) => ({
   ...(await orig<typeof import('../lib/subscription')>()),
   fetchMySubscription: () => fetchSub(),
   cancelMySubscription: () => cancelSub(),
+  fetchCancelPreview: () => previewMock(),
 }))
 
 import { SubscriptionPanel } from './SubscriptionPanel'
@@ -19,7 +21,7 @@ const active: MySubscription = {
   access_until: null, cancel_source: null, canceled_at: null, created_at: '2026-10-16T15:00:00Z',
 }
 
-beforeEach(() => { fetchSub.mockReset(); cancelSub.mockReset() })
+beforeEach(() => { fetchSub.mockReset(); cancelSub.mockReset(); previewMock.mockReset(); previewMock.mockResolvedValue(null) })
 afterEach(cleanup)
 
 const setup = (props: Partial<Parameters<typeof SubscriptionPanel>[0]> = {}) => {
@@ -37,19 +39,45 @@ describe('SubscriptionPanel', () => {
     expect(screen.getByRole('button', { name: 'Cancelar assinatura' })).toBeTruthy()
   })
 
-  it('pede confirmação com o que acontece de verdade, sem travessão', async () => {
+  it('sem prévia: pede confirmação com as regras, sem travessão', async () => {
     fetchSub.mockResolvedValue(active)
     setup()
     fireEvent.click(await screen.findByRole('button', { name: 'Cancelar assinatura' }))
     const dialog = screen.getByRole('dialog', { name: 'Cancelar a assinatura?' })
+    await vi.waitFor(() => expect(dialog.textContent).toContain('até o fim do período que já pagou (16/12/2026)'))
     const text = dialog.textContent ?? ''
     expect(text).toContain('nada mais é cobrado')
-    expect(text).toContain('até o fim do período que já pagou (16/12/2026)')
-    expect(text).toContain('volta para o Livre')
-    expect(text).toContain('até 7 dias')
+    expect(text).toContain('primeira assinatura')
     expect(text).toContain('não são apagados')
     expect(text).not.toContain('—')
     expect(cancelSub).not.toHaveBeenCalled()
+  })
+
+  it('com prévia: mostra só o desfecho certo (ex.: pedido de estorno quando não é a primeira)', async () => {
+    fetchSub.mockResolvedValue(active)
+    previewMock.mockResolvedValue({ outcome: 'refund_request', plan: 'essencial_mensal', accessUntil: '2026-12-17T03:00:00Z', amount: 49.9 })
+    setup()
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancelar assinatura' }))
+    const dialog = screen.getByRole('dialog', { name: 'Cancelar a assinatura?' })
+    await vi.waitFor(() => expect(dialog.textContent).toContain('não é automático'))
+    expect(dialog.textContent).not.toContain('devolvemos o valor integral')
+  })
+
+  it('cortesia: mostra até quando vale e não tem botão de cancelar', async () => {
+    fetchSub.mockResolvedValue({ ...active, kind: 'courtesy', cycle: null, access_until: '2027-01-31T03:00:00Z', next_due_date: null })
+    setup({ planExpiresAt: '2027-01-31T03:00:00Z' })
+    expect(await screen.findByText(/Plano de cortesia, sem cobrança\. Vale até 30\/01\/2027\./)).toBeTruthy()
+    expect(screen.queryByText(/Assinatura cancelada/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Cancelar assinatura' })).toBeNull()
+  })
+
+  it('estorno recusado: avisa que a equipe faz o estorno', async () => {
+    fetchSub.mockResolvedValue(active)
+    cancelSub.mockResolvedValue({ ok: true, data: { result: 'canceled', accessUntil: null, refunded: false, refundFailed: true, plan: 'essencial_mensal' } })
+    setup()
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancelar assinatura' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, cancelar' }))
+    expect(await screen.findByText(/a nossa equipe vai fazer e te avisa/)).toBeTruthy()
   })
 
   it('"Manter assinatura" fecha sem cancelar', async () => {
@@ -103,6 +131,7 @@ describe('SubscriptionPanel', () => {
 
   it('no Livre não mostra nada', () => {
     fetchSub.mockResolvedValue(null)
+    previewMock.mockResolvedValue(null)
     const { container } = render(<SubscriptionPanel plan="free" planExpiresAt={null} onChanged={() => {}} onOpenPricing={() => {}} />)
     expect(container.textContent).toBe('')
   })

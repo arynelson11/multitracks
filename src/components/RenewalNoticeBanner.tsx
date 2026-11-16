@@ -4,8 +4,9 @@ import { isPaidPlan } from '../lib/plans'
 import { brtTodayKey, fetchMySubscription, renewalNotice } from '../lib/subscription'
 
 // Aviso de vencimento do plano MENSAL: aparece de 3 dias antes até o dia da
-// renovação. Se a renovação não for paga, a conta volta pro Livre no mesmo
-// dia (regra do dono), então vale avisar antes. "Entendi" esconde até o dia
+// renovação. O cartão é cobrado no vencimento; se não passar, o Asaas marca a
+// cobrança como vencida no dia seguinte e a conta volta pro Livre nesse dia
+// (regra do dono), então vale avisar antes. "Entendi" esconde até o dia
 // seguinte (guardado só neste aparelho).
 
 const DISMISS_KEY = 'renewal_notice_dismissed_on'
@@ -46,7 +47,7 @@ export function RenewalNoticeBanner({ userId, plan }: { userId: string | null | 
       <div className="flex-1 min-w-0">
         <p className="text-white text-sm font-bold leading-tight">{label(notice.daysLeft, notice.dueDate)}</p>
         <p className="text-zinc-400 text-xs leading-snug mt-1">
-          A renovação é cobrada no cartão cadastrado. Se não for paga até o vencimento, a conta volta para o Livre no mesmo dia (seus arquivos não são apagados).
+          A renovação é cobrada no cartão cadastrado no dia do vencimento. Se não for paga, no dia seguinte a conta volta para o Livre (seus arquivos não são apagados).
         </p>
         <button onClick={dismiss} className="mt-2 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-white text-xs font-bold cursor-pointer">
           Entendi

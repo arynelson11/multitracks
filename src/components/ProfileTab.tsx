@@ -3,6 +3,7 @@ import { Camera, Loader2, Check, LogOut, Crown, Calendar, Mail, User as UserIcon
 import type { User } from '@supabase/supabase-js';
 import { uploadToR2 } from '../lib/r2';
 import { planDisplayName, isPaidPlan } from '../lib/plans';
+import { deleteAccountNotice, fetchCancelPreview } from '../lib/subscription';
 
 interface ProfileTabProps {
   user: User;
@@ -95,8 +96,9 @@ export function ProfileTab({ user, userPlan, updateProfile, updatePassword, sign
 
   const [deleting, setDeleting] = useState(false);
   const handleDelete = async () => {
+    // Assinante: diz o que acontece com o dinheiro (data e valor quando dá pra saber).
     const subscriptionNote = isPaidPlan(userPlan)
-      ? '\n\nSua assinatura é cancelada na hora e nada mais é cobrado. Se você assinou há até 7 dias (primeira cobrança), devolvemos o valor no cartão.'
+      ? `\n\n${deleteAccountNotice(await fetchCancelPreview(), userPlan)}`
       : '';
     const typed = prompt(`Isto apaga sua conta permanentemente e não pode ser desfeito.${subscriptionNote}\n\nDigite EXCLUIR para confirmar:`);
     if (typed !== 'EXCLUIR') return;

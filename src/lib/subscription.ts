@@ -38,8 +38,67 @@ export async function fetchMySubscription(): Promise<MySubscription | null> {
 export type CancelOutcome = {
   result: 'canceled' | 'already_canceled'
   accessUntil: string | null
-  refunded: boolean
+  refunded: boolean          // estorno automático feito
+  refundRequested?: boolean  // pedido de estorno foi pra equipe (não é a 1ª assinatura)
+  refundFailed?: boolean     // estorno recusado: a equipe faz à mão
+  pendingStop?: boolean      // confirmação com o sistema de pagamento ficou pendente
   plan: string
+}
+
+// O que o cancelamento faria pra esta pessoa (servidor, sem mudar nada).
+export type CancelPreview = {
+  outcome: 'none' | 'refund_auto' | 'refund_request' | 'until_period_end'
+  plan: string | null
+  accessUntil: string | null
+  amount: number | null
+}
+
+export async function fetchCancelPreview(): Promise<CancelPreview | null> {
+  try {
+    const res = await fetch(apiUrl('/api/checkout?action=cancel-preview'), { method: 'POST', headers: await getAuthHeaders(), body: '{}' })
+    if (!res.ok) return null
+    const body = await res.json().catch(() => null)
+    return body && typeof body.outcome === 'string' ? (body as CancelPreview) : null
+  } catch {
+    return null
+  }
+}
+
+const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
+export function formatBRL(value: number): string {
+  return BRL.format(value).replace(/\u00a0/g, ' ')
+}
+
+// Linha da confirmação com o desfecho certo pra esta pessoa.
+export function cancelOutcomeLine(p: CancelPreview, planName: string): string {
+  const amount = p.amount != null ? ` ${formatBRL(p.amount)}` : ' o valor'
+  if (p.outcome === 'refund_auto') {
+    return `Como esta é sua primeira assinatura e faz até 7 dias da compra, devolvemos${amount} no cartão e a conta volta para o Livre na hora.`
+  }
+  if (p.outcome === 'refund_request') {
+    const until = p.accessUntil ? ` até ${accessDateLabel(p.accessUntil)}` : ' até o fim do período pago'
+    return `Você assinou há até 7 dias, mas esta não é sua primeira assinatura, então o estorno não é automático: o pedido vai para a nossa equipe, que te responde pelo e-mail da conta. Enquanto isso você continua com o ${planName}${until}.`
+  }
+  const until = p.accessUntil ? `até ${accessDateLabel(p.accessUntil)}` : 'até o fim do período que já pagou'
+  return `Você continua com o ${planName} ${until}. Depois disso a conta volta para o Livre (5 separações por mês, em 2 faixas).`
+}
+
+// Aviso de "Excluir minha conta" pra quem tem plano pago.
+export function deleteAccountNotice(p: CancelPreview | null, plan: string): string {
+  const base = 'Sua assinatura é cancelada na hora e nada mais é cobrado.'
+  if (p?.outcome === 'refund_auto') {
+    return `${base} Como é sua primeira assinatura e faz até 7 dias da compra, devolvemos ${p.amount != null ? formatBRL(p.amount) : 'o valor'} no cartão.`
+  }
+  if (p?.outcome === 'refund_request') {
+    return `${base} Você assinou há até 7 dias, mas não é sua primeira assinatura: o pedido de estorno vai para a nossa equipe aprovar.`
+  }
+  if (p?.outcome === 'until_period_end') {
+    const until = p.accessUntil ? `, que ia até ${accessDateLabel(p.accessUntil)}` : ''
+    const value = p.amount != null ? ` (${formatBRL(p.amount)})` : ''
+    return `${base} O período já pago${until}${value} é perdido, sem devolução.`
+  }
+  void plan
+  return `${base} Fora do prazo de 7 dias da primeira compra, o tempo que você já pagou e ainda não usou é perdido, sem devolução (no anual, o resto do ano).`
 }
 
 export async function cancelMySubscription(): Promise<{ ok: true; data: CancelOutcome } | { ok: false; error: string }> {
