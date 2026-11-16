@@ -51,6 +51,7 @@ beforeEach(() => {
   warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 })
 afterEach(() => {
+  vi.useRealTimers()
   vi.unstubAllEnvs()
 })
 
@@ -110,6 +111,26 @@ describe('falha fechada', () => {
     expect(await readProfileFlags(USER_A)).toEqual({ isAdmin: false, blocked: false })
     expect(await verifyAdmin(req())).toMatchObject({ ok: false, status: 403 })
     expect(await verifyActiveUser(req())).toMatchObject({ ok: true, blocked: false })
+  })
+
+  it('banco que nunca responde: o pedido segue em até 3 s e a pessoa não é admin', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    db = createBillingDb({ profiles: [profile({ is_admin: true, blocked_at: '2026-11-10T12:00:00Z' })] })
+    // consulta pendurada: a cadeia devolve ela mesma e o then nunca chama de volta
+    const hung: Record<string, unknown> = {}
+    for (const m of ['select', 'eq', 'maybeSingle']) hung[m] = () => hung
+    hung.then = () => {}
+    db.from = (() => hung) as unknown as FakeDb['from']
+
+    let out: unknown = 'pendente'
+    void verifyUser(req()).then((r) => { out = r })
+    await vi.advanceTimersByTimeAsync(2999)
+    expect(out).toBe('pendente')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(out).toEqual({ ok: true, userId: USER_A, email: OTHER, isAdmin: false, blocked: false })
+    // aviso sem dado pessoal: sem token, e-mail, chave ou id
+    expect(warn).toHaveBeenCalledTimes(1)
+    for (const s of [TOKEN, OTHER, SERVICE, USER_A]) expect(warnText()).not.toContain(s)
   })
 
   it('sem linha no perfil não é admin nem bloqueado', async () => {

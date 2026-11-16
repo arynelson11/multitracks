@@ -26,6 +26,19 @@ function warnClosed(reason: string): ProfileFlags {
     return { ...CLOSED };
 }
 
+// Teto da leitura do perfil: banco pendurado não segura o pedido até o limite
+// da função na Vercel. Estourou, fecha como nos outros erros.
+const PROFILE_READ_TIMEOUT_MS = 3000;
+const TIMED_OUT = Symbol('tempo esgotado');
+
+function withTimeout<T>(work: PromiseLike<T>, ms: number): Promise<T | typeof TIMED_OUT> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const limit = new Promise<typeof TIMED_OUT>((resolve) => {
+        timer = setTimeout(() => resolve(TIMED_OUT), ms);
+    });
+    return Promise.race([Promise.resolve(work), limit]).finally(() => clearTimeout(timer));
+}
+
 export async function readProfileFlags(userId: string): Promise<ProfileFlags> {
     const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
     const serviceKey  = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -33,11 +46,15 @@ export async function readProfileFlags(userId: string): Promise<ProfileFlags> {
 
     try {
         const db = createClient(supabaseUrl, serviceKey);
-        const { data, error } = await db
+        const query = db
             .from('profiles')
             .select('is_admin, blocked_at')
             .eq('id', userId)
             .maybeSingle();
+        const out = await withTimeout(query, PROFILE_READ_TIMEOUT_MS);
+        // Aviso sem nenhum dado pessoal: sem token, e-mail, chave ou id.
+        if (out === TIMED_OUT) return warnClosed('tempo esgotado na leitura do perfil (3 s)');
+        const { data, error } = out;
         if (error) return warnClosed(`erro de banco ${error.code || 'sem codigo'}: ${String(error.message ?? '').slice(0, 200)}`);
         if (!data) return warnClosed('perfil nao encontrado');
         return { isAdmin: data.is_admin === true, blocked: data.blocked_at != null };
