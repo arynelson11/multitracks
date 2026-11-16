@@ -9,11 +9,11 @@
 export type PlanKey = 'essencial_mensal' | 'essencial_anual' | 'pro_mensal' | 'pro_anual'
 export type BillingCycle = 'MONTHLY' | 'YEARLY'
 
-export const PLAN_PRICING: Record<PlanKey, { value: number; cycle: BillingCycle; description: string }> = {
-  essencial_mensal: { value: 49.90, cycle: 'MONTHLY', description: 'Playback Studio Pro (mensal)' },
-  essencial_anual:  { value: 454.80, cycle: 'YEARLY',  description: 'Playback Studio Pro (anual)' },
-  pro_mensal:       { value: 119.90, cycle: 'MONTHLY', description: 'Playback Studio Studio (mensal)' },
-  pro_anual:        { value: 1078.80, cycle: 'YEARLY', description: 'Playback Studio Studio (anual)' },
+export const PLAN_PRICING: Record<PlanKey, { value: number; cycle: BillingCycle; description: string; label: string }> = {
+  essencial_mensal: { value: 49.90, cycle: 'MONTHLY', description: 'Playback Studio Pro (mensal)', label: 'Pro Mensal' },
+  essencial_anual:  { value: 454.80, cycle: 'YEARLY',  description: 'Playback Studio Pro (anual)', label: 'Pro Anual' },
+  pro_mensal:       { value: 119.90, cycle: 'MONTHLY', description: 'Playback Studio Studio (mensal)', label: 'Studio Mensal' },
+  pro_anual:        { value: 1078.80, cycle: 'YEARLY', description: 'Playback Studio Studio (anual)', label: 'Studio Anual' },
 }
 
 export function isPlanKey(v: unknown): v is PlanKey {

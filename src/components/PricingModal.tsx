@@ -82,12 +82,9 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
                 return;
             }
 
-            console.error('[checkout] HTTP', response.status, response.statusText, '\nbody:', rawText);
-            const baseMsg = data?.error || response.statusText || `HTTP ${response.status}`;
-            const detail = data?.details
-                ? (typeof data.details === 'object' ? JSON.stringify(data.details, null, 2) : String(data.details))
-                : (!data && rawText ? rawText.slice(0, 500) : '');
-            alert(`Erro ao gerar checkout (HTTP ${response.status}): ${baseMsg}${detail ? '\n\nDetalhes:\n' + detail : ''}`);
+            console.error('[checkout] HTTP', response.status);
+            // 409 = já tem este plano ativo; o servidor manda a mensagem pronta.
+            alert(typeof data?.error === 'string' ? data.error : 'Não deu para abrir o pagamento agora. Tente de novo em alguns minutos.');
         } catch (error) {
             console.error('Erro de rede ou processamento:', error);
             alert(`Não foi possível conectar com o servidor.\n${error instanceof Error ? error.message : ''}`);

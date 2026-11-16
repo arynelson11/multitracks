@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import axios from 'axios';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
 import { verifyUser } from './_lib/auth.js';
 import { PLAN_PRICING, isPlanKey } from './_lib/pricing.js';
@@ -53,6 +53,22 @@ export default async function handler(req: any, res: any) {
     }
     const plan = PLAN_PRICING[planKey];
 
+    // Compra duplicada (duas abas, app antigo): já tem este plano ativo.
+    const db = serviceDb();
+    if (!db) return res.status(500).json({ error: MSG_CHECKOUT_DOWN });
+    let duplicate: boolean;
+    try {
+      duplicate = await hasActiveSamePlan(db, userId, planKey);
+    } catch (e) {
+      console.error('[checkout] nao deu pra conferir assinatura ativa:', e instanceof Error ? e.message : 'erro');
+      return res.status(500).json({ error: MSG_CHECKOUT_DOWN });
+    }
+    if (duplicate) {
+      return res.status(409).json({
+        error: `Você já tem o ${plan.label} ativo. Não precisa assinar de novo; para mudar, escolha outro plano.`,
+      });
+    }
+
     const apiKey = process.env.ASAAS_API_KEY;
     if (!apiKey) {
       console.error('[checkout] Missing ASAAS_API_KEY');
@@ -102,30 +118,42 @@ export default async function handler(req: any, res: any) {
         // Grava o vínculo checkout -> usuário/plano. O webhook CHECKOUT_PAID lê
         // isso pelo id do checkout (o Asaas não propaga nosso externalReference
         // pro pagamento/assinatura, então guardamos do nosso lado).
-        const supaUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-        if (supaUrl && serviceKey) {
-          try {
-            const supabase = createClient(supaUrl, serviceKey);
-            await supabase.from('pending_checkouts').insert({ id: checkoutId, user_id: userId, plan_key: planKey });
-          } catch (e: any) {
-            console.error('[checkout] failed to save pending_checkout:', e?.message);
-          }
+        // Sem o vínculo o pagamento não liga ao usuário: não entrega o link.
+        const { error: linkErr } = await db.from('pending_checkouts').insert({ id: checkoutId, user_id: userId, plan_key: planKey });
+        if (linkErr) {
+          console.error('[checkout] failed to save pending_checkout:', linkErr.message);
+          return res.status(500).json({ error: MSG_CHECKOUT_DOWN });
         }
         return res.status(200).json({ url });
       }
-      if (url) return res.status(200).json({ url });
-      console.error('[checkout] no url in Asaas response:', JSON.stringify(data));
-      return res.status(502).json({ error: 'Checkout criado sem URL', details: data });
+      // Detalhe do Asaas só no log, nunca no navegador.
+      console.error('[checkout] resposta do Asaas sem link ou id:', JSON.stringify(data).slice(0, 500));
+      return res.status(502).json({ error: MSG_CHECKOUT_DOWN });
     } catch (err: any) {
       const detail = err?.response?.data || err?.message;
-      console.error('[checkout] Asaas error:', JSON.stringify(detail));
-      return res.status(502).json({ error: 'Falha ao criar checkout no Asaas', details: detail });
+      console.error('[checkout] Asaas error:', JSON.stringify(detail)?.slice(0, 500));
+      return res.status(502).json({ error: MSG_CHECKOUT_DOWN });
     }
   } catch (e: any) {
-    console.error('[checkout] unexpected handler error:', e?.message, e?.stack);
-    return res.status(500).json({ error: 'Unexpected handler error', message: e?.message || 'unknown' });
+    console.error('[checkout] unexpected handler error:', e?.message);
+    return res.status(500).json({ error: MSG_CHECKOUT_DOWN });
   }
+}
+
+const MSG_CHECKOUT_DOWN = 'Não deu para abrir o pagamento agora. Tente de novo em alguns minutos.';
+
+// Já existe assinatura ativa deste plano? (linha nova ou, pra quem assinou antes
+// desta versão, o plano do perfil sem data de fim). Cancelada ainda no período
+// pago pode assinar de novo.
+async function hasActiveSamePlan(db: SupabaseClient, userId: string, planKey: string): Promise<boolean> {
+  const subs = await db.from('billing_subscriptions').select('id')
+    .eq('user_id', userId).eq('status', 'active').eq('kind', 'asaas').eq('plan_key', planKey);
+  if (subs.error) throw new Error(subs.error.message);
+  if (((subs.data as unknown[] | null) ?? []).length > 0) return true;
+  const prof = await db.from('profiles').select('plan, plan_expires_at').eq('id', userId).maybeSingle();
+  if (prof.error) throw new Error(prof.error.message);
+  const p = prof.data as { plan?: string | null; plan_expires_at?: string | null } | null;
+  return p?.plan === planKey && !p?.plan_expires_at;
 }
 
 // Cancela a assinatura de QUEM ESTÁ LOGADO (o id vem do JWT; o corpo do pedido é
