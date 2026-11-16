@@ -725,3 +725,57 @@ describe('rodada 4: duas compras no mesmo dia (COB-R4)', () => {
     expect(db.tables.billing_subscriptions.find((r) => r.id === 'chk_b')).toMatchObject({ status: 'canceled', cancel_source: 'duplicate', needs_admin_review: true })
   })
 })
+
+describe('rodada 5: a rede só desfaz o corte com pagamento EM DIA e sem vencida em aberto (COB-S1, S2)', () => {
+  beforeEach(() => {
+    db.tables.profiles[0].plan = 'free'
+    // a rede cortou pelo ciclo 14/11 (o aviso de vencida não chegou)
+    db.tables.billing_subscriptions.push(subRow({ id: 'chk_1', user_id: USER_A, asaas_subscription_id: 'sub_1', status: 'canceled', cancel_source: 'unpaid', last_paid_due_date: '2026-10-14', next_due_date: '2026-11-14', access_until: '2026-11-16T06:15:00.000Z' }))
+    db.tables.billing_pending_actions.push({ id: 90, subscription_ref: 'chk_1', user_id: USER_A, action: 'inactivate_subscription', reason: 'rede_de_seguranca', asaas_subscription_id: 'sub_1', asaas_payment_id: 'p_x', due_date: '2026-11-14', auto_retry: true, status: 'pending', attempts: 0, next_attempt_at: '2026-11-16T00:00:00.000Z' })
+  })
+
+  it('S1: vencida paga com atraso e contada ANTES da pendência: inativa no Asaas, plano até o fim do período, sem renovação', async () => {
+    const paidLate = payment({ id: 'p_x', subscription: 'sub_1', dueDate: '2026-11-14', originalDueDate: '2026-11-14', confirmedDate: '2026-11-16', paymentDate: '2026-11-16', status: 'CONFIRMED' })
+    asaas!.get.mockResolvedValue({ data: [paidLate, payment({ id: 'p_next', subscription: 'sub_1', dueDate: '2026-12-14', originalDueDate: '2026-12-14', confirmedDate: null, status: 'PENDING' })], hasMore: false })
+    // o aviso do pagamento é processado primeiro; no mesmo pedido, a pendência roda
+    const res = await post(payEvent('evt_late', 'PAYMENT_CONFIRMED', { id: 'p_x', dueDate: '2026-11-14', originalDueDate: '2026-11-14', confirmedDate: '2026-11-16', paymentDate: '2026-11-16', status: 'CONFIRMED' }, '2026-11-16 11:00:00'))
+    expect(res.body).toMatchObject({ result: 'late_payment' })
+    expect(stopCalls()).toEqual([['/subscriptions/sub_1', { status: 'INACTIVE' }]])
+    expect(asaas!.del).toHaveBeenCalledWith('/payments/p_next')
+    const row = db.tables.billing_subscriptions[0]
+    expect(row).toMatchObject({ status: 'canceled', access_until: '2026-12-15T03:00:00.000Z' })
+    expect(row.asaas_stopped_at).toBeTruthy()
+    expect(String(row.admin_note)).toContain('acontece mesmo assim (feita em')
+    expect(String(row.admin_note)).not.toContain('(pendente)')
+    expect(String(row.admin_note)).not.toContain('corte indevido')
+    expect(db.tables.billing_pending_actions.find((a) => a.id === 90)!.status).toBe('done')
+    expect(db.tables.profiles[0]).toMatchObject({ plan: 'essencial_mensal', plan_expires_at: '2026-12-15T03:00:00.000Z' })
+  })
+
+  it('S1: ciclo já contado e pago em dia, mas com outra cobrança vencida sem pagamento: não desfaz, inativa e marca', async () => {
+    Object.assign(db.tables.billing_subscriptions[0], { last_paid_due_date: '2026-11-14' })
+    asaas!.get.mockResolvedValue({ data: [
+      payment({ id: 'p_old', subscription: 'sub_1', dueDate: '2026-11-10', originalDueDate: '2026-11-10', confirmedDate: null, status: 'OVERDUE' }),
+      payment({ id: 'p_x', subscription: 'sub_1', dueDate: '2026-11-14', originalDueDate: '2026-11-14', confirmedDate: '2026-11-13', status: 'CONFIRMED' }),
+    ], hasMore: false })
+    await cron()
+    expect(db.rpcCalls.some((c) => c.name === 'billing_undo_counted_cut')).toBe(false)
+    expect(stopCalls()).toEqual([['/subscriptions/sub_1', { status: 'INACTIVE' }]])
+    expect(db.tables.billing_subscriptions[0]).toMatchObject({ status: 'canceled', needs_admin_review: true })
+    expect(String(db.tables.billing_subscriptions[0].admin_note)).toContain('sem renovacao')
+  })
+
+  it('S2: cobrança de um ciclo antigo adiada pra data do ciclo cortado não faz desfazer: vale a do ciclo pelo vencimento original', async () => {
+    asaas!.get.mockResolvedValue({ data: [
+      // ciclo 14/10, adiado no painel pra 14/11 e pago (já contado)
+      payment({ id: 'p_old', subscription: 'sub_1', dueDate: '2026-11-14', originalDueDate: '2026-10-14', confirmedDate: '2026-11-10', status: 'CONFIRMED' }),
+      // ciclo 14/11 de verdade, sem pagamento
+      payment({ id: 'p_x', subscription: 'sub_1', dueDate: '2026-11-14', originalDueDate: '2026-11-14', confirmedDate: null, status: 'OVERDUE' }),
+    ], hasMore: false })
+    await cron()
+    expect(db.rpcCalls.some((c) => c.name === 'billing_undo_counted_cut' || c.name === 'billing_undo_safety_cut')).toBe(false)
+    expect(stopCalls()).toEqual([['/subscriptions/sub_1', { status: 'INACTIVE' }]])
+    expect(db.tables.billing_subscriptions[0]).toMatchObject({ status: 'canceled', needs_admin_review: true })
+    expect(String(db.tables.billing_subscriptions[0].admin_note)).toContain('corte mantido')
+  })
+})

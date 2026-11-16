@@ -32,6 +32,12 @@ export function createFakeAsaas(routes: { get?: Route; post?: Route; put?: Route
   } as FakeAsaas
 }
 
+// dd/mm/aaaa em Brasília de um instante ISO
+function brDay(isoAt: string): string {
+  const d = new Date(Date.parse(isoAt) - 3 * 3600_000).toISOString().slice(0, 10)
+  return `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`
+}
+
 function nextDueDate(due: string, cycle: string | null): string {
   const [y, m, d] = due.split('-').map(Number)
   const base = cycle === 'YEARLY' ? new Date(Date.UTC(y + 1, m - 1, d)) : new Date(Date.UTC(y, m, d))
@@ -109,7 +115,11 @@ export function createBillingDb(tables: Record<string, Row[]> = {}, now: () => D
   }
   const markStopped = (ref: unknown, kind: string, subId?: unknown) => {
     const r = sub(ref)
-    if (r) { r.asaas_stopped_at ??= iso(); r.asaas_stop_kind ??= kind; r.asaas_subscription_id ??= subId ?? null }
+    if (r) {
+      r.asaas_stopped_at ??= iso(); r.asaas_stop_kind ??= kind; r.asaas_subscription_id ??= subId ?? null
+      // como o SQL: a nota do N1 deixa de dizer "(pendente)" quando a parada é feita
+      if (typeof r.admin_note === 'string') r.admin_note = r.admin_note.replace('acontece mesmo assim (pendente)', `acontece mesmo assim (feita em ${brDay(iso())})`)
+    }
     for (const a of db.tables.billing_pending_actions) {
       if (a.subscription_ref === ref && a.status === 'pending' && STOP_ACTIONS.includes(String(a.action))) a.status = 'done'
     }
@@ -212,7 +222,9 @@ export function createBillingDb(tables: Record<string, Row[]> = {}, now: () => D
             sync(r.user_id)
             return { result: 'reactivated' }
           }
-          Object.assign(r, { access_until: end }); flag(r.id, `cobranca vencida paga depois (vencimento ${due}); sem renovacao`); sync(r.user_id)
+          Object.assign(r, { access_until: end })
+          flag(r.id, `cobranca vencida paga depois (vencimento ${due}); sem renovacao: a inativacao no Asaas acontece mesmo assim${r.asaas_stopped_at ? ' (feita)' : ' (pendente)'}`)
+          sync(r.user_id)
           return { result: 'late_payment', access_until: end }
         }
         if (r.cancel_source === 'user' || r.cancel_source === 'asaas') {
@@ -247,6 +259,8 @@ export function createBillingDb(tables: Record<string, Row[]> = {}, now: () => D
       billing_undo_counted_cut: (a) => {
         const r = sub(a.p_id)
         if (!r) return { result: 'not_found' }
+        // COB-S1: atraso já restaurado (acesso até o fim do período) não é corte indevido
+        if (r.access_until && String(r.access_until) > iso()) return { result: 'refused_late' }
         for (const x of db.tables.billing_pending_actions) if (x.subscription_ref === r.id && x.status === 'pending' && x.action === 'inactivate_subscription') x.status = 'canceled'
         if (r.status !== 'canceled' || r.cancel_source !== 'unpaid' || !r.cycle || !r.last_paid_due_date) {
           flag(r.id, `rede de seguranca: cobranca do ciclo ${String(a.p_cut_due)} ja estava paga; nada desfeito e nada inativado, conferir`)

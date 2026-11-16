@@ -334,10 +334,19 @@ export async function runPendingActions(
         // Rede de segurança (sem o evento do Asaas): confere no Asaas antes.
         if (a.reason === 'rede_de_seguranca' && a.due_date) {
           const payments = await listSubscriptionPayments(asaas, subId)
-          // a cobrança paga é procurada por assinatura e ciclo (vencimento
-          // original ou atual), não só pela data atual
-          const paid = payments.find((p) => !p.deleted && PAID_STATUSES.has(p.status ?? '')
-            && (toBrtDate(p.originalDueDate) === a.due_date || toBrtDate(p.dueDate) === a.due_date))
+          const today = brtToday(nowOf(deps))
+          const live = payments.filter((p) => !p.deleted)
+          // A cobrança do ciclo cortado é a de vencimento ORIGINAL igual ao ciclo;
+          // só se nenhuma tiver esse ciclo vale a data atual (COB-S2: uma cobrança
+          // de ciclo antigo adiada pra essa data não conta como a do ciclo).
+          const ofCycle = live.filter((p) => toBrtDate(p.originalDueDate) === a.due_date)
+          const candidates = ofCycle.length > 0 ? ofCycle : live.filter((p) => toBrtDate(p.dueDate) === a.due_date)
+          const paid = candidates.find((p) => PAID_STATUSES.has(p.status ?? ''))
+          // Q3/S1: cobrança já vencida sem pagamento, em qualquer status (removida não conta)
+          const unpaidPast = live.some((p) => {
+            const d = toBrtDate(p.dueDate)
+            return !!d && d < today && !PAID_STATUSES.has(p.status ?? '')
+          })
           if (paid) {
             const r = await rpc<EndResult>(deps.db, 'billing_payment_confirmed', {
               p_id: a.subscription_ref, p_due_date: toBrtDate(paid.originalDueDate) ?? a.due_date,
@@ -345,13 +354,26 @@ export async function runPendingActions(
             })
             // Pago em dia (o aviso é que atrasou): corte desfeito e marcado, nada a inativar.
             if (r.result === 'reactivated') { await enforceSinglePaid(deps, row?.user_id ?? null); out.done++; continue }
-            // COB-R1: a cobrança do ciclo cortado já estava paga e contada. O
-            // corte foi indevido: desfaz e marca pro admin, NUNCA inativa.
             if (r.result === 'already_counted') {
-              await rpc<EndResult>(deps.db, 'billing_undo_counted_cut', { p_id: a.subscription_ref, p_cut_due: a.due_date })
-              await enforceSinglePaid(deps, row?.user_id ?? null)
-              out.done++
-              continue
+              // COB-R1 com a COB-S1: ciclo já contado só é corte indevido se o
+              // pagamento foi EM DIA (até o vencimento da própria cobrança) e não há
+              // cobrança vencida sem pagamento. Aí desfaz e marca, nunca inativa.
+              const paidDay = paidOn(paid)
+              const onTime = !!paidDay && paidDay <= (toBrtDate(paid.dueDate) ?? a.due_date)
+              if (onTime && !unpaidPast) {
+                const u = await rpc<EndResult>(deps.db, 'billing_undo_counted_cut', { p_id: a.subscription_ref, p_cut_due: a.due_date })
+                if (u.result !== 'refused_late') {
+                  await enforceSinglePaid(deps, row?.user_id ?? null)
+                  out.done++
+                  continue
+                }
+              }
+              // Atraso (já contado antes desta pendência) ou outra vencida sem
+              // pagamento: regra do N1, plano até o fim do período e inativa mesmo assim.
+              await rpc<null>(deps.db, 'billing_flag_review', {
+                p_id: a.subscription_ref,
+                p_note: `rede de seguranca: ciclo ${a.due_date} pago com atraso ou com cobranca vencida sem pagamento: sem renovacao, inativa no Asaas`,
+              })
             }
             // Pago depois do vencimento: plano até o fim daquele período, mas a
             // inativação acontece mesmo assim (regra do dono: sem renovação).
@@ -361,13 +383,8 @@ export async function runPendingActions(
             // venceu: a rede cortou à toa, desfaz.
             // Q3: só desfaz se NENHUMA cobrança já vencida está sem pagamento,
             // em qualquer status (removida não conta); senão mantém o corte e marca.
-            const today = brtToday(nowOf(deps))
-            const unpaidPast = payments.some((p) => {
-              const d = toBrtDate(p.dueDate)
-              return !p.deleted && !!d && d < today && !PAID_STATUSES.has(p.status ?? '')
-            })
-            const next = payments
-              .filter((p) => !p.deleted && (p.status === 'PENDING' || p.status === 'AWAITING_RISK_ANALYSIS'))
+            const next = live
+              .filter((p) => p.status === 'PENDING' || p.status === 'AWAITING_RISK_ANALYSIS')
               .map((p) => toBrtDate(p.dueDate))
               .filter((d): d is string => !!d && d >= today && d !== a.due_date)
               .sort()[0]

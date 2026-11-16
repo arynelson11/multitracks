@@ -857,6 +857,10 @@ $$;
 -- da cobrança em aberto desse ciclo, se o Asaas já mandou). Se a assinatura já
 -- está parada no Asaas, não volta a "ativa cobrando": fica com o plano até o
 -- fim do período pago, sem renovação (regra do N1).
+-- COB-S1: só vale pra pagamento EM DIA (o backend confere a data e se não há
+-- cobrança vencida sem pagamento). Se o acesso já foi devolvido até o fim do
+-- período (pagamento atrasado contado antes, regra do N1), recusa sem mexer em
+-- nada ('refused_late') e a inativação segue.
 create or replace function public.billing_undo_counted_cut(p_id text, p_cut_due date default null)
 returns jsonb
 language plpgsql
@@ -873,6 +877,9 @@ begin
   select * into r from public.billing_subscriptions where id = p_id for update;
   if not found then
     return jsonb_build_object('result', 'not_found');
+  end if;
+  if r.access_until is not null and r.access_until > now() then
+    return jsonb_build_object('result', 'refused_late');
   end if;
   update public.billing_pending_actions
      set status = 'canceled', done_at = now(), done_note = 'rede de seguranca: ciclo ' || v_cut || ' ja pago, corte indevido (nao inativa)'
