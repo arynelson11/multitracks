@@ -64,6 +64,10 @@ interface FamilyRule {
   // Palavras fracas: só decidem a família quando o resto do nome é número ou marca
   // de andamento ("Beat 01", "Tempo_120bpm"). "Beat Loop" não é Click.
   weakWords: ReadonlySet<string>
+  // Palavras que podem ficar ao lado da palavra fraca sem tirar dela a família, além de
+  // número e andamento: lado do par estéreo e variação ("Loop L", "Loop A"). Só a
+  // Percussão tem; a marca de andamento do Click (isTempoMark) não muda.
+  weakCompanions: ReadonlySet<string>
   sequences: readonly (readonly string[])[]
   // Peças com rótulo próprio dentro da família (bateria e percussão). Peça que também
   // é palavra fraca só dá o rótulo quando decide a família ("Loop 2" é Loop; "PERC LOOP"
@@ -76,6 +80,7 @@ const rule = (
   words: readonly string[],
   extra: {
     weakWords?: readonly string[]
+    weakCompanions?: readonly string[]
     sequences?: readonly (readonly string[])[]
     pieces?: Record<string, string>
   } = {},
@@ -83,6 +88,7 @@ const rule = (
   family,
   words: new Set(words),
   weakWords: new Set(extra.weakWords ?? []),
+  weakCompanions: new Set(extra.weakCompanions ?? []),
   sequences: extra.sequences ?? [],
   pieces: extra.pieces ? new Map(Object.entries(extra.pieces)) : undefined,
 })
@@ -123,10 +129,12 @@ const FAMILY_RULES: readonly FamilyRule[] = [
   rule('bateria', ['DRUMS', 'DRUM', 'DRM', 'BATERIA', 'BATERIAS', 'BATERA', 'BAT', 'KIT', 'DRUMSET', 'DRUMKIT'], {
     pieces: DRUM_PIECES,
   }),
-  // LOOP é fraca: só é Percussão quando é a única palavra do nome, fora número e
-  // andamento ("Loop 2"). "Drum Loop" é Bateria Loop; "Beat Loop" fica não reconhecido.
+  // LOOP é fraca: só é Percussão quando é a única palavra do nome, fora número,
+  // andamento, lado do par estéreo e variação ("Loop 2", "Loop L", "Loop A", "Loop Fx").
+  // "Drum Loop" é Bateria Loop; "Beat Loop" fica não reconhecido.
   rule('percussao', ['PERC', 'PERCS', 'PERCUSSION', 'PERCUSSAO', 'PERCUSSOES', 'CAJON', 'CONGA', 'CONGAS'], {
     weakWords: ['LOOP', 'LOOPS'],
+    weakCompanions: ['L', 'R', 'LEFT', 'RIGHT', 'ESQ', 'DIR', 'A', 'B', 'FX'],
     pieces: { SHAKER: 'Shaker', LOOP: 'Loop', LOOPS: 'Loop' },
   }),
   // LEADVOCAL, LEADVOX (grudados) e VOCALISTA: grafias que a regra antiga de formantes pegava.
@@ -224,13 +232,15 @@ export function isDrumPieceToken(token: string): boolean {
 const TEMPO_MARKS: ReadonlySet<string> = new Set(['BPM'])
 const isTempoMark = (token: string) => /^\p{N}+$/u.test(token) || TEMPO_MARKS.has(token)
 
-// Palavra fraca só conta quando todo o resto do nome é marca de andamento.
+// Palavra fraca só conta quando todo o resto do nome é marca de andamento (ou, na
+// Percussão, lado ou variação do loop).
 function weakHits(tokens: readonly string[], familyRule: FamilyRule): Set<number> {
   const hits = new Set<number>()
   tokens.forEach((token, i) => {
     if (familyRule.weakWords.has(token)) hits.add(i)
   })
-  if (hits.size === 0 || !tokens.every((token, i) => hits.has(i) || isTempoMark(token))) return new Set()
+  const isAllowedRest = (token: string) => isTempoMark(token) || familyRule.weakCompanions.has(token)
+  if (hits.size === 0 || !tokens.every((token, i) => hits.has(i) || isAllowedRest(token))) return new Set()
   return hits
 }
 

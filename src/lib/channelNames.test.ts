@@ -497,3 +497,31 @@ describe('palavras novas da M5 com Click e Guia mantêm o papel', () => {
     expect(resolveChannelRole({ id: '2', name: 'Track 1', customName: name })).toBe(role)
   })
 })
+
+// Rodada 1 da M5, item 4: loop em par estéreo ou em variações. Só a regra da Percussão
+// aceita esses lados ao lado de LOOP; a marca de andamento do Click não muda.
+describe('loop estéreo e variações (M5, rodada 1)', () => {
+  it.each([
+    ['Loop L', 'Loop L'], ['Loop R', 'Loop R'], ['LOOP LEFT', 'Loop L'], ['Loops_R', 'Loop R'], ['Loop Esq', 'Loop L'],
+    ['Loop Dir', 'Loop R'], ['Loop A', 'Loop'], ['Loop B', 'Loop'], ['Loop Fx', 'Loop FX'], ['Loop L 2', 'Loop L'],
+  ])('%s vira Percussão %s, papel Normal', (raw, label) => {
+    expect(recognizeChannel(raw)).toEqual({ label, family: 'percussao' })
+    expect(roleFromName(raw)).toBe('normal')
+  })
+  it('Loop A e Loop B entram na numeração', () => {
+    expect(labels(['Loop B', 'Loop A'])).toEqual(['Loop 2', 'Loop 1'])
+  })
+  it.each([
+    ['Beat L', 'Beat L'], ['Beat R', 'Beat R'], ['Tempo L', 'Tempo L'], ['Beat A', 'Beat A'], ['Tempo Fx', 'Tempo Fx'],
+  ])('%s continua como antes: não reconhecido (%s), papel Normal', (raw, label) => {
+    expect(recognizeChannel(raw)).toEqual({ label, family: 'desconhecido' })
+    expect(roleFromName(raw)).toBe('normal')
+    expect(resolveChannelRole({ id: '1', name: raw })).toBe('normal')
+  })
+  it('os lados só valem ao lado de LOOP', () => {
+    expect(recognizeChannel('L')).toEqual({ label: 'L', family: 'desconhecido' })
+    expect(recognizeChannel('Beat Loop L')).toEqual({ label: 'Beat Loop L', family: 'desconhecido' })
+    expect(recognizeChannel('Intro Loop R')).toEqual({ label: 'Intro Loop R', family: 'desconhecido' })
+    expect(recognizeChannel('Pad Loop L')).toEqual({ label: 'Pad Loop L', family: 'pad' })
+  })
+})

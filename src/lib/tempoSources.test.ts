@@ -69,6 +69,12 @@ describe('pulso', () => {
   it('sem kit inteiro, loop e virada ficam no pulso', () => {
     expect(pick(mk(['Drum Loop', 'Drum Fills', 'KICK'])).pulse).toEqual(['Drum Loop', 'Drum Fills', 'KICK'])
   })
+  // Rodada 1, item 4: loop em par estéreo não pode deixar o pacote sem pulso.
+  it('loop em par estéreo entra no pulso', () => {
+    expect(pick(mk(['Click', 'Loop L', 'Loop R', 'Pad']))).toEqual({
+      click: 'Click', pulse: ['Loop L', 'Loop R'], bass: null, harmony: ['Pad'], label: 'Percussão',
+    })
+  })
   it('palavra inteira, nunca pedaço de nome: "Fillmore" não é virada', () => {
     expect(pick(mk(['DRUMS', 'Fillmore Perc'])).pulse).toEqual(['DRUMS', 'Fillmore Perc'])
   })
