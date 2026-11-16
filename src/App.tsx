@@ -23,6 +23,9 @@ import { WhatsNewModal } from './components/WhatsNewModal'
 import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/SectionBar'
 import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections } from './lib/plans'
 import { isAdminEmail } from './lib/admin'
+import { usePasswordRecovery } from './hooks/usePasswordRecovery'
+import { finishPasswordRecovery } from './lib/passwordRecovery'
+import { NewPasswordPage } from './components/NewPasswordPage'
 import { keyToSemitone, semitonesBetweenKeys } from './lib/pitchRules'
 import { InstallAppBanner } from './components/InstallAppBanner'
 import { AUDIO_FILE_ACCEPT } from './lib/uploadContentType'
@@ -68,6 +71,8 @@ import { Button } from './components/ui'
 
 export default function App() {
   const { user, loading, signOut, userPlan } = useAuth()
+  // Volta do link de recuperar senha: mostra a tela Criar nova senha antes de tudo.
+  const isRecoveringPassword = usePasswordRecovery(supabase)
   const isOnline = useNetworkStatus()
 
   const {
@@ -643,6 +648,11 @@ export default function App() {
         </div>
       </div>
     )
+  }
+
+  // ───────────────── NOVA SENHA (volta do link de recuperar senha) ─────────────────
+  if (isRecoveringPassword) {
+    return <NewPasswordPage client={supabase} onDone={finishPasswordRecovery} />
   }
 
   if (!user) {

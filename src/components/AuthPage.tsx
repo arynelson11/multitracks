@@ -3,6 +3,7 @@ import { Mail, Lock, Loader2, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark';
 import { isElectron, onDeepLinkAuth } from '../lib/desktop';
+import { startPasswordRecovery } from '../lib/passwordRecovery';
 
 import { DomingoMark } from './brand/DomingoMark';
 
@@ -34,6 +35,9 @@ export function AuthPage({ }: AuthPageProps) {
                 });
                 if (error) {
                     setError('Erro ao restaurar sessão do Google: ' + error.message);
+                } else if (params.get('type') === 'recovery') {
+                    // Link de recuperar senha aberto no computador: abre a tela Criar nova senha.
+                    startPasswordRecovery();
                 }
                 // Se deu certo, o onAuthStateChange do useAuth vai pegar a sessão.
             }
@@ -57,9 +61,16 @@ export function AuthPage({ }: AuthPageProps) {
                 if (error) throw error;
                 setMessage('Cadastro feito. Verifica seu email pra confirmar.');
             } else if (mode === 'forgot') {
-                const { error } = await supabase!.auth.resetPasswordForEmail(email);
+                // No app desktop o link do email volta pelo playbackstudio:// e abre a tela de
+                // nova senha no próprio app; no navegador volta no site (Site URL do Supabase).
+                const { error } = await supabase!.auth.resetPasswordForEmail(
+                    email,
+                    isElectron ? { redirectTo: 'playbackstudio://auth/callback' } : undefined,
+                );
                 if (error) throw error;
-                setMessage('Instruções de recuperação enviadas pro seu email.');
+                setMessage(isElectron
+                    ? 'Instruções de recuperação enviadas pro seu email. Abra o link neste computador, com o app instalado.'
+                    : 'Instruções de recuperação enviadas pro seu email.');
             }
         } catch (err: any) {
             setError(err.message || 'Algo deu errado.');
