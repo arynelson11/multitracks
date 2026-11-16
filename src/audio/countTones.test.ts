@@ -26,7 +26,7 @@ describe('scheduleCount', () => {
     expect(valueAt(mix.gain, 6)).toBe(COUNT_TONE.squareMix)
     expect(tri.connections.some((c) => c.to === mix)).toBe(false)
     expect(tri.stops).toEqual(sq.stops); expect(tri.stops).toHaveLength(1)
-    expect(tri.stops[0]).toBeGreaterThan(6 + COUNT_TONE.release)
+    expect(tri.stops[0]).toBeCloseTo(6.22, 12) // v6: param em t + 0,22, 30 ms depois do fim da queda
   })
   it('envelope: sobe em 4 ms até o pico, segura até 75 ms e cai exponencial até 190 ms', () => {
     const ctx = createFakeAudioContext(); const dest = ctx.createGain()
@@ -38,7 +38,7 @@ describe('scheduleCount', () => {
       { kind: 'set', value: 0, time: 6 },
       { kind: 'linear', value: 0.85, time: 6 + 0.004 },
       { kind: 'set', value: 0.85, time: 6 + 0.075 },
-      { kind: 'exp', value: expect.any(Number), time: 6 + 0.19 },
+      { kind: 'exp', value: 0.0005, time: 6 + 0.19 },
     ])
     expect(valueAt(e1.gain, 6)).toBe(0); expect(valueAt(e1.gain, 6.004)).toBe(0.85); expect(valueAt(e1.gain, 6.05)).toBe(0.85)
     expect(valueAt(e1.gain, 6.19)).toBeLessThan(0.001)
@@ -50,7 +50,7 @@ describe('scheduleCount', () => {
     const filters = nodesOf(ctx, 'BiquadFilterNode')
     expect(filters).toHaveLength(1)
     const [lp] = filters
-    expect(lp.type).toBe('lowpass'); expect(valueAt(lp.frequency, 6)).toBe(5200)
+    expect(lp.type).toBe('lowpass'); expect(valueAt(lp.frequency, 6)).toBe(5200); expect(valueAt(lp.Q, 6)).toBe(0.7)
     expect(lp.connections).toEqual([{ to: dest, output: 0, input: 0 }])
     // Nada além do filtro liga fora do bipe: o único caminho até o destino passa por ele.
     const outside = ctx.created.filter((c) => c.node !== lp).flatMap((c) => (c.node as typeof lp).connections)
