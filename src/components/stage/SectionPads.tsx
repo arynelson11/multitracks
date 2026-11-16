@@ -6,12 +6,17 @@ import { countState } from '../../lib/transitionView'
 import { Button, cx } from '../ui'
 import { Icon } from './icons'
 import { PAD_COUNT_TEXT, padMeta, padProgress, padReserve, padTag } from './sectionPadMeta'
-import { setText } from './stageDom'
+import { setFlag, setText } from './stageDom'
 import { useFrame } from './useFrame'
 
 export interface SectionPadsProps {
   sections: StageSection[]; currentSection: number; intent: ArmIntent | null; transition: TransitionView | null; isPlaying: boolean
   landed: StageView['landed']; gates: StageGates; clock: Pick<StageClock, 'heardNow' | 'position'>; onTap(i: number): void; onUpgrade(): void
+  /**
+   * A música tem grade (click lido ou BPM salvo: `StageView.grid !== null`). Sem grade, cada botão
+   * reserva também "no fim da seção". Sem informar, reserva (o lado seguro: a largura nunca muda ao armar).
+   */
+  hasGrid?: boolean
 }
 
 const INVITE = 'Marque as seções da música e troque de parte ao vivo sem parar a VS.'
@@ -32,9 +37,10 @@ const PAD_MIN_PX = 104
 const WIDEN_STEP = 8
 const WIDEN_MAX = 240
 
-// v5 .botoeira, com a Ruling T10-rolagem: a janela mostra sempre um número inteiro de botões, todos
-// da mesma largura; a rolagem encaixa no começo de cada botão (nunca para no meio). Sem barra de
-// rolagem: quem pagina são os indicadores das pontas (e o arrasto no iPad).
+// v5 .botoeira, com as Rulings T10-rolagem e T10-largura-2: cada botão na largura dele (nunca
+// esticado); a janela termina no último botão inteiro e o que ela cortaria some (data-out), com a
+// sobra vazia à direita; a rolagem encaixa no começo de cada botão (nunca para no meio). Sem barra
+// de rolagem: quem pagina são os indicadores das pontas (e o arrasto no iPad).
 const TRACK = 'flex items-stretch gap-ps-gap'
 const ROW = 'flex min-w-0 flex-1 gap-ps-gap overflow-x-auto snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
 // v5 .sp: 64 a 82 px de altura (8vh), faixa da cor à esquerda; 4 px entre a linha da tecla e o nome
@@ -42,7 +48,7 @@ const ROW = 'flex min-w-0 flex-1 gap-ps-gap overflow-x-auto snap-x snap-mandator
 // em 2 linhas (a fileira inteira acompanha, pra todos ficarem iguais). Foco por dentro: a fileira rola e
 // cortaria o contorno de fora.
 const PAD =
-  'relative isolate flex flex-none snap-start min-w-[104px] min-h-[clamp(64px,8vh,82px)] flex-col justify-center overflow-clip rounded-ps-lg py-1 pr-2.5 pl-[18px] text-left font-ps-sans text-ps-bone select-none transition-[transform,background-color] duration-150 active:scale-[0.98] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ps-or'
+  'relative isolate flex flex-none snap-start data-[out=true]:invisible min-w-[104px] min-h-[clamp(64px,8vh,82px)] flex-col justify-center overflow-clip rounded-ps-lg py-1 pr-2.5 pl-[18px] text-left font-ps-sans text-ps-bone select-none transition-[transform,background-color] duration-150 active:scale-[0.98] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ps-or'
 const IDLE_RING = 'inset-ring inset-ring-ps-line hover:inset-ring-ps-line-2'
 const CURRENT_BG = 'bg-[color-mix(in_srgb,var(--ps-c)_20%,var(--color-ps-s1))]'
 const CURRENT_RING = 'inset-ring-2 inset-ring-(--ps-c)'
@@ -73,29 +79,32 @@ const MORE =
   'flex min-w-[52px] flex-1 items-center justify-center gap-1 rounded-ps-lg bg-ps-s1 px-2 text-ps-bone inset-ring inset-ring-ps-line select-none transition-[transform,box-shadow] duration-150 hover:inset-ring-ps-line-2 active:scale-[0.96] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ps-or disabled:pointer-events-none disabled:opacity-35'
 const NOTE = 'flex min-h-[clamp(64px,8vh,82px)] flex-wrap items-center gap-x-4 gap-y-2 rounded-ps-lg bg-ps-s1 px-4 py-2.5 inset-ring inset-ring-ps-line'
 
-interface PadParts { s: StageSection; meta: HTMLElement; fill: HTMLElement | null; big: HTMLElement | null }
-/** Janela da fileira: `k` botões inteiros à vista, `step` = largura do botão + espaço; `overflow` quando nem todos cabem. */
-interface RowLayout { k: number; step: number; overflow: boolean }
-const NO_LAYOUT: RowLayout = { k: 0, step: 0, overflow: false }
+interface PadParts { k: number; s: StageSection; pad: HTMLElement; meta: HTMLElement; fill: HTMLElement | null; big: HTMLElement | null }
+/**
+ * Medida da fileira: começo e largura de cada botão (px inteiros, dentro da rolagem) e a largura da
+ * janela; `overflow` quando nem todos cabem (aí há indicadores e a janela rola).
+ */
+interface RowLayout { overflow: boolean; view: number; offsets: number[]; widths: number[] }
+const NO_LAYOUT: RowLayout = { overflow: false, view: 0, offsets: [], widths: [] }
+const sameLayout = (a: RowLayout, b: RowLayout) =>
+  a.overflow === b.overflow && a.view === b.view && a.offsets.length === b.offsets.length &&
+  a.offsets.every((x, i) => x === b.offsets[i] && a.widths[i] === b.widths[i])
 
 const tooTall = (name: HTMLElement, px: number) => name.offsetHeight > px * NAME_LEADING * (NAME_MAX_LINES + 0.5)
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 
 /**
- * Mede a fileira UMA vez por layout (seções, teto do plano, largura da tela, fontes); trocar de
- * estado nunca passa por aqui. 1) O que cada botão pede na largura livre: a reserva do estado mais
- * largo entra no min-content, e o nome cabe em 2 linhas (16 px; senão 14 px; senão a reserva alarga).
- * 2) Todos ficam com a largura do maior pedido (no mínimo 104 px), dividindo a sobra: cabe tudo, a
- * fileira inteira; não cabe, `k` botões inteiros entre os indicadores, em pixels inteiros (a rolagem
- * encaixa sem sobrar meio pixel de vizinho). 3) O nome na largura final.
+ * Mede a fileira UMA vez por layout (seções, teto do plano, grade, largura da tela, fontes); trocar
+ * de estado nunca passa por aqui. Cada botão fica com o que ELE pede na largura livre (a reserva do
+ * estado mais largo dele entra no min-content; nome em 2 linhas: 16 px, senão 14 px, senão a reserva
+ * alarga), em px inteiros e no mínimo 104, sem esticar. Cabe tudo: a fileira termina no último botão
+ * e a sobra fica vazia. Não cabe: janela entre os indicadores e, no fim, uma folga pra a última página
+ * começar num botão (a rolagem não passa dela).
  */
 function layoutRow(track: HTMLElement, row: HTMLElement): RowLayout {
   const pads = [...row.querySelectorAll<HTMLElement>('[data-section-pad]')]
-  const names = pads.map((pad) => pad.querySelector<HTMLElement>('[data-pad-name]'))
-  const n = pads.length
-  let padMin = PAD_MIN_PX
-  pads.forEach((pad, k) => {
-    const name = names[k]
+  const spacer = row.querySelector<HTMLElement>('[data-pads-spacer]')
+  const widths = pads.map((pad) => {
+    const name = pad.querySelector<HTMLElement>('[data-pad-name]')
     if (name) delete name.dataset.fit
     pad.style.width = 'min-content'
     let w = Math.max(PAD_MIN_PX, Math.ceil(parseFloat(getComputedStyle(pad).width)) || pad.offsetWidth)
@@ -106,51 +115,67 @@ function layoutRow(track: HTMLElement, row: HTMLElement): RowLayout {
         w = Math.min(WIDEN_MAX, w + WIDEN_STEP)
         pad.style.width = `${w}px`
       }
-      delete name.dataset.fit
     }
-    padMin = Math.max(padMin, w)
+    return w
   })
-  row.dataset.padMin = String(padMin)
-
+  const offsets: number[] = []
+  widths.reduce((x, w) => { offsets.push(x); return x + w + GAP }, 0)
+  const n = pads.length
+  const total = n > 0 ? offsets[n - 1] + widths[n - 1] : 0
   const avail0 = track.clientWidth
-  let layout = NO_LAYOUT
-  let padW: number | null = null
-  if (avail0 > 0 && n > 0) {
-    if (n * padMin + (n - 1) * GAP <= avail0) {
-      padW = (avail0 - (n - 1) * GAP) / n
-      layout = { k: n, step: padW + GAP, overflow: false }
-    } else {
-      const avail = avail0 - 2 * (MORE_W + GAP)
-      const k = Math.max(1, Math.floor((avail + GAP) / (padMin + GAP)))
-      padW = Math.max(padMin, Math.floor((avail - (k - 1) * GAP) / k))
-      layout = { k, step: padW + GAP, overflow: true }
-    }
+  const overflow = avail0 > 0 && total > avail0
+  const layout: RowLayout = { overflow, view: overflow ? avail0 - 2 * (MORE_W + GAP) : Math.max(0, avail0), offsets, widths }
+  row.style.flex = overflow ? 'none' : ''
+  row.style.width = overflow ? `${layout.view}px` : ''
+  if (spacer) {
+    spacer.style.display = overflow ? '' : 'none'
+    const fMax = overflow ? lastFirst(layout) : 0
+    spacer.style.width = overflow ? `${Math.max(0, layout.view - span(layout, fMax, n - 1) - GAP)}px` : '0px'
   }
-  for (const pad of pads) pad.style.width = padW === null ? '' : `${padW}px`
-  row.style.flex = layout.overflow ? 'none' : ''
-  row.style.width = layout.overflow && padW !== null ? `${layout.k * padW + (layout.k - 1) * GAP}px` : ''
-  names.forEach((name) => { if (name && tooTall(name, NAME_PX)) name.dataset.fit = 'small' })
   return layout
 }
 
+/** Do começo do botão `a` ao fim do botão `b` (a <= b). */
+const span = (L: RowLayout, a: number, b: number) => L.offsets[b] + L.widths[b] - L.offsets[a]
+const fits = (L: RowLayout, a: number, b: number) => span(L, a, b) <= L.view + 0.5
+/** Quantos botões inteiros cabem na janela começando no botão `f`. */
+function visibleFrom(L: RowLayout, f: number): number {
+  let v = 0
+  while (f + v < L.offsets.length && fits(L, f, f + v)) v++
+  return Math.max(1, v)
+}
+/** Primeiro botão da página que termina no botão `i` (o mais à esquerda que ainda cabe junto). */
+function firstEndingAt(L: RowLayout, i: number): number {
+  let f = i
+  while (f > 0 && fits(L, f - 1, i)) f--
+  return f
+}
+/** Começo da última página (dali até o fim cabe tudo); a rolagem não passa dele. */
+const lastFirst = (L: RowLayout) => firstEndingAt(L, L.offsets.length - 1)
+/** Botão cujo começo está mais perto da posição da rolagem. */
+function firstAt(L: RowLayout, x: number): number {
+  let best = 0
+  L.offsets.forEach((o, i) => { if (Math.abs(o - x) < Math.abs(L.offsets[best] - x)) best = i })
+  return best
+}
+
 /**
- * Primeiro botão da janela pra a AGORA ficar à vista (e o alvo armado também, quando os dois
- * cabem juntos), mexendo o mínimo a partir de onde a janela está.
+ * Primeiro botão da janela pra a AGORA ficar à vista (e o alvo armado também, quando os dois cabem
+ * juntos), mexendo o mínimo a partir de onde a janela está.
  */
-function pickFirst(first: number, k: number, n: number, current: number, armed: number): number {
+function pickFirst(L: RowLayout, first: number, current: number, armed: number): number {
   let f = first
   const show = (i: number) => {
     if (i < 0) return
     if (i < f) f = i
-    else if (i >= f + k) f = i - k + 1
+    else if (i >= f + visibleFrom(L, f)) f = firstEndingAt(L, i)
   }
-  if (armed >= 0 && current >= 0 && Math.abs(armed - current) < k) show(armed)
+  if (armed >= 0 && current >= 0 && fits(L, Math.min(armed, current), Math.max(armed, current))) show(armed)
   show(current)
-  return clamp(f, 0, Math.max(0, n - k))
+  return Math.min(f, lastFirst(L))
 }
 
-function scrollToFirst(row: HTMLElement, f: number, step: number, smooth: boolean): void {
-  const left = Math.round(f * step)
+function scrollToX(row: HTMLElement, left: number, smooth: boolean): void {
   const reduce = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
   if (smooth && !reduce && typeof row.scrollTo === 'function') row.scrollTo({ left, behavior: 'smooth' })
   else row.scrollLeft = left
@@ -184,6 +209,27 @@ function writeMore(btn: HTMLButtonElement | null, side: 'antes' | 'depois', coun
   if (num) setText(num, count > 0 ? String(count) : '')
 }
 
+/**
+ * O que aparece na janela com a rolagem em `x`, escrito direto no DOM: botão que a janela cortaria
+ * some (data-out, nunca meio botão); os indicadores contam os que estão fora de cada lado.
+ */
+function syncWindow(parts: PadParts[], L: RowLayout, x: number, before: HTMLButtonElement | null, after: HTMLButtonElement | null): void {
+  let nBefore = 0
+  let nAfter = 0
+  for (const p of parts) {
+    const o = L.offsets[p.k]
+    const left = L.overflow && o < x - 0.5
+    const right = L.overflow && o + L.widths[p.k] > x + L.view + 0.5
+    if (left) nBefore++
+    if (right) nAfter++
+    setFlag(p.pad, 'out', left || right)
+  }
+  if (L.overflow) {
+    writeMore(before, 'antes', nBefore)
+    writeMore(after, 'depois', nAfter)
+  }
+}
+
 /** Indicador da ponta: tocável (52 px), pagina pela quantidade de botões à vista. A conta vem do writeMore. */
 function MoreButton({ side, ref, onPage }: { side: 'antes' | 'depois'; ref: React.Ref<HTMLButtonElement>; onPage(): void }) {
   return (
@@ -205,7 +251,7 @@ function MoreButton({ side, ref, onPage }: { side: 'antes' | 'depois'; ref: Reac
  * a cada quadro, escritos direto no DOM. No Livre, convite pros planos; no pago sem seções, o
  * caminho pro EDITAR. O toque só chama `onTap`: quem decide é a regra da T4.
  */
-export function SectionPads({ sections, currentSection, intent, transition, isPlaying, landed, gates, clock, onTap, onUpgrade }: SectionPadsProps) {
+export function SectionPads({ sections, currentSection, intent, transition, isPlaying, landed, gates, clock, onTap, onUpgrade, hasGrid = false }: SectionPadsProps) {
   const trackRef = useRef<HTMLDivElement>(null)
   const rowRef = useRef<HTMLDivElement>(null)
   const partsRef = useRef<PadParts[]>([])
@@ -220,9 +266,8 @@ export function SectionPads({ sections, currentSection, intent, transition, isPl
   const armedIndex = intent !== null && !selfLoop ? intent.target : null
   // A conta do motor só vale pro alvo armado agora (troca de alvo chega antes da conta nova).
   const pending = armedIndex !== null && transition !== null && transition.to === armedIndex ? transition : null
-  const reserve = padReserve(sections, gates.maxRepeats)
-  // Muda só com o que muda a largura: seções (nomes, compassos, tempos) e o teto do REPETE.
-  const layoutKey = `${gates.maxRepeats}#${sections.map((s) => `${s.index}|${s.label}|${s.bars}|${s.start}|${s.end}`).join('~')}`
+  // Muda só com o que muda a largura: seções (nomes, compassos, tempos), o teto do REPETE e a grade.
+  const layoutKey = `${gates.maxRepeats}#${hasGrid}#${sections.map((s) => `${s.index}|${s.label}|${s.bars}|${s.start}|${s.end}`).join('~')}`
   const curPos = sections.findIndex((s) => s.index === currentSection)
   const armedPos = armedIndex === null ? -1 : sections.findIndex((s) => s.index === armedIndex)
 
@@ -248,7 +293,7 @@ export function SectionPads({ sections, currentSection, intent, transition, isPl
         const pad = row.children[k] as HTMLElement | undefined
         const meta = pad?.querySelector<HTMLElement>('[data-pad-meta]')
         if (!pad || !meta) return
-        parts.push({ s, meta, fill: pad.querySelector<HTMLElement>('[data-pad-fill]'), big: pad.querySelector<HTMLElement>('[data-pad-big]') })
+        parts.push({ k, s, pad, meta, fill: pad.querySelector<HTMLElement>('[data-pad-fill]'), big: pad.querySelector<HTMLElement>('[data-pad-big]') })
       })
     }
     partsRef.current = parts
@@ -260,10 +305,10 @@ export function SectionPads({ sections, currentSection, intent, transition, isPl
       const row = rowRef.current
       if (!track || !row) return
       const next = layoutRow(track, row)
-      setLayout((prev) => (prev.k === next.k && prev.step === next.step && prev.overflow === next.overflow ? prev : next))
+      setLayout((prev) => (sameLayout(prev, next) ? prev : next))
     }
   })
-  // Mede só quando o layout muda (seções, teto do plano); a janela e as fontes chamam pelo efeito de baixo.
+  // Mede só quando o layout muda (seções, teto do plano, grade); a janela e as fontes chamam pelo efeito de baixo.
   useLayoutEffect(() => {
     if (showPads) relayout.current()
   }, [layoutKey, showPads])
@@ -277,34 +322,35 @@ export function SectionPads({ sections, currentSection, intent, transition, isPl
     ro.observe(track)
     return () => { alive = false; ro.disconnect() }
   }, [showPads])
-  const showFirst = (f: number) => {
-    firstRef.current = f
-    writeMore(beforeRef.current, 'antes', f)
-    writeMore(afterRef.current, 'depois', Math.max(0, n - layout.k - f))
-  }
-  // A AGORA (e o alvo armado, se cabem juntos) à vista já encaixada, quando a seção, o alvo ou a janela mudam.
+  // A AGORA (e o alvo armado, se cabem juntos) à vista já encaixada, quando a seção, o alvo ou a medida mudam.
   useLayoutEffect(() => {
     const row = rowRef.current
-    if (!row || !layout.overflow) return
-    const now = clamp(Math.round(row.scrollLeft / layout.step), 0, n - layout.k)
-    const f = pickFirst(now, layout.k, n, curPos, armedPos)
-    scrollToFirst(row, f, layout.step, false)
-    firstRef.current = f
-    writeMore(beforeRef.current, 'antes', f)
-    writeMore(afterRef.current, 'depois', Math.max(0, n - layout.k - f))
+    if (!row || layout.offsets.length !== n) return
+    if (layout.overflow) {
+      const f = pickFirst(layout, firstAt(layout, row.scrollLeft), curPos, armedPos)
+      if (Math.abs(row.scrollLeft - layout.offsets[f]) > 0.5) row.scrollLeft = layout.offsets[f]
+      firstRef.current = f
+    }
+    syncWindow(partsRef.current, layout, row.scrollLeft, beforeRef.current, afterRef.current)
   }, [curPos, armedPos, layout, n])
   useFrame(paint, showPads)
 
   const onScroll = () => {
     const row = rowRef.current
-    if (row && layout.overflow) showFirst(clamp(Math.round(row.scrollLeft / layout.step), 0, n - layout.k))
+    if (!row || !layout.overflow || layout.offsets.length !== n) return
+    firstRef.current = firstAt(layout, row.scrollLeft)
+    syncWindow(partsRef.current, layout, row.scrollLeft, beforeRef.current, afterRef.current)
   }
+  // Pagina pela quantidade à vista: pra frente, a página começa no primeiro botão que não coube; pra
+  // trás, a página que termina logo antes do primeiro de agora.
   const page = (dir: -1 | 1) => {
     const row = rowRef.current
-    if (!row || !layout.overflow) return
-    const f = clamp(firstRef.current + dir * layout.k, 0, n - layout.k)
-    scrollToFirst(row, f, layout.step, true)
-    showFirst(f)
+    if (!row || !layout.overflow || layout.offsets.length !== n) return
+    const f0 = firstRef.current
+    const f = dir > 0 ? Math.min(lastFirst(layout), f0 + visibleFrom(layout, f0)) : f0 > 0 ? firstEndingAt(layout, f0 - 1) : 0
+    firstRef.current = f
+    scrollToX(row, layout.offsets[f], true)
+    syncWindow(partsRef.current, layout, layout.offsets[f], beforeRef.current, afterRef.current)
   }
 
   if (!showPads) {
@@ -324,13 +370,14 @@ export function SectionPads({ sections, currentSection, intent, transition, isPl
     )
   }
 
-  const reservedTags = [...reserve.tags.map((text) => ({ text, loop: false })), { text: 'AGORA', loop: true }]
   return (
     <div data-tour="secoes" role="group" aria-label="Seções da música" className="px-ps-gutter pt-2.5">
       <div ref={trackRef} data-pads-track="" className={TRACK}>
         {layout.overflow && <MoreButton side="antes" ref={beforeRef} onPage={() => page(-1)} />}
         <div ref={rowRef} data-pads-scroller="" onScroll={onScroll} className={ROW}>
           {sections.map((s, k) => {
+            const reserve = padReserve(s, sections, gates.maxRepeats, hasGrid)
+            const reservedTags = [...reserve.tags.map((text) => ({ text, loop: false })), { text: 'AGORA', loop: true }]
             const tag = padTag(intent, s.index, currentSection)
             const current = s.index === currentSection
             const armed = s.index === armedIndex
@@ -388,6 +435,7 @@ export function SectionPads({ sections, currentSection, intent, transition, isPl
               </button>
             )
           })}
+          <span data-pads-spacer="" aria-hidden="true" className="flex-none" />
         </div>
         {layout.overflow && <MoreButton side="depois" ref={afterRef} onPage={() => page(1)} />}
       </div>

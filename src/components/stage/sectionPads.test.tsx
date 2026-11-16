@@ -323,7 +323,7 @@ describe('botoeira de seções', () => {
     }
   })
 
-  it('nome que não cabe em 2 linhas nem a 14 px alarga a reserva do botão, em vez de quebrar em 3', () => {
+  it('nome que não cabe em 2 linhas nem a 14 px alarga a reserva só daquele botão, em vez de quebrar em 3', () => {
     // Régua falsa: 5 caracteres por linha a 16 px; a 14 px, um caractere a cada 10 px de largura além de 48 px.
     const desc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
     Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
@@ -339,11 +339,9 @@ describe('botoeira de seções', () => {
     try {
       ruler(300)
       renderPads({ sections: [{ ...SECTIONS[0], label: 'Verso Lento 12' }, SECTIONS[1]] })
-      // 104 -> 112 (6 por linha, 3 linhas) -> 120 (7 por linha, 2 linhas): a reserva comum vira 120.
-      expect(scroller().dataset.padMin).toBe('120')
-      // Cabe tudo: os dois dividem a sobra igual ((300 - 8) / 2).
-      expect(pad(0).style.width).toBe('146px')
-      expect(pad(1).style.width).toBe('146px')
+      // 104 -> 112 (6 por linha, 3 linhas) -> 120 (7 por linha, 2 linhas); o vizinho curto fica nos 104 dele.
+      expect(pad(0).style.width).toBe('120px')
+      expect(pad(1).style.width).toBe('104px')
       expect(part(0, 'pad-name')?.dataset.fit).toBe('small')
       expect(part(1, 'pad-name')?.dataset.fit).toBeUndefined()
     } finally {
@@ -351,7 +349,7 @@ describe('botoeira de seções', () => {
     }
   })
 
-  it('reserva a largura do estado mais largo da música em cada botão (metas, REPETE 9x, LOOP e a tecla)', () => {
+  it('cada botão reserva o estado mais largo DELE (metas dele, REPETE 9x, LOOP e a tecla); "no fim da seção" só em música sem grade', () => {
     const longa = [SECTIONS[0], { ...SECTIONS[1], end: 248, bars: 120 }, { ...SECTIONS[2], start: 248, end: 264 }]
     renderPads({ sections: longa })
     for (const i of [0, 1, 2]) {
@@ -360,27 +358,35 @@ describe('botoeira de seções', () => {
       expect(sizer.className).toContain('invisible')
       expect(sizer.className).toContain('h-0')
       const t = sizer.textContent ?? ''
-      for (const w of ['no fim da seção', 'contagem', 'em 999 comp.', 'comp. 999/999', 'REPETE 9x', 'PRÓXIMA', 'AGORA']) expect(t).toContain(w)
+      for (const w of ['contagem', 'em 999 comp.', 'REPETE 9x', 'PRÓXIMA', 'AGORA', 'no fim da seção']) expect(t).toContain(w)
       // A tecla entra na mesma linha da etiqueta reservada: ela nunca precisa sair.
       expect(sizer.querySelectorAll('kbd').length).toBeGreaterThan(0)
       expect(sizer.querySelector('svg')).not.toBeNull() // AGORA com o ícone de loop
     }
-    expect(padReserve(longa, 9)).toEqual({ metas: ['no fim da seção', 'em 999 comp.', 'comp. 999/999', '4:08'], tags: ['PRÓXIMA', 'REPETE', 'REPETE 9x'] })
-    // Seção sem compassos (Final, 14,1 s): entra o "m:ss/m:ss" dela.
-    expect(padReserve(SECTIONS, 9).metas).toEqual(['no fim da seção', 'em 99 comp.', 'comp. 99/99', '1:05', '0:14/0:14'])
-    expect(padReserve(SECTIONS.slice(0, 3), Infinity).tags).toEqual(['PRÓXIMA', 'REPETE', 'REPETE 99x'])
-    expect(padReserve(SECTIONS.slice(0, 3), 1).tags).toEqual(['PRÓXIMA', 'REPETE'])
-    expect(padReserve(SECTIONS.slice(0, 3), 9).metas).toEqual(['no fim da seção', 'em 99 comp.', 'comp. 99/99', '0:22'])
+    // O compasso de cada um é o dele: só o Verso reserva "comp. 120/120".
+    expect(part(1, 'pad-sizer')?.textContent).toContain('comp. 120/120')
+    expect(part(0, 'pad-sizer')?.textContent).toContain('comp. 4/4')
+    expect(part(0, 'pad-sizer')?.textContent).not.toContain('comp. 120/120')
+    cleanup()
+    // Com grade, o estado sem grade não entra.
+    renderPads({ sections: longa, hasGrid: true })
+    for (const i of [0, 1, 2]) expect(part(i, 'pad-sizer')?.textContent).not.toContain('no fim da seção')
+
+    expect(padReserve(longa[0], longa, 9, true)).toEqual({ metas: ['0:00', 'comp. 4/4', 'em 999 comp.'], tags: ['PRÓXIMA', 'REPETE', 'REPETE 9x'] })
+    expect(padReserve(longa[1], longa, 9, false).metas).toEqual(['0:08', 'comp. 120/120', 'em 999 comp.', 'no fim da seção'])
+    // Seção sem compassos (Final, 14,1 s): o "m:ss/m:ss" dela.
+    expect(padReserve(SECTIONS[4], SECTIONS, 9, true).metas).toEqual(['1:05', '0:14/0:14', 'em 99 comp.'])
+    expect(padReserve(SECTIONS[0], SECTIONS, Infinity, true).tags).toEqual(['PRÓXIMA', 'REPETE', 'REPETE 99x'])
+    expect(padReserve(SECTIONS[0], SECTIONS, 1, true).tags).toEqual(['PRÓXIMA', 'REPETE'])
   })
 
   it('armar, contar, pousar, REPETE e LOOP (com e sem grade, seção de 120 comp.) não mudam a largura de nenhum botão nem medem de novo', () => {
     const longa = SECTIONS.map((s, i) => (i === 3 ? { ...s, bars: 120 } : s))
-    const calls = ruler(1000)
+    const calls = ruler(1000, (b) => (b.dataset.sectionPad === '3' ? 150 : 104))
     const { rerender } = renderPads({ sections: longa })
     const widths = () => pads().map((b) => b.style.width)
     const w0 = widths()
-    const min0 = scroller().dataset.padMin
-    expect(w0.every((w) => w === '193.6px')).toBe(true) // (1000 - 4 x 8) / 5
+    expect(w0).toEqual(['104px', '104px', '104px', '150px', '104px']) // cada um com a dele, sem esticar
     const keys0 = pads().map((b) => b.querySelector('[data-pad-key]')?.className)
     calls.n = 0
     const SEIS_OITO: TransitionView = { ...T, countTimes: [21, 21.5], countLabels: [1, 2], countTotal: 2 }
@@ -402,44 +408,75 @@ describe('botoeira de seções', () => {
       rerender(<SectionPads {...props({ sections: longa, ...patch })} />)
       frame()
       expect(widths()).toEqual(w0)
-      expect(scroller().dataset.padMin).toBe(min0)
       // A tecla fica nas 9 primeiras em todo estado.
       expect(pads().map((b) => b.querySelector('[data-pad-key]')?.className)).toEqual(keys0)
     }
     expect(calls.n).toBe(0) // trocar de estado nunca mede de novo
   })
 
-  it('parado nunca mostra botão pela metade: número inteiro de botões, encaixe obrigatório e indicadores nas pontas', () => {
+  it('parado nunca mostra botão pela metade: a janela termina no último botão inteiro, encaixe obrigatório e indicadores nas pontas', () => {
     const doze = Array.from({ length: 12 }, (_, i): StageSection => ({ index: i, label: `S${i + 1}`, color: '#10b981', start: i * 8, end: i * 8 + 8, bars: 4 }))
     ruler(600)
     renderPads({ sections: doze, currentSection: 1 })
-    // 600 - 2 x (52 + 8) = 480 úteis: 4 botões de 114 px ((480 - 3 x 8) / 4) e a janela de 480 px.
-    expect(pads().every((b) => b.style.width === '114px')).toBe(true)
+    // 600 - 2 x (52 + 8) = 480 de janela: 4 botões de 104 (440 px) e 40 px vazios; o 5º, que caberia pela metade, some.
+    expect(pads().every((b) => b.style.width === '104px')).toBe(true)
     expect(scroller().style.width).toBe('480px')
     expect(scroller().className).toContain('snap-x')
     expect(scroller().className).toContain('snap-mandatory')
     expect(scroller().className).toContain('overflow-x-auto')
     for (const b of pads()) expect(b.className).toContain('snap-start')
+    expect(pads().map((b) => b.dataset.out)).toEqual(['false', 'false', 'false', 'false', ...Array(8).fill('true')])
+    for (const b of pads()) expect(b.className).toContain('data-[out=true]:invisible')
+    // Folga no fim pra a última página começar num botão: 480 - 440 - 8.
+    expect((document.querySelector('[data-pads-spacer]') as HTMLElement).style.width).toBe('32px')
     expect(scroller().scrollLeft).toBe(0)
     expect(before()?.disabled).toBe(true)
     expect(after()?.textContent).toBe('8')
     expect(after()?.getAttribute('aria-label')).toBe('Ver 8 seções depois')
     for (const b of [before(), after()]) expect(b?.className).toContain('min-w-[52px]')
     fireEvent.click(after() as HTMLButtonElement) // pagina pela quantidade visível
-    expect(scroller().scrollLeft).toBe(4 * 122)
+    expect(scroller().scrollLeft).toBe(4 * 112)
     expect(before()?.textContent).toBe('4')
     expect(after()?.textContent).toBe('4')
     fireEvent.click(after() as HTMLButtonElement)
-    expect(scroller().scrollLeft).toBe(8 * 122)
+    expect(scroller().scrollLeft).toBe(8 * 112)
     expect(after()?.disabled).toBe(true)
     expect(before()?.getAttribute('aria-label')).toBe('Ver 8 seções antes')
     fireEvent.click(before() as HTMLButtonElement)
-    expect(scroller().scrollLeft).toBe(4 * 122)
-    // Rolar à mão: a conta segue o botão do começo da janela.
-    scroller().scrollLeft = 5 * 122
+    expect(scroller().scrollLeft).toBe(4 * 112)
+    // Rolar à mão: a conta e o que aparece seguem o botão do começo da janela.
+    scroller().scrollLeft = 5 * 112
     fireEvent.scroll(scroller())
     expect(before()?.textContent).toBe('5')
     expect(after()?.textContent).toBe('3')
+    expect(pads().map((b) => b.dataset.out).join('')).toBe(['true', 'true', 'true', 'true', 'true', 'false', 'false', 'false', 'false', 'true', 'true', 'true'].join(''))
+  })
+
+  it('larguras diferentes: cada página começa num botão e termina no último que cabe inteiro', () => {
+    const doze = Array.from({ length: 12 }, (_, i): StageSection => ({ index: i, label: `S${i + 1}`, color: '#10b981', start: i * 8, end: i * 8 + 8, bars: 4 }))
+    // Botões de 104 px, menos o 3º (200) e o 6º (160): começos em 0, 112, 224, 432, 544, 656, 824, 936, 1048...
+    ruler(600, (b) => (b.dataset.sectionPad === '2' ? 200 : b.dataset.sectionPad === '5' ? 160 : 104))
+    renderPads({ sections: doze, currentSection: 0 })
+    const out = () => pads().map((b) => (b.dataset.out === 'true' ? 0 : 1)).join('')
+    expect(out()).toBe('111000000000') // 0 a 2 (424 px); o 3º começa em 432 e não cabe inteiro
+    expect(after()?.textContent).toBe('9')
+    fireEvent.click(after() as HTMLButtonElement)
+    expect(scroller().scrollLeft).toBe(432)
+    expect(out()).toBe('000111000000')
+    expect(before()?.textContent).toBe('3')
+    expect(after()?.textContent).toBe('6')
+    fireEvent.click(after() as HTMLButtonElement)
+    expect(scroller().scrollLeft).toBe(824)
+    expect(out()).toBe('000000111100')
+    fireEvent.click(after() as HTMLButtonElement) // última página: 8 a 11 (a 12ª termina a 440 px do começo)
+    expect(scroller().scrollLeft).toBe(1048)
+    expect(after()?.disabled).toBe(true)
+    expect((document.querySelector('[data-pads-spacer]') as HTMLElement).style.width).toBe('32px')
+    fireEvent.click(before() as HTMLButtonElement) // volta a página que termina logo antes do 8
+    expect(scroller().scrollLeft).toBe(656)
+    expect(out()).toBe('000001110000')
+    expect(before()?.textContent).toBe('5')
+    expect(after()?.textContent).toBe('4')
   })
 
   it('AGORA trazida pra vista já encaixada; o alvo armado também, quando cabe junto com ela', () => {
@@ -448,21 +485,22 @@ describe('botoeira de seções', () => {
     const { rerender } = renderPads({ sections: doze, currentSection: 1 })
     expect(scroller().scrollLeft).toBe(0)
     rerender(<SectionPads {...props({ sections: doze, currentSection: 1, intent: { target: 4, plays: 1 } })} />)
-    expect(scroller().scrollLeft).toBe(122) // S2 a S5: atual e alvo à vista
+    expect(scroller().scrollLeft).toBe(112) // S2 a S5: atual e alvo à vista
     rerender(<SectionPads {...props({ sections: doze, currentSection: 1, intent: { target: 8, plays: 1 } })} />)
-    expect(scroller().scrollLeft).toBe(122) // alvo longe: a AGORA manda
+    expect(scroller().scrollLeft).toBe(112) // alvo longe: a AGORA manda
     rerender(<SectionPads {...props({ sections: doze, currentSection: 9 })} />)
-    expect(scroller().scrollLeft).toBe(6 * 122)
+    expect(scroller().scrollLeft).toBe(6 * 112)
     expect(before()?.textContent).toBe('6')
     expect(after()?.textContent).toBe('2')
   })
 
-  it('tudo cabe: sem indicadores, a sobra dividida igual e sem rolar', () => {
+  it('tudo cabe: sem indicadores, sem esticar e sem rolar (a sobra fica vazia à direita)', () => {
     ruler(1000)
     const { container } = renderPads()
     expect(before()).toBeNull()
     expect(after()).toBeNull()
-    expect(pads().every((b) => b.style.width === '193.6px')).toBe(true)
+    expect(pads().every((b) => b.style.width === '104px')).toBe(true)
+    expect(pads().every((b) => b.dataset.out === 'false')).toBe(true)
     expect(container.querySelectorAll('button')).toHaveLength(5)
   })
 

@@ -78,23 +78,22 @@ export function padTag(intent: ArmIntent | null, index: number, current: number)
 export interface PadReserve { metas: string[]; tags: string[] }
 
 /**
- * Textos mais largos que um botão pode mostrar NESTA música (Ruling T10-largura): cada botão
- * reserva a largura deles, então armar, contar, pousar, REPETE e LOOP nunca mudam a largura.
- * Metas (fonte mono, então só conta o número de caracteres): sem grade, "em N comp." e
- * "comp. N/N" com o maior número de dígitos de compasso da música (no mínimo 2), o início mais
- * tardio e, se alguma seção não tem compassos, o "m:ss/m:ss" da maior delas. A "contagem" entra à
- * parte, com o espaço do número grande. Etiquetas: PRÓXIMA, REPETE e REPETE Nx com o teto do
- * plano (99 quando não há teto).
+ * Textos mais largos que o botão da seção `s` pode mostrar (Ruling T10-largura-2: a reserva é
+ * dele, não da fileira), então armar, contar, pousar, REPETE e LOOP nunca mudam a largura. Metas
+ * (fonte mono, só conta o número de caracteres): o início dele; como atual, "comp. M/M" com os
+ * compassos DELE (ou o "m:ss/m:ss" dele, sem compassos); como armado, "em N comp." com o maior
+ * número de dígitos de compasso da música (N é o que falta da seção que estiver tocando, qualquer
+ * uma; no mínimo 2 dígitos); "no fim da seção" só em música sem grade. A "contagem" entra à parte,
+ * com o espaço do número grande. Etiquetas (qualquer botão pode ser a atual ou o alvo): PRÓXIMA,
+ * REPETE e REPETE Nx com o teto do plano (99 quando não há teto).
  */
-export function padReserve(sections: StageSection[], maxRepeats: number): PadReserve {
-  const bars = sections.map((s) => (s.bars !== null && s.bars >= 1 ? Math.floor(s.bars) : 0))
-  const nines = '9'.repeat(Math.max(2, String(Math.max(0, ...bars)).length))
-  const metas = [NO_GRID_TEXT, `em ${nines} comp.`, `comp. ${nines}/${nines}`, clockText(Math.max(0, ...sections.map((s) => s.start)))]
-  const noBars = sections.filter((_, k) => bars[k] === 0)
-  if (noBars.length > 0) {
-    const len = clockText(Math.max(0, ...noBars.map((s) => s.end - s.start)))
-    metas.push(`${len}/${len}`)
-  }
+export function padReserve(s: StageSection, sections: StageSection[], maxRepeats: number, hasGrid: boolean): PadReserve {
+  const barsOf = (x: StageSection) => (x.bars !== null && x.bars >= 1 ? Math.floor(x.bars) : 0)
+  const nines = '9'.repeat(Math.max(2, String(Math.max(0, ...sections.map(barsOf))).length))
+  const own = barsOf(s)
+  const len = clockText(s.end - s.start)
+  const metas = [clockText(s.start), own > 0 ? `comp. ${own}/${own}` : `${len}/${len}`, `em ${nines} comp.`]
+  if (!hasGrid) metas.push(NO_GRID_TEXT)
   const cap = !(maxRepeats >= 1) ? 1 : Number.isFinite(maxRepeats) ? Math.floor(maxRepeats) : 99 // mesmo teto do clampPlays da T4
   return { metas, tags: cap > 1 ? ['PRÓXIMA', 'REPETE', `REPETE ${cap}x`] : ['PRÓXIMA', 'REPETE'] }
 }
