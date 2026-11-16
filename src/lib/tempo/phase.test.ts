@@ -6,7 +6,7 @@ import { legacyDetectBeatGrid } from '../../test/legacyBeatGrid';
 import { TEMPO_CASES, caseBeatsPerBar, caseTracks, expectedBpm, firstBeatError, tempoCase, type TempoCase } from '../../test/tempoCases';
 import type { SynthSong } from '../../test/synthMusic';
 import { choosePhase } from './phase';
-import { combScore, type OnsetBands } from './onsets';
+import { combScore, onsetBands, type OnsetBands } from './onsets';
 
 const LENTO = 60_000;
 
@@ -27,8 +27,22 @@ describe('tempo x contratempo nos casos do relatório', () => {
     expect(Math.abs(erroDoPrimeiroClick(tempoCase(id)))).toBeLessThan(0.010);
   });
 
-  it.each(['bass-colcheias', 'loop-shaker'])('%s: sem bumbo nem caixa, avisa o risco de meio tempo', (id) => {
-    expect(detect(tempoCase(id)).grid.offbeatRisk).toBe(true);
+  // Os dois avisam o risco, por caminhos diferentes (o teste confere qual).
+  it('loop-shaker: sem bumbo nem caixa, avisa o risco de meio tempo', () => {
+    const c = tempoCase('loop-shaker');
+    const { song, grid } = detect(c);
+    const b = onsetBands(caseTracks(c, song)[0].channels, song.sr);
+    expect({ bumbo: b?.hasKick, caixa: b?.hasSnare }).toEqual({ bumbo: false, caixa: false });
+    expect(grid.offbeatRisk).toBe(true);
+  });
+
+  it('bass-colcheias: o baixo acende a banda grave, mas tempo e contratempo empatam (menos de 15%) e avisa o risco', () => {
+    const c = tempoCase('bass-colcheias');
+    const { song, grid } = detect(c);
+    const b = onsetBands(caseTracks(c, song)[0].channels, song.sr);
+    // O baixo passa por "tem grave" (hasKick); o risco vem do empate, não da ausência.
+    expect({ grave: b?.hasKick, caixa: b?.hasSnare }).toEqual({ grave: true, caixa: false });
+    expect(grid.offbeatRisk).toBe(true);
   });
 
   it('levada comum (rock no b) não avisa risco', () => {

@@ -148,7 +148,7 @@ export const TEMPO_CASES: readonly TempoCase[] = [
     note: 'rápida 176 BPM: a grade ainda sai pela metade (88), a M4 corrige a oitava' },
   { id: 'n_kicksplit', group: 'validacao', positive: true, song: synth({ bpm: 104, firstBeat: 0.55 }),
     note: 'pacote com a bateria numa faixa "KICK" (sem "drum"): o pulso é a bateria (o AUTO antigo caía no BASS)' },
-  // ── Sem bumbo nem caixa (cointoss.mjs e harness.mjs) ──
+  // ── Só baixo ou só shaker (cointoss.mjs e harness.mjs) ──
   { id: 'bass-colcheias', group: 'calibracao', positive: true, song: synth({ bpm: 104, firstBeat: 0.55 }), pulse: ['bass8'],
     note: 'só baixo em colcheias iguais (o BASS do pacote n_kicksplit), 104 BPM: tempo e contratempo empatam' },
   { id: 'loop-shaker', group: 'validacao', positive: true, song: synth({ bpm: 104, firstBeat: 0.55 }), pulse: ['shaker'],

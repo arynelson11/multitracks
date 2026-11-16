@@ -29,14 +29,18 @@ export interface OnsetBands {
   full: Float32Array;
   /** Banda grave (passa-baixa de 1 polo em 150 Hz). */
   low: Float32Array;
-  /** Bumbo: passa-baixa de 2 polos em 100 Hz, energia linear. Zeros quando `hasKick` é false. */
+  /** Bumbo (ou baixo): passa-baixa de 2 polos em 100 Hz, energia linear. Zeros quando `hasKick` é false. */
   kick: Float32Array;
   /**
    * Caixa: o ataque sai do ruído acima de 2 kHz (passa-alta de 2 polos), energia
    * linear. Zeros quando `hasSnare` é false.
    */
   snare: Float32Array;
-  /** A faixa tem bumbo (energia abaixo de ~100 Hz). */
+  /**
+   * A faixa tem grave de bumbo: pelo menos 10% da energia abaixo de ~100 Hz. Um
+   * baixo também acende (não dá pra separar pelo espectro); aí quem avisa o risco
+   * de meio tempo é o empate entre tempo e contratempo.
+   */
   hasKick: boolean;
   /** A faixa tem caixa: corpo de 150 a 300 Hz somado a ruído acima de 2 kHz. */
   hasSnare: boolean;
