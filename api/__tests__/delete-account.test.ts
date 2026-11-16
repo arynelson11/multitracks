@@ -98,6 +98,16 @@ describe('excluir conta', () => {
     expect(deleteUser).toHaveBeenCalledWith(USER_A)
   })
 
+  it('COB-R2: a remoção da cobrança futura recusada pelo Asaas é pendência própria e não trava a exclusão', async () => {
+    // vencida inativada no Asaas; a remoção da renovação seguinte ficou pendente (recusada)
+    Object.assign(db.tables.billing_subscriptions[0], { status: 'canceled', cancel_source: 'unpaid', access_until: '2026-11-15T00:00:00.000Z', asaas_stopped_at: '2026-11-15T10:00:00.000Z', asaas_stop_kind: 'inactivated' })
+    db.tables.billing_pending_actions.push({ id: 7, subscription_ref: 'chk_a', user_id: USER_A, action: 'delete_future_payments', reason: 'vencida', asaas_subscription_id: 'sub_a', asaas_payment_id: 'p_venc', due_date: '2026-11-14', auto_retry: true, status: 'pending', attempts: 1, next_attempt_at: '2026-11-17T00:00:00.000Z' })
+    const res = await remove()
+    expect(res.statusCode).toBe(200)
+    expect(deleteUser).toHaveBeenCalledWith(USER_A)
+    expect(db.tables.billing_pending_actions[0]).toMatchObject({ action: 'delete_future_payments', status: 'pending' })
+  })
+
   it('quem não tem assinatura apaga normalmente, sem falar com o Asaas', async () => {
     authUser = USER_C
     const res = await remove()

@@ -22,6 +22,8 @@ export type FakeDb = {
   tables: Record<string, Row[]>
   rpcCalls: { name: string; args: Record<string, unknown> }[]
   writes: { table: string; op: 'insert' | 'upsert' | 'update' | 'delete'; payload: unknown }[]
+  // leituras feitas (tabela e filtros), pra provar em tempo de execução quem leu o quê
+  reads: { table: string; filters: { col: string; op: string; value: unknown }[] }[]
   failTable: (table: string, error: DbError) => void
   clearFailure: (table: string) => void
   setRpc: (name: string, handler: RpcHandler) => RpcHandler | undefined
@@ -96,6 +98,7 @@ class QueryBuilder implements PromiseLike<DbResult> {
     const pk = this.db.primaryKeys[this.table] ?? 'id'
 
     if (this.op === 'select') {
+      this.db.reads.push({ table: this.table, filters: this.filters.map((f) => ({ ...f })) })
       let out = rows.filter((r) => this.matches(r)).map((r) => ({ ...r }))
       if (this.orderBy) {
         const { col, ascending } = this.orderBy
@@ -156,6 +159,7 @@ class FakeDbImpl implements FakeDb {
   rpcHandlers: Record<string, RpcHandler>
   rpcCalls: { name: string; args: Record<string, unknown> }[] = []
   writes: { table: string; op: 'insert' | 'upsert' | 'update' | 'delete'; payload: unknown }[] = []
+  reads: { table: string; filters: { col: string; op: string; value: unknown }[] }[] = []
   failures = new Map<string, DbError>()
   defaults: Record<string, () => Row>
 

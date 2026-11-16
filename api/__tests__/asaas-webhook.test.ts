@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRes, type FakeDb } from './fakeSupabase.js'
-import { USER_A, asaasDown, createBillingDb, createFakeAsaas, payment, subRow, type FakeAsaas } from './billingHarness.js'
+import { USER_A, asaasDown, asaasRejected, createBillingDb, createFakeAsaas, forbiddenInWebhook, payment, subRow, type FakeAsaas } from './billingHarness.js'
 
 // Webhook do Asaas com Supabase e Asaas falsos: autenticidade, evento gravado
 // antes de processar (200 mesmo com o Asaas fora; 500 só se não gravar),
@@ -52,6 +52,11 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllEnvs()
+})
+// COB-R8: em TODO cenário deste arquivo, em tempo de execução, o webhook e o job
+// não estornam nada e não passam pelo cancelamento do usuário.
+afterEach(() => {
+  expect(forbiddenInWebhook(db, asaas)).toEqual([])
 })
 
 describe('autenticidade', () => {
@@ -518,6 +523,7 @@ describe('rodada 3: rede de segurança por ciclo (Q2) e desfazer com conferênci
 })
 
 describe('rodada 3: nenhum caminho do webhook estorna', () => {
+  // Complemento: a prova é a de tempo de execução (afterEach com forbiddenInWebhook, COB-R8).
   it('no código, o único estorno é o do botão de cancelar do usuário', async () => {
     const { readFileSync } = await import('node:fs')
     const src = readFileSync(new URL('../_lib/billing.ts', import.meta.url), 'utf8')
@@ -531,5 +537,191 @@ describe('rodada 3: nenhum caminho do webhook estorna', () => {
     const webhookSrc = readFileSync(new URL('../webhook/asaas.ts', import.meta.url), 'utf8')
     expect(webhookSrc).not.toContain('refund')
     expect(webhookSrc).not.toContain('cancelSubscriptionForUser')
+  })
+})
+
+describe('rodada 4: rede de segurança e troca de ciclo (COB-R1, R5)', () => {
+  beforeEach(() => {
+    db.tables.billing_pending_actions.push({ id: 80, subscription_ref: 'chk_1', user_id: USER_A, action: 'inactivate_subscription', reason: 'rede_de_seguranca', asaas_subscription_id: 'sub_1', asaas_payment_id: null, due_date: '2026-11-13', auto_retry: true, status: 'pending', attempts: 0, next_attempt_at: '2026-11-16T00:00:00.000Z' })
+  })
+
+  it('R1: cobrança do ciclo já paga e contada (already_counted) é corte indevido: desfaz e marca, nunca inativa', async () => {
+    // anual: vencimento 04/11 adiado pra 13/11 e pago em 12/11; o vencimento ficou em 13/11 e a rede cortou
+    db.tables.billing_subscriptions.push(subRow({ id: 'chk_1', user_id: USER_A, asaas_subscription_id: 'sub_1', plan_key: 'essencial_anual', cycle: 'YEARLY', status: 'canceled', cancel_source: 'unpaid', last_paid_due_date: '2026-11-04', next_due_date: '2026-11-13', access_until: '2026-11-16T06:15:00.000Z' }))
+    asaas!.get.mockResolvedValue({ data: [payment({ id: 'p_ano', subscription: 'sub_1', dueDate: '2026-11-13', originalDueDate: '2026-11-04', confirmedDate: '2026-11-12', status: 'CONFIRMED', value: 454.8 })], hasMore: false })
+    await cron()
+    expect(db.rpcCalls.find((c) => c.name === 'billing_payment_confirmed')!.args).toMatchObject({ p_due_date: '2026-11-04' })
+    expect(db.rpcCalls.find((c) => c.name === 'billing_undo_counted_cut')!.args).toMatchObject({ p_id: 'chk_1', p_cut_due: '2026-11-13' })
+    expect(stopCalls()).toEqual([])
+    expect(asaas!.del).not.toHaveBeenCalled()
+    const row = db.tables.billing_subscriptions[0]
+    expect(row).toMatchObject({ status: 'active', needs_admin_review: true, next_due_date: '2027-11-04' })
+    expect(String(row.admin_note)).toContain('corte indevido')
+    expect(db.tables.billing_pending_actions.find((a) => a.id === 80)!.status).toBe('canceled')
+    expect(db.tables.profiles[0].plan).toBe('essencial_anual')
+  })
+
+  it('R5: pago em dia na rede (reactivated) desfaz e marca pro admin', async () => {
+    db.tables.billing_subscriptions.push(subRow({ id: 'chk_1', user_id: USER_A, asaas_subscription_id: 'sub_1', status: 'canceled', cancel_source: 'unpaid', last_paid_due_date: '2026-10-13' }))
+    asaas!.get.mockResolvedValue({ data: [payment({ id: 'p_n', subscription: 'sub_1', dueDate: '2026-11-13', originalDueDate: '2026-11-13', confirmedDate: '2026-11-13', status: 'CONFIRMED' })], hasMore: false })
+    await cron()
+    expect(stopCalls()).toEqual([])
+    expect(db.tables.billing_subscriptions[0]).toMatchObject({ status: 'active', needs_admin_review: true })
+    expect(String(db.tables.billing_subscriptions[0].admin_note)).toContain('corte desfeito')
+  })
+
+  it('R5: sem a cobrança do ciclo e sem próxima em aberto: mantém o corte, inativa e marca pro admin', async () => {
+    db.tables.billing_subscriptions.push(subRow({ id: 'chk_1', user_id: USER_A, asaas_subscription_id: 'sub_1', status: 'canceled', cancel_source: 'unpaid', last_paid_due_date: '2026-10-13' }))
+    asaas!.get.mockResolvedValue({ data: [payment({ id: 'p_old', subscription: 'sub_1', dueDate: '2026-10-13', originalDueDate: '2026-10-13', confirmedDate: '2026-10-13', status: 'RECEIVED' })], hasMore: false })
+    await cron()
+    expect(stopCalls()).toEqual([['/subscriptions/sub_1', { status: 'INACTIVE' }]])
+    expect(db.tables.billing_subscriptions[0]).toMatchObject({ status: 'canceled', needs_admin_review: true })
+    expect(String(db.tables.billing_subscriptions[0].admin_note)).toContain('corte mantido')
+  })
+})
+
+describe('rodada 4: remoção da cobrança futura ao inativar (COB-R2)', () => {
+  const pend = (action: string) => db.tables.billing_pending_actions.find((a) => a.action === action)!
+  beforeEach(() => {
+    db.tables.profiles[0].plan = 'essencial_mensal'
+    db.tables.billing_subscriptions.push(subRow({ id: 'chk_1', user_id: USER_A, asaas_subscription_id: 'sub_1', last_paid_due_date: '2026-10-14' }))
+  })
+
+  it('a vencida da decisão fica guardada e nunca é removida, mesmo adiada depois pro futuro', async () => {
+    asaas!.put.mockRejectedValue(asaasDown())
+    await post(payEvent('evt_o', 'PAYMENT_OVERDUE', { id: 'p_venc', status: 'OVERDUE', dueDate: '2026-11-14' }))
+    expect(pend('inactivate_subscription')).toMatchObject({ status: 'pending', asaas_payment_id: 'p_venc', due_date: '2026-11-14' })
+    // com a inativação pendente, a vencida é adiada no painel (volta a PENDING com data futura)
+    asaas!.put.mockResolvedValue({})
+    asaas!.get.mockResolvedValue({ data: [
+      payment({ id: 'p_venc', subscription: 'sub_1', dueDate: '2026-11-30', originalDueDate: null, status: 'PENDING' }),
+      payment({ id: 'p_fut', subscription: 'sub_1', dueDate: '2026-12-14', originalDueDate: '2026-12-14', status: 'PENDING' }),
+    ], hasMore: false })
+    pend('inactivate_subscription').next_attempt_at = '2026-11-16T00:00:00.000Z'
+    await cron()
+    expect(stopCalls()).toContainEqual(['/subscriptions/sub_1', { status: 'INACTIVE' }])
+    expect(asaas!.del).toHaveBeenCalledWith('/payments/p_fut')
+    expect(asaas!.del).not.toHaveBeenCalledWith('/payments/p_venc')
+    expect(db.tables.billing_subscriptions[0].asaas_stopped_at).toBeTruthy()
+    expect(pend('delete_future_payments').status).toBe('done')
+  })
+
+  it('o Asaas recusa remover a futura: a inativação vale, a remoção vira pendência própria e o admin é marcado', async () => {
+    asaas!.get.mockImplementation(async (path: string) => {
+      if (path === '/payments/p_fut') return { id: 'p_fut', status: 'PENDING' }
+      return { data: [
+        payment({ id: 'p_venc', subscription: 'sub_1', dueDate: '2026-11-14', originalDueDate: '2026-11-14', status: 'OVERDUE' }),
+        payment({ id: 'p_fut', subscription: 'sub_1', dueDate: '2026-12-14', originalDueDate: '2026-12-14', status: 'PENDING' }),
+        payment({ id: 'p_fut2', subscription: 'sub_1', dueDate: '2027-01-14', originalDueDate: '2027-01-14', status: 'PENDING' }),
+      ], hasMore: false }
+    })
+    asaas!.del.mockImplementation(async (path: string) => { if (path === '/payments/p_fut') throw asaasRejected('nao pode remover'); return { deleted: true } })
+    await post(payEvent('evt_o', 'PAYMENT_OVERDUE', { id: 'p_venc', status: 'OVERDUE', dueDate: '2026-11-14' }))
+    expect(stopCalls()).toEqual([['/subscriptions/sub_1', { status: 'INACTIVE' }]])
+    expect(pend('inactivate_subscription').status).toBe('done')
+    expect(db.tables.billing_subscriptions[0]).toMatchObject({ asaas_stop_kind: 'inactivated', needs_admin_review: true })
+    expect(db.tables.billing_subscriptions[0].asaas_stopped_at).toBeTruthy()
+    expect(String(db.tables.billing_subscriptions[0].admin_note)).toContain('p_fut')
+    // a recusa não para as outras da lista
+    expect(asaas!.del).toHaveBeenCalledWith('/payments/p_fut2')
+    expect(pend('delete_future_payments')).toMatchObject({ status: 'pending', attempts: 1, asaas_payment_id: 'p_venc' })
+  })
+
+  it('recusa porque a futura foi paga entre a lista e a remoção: relê e não há o que remover', async () => {
+    asaas!.get.mockImplementation(async (path: string) => {
+      if (path === '/payments/p_fut') return { id: 'p_fut', status: 'CONFIRMED' }
+      return { data: [payment({ id: 'p_fut', subscription: 'sub_1', dueDate: '2026-12-14', originalDueDate: '2026-12-14', status: 'PENDING' })], hasMore: false }
+    })
+    asaas!.del.mockRejectedValue(asaasRejected('ja paga'))
+    await post(payEvent('evt_o', 'PAYMENT_OVERDUE', { id: 'p_venc', status: 'OVERDUE', dueDate: '2026-11-14' }))
+    expect(pend('delete_future_payments').status).toBe('done')
+    expect(db.tables.billing_subscriptions[0].needs_admin_review).toBe(false)
+  })
+
+  it('pagamento em dia que chega depois da inativação segue o N1 e nunca volta a ativa cobrando', async () => {
+    await post(payEvent('evt_o', 'PAYMENT_OVERDUE', { id: 'p_venc', status: 'OVERDUE', dueDate: '2026-11-14' }))
+    expect(db.tables.billing_subscriptions[0].asaas_stopped_at).toBeTruthy()
+    const late = await post(payEvent('evt_c', 'PAYMENT_CONFIRMED', { id: 'p_venc', status: 'CONFIRMED', dueDate: '2026-11-14', confirmedDate: '2026-11-14' }, '2026-11-16 13:00:00'))
+    expect(late.body).toMatchObject({ result: 'late_payment' })
+    expect(db.tables.billing_subscriptions[0]).toMatchObject({ status: 'canceled', needs_admin_review: true })
+    expect(db.tables.profiles[0].plan).toBe('essencial_mensal')
+  })
+
+  it('o aviso de inativada do próprio Asaas fecha a inativação enquanto ela roda: a remoção das futuras acontece mesmo assim', async () => {
+    asaas!.put.mockImplementation(async () => {
+      await db.rpc('billing_mark_asaas_stopped', { p_id: 'chk_1', p_kind: 'inactivated', p_subscription_id: 'sub_1' })
+      return {}
+    })
+    asaas!.get.mockResolvedValue({ data: [payment({ id: 'p_fut', subscription: 'sub_1', dueDate: '2026-12-14', originalDueDate: '2026-12-14', status: 'PENDING' })], hasMore: false })
+    await post(payEvent('evt_o', 'PAYMENT_OVERDUE', { id: 'p_venc', status: 'OVERDUE', dueDate: '2026-11-14' }))
+    expect(asaas!.del).toHaveBeenCalledWith('/payments/p_fut')
+  })
+})
+
+describe('rodada 4: corte e marcação na mesma chamada (COB-R3)', () => {
+  const paidAt = (id: string, when: string) => ({ id: `evt_${id}`, event: 'CHECKOUT_PAID', dateCreated: when, checkout: { id, customer: 'cus_1' } })
+  // a próxima chamada ao banco logo depois do corte cai (uma vez)
+  const dropAfterCut = () => {
+    const orig = db.rpc.bind(db)
+    let armed = false
+    let fired = false
+    db.rpc = async (name: string, args: Record<string, unknown> = {}) => {
+      if (armed) { armed = false; return { data: null, error: { message: 'queda entre o corte e a marcacao' } } }
+      const res = await orig(name, args)
+      if (!fired && name === 'billing_end_subscription' && ['duplicate', 'superseded'].includes(String(args.p_source))) { armed = true; fired = true }
+      return res
+    }
+  }
+  // o Asaas acha a assinatura de cada checkout pelas cobranças dele
+  beforeEach(() => {
+    asaas!.get.mockImplementation(async (path: string, params?: Record<string, unknown>) =>
+      path === '/payments' && typeof params?.checkoutSession === 'string'
+        ? { data: [payment({ id: `pay_${params.checkoutSession}`, subscription: `sub_${params.checkoutSession}`, checkoutSession: params.checkoutSession, status: 'CONFIRMED' })] }
+        : { data: [], hasMore: false })
+  })
+  const nextDayJob = async () => {
+    vi.setSystemTime(new Date('2026-11-17T09:30:00Z'))
+    for (const p of db.tables.billing_pending_actions) p.next_attempt_at = '2026-11-16T00:00:00.000Z'
+    await cron()
+  }
+
+  it('compra repetida: queda logo depois do corte e reprocessamento, a marcação existe', async () => {
+    db.tables.pending_checkouts.push({ id: 'chk_b', user_id: USER_A, plan_key: 'essencial_mensal' })
+    await post(paidAt('chk_1', '2026-11-16 12:00:00'))
+    dropAfterCut()
+    await post(paidAt('chk_b', '2026-11-16 12:00:40'))
+    await nextDayJob()
+    const dup = db.tables.billing_subscriptions.find((r) => r.id === 'chk_b')!
+    expect(dup).toMatchObject({ status: 'canceled', cancel_source: 'duplicate', needs_admin_review: true })
+    expect(String(dup.admin_note)).toContain('compra duplicada: estornar a mao (ficou a chk_1)')
+    expect(dup.asaas_stopped_at).toBeTruthy()
+  })
+
+  it('troca fora do Alterar Plano: queda logo depois do corte e reprocessamento, a marcação existe', async () => {
+    db.tables.pending_checkouts[0].created_at = '2026-11-16T11:59:00Z'
+    db.tables.pending_checkouts.push({ id: 'chk_b', user_id: USER_A, plan_key: 'pro_mensal', created_at: '2026-11-16T11:59:50Z' })
+    await post(paidAt('chk_1', '2026-11-16 12:00:00'))
+    dropAfterCut()
+    await post(paidAt('chk_b', '2026-11-16 12:01:00'))
+    await nextDayJob()
+    const old = db.tables.billing_subscriptions.find((r) => r.id === 'chk_1')!
+    expect(old).toMatchObject({ status: 'canceled', cancel_source: 'superseded', needs_admin_review: true })
+    expect(String(old.admin_note)).toContain('troca de plano fora do Alterar Plano')
+    expect(old.asaas_stopped_at).toBeTruthy()
+  })
+})
+
+describe('rodada 4: duas compras no mesmo dia (COB-R4)', () => {
+  it('o PAYMENT_CONFIRMED só traz o dia: espera o CHECKOUT_PAID e fica a de hora exata mais antiga', async () => {
+    db.tables.pending_checkouts[0].created_at = '2026-11-16T14:00:00Z'
+    db.tables.pending_checkouts.push({ id: 'chk_b', user_id: USER_A, plan_key: 'essencial_mensal', created_at: '2026-11-16T14:30:00Z' })
+    // A (chk_1) pagou às 12:00 e B às 12:05 (Brasília); o aviso de pagamento da B chega antes de tudo
+    await post(payEvent('evt_pc_b', 'PAYMENT_CONFIRMED', { id: 'pay_b1', subscription: 'sub_b', checkoutSession: 'chk_b', dueDate: '2026-11-16', confirmedDate: '2026-11-16' }, '2026-11-16 12:05:01'))
+    await post({ id: 'evt_cp_a', event: 'CHECKOUT_PAID', dateCreated: '2026-11-16 12:00:00', checkout: { id: 'chk_1', customer: 'cus_1' } })
+    // mesmo dia e a B ainda sem a hora exata: ninguém é cortado ainda
+    expect(db.tables.billing_subscriptions.filter((r) => r.status === 'active').map((r) => r.id).sort()).toEqual(['chk_1', 'chk_b'])
+    await post({ id: 'evt_cp_b', event: 'CHECKOUT_PAID', dateCreated: '2026-11-16 12:05:00', checkout: { id: 'chk_b', customer: 'cus_1' } })
+    expect(db.tables.billing_subscriptions.find((r) => r.id === 'chk_1')!.status).toBe('active')
+    expect(db.tables.billing_subscriptions.find((r) => r.id === 'chk_b')).toMatchObject({ status: 'canceled', cancel_source: 'duplicate', needs_admin_review: true })
   })
 })

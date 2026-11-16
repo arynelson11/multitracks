@@ -98,6 +98,7 @@ create table if not exists public.billing_subscriptions (
   started_at            timestamptz not null default now(),  -- início da assinatura (1º pagamento)
   first_paid_at         timestamptz,       -- 1º pagamento confirmado (null = ainda sem pagamento)
   checkout_created_at   timestamptz,       -- quando a pessoa abriu este checkout (intenção)
+  checkout_paid_at      timestamptz,       -- hora exata do CHECKOUT_PAID (desempata duas compras pagas no mesmo dia)
   switch_confirmed      boolean not null default false,  -- veio do "Trocar de plano?" confirmado
   anchor_due_date       date,              -- 1º vencimento: base da recorrência (dia 31 continua 31)
   last_paid_due_date    date,              -- vencimento da última cobrança paga
@@ -185,6 +186,9 @@ revoke all on table public.asaas_webhook_events from anon, authenticated;
 -- ─── 7. Pendências com o Asaas (o admin vê esta lista) ──────────────────────
 -- delete_subscription / inactivate_subscription: tentadas de novo sozinhas
 -- (próximo webhook, próximo login do usuário, job diário) até dar certo.
+-- delete_future_payments: depois de inativar, remover as cobranças em aberto que
+-- ainda vão vencer (a da renovação seguinte já gerada); nunca a vencida guardada
+-- em asaas_payment_id. Não trava a exclusão da conta.
 -- refund_payment: estorno que o admin precisa fazer ou aprovar (não automático).
 -- admin_review: caso pro admin olhar (ex.: assinatura antiga não achada no Asaas).
 -- Antes de qualquer estorno manual, o admin confere o status da cobrança no Asaas.
@@ -192,10 +196,10 @@ create table if not exists public.billing_pending_actions (
   id                    bigserial primary key,
   subscription_ref      text not null,     -- billing_subscriptions.id (sem FK: o histórico fica)
   user_id               uuid references auth.users(id) on delete set null,
-  action                text not null check (action in ('delete_subscription', 'inactivate_subscription', 'refund_payment', 'admin_review')),
+  action                text not null check (action in ('delete_subscription', 'inactivate_subscription', 'delete_future_payments', 'refund_payment', 'admin_review')),
   reason                text not null,
   asaas_subscription_id text,
-  asaas_payment_id      text,
+  asaas_payment_id      text,              -- cobrança que motivou (na inativação: a vencida, que nunca é removida)
   due_date              date,              -- cobrança que motivou (vencida, estorno)
   amount                numeric(12, 2),
   auto_retry            boolean not null default true,
@@ -275,11 +279,50 @@ as $$
   select ((p_next_due + 1)::timestamp) at time zone 'America/Sao_Paulo';
 $$;
 
+-- Ciclo seguinte ao último pago (o vencimento ORIGINAL dele), pela âncora,
+-- pulando ciclo de cobrança removida. É o mesmo cálculo do registro de
+-- cobrança (seção 16); usado pela troca de ciclo e pela rede de segurança.
+create or replace function public.billing_next_cycle(p_ref text, p_anchor date, p_last_paid date, p_cycle text)
+returns date
+language plpgsql
+stable
+set search_path = public, pg_temp
+as $$
+declare
+  v_calc  date := public.billing_next_due(p_anchor, p_last_paid, p_cycle);
+  v_guard integer := 0;
+begin
+  while v_calc is not null and v_guard < 12 and exists (
+    select 1 from public.billing_payments
+     where subscription_ref = p_ref and status = 'DELETED' and coalesce(original_due_date, due_date) = v_calc
+  ) loop
+    v_calc := public.billing_next_due(p_anchor, v_calc, p_cycle);
+    v_guard := v_guard + 1;
+  end loop;
+  return v_calc;
+end;
+$$;
+
+-- Ordem dos planos (COB-R7): Studio (pro_*) acima do Pro (essencial_*).
+create or replace function public.billing_plan_rank(p_plan text)
+returns integer
+language sql
+immutable
+set search_path = pg_catalog, pg_temp
+as $$
+  select case when p_plan in ('pro_mensal', 'pro_anual') then 2
+              when p_plan in ('essencial_mensal', 'essencial_anual') then 1
+              else 0 end;
+$$;
+
 -- ─── 9. Plano do perfil a partir das assinaturas ────────────────────────────
--- Vale a assinatura ativa de INÍCIO mais recente (não a linha criada por último:
--- a de quem assinou antes desta versão nasce depois mas começou antes); senão a
--- cancelada que ainda tem acesso; com assinaturas mas sem acesso, Livre. Quem
--- não tem nenhuma linha (plano antigo ou dado à mão) não é tocado.
+-- Entre as assinaturas pagas ativas vale a de INÍCIO mais recente (não a linha
+-- criada por último: a de quem assinou antes desta versão nasce depois mas
+-- começou antes). Com cortesia ativa (com ou sem data), vale o MAIOR plano entre
+-- a paga ativa e a cortesia (COB-R7; empate, a paga); a cobrança segue só a paga.
+-- Sem nada ativo, a cancelada que ainda tem acesso; com assinaturas mas sem
+-- acesso, Livre. Quem não tem nenhuma linha (plano antigo ou dado à mão) não é
+-- tocado.
 create or replace function public.billing_sync_profile(p_user_id uuid)
 returns text
 language plpgsql
@@ -287,7 +330,11 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  r record;
+  r             record;
+  v_paid_plan   text;
+  v_paid_until  timestamptz;
+  v_court_plan  text;
+  v_court_until timestamptz;
 begin
   if p_user_id is null then
     return 'no_user';
@@ -296,14 +343,44 @@ begin
   perform 1 from public.profiles where id = p_user_id for update;
 
   select s.plan_key, s.access_until
+    into v_paid_plan, v_paid_until
+    from public.billing_subscriptions s
+   where s.user_id = p_user_id and s.kind = 'asaas' and s.status = 'active'
+     and (s.access_until is null or s.access_until > now())
+   order by (s.access_until is null) desc, s.started_at desc, s.created_at desc
+   limit 1;
+  select s.plan_key, s.access_until
+    into v_court_plan, v_court_until
+    from public.billing_subscriptions s
+   where s.user_id = p_user_id and s.kind = 'courtesy' and s.status = 'active'
+     and (s.access_until is null or s.access_until > now())
+   order by public.billing_plan_rank(s.plan_key) desc, s.started_at desc, s.created_at desc
+   limit 1;
+
+  if v_court_plan is not null
+     and (v_paid_plan is null or public.billing_plan_rank(v_court_plan) > public.billing_plan_rank(v_paid_plan)) then
+    -- Cortesia de plano maior por cima de uma paga ativa: o perfil fica com a
+    -- data da paga (sem data), senão no fim da cortesia quem paga contaria como
+    -- Livre até o job; o job diário volta pro plano pago quando a cortesia acaba.
+    update public.profiles
+       set plan = v_court_plan,
+           plan_expires_at = case when v_paid_plan is not null then v_paid_until else v_court_until end
+     where id = p_user_id;
+    return v_court_plan;
+  end if;
+  if v_paid_plan is not null then
+    update public.profiles
+       set plan = v_paid_plan, plan_expires_at = v_paid_until
+     where id = p_user_id;
+    return v_paid_plan;
+  end if;
+
+  select s.plan_key, s.access_until
     into r
     from public.billing_subscriptions s
    where s.user_id = p_user_id
-     and ((s.status = 'active' and (s.access_until is null or s.access_until > now()))
-          or (s.status = 'canceled' and s.access_until > now()))
-   order by (s.status = 'active') desc,
-            (s.status = 'active' and s.kind = 'asaas' and s.access_until is null) desc,
-            s.started_at desc, s.created_at desc
+     and s.status = 'canceled' and s.access_until > now()
+   order by s.started_at desc, s.created_at desc
    limit 1;
 
   if found then
@@ -366,9 +443,13 @@ begin
 end;
 $$;
 
--- Concluída. Pra parar a recorrência, grava também na assinatura.
+-- Concluída. Pra parar a recorrência, grava também na assinatura (a parada vale
+-- assim que o Asaas aceitou). Inativação concluída cria, NA MESMA transação, a
+-- pendência própria de remover as cobranças futuras (COB-R2), com a vencida da
+-- decisão guardada pra nunca ser removida; devolve o id dela.
+drop function if exists public.billing_action_done(bigint, text, text);
 create or replace function public.billing_action_done(p_action_id bigint, p_subscription_id text default null, p_note text default null)
-returns void
+returns bigint
 language plpgsql
 security definer
 set search_path = public, pg_temp
@@ -381,7 +462,13 @@ begin
    where id = p_action_id and status = 'pending'
   returning * into a;
   if not found then
-    return;
+    -- o aviso do próprio Asaas (SUBSCRIPTION_INACTIVATED) fechou a inativação
+    -- enquanto ela rodava: a remoção das cobranças futuras continua valendo
+    select * into a from public.billing_pending_actions
+     where id = p_action_id and status = 'done' and action = 'inactivate_subscription';
+    if not found then
+      return null;
+    end if;
   end if;
   if a.action in ('delete_subscription', 'inactivate_subscription') then
     update public.billing_subscriptions
@@ -392,6 +479,11 @@ begin
            updated_at            = now()
      where id = a.subscription_ref;
   end if;
+  if a.action = 'inactivate_subscription' then
+    return public.billing_enqueue_action(a.subscription_ref, 'delete_future_payments', a.reason,
+                                         a.asaas_payment_id, a.due_date, null, true, a.user_id);
+  end if;
+  return null;
 end;
 $$;
 
@@ -455,6 +547,7 @@ $$;
 -- p_started_at = início real (pra quem assinou antes desta versão: a data do
 -- pagamento em payments). p_activate = aplica no perfil.
 drop function if exists public.billing_upsert_subscription(text, uuid, text, text, text, text, date, boolean, timestamptz);
+drop function if exists public.billing_upsert_subscription(text, uuid, text, text, text, text, date, boolean, timestamptz, timestamptz, timestamptz, boolean);
 create or replace function public.billing_upsert_subscription(
   p_id text,
   p_user_id uuid,
@@ -467,7 +560,8 @@ create or replace function public.billing_upsert_subscription(
   p_started_at timestamptz default null,
   p_first_paid_at timestamptz default null,
   p_checkout_created_at timestamptz default null,
-  p_switch_confirmed boolean default false
+  p_switch_confirmed boolean default false,
+  p_checkout_paid_at timestamptz default null   -- hora exata do CHECKOUT_PAID (COB-R4)
 )
 returns text
 language plpgsql
@@ -480,17 +574,18 @@ declare
 begin
   insert into public.billing_subscriptions as s
     (id, kind, user_id, plan_key, cycle, asaas_subscription_id, asaas_customer_id, started_at,
-     first_paid_at, checkout_created_at, switch_confirmed,
+     first_paid_at, checkout_created_at, checkout_paid_at, switch_confirmed,
      anchor_due_date, last_paid_due_date, next_due_date, paid_until)
   values
     (p_id, 'asaas', p_user_id, p_plan_key, p_cycle, p_subscription_id, p_customer_id, coalesce(p_started_at, now()),
-     p_first_paid_at, p_checkout_created_at, coalesce(p_switch_confirmed, false),
+     p_first_paid_at, p_checkout_created_at, p_checkout_paid_at, coalesce(p_switch_confirmed, false),
      p_paid_due_date, p_paid_due_date, v_next,
      case when v_next is not null then public.billing_access_end(v_next) end)
   on conflict (id) do update
      set asaas_subscription_id = coalesce(s.asaas_subscription_id, excluded.asaas_subscription_id),
          first_paid_at         = least(s.first_paid_at, excluded.first_paid_at),
          checkout_created_at   = coalesce(s.checkout_created_at, excluded.checkout_created_at),
+         checkout_paid_at      = least(s.checkout_paid_at, excluded.checkout_paid_at),
          switch_confirmed      = s.switch_confirmed or excluded.switch_confirmed,
          asaas_customer_id     = coalesce(s.asaas_customer_id, excluded.asaas_customer_id),
          started_at            = least(s.started_at, coalesce(p_started_at, s.started_at)),
@@ -583,6 +678,9 @@ begin
       update public.billing_pending_actions
          set status = 'canceled', done_at = now(), done_note = 'pago em dia: corte desfeito'
        where subscription_ref = p_id and status = 'pending' and action = 'inactivate_subscription';
+      -- desfazer o corte sempre marca pro admin (COB-R5)
+      perform public.billing_flag_review(p_id, 'corte desfeito: cobranca do vencimento ' || to_char(p_due_date, 'DD/MM/YYYY')
+                || ' paga em dia (em ' || to_char(p_paid_on, 'DD/MM/YYYY') || ')');
       perform public.billing_sync_profile(r.user_id);
       return jsonb_build_object('result', 'reactivated');
     end if;
@@ -617,8 +715,12 @@ $$;
 
 -- ─── 13. Renovação não paga (PAYMENT_OVERDUE, ou rede de segurança do job) ──
 -- Volta pro Livre agora e deixa pendente INATIVAR a assinatura no Asaas (a
--- cobrança vencida continua pagável pelo link do e-mail).
-create or replace function public.billing_payment_overdue(p_id text, p_due_date date, p_reason text default 'vencida')
+-- cobrança vencida continua pagável pelo link do e-mail). A pendência guarda o
+-- id da cobrança vencida desta decisão (p_payment_id; na rede de segurança, a
+-- cobrança do ciclo conhecida em billing_payments): a remoção das cobranças
+-- futuras nunca a apaga, nem se o vencimento for adiado depois (COB-R2).
+drop function if exists public.billing_payment_overdue(text, date, text);
+create or replace function public.billing_payment_overdue(p_id text, p_due_date date, p_reason text default 'vencida', p_payment_id text default null)
 returns jsonb
 language plpgsql
 security definer
@@ -627,6 +729,7 @@ as $$
 declare
   r      public.billing_subscriptions%rowtype;
   v_act  bigint;
+  v_pay  text;
 begin
   select * into r from public.billing_subscriptions where id = p_id for update;
   if not found then
@@ -652,7 +755,13 @@ begin
          updated_at    = now()
    where id = p_id;
   if r.kind = 'asaas' and r.asaas_stopped_at is null then
-    v_act := public.billing_enqueue_action(p_id, 'inactivate_subscription', p_reason, null, p_due_date);
+    v_pay := coalesce(p_payment_id, (
+      select b.asaas_payment_id from public.billing_payments b
+       where b.subscription_ref = p_id and b.status in ('PENDING', 'OVERDUE', 'AWAITING_RISK_ANALYSIS')
+         and (b.due_date = p_due_date or b.original_due_date = p_due_date)
+       order by b.due_date
+       limit 1));
+    v_act := public.billing_enqueue_action(p_id, 'inactivate_subscription', p_reason, v_pay, p_due_date);
   end if;
   perform public.billing_sync_profile(r.user_id);
 
@@ -741,18 +850,88 @@ begin
 end;
 $$;
 
+-- Rede de segurança com a cobrança do ciclo cortado já paga e contada (o
+-- backend recebeu already_counted ao conferir no Asaas): o corte foi indevido
+-- (COB-R1). Desfaz SEMPRE e marca pro admin; NUNCA inativa (fecha a pendência
+-- de inativar). O próximo vencimento sai do último ciclo pago (e da data real
+-- da cobrança em aberto desse ciclo, se o Asaas já mandou). Se a assinatura já
+-- está parada no Asaas, não volta a "ativa cobrando": fica com o plano até o
+-- fim do período pago, sem renovação (regra do N1).
+create or replace function public.billing_undo_counted_cut(p_id text, p_cut_due date default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  r      public.billing_subscriptions%rowtype;
+  v_calc date;
+  v_real date;
+  v_next date;
+  v_cut  text := coalesce(to_char(p_cut_due, 'DD/MM/YYYY'), '?');
+begin
+  select * into r from public.billing_subscriptions where id = p_id for update;
+  if not found then
+    return jsonb_build_object('result', 'not_found');
+  end if;
+  update public.billing_pending_actions
+     set status = 'canceled', done_at = now(), done_note = 'rede de seguranca: ciclo ' || v_cut || ' ja pago, corte indevido (nao inativa)'
+   where subscription_ref = p_id and status = 'pending' and action = 'inactivate_subscription';
+  if r.status <> 'canceled' or r.cancel_source is distinct from 'unpaid' or r.cycle is null or r.last_paid_due_date is null then
+    perform public.billing_flag_review(p_id, 'rede de seguranca: cobranca do ciclo ' || v_cut || ' ja estava paga; nada desfeito e nada inativado, conferir');
+    return jsonb_build_object('result', 'not_applicable');
+  end if;
+
+  v_calc := public.billing_next_cycle(p_id, coalesce(r.anchor_due_date, r.last_paid_due_date), r.last_paid_due_date, r.cycle);
+  select due_date into v_real
+    from public.billing_payments
+   where subscription_ref = p_id
+     and status in ('PENDING', 'OVERDUE', 'AWAITING_RISK_ANALYSIS')
+     and coalesce(original_due_date, due_date) = v_calc
+   order by due_date
+   limit 1;
+  v_next := coalesce(v_real, v_calc);
+
+  if r.asaas_stopped_at is not null then
+    update public.billing_subscriptions
+       set access_until = greatest(coalesce(access_until, '-infinity'::timestamptz), public.billing_access_end(v_next)),
+           paid_until   = greatest(paid_until, public.billing_access_end(v_next)),
+           updated_at   = now()
+     where id = p_id;
+    perform public.billing_flag_review(p_id, 'rede de seguranca: cobranca do ciclo ' || v_cut || ' ja estava paga (corte indevido); assinatura ja parada no Asaas: plano ate '
+              || to_char(public.billing_access_end(v_next) at time zone 'America/Sao_Paulo' - interval '1 second', 'DD/MM/YYYY') || ', sem renovacao');
+    perform public.billing_sync_profile(r.user_id);
+    return jsonb_build_object('result', 'restored_until_period_end', 'access_until', public.billing_access_end(v_next));
+  end if;
+
+  update public.billing_subscriptions
+     set status = 'active', cancel_source = null, canceled_at = null, access_until = null,
+         next_due_date = v_next, paid_until = greatest(paid_until, public.billing_access_end(v_next)), updated_at = now()
+   where id = p_id;
+  perform public.billing_flag_review(p_id, 'rede de seguranca desfeita: cobranca do ciclo ' || v_cut || ' ja estava paga (corte indevido); proximo vencimento '
+            || to_char(v_next, 'DD/MM/YYYY'));
+  perform public.billing_sync_profile(r.user_id);
+  return jsonb_build_object('result', 'undone', 'next_due_date', v_next);
+end;
+$$;
+
 -- ─── 15. Encerrar uma assinatura (botão, painel, troca, admin, exclusão) ────
 -- p_immediate: perde o plano agora. Senão vale até o fim do período pago (o
 -- maior entre o guardado e o que o backend confirmou no Asaas).
 -- p_already_stopped: o backend já parou a recorrência no Asaas antes de gravar
 -- (botão do app). Senão, cria a pendência de parar (p_stop: delete|inactivate).
+-- p_note: marcação pro admin gravada NA MESMA transação do corte (compra
+-- repetida, troca fora do Alterar Plano: COB-R3), pra nunca sobrar linha
+-- encerrada sem marcação.
+drop function if exists public.billing_end_subscription(text, text, date, boolean, text, boolean);
 create or replace function public.billing_end_subscription(
   p_id text,
   p_source text,
   p_paid_due_date date default null,
   p_immediate boolean default false,
   p_stop text default 'delete',
-  p_already_stopped boolean default false
+  p_already_stopped boolean default false,
+  p_note text default null
 )
 returns jsonb
 language plpgsql
@@ -812,6 +991,9 @@ begin
     elsif r.asaas_stopped_at is null then
       v_act := public.billing_enqueue_action(p_id, v_action, p_source);
     end if;
+  end if;
+  if p_note is not null then
+    perform public.billing_flag_review(p_id, p_note);
   end if;
   perform public.billing_sync_profile(r.user_id);
 
@@ -932,7 +1114,8 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  r public.billing_subscriptions%rowtype;
+  r        public.billing_subscriptions%rowtype;
+  v_anchor date;
 begin
   select * into r from public.billing_subscriptions where id = p_id for update;
   if not found then
@@ -941,13 +1124,20 @@ begin
   if r.status <> 'active' then
     return jsonb_build_object('result', 'not_active');
   end if;
-  -- Troca de ciclo: o Asaas mantém a próxima cobrança na data de sempre (com o
-  -- valor novo), então ela vira a âncora do ciclo novo.
+  -- Troca de ciclo: o Asaas mantém a próxima cobrança no ciclo de sempre (com o
+  -- valor novo), então o ciclo dela vira a âncora do ciclo novo. Âncora = o
+  -- vencimento ORIGINAL desse ciclo (o seguinte ao último pago, pela âncora
+  -- antiga), NUNCA o next_due_date, que pode ser a data adiada no painel: com
+  -- a data adiada como âncora, o pagamento desse ciclo devolveria a própria
+  -- data adiada como próximo vencimento e a rede cortaria quem pagou (COB-R1).
+  v_anchor := r.anchor_due_date;
+  if p_cycle is not null and p_cycle is distinct from r.cycle and r.last_paid_due_date is not null then
+    v_anchor := coalesce(public.billing_next_cycle(p_id, coalesce(r.anchor_due_date, r.last_paid_due_date), r.last_paid_due_date, r.cycle), v_anchor);
+  end if;
   update public.billing_subscriptions
      set plan_key        = p_plan_key,
          cycle           = coalesce(p_cycle, cycle),
-         anchor_due_date = case when p_cycle is not null and p_cycle is distinct from cycle
-                                then coalesce(next_due_date, anchor_due_date) else anchor_due_date end,
+         anchor_due_date = v_anchor,
          updated_at      = now()
    where id = p_id;
   perform public.billing_sync_profile(r.user_id);
@@ -994,12 +1184,22 @@ declare
   r record;
 begin
   -- Quem tem assinaturas registradas é recalculado (uma cortesia que acabou
-  -- não pode derrubar uma assinatura paga ativa); o resto vira Livre.
+  -- não pode derrubar uma assinatura paga ativa); o resto vira Livre. Também
+  -- recalcula quem está no plano de uma cortesia que já acabou e não tem mais
+  -- nada ativo nesse plano (cortesia maior por cima de uma paga: o perfil fica
+  -- sem data, COB-R7).
   n := 0;
   for r in
     select p.id, exists (select 1 from public.billing_subscriptions s where s.user_id = p.id) as tracked
       from public.profiles p
-     where p.plan_expires_at is not null and p.plan_expires_at <= now()
+     where (p.plan_expires_at is not null and p.plan_expires_at <= now())
+        or (exists (select 1 from public.billing_subscriptions c
+                     where c.user_id = p.id and c.kind = 'courtesy' and c.status = 'active'
+                       and c.plan_key = p.plan and c.access_until <= now())
+            and not exists (select 1 from public.billing_subscriptions o
+                             where o.user_id = p.id and o.plan_key = p.plan
+                               and ((o.status = 'active' and (o.access_until is null or o.access_until > now()))
+                                    or (o.status = 'canceled' and o.access_until > now()))))
   loop
     if r.tracked then
       perform public.billing_sync_profile(r.id);
@@ -1077,15 +1277,17 @@ begin
     'public.billing_sync_profile(uuid)',
     'public.billing_enqueue_action(text, text, text, text, date, numeric, boolean, uuid)',
     'public.billing_undo_safety_cut(text, date)',
+    'public.billing_undo_counted_cut(text, date)',
+    'public.billing_next_cycle(text, date, date, text)',
     'public.billing_action_done(bigint, text, text)',
     'public.billing_action_failed(bigint, text, boolean)',
     'public.billing_mark_asaas_stopped(text, text, text)',
     'public.billing_flag_review(text, text)',
-    'public.billing_upsert_subscription(text, uuid, text, text, text, text, date, boolean, timestamptz, timestamptz, timestamptz, boolean)',
+    'public.billing_upsert_subscription(text, uuid, text, text, text, text, date, boolean, timestamptz, timestamptz, timestamptz, boolean, timestamptz)',
     'public.billing_payment_confirmed(text, date, date, date)',
-    'public.billing_payment_overdue(text, date, text)',
+    'public.billing_payment_overdue(text, date, text, text)',
     'public.billing_payment_refunded(text, date)',
-    'public.billing_end_subscription(text, text, date, boolean, text, boolean)',
+    'public.billing_end_subscription(text, text, date, boolean, text, boolean, text)',
     'public.billing_preview_access(text, date)',
     'public.billing_record_payment(text, text, uuid, text, text, text, text, text, numeric, numeric, numeric, numeric, date, date, date, text, timestamptz, date)',
     'public.billing_change_plan(text, text, text)',
@@ -1115,7 +1317,7 @@ begin
     'billing_payments.last_event_at', 'billing_pending_actions.auto_retry', 'billing_pending_actions.next_attempt_at',
     'pending_checkouts.switch_confirmed', 'pending_checkouts.created_at', 'profiles.plan_expires_at', 'profiles.tokens_period_start',
     'billing_subscriptions.first_paid_at', 'billing_subscriptions.checkout_created_at', 'billing_subscriptions.switch_confirmed',
-    'billing_payments.original_due_date'
+    'billing_payments.original_due_date', 'billing_subscriptions.checkout_paid_at'
   ]
   loop
     if not exists (
@@ -1130,7 +1332,8 @@ begin
   end if;
   -- e os CHECK que aceitam os valores novos (tabela antiga recusaria)
   foreach c in array array[
-    'billing_subscriptions:duplicate', 'billing_pending_actions:admin_review', 'asaas_webhook_events:exhausted'
+    'billing_subscriptions:duplicate', 'billing_pending_actions:admin_review', 'asaas_webhook_events:exhausted',
+    'billing_pending_actions:delete_future_payments'
   ]
   loop
     if not exists (

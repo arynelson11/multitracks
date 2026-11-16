@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { BillingError, cancelSubscriptionForUser, changePlan, endCourtesy, grantCourtesy, latestPaidDueDate, toBrtDate, withdrawalStatus } from '../_lib/billing.js'
 import type { FakeDb } from './fakeSupabase.js'
-import { USER_A, USER_B, asaasDown, createBillingDb, createFakeAsaas, payment, subRow, type FakeAsaas } from './billingHarness.js'
+import { USER_A, USER_B, asaasDown, createBillingDb, createFakeAsaas, forbiddenInWebhook, payment, subRow, type FakeAsaas } from './billingHarness.js'
 
 // Funções de api/_lib/billing.ts que o futuro painel admin vai chamar.
 
@@ -67,6 +67,17 @@ describe('cancelamento pelo admin', () => {
     expect(out.refunded).toBe(false)
     expect(asaas.post).not.toHaveBeenCalled()
     expect(db.rpcCalls.find((c) => c.name === 'billing_end_subscription')!.args).toMatchObject({ p_source: 'admin', p_immediate: true })
+  })
+})
+
+describe('COB-R8: o detector usado nos testes do webhook não é vazio', () => {
+  it('pega um cancelamento do usuário de verdade, com estorno', async () => {
+    asaas.get.mockResolvedValue({ data: [payment({ id: 'p1', subscription: 'sub_1', dueDate: '2026-11-14', confirmedDate: '2026-11-14' })], hasMore: false })
+    await cancelSubscriptionForUser(deps(), { userId: USER_A, source: 'user' })
+    const found = forbiddenInWebhook(db, asaas)
+    expect(found).toContain('estorno no Asaas: POST /payments/p1/refund')
+    expect(found).toContain('cancelamento do usuario: billing_end_subscription(chk_1, user_refund)')
+    expect(found).toContain('pendencias lidas por usuario (cancelSubscriptionForUser)')
   })
 })
 

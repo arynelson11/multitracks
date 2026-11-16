@@ -170,20 +170,51 @@ export async function deletePayment(api: AsaasApi, paymentId: string): Promise<v
   }
 }
 
+// Uma cobrança (GET /payments/{id}); null se não existe mais (404).
+export async function getPayment(api: AsaasApi, paymentId: string): Promise<AsaasPayment | null> {
+  try {
+    return await api.get<AsaasPayment>(`/payments/${encodeURIComponent(paymentId)}`)
+  } catch (e) {
+    if (e instanceof AsaasError && e.kind === 'not_found') return null
+    throw e
+  }
+}
+
 // Depois de inativar: a assinatura não gera cobrança nova, mas a da renovação
 // seguinte pode já ter sido gerada (o Asaas cria 40 dias antes) e seria cobrada
-// no cartão. Remove as cobranças em aberto que ainda vão vencer; a vencida fica
-// (continua pagável pelo link do e-mail).
-export async function removeFuturePendingCharges(api: AsaasApi, subscriptionId: string, todayBrt: string): Promise<number> {
+// no cartão. Remove as cobranças em aberto que ainda vão vencer, menos a vencida
+// da decisão de inativar (COB-R2): ela fica pagável pelo link do e-mail mesmo
+// que o vencimento dela seja adiado depois. `keep.paymentId` é o id guardado na
+// pendência; `keep.cycleDue` é o ciclo cortado (vencimento original ou atual).
+// Recusa do Asaas numa remoção: relê a cobrança; se já não está em aberto (foi
+// paga ou removida entre a lista e a remoção), não há o que remover; senão vai
+// em `refused` (o admin remove à mão) e as outras da lista seguem. Asaas fora do
+// ar lança (a pendência tenta de novo).
+export async function removeFuturePendingCharges(
+  api: AsaasApi,
+  subscriptionId: string,
+  todayBrt: string,
+  keep: { paymentId?: string | null; cycleDue?: string | null } = {},
+): Promise<{ removed: string[]; refused: string[] }> {
+  const day = (v: unknown) => (typeof v === 'string' ? v.slice(0, 10) : '')
   const payments = await listSubscriptionPayments(api, subscriptionId)
-  let n = 0
+  const out = { removed: [] as string[], refused: [] as string[] }
   for (const p of payments) {
-    const due = typeof p.dueDate === 'string' ? p.dueDate.slice(0, 10) : ''
+    const due = day(p.dueDate)
     if (p.deleted || p.status !== 'PENDING' || !due || due <= todayBrt) continue
-    await deletePayment(api, p.id)
-    n++
+    if (keep.paymentId && p.id === keep.paymentId) continue
+    if (keep.cycleDue && (day(p.originalDueDate) === keep.cycleDue || due === keep.cycleDue)) continue
+    try {
+      await deletePayment(api, p.id)
+      out.removed.push(p.id)
+    } catch (e) {
+      if (!(e instanceof AsaasError) || e.kind !== 'rejected') throw e
+      const now = await getPayment(api, p.id)
+      if (!now || now.deleted || now.status !== 'PENDING') continue
+      out.refused.push(p.id)
+    }
   }
-  return n
+  return out
 }
 
 // Estorno integral da cobrança (POST /payments/{id}/refund sem valor = total).

@@ -156,6 +156,7 @@ type SubRow = {
   started_at: string
   first_paid_at: string | null
   checkout_created_at: string | null
+  checkout_paid_at: string | null
   switch_confirmed: boolean | null
   last_paid_due_date: string | null
   next_due_date: string | null
@@ -165,7 +166,7 @@ type SubRow = {
   asaas_stopped_at: string | null
   created_at: string
 }
-const SUB_COLS = 'id, kind, user_id, plan_key, cycle, asaas_subscription_id, asaas_customer_id, status, started_at, first_paid_at, checkout_created_at, switch_confirmed, last_paid_due_date, next_due_date, paid_until, access_until, cancel_source, asaas_stopped_at, created_at'
+const SUB_COLS = 'id, kind, user_id, plan_key, cycle, asaas_subscription_id, asaas_customer_id, status, started_at, first_paid_at, checkout_created_at, checkout_paid_at, switch_confirmed, last_paid_due_date, next_due_date, paid_until, access_until, cancel_source, asaas_stopped_at, created_at'
 
 type EndResult = { result: string; access_until?: string | null; action_id?: number | null }
 
@@ -267,6 +268,7 @@ export async function resolveSubscription(
     // quem assinou antes desta versão já pagou (o plano veio do CHECKOUT_PAID antigo)
     p_first_paid_at: owner.legacy ? owner.startedAt : null,
     p_checkout_created_at: owner.checkoutCreatedAt, p_switch_confirmed: owner.switchConfirmed,
+    p_checkout_paid_at: owner.legacy ? owner.startedAt : null,
   })
   if (linked !== 'ok') {
     console.warn('[billing] vinculo recusado', { checkoutId, linked })
@@ -291,14 +293,15 @@ export async function resolveSubscription(
 type PendingAction = {
   id: number
   subscription_ref: string
-  action: 'delete_subscription' | 'inactivate_subscription' | 'refund_payment'
+  action: 'delete_subscription' | 'inactivate_subscription' | 'delete_future_payments' | 'refund_payment'
   reason: string
   asaas_subscription_id: string | null
+  asaas_payment_id: string | null   // na inativação: a vencida da decisão, que nunca é removida
   due_date: string | null
 }
 
-// Executa as pendências de parar a recorrência no Asaas. Nunca lança por erro
-// do Asaas: a falha fica gravada e é tentada de novo depois.
+// Executa as pendências com o Asaas. Nunca lança por erro do Asaas: a falha
+// fica gravada e é tentada de novo depois.
 export async function runPendingActions(
   deps: BillingDeps,
   filter: { ids?: number[]; userId?: string; limit?: number } = {},
@@ -308,7 +311,7 @@ export async function runPendingActions(
   if (!asaas) return out
   if (filter.ids && filter.ids.length === 0) return out
   let q = deps.db.from('billing_pending_actions')
-    .select('id, subscription_ref, action, reason, asaas_subscription_id, due_date')
+    .select('id, subscription_ref, action, reason, asaas_subscription_id, asaas_payment_id, due_date')
     .eq('status', 'pending').eq('auto_retry', true)
   if (filter.ids) q = q.in('id', filter.ids)
   else q = q.lte('next_attempt_at', nowOf(deps).toISOString())
@@ -316,7 +319,9 @@ export async function runPendingActions(
   const { data, error } = await q.order('id', { ascending: true }).limit(filter.limit ?? 10)
   if (error) throw new BillingError('db_error', `Falha no banco (billing_pending_actions): ${error.message}`, 500)
 
-  for (const a of (data as PendingAction[] | null) ?? []) {
+  const queue = [...((data as PendingAction[] | null) ?? [])]
+  while (queue.length > 0) {
+    const a = queue.shift()!
     try {
       const row = await getSubBy(deps.db, 'id', a.subscription_ref)
       const subId = a.asaas_subscription_id ?? row?.asaas_subscription_id ?? await findSubscriptionIdByCheckout(asaas, a.subscription_ref)
@@ -338,8 +343,16 @@ export async function runPendingActions(
               p_id: a.subscription_ref, p_due_date: toBrtDate(paid.originalDueDate) ?? a.due_date,
               p_paid_on: paidOn(paid), p_real_due: toBrtDate(paid.dueDate),
             })
-            // Pago em dia (o aviso é que atrasou): corte desfeito, nada a inativar.
+            // Pago em dia (o aviso é que atrasou): corte desfeito e marcado, nada a inativar.
             if (r.result === 'reactivated') { await enforceSinglePaid(deps, row?.user_id ?? null); out.done++; continue }
+            // COB-R1: a cobrança do ciclo cortado já estava paga e contada. O
+            // corte foi indevido: desfaz e marca pro admin, NUNCA inativa.
+            if (r.result === 'already_counted') {
+              await rpc<EndResult>(deps.db, 'billing_undo_counted_cut', { p_id: a.subscription_ref, p_cut_due: a.due_date })
+              await enforceSinglePaid(deps, row?.user_id ?? null)
+              out.done++
+              continue
+            }
             // Pago depois do vencimento: plano até o fim daquele período, mas a
             // inativação acontece mesmo assim (regra do dono: sem renovação).
           } else {
@@ -363,17 +376,50 @@ export async function runPendingActions(
               if (r.result === 'undone') { out.done++; continue }
             } else if (unpaidPast) {
               await rpc<null>(deps.db, 'billing_flag_review', { p_id: a.subscription_ref, p_note: 'rede de seguranca: corte mantido, ha cobranca vencida sem pagamento' })
+            } else {
+              // COB-R5: manter o corte também marca pro admin.
+              await rpc<null>(deps.db, 'billing_flag_review', {
+                p_id: a.subscription_ref,
+                p_note: `rede de seguranca: corte mantido, a cobranca do ciclo ${a.due_date} nao foi achada no Asaas e nao ha proxima em aberto`,
+              })
             }
           }
         }
         await inactivateSubscription(asaas, subId)
-        await removeFuturePendingCharges(asaas, subId, brtToday(nowOf(deps)))
-      } else if (a.action === 'delete_subscription') {
+        // COB-R2: a inativação vale assim que o Asaas aceitou (asaas_stopped_at
+        // gravado agora). A remoção das cobranças futuras é uma pendência própria,
+        // criada na mesma chamada do banco, e roda logo em seguida; se o Asaas
+        // recusar, a inativação continua feita.
+        const removal = await rpc<number | null>(deps.db, 'billing_action_done', { p_action_id: a.id, p_subscription_id: subId, p_note: 'ok' })
+        out.done++
+        if (typeof removal === 'number') {
+          queue.unshift({ id: removal, subscription_ref: a.subscription_ref, action: 'delete_future_payments', reason: a.reason, asaas_subscription_id: subId, asaas_payment_id: a.asaas_payment_id, due_date: a.due_date })
+        }
+        continue
+      }
+      if (a.action === 'delete_future_payments') {
+        const res = await removeFuturePendingCharges(asaas, subId, brtToday(nowOf(deps)), { paymentId: a.asaas_payment_id, cycleDue: a.due_date })
+        if (res.refused.length > 0) {
+          await rpc<null>(deps.db, 'billing_flag_review', {
+            p_id: a.subscription_ref,
+            p_note: `renovacao inativada, mas o Asaas recusou remover a cobranca futura ${res.refused.join(', ')}: remover a mao no painel`,
+          })
+          await rpc<null>(deps.db, 'billing_action_failed', { p_action_id: a.id, p_error: `Asaas recusou remover ${res.refused.join(', ')}`, p_permanent: true })
+          out.failed++
+          continue
+        }
+        await rpc<number | null>(deps.db, 'billing_action_done', {
+          p_action_id: a.id, p_subscription_id: subId, p_note: res.removed.length ? `removidas: ${res.removed.join(', ')}` : 'nada a remover',
+        })
+        out.done++
+        continue
+      }
+      if (a.action === 'delete_subscription') {
         await deleteSubscription(asaas, subId)
       } else {
         continue // estorno: é com o admin
       }
-      await rpc<null>(deps.db, 'billing_action_done', { p_action_id: a.id, p_subscription_id: subId, p_note: 'ok' })
+      await rpc<number | null>(deps.db, 'billing_action_done', { p_action_id: a.id, p_subscription_id: subId, p_note: 'ok' })
       out.done++
     } catch (e) {
       if (!(e instanceof AsaasError)) throw e
@@ -428,7 +474,7 @@ async function adoptLegacySubscriptions(db: SupabaseClient, asaas: AsaasApi, use
     await rpc<string>(db, 'billing_upsert_subscription', {
       p_id: c.checkoutId, p_user_id: userId, p_plan_key: c.planKey, p_cycle: PLAN_PRICING[c.planKey].cycle,
       p_subscription_id: subId, p_customer_id: str(sub.customer), p_started_at: c.paidAt,
-      p_first_paid_at: c.paidAt, p_checkout_created_at: c.paidAt,
+      p_first_paid_at: c.paidAt, p_checkout_created_at: c.paidAt, p_checkout_paid_at: c.paidAt,
     })
   }
 }
@@ -473,9 +519,10 @@ export async function activateFromCheckout(
     p_id: input.checkoutId, p_user_id: input.userId, p_plan_key: input.planKey, p_cycle: price.cycle,
     p_subscription_id: null, p_customer_id: input.customerId ?? null, p_paid_due_date: due, p_activate: true,
     p_started_at: input.startedAt ?? null,
-    // CHECKOUT_PAID = pagamento confirmado
+    // CHECKOUT_PAID = pagamento confirmado, com a hora exata (desempate no mesmo dia, COB-R4)
     p_first_paid_at: input.startedAt ?? nowOf(deps).toISOString(),
     p_checkout_created_at: input.checkoutCreatedAt ?? null, p_switch_confirmed: !!input.switchConfirmed,
+    p_checkout_paid_at: input.startedAt ?? nowOf(deps).toISOString(),
   })
   if (linked === 'owner_mismatch') {
     console.error('[billing] checkout pago ligado a outro usuario; nada ativado', { checkoutId: input.checkoutId })
@@ -517,11 +564,16 @@ export async function activateFromCheckout(
 // Garante no máximo UMA assinatura paga ativa por conta, venham os avisos na
 // ordem que vierem (roda depois de todo aviso que cria ou ativa assinatura).
 // * Mesmo plano: fica a de pagamento CONFIRMADO mais antigo (sem pagamento não
-//   conta como primeira e espera o pagamento dela). As outras pagas têm a
-//   renovação inativada no Asaas e o admin recebe "compra duplicada: estornar à mão".
+//   conta como primeira e espera o pagamento dela). O PAYMENT_CONFIRMED só traz o
+//   dia (meia-noite de Brasília), então a comparação é pelo dia; duas compras no
+//   mesmo dia desempatam pela hora exata do CHECKOUT_PAID (COB-R4), e enquanto
+//   uma delas ainda não tem essa hora, espera (o CHECKOUT_PAID sempre chega). As
+//   outras pagas têm a renovação inativada no Asaas e o admin recebe "compra
+//   duplicada: estornar à mão".
 // * Planos diferentes (entre as pagas): fica o checkout CRIADO por último (a
 //   última intenção da pessoa). As outras são encerradas no Asaas e, se a troca
 //   não foi confirmada na tela, o admin recebe os valores.
+// O corte e a marcação pro admin vão na MESMA chamada do banco (COB-R3).
 // Nunca estorna nada.
 export async function enforceSinglePaid(deps: BillingDeps, userId: string | null): Promise<{ duplicates: string[]; superseded: string[] }> {
   const out = { duplicates: [] as string[], superseded: [] as string[] }
@@ -531,43 +583,47 @@ export async function enforceSinglePaid(deps: BillingDeps, userId: string | null
   if (rows.length <= 1) return out
   const actionIds: (number | null | undefined)[] = []
   const ts = (v: string | null | undefined) => (v ? Date.parse(v) : Number.POSITIVE_INFINITY)
+  const paidDay = (r: SubRow) => brtToday(new Date(Date.parse(r.first_paid_at!)))
 
   const byPlan = new Map<string, SubRow[]>()
   for (const r of rows) byPlan.set(r.plan_key, [...(byPlan.get(r.plan_key) ?? []), r])
   const paidKeepers: SubRow[] = []
+  let waiting = false
   for (const group of byPlan.values()) {
     const paid = group.filter((r) => r.first_paid_at)
-      .sort((a, b) => ts(a.first_paid_at) - ts(b.first_paid_at) || ts(a.checkout_created_at) - ts(b.checkout_created_at) || (a.id < b.id ? -1 : 1))
     if (paid.length === 0) continue
-    const keeper = paid[0]
+    const firstDay = paid.map(paidDay).sort()[0]
+    const sameDay = paid.filter((r) => paidDay(r) === firstDay)
+    if (sameDay.length > 1 && sameDay.some((r) => !r.checkout_paid_at)) { waiting = true; continue }
+    const keeper = sameDay
+      .sort((a, b) => ts(a.checkout_paid_at) - ts(b.checkout_paid_at) || ts(a.checkout_created_at) - ts(b.checkout_created_at) || (a.id < b.id ? -1 : 1))[0]
     paidKeepers.push(keeper)
     // só as PAGAS além da primeira são repetidas; uma sem pagamento confirmado
     // espera (o pagamento dela pode chegar e ela ser a mais antiga)
     for (const dup of paid) {
       if (dup.id === keeper.id) continue
-      const end = await rpc<EndResult>(db, 'billing_end_subscription', { p_id: dup.id, p_source: 'duplicate', p_paid_due_date: null, p_immediate: true, p_stop: 'inactivate' })
+      const note = await duplicateNote(deps, dup, keeper)
+      const end = await rpc<EndResult>(db, 'billing_end_subscription', { p_id: dup.id, p_source: 'duplicate', p_paid_due_date: null, p_immediate: true, p_stop: 'inactivate', p_note: note })
       actionIds.push(end?.action_id)
-      await rpc<null>(db, 'billing_flag_review', { p_id: dup.id, p_note: await duplicateNote(deps, dup, keeper) })
       out.duplicates.push(dup.id)
     }
   }
 
-  if (paidKeepers.length > 1) {
+  // com um plano ainda esperando o desempate, a troca entre planos espera junto
+  if (paidKeepers.length > 1 && !waiting) {
     const keeper = paidKeepers.slice()
       .sort((a, b) => ts(b.checkout_created_at ?? b.started_at) - ts(a.checkout_created_at ?? a.started_at))[0]
     for (const old of paidKeepers) {
       if (old.id === keeper.id) continue
-      const end = await rpc<EndResult>(db, 'billing_end_subscription', { p_id: old.id, p_source: 'superseded', p_paid_due_date: null, p_immediate: true })
-      actionIds.push(end?.action_id)
+      let note: string | null = null
       if (!keeper.switch_confirmed) {
         const o = PLAN_PRICING[old.plan_key as PlanKey]
         const n = PLAN_PRICING[keeper.plan_key as PlanKey]
         const until = old.paid_until ? ` pago ate ${brDate(old.paid_until)}` : ''
-        await rpc<null>(db, 'billing_flag_review', {
-          p_id: old.id,
-          p_note: `troca de plano fora do Alterar Plano: periodo antigo do ${o?.label ?? old.plan_key}${o ? ` (${brl(o.value)})` : ''}${until}; ficou o ${n?.label ?? keeper.plan_key}${n ? ` (${brl(n.value)})` : ''}; avaliar estorno proporcional`,
-        })
+        note = `troca de plano fora do Alterar Plano: periodo antigo do ${o?.label ?? old.plan_key}${o ? ` (${brl(o.value)})` : ''}${until}; ficou o ${n?.label ?? keeper.plan_key}${n ? ` (${brl(n.value)})` : ''}; avaliar estorno proporcional`
       }
+      const end = await rpc<EndResult>(db, 'billing_end_subscription', { p_id: old.id, p_source: 'superseded', p_paid_due_date: null, p_immediate: true, p_note: note })
+      actionIds.push(end?.action_id)
       out.superseded.push(old.id)
     }
   }
@@ -1013,7 +1069,8 @@ async function onPaymentEvent(deps: BillingDeps, event: string, p: Record<string
       return { result: r.result }
     }
     case 'PAYMENT_OVERDUE': {
-      const r = await rpc<EndResult>(deps.db, 'billing_payment_overdue', { p_id: row.id, p_due_date: due, p_reason: 'vencida' })
+      // a pendência guarda o id da vencida: a remoção das futuras nunca a apaga (COB-R2)
+      const r = await rpc<EndResult>(deps.db, 'billing_payment_overdue', { p_id: row.id, p_due_date: due, p_reason: 'vencida', p_payment_id: paymentId })
       await tryPending(deps, [r.action_id])
       return { result: r.result }
     }
