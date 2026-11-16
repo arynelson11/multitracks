@@ -306,6 +306,64 @@ describe('gesto (Ruling T14-gesto)', () => {
   })
 })
 
+describe('cancelamento sem valor de antes', () => {
+  it('ganho ou pan de antes que não é número: o cancelamento não manda nada pro motor', () => {
+    const { actions } = renderMixer(view({ channels: [stageChannel('d1', 'Bateria', { volume: Number.NaN, pan: Number.NaN })] }))
+    for (const el of [fader('Bateria'), panOf('Bateria')]) {
+      pointer(el, 'pointerdown', { clientX: 100, clientY: 200 })
+      pointer(el, 'pointermove', { clientX: 100, clientY: 190 })
+      pointer(el, 'pointercancel', { clientX: 100, clientY: 190 })
+    }
+    expect(actions.setVolume).toHaveBeenCalledTimes(1) // só o do arrasto
+    expect(actions.setPan).toHaveBeenCalledTimes(1)
+    for (const [, v] of vi.mocked(actions.setVolume).mock.calls) expect(Number.isFinite(v)).toBe(true)
+    for (const [, v] of vi.mocked(actions.setPan).mock.calls) expect(Number.isFinite(v)).toBe(true)
+  })
+})
+
+describe('debaixo da camada do EDITAR CANAIS', () => {
+  const covered = (label: string) => [panOf(label), fader(label), ...within(strip(label)).getAllByRole('button', { name: /^(M|S)$/ })]
+
+  it('com o modo ligado, pan, fader, M e S saem do Tab e a seta não muda nada', () => {
+    const { actions } = renderMixer(view({ channelEditMode: true }))
+    for (const ch of CHANNELS) {
+      for (const el of covered(ch.label)) {
+        expect(el.tabIndex, `${ch.label} ${el.getAttribute('aria-label') ?? el.textContent}`).toBe(-1)
+        expect(el.closest('[inert]'), ch.label).not.toBeNull()
+      }
+      // O que fica no Tab do canal é só a camada: alça, lápis e lixeira.
+      const tabbable = [...strip(ch.label).querySelectorAll<HTMLElement>('[tabindex], button')].filter((el) => el.tabIndex >= 0)
+      expect(tabbable.map((el) => el.getAttribute('aria-label'))).toEqual([`Mover ${ch.label}`, `Renomear e escolher papel de ${ch.label}`, `Apagar o canal ${ch.label}`])
+    }
+    for (const key of ['ArrowUp', 'ArrowDown', 'PageUp', 'Home', 'End']) fireEvent.keyDown(fader('Bateria'), { key })
+    fireEvent.keyDown(panOf('Bateria'), { key: 'ArrowRight' })
+    expect(actions.setVolume).not.toHaveBeenCalled()
+    expect(actions.setPan).not.toHaveBeenCalled()
+    // O PRINCIPAL não fica debaixo da camada: continua no Tab e no teclado.
+    expect(fader('principal').tabIndex).toBe(0)
+    expect(fader('principal').closest('[inert]')).toBeNull()
+    fireEvent.keyDown(fader('principal'), { key: 'ArrowUp' })
+    expect(actions.setMasterVolume).toHaveBeenCalledTimes(1)
+  })
+
+  it('com o modo desligado, tudo volta como era', () => {
+    const { actions, rerenderWith } = renderMixer(view({ channelEditMode: true }))
+    rerenderWith(view({ channelEditMode: false }))
+    for (const ch of CHANNELS) {
+      const [pan, fd, m, s] = covered(ch.label)
+      expect(pan.tabIndex).toBe(0)
+      expect(fd.tabIndex).toBe(0)
+      expect(m.tabIndex).toBe(0)
+      expect(s.tabIndex).toBe(0)
+      for (const el of [pan, fd, m, s]) expect(el.closest('[inert]')).toBeNull()
+    }
+    fireEvent.keyDown(fader('Bateria'), { key: 'ArrowUp' })
+    expect(dbOf(vi.mocked(actions.setVolume).mock.lastCall![1])).toBeCloseTo(1, 9)
+    fireEvent.keyDown(panOf('Bateria'), { key: 'ArrowRight' })
+    expect(actions.setPan).toHaveBeenLastCalledWith('d1', 0.05)
+  })
+})
+
 describe('teclado (Ruling T14-teclado)', () => {
   it('fader, PRINCIPAL e pan pegam foco pelo Tab; pan travado não', () => {
     const { rerenderWith } = renderMixer()

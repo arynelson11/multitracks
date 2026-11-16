@@ -101,19 +101,24 @@ export function ChannelStrip({
       style={{ '--c': ch.color } as React.CSSProperties}
       className="flex h-full w-full min-w-0 flex-col items-center gap-1.5 px-[3px] font-ps-sans"
     >
-      <div className="relative flex min-h-0 w-full flex-1 flex-col items-center gap-1.5">
-        <div className={cx('w-full', quiet && DIM)}>
-          <PanKnob pan={ch.pan} editable={panEditable} label={ch.label} onChange={onPan} />
-        </div>
-        <FaderVU
-          variant="canal" gain={ch.volume} fill={channelFaderFill(ch.color, quiet)} quiet={quiet}
-          readLevel={() => clock.level(ch.id)} label={`Volume ${ch.label}`} onChange={onVolume} className={quiet ? DIM : undefined}
-        >
-          {count !== null && <span ref={countRef} data-count="" aria-hidden="true" className={COUNT} />}
-        </FaderVU>
-        <div className="flex w-full max-w-[84px] shrink-0 gap-1">
-          <button type="button" data-touch-exception="ms" aria-pressed={ch.muted} title="Mudo" onClick={onMute} className={cx(MS, ch.muted ? M_ON : MS_OFF)}>M</button>
-          <button type="button" data-touch-exception="ms" aria-pressed={ch.soloed} title="Solo" onClick={onSolo} className={cx(MS, ch.soloed ? S_ON : MS_OFF)}>S</button>
+      <div className="relative flex min-h-0 w-full flex-1 flex-col">
+        {/* Com o EDITAR CANAIS ligado a camada cobre pan, fader e M/S: inertes (nem foco, nem tecla,
+            nem toque; o leitor de tela pula) e fora do Tab também onde o inert não existe. */}
+        <div inert={editMode} className="flex min-h-0 w-full flex-1 flex-col items-center gap-1.5">
+          <div className={cx('w-full', quiet && DIM)}>
+            <PanKnob pan={ch.pan} editable={panEditable} label={ch.label} onChange={onPan} focusable={!editMode} />
+          </div>
+          <FaderVU
+            variant="canal" gain={ch.volume} fill={channelFaderFill(ch.color, quiet)} quiet={quiet}
+            readLevel={() => clock.level(ch.id)} label={`Volume ${ch.label}`} onChange={onVolume} focusable={!editMode}
+            className={quiet ? DIM : undefined}
+          >
+            {count !== null && <span ref={countRef} data-count="" aria-hidden="true" className={COUNT} />}
+          </FaderVU>
+          <div className="flex w-full max-w-[84px] shrink-0 gap-1">
+            <button type="button" data-touch-exception="ms" aria-pressed={ch.muted} title="Mudo" onClick={onMute} tabIndex={editMode ? -1 : undefined} className={cx(MS, ch.muted ? M_ON : MS_OFF)}>M</button>
+            <button type="button" data-touch-exception="ms" aria-pressed={ch.soloed} title="Solo" onClick={onSolo} tabIndex={editMode ? -1 : undefined} className={cx(MS, ch.soloed ? S_ON : MS_OFF)}>S</button>
+          </div>
         </div>
         {editMode && (
           <div data-edit-layer="" className={EDIT_LAYER}>

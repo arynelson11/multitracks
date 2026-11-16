@@ -20,6 +20,8 @@ export interface FaderVUProps {
   /** Nome acessível ("Volume Bateria"). */
   label: string
   onChange(gain: number): void
+  /** Falso enquanto a camada do EDITAR CANAIS cobre o fader: sai do Tab e ignora o teclado. */
+  focusable?: boolean
   className?: string
   /** Por cima do fader (balão da contagem no canal de Click). */
   children?: ReactNode
@@ -99,7 +101,7 @@ const SCALE_BOX = 'ps-num pointer-events-none absolute inset-y-3 left-0 w-[18px]
  * balão mostra o valor durante o arrasto. Com foco, o teclado ajusta em dB. O nível acende segmentado DENTRO do trilho, com marca de pico, lido a
  * cada quadro e escrito direto no DOM (sem estado do React). Marca de 0 dB em 3/4 do curso.
  */
-export function FaderVU({ gain, variant, fill, quiet, readLevel, label, onChange, className, children }: FaderVUProps) {
+export function FaderVU({ gain, variant, fill, quiet, readLevel, label, onChange, focusable = true, className, children }: FaderVUProps) {
   const master = variant === 'principal'
   const [dragF, setDragF] = useState<number | null>(null)
   const dragRef = useRef<Drag | null>(null)
@@ -178,14 +180,15 @@ export function FaderVU({ gain, variant, fill, quiet, readLevel, label, onChange
     const d = dragRef.current
     if (!d || e.pointerId !== d.id) return
     endDrag()
-    if (d.moving && d.sent !== d.g0) onChange(d.g0)
+    // Sem um valor de antes que seja número (dado estragado), não manda nada pro motor.
+    if (d.moving && d.sent !== d.g0 && Number.isFinite(d.g0)) onChange(d.g0)
   }
   const onDoubleClick = () => {
     endDrag()
     onChange(1)
   }
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (e.altKey || e.ctrlKey || e.metaKey) return
+    if (!focusable || e.altKey || e.ctrlKey || e.metaKey) return
     const delta = KEY_DB[e.key]
     let next: number
     if (delta !== undefined) next = stepGainDb(gain, delta)
@@ -208,7 +211,7 @@ export function FaderVU({ gain, variant, fill, quiet, readLevel, label, onChange
       aria-valuemax={FADER_MAX_DB}
       aria-valuenow={ariaDb(shownGain)}
       aria-valuetext={dbText(shownGain)}
-      tabIndex={0}
+      tabIndex={focusable ? 0 : -1}
       title="Arraste para ajustar. Duplo clique volta para 0 dB."
       data-fader={variant}
       data-quiet={quiet}

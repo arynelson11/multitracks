@@ -11,6 +11,8 @@ export interface PanKnobProps {
   /** Rótulo do canal, pro nome acessível ("Pan Bateria"). */
   label: string
   onChange(pan: number): void
+  /** Falso enquanto a camada do EDITAR CANAIS cobre o knob: sai do Tab e ignora o teclado. */
+  focusable?: boolean
 }
 
 const NO_PAN = 'Com Click e Guia separados o pan não decide a saída'
@@ -41,7 +43,7 @@ const VALUE = 'ps-num min-w-[4ch] text-left text-ps-micro leading-none font-bold
  * duplo clique centraliza; com foco, setas pra esquerda e pra direita. Sem edição fica apagado,
  * sem foco, não arrasta e explica no title.
  */
-export function PanKnob({ pan, editable, label, onChange }: PanKnobProps) {
+export function PanKnob({ pan, editable, label, onChange, focusable = true }: PanKnobProps) {
   const [dragP, setDragP] = useState<number | null>(null)
   const dragRef = useRef<Drag | null>(null)
   const p = dragP ?? (Number.isFinite(pan) ? Math.min(1, Math.max(-1, pan)) : 0)
@@ -94,7 +96,8 @@ export function PanKnob({ pan, editable, label, onChange }: PanKnobProps) {
     const d = dragRef.current
     if (!d || e.pointerId !== d.id) return
     endDrag()
-    if (d.moving && d.sent !== d.orig) onChange(d.orig)
+    // Sem um valor de antes que seja número (dado estragado), não manda nada pro motor.
+    if (d.moving && d.sent !== d.orig && Number.isFinite(d.orig)) onChange(d.orig)
   }
   const onDoubleClick = () => {
     if (!editable) return
@@ -102,7 +105,7 @@ export function PanKnob({ pan, editable, label, onChange }: PanKnobProps) {
     onChange(0)
   }
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (!editable || e.altKey || e.ctrlKey || e.metaKey) return
+    if (!editable || !focusable || e.altKey || e.ctrlKey || e.metaKey) return
     const delta = e.key === 'ArrowRight' ? KEY_STEP : e.key === 'ArrowLeft' ? -KEY_STEP : null
     if (delta === null) return
     // A seta é do pan: o atalho do palco (buscar 5 s na música) não recebe.
@@ -120,7 +123,7 @@ export function PanKnob({ pan, editable, label, onChange }: PanKnobProps) {
       aria-valuenow={Math.round(p * 100)}
       aria-valuetext={text}
       aria-disabled={editable ? undefined : true}
-      tabIndex={editable ? 0 : undefined}
+      tabIndex={editable ? (focusable ? 0 : -1) : undefined}
       title={editable ? 'Pan: arraste para cima ou para baixo. Duplo clique centraliza.' : NO_PAN}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
