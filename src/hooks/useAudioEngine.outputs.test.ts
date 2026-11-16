@@ -1,0 +1,506 @@
+// @vitest-environment jsdom
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
+import { act, cleanup, renderHook } from '@testing-library/react'
+import {
+  asFake, connectedTo, createFakeAudioContext, FakeAudioBuffer, FakeAudioNode, nodesOf, reaches, valueAt,
+  type FakeAudioContext, type FakeAudioContextOptions, type FakeGainNode,
+} from '../test/fakeAudio'
+import { measure, type Sig } from '../test/signalMeasure'
+import type { SavedSong } from '../lib/repertoireSchema'
+import type { OutputSettings } from '../lib/stageContracts'
+import { useAudioEngine } from './useAudioEngine'
+
+// T25: o motor liga o fader de cada canal no barramento do papel (grafo da T12), põe o pan
+// efetivo no panner, zera uma vez os pans do pan automático antigo, refaz o plano na troca de
+// aparelho e manda a pré-contagem pelo barramento do Click. O hook roda de verdade com o
+// AudioContext falso da T1 e o IndexedDB em memória; o nível sai do simulador linear da T12
+// (src/test/signalMeasure.ts) comparado com o grafo da v1.4.16 montado do mesmo jeito.
+
+const SR = 48000
+const mem = vi.hoisted(() => ({
+  db: new Map<string, unknown>(),
+  settings: {} as Record<string, unknown>,
+  updates: [] as [string, unknown][],
+  ctx: null as unknown,
+  ctxOpts: {} as Record<string, unknown>,
+  metaGate: null as Promise<void> | null,
+}))
+
+const isMetaKey = (key: string) => key.startsWith('mt_meta_playlist')
+vi.mock('idb-keyval', () => ({
+  get: async (key: string) => {
+    if (isMetaKey(key) && mem.metaGate) await mem.metaGate
+    return isMetaKey(key) ? structuredClone(mem.db.get(key)) : mem.db.get(key)
+  },
+  set: async (key: string, value: unknown) => { mem.db.set(key, isMetaKey(key) ? structuredClone(value) : value) },
+  del: async (key: string) => { mem.db.delete(key) },
+  keys: async () => [...mem.db.keys()],
+}))
+vi.mock('tone', () => ({ setContext: () => {} }))
+// Worklet de tom pelo nó rastreado do fake (Ruling T1-N3); nenhum teste aqui transpõe.
+vi.mock('signalsmith-stretch', async () => {
+  const { FakeWorkletNode } = await import('../test/fakeAudio')
+  return {
+    default: async (ctx: BaseAudioContext) => Object.assign(new FakeWorkletNode(ctx, 'signalsmith-stretch'), {
+      start: async () => {}, stop: async () => {}, schedule: async () => {}, latency: async () => 0.12,
+    }),
+  }
+})
+vi.mock('../contexts/SettingsContext', () => ({
+  useSettings: () => ({
+    settings: mem.settings,
+    updateSetting: (key: string, value: unknown) => {
+      mem.updates.push([key, value])
+      mem.settings = { ...mem.settings, [key]: value }
+    },
+  }),
+}))
+vi.mock('../lib/AudioAnalyzer', () => ({ detectKey: () => 'C', generateEndlessClickTrackFromSample: async () => ({ clickBlob: new Blob(['mono']) }) }))
+vi.mock('../lib/clickLibrary', () => ({ loadClickSelection: () => ({ type: 'wood', subdivision: 1 }) }))
+vi.mock('../lib/offlineCache', () => ({ getCachedStem: async () => undefined, getCachedStemNames: async () => null, isSongCached: async () => false }))
+
+// jsdom 26 não tem Blob.arrayBuffer(); o motor lê os stems com ele.
+beforeAll(() => {
+  if (typeof Blob.prototype.arrayBuffer === 'function') return
+  Blob.prototype.arrayBuffer = function (this: Blob) {
+    return new Promise<ArrayBuffer>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as ArrayBuffer)
+      reader.onerror = () => reject(reader.error)
+      reader.readAsArrayBuffer(this)
+    })
+  }
+})
+
+const SPLIT: OutputSettings = { mode: 'split2', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } }
+const STEREO: OutputSettings = { ...SPLIT, mode: 'stereo' }
+const MULTI: OutputSettings = { ...SPLIT, mode: 'multi' }
+
+let warn: MockInstance<typeof console.warn>
+let error: MockInstance<typeof console.error>
+beforeEach(() => {
+  mem.db.clear()
+  mem.updates.length = 0
+  mem.metaGate = null
+  mem.ctx = null
+  mem.ctxOpts = {}
+  mem.settings = { autoPan: false, audioDeviceId: 'default', outputs: SPLIT, legacyPanReset: false }
+  // O arquivo diz quantos canais o áudio tem ("stereo..." ou "mono...").
+  const decode = async (data: ArrayBuffer) => new FakeAudioBuffer(new TextDecoder().decode(data).startsWith('stereo') ? 2 : 1, 4800, SR)
+  vi.stubGlobal('AudioContext', function () {
+    const ctx = createFakeAudioContext({ ...(mem.ctxOpts as FakeAudioContextOptions), decode })
+    mem.ctx = ctx
+    return ctx
+  })
+  vi.stubGlobal('requestAnimationFrame', () => 0)
+  vi.stubGlobal('cancelAnimationFrame', () => {})
+  warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  error = vi.spyOn(console, 'error').mockImplementation(() => {})
+})
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+  // A guarda da T12 só avisa num plano malformado: aqui ela nunca pode aparecer.
+  expect(warn.mock.calls.filter((c) => String(c[0]).includes('plano de saídas com erro'))).toEqual([])
+  expect(error).not.toHaveBeenCalled()
+  vi.restoreAllMocks()
+})
+
+const ctxOf = () => mem.ctx as FakeAudioContext
+const META = 'mt_meta_playlist_u1'
+const ch = (id: string, name: string, pan: number, extra: Partial<SavedSong['channels'][number]> = {}): SavedSong['channels'][number] =>
+  ({ id, name, volume: 1, muted: false, soloed: false, pan, bus: '1/2', ...extra })
+// Click e Guia mono, Baixo e Teclado estéreo (L e R diferentes).
+const song = (id: string, pans: { click?: number; guide?: number; bass?: number; keys?: number } = {}): SavedSong => ({
+  id, name: `Música ${id}`, duration: 0.1, pitch: 0, originalKey: 'C', schemaVersion: 3, channelOrder: 'auto',
+  channels: [
+    ch(`${id}-click`, 'CLICK', pans.click ?? 0), ch(`${id}-guide`, 'Voz Guia', pans.guide ?? 0),
+    ch(`${id}-bass`, 'BASS_1', pans.bass ?? 0), ch(`${id}-keys`, 'KEYS', pans.keys ?? 0),
+  ],
+})
+function seed(...songs: SavedSong[]) {
+  mem.db.set(META, structuredClone(songs))
+  for (const s of songs) for (const c of s.channels) {
+    mem.db.set(`mt_files_u1:ch:${c.id}`, new File([/BASS|KEYS/.test(c.name) ? 'stereo' : 'mono'], `${c.name}.wav`, { type: 'audio/wav' }))
+  }
+}
+
+// Abre o app como no aparelho: o render do motor pronto acontece antes de o IndexedDB
+// responder (sem isso o efeito do pan automático veria o repertório já restaurado).
+async function openApp() {
+  const hook = renderHook(() => useAudioEngine('u1'))
+  let release!: () => void
+  mem.metaGate = new Promise<void>((resolve) => { release = resolve })
+  let init!: Promise<void>
+  await act(async () => { init = hook.result.current.initEngine() })
+  await act(async () => { release(); await init })
+  mem.metaGate = null
+  return hook
+}
+type Hook = Awaited<ReturnType<typeof openApp>>
+const chan = (hook: Hook, id: string) => hook.result.current.channels.find((c) => c.id === id)!
+const panOf = (hook: Hook, id: string) => valueAt(asFake(chan(hook, id).pannerNode).pan, ctxOf().currentTime + 1)
+const savedPans = (id: string) => (mem.db.get(META) as SavedSong[]).find((s) => s.id === id)!.channels.map((c) => [c.pan, c.bus])
+
+// Barramentos e principal da T12: os cinco primeiros GainNode que o initEngine cria (click,
+// guia, VS, principal, mudo geral), conferidos pela forma do grafo.
+function graphOf(ctx: FakeAudioContext) {
+  const [click, guide, vs, master, masterMute] = nodesOf(ctx, 'GainNode')
+  expect(connectedTo(masterMute, ctx.destination)).toBe(true)
+  expect(connectedTo(master, masterMute)).toBe(true)
+  expect(reaches(nodesOf(ctx, 'DelayNode')[0], click)).toBe(true) // a contagem da T12 entra no Click
+  expect(connectedTo(guide, master)).toBe(false) // a Guia passa pelo panner do barramento
+  return { click, guide, vs, master, masterMute }
+}
+
+// Sinal de cada canal tocando: base com 2 posições por canal (L e R do arquivo; mono usa só a 1ª).
+async function playAndMeasure(hook: Hook, ids: string[]): Promise<Sig> {
+  await act(async () => { await hook.result.current.play() })
+  const sources = new Map<unknown, Sig>()
+  for (const s of nodesOf(ctxOf(), 'AudioBufferSourceNode')) {
+    if (s.connections.length === 0) continue
+    const k = ids.findIndex((id) => chan(hook, id).buffer === s.buffer)
+    const row = (j: number) => Array.from({ length: ids.length * 2 }, (_, x) => (k >= 0 && x === k * 2 + j ? 1 : 0))
+    sources.set(s, s.buffer?.numberOfChannels === 2 ? [row(0), row(1)] : [row(0)])
+  }
+  ctxOf().currentTime += 1 // pans e ganhos já assentados
+  return measure(ctxOf(), sources, ids.length * 2)
+}
+
+// O grafo da v1.4.16, montado no mesmo fake: fonte -> panner do canal (mono em 1 canal) ->
+// fader -> principal -> destino. É a régua do nível (R-24).
+function legacyMeasure(tracks: { stereo: boolean; pan: number }[]): Sig {
+  const ctx = createFakeAudioContext()
+  const master = ctx.createGain()
+  master.connect(ctx.destination)
+  const sources = new Map<unknown, Sig>()
+  tracks.forEach((t, k) => {
+    const src = ctx.createGain()
+    const panner = ctx.createStereoPanner()
+    if (!t.stereo) { panner.channelCountMode = 'explicit'; panner.channelCount = 1 }
+    panner.pan.value = t.pan
+    const fader = ctx.createGain()
+    src.connect(panner); panner.connect(fader); fader.connect(master)
+    const row = (j: number) => Array.from({ length: tracks.length * 2 }, (_, x) => (x === k * 2 + j ? 1 : 0))
+    sources.set(src, t.stereo ? [row(0), row(1)] : [row(0)])
+  })
+  return measure(ctx, sources, tracks.length * 2)
+}
+const close = (got: Sig, want: Sig) => {
+  expect(got.length).toBe(want.length)
+  got.forEach((c, i) => c.forEach((v, k) => expect(Math.abs(v - want[i][k]), `saída ${i + 1}, base ${k}`).toBeLessThan(1e-12)))
+}
+// Coeficientes de um canal (base k*2, k*2+1) numa saída.
+const part = (sig: Sig, output: number, k: number) => Math.hypot(sig[output][k * 2], sig[output][k * 2 + 1])
+
+const IDS = ['s1-click', 's1-guide', 's1-bass', 's1-keys']
+
+describe('barramento por papel', () => {
+  it('canal Click liga no barramento do click e o Baixo no da VS', async () => {
+    seed(song('s1'))
+    const hook = await openApp()
+    const bus = graphOf(ctxOf())
+    expect(connectedTo(asFake(chan(hook, 's1-click').gainNode), bus.click)).toBe(true)
+    expect(connectedTo(asFake(chan(hook, 's1-guide').gainNode), bus.guide)).toBe(true)
+    expect(connectedTo(asFake(chan(hook, 's1-bass').gainNode), bus.vs)).toBe(true)
+    // Fader nenhum direto no principal ou no destino.
+    for (const c of hook.result.current.channels) {
+      expect(connectedTo(asFake(c.gainNode), bus.master)).toBe(false)
+      expect(connectedTo(asFake(c.gainNode), ctxOf().destination)).toBe(false)
+    }
+
+    // Os outros lugares que criam canal: arquivo novo, canal avulso e metrônomo.
+    const files = ['Click.wav', 'BASS_2.wav'].map((n) => new File([n.startsWith('BASS') ? 'stereo' : 'mono'], n, { type: 'audio/wav' }))
+    await act(async () => { await hook.result.current.loadFiles(files as unknown as FileList, 'Nova') })
+    await act(async () => { hook.result.current.jumpToSong(1) })
+    await act(async () => { await hook.result.current.addChannelToActiveSong(new File(['mono'], 'GUIDE VOX.wav', { type: 'audio/wav' })) })
+    await act(async () => { await hook.result.current.createEndlessMetronomeSong(120) })
+    const byName = (name: string) => hook.result.current.playlist.flatMap((s) => s.channels).find((c) => c.name === name)!
+    expect(connectedTo(asFake(byName('Click').gainNode), bus.click)).toBe(true)
+    expect(connectedTo(asFake(byName('BASS_2').gainNode), bus.vs)).toBe(true)
+    expect(connectedTo(asFake(byName('GUIDE VOX').gainNode), bus.guide)).toBe(true)
+    expect(connectedTo(asFake(byName('Metronomo Loop').gainNode), bus.click)).toBe(true)
+    expect(valueAt(asFake(byName('Metronomo Loop').pannerNode).pan, 1)).toBe(-1)
+  })
+
+  it('papel manual Guia no Baixo religa no barramento da guia sem cortar o medidor', async () => {
+    seed(song('s1', { bass: 0.4 }))
+    const hook = await openApp()
+    const bus = graphOf(ctxOf())
+    const bass = asFake(chan(hook, 's1-bass').gainNode)
+    // Como o App: um AnalyserNode no gainNode do canal pro VU.
+    const meter = ctxOf().createAnalyser()
+    bass.connect(meter)
+
+    await act(async () => { hook.result.current.setChannelMeta('s1-bass', { role: 'guide' }) })
+    expect(connectedTo(bass, bus.guide)).toBe(true)
+    expect(connectedTo(bass, bus.vs)).toBe(false)
+    expect(connectedTo(bass, meter)).toBe(true)
+    // Em separados o lado sai do papel novo; o pan gravado (0,4) não muda.
+    expect(panOf(hook, 's1-bass')).toBe(-1)
+    expect(chan(hook, 's1-bass').pan).toBe(0.4)
+
+    // O som dele agora só no ouvido (saída 1).
+    const sig = await playAndMeasure(hook, IDS)
+    expect(part(sig, 0, 2)).toBeGreaterThan(0.5)
+    expect(part(sig, 1, 2)).toBeLessThan(1e-6)
+
+    await act(async () => { hook.result.current.setChannelMeta('s1-bass', { role: null }) })
+    expect(connectedTo(bass, bus.vs)).toBe(true)
+    expect(connectedTo(bass, bus.guide)).toBe(false)
+    expect(connectedTo(bass, meter)).toBe(true)
+    expect(panOf(hook, 's1-bass')).toBe(1)
+  })
+})
+
+describe('pan efetivo', () => {
+  it('em separados o pan efetivo é o do papel, nunca o do knob', async () => {
+    seed(song('s1', { click: 0.6, guide: 0.3, bass: -1, keys: 0.2 }))
+    const hook = await openApp()
+    expect([panOf(hook, 's1-click'), panOf(hook, 's1-guide'), panOf(hook, 's1-bass'), panOf(hook, 's1-keys')]).toEqual([-1, -1, 1, 1])
+    // O knob grava, o panner fica no lado do papel.
+    await act(async () => { hook.result.current.updatePan('s1-click', 0.3) })
+    expect(chan(hook, 's1-click').pan).toBe(0.3)
+    expect(panOf(hook, 's1-click')).toBe(-1)
+
+    // Mesmo nível do pan automático da v1.4.16 (Click e Guia em -1, o resto em +1), saída por saída.
+    const sig = await playAndMeasure(hook, IDS)
+    close(sig, legacyMeasure([{ stereo: false, pan: -1 }, { stereo: false, pan: -1 }, { stereo: true, pan: 1 }, { stereo: true, pan: 1 }]))
+    act(() => { hook.result.current.pause() })
+
+    // Lado trocado: Click e Guia na saída 2, a VS na 1.
+    mem.settings = { ...mem.settings, outputs: { ...SPLIT, earOnSecond: true } }
+    await act(async () => { hook.rerender() })
+    expect([panOf(hook, 's1-click'), panOf(hook, 's1-guide'), panOf(hook, 's1-bass'), panOf(hook, 's1-keys')]).toEqual([1, 1, -1, -1])
+    const swapped = await playAndMeasure(hook, IDS)
+    for (const k of [0, 1]) { expect(part(swapped, 1, k)).toBeCloseTo(1, 12); expect(part(swapped, 0, k)).toBeLessThan(1e-6) }
+    for (const k of [2, 3]) { expect(part(swapped, 0, k)).toBeCloseTo(Math.SQRT2, 12); expect(part(swapped, 1, k)).toBeLessThan(1e-6) }
+    expect(nodesOf(ctxOf(), 'AudioWorkletNode')).toHaveLength(0)
+  })
+
+  it('em tudo junto vale o knob', async () => {
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    seed(song('s1', { click: 0.6, guide: 0, bass: -1, keys: 0.2 }))
+    const hook = await openApp()
+    expect([panOf(hook, 's1-click'), panOf(hook, 's1-guide'), panOf(hook, 's1-bass'), panOf(hook, 's1-keys')]).toEqual([0.6, 0, -1, 0.2])
+    await act(async () => { hook.result.current.updatePan('s1-bass', 0.25) })
+    ctxOf().currentTime += 2 // a rampa curta do knob (constante 0,05 s) já chegou
+    expect(panOf(hook, 's1-bass')).toBeCloseTo(0.25, 12)
+    const sig = await playAndMeasure(hook, IDS)
+    close(sig, legacyMeasure([{ stereo: false, pan: 0.6 }, { stereo: false, pan: 0 }, { stereo: true, pan: 0.25 }, { stereo: true, pan: 0.2 }]))
+  })
+
+  it('migração: pans ±1 gravados voltam a 0 uma vez e o flag desliga', async () => {
+    mem.settings = { ...mem.settings, legacyPanReset: true }
+    seed(song('s1', { click: -1, guide: -1, bass: 1, keys: 0.3 }), song('s2', { click: -1, bass: 1 }))
+    const hook = await openApp()
+    expect(hook.result.current.channels.map((c) => c.pan)).toEqual([0, 0, 0, 0.3])
+    // Gravado já, nas duas músicas, e a aba Buses volta pro centro junto.
+    expect(savedPans('s1')).toEqual([[0, '1/2'], [0, '1/2'], [0, '1/2'], [0.3, '1/2']])
+    expect(savedPans('s2')).toEqual([[0, '1/2'], [0, '1/2'], [0, '1/2'], [0, '1/2']])
+    expect(mem.updates).toEqual([['legacyPanReset', false]])
+    // Os nós continuam no lado do papel (separados).
+    expect(panOf(hook, 's1-click')).toBe(-1)
+    expect(panOf(hook, 's1-bass')).toBe(1)
+
+    // Uma vez só: com o flag desligado, um pan ±1 escolhido depois fica.
+    cleanup()
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    seed(song('s3', { click: -1, bass: 1 }))
+    mem.updates.length = 0
+    const again = await openApp()
+    expect(again.result.current.channels.map((c) => c.pan)).toEqual([-1, 0, 1, 0])
+    expect(savedPans('s3')[0]).toEqual([-1, '1/2'])
+    expect(mem.updates).toEqual([])
+  })
+})
+
+describe('plano das saídas', () => {
+  it('placa de 2 canais com 4 ou mais escolhido cai em separados', async () => {
+    mem.settings = { ...mem.settings, outputs: MULTI }
+    seed(song('s1'))
+    const hook = await openApp()
+    expect(hook.result.current.outputPlan).toMatchObject({ mode: 'split2', fellBackFrom: 'multi', warning: 'poucos-canais', click: [0], vs: [1] })
+    expect(hook.result.current.maxOutputChannels).toBe(2)
+    expect(ctxOf().destination.channelCount).toBe(2)
+    const sig = await playAndMeasure(hook, IDS)
+    close(sig, legacyMeasure([{ stereo: false, pan: -1 }, { stereo: false, pan: -1 }, { stereo: true, pan: 1 }, { stereo: true, pan: 1 }]))
+  })
+
+  it('placa de 8 canais: VS em 1/2, Click na 3, Guia na 4, nada de Click e Guia na VS', async () => {
+    mem.ctxOpts = { maxChannelCount: 8 }
+    mem.settings = { ...mem.settings, outputs: MULTI }
+    seed(song('s1', { bass: -0.5, keys: 0.5 }))
+    const hook = await openApp()
+    expect(hook.result.current.outputPlan).toMatchObject({ mode: 'multi', channels: 8, vs: [0, 1], click: [2], guide: [3], warning: null })
+    expect(ctxOf().destination).toMatchObject({ channelCount: 8, channelInterpretation: 'discrete' })
+    expect([panOf(hook, 's1-click'), panOf(hook, 's1-guide'), panOf(hook, 's1-bass'), panOf(hook, 's1-keys')]).toEqual([-1, -1, -0.5, 0.5])
+    const sig = await playAndMeasure(hook, IDS)
+    // Click e Guia inteiros na saída própria (o nível do ouvido em separados) e zero no par da VS.
+    expect(part(sig, 2, 0)).toBeCloseTo(1, 12)
+    expect(part(sig, 3, 1)).toBeCloseTo(1, 12)
+    for (const k of [0, 1]) for (const o of [0, 1]) expect(part(sig, o, k)).toBe(0)
+    // A VS no par 1/2 com o knob, como em "Tudo junto".
+    const ref = legacyMeasure([{ stereo: false, pan: 0 }, { stereo: false, pan: 0 }, { stereo: true, pan: -0.5 }, { stereo: true, pan: 0.5 }])
+    for (const o of [0, 1]) for (const k of [4, 5, 6, 7]) expect(Math.abs(sig[o][k] - ref[o][k])).toBeLessThan(1e-12)
+    for (const o of [2, 3, 4, 5, 6, 7]) for (const k of [4, 5, 6, 7]) expect(sig[o][k]).toBe(0)
+  })
+
+  it('troca de aparelho refaz o plano com os canais do aparelho novo', async () => {
+    mem.ctxOpts = { maxChannelCount: 2, sinks: { placa: 8, fone: 2 } }
+    mem.settings = { ...mem.settings, outputs: MULTI }
+    seed(song('s1'))
+    const hook = await openApp()
+    expect(hook.result.current.outputPlan.mode).toBe('split2')
+
+    // Placa de 8 canais: o destino estava em 2 (separados) e mesmo assim o "4 ou mais" entra.
+    mem.settings = { ...mem.settings, audioDeviceId: 'placa' }
+    await act(async () => { hook.rerender() })
+    await act(async () => { await Promise.resolve() })
+    expect(hook.result.current.maxOutputChannels).toBe(8)
+    expect(hook.result.current.outputPlan).toMatchObject({ mode: 'multi', channels: 8 })
+    expect(ctxOf().destination.channelCount).toBe(8)
+    expect(panOf(hook, 's1-bass')).toBe(0)
+
+    // Fone de 2 canais: volta pra separados.
+    mem.settings = { ...mem.settings, audioDeviceId: 'fone' }
+    await act(async () => { hook.rerender() })
+    await act(async () => { await Promise.resolve() })
+    expect(hook.result.current.outputPlan).toMatchObject({ mode: 'split2', fellBackFrom: 'multi' })
+    expect(ctxOf().destination.channelCount).toBe(2)
+    expect(panOf(hook, 's1-bass')).toBe(1)
+
+    // O sistema troca o aparelho sozinho (evento sinkchange): plano novo também.
+    asFake(ctxOf().destination).maxChannelCount = 8
+    await act(async () => { ctxOf().dispatchEvent(new Event('sinkchange')) })
+    expect(hook.result.current.outputPlan).toMatchObject({ mode: 'multi', channels: 8 })
+  })
+
+  it('plano que o aparelho não aceita cai em 2 canais, com som e sem Click na VS', async () => {
+    // O aparelho diz 8 canais na leitura e recusa na hora de ligar (o grafo lança RangeError).
+    let reads = 0
+    mem.ctxOpts = { maxChannelCount: 8 }
+    mem.settings = { ...mem.settings, outputs: MULTI }
+    vi.stubGlobal('AudioContext', function () {
+      const ctx = createFakeAudioContext({ maxChannelCount: 2, decode: async (data: ArrayBuffer) => new FakeAudioBuffer(new TextDecoder().decode(data).startsWith('stereo') ? 2 : 1, 4800, SR) })
+      Object.defineProperty(ctx.destination, 'maxChannelCount', { get: () => (reads++ === 0 ? 8 : 2), configurable: true })
+      mem.ctx = ctx
+      return ctx
+    })
+    seed(song('s1'))
+    const hook = await openApp()
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('Usando 2 canais'))).toBe(true)
+    expect(hook.result.current.outputPlan).toMatchObject({ mode: 'split2', fellBackFrom: 'multi' })
+    const sig = await playAndMeasure(hook, IDS)
+    close(sig, legacyMeasure([{ stereo: false, pan: -1 }, { stereo: false, pan: -1 }, { stereo: true, pan: 1 }, { stereo: true, pan: 1 }]))
+  })
+})
+
+// Todo caminho de `from` até o destino passa por `through`? (busca que para no `through`)
+function onlyThrough(ctx: FakeAudioContext, from: FakeAudioNode, through: FakeGainNode): boolean {
+  const seen = new Set<unknown>([from])
+  const stack: unknown[] = [from]
+  while (stack.length > 0) {
+    const node = stack.pop()
+    if (node === through) continue
+    if (node === ctx.destination) return false
+    for (const c of (node as FakeAudioNode).connections) if (!seen.has(c.to)) { seen.add(c.to); stack.push(c.to) }
+  }
+  return true
+}
+
+describe('pré-contagem antiga', () => {
+  beforeEach(() => { localStorage.setItem('precount_enabled', 'true'); localStorage.setItem('precount_beats', '4') })
+  afterEach(() => { localStorage.removeItem('precount_enabled'); localStorage.removeItem('precount_beats') })
+
+  // Bipe no pico do envelope (0,25 aos 3 ms), um oscilador por vez.
+  async function countIn(hook: Hook): Promise<Sig[]> {
+    const t0 = ctxOf().currentTime
+    await act(async () => { await hook.result.current.playWithPrecount() })
+    const oscs = nodesOf(ctxOf(), 'OscillatorNode')
+    expect(oscs).toHaveLength(4)
+    const ctx = ctxOf()
+    const out = oscs.map((osc, i) => {
+      ctx.currentTime = t0 + i * 0.6 + 0.003
+      return measure(ctx, new Map(oscs.map((o) => [o, [[o === osc ? 1 : 0]]])), 1)
+    })
+    act(() => { hook.result.current.cancelCountIn() })
+    return out
+  }
+  // A pré-contagem da v1.4.16: oscilador -> envelope -> panner (-1 com o pan automático, 0 sem) -> destino.
+  function legacyBeep(pan: number): Sig {
+    const ctx = createFakeAudioContext()
+    const osc = ctx.createGain()
+    const env = ctx.createGain()
+    env.gain.value = 0.25
+    const panner = ctx.createStereoPanner()
+    panner.pan.value = pan
+    osc.connect(env); env.connect(panner); panner.connect(ctx.destination)
+    return measure(ctx, new Map([[osc, [[1]]]]), 1)
+  }
+
+  it('a pré-contagem nunca liga no destino direto', async () => {
+    seed(song('s1'))
+    const hook = await openApp()
+    const bus = graphOf(ctxOf())
+    const beeps = await countIn(hook)
+    for (const osc of nodesOf(ctxOf(), 'OscillatorNode')) {
+      expect(reaches(osc, bus.click)).toBe(true)
+      expect(onlyThrough(ctxOf(), osc, bus.click)).toBe(true)
+    }
+    // Separados: igual à v1.4.16 com o pan automático (pico 0,25 no ouvido) e nada na VS.
+    for (const sig of beeps) close(sig, legacyBeep(-1))
+    expect(Math.abs(beeps[0][1][0])).toBeLessThan(1e-12)
+  })
+
+  it('em tudo junto sai no centro como a v1.4.16 sem pan automático', async () => {
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    seed(song('s1'))
+    const hook = await openApp()
+    for (const sig of await countIn(hook)) close(sig, legacyBeep(0))
+  })
+
+  it('em 4 ou mais sai só na saída do Click, no nível do ouvido', async () => {
+    mem.ctxOpts = { maxChannelCount: 8 }
+    mem.settings = { ...mem.settings, outputs: MULTI }
+    seed(song('s1'))
+    const hook = await openApp()
+    const bus = graphOf(ctxOf())
+    for (const sig of await countIn(hook)) {
+      expect(sig).toHaveLength(8)
+      sig.forEach((c, o) => (o === 2 ? expect(c[0]).toBeCloseTo(0.25, 12) : expect(c[0]).toBe(0)))
+    }
+    for (const osc of nodesOf(ctxOf(), 'OscillatorNode')) expect(onlyThrough(ctxOf(), osc, bus.click)).toBe(true)
+  })
+
+  it('depois de um fade-out a contagem sai no volume do principal', async () => {
+    seed(song('s1'))
+    const hook = await openApp()
+    const { master } = graphOf(ctxOf())
+    // O FADE do fim da música deixou o principal quase em 0.
+    master.gain.setValueAtTime(0.001, ctxOf().currentTime)
+    for (const sig of await countIn(hook)) close(sig, legacyBeep(-1))
+  })
+})
+
+describe('mudo geral', () => {
+  it('mudo geral zera só o masterMute', async () => {
+    seed(song('s1'))
+    const hook = await openApp()
+    const bus = graphOf(ctxOf())
+    const t = ctxOf().currentTime
+    act(() => { hook.result.current.toggleMasterMute() })
+    expect(hook.result.current.masterMuted).toBe(true)
+    expect(valueAt(bus.masterMute.gain, t + 0.1)).toBeLessThan(1e-6)
+    for (const g of [bus.master, bus.click, bus.guide, bus.vs]) expect(valueAt(g.gain, t + 0.1)).toBe(1)
+    // Tocar não desfaz o mudo (o play mexe no principal, não no mudo).
+    await act(async () => { await hook.result.current.play() })
+    expect(valueAt(bus.masterMute.gain, ctxOf().currentTime + 0.1)).toBeLessThan(1e-6)
+
+    ctxOf().currentTime = t + 1
+    act(() => { hook.result.current.toggleMasterMute() })
+    expect(hook.result.current.masterMuted).toBe(false)
+    expect(valueAt(bus.masterMute.gain, t + 1.2)).toBeGreaterThan(1 - 1e-6)
+    expect(hook.result.current.getOutputLevels()).toEqual({ l: 0, r: 0 })
+  })
+})

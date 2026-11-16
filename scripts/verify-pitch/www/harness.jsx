@@ -141,9 +141,22 @@ async function main() {
   const chNames = E().channels.map((c) => c.name);
   ev('channels', { names: chNames });
 
-  // Contexto e master do hook, achados pela ligação gain do canal -> master.
+  // Contexto e principal do hook. Desde a T25 o fader liga no barramento do papel (grafo das
+  // saídas), não direto no principal: anda pelas ligações a partir do fader até o nó que
+  // entrega no destino (o mudo geral, depois do principal), onde sai a mistura inteira.
   const ctx = E().channels[0].gainNode.context;
-  const master = [...(edges.get(E().channels[0].gainNode) || [])].find((x) => x instanceof GainNode);
+  const findMaster = (start) => {
+    const seen = new Set([start]);
+    const queue = [start];
+    while (queue.length) {
+      const node = queue.shift();
+      const next = [...(edges.get(node) || [])];
+      if (next.includes(ctx.destination)) return node;
+      for (const n of next) if (!seen.has(n)) { seen.add(n); queue.push(n); }
+    }
+    return null;
+  };
+  const master = findMaster(E().channels[0].gainNode);
   if (!master) throw new Error('master do hook não encontrado');
   window.__ctx = ctx;
   ev('ctx', { sampleRate: ctx.sampleRate, state: ctx.state });

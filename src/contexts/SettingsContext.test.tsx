@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen } from '@testing-library/react'
+import { useEffect } from 'react'
+import type { OutputSettings } from '../lib/stageContracts'
 import { SettingsProvider, useSettings } from './SettingsContext'
 import { canPickAudioOutput, listAudioOutputs } from '../lib/audioOutputs'
 import { AudioOutputSelect } from '../components/AudioOutputSelect'
@@ -183,5 +185,98 @@ describe('AudioOutputSelect (aba Geral das Configurações)', () => {
     expect(fake.md.getUserMedia).toHaveBeenCalledTimes(1)
     const options = [...screen.getByRole('combobox').querySelectorAll('option')].map(o => o.textContent)
     expect(options).toEqual(['Padrão do Sistema', 'Fone', 'Interface'])
+  })
+})
+
+// ---------- T25: saídas por papel, chave do palco e migração do pan automático (R-23) ----------
+
+describe('SettingsProvider: saídas e palco na primeira carga', () => {
+  const SETTINGS = 'mt_app_settings'
+  const MARKER = 'mt_outputs_migrated'
+  const SPLIT: OutputSettings = { mode: 'split2', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } }
+  const STEREO: OutputSettings = { ...SPLIT, mode: 'stereo' }
+  // O que o Probe viu no último render (guardado depois do render, num efeito).
+  const latest: { current: ReturnType<typeof useSettings> | null } = { current: null }
+  const seen = () => latest.current!
+
+  function Probe() {
+    const value = useSettings()
+    useEffect(() => { latest.current = value })
+    return null
+  }
+  async function load(stored?: unknown, marker?: string) {
+    if (stored !== undefined) localStorage.setItem(SETTINGS, typeof stored === 'string' ? stored : JSON.stringify(stored))
+    if (marker !== undefined) localStorage.setItem(MARKER, marker)
+    await act(async () => { render(<SettingsProvider><Probe /></SettingsProvider>) })
+    return seen()
+  }
+  const storedNow = () => JSON.parse(localStorage.getItem(SETTINGS) ?? 'null')
+
+  beforeEach(() => { localStorage.clear(); latest.current = null; dropAudioContext() })
+  afterEach(() => { cleanup(); localStorage.clear() })
+
+  it('quem tinha pan automático entra em separados, sem pan automático, e o palco novo é o padrão', async () => {
+    const { settings, outputLoadWarnings } = await load({ autoPan: true, audioDeviceId: 'fone' })
+    expect(settings).toMatchObject({ outputs: SPLIT, autoPan: false, stageVersion: 'novo', legacyPanReset: true, audioDeviceId: 'fone' })
+    expect(outputLoadWarnings).toEqual([])
+    // Gravado na hora: as saídas nas configurações e o marcador na chave própria.
+    expect(storedNow()).toMatchObject({ outputs: SPLIT, autoPan: false, stageVersion: 'novo', legacyPanReset: true, audioDeviceId: 'fone' })
+    expect(localStorage.getItem(MARKER)).toBe('1')
+  })
+
+  it('quem nunca gravou nada (o pan automático era o padrão) também entra em separados', async () => {
+    const { settings } = await load()
+    expect(settings).toMatchObject({ outputs: SPLIT, autoPan: false, stageVersion: 'novo', legacyPanReset: true, audioDeviceId: 'default' })
+    expect(localStorage.getItem(MARKER)).toBe('1')
+  })
+
+  it('com o pan automático desligado fica em Tudo junto e não zera pan nenhum', async () => {
+    const { settings } = await load({ autoPan: false, audioDeviceId: 'default' })
+    expect(settings).toMatchObject({ outputs: STEREO, autoPan: false, legacyPanReset: false })
+  })
+
+  it('depois da migração, saída ilegível vira separados sem zerar os pans de novo', async () => {
+    const { settings, outputLoadWarnings } = await load({ autoPan: true, outputs: { mode: 'quebrado' } }, '1')
+    expect(settings).toMatchObject({ outputs: SPLIT, legacyPanReset: false })
+    expect(outputLoadWarnings).toEqual(['modo-assumido'])
+  })
+
+  it('se só o marcador sumir, as saídas gravadas vencem e nada é zerado', async () => {
+    const { settings } = await load({ autoPan: true, outputs: STEREO })
+    expect(settings).toMatchObject({ outputs: STEREO, autoPan: true, legacyPanReset: false })
+    expect(localStorage.getItem(MARKER)).toBe('1')
+  })
+
+  it('configurações quebradas sem marcador contam como primeira carga', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { settings } = await load('{nao e json')
+    expect(error).toHaveBeenCalled()
+    expect(settings).toMatchObject({ outputs: SPLIT, autoPan: false, legacyPanReset: true })
+    expect(storedNow()).toMatchObject({ outputs: SPLIT })
+    error.mockRestore()
+  })
+
+  it('palco antigo fica; valor estranho vira o novo', async () => {
+    expect((await load({ autoPan: false, stageVersion: 'antigo' })).settings.stageVersion).toBe('antigo')
+    cleanup(); localStorage.clear()
+    expect((await load({ autoPan: false, stageVersion: 'v7' })).settings.stageVersion).toBe('novo')
+  })
+
+  it('o pedido de zerar os pans fica gravado até o motor desligar', async () => {
+    const first = await load({ autoPan: false, outputs: SPLIT, legacyPanReset: true }, '1')
+    expect(first.settings.legacyPanReset).toBe(true)
+    await act(async () => { first.updateSetting('legacyPanReset', false) })
+    expect(seen().settings.legacyPanReset).toBe(false)
+    expect(storedNow().legacyPanReset).toBe(false)
+  })
+
+  it('avisos da leitura somem quando o operador grava uma escolha de saídas', async () => {
+    const first = await load({ autoPan: false, outputs: { mode: 'split2', multi: SPLIT.multi } }, '1')
+    expect(first.outputLoadWarnings).toEqual(['lado-assumido'])
+    await act(async () => { first.updateSetting('stageVersion', 'antigo') })
+    expect(seen().outputLoadWarnings).toEqual(['lado-assumido'])
+    await act(async () => { first.updateSetting('outputs', { ...SPLIT, earOnSecond: true }) })
+    expect(seen().outputLoadWarnings).toEqual([])
+    expect(storedNow().outputs).toEqual({ ...SPLIT, earOnSecond: true })
   })
 })
