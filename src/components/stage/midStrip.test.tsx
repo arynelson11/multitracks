@@ -558,7 +558,9 @@ describe('faixa do meio', () => {
       if (this.parentElement?.hasAttribute('data-cover')) return k <= 0.25 ? rect(10, 120) : rect(25, 60)
       const title = len(cell.querySelector('[data-song-title]'))
       const next = len(cell.querySelector('[aria-label^="Próxima"] b'))
-      const need = title > 70 ? -1 : title > 20 ? (next > 20 ? 0.25 : 0.5) : 1
+      const dropped = cell.dataset.fit === 'drop'
+      // 'y' x 71: não cabe nem no mínimo com a capa; sem ela, cabe em 0,75.
+      const need = title > 70 && (cell.textContent ?? '').includes('yyy') ? (dropped ? 0.75 : -1) : title > 70 ? -1 : title > 20 ? (next > 20 ? 0.25 : 0.5) : 1
       return k > need ? rect(-10, 188) : rect(20, 100)
     })
     vi.spyOn(Element.prototype, 'scrollWidth', 'get').mockImplementation(function (this: Element) {
@@ -585,6 +587,10 @@ describe('faixa do meio', () => {
     rerender(strip({ song: { ...longSong, name: 'x'.repeat(77) } }))
     expect(fit('musica')).toBe('0')
     expect(q('[data-cell="musica"]').dataset.fit).toBe('drop')
+    // Sem a capa, mede de novo do tamanho cheio: se coube com ela fora, a fonte volta a crescer.
+    rerender(strip({ song: { ...longSong, name: 'y'.repeat(71) } }))
+    expect(q('[data-cell="musica"]').dataset.fit).toBe('drop')
+    expect(fit('musica')).toBe('0.75')
     expect(q('[data-cover]').className).toContain('group-data-[fit=drop]/song:hidden')
     // Palavra do título de enfeite mais larga que a capa: some também.
     const width = vi.spyOn(Element.prototype, 'getBoundingClientRect')

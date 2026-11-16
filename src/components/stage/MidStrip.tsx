@@ -65,16 +65,25 @@ function cellFits(cell: HTMLElement): boolean {
   return true
 }
 
+/** Desce o --ps-fit da célula do tamanho cheio até o mínimo e para no primeiro degrau em que cabe. */
+function shrinkToFit(cell: HTMLElement): boolean {
+  for (let i = 0; i <= FIT_STEPS; i++) {
+    cell.style.setProperty('--ps-fit', String(1 - i / FIT_STEPS))
+    if (cellFits(cell)) return true
+  }
+  return false
+}
+
 /**
- * Nada corta (regra do dono; Ruling T13-texto): o que não cabe desce de tamanho aos poucos. Cada
- * célula com `data-fit-height` (tempo, seção, música) ganha `--ps-fit`, que as classes leem: o
- * maior degrau em que nada chega a menos de 4 px da borda de cima ou de baixo (o conteúdo centralizado
- * pode usar o padding até aí) e o nome da seção e o título ficam em até 2 linhas; se nem no mínimo
- * couber, fica no mínimo (12 px de texto), sem cortar. O botão do
- * tom (`data-fit-width`) que passa da largura perde a seta e desce o tom pra 30 px. Se no mínimo a
- * célula ainda não couber e tiver algo que pode sair (`data-fit-drop`, a capa), ela ganha
- * `data-fit="drop"` e mede de novo. Por fim, a capa sem imagem (`data-fit-cover`) esconde o título de
- * enfeite que não cabe no quadrado, na altura ou na largura (palavra longa numa capa pequena).
+ * Nada corta (regra do dono; Ruling T13-texto): o que não cabe desce de tamanho aos poucos.
+ * - Botão do tom (`data-fit-width`) que passa da largura: perde a seta e o tom desce pra 30 px.
+ * - Célula com `data-fit-height` (tempo, seção, música): ganha `--ps-fit`, que as classes leem, no
+ *   maior degrau em que nada chega a menos de 4 px da borda de cima ou de baixo (o conteúdo
+ *   centralizado pode usar o padding até aí) e o nome da seção e o título ficam em até 2 linhas.
+ *   Se nem no mínimo (12 px de texto) couber e houver o que pode sair (`data-fit-drop`, a capa), a
+ *   célula ganha `data-fit="drop"` e mede de novo, do tamanho cheio; senão fica no mínimo, sem cortar.
+ * - Capa sem imagem (`data-fit-cover`): o título de enfeite que não cabe no quadrado, na altura ou na
+ *   largura (palavra longa numa capa pequena), some.
  */
 function fitStrip(root: HTMLElement): void {
   const width = [...root.querySelectorAll<HTMLElement>('[data-fit-width]')]
@@ -88,12 +97,9 @@ function fitStrip(root: HTMLElement): void {
   const tooWide = width.filter((el) => el.scrollWidth > el.clientWidth + 1)
   for (const el of tooWide) el.dataset.fit = 'small'
   for (const cell of cells) {
-    let fits = false
-    for (let i = 0; i <= FIT_STEPS && !fits; i++) {
-      cell.style.setProperty('--ps-fit', String(1 - i / FIT_STEPS))
-      fits = cellFits(cell)
-    }
-    if (!fits && cell.querySelector('[data-fit-drop]')) cell.dataset.fit = 'drop'
+    if (shrinkToFit(cell) || !cell.querySelector('[data-fit-drop]')) continue
+    cell.dataset.fit = 'drop'
+    shrinkToFit(cell)
   }
   for (const el of cover) if (overflowsY(el) || overflowsX(el)) el.dataset.fit = 'hide'
 }
