@@ -1,10 +1,7 @@
-import { useEffect, useSyncExternalStore } from 'react'
-import {
-  isPasswordRecovery, subscribePasswordRecovery, watchPasswordRecovery, type RecoveryAuthClient,
-} from '../lib/passwordRecovery'
+import { useSyncExternalStore } from 'react'
+import { isPasswordRecovery, subscribePasswordRecovery } from '../lib/passwordRecovery'
 
-// true enquanto a pessoa voltou do link de recuperar senha e ainda não criou a senha nova.
-export function usePasswordRecovery(client: RecoveryAuthClient | null): boolean {
-  useEffect(() => (client ? watchPasswordRecovery(client) : undefined), [client])
+// true depois do evento PASSWORD_RECOVERY do Supabase, até a pessoa salvar a senha nova ou desistir.
+export function usePasswordRecovery(): boolean {
   return useSyncExternalStore(subscribePasswordRecovery, isPasswordRecovery, isPasswordRecovery)
 }

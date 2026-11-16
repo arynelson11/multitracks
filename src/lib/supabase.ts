@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { watchPasswordRecovery } from './passwordRecovery';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -7,6 +8,9 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 export const supabase = (supabaseUrl && supabaseKey)
     ? createClient(supabaseUrl, supabaseKey)
     : null;
+
+// Escuta o PASSWORD_RECOVERY desde a criação do cliente, antes de o React montar.
+if (supabase) watchPasswordRecovery(supabase);
 
 if (!supabase) {
     console.warn('Supabase credentials missing. Cloud Library and Admin Upload features will be disabled. Please check your .env file or Vercel environment variables.');

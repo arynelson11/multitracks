@@ -18,7 +18,12 @@ function friendlyError(message: string): string {
   return `Não deu pra salvar a senha nova: ${message}`
 }
 
-export function NewPasswordPage({ client, onDone }: { client: RecoveryAuthClient; onDone: () => void }) {
+export function NewPasswordPage({ client, onDone, onCancel }: {
+  client: RecoveryAuthClient
+  onDone: () => void
+  // Antes de salvar: sai da conta e vai pra tela de entrar (não fica logado pelo link).
+  onCancel: () => void
+}) {
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [saving, setSaving] = useState(false)
@@ -83,10 +88,10 @@ export function NewPasswordPage({ client, onDone }: { client: RecoveryAuthClient
             </button>
             <button
               type="button"
-              onClick={onDone}
+              onClick={onCancel}
               className="w-full py-3 text-[14px] text-warm-200 hover:text-bone transition-colors cursor-pointer"
             >
-              Voltar pro início
+              Cancelar e voltar pra tela de entrar
             </button>
           </form>
         )}

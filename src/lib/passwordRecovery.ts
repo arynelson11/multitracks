@@ -1,9 +1,9 @@
-// Volta do link "Esqueceu sua senha?": o Supabase loga a pessoa com uma sessão de
-// recuperação e avisa com o evento PASSWORD_RECOVERY (o endereço chega com type=recovery).
-// Este módulo guarda esse estado pra o App mostrar a tela "Criar nova senha"
-// (src/components/NewPasswordPage.tsx) antes de qualquer outra.
-// Web: o link do email volta no site. Desktop: o link volta pelo playbackstudio:// e o
-// AuthPage liga o estado quando o fragmento tem type=recovery.
+// Volta do link "Esqueceu sua senha?": o Supabase valida o token no servidor, loga a pessoa
+// com a sessão de recuperação e só então avisa com o evento PASSWORD_RECOVERY. Só esse
+// evento liga a tela "Criar nova senha" (src/components/NewPasswordPage.tsx); o endereço
+// (#type=recovery) sozinho nunca liga, senão qualquer link com esse pedaço abriria a tela
+// pra quem já está logado. A escuta é registrada junto com o cliente (src/lib/supabase.ts).
+// O link do email sempre volta no site, na web e no desktop (AuthPage).
 
 export interface RecoveryAuthClient {
   auth: {
@@ -11,14 +11,11 @@ export interface RecoveryAuthClient {
       data: { subscription: { unsubscribe(): void } }
     }
     updateUser(attributes: { password: string }): Promise<{ error: { message: string } | null }>
+    signOut(): Promise<{ error: { message: string } | null }>
   }
 }
 
-export function hashIsRecovery(hash: string): boolean {
-  return /(?:^#|&)type=recovery(?:&|$)/.test(hash)
-}
-
-let recovering = typeof window !== 'undefined' && hashIsRecovery(window.location.hash)
+let recovering = false
 const listeners = new Set<() => void>()
 const set = (value: boolean) => {
   if (recovering === value) return
@@ -40,4 +37,13 @@ export function watchPasswordRecovery(client: RecoveryAuthClient): () => void {
     if (event === 'PASSWORD_RECOVERY') startPasswordRecovery()
   })
   return () => data.subscription.unsubscribe()
+}
+
+// Desistiu de trocar a senha: sai da sessão de recuperação (não fica logado por um link).
+export async function cancelPasswordRecovery(client: RecoveryAuthClient): Promise<void> {
+  try {
+    await client.auth.signOut()
+  } finally {
+    finishPasswordRecovery()
+  }
 }

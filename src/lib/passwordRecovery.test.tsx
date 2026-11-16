@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import {
-  finishPasswordRecovery, hashIsRecovery, isPasswordRecovery, startPasswordRecovery, watchPasswordRecovery,
+  cancelPasswordRecovery, finishPasswordRecovery, isPasswordRecovery, startPasswordRecovery, watchPasswordRecovery,
   type RecoveryAuthClient,
 } from './passwordRecovery'
 import { usePasswordRecovery } from '../hooks/usePasswordRecovery'
@@ -20,6 +20,7 @@ function fakeClient(updateError: { message: string } | null = null) {
       }),
       updateUser: vi.fn<(attrs: { password: string }) => Promise<{ data: object; error: { message: string } | null }>>(
         async () => ({ data: {}, error: updateError })),
+      signOut: vi.fn(async () => ({ error: null })),
     },
   }
   return { client: client as unknown as RecoveryAuthClient & typeof client, emit: (e: string) => listeners.forEach(l => l(e)), unsubscribe }
@@ -31,12 +32,24 @@ afterEach(() => {
 })
 
 describe('detectar a volta do link de recuperar senha', () => {
-  it('reconhece o type=recovery do endereço (fluxo do Supabase)', () => {
-    expect(hashIsRecovery('#access_token=a&expires_in=3600&refresh_token=b&token_type=bearer&type=recovery')).toBe(true)
-    expect(hashIsRecovery('#type=recovery&access_token=a')).toBe(true)
-    expect(hashIsRecovery('#access_token=a&type=signup')).toBe(false)
-    expect(hashIsRecovery('#error=access_denied&error_code=otp_expired')).toBe(false)
-    expect(hashIsRecovery('')).toBe(false)
+  it('#type=recovery no endereço, sem o evento do Supabase, NÃO abre a tela; com o evento, abre', async () => {
+    window.location.hash = '#access_token=lixo&type=recovery'
+    vi.resetModules()
+    const fresh = await import('./passwordRecovery')
+    expect(fresh.isPasswordRecovery()).toBe(false)
+    const { client, emit } = fakeClient()
+    const stop = fresh.watchPasswordRecovery(client)
+    emit('PASSWORD_RECOVERY')
+    expect(fresh.isPasswordRecovery()).toBe(true)
+    stop()
+    fresh.finishPasswordRecovery()
+    window.location.hash = ''
+  })
+
+  it('a escuta do evento fica no carregamento do cliente Supabase (não depende da ordem do React)', async () => {
+    const { readFileSync } = await import('node:fs')
+    const src = readFileSync(`${process.cwd()}/src/lib/supabase.ts`, 'utf8')
+    expect(src).toMatch(/if \(supabase\) watchPasswordRecovery\(supabase\)/)
   })
 
   it('o evento PASSWORD_RECOVERY do Supabase liga a tela; outros eventos não', () => {
@@ -50,20 +63,29 @@ describe('detectar a volta do link de recuperar senha', () => {
     expect(unsubscribe).toHaveBeenCalled()
   })
 
-  it('o hook acompanha o estado e sem cliente (Supabase sem configurar) não quebra', () => {
+  it('o hook acompanha o estado', () => {
     const { client, emit } = fakeClient()
-    function Probe({ c }: { c: RecoveryAuthClient | null }) {
-      return <span>{usePasswordRecovery(c) ? 'recuperando' : 'normal'}</span>
+    const stop = watchPasswordRecovery(client)
+    function Probe() {
+      return <span>{usePasswordRecovery() ? 'recuperando' : 'normal'}</span>
     }
-    const { rerender } = render(<Probe c={client} />)
+    render(<Probe />)
     expect(screen.getByText('normal')).toBeTruthy()
     act(() => emit('PASSWORD_RECOVERY'))
     expect(screen.getByText('recuperando')).toBeTruthy()
     act(() => finishPasswordRecovery())
     expect(screen.getByText('normal')).toBeTruthy()
-    rerender(<Probe c={null} />)
     act(() => startPasswordRecovery())
     expect(screen.getByText('recuperando')).toBeTruthy()
+    stop()
+  })
+
+  it('desistir de trocar a senha sai da conta e desliga a tela', async () => {
+    const { client } = fakeClient()
+    startPasswordRecovery()
+    await cancelPasswordRecovery(client)
+    expect(client.auth.signOut).toHaveBeenCalled()
+    expect(isPasswordRecovery()).toBe(false)
   })
 })
 
@@ -74,7 +96,7 @@ describe('tela Criar nova senha', () => {
 
   it('pede pelo menos 8 caracteres e não chama o Supabase', async () => {
     const { client } = fakeClient()
-    render(<NewPasswordPage client={client} onDone={() => {}} />)
+    render(<NewPasswordPage client={client} onDone={() => {}} onCancel={() => {}} />)
     fireEvent.change(nova(), { target: { value: 'abc12' } })
     fireEvent.change(repetir(), { target: { value: 'abc12' } })
     await act(async () => salvar())
@@ -84,7 +106,7 @@ describe('tela Criar nova senha', () => {
 
   it('as duas senhas precisam ser iguais', async () => {
     const { client } = fakeClient()
-    render(<NewPasswordPage client={client} onDone={() => {}} />)
+    render(<NewPasswordPage client={client} onDone={() => {}} onCancel={() => {}} />)
     fireEvent.change(nova(), { target: { value: 'senhaforte1' } })
     fireEvent.change(repetir(), { target: { value: 'senhaforte2' } })
     await act(async () => salvar())
@@ -95,19 +117,29 @@ describe('tela Criar nova senha', () => {
   it('salva com updateUser({ password }) e mostra o sucesso; Continuar fecha a tela', async () => {
     const { client } = fakeClient()
     const onDone = vi.fn()
-    render(<NewPasswordPage client={client} onDone={onDone} />)
+    render(<NewPasswordPage client={client} onDone={onDone} onCancel={() => {}} />)
     fireEvent.change(nova(), { target: { value: 'senhaforte1' } })
     fireEvent.change(repetir(), { target: { value: 'senhaforte1' } })
     await act(async () => salvar())
     expect(client.auth.updateUser).toHaveBeenCalledWith({ password: 'senhaforte1' })
     expect(screen.getByRole('status').textContent).toBe('Senha nova salva. Você já está conectado.')
+    expect(screen.queryByRole('button', { name: 'Cancelar e voltar pra tela de entrar' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Continuar' }))
     expect(onDone).toHaveBeenCalled()
   })
 
+  it('antes de salvar, Cancelar e voltar pra tela de entrar chama o cancelamento', () => {
+    const { client } = fakeClient()
+    const onCancel = vi.fn()
+    render(<NewPasswordPage client={client} onDone={() => {}} onCancel={onCancel} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar e voltar pra tela de entrar' }))
+    expect(onCancel).toHaveBeenCalled()
+    expect(client.auth.updateUser).not.toHaveBeenCalled()
+  })
+
   it('erro do Supabase aparece em português (link vencido, senha igual à anterior)', async () => {
     const vencido = fakeClient({ message: 'Auth session missing!' })
-    render(<NewPasswordPage client={vencido.client} onDone={() => {}} />)
+    render(<NewPasswordPage client={vencido.client} onDone={() => {}} onCancel={() => {}} />)
     fireEvent.change(nova(), { target: { value: 'senhaforte1' } })
     fireEvent.change(repetir(), { target: { value: 'senhaforte1' } })
     await act(async () => salvar())
@@ -115,7 +147,7 @@ describe('tela Criar nova senha', () => {
     cleanup()
 
     const igual = fakeClient({ message: 'New password should be different from the old password.' })
-    render(<NewPasswordPage client={igual.client} onDone={() => {}} />)
+    render(<NewPasswordPage client={igual.client} onDone={() => {}} onCancel={() => {}} />)
     fireEvent.change(nova(), { target: { value: 'senhaforte1' } })
     fireEvent.change(repetir(), { target: { value: 'senhaforte1' } })
     await act(async () => salvar())
@@ -124,7 +156,7 @@ describe('tela Criar nova senha', () => {
 
   it('campos com 16px (o iPhone não dá zoom) e do tipo senha', () => {
     const { client } = fakeClient()
-    render(<NewPasswordPage client={client} onDone={() => {}} />)
+    render(<NewPasswordPage client={client} onDone={() => {}} onCancel={() => {}} />)
     for (const input of [nova(), repetir()]) {
       expect(input.type).toBe('password')
       expect(input.className).toContain('text-[16px]')
