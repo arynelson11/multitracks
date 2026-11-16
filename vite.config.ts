@@ -83,6 +83,9 @@ export default defineConfig({
             // (global, em main.tsx) só oferece recarregar, nunca recarrega sozinho pra
             // não cortar uma música tocando.
             registerType: 'autoUpdate',
+            // registerSW.js com defer: não bloqueia a primeira pintura (ele só registra o
+            // service worker no evento load, então nada muda no comportamento).
+            injectRegister: 'script-defer',
             includeAssets: ['logo.svg', 'logo.png', 'app-icon.svg', 'app-icon.png', 'favicon.svg', 'apple-touch-icon.png', 'pwa-192.png', 'pwa-512.png'],
             manifest: {
               id: '/',
