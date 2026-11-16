@@ -19,6 +19,8 @@ interface SynthClickOptions {
   pickupPulses?: number
   jitterMs?: number
   gap?: [number, number]
+  /** Atraso fixo do ataque por tempo do compasso, em ms (sons diferentes no mesmo click). */
+  beatOffsetsMs?: number[]
 }
 
 function seeded(seed: number): () => number {
@@ -42,9 +44,9 @@ function synthClick(o: SynthClickOptions): Float32Array {
     const nominal = o.firstPulse + k * period
     if (nominal >= o.seconds) break
     const jitter = o.jitterMs ? (rand() * 2 - 1) * o.jitterMs / 1000 : 0
-    const t = nominal + jitter
-    if (t < 0 || (o.gap && t >= o.gap[0] && t < o.gap[1])) continue
     const beat = (((k - pickup) % o.pulsesPerBar) + o.pulsesPerBar) % o.pulsesPerBar
+    const t = nominal + jitter + (o.beatOffsetsMs?.[beat] ?? 0) / 1000
+    if (t < 0 || (o.gap && t >= o.gap[0] && t < o.gap[1])) continue
     const isOne = beat === 0
     const isEven = (((k - pickup) % 2) + 2) % 2 === 0
     let amp = BASE_AMP
@@ -114,6 +116,16 @@ describe('analyzeClickTrack: o resto do contrato', () => {
       for (let i = 0; i < 600; i++) x[start + i] += BASE_AMP * Math.exp(-i / SR / 0.008) * Math.sin(2 * Math.PI * 1200 * i / SR)
     }
     expect(analyzeClickTrack(x, SR)).toBeNull()
+  })
+  it('click longo com ataques de sons diferentes não escorrega da grade', () => {
+    // Visto nos clicks reais: cada tempo do compasso tem um som e o ataque de cada um é
+    // detectado com um atraso um pouco diferente. A mediana dos intervalos sai torta por
+    // frações de ms e, num arquivo de 6 min, o índice calculado só com ela escorrega da grade.
+    const x = synthClick({ bpm: 140, seconds: 360, pulsesPerBar: 4, accent: 'loud', firstPulse: 0, beatOffsetsMs: [0, 0.5, 1, 1.5] })
+    const a = analyzeClickTrack(x, 48000)!
+    expect(a).not.toBeNull()
+    expect(Math.abs(a.bpm - 140)).toBeLessThan(0.02); expect(a.pulsesPerBar).toBe(4); expect(a.onsets).toBe(840)
+    expect(Math.abs(a.firstDownbeat! - 0.00075)).toBeLessThan(0.002)
   })
   it('outra taxa de amostragem dá o mesmo tempo', () => {
     // O mesmo click reamostrado por vizinho mais perto pra 44,1 kHz.

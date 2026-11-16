@@ -7,7 +7,9 @@
 //    global, com no mínimo 60 ms entre ataques. O tempo é a primeira amostra acima do limiar.
 // 2. Período: mediana dos intervalos vizinhos. Cada ataque ganha o índice
 //    round((t - t0) / mediana) e sai da conta se cai a mais de 15% da grade. BPM e fase
-//    saem de mínimos quadrados (índice x tempo).
+//    saem de mínimos quadrados (índice x tempo). Isso vale nos primeiros 16 períodos; dali
+//    em diante a reta ajustada refaz os índices em trechos que dobram até o fim do arquivo
+//    (ver fitGrid).
 // 3. Traços de cada ataque nos primeiros 15 ms: pico (acento mais forte, `loud`) e
 //    cruzamentos por zero (acento mais agudo, `bright`). Cada traço é dividido em 2 grupos
 //    (2-médias) com o limiar no meio das médias. Médias a menos de 10% uma da outra quer
@@ -106,23 +108,54 @@ function median(values: number[]): number {
 }
 
 /**
- * Ataques na grade da mediana dos intervalos. Dois ataques no mesmo índice: fica o mais perto
- * da grade (o primeiro ataque, índice 0, está sempre exatamente nela).
+ * Ataques até `until` (amostra) que caem a no máximo 15% do período da grade
+ * `phase + period * índice`. Dois ataques no mesmo índice: fica o mais perto da grade.
  */
-function onsetsOnGrid(onsets: number[]): GridOnset[] {
-  const intervals: number[] = []
-  for (let i = 1; i < onsets.length; i++) intervals.push(onsets[i] - onsets[i - 1])
-  const period = median(intervals)
-  const t0 = onsets[0]
+function snapToGrid(onsets: number[], phase: number, period: number, until: number): GridOnset[] {
   const byIndex = new Map<number, { sample: number; dev: number }>()
   for (const sample of onsets) {
-    const index = Math.round((sample - t0) / period)
-    const dev = Math.abs(sample - (t0 + index * period))
+    if (sample > until) break
+    const index = Math.round((sample - phase) / period)
+    const dev = Math.abs(sample - (phase + index * period))
     if (dev > GRID_TOLERANCE * period) continue
     const prev = byIndex.get(index)
     if (!prev || dev < prev.dev) byIndex.set(index, { sample, dev })
   }
   return [...byIndex.entries()].map(([index, o]) => ({ sample: o.sample, index })).sort((a, b) => a.index - b.index)
+}
+
+/**
+ * Trecho inicial, em períodos, em que o índice sai só da mediana. A mediana dos intervalos
+ * vizinhos sai torta por frações de ms quando os sons do click têm ataques diferentes (visto
+ * nos clicks reais): em 16 períodos o erro acumulado fica bem abaixo dos 15%.
+ */
+const FIRST_SPAN_PERIODS = 16
+
+/**
+ * Grade dos ataques (etapa 2). O índice começa como round((t - t0) / mediana) nos primeiros
+ * 16 períodos; a reta ajustada ali refaz os índices num trecho com o dobro do tamanho, e assim
+ * por diante até o fim do arquivo. Sem isso, num click de 5 min o índice escorrega da grade
+ * no meio do arquivo e os ataques do fim saem da conta.
+ */
+function fitGrid(onsets: number[]): { grid: GridOnset[]; period: number; phase: number } | null {
+  const intervals: number[] = []
+  for (let i = 1; i < onsets.length; i++) intervals.push(onsets[i] - onsets[i - 1])
+  let period = median(intervals)
+  let phase = onsets[0]
+  const last = onsets[onsets.length - 1]
+  let span = FIRST_SPAN_PERIODS * period
+  let grid: GridOnset[] = []
+  for (;;) {
+    const until = onsets[0] + span
+    grid = snapToGrid(onsets, phase, period, until)
+    if (grid.length >= 2) ({ period, phase } = fitLine(grid))
+    if (!(period > 0)) return null
+    if (until >= last) break
+    span *= 2
+  }
+  // Índices a partir de 0 no primeiro ataque da grade.
+  const first = grid[0]?.index ?? 0
+  return { grid: grid.map((o) => ({ sample: o.sample, index: o.index - first })), period, phase: phase + first * period }
 }
 
 /** Reta de mínimos quadrados tempo = fase + período * índice, em amostras. */
@@ -233,10 +266,10 @@ export function analyzeClickTrack(samples: Float32Array, sampleRate: number): Cl
   if (!(sampleRate > 0) || samples.length < MIN_SECONDS * sampleRate) return null
   const detected = detectOnsets(samples, sampleRate)
   if (detected.length < MIN_ONSETS) return null
-  const grid = onsetsOnGrid(detected)
+  const fit = fitGrid(detected)
+  if (!fit) return null
+  const { grid, period, phase } = fit
   if (grid.length < MIN_ONSETS || grid.length < MIN_ON_GRID_SHARE * detected.length) return null
-  const { period, phase } = fitLine(grid)
-  if (!(period > 0)) return null
   const timeOf = (index: number) => (phase + period * index) / sampleRate
   const result: ClickAnalysis = {
     bpm: (60 * sampleRate) / period,
