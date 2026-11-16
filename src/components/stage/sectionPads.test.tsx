@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { SECTION_SHORTCUTS } from '../SectionBar'
 import { FAMILY_COLOR } from '../../lib/channelNames'
 import type { StageGates, StageSection, TransitionView } from '../../lib/stageContracts'
@@ -64,7 +64,7 @@ const clock = { heardNow: () => heard, position: () => position }
 
 const props = (patch: Partial<SectionPadsProps> = {}): SectionPadsProps => ({
   sections: SECTIONS, currentSection: 1, intent: null, transition: null, isPlaying: true, landed: null, gates: GATES,
-  clock, onTap: () => {}, onUpgrade: () => {}, ...patch,
+  clock, onTap: () => {}, onUpgrade: () => {}, songId: 'musica-1', ...patch,
 })
 const renderPads = (patch: Partial<SectionPadsProps> = {}) => render(<SectionPads {...props(patch)} />)
 const pads = () => [...document.querySelectorAll('[data-section-pad]')] as HTMLButtonElement[]
@@ -74,11 +74,13 @@ const scroller = () => document.querySelector('[data-pads-scroller]') as HTMLEle
 const before = () => document.querySelector('[data-pads-more="antes"]') as HTMLButtonElement | null
 const after = () => document.querySelector('[data-pads-more="depois"]') as HTMLButtonElement | null
 
-// Régua falsa (o jsdom não mede): largura útil da fileira e o que cada botão pede na largura livre.
-function ruler(track: number, need: (pad: HTMLElement) => number = () => 104) {
+// Régua falsa (o jsdom não mede): largura útil da fileira (fixa ou lida na hora, pra janela que muda)
+// e o que cada botão pede na largura livre.
+function ruler(track: number | (() => number), need: (pad: HTMLElement) => number = () => 104) {
   const widthCalls = { n: 0 }
   vi.spyOn(Element.prototype, 'clientWidth', 'get').mockImplementation(function (this: Element) {
-    return this.hasAttribute('data-pads-track') ? track : 0
+    if (!this.hasAttribute('data-pads-track')) return 0
+    return typeof track === 'function' ? track() : track
   })
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
     if (!this.hasAttribute('data-section-pad')) return 0
@@ -577,10 +579,152 @@ describe('botoeira de seções', () => {
     rerender(<SectionPads {...props({ hasGrid: true, isPlaying: false })} />)
     expect(pads().every((b) => b.style.width === '117px')).toBe(true)
     cleanup()
-    // Próxima música já tocando, com a grade conhecida: entra com a dela.
+    // Próxima música já tocando, com a grade conhecida: entra com a dela. Quem diz que é outra música é o id.
     const r = renderPads()
-    r.rerender(<SectionPads {...props({ sections: SECTIONS.slice(0, 4), hasGrid: true })} />)
+    r.rerender(<SectionPads {...props({ songId: 'musica-2', hasGrid: true })} />)
     expect(pads().every((b) => b.style.width === '117px')).toBe(true)
+  })
+
+  // Ruling T10-grade-tarde-2: a música é reconhecida pelo id; tocando, a reserva inteira fica a do começo.
+  const doze = (patch: (s: StageSection, i: number) => Partial<StageSection> = () => ({})): StageSection[] =>
+    Array.from({ length: 12 }, (_, i): StageSection => {
+      const s: StageSection = { index: i, label: `S${i + 1}`, color: '#10b981', start: i * 16, end: i * 16 + 16, bars: 8 }
+      return { ...s, ...patch(s, i) }
+    })
+  const widths = () => pads().map((b) => b.style.width)
+  const sizers = () => pads().map((b) => b.querySelector('[data-pad-sizer]')?.textContent ?? '')
+  const outs = () => pads().map((b) => (b.dataset.out === 'true' ? 0 : 1)).join('')
+
+  it('tocando, a grade chegar e os compassos de todas as seções mudarem não mexe em nenhum botão nem rola a fileira; parada, entram as larguras novas', () => {
+    // Como o sectionSpans entrega: antes da grade, marcas 0,12 s depois da barra e sem compassos; com ela, encaixadas e com 8.
+    const antes = doze((s, i) => ({ start: i === 0 ? 0 : s.start + 0.12, end: s.end + 0.12, bars: null }))
+    const depois = doze()
+    // Régua falsa pela reserva: 123 com "no fim da seção", 117 sem; o "comp. 8/8" de cada uma soma 2.
+    const calls = ruler(600, (b) => {
+      const t = b.querySelector('[data-pad-sizer]')?.textContent ?? ''
+      return (t.includes('no fim da seção') ? 123 : 117) + (t.includes('comp. 8/8') ? 2 : 0)
+    })
+    position = 17
+    const { rerender } = renderPads({ sections: antes, hasGrid: false })
+    expect(widths().every((w) => w === '123px')).toBe(true)
+    // O operador paginou (toque no ›): S4 a S6, AGORA fora de vista.
+    fireEvent.pointerDown(after() as HTMLButtonElement)
+    fireEvent.click(after() as HTMLButtonElement)
+    expect(scroller().scrollLeft).toBe(3 * 131)
+    const w0 = widths()
+    const s0 = sizers()
+    const o0 = outs()
+    calls.n = 0
+    // A grade chega logo depois, com a música tocando: muda início, fim e compassos de TODAS as seções.
+    rerender(<SectionPads {...props({ sections: depois, hasGrid: true })} />)
+    expect(widths()).toEqual(w0)
+    expect(sizers()).toEqual(s0) // a reserva continua a do começo
+    expect(calls.n).toBe(0) // nem mede: largura, lugar e altura (nome em 1 ou 2 linhas) não mudam
+    expect(scroller().scrollLeft).toBe(3 * 131) // não volta pra AGORA debaixo do dedo
+    expect(outs()).toBe(o0)
+    expect(part(1, 'pad-meta')?.textContent).toBe('comp. 1/8') // a linha de baixo já mostra o dado novo
+    // Os compassos mudam de novo, ainda tocando: nada.
+    rerender(<SectionPads {...props({ sections: doze(() => ({ bars: 9 })), hasGrid: true })} />)
+    expect(widths()).toEqual(w0)
+    expect(calls.n).toBe(0)
+    // Parada: entram as larguras novas (sem "no fim da seção", com o compasso de cada uma). A AGORA não
+    // estava à vista, então a fileira fica na página do operador.
+    rerender(<SectionPads {...props({ sections: depois, hasGrid: true, isPlaying: false })} />)
+    expect(widths().every((w) => w === '119px')).toBe(true)
+    expect(sizers().every((t) => !t.includes('no fim da seção') && t.includes('comp. 8/8'))).toBe(true)
+    expect(scroller().scrollLeft).toBe(3 * 127)
+    calls.n = 0
+    rerender(<SectionPads {...props({ sections: depois, hasGrid: true, isPlaying: true })} />)
+    expect(widths().every((w) => w === '119px')).toBe(true)
+    expect(calls.n).toBe(0) // voltar a tocar não muda nada
+  })
+
+  it('outra música (id novo) tocando: a fileira mede de novo e vai pra AGORA, mesmo com as seções iguais às da anterior', () => {
+    const calls = ruler(600, (b) => (b.querySelector('[data-pad-sizer]')?.textContent?.includes('no fim da seção') ? 123 : 117))
+    const novas: Array<[string, StageSection[]]> = [
+      ['seções novas', doze((s) => ({ start: s.start + 0.5, end: s.end + 0.5 }))],
+      ['mesmas seções (arranjo igual ao da anterior)', doze()],
+    ]
+    for (const [caso, nova] of novas) {
+      const { rerender } = renderPads({ sections: doze(), hasGrid: false })
+      fireEvent.pointerDown(after() as HTMLButtonElement)
+      fireEvent.click(after() as HTMLButtonElement)
+      expect(scroller().scrollLeft, caso).toBe(3 * 131)
+      calls.n = 0
+      rerender(<SectionPads {...props({ songId: 'musica-2', sections: nova, currentSection: 9, hasGrid: true })} />)
+      expect(calls.n, caso).toBeGreaterThan(0)
+      expect(widths().every((w) => w === '117px'), caso).toBe(true)
+      // AGORA (S10) à vista e encaixada, mesmo com o toque recente: S8 a S10 (3 de 117 px na janela de 480).
+      expect(scroller().scrollLeft, caso).toBe(7 * 125)
+      expect(pad(9).dataset.out, caso).toBe('false')
+      cleanup()
+    }
+  })
+
+  it('mesma música tocando com outra lista de botões (duas marcas na mesma barra) não espera: cada botão manda o índice da lista nova', () => {
+    const onTap = vi.fn()
+    const { rerender } = renderPads({ onTap })
+    const menos = SECTIONS.filter((s) => s.index !== 2).map((s, i) => ({ ...s, index: i }))
+    rerender(<SectionPads {...props({ onTap, sections: menos })} />)
+    expect(pads().map((b) => b.querySelector('[data-pad-name]')?.textContent)).toEqual(['Intro', 'Verso', 'Ponte', 'Final'])
+    fireEvent.click(pad(2))
+    expect(onTap).toHaveBeenLastCalledWith(2)
+    expect(part(3, 'pad-sizer')?.textContent).toContain('1:05') // a reserva do Final é a dele
+  })
+
+  // Ruling T10-remedida: medida nova (janela, fonte) que tiraria da vista a AGORA traz a AGORA.
+  it.each([
+    ['1280 -> 1040', 1248, 1008, 8],
+    ['1440 -> 1200', 1408, 1168, 9],
+  ])('janela %s com a AGORA no fim da página: a medida nova traz a AGORA; armar e cancelar não rolam; quem paginou pra longe não é puxado', (_, from, to, cur) => {
+    let track = from
+    ruler(() => track, () => 117)
+    const resize: Array<() => void> = []
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(cb: () => void) { resize.push(cb) }
+      observe() {}
+      disconnect() {}
+    })
+    const base = { sections: doze(), currentSection: cur, hasGrid: true }
+    const { rerender } = renderPads(base)
+    expect(scroller().scrollLeft).toBe(0)
+    expect(pad(cur).dataset.out).toBe('false') // a AGORA é a última à vista
+    expect(pad(cur + 1).dataset.out).toBe('true')
+    track = to // janela 240 px mais estreita: cabem 2 a menos
+    act(() => resize.forEach((f) => f()))
+    expect(pad(cur).dataset.out).toBe('false')
+    expect(scroller().scrollLeft).toBe(2 * 125) // a página que termina na AGORA, encaixada
+    rerender(<SectionPads {...props({ ...base, intent: { target: 3, plays: 1 } })} />)
+    expect(scroller().scrollLeft).toBe(250)
+    rerender(<SectionPads {...props({ ...base, intent: null })} />)
+    expect(scroller().scrollLeft).toBe(250)
+    // Paginou pra trás (AGORA fora de vista) e a janela muda de novo: re-encaixa onde está.
+    fireEvent.pointerDown(before() as HTMLButtonElement)
+    fireEvent.click(before() as HTMLButtonElement)
+    expect(scroller().scrollLeft).toBe(0)
+    expect(pad(cur).dataset.out).toBe('true')
+    track = to - 125
+    act(() => resize.forEach((f) => f()))
+    expect(scroller().scrollLeft).toBe(0)
+  })
+
+  it('fonte que chega depois da primeira medida e tira a AGORA da vista: a fileira traz a AGORA', async () => {
+    let fontsLoaded = () => {}
+    const ready = new Promise<void>((r) => { fontsLoaded = r })
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { ready } })
+    try {
+      let w = 104 // fonte do sistema: cabem 10 (S1 a S10), AGORA na ponta
+      ruler(1248, () => w)
+      renderPads({ sections: doze(), currentSection: 9, hasGrid: true })
+      expect(scroller().scrollLeft).toBe(0)
+      expect(pad(9).dataset.out).toBe('false')
+      w = 117 // a Inter chegou: cabem 9
+      await act(async () => { fontsLoaded(); await ready })
+      expect(pad(9).dataset.out).toBe('false')
+      expect(scroller().scrollLeft).toBe(125) // S2 a S10
+    } finally {
+      delete (document as unknown as { fonts?: unknown }).fonts
+    }
   })
 
   it('tudo cabe: sem indicadores, sem esticar e sem rolar (a sobra fica vazia à direita)', () => {

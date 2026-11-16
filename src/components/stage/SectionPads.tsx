@@ -13,6 +13,11 @@ export interface SectionPadsProps {
   sections: StageSection[]; currentSection: number; intent: ArmIntent | null; transition: TransitionView | null; isPlaying: boolean
   landed: StageView['landed']; gates: StageGates; clock: Pick<StageClock, 'heardNow' | 'position'>; onTap(i: number): void; onUpgrade(): void
   /**
+   * Música carregada (`StageView.song?.id ?? null`). É por ela que a botoeira sabe que a música mudou
+   * (mede de novo e vai pra AGORA); a grade e os compassos das seções nunca contam como música nova.
+   */
+  songId: string | null
+  /**
    * A música tem grade (click lido ou BPM salvo: `StageView.grid !== null`). Sem grade, cada botão
    * reserva também "no fim da seção". Sem informar, reserva (o lado seguro: a largura nunca muda ao armar).
    */
@@ -98,6 +103,14 @@ const sameLayout = (a: RowLayout, b: RowLayout) =>
 const tooTall = (name: HTMLElement, px: number) => name.offsetHeight > px * NAME_LEADING * (NAME_MAX_LINES + 0.5)
 
 /**
+ * O que entra na medida da fileira (Ruling T10-grade-tarde-2): as seções (nomes, compassos, inícios e
+ * fins), a grade e a música de onde vieram. `shape` é só a lista de botões (posição e nome).
+ */
+interface Held { song: string | null; sections: StageSection[]; key: string; shape: string; grid: boolean }
+const shapeOf = (list: StageSection[]) => list.map((s) => `${s.index}|${s.label}`).join('~')
+const keyOf = (list: StageSection[]) => list.map((s) => `${s.index}|${s.label}|${s.bars}|${s.start}|${s.end}`).join('~')
+
+/**
  * Mede a fileira UMA vez por layout (seções, teto do plano, grade, largura da tela, fontes); trocar
  * de estado nunca passa por aqui. Cada botão fica com o que ELE pede na largura livre (a reserva do
  * estado mais largo dele entra no min-content; nome numa linha se custar até 16 px a mais, senão em
@@ -169,6 +182,12 @@ function firstAt(L: RowLayout, x: number): number {
   let best = 0
   L.offsets.forEach((o, i) => { if (Math.abs(o - x) < Math.abs(L.offsets[best] - x)) best = i })
   return best
+}
+
+/** O botão na posição `cur` aparece inteiro na janela que começa no botão `f` (sem rolagem, todos aparecem). */
+function inView(L: RowLayout, f: number, cur: number): boolean {
+  if (cur < 0 || cur >= L.offsets.length) return false
+  return !L.overflow || (cur >= f && cur < f + visibleFrom(L, f))
 }
 
 /** Primeiro botão da janela pra a AGORA ficar à vista, mexendo o mínimo a partir de onde a janela está. */
@@ -255,7 +274,7 @@ function MoreButton({ side, ref, onPage }: { side: 'antes' | 'depois'; ref: Reac
  * a cada quadro, escritos direto no DOM. No Livre, convite pros planos; no pago sem seções, o
  * caminho pro EDITAR. O toque só chama `onTap`: quem decide é a regra da T4.
  */
-export function SectionPads({ sections, currentSection, intent, transition, isPlaying, landed, gates, clock, onTap, onUpgrade, hasGrid = false }: SectionPadsProps) {
+export function SectionPads({ sections, currentSection, intent, transition, isPlaying, landed, gates, clock, onTap, onUpgrade, songId, hasGrid = false }: SectionPadsProps) {
   const trackRef = useRef<HTMLDivElement>(null)
   const rowRef = useRef<HTMLDivElement>(null)
   const partsRef = useRef<PadParts[]>([])
@@ -265,24 +284,28 @@ export function SectionPads({ sections, currentSection, intent, transition, isPl
   const afterRef = useRef<HTMLButtonElement>(null)
   const [layout, setLayout] = useState<RowLayout>(NO_LAYOUT)
   const touchedAt = useRef(-Infinity) // último toque, roda ou tecla na fileira (performance.now)
-  const viewRef = useRef<{ song: string; cur: number; layout: RowLayout } | null>(null)
+  const viewRef = useRef<{ song: string | null; cur: number; layout: RowLayout } | null>(null)
   const n = sections.length
-  const songKey = sections.map((s) => `${s.index}|${s.label}|${s.bars}|${s.start}|${s.end}`).join('~')
-  // Ruling T10-grade-tarde: a grade que chega com a música tocando só muda as larguras com ela parada
-  // (ou na próxima música); tocando, a reserva continua a do começo.
-  const [gridLatch, setGridLatch] = useState({ song: songKey, grid: hasGrid })
-  let layoutGrid = gridLatch.grid
-  if (gridLatch.song !== songKey || (!isPlaying && gridLatch.grid !== hasGrid)) {
-    setGridLatch({ song: songKey, grid: hasGrid })
-    layoutGrid = hasGrid
+  // Ruling T10-grade-tarde-2: a música é reconhecida pelo id. Com ela tocando, o que entra na medida
+  // (larguras, altura da fileira, ordem) fica o do começo, mesmo que a grade chegue ou os compassos, os
+  // inícios e os fins das seções mudem; parada, ou outra música, entra o que veio agora. Só uma lista de
+  // botões diferente (outra quantidade ou outro nome, como duas marcas caindo na mesma barra) entra na
+  // hora: o toque tem de mandar o índice da lista que o motor usa.
+  const liveKey = keyOf(sections)
+  const liveShape = shapeOf(sections)
+  const [held, setHeld] = useState<Held>(() => ({ song: songId, sections, key: liveKey, shape: liveShape, grid: hasGrid }))
+  let lay = held
+  if (held.song !== songId || held.shape !== liveShape || (!isPlaying && (held.key !== liveKey || held.grid !== hasGrid))) {
+    lay = { song: songId, sections, key: liveKey, shape: liveShape, grid: hasGrid }
+    setHeld(lay)
   }
   const showPads = gates.sections && n > 0
   const selfLoop = isSelfLoop(intent, currentSection)
   const armedIndex = intent !== null && !selfLoop ? intent.target : null
   // A conta do motor só vale pro alvo armado agora (troca de alvo chega antes da conta nova).
   const pending = armedIndex !== null && transition !== null && transition.to === armedIndex ? transition : null
-  // Muda só com o que muda a largura: seções (nomes, compassos, tempos), o teto do REPETE e a grade.
-  const layoutKey = `${gates.maxRepeats}#${layoutGrid}#${songKey}`
+  // Muda só com o que muda a largura: a música, as seções da medida (nomes, compassos, tempos), o teto do REPETE e a grade.
+  const layoutKey = `${gates.maxRepeats}#${lay.grid}#${String(lay.song)}#${lay.key}`
   const curPos = sections.findIndex((s) => s.index === currentSection)
 
   const paint = () => {
@@ -338,25 +361,31 @@ export function SectionPads({ sections, currentSection, intent, transition, isPl
   }, [showPads])
   // Ruling T10-volta: armar, cancelar e trocar o alvo nunca rolam a fileira. Ela vai sozinha pra AGORA
   // (já encaixada) só quando a música carrega e quando a seção atual muda sem toque na fileira há 4 s.
-  // Medida nova (janela, fontes) só re-encaixa a página de agora.
+  // Ruling T10-remedida: medida nova (janela, fontes, larguras novas com a música parada) re-encaixa a
+  // página de agora e, se a AGORA estava à vista e sairia, traz a AGORA (é a janela que mudou, não um
+  // toque; quem paginou pra longe dela continua onde está).
   useLayoutEffect(() => {
     const row = rowRef.current
     if (!row || layout.key !== layoutKey) return // medida ainda não é desta música
     const prev = viewRef.current
-    viewRef.current = { song: songKey, cur: curPos, layout }
+    viewRef.current = { song: songId, cur: curPos, layout }
     if (layout.overflow) {
-      const loaded = prev === null || prev.song !== songKey
+      const loaded = prev === null || prev.song !== songId
+      const remeasured = !loaded && prev.layout !== layout
       const moved = !loaded && prev.cur !== curPos && performance.now() - touchedAt.current >= IDLE_MS
-      let f = Math.min(firstRef.current, lastFirst(layout))
+      // Sem rolagem na medida anterior a janela estava no começo (o firstRef pode ser de antes dela).
+      const f0 = loaded || !prev.layout.overflow ? 0 : firstRef.current
+      const keepNow = remeasured && inView(prev.layout, f0, curPos)
+      let f = Math.min(f0, lastFirst(layout))
       if (loaded) f = pickFirst(layout, 0, curPos)
-      else if (moved) f = pickFirst(layout, f, curPos)
-      if (loaded || moved || prev.layout !== layout) {
+      else if (moved || keepNow) f = pickFirst(layout, f, curPos)
+      if (loaded || moved || remeasured) {
         if (Math.abs(row.scrollLeft - layout.offsets[f]) > 0.5) row.scrollLeft = layout.offsets[f]
         firstRef.current = f
       }
     }
     syncWindow(partsRef.current, layout, row.scrollLeft, beforeRef.current, afterRef.current)
-  }, [songKey, curPos, layout, layoutKey])
+  }, [songId, curPos, layout, layoutKey])
   useFrame(paint, showPads)
 
   const markTouch = () => { touchedAt.current = performance.now() }
@@ -401,7 +430,8 @@ export function SectionPads({ sections, currentSection, intent, transition, isPl
         {layout.overflow && <MoreButton side="antes" ref={beforeRef} onPage={() => page(-1)} />}
         <div ref={rowRef} data-pads-scroller="" onScroll={onScroll} className={ROW}>
           {sections.map((s, k) => {
-            const reserve = padReserve(s, sections, gates.maxRepeats, layoutGrid)
+            // A reserva sai das seções da medida (a lista de botões é a mesma; tocando, os compassos e a grade são os do começo).
+            const reserve = padReserve(lay.sections[k] ?? s, lay.sections, gates.maxRepeats, lay.grid)
             const reservedTags = [...reserve.tags.map((text) => ({ text, loop: false })), { text: 'AGORA', loop: true }]
             const tag = padTag(intent, s.index, currentSection, gates.maxRepeats)
             const current = s.index === currentSection
