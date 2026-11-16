@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   AsaasError,
   deleteSubscription,
-  ensureDueDateNotifications,
+  ensureEmailOnlyNotifications,
   findSubscriptionIdByCheckout,
   getSubscription,
   listSubscriptionPayments,
@@ -283,9 +283,10 @@ export async function activateFromCheckout(
     superseded++
   }
 
-  // Avisos do próprio Asaas (vencimento e atraso) ligados. Nunca derruba a ativação.
+  // Avisos do próprio Asaas ao cliente só por e-mail (vencimento e atraso
+  // ligados; SMS, ligação e WhatsApp desligados). Nunca derruba a ativação.
   if (deps.asaas && input.customerId) {
-    try { await ensureDueDateNotifications(deps.asaas, input.customerId) } catch (e) {
+    try { await ensureEmailOnlyNotifications(deps.asaas, input.customerId) } catch (e) {
       console.warn('[billing] nao deu pra conferir as notificacoes do cliente:', e instanceof Error ? e.message : 'erro')
     }
   }

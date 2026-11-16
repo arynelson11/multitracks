@@ -148,21 +148,40 @@ export async function refundPayment(api: AsaasApi, paymentId: string, descriptio
   await api.post(`/payments/${encodeURIComponent(paymentId)}/refund`, { description })
 }
 
-// Mantém ligados, por e-mail e SMS, os avisos do próprio Asaas ao cliente sobre
-// vencimento e atraso. O Asaas já cria esses avisos ligados para todo cliente
-// novo (docs: "Notificações padrões"); aqui só religa o que estiver desligado.
-// Os avisos são por cliente (não por assinatura) e têm tarifa por envio.
+// Avisos do próprio Asaas ao cliente: SÓ POR E-MAIL (regra do dono: SMS,
+// ligação e WhatsApp têm tarifa por envio). O Asaas cria, pra todo cliente
+// novo, avisos ligados com e-mail e SMS (docs: "Notificações padrões"); os de
+// vencimento e atraso ficam ligados por e-mail e, em todos, SMS, ligação e
+// WhatsApp são desligados. Os avisos são por cliente (não por assinatura) e só
+// podem ser alterados, não criados. Devolve quantos foram alterados.
 const KEEP_ON = new Set(['PAYMENT_DUEDATE_WARNING', 'PAYMENT_OVERDUE'])
-type AsaasNotification = { id: string; event?: string; enabled?: boolean; emailEnabledForCustomer?: boolean; smsEnabledForCustomer?: boolean }
+type AsaasNotification = {
+  id: string
+  event?: string
+  enabled?: boolean
+  emailEnabledForCustomer?: boolean
+  smsEnabledForCustomer?: boolean
+  phoneCallEnabledForCustomer?: boolean
+  whatsappEnabledForCustomer?: boolean
+}
 
-export async function ensureDueDateNotifications(api: AsaasApi, customerId: string): Promise<number> {
+export async function ensureEmailOnlyNotifications(api: AsaasApi, customerId: string): Promise<number> {
   const res = await api.get<ListPage<AsaasNotification>>(`/customers/${encodeURIComponent(customerId)}/notifications`)
-  const off = (Array.isArray(res?.data) ? res.data : []).filter((n) =>
-    KEEP_ON.has(n.event ?? '') && (n.enabled === false || n.emailEnabledForCustomer === false || n.smsEnabledForCustomer === false))
-  if (off.length === 0) return 0
-  await api.put('/notifications/batch', {
-    customer: customerId,
-    notifications: off.map((n) => ({ id: n.id, enabled: true, emailEnabledForCustomer: true, smsEnabledForCustomer: true })),
-  })
-  return off.length
+  const updates: Record<string, unknown>[] = []
+  for (const n of Array.isArray(res?.data) ? res.data : []) {
+    const keepOn = KEEP_ON.has(n.event ?? '')
+    const paidChannel = n.smsEnabledForCustomer === true || n.phoneCallEnabledForCustomer === true || n.whatsappEnabledForCustomer === true
+    const emailOff = keepOn && (n.enabled !== true || n.emailEnabledForCustomer !== true)
+    if (!paidChannel && !emailOff) continue
+    updates.push({
+      id: n.id,
+      ...(keepOn ? { enabled: true, emailEnabledForCustomer: true } : {}),
+      smsEnabledForCustomer: false,
+      phoneCallEnabledForCustomer: false,
+      whatsappEnabledForCustomer: false,
+    })
+  }
+  if (updates.length === 0) return 0
+  await api.put('/notifications/batch', { customer: customerId, notifications: updates })
+  return updates.length
 }
