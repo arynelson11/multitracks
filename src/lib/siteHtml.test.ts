@@ -18,6 +18,17 @@ describe('index.html', () => {
     expect(indexHtml).not.toContain('maximum-scale')
   })
 
+  it('fontes do Google não bloqueiam a renderização e o Caveat vem só com as letras de domingo.', () => {
+    const semNoscript = indexHtml.replace(/<noscript>[\s\S]*?<\/noscript>/g, '')
+    expect(semNoscript).not.toMatch(/<link[^>]*rel="stylesheet"[^>]*fonts\.googleapis/)
+    expect(semNoscript).not.toMatch(/<link[^>]*fonts\.googleapis[^>]*rel="stylesheet"/)
+    const preloads = [...indexHtml.matchAll(/<link rel="preload" as="style" href="([^"]+)" onload="this\.onload=null;this\.rel='stylesheet'" \/>/g)].map(m => m[1])
+    expect(preloads).toHaveLength(2)
+    expect(preloads[1]).toBe('https://fonts.googleapis.com/css2?family=Caveat:wght@500&amp;text=domingo.&amp;display=swap')
+    expect(preloads[0]).not.toContain('Caveat')
+    for (const href of preloads) expect(indexHtml).toContain(`<noscript><link rel="stylesheet" href="${href}" /></noscript>`)
+  })
+
   it('não tem travessão', () => {
     expect(indexHtml).not.toContain('—')
   })

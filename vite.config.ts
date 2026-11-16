@@ -25,6 +25,10 @@ const isDesktop = !!process.env.DESKTOP
 // - apple-mobile-web-app-status-bar-style 'black' (e não 'black-translucent'): o app fica
 //   abaixo do relógio/notch. Com translucent ele desenha por baixo e o CSS não trata
 //   safe-area, então VOLTAR/SALVAR do topo ficariam escondidos atrás do relógio.
+// - fontes do Google: carregam sem bloquear a renderização (preload de estilo que vira
+//   stylesheet no onload, com <noscript> pra quem não roda JS). Mesmas famílias e pesos de
+//   antes, menos o Caveat: só o peso 500 e só as letras de "domingo." (a única palavra
+//   escrita com ele, no DomingoMark), o que corta o arquivo de 72 KiB pra poucos KiB.
 // - google-site-verification: troque COLE_AQUI_O_CODIGO_DO_SEARCH_CONSOLE pelo código que
 //   o Search Console mostra no método "Tag HTML" (só o valor do content).
 //

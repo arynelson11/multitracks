@@ -83,6 +83,6 @@ describe('injectSiteSeo', () => {
     const out = injectSiteSeo(indexHtml)
     expect(out.indexOf('application/ld+json')).toBeLessThan(out.indexOf('</head>'))
     expect(out).toMatch(/<div id="root"><\/div>\n<noscript>/)
-    expect(out.match(/<noscript>/g)).toHaveLength(1)
+    expect(out.slice(out.indexOf('<body>')).match(/<noscript>/g)).toHaveLength(1)
   })
 })
