@@ -95,15 +95,19 @@ export interface PadReserve { metas: string[]; tags: string[] }
  * número de dígitos de compasso da música (N é o que falta da seção que estiver tocando, qualquer
  * uma, arredondado pra cima; no mínimo 2 dígitos); "no fim da seção" só em música sem grade. A "contagem" entra à parte,
  * com o espaço do número grande. Etiquetas (qualquer botão pode ser a atual ou o alvo): PRÓXIMA,
- * REPETE e REPETE Nx com o maior número que a etiqueta mostra (`tagCap`).
+ * REPETE e REPETE Nx com o maior número que a etiqueta mostra (`tagCap`). Ruling T10-final: com grade,
+ * seção sem compassos (grade só de BPM) reserva 3 dígitos, porque o click lido depois traz os compassos
+ * com a reserva travada: "comp. 999/999" nela e "em 999 comp." em todo botão.
  */
 export function padReserve(s: StageSection, sections: StageSection[], maxRepeats: number, hasGrid: boolean): PadReserve {
   const barsOf = (x: StageSection) => (x.bars !== null && x.bars >= 1 ? Math.floor(x.bars) : 0)
+  const unknownBars = hasGrid && sections.some((x) => barsOf(x) === 0)
   // N vem arredondado pra cima: pode ter um compasso a mais que a maior seção ("em 100 comp." com 99).
-  const nines = '9'.repeat(Math.max(2, String(Math.max(0, ...sections.map(barsOf)) + 1).length))
+  const nines = '9'.repeat(Math.max(unknownBars ? 3 : 2, String(Math.max(0, ...sections.map(barsOf)) + 1).length))
   const own = barsOf(s)
   const len = clockText(s.end - s.start)
   const metas = [clockText(s.start), own > 0 ? `comp. ${own}/${own}` : `${len}/${len}`, `em ${nines} comp.`]
+  if (hasGrid && own === 0) metas.push('comp. 999/999')
   if (!hasGrid) metas.push(NO_GRID_TEXT)
   const cap = tagCap(maxRepeats)
   return { metas, tags: cap > 1 ? ['PRÓXIMA', 'REPETE', `REPETE ${cap}x`] : ['PRÓXIMA', 'REPETE'] }

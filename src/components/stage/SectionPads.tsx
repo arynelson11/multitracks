@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type React from 'react'
 import { isSelfLoop } from '../../lib/sectionArm'
 import type { ArmIntent, StageClock, StageGates, StageSection, StageView, TransitionView } from '../../lib/stageContracts'
@@ -184,6 +184,27 @@ function firstAt(L: RowLayout, x: number): number {
   return best
 }
 
+/**
+ * Seção de agora (posição em `live`) que cada botão da lista travada representa (Ruling T10-final):
+ * com a mesma lista, a mesma posição; com a lista diferente (a grade juntou duas marcas e só tira
+ * botões), a seção de início mais perto do início do botão.
+ */
+function pairsOf(shown: StageSection[], live: StageSection[], same: boolean): number[] {
+  if (same) return shown.map((_, k) => k)
+  return shown.map((h) => {
+    let best = 0
+    live.forEach((x, j) => { if (Math.abs(x.start - h.start) < Math.abs(live[best].start - h.start)) best = j })
+    return best
+  })
+}
+
+/** Posição na fileira do botão da seção de agora `index`; com duas marcas juntadas, a que ficou (a de depois). */
+function padOf(pair: number[], live: StageSection[], index: number): number {
+  let at = -1
+  pair.forEach((j, k) => { if (live[j]?.index === index) at = k })
+  return at
+}
+
 /** O botão na posição `cur` aparece inteiro na janela que começa no botão `f` (sem rolagem, todos aparecem). */
 function inView(L: RowLayout, f: number, cur: number): boolean {
   if (cur < 0 || cur >= L.offsets.length) return false
@@ -285,20 +306,25 @@ export function SectionPads({ sections, currentSection, intent, transition, isPl
   const [layout, setLayout] = useState<RowLayout>(NO_LAYOUT)
   const touchedAt = useRef(-Infinity) // último toque, roda ou tecla na fileira (performance.now)
   const viewRef = useRef<{ song: string | null; cur: number; layout: RowLayout } | null>(null)
-  const n = sections.length
-  // Ruling T10-grade-tarde-2: a música é reconhecida pelo id. Com ela tocando, o que entra na medida
-  // (larguras, altura da fileira, ordem) fica o do começo, mesmo que a grade chegue ou os compassos, os
-  // inícios e os fins das seções mudem; parada, ou outra música, entra o que veio agora. Só uma lista de
-  // botões diferente (outra quantidade ou outro nome, como duas marcas caindo na mesma barra) entra na
-  // hora: o toque tem de mandar o índice da lista que o motor usa.
+  // Ruling T10-grade-tarde-2 e T10-final: a música é reconhecida pelo id. Com ela tocando, a fileira
+  // (lista de botões, larguras, altura, ordem) fica a do começo, mesmo que a grade chegue, junte duas
+  // marcas ou mude compassos, inícios e fins; parada, ou outra música, entra o que veio agora. Só entra
+  // tocando a lista que não dá pra travar: sem botão antes (as seções chegaram depois da música) ou com
+  // mais botões que antes (a grade só tira, então não foi ela).
   const liveKey = keyOf(sections)
   const liveShape = shapeOf(sections)
   const [held, setHeld] = useState<Held>(() => ({ song: songId, sections, key: liveKey, shape: liveShape, grid: hasGrid }))
   let lay = held
-  if (held.song !== songId || held.shape !== liveShape || (!isPlaying && (held.key !== liveKey || held.grid !== hasGrid))) {
+  const canHold = isPlaying && held.song === songId && held.sections.length > 0 && sections.length > 0 && sections.length <= held.sections.length
+  if (!canHold && (held.song !== songId || held.key !== liveKey || held.grid !== hasGrid)) {
     lay = { song: songId, sections, key: liveKey, shape: liveShape, grid: hasGrid }
     setHeld(lay)
   }
+  // Botões na tela (a lista da medida) e a seção de agora de cada um: o índice que o toque manda e o
+  // motor usa (AGORA, alvo, pouso), com o início, o fim e os compassos de agora na linha de baixo.
+  const shown = lay.sections
+  const n = shown.length
+  const pair = useMemo(() => pairsOf(shown, sections, lay.shape === liveShape), [shown, sections, lay.shape, liveShape])
   const showPads = gates.sections && n > 0
   const selfLoop = isSelfLoop(intent, currentSection)
   const armedIndex = intent !== null && !selfLoop ? intent.target : null
@@ -306,7 +332,8 @@ export function SectionPads({ sections, currentSection, intent, transition, isPl
   const pending = armedIndex !== null && transition !== null && transition.to === armedIndex ? transition : null
   // Muda só com o que muda a largura: a música, as seções da medida (nomes, compassos, tempos), o teto do REPETE e a grade.
   const layoutKey = `${gates.maxRepeats}#${lay.grid}#${String(lay.song)}#${lay.key}`
-  const curPos = sections.findIndex((s) => s.index === currentSection)
+  // Posição da AGORA na fileira.
+  const curPos = padOf(pair, sections, currentSection)
 
   const paint = () => {
     const parts = partsRef.current
@@ -326,10 +353,11 @@ export function SectionPads({ sections, currentSection, intent, transition, isPl
     const row = rowRef.current
     const parts: PadParts[] = []
     if (row && showPads) {
-      sections.forEach((s, k) => {
+      shown.forEach((_, k) => {
         const pad = row.children[k] as HTMLElement | undefined
         const meta = pad?.querySelector<HTMLElement>('[data-pad-meta]')
-        if (!pad || !meta) return
+        const s = sections[pair[k]]
+        if (!pad || !meta || !s) return
         parts.push({ k, s, pad, meta, fill: pad.querySelector<HTMLElement>('[data-pad-fill]'), big: pad.querySelector<HTMLElement>('[data-pad-big]') })
       })
     }
@@ -429,31 +457,33 @@ export function SectionPads({ sections, currentSection, intent, transition, isPl
       <div ref={trackRef} data-pads-track="" className={TRACK} onPointerDownCapture={markTouch} onWheelCapture={markTouch} onKeyDownCapture={markTouch}>
         {layout.overflow && <MoreButton side="antes" ref={beforeRef} onPage={() => page(-1)} />}
         <div ref={rowRef} data-pads-scroller="" onScroll={onScroll} className={ROW}>
-          {sections.map((s, k) => {
-            // A reserva sai das seções da medida (a lista de botões é a mesma; tocando, os compassos e a grade são os do começo).
-            const reserve = padReserve(lay.sections[k] ?? s, lay.sections, gates.maxRepeats, lay.grid)
+          {shown.map((h, k) => {
+            // `h` é o botão (nome, cor, reserva da medida); `s` é a seção de agora que ele representa.
+            const s = sections[pair[k]] ?? h
+            const reserve = padReserve(h, shown, gates.maxRepeats, lay.grid)
             const reservedTags = [...reserve.tags.map((text) => ({ text, loop: false })), { text: 'AGORA', loop: true }]
             const tag = padTag(intent, s.index, currentSection, gates.maxRepeats)
             const current = s.index === currentSection
             const armed = s.index === armedIndex
             const loop = tag !== null && tag.loop
             const pressed = intent !== null && intent.target === s.index
-            const key = k < KEYS ? String(k + 1) : null
+            // Tecla N = N-ésima seção de agora (o atalho do palco); só nos botões cuja reserva tem a tecla.
+            const key = k < KEYS ? String(pair[k] + 1) : null
             const state = armed ? (tag?.kind === 'repete' ? 'repete' : 'armada') : current ? (loop ? 'loop' : 'atual') : 'normal'
-            let spoken = s.label
+            let spoken = h.label
             if (tag?.kind === 'agora') spoken += loop ? ', agora, em loop' : ', agora'
             else if (tag) spoken += `, ${tag.text.toLowerCase()}`
             return (
               <button
-                key={s.index}
+                key={h.index}
                 type="button"
-                data-section-pad={s.index}
+                data-section-pad={h.index}
                 data-state={state}
                 aria-pressed={pressed}
                 aria-keyshortcuts={key ?? undefined}
                 aria-label={spoken}
-                title={hint(s, key, isPlaying, pressed, loop, current)}
-                style={{ '--ps-c': s.color } as React.CSSProperties}
+                title={hint(h, key, isPlaying, pressed, loop, current)}
+                style={{ '--ps-c': h.color } as React.CSSProperties}
                 className={cx(PAD, current ? CURRENT_BG : 'bg-ps-s1', armed ? ARMED : current ? CURRENT_RING : IDLE_RING)}
                 onClick={() => onTap(s.index)}
               >
@@ -470,7 +500,7 @@ export function SectionPads({ sections, currentSection, intent, transition, isPl
                   )}
                 </span>
                 <span className={BODY}>
-                  <span data-pad-name="" className={NAME}>{s.label}</span>
+                  <span data-pad-name="" className={NAME}>{h.label}</span>
                   <span data-pad-meta="" className={cx(META, armed ? 'font-bold text-ps-arm' : current ? 'text-ps-bone' : 'text-ps-mut')} />
                   {armed && <span data-pad-big="" aria-hidden="true" className={BIG} />}
                 </span>

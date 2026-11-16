@@ -388,11 +388,16 @@ describe('botoeira de seções', () => {
     expect(padReserve(longa[0], longa, 9, true)).toEqual({ metas: ['0:00', 'comp. 4/4', 'em 999 comp.'], tags: ['PRÓXIMA', 'REPETE', 'REPETE 9x'] })
     expect(padReserve(longa[1], longa, 9, false).metas).toEqual(['0:08', 'comp. 120/120', 'em 999 comp.', 'no fim da seção'])
     // Seção sem compassos (Final, 14,1 s): o "m:ss/m:ss" dela.
-    expect(padReserve(SECTIONS[4], SECTIONS, 9, true).metas).toEqual(['1:05', '0:14/0:14', 'em 99 comp.'])
+    // Ruling T10-final: com grade, seção sem compassos (Final) reserva 3 dígitos, pros compassos que o click lido traz depois.
+    expect(padReserve(SECTIONS[4], SECTIONS, 9, true).metas).toEqual(['1:05', '0:14/0:14', 'em 999 comp.', 'comp. 999/999'])
+    expect(padReserve(SECTIONS[0], SECTIONS, 9, true).metas).toEqual(['0:00', 'comp. 4/4', 'em 999 comp.'])
+    const todas = SECTIONS.slice(0, 4)
+    expect(padReserve(todas[0], todas, 9, true).metas).toEqual(['0:00', 'comp. 4/4', 'em 99 comp.']) // todas com compassos: 2 dígitos
+    expect(padReserve(SECTIONS[4], SECTIONS, 9, false).metas).toEqual(['1:05', '0:14/0:14', 'em 99 comp.', 'no fim da seção']) // sem grade cobre
     expect(padReserve(SECTIONS[0], SECTIONS, Infinity, true).tags).toEqual(['PRÓXIMA', 'REPETE', 'REPETE 99x'])
     expect(padReserve(SECTIONS[0], SECTIONS, 1, true).tags).toEqual(['PRÓXIMA', 'REPETE'])
     // A espera é arredondada pra cima: com 99 compassos pode aparecer "em 100 comp.".
-    const cem = SECTIONS.map((x, i) => (i === 1 ? { ...x, bars: 99 } : x))
+    const cem = todas.map((x, i) => (i === 1 ? { ...x, bars: 99 } : x))
     expect(padReserve(cem[0], cem, 9, true).metas).toContain('em 999 comp.')
   })
 
@@ -661,15 +666,75 @@ describe('botoeira de seções', () => {
     }
   })
 
-  it('mesma música tocando com outra lista de botões (duas marcas na mesma barra) não espera: cada botão manda o índice da lista nova', () => {
+  // Ruling T10-final: tocando, a lista de botões também fica travada; a grade só tira botões.
+  it('tocando, a grade juntar duas marcas não mexe na lista: mesmos botões no mesmo lugar, e cada toque arma a seção de início mais perto; parada, entra a lista nova', () => {
+    // Marca dupla de versão antiga (a 0,3 s) no 3º botão: 13 botões antes da grade; com ela, a de antes sai e sobram 12.
+    const depois = doze()
+    const antes: StageSection[] = [
+      ...depois.slice(0, 2).map((s, i) => ({ ...s, start: i === 0 ? 0 : s.start + 0.12, end: s.end + 0.12, bars: null })),
+      { ...depois[2], label: 'Dupla', start: 32.12, end: 32.42, bars: null },
+      ...depois.slice(2).map((s, i) => ({ ...s, start: i === 0 ? 32.42 : s.start + 0.12, end: s.end + 0.12, bars: null })),
+    ].map((s, i) => ({ ...s, index: i }))
+    const calls = ruler(600, () => 117)
     const onTap = vi.fn()
-    const { rerender } = renderPads({ onTap })
-    const menos = SECTIONS.filter((s) => s.index !== 2).map((s, i) => ({ ...s, index: i }))
-    rerender(<SectionPads {...props({ onTap, sections: menos })} />)
-    expect(pads().map((b) => b.querySelector('[data-pad-name]')?.textContent)).toEqual(['Intro', 'Verso', 'Ponte', 'Final'])
+    const { rerender } = renderPads({ sections: antes, hasGrid: false, onTap })
+    fireEvent.pointerDown(after() as HTMLButtonElement)
+    fireEvent.click(after() as HTMLButtonElement) // operador paginou: S3, S4 e S5 à vista
+    expect(scroller().scrollLeft).toBe(3 * 125)
+    const nomes = pads().map((b) => b.querySelector('[data-pad-name]')?.textContent)
+    const w0 = widths()
+    const o0 = outs()
+    calls.n = 0
+    rerender(<SectionPads {...props({ sections: depois, hasGrid: true, onTap })} />)
+    expect(pads().map((b) => b.querySelector('[data-pad-name]')?.textContent)).toEqual(nomes) // 13 botões, mesma ordem
+    expect(widths()).toEqual(w0)
+    expect(outs()).toBe(o0)
+    expect(calls.n).toBe(0)
+    expect(scroller().scrollLeft).toBe(3 * 125)
+    // Cada botão manda a seção de agora com início mais perto: a Dupla (32,12 s) e o S3 (32,42 s) mandam a do 32 s.
+    const esperado = [0, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    pads().forEach((b, k) => {
+      fireEvent.click(b)
+      expect(onTap, `botão ${k}`).toHaveBeenLastCalledWith(esperado[k])
+    })
+    // O que sumiu acende junto com o que ficou (os dois são a mesma seção agora); a AGORA segue no S2.
+    rerender(<SectionPads {...props({ sections: depois, hasGrid: true, onTap, intent: { target: 2, plays: 1 }, transition: { ...T, from: 1, to: 2 } })} />)
+    expect(pads().map((b) => b.dataset.state)).toEqual(['normal', 'atual', 'armada', 'armada', ...Array(9).fill('normal')])
+    expect(pad(2).getAttribute('aria-pressed')).toBe('true')
+    expect(pad(3).getAttribute('aria-pressed')).toBe('true')
+    // As teclas seguem o atalho do palco (tecla N = N-ésima seção de agora); do 10º botão em diante a reserva não tem tecla.
+    expect(pads().map((b) => b.querySelector('[data-pad-key]')?.textContent ?? null)).toEqual(['1', '2', '3', '3', '4', '5', '6', '7', '8', null, null, null, null])
+    expect(widths()).toEqual(w0)
+    // Parada, entra a lista nova.
+    rerender(<SectionPads {...props({ sections: depois, hasGrid: true, onTap, isPlaying: false })} />)
+    expect(pads()).toHaveLength(12)
     fireEvent.click(pad(2))
     expect(onTap).toHaveBeenLastCalledWith(2)
-    expect(part(3, 'pad-sizer')?.textContent).toContain('1:05') // a reserva do Final é a dele
+  })
+
+  it('música que entra tocando sem seções e ganha as seções depois (a duração chegou): mostra os botões na hora', () => {
+    const { rerender } = renderPads({ sections: [], currentSection: -1, songId: 'musica-2' })
+    expect(pads()).toHaveLength(0)
+    rerender(<SectionPads {...props({ songId: 'musica-2' })} />)
+    expect(pads()).toHaveLength(5)
+  })
+
+  it('grade só de BPM ao carregar e o click lido tocando: a seção de 120 compassos depois do compasso 100 cabe na reserva travada', () => {
+    // 12 seções; a 11ª (sem tecla, o botão mais estreito) tem 240 s. Grade só de BPM: compassos nulos.
+    const sem = doze((s, i) => ({ bars: null, start: i <= 10 ? s.start : 16 * 10 + 240, end: i < 10 ? s.end : i === 10 ? 16 * 10 + 240 : 16 * 10 + 256 }))
+    const com = sem.map((s, i) => ({ ...s, bars: i === 10 ? 120 : i === 11 ? null : 8 }))
+    position = 160 + (100.5 / 120) * 240 // compasso 101 de 120
+    const { rerender } = renderPads({ sections: sem, currentSection: 10, hasGrid: true })
+    rerender(<SectionPads {...props({ sections: com, currentSection: 10, hasGrid: true })} />)
+    const meta = part(10, 'pad-meta')?.textContent ?? ''
+    expect(meta).toBe('comp. 101/120')
+    // Fonte mono (ps-num): a meta cabe se tiver no máximo os caracteres da meta mais longa reservada.
+    const sizer = part(10, 'pad-sizer') as HTMLElement
+    const reservadas = [...sizer.children].filter((c) => c.className.includes('ps-num') && !c.className.includes('pr-6')).map((c) => c.textContent ?? '')
+    expect(Math.max(...reservadas.map((t) => t.length))).toBeGreaterThanOrEqual(meta.length)
+    expect(reservadas).toContain('comp. 999/999')
+    // A armada com 120 compassos de espera também cabe ("em 999 comp." em todo botão).
+    expect(part(3, 'pad-sizer')?.textContent).toContain('em 999 comp.')
   })
 
   // Ruling T10-remedida: medida nova (janela, fonte) que tiraria da vista a AGORA traz a AGORA.
