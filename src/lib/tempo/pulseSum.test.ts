@@ -25,6 +25,31 @@ describe('kit separado somado', () => {
     for (const t of tracks) expect({ peca: t.id, acha: acha(detectSongGrid([t], SR, { beatsPerBar: 4 })) }).toEqual({ peca: t.id, acha: false });
   }, LENTO);
 
+  // A banda grave do "1" só vem das peças com bumbo: o vazamento grave do chimbal e
+  // da caixa, dividido pelo próprio máximo, pesaria tanto quanto o bumbo.
+  it.each([
+    { id: 'x_kicksync', song: { bpm: 92, firstBeat: 0.5, pattern: 'kicksync44' as const } },
+    { id: 'x_popsync', song: { bpm: 84, firstBeat: 0.5, pattern: 'popsync44' as const } },
+  ])('$id: o kit separado acha o "1" igual à bateria inteira', ({ song: opts }) => {
+    const s = makeSong({ sr: SR, duration: 60, withPad: false, withBass: false, splitKit: true, ...opts });
+    const kit = s.tracks.kit;
+    if (!kit) throw new Error('sem kit');
+    const inteira = detectSongGrid([{ id: 'bat', label: 'Bateria', use: 'pulse', channels: s.tracks.drums }], SR, { beatsPerBar: 4 });
+    const somado = detectSongGrid([
+      { id: 'kick', label: 'KICK', use: 'pulse', channels: kit.kick },
+      { id: 'snare', label: 'SNARE', use: 'pulse', channels: kit.snare },
+      { id: 'hihat', label: 'HIHAT', use: 'pulse', channels: kit.hihat },
+    ], SR, { beatsPerBar: 4 });
+    // Em que tempo do compasso real cai o "1" detectado (0 = certo).
+    const posicao = (g: { bpm: number; firstBeat: number; downbeat: number }) => {
+      const P = 60 / s.bpm;
+      return ((Math.round((g.firstBeat + g.downbeat * P - s.firstBeat) / P) % 4) + 4) % 4;
+    };
+    expect(somado.bpm).toBe(inteira.bpm);
+    expect(posicao(inteira)).toBe(0);
+    expect(posicao(somado)).toBe(0);
+  }, LENTO);
+
   it('uma faixa de pulso de 6 s não corta a bateria de 4 min: mesma grade e mesma confiança', () => {
     // 22,05 kHz pra caber 4 min na memória do teste; a análise trabalha em ~200 quadros/s em qualquer taxa.
     const sr = 22050;
@@ -95,6 +120,13 @@ describe('sumOnsetBands', () => {
     expect(r.hasKick).toBe(true);
     expect(r.hasSnare).toBe(true);
     expect(r.fps).toBe(200);
+  });
+
+  it('a banda grave só soma as faixas com bumbo (sem nenhuma, soma todas)', () => {
+    const kick = b({ low: banda([0, 2, 0]), hasKick: true });
+    const chimbal = b({ low: banda([5, 0, 0]) });
+    expect(Array.from(sumOnsetBands([kick, chimbal]).low)).toEqual([0, 1, 0]);
+    expect(Array.from(sumOnsetBands([chimbal, b({ low: banda([0, 0, 3]) })]).low)).toEqual([1, 0, 1]);
   });
 
   it('recusa lista vazia e taxas diferentes', () => {

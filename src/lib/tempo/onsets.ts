@@ -272,8 +272,11 @@ function normalized(o: Float32Array, n: number): Float32Array {
  * Junta os ataques de várias faixas de pulso (kit separado: KICK, SNARE, HIHAT):
  * cada banda de cada faixa dividida pelo próprio máximo e somadas banda a banda,
  * no tamanho da MAIS LONGA (a mais curta completa com zeros depois do fim: uma
- * faixa de 6 s não pode cortar a análise da música inteira). Com uma faixa só,
- * devolve ela mesma (sem dividir). Todas precisam ter a mesma taxa (`fps`).
+ * faixa de 6 s não pode cortar a análise da música inteira). A banda grave (`low`,
+ * a do "1") só vem das faixas com bumbo, quando há alguma: o vazamento grave do
+ * chimbal e da caixa, dividido pelo próprio máximo, pesaria tanto quanto o bumbo.
+ * Com uma faixa só, devolve ela mesma (sem dividir). Todas precisam ter a mesma
+ * taxa (`fps`).
  */
 export function sumOnsetBands(list: readonly OnsetBands[]): OnsetBands {
   if (!list.length) throw new Error('sumOnsetBands: nenhuma faixa');
@@ -281,9 +284,10 @@ export function sumOnsetBands(list: readonly OnsetBands[]): OnsetBands {
   const { fps } = list[0];
   if (list.some(b => b.fps !== fps)) throw new Error('sumOnsetBands: faixas com taxas diferentes');
   const n = Math.max(...list.map(b => b.full.length));
-  const sum = (pick: (b: OnsetBands) => Float32Array) => {
+  const withKick = list.filter(b => b.hasKick);
+  const sum = (pick: (b: OnsetBands) => Float32Array, from: readonly OnsetBands[] = list) => {
     const out = new Float32Array(n);
-    for (const b of list) {
+    for (const b of from) {
       const o = normalized(pick(b), n);
       for (let i = 0; i < n; i++) out[i] += o[i];
     }
@@ -292,7 +296,7 @@ export function sumOnsetBands(list: readonly OnsetBands[]): OnsetBands {
   return {
     fps,
     full: sum(b => b.full),
-    low: sum(b => b.low),
+    low: sum(b => b.low, withKick.length ? withKick : list),
     kick: sum(b => b.kick),
     snare: sum(b => b.snare),
     hasKick: list.some(b => b.hasKick),
