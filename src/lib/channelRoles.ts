@@ -70,7 +70,8 @@ export function findClickChannel<T extends ChannelIdentity>(channels: readonly T
   return channels.find((ch) => resolveChannelRole(ch) === 'click')
 }
 
-// Canal de referência pra onda do SectionBar e pra detecção de tom.
+// Canal de referência pra detecção de tom (e pro tempo, quando não há bateria nem
+// baixo). A onda do SectionBar usa pickWaveformChannel.
 export function pickMainChannel<T extends ChannelIdentity>(channels: readonly T[]): T | undefined {
   return channels.find((ch) => resolveChannelRole(ch) === 'normal')
 }
