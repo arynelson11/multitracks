@@ -17,7 +17,7 @@ export interface FakeStart { when: number; offset?: number; duration?: number }
 export type FakeGraphItem = FakeAudioNode | FakeAudioParam | AudioNode | AudioParam | { readonly connections: readonly FakeConnection[] }
 
 /** Duração do áudio decodificado quando o teste não passa `decode` (a mesma do fake do persistence.test). */
-const DEFAULT_DECODED_SECONDS = 300
+const DEFAULT_DECODED_SECONDS = 300 // ~55 MB por canal a 48 kHz quando lido (ver FakeAudioContextOptions.decode)
 
 const domError = (message: string, name: string) => new DOMException(message, name)
 function checkFinite(v: number, what: string): void {
@@ -461,7 +461,10 @@ export class FakeWorkletNode extends FakeAudioNode {
 
 // ---------- AudioBuffer ----------
 
-/** AudioBuffer falso. Os dados de cada canal nascem zerados no primeiro getChannelData (300 s não ocupam memória à toa). */
+/**
+ * AudioBuffer falso. Os dados de cada canal nascem zerados no primeiro getChannelData: buffer
+ * que ninguém lê não ocupa memória, mas ler um canal aloca `length` Float32 (4 bytes cada).
+ */
 export class FakeAudioBuffer {
   readonly numberOfChannels: number
   readonly length: number
@@ -501,7 +504,12 @@ export interface FakeAudioContextOptions {
   outputLatency?: number
   /** Canais de cada aparelho por id, pro setSinkId. '' e 'default' são o aparelho padrão; outro id fora do mapa rejeita com NotFoundError (aparelho que sumiu). */
   sinks?: Readonly<Record<string, number>>
-  /** Decodificação do teste; sem ela, decodeAudioData devolve 300 s de silêncio em 2 canais. */
+  /**
+   * Decodificação do teste; sem ela, decodeAudioData devolve 300 s de silêncio em 2 canais.
+   * Cuidado com a memória: a 48 kHz esses 300 s alocam uns 55 MB por canal (14,4 milhões de
+   * Float32) no primeiro getChannelData. Teste que lê o áudio (análise da faixa de click,
+   * picos da onda, várias faixas) passa um `decode` curto, ex.: `() => new FakeAudioBuffer(1, 48000 * 8, 48000)`.
+   */
   decode?: (data: ArrayBuffer) => FakeAudioBuffer | Promise<FakeAudioBuffer>
 }
 
