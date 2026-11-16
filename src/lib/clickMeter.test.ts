@@ -26,6 +26,8 @@ interface SynthClickOptions {
   gap?: [number, number]
   /** Atraso fixo do ataque por tempo do compasso, em ms (sons diferentes no mesmo click). */
   beatOffsetsMs?: number[]
+  /** Amplitude do acento `loud` em relação aos outros tempos (padrão 1,8). */
+  loudGain?: number
 }
 
 function seeded(seed: number): () => number {
@@ -63,7 +65,7 @@ function synthClickWithTimes(o: SynthClickOptions): { samples: Float32Array; tim
     const isEven = (((k - pickup) % 2) + 2) % 2 === 0
     let amp = BASE_AMP
     let freq = 1200
-    if (o.accent === 'loud' && isOne) amp *= 1.8
+    if (o.accent === 'loud' && isOne) amp *= o.loudGain ?? 1.8
     if ((o.accent === 'every2' || o.accent === 'beatsAndOne') && isEven) amp *= 1.8
     if (o.accent === 'beatsAndOne' && isOne) freq = 2400
     if (o.accent === 'bright' && isOne) freq = 2400
@@ -112,6 +114,22 @@ describe('analyzeClickTrack: casos do plano', () => {
   it('5 minutos analisados em menos de 2 s', () => { const x = synthClick({ bpm: 120, seconds: 300, pulsesPerBar: 4, accent: 'loud', firstPulse: 0 }); const t0 = performance.now(); analyzeClickTrack(x, 48000); expect(performance.now() - t0).toBeLessThan(2000) })
 })
 
+/**
+ * A mesma leitura: campos discretos iguais e BPM e fases a menos da precisão da medida (o
+ * limiar do ataque sai do nível típico dos ataques, então um ataque a mais muda o instante
+ * medido de cada um por frações de microssegundo).
+ */
+function expectSameReading(a: ClickAnalysis | null, b: ClickAnalysis): void {
+  expect(a).not.toBeNull()
+  const { bpm, firstPulse, firstDownbeat, ...rest } = a!
+  const { bpm: bpmB, firstPulse: fpB, firstDownbeat: fdB, ...restB } = b
+  expect(rest).toEqual(restB)
+  expect(Math.abs(bpm - bpmB)).toBeLessThan(0.001)
+  expect(Math.abs(firstPulse - fpB)).toBeLessThan(1e-4)
+  if (fdB === null) expect(firstDownbeat).toBeNull()
+  else expect(Math.abs(firstDownbeat! - fdB)).toBeLessThan(1e-4)
+}
+
 describe('analyzeClickTrack: a fase vem do conjunto dos ataques', () => {
   // Achado I1 da revisão: a fase não pode depender do primeiro ataque do arquivo.
   it('um ataque solto antes do primeiro click (0,2 a 0,8 do período antes) não muda a grade', () => {
@@ -120,8 +138,7 @@ describe('analyzeClickTrack: a fase vem do conjunto dos ataques', () => {
       const x = synthClick({ bpm: 120, seconds: 30, pulsesPerBar: 4, accent: 'loud', firstPulse: 1 })
       addBeep(x, 1 - frac * 0.5)
       const a = analyzeClickTrack(x, SR)
-      expect(a).not.toBeNull()
-      expect(a).toEqual(limpo)
+      expectSameReading(a, limpo)
       expect(Math.abs(a!.firstDownbeat! - 1)).toBeLessThan(0.002)
     }
   })
@@ -130,8 +147,7 @@ describe('analyzeClickTrack: a fase vem do conjunto dos ataques', () => {
     const x = synthClick({ bpm: 132, seconds: 40, pulsesPerBar: 4, accent: 'every2', firstPulse: 3 })
     for (const t of [0.13, 0.45, 0.95, 1.4, 1.86, 2.32, 2.78]) addBeep(x, t, BASE_AMP * 0.9, 600)
     const a = analyzeClickTrack(x, SR)
-    expect(a).not.toBeNull()
-    expect(a).toEqual(limpo)
+    expectSameReading(a, limpo)
     expect(Math.abs(a!.firstPulse - 3)).toBeLessThan(0.002)
   })
 })
@@ -169,6 +185,22 @@ describe('analyzeClickTrack: sem pulso regular a leitura é nula (SEM GRADE)', (
     const a = analyzeClickTrack(deriva(4, null), SR)
     expect(a).not.toBeNull()
     expect(Math.abs(a!.bpm - 71)).toBeLessThan(0.05)
+  })
+})
+
+describe('analyzeClickTrack: limiar do ataque pelo nível típico do click', () => {
+  // Achado m2: o limiar não sai do pico global, que um estalo ou um acento muito forte dominam.
+  it('um estalo 4x mais forte que o pico do click não anula a leitura', () => {
+    const x = synthClick({ bpm: 120, seconds: 30, pulsesPerBar: 4, accent: 'loud', firstPulse: 0 })
+    addBeep(x, 10.13, 4 * BASE_AMP * 1.8)
+    const a = analyzeClickTrack(x, SR)
+    expect(a).not.toBeNull()
+    expect(Math.abs(a!.bpm - 120)).toBeLessThan(0.02); expect(a!.pulsesPerBar).toBe(4); expect(a!.onsets).toBe(60)
+  })
+  it('acento 3,5x mais forte que os outros tempos: o BPM sai nos tempos, não na taxa do compasso', () => {
+    const a = analyzeClickTrack(synthClick({ bpm: 100, seconds: 30, pulsesPerBar: 4, accent: 'loud', loudGain: 3.5, firstPulse: 0.2 }), SR)!
+    expect(Math.abs(a.bpm - 100)).toBeLessThan(0.02); expect(a.pulsesPerBar).toBe(4); expect(a.onsets).toBe(50)
+    expect(Math.abs(a.firstDownbeat! - 0.2)).toBeLessThan(0.002)
   })
 })
 

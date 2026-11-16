@@ -3,8 +3,10 @@
 // Puro: recebe as amostras de um canal (o canal 0 do buffer do click) e não usa Web Audio.
 //
 // Etapas:
-// 1. Ataques: envelope do valor absoluto; ataque é a subida do envelope acima de 30% do pico
-//    global, com no mínimo 60 ms entre ataques. O tempo é a primeira amostra acima do limiar.
+// 1. Ataques: envelope do valor absoluto; ataque é a subida do envelope acima de 30% do nível
+//    típico do click, com no mínimo 60 ms entre ataques. O tempo é a primeira amostra acima do
+//    limiar. O nível típico é a mediana dos picos dos ataques de uma primeira passada a 20% do
+//    pico global: um estalo ou um acento muito forte não sobem o limiar acima dos outros tempos.
 // 2. Período: mediana dos intervalos vizinhos. Cada ataque ganha o índice
 //    round((t - t0) / mediana) e sai da conta se cai a mais de 15% da grade; t0 é o ataque
 //    do começo que mais ataques confirma (não o primeiro do arquivo, que pode ser um estalo
@@ -62,8 +64,13 @@ export interface ClickAnalysis {
 const MIN_SECONDS = 4
 /** Ataques mínimos na grade. */
 const MIN_ONSETS = 8
-/** Limiar do ataque, em fração do pico global. */
+/** Limiar do ataque, em fração do nível típico do click (ver detectOnsets). */
 const ONSET_THRESHOLD = 0.3
+/**
+ * Primeira passada, em fração do pico global: só acha o nível típico do click. Aguenta um
+ * estalo até 5x o pico do click e acento até 5x os outros tempos sem perder os tempos.
+ */
+const PROBE_THRESHOLD = 0.2
 /** Distância mínima entre dois ataques, em segundos. */
 const MIN_ONSET_GAP_S = 0.06
 /**
@@ -135,15 +142,8 @@ interface GridOnset {
   index: number
 }
 
-/** Amostras dos ataques (subida do envelope acima de 30% do pico global, 60 ms de folga). */
-function detectOnsets(x: Float32Array, sampleRate: number): number[] {
-  let peak = 0
-  for (let i = 0; i < x.length; i++) {
-    const v = Math.abs(x[i])
-    if (v > peak) peak = v
-  }
-  if (!(peak > 0) || !Number.isFinite(peak)) return []
-  const threshold = ONSET_THRESHOLD * peak
+/** Amostras em que o envelope sobe acima de `threshold`, com 60 ms de folga entre elas. */
+function onsetsAbove(x: Float32Array, sampleRate: number, threshold: number): number[] {
   const release = Math.exp(-1 / (ENVELOPE_RELEASE_S * sampleRate))
   const minGap = Math.round(MIN_ONSET_GAP_S * sampleRate)
   const onsets: number[] = []
@@ -160,6 +160,26 @@ function detectOnsets(x: Float32Array, sampleRate: number): number[] {
     }
   }
   return onsets
+}
+
+/**
+ * Amostras dos ataques (etapa 1): subida do envelope acima de 30% do nível típico do click, que
+ * é a mediana dos picos (nos primeiros 15 ms) dos ataques acima de 20% do pico global.
+ */
+function detectOnsets(x: Float32Array, sampleRate: number): number[] {
+  let peak = 0
+  for (let i = 0; i < x.length; i++) {
+    const v = Math.abs(x[i])
+    if (v > peak) peak = v
+  }
+  if (!(peak > 0) || !Number.isFinite(peak)) return []
+  const len = Math.round(TRAIT_WINDOW_S * sampleRate)
+  const levels = onsetsAbove(x, sampleRate, PROBE_THRESHOLD * peak).map((start) => {
+    let p = 0
+    for (let i = start; i < Math.min(x.length, start + len); i++) p = Math.max(p, Math.abs(x[i]))
+    return p
+  })
+  return onsetsAbove(x, sampleRate, ONSET_THRESHOLD * median(levels))
 }
 
 function median(values: number[]): number {
