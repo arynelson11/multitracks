@@ -2,6 +2,12 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { Repeat, Infinity as InfinityIcon, CornerUpLeft, Plus, X, Minus, Lock } from 'lucide-react';
 import type { Marker } from '../types';
 import { computePeaks } from './stage/wavePeaks';
+import { SECTION_SHORTCUTS, colorForSection } from '../lib/sectionTypes';
+
+// Os tipos de seção moram em src/lib/sectionTypes.ts (puro, sem React). Reexportados aqui pra
+// quem já importa do SectionBar (App.tsx e testes do palco) continuar funcionando.
+// eslint-disable-next-line react-refresh/only-export-components -- reexport de compatibilidade; o código novo importa de sectionTypes
+export { SECTION_SHORTCUTS, colorForSection };
 
 interface SectionBarProps {
   markers: Marker[];
@@ -24,22 +30,6 @@ interface SectionBarProps {
   onAddMarker: (label: string) => void;
   onRemoveMarker: (id: string) => void;
 }
-
-// Atalhos pra marcar uma seção no calor do ao vivo: a tecla cria a seção no
-// ponto atual já com o nome e a cor do tipo. `code` usa a tecla física
-// (independe de layout). Pré e Ponte colidem em "P", então Ponte usa "B".
-export const SECTION_SHORTCUTS: { name: string; key: string; code: string; color: string }[] = [
-  { name: 'Intro', key: 'I', code: 'KeyI', color: '#3b82f6' },
-  { name: 'Verso', key: 'V', code: 'KeyV', color: '#10b981' },
-  { name: 'Pré', key: 'P', code: 'KeyP', color: '#f59e0b' },
-  { name: 'Refrão', key: 'R', code: 'KeyR', color: '#FF6B35' },
-  { name: 'Ponte', key: 'B', code: 'KeyB', color: '#8b5cf6' },
-  { name: 'Final', key: 'F', code: 'KeyF', color: '#ec4899' },
-];
-
-// Cor de um tipo de seção pelo nome (fallback laranja pra nomes customizados).
-export const colorForSection = (label: string): string =>
-  SECTION_SHORTCUTS.find((s) => s.name.toLowerCase() === label.trim().toLowerCase())?.color || '#FF6B35';
 
 const WAVE_BUCKETS = 1100; // resolução horizontal da forma de onda
 

@@ -1,0 +1,131 @@
+import { useEffect, useLayoutEffect, useRef } from 'react'
+import { TIME_SIGNATURES, countPulses, displayBpmFromPulseBpm, isCompound } from '../../lib/stageContracts'
+import type { MeterSource, SongGrid, TimeSignature } from '../../lib/stageContracts'
+import { Button, Segmented } from '../ui'
+import type { SegmentedOption } from '../ui'
+import { Icon } from './icons'
+
+export interface MeterEditorProps {
+  grid: SongGrid | null; songBpm: number | null; busy: boolean
+  onChange(sig: TimeSignature, countEvery: 1 | 3): void; onRedetect(): void; onClose(): void
+}
+
+type CountValue = '1' | '3'
+
+const SIGNATURE_OPTIONS: SegmentedOption<TimeSignature>[] = TIME_SIGNATURES.map((s) => ({ value: s, label: s }))
+const METER_ORIGIN: Record<Exclude<MeterSource, 'padrao'>, string> = {
+  acento: 'Lido no acento do click', salvo: 'Salvo na biblioteca', manual: 'Escolhido por você',
+}
+const BPM_FROM_CLICK = 'Lido no click'
+const BPM_SAVED = 'BPM salvo da música, sem o 1 do compasso'
+
+/** De onde veio o compasso. O assumido diz qual (4/4, ou 6/8 quando a leitura do click é composta). */
+function meterOrigin(g: SongGrid | null): string {
+  if (!g) return 'Sem compasso lido'
+  return g.meterSource === 'padrao' ? `Assumido ${g.signature}` : METER_ORIGIN[g.meterSource]
+}
+
+/**
+ * BPM que a pessoa vê (sempre a semínima, pela conversão única do contrato: trocar simples por
+ * composto não muda o número) e de onde ele veio. Sem grade, o BPM salvo da música, se houver.
+ */
+function shownBpm(g: SongGrid | null, songBpm: number | null): { value: number; origin: string } | null {
+  const fromGrid = g ? displayBpmFromPulseBpm(g.bpm, g.signature) : NaN
+  if (g && Number.isFinite(fromGrid)) return { value: fromGrid, origin: g.source === 'click' ? BPM_FROM_CLICK : BPM_SAVED }
+  if (songBpm !== null && Number.isFinite(songBpm) && songBpm > 0) return { value: songBpm, origin: BPM_SAVED }
+  return null
+}
+
+/**
+ * Compasso da música no modo EDITAR (diálogo que abre pela célula de tempo). Seletor com os
+ * compassos do contrato; no 6/8 e no 12/8, se a contagem conta todos os pulsos ou de 3 em 3; de
+ * onde vieram o compasso e o BPM; e "Ler o click de novo" (relê BPM e fase e mantém o compasso
+ * escolhido: `keepManualMeter`, no App). O que sai em `onChange` passa pelo `withMeter` e o
+ * `sanitizeGrid` devolve igual: compasso simples sempre conta 1. Fecha no X e no Esc (na
+ * captura, marcando o evento como tratado, como os painéis do palco).
+ */
+export function MeterEditor({ grid, songBpm, busy, onChange, onRedetect, onClose }: MeterEditorProps) {
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      e.preventDefault()
+      onClose()
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
+  }, [onClose])
+
+  // Abrir leva o foco pro diálogo; fechar com o foco nele (ou perdido) devolve pra quem abriu.
+  useLayoutEffect(() => {
+    const panel = panelRef.current
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    panel?.focus({ preventScroll: true })
+    return () => {
+      const active = document.activeElement
+      const lost = !active || active === document.body || !active.isConnected || (panel?.contains(active) ?? false)
+      if (opener && opener !== panel && opener.isConnected && lost) opener.focus({ preventScroll: true })
+    }
+  }, [])
+
+  // Entrar no composto mantém a contagem de quem já era composto; senão conta de 3 em 3, como a leitura do click.
+  const pickSignature = (sig: TimeSignature) => {
+    const keep: 1 | 3 = grid !== null && isCompound(grid.signature) ? grid.countEvery : 3
+    onChange(sig, isCompound(sig) ? keep : 1)
+  }
+  const compound = grid !== null && isCompound(grid.signature) ? grid : null
+  const countOptions: SegmentedOption<CountValue>[] = compound
+    ? [
+        { value: '1', label: `Contar ${countPulses(compound.signature, 1)}` },
+        { value: '3', label: `Contar ${countPulses(compound.signature, 3)}` },
+      ]
+    : []
+  const bpm = shownBpm(grid, songBpm)
+
+  return (
+    <div
+      ref={panelRef}
+      role="dialog"
+      aria-label="Compasso da música"
+      tabIndex={-1}
+      className="flex w-max max-w-full flex-col gap-3 rounded-ps-xl bg-ps-pop p-3 font-ps-sans text-ps-bone shadow-ps-pop inset-ring inset-ring-ps-line-2 outline-none"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span className="ps-label pl-1">Compasso</span>
+        <button
+          type="button" aria-label="Fechar compasso" title="Fechar (Esc)" onClick={onClose}
+          className="inline-flex min-h-ps-touch min-w-ps-touch shrink-0 items-center justify-center rounded-ps-md bg-ps-s2 text-ps-mut transition-colors hover:text-ps-bone focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or"
+        >
+          <Icon name="x" />
+        </button>
+      </div>
+
+      <Segmented
+        aria-label="Compasso" options={SIGNATURE_OPTIONS} value={grid?.signature ?? null} onChange={pickSignature}
+        className="flex-wrap self-start"
+      />
+      {compound && (
+        <Segmented
+          aria-label="Contagem" options={countOptions} value={compound.countEvery === 3 ? '3' : '1'}
+          onChange={(v) => onChange(compound.signature, v === '3' ? 3 : 1)}
+          className="flex-wrap self-start"
+        />
+      )}
+
+      <dl className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1.5 px-1 text-ps-sm">
+        <dt className="ps-label">Compasso</dt>
+        <dd data-meter-origin="" className="text-ps-bone">{meterOrigin(grid)}</dd>
+        <dt className="ps-label">BPM</dt>
+        <dd className="text-ps-mut">
+          <b data-bpm-value="" className="ps-num text-ps-base font-extrabold text-ps-bone">{bpm ? bpm.value.toFixed(2) : 'BPM não informado'}</b>
+          {bpm && <><span aria-hidden="true"> · </span><span data-bpm-origin="">{bpm.origin}</span></>}
+        </dd>
+      </dl>
+
+      <Button onClick={onRedetect} disabled={busy} icon={<Icon name="rev" className="size-4" />} className="self-start">
+        {busy ? 'Lendo o click...' : 'Ler o click de novo'}
+      </Button>
+    </div>
+  )
+}
