@@ -22,8 +22,11 @@ type FakePitchNode = { active: boolean; starts: number; stops: number; connected
 type FakeDelay = { delayTime: FakeParam; connectedTo: unknown }
 // Latência do worklet no modo ao vivo, como o pacote informa (~0,12 s).
 const PITCH_LATENCY = 0.12
-// O motor agenda todas as faixas um pouco à frente do relógio (START_LEAD_S).
-const START_LEAD = 0.04
+// Taxa do AudioContext falso. O motor agenda todas as faixas no mesmo instante, 2
+// blocos de áudio (128 amostras cada) à frente do relógio, na grade de blocos
+// (START_LEAD_QUANTA); com o relógio parado em 0 no play, isso dá 2 blocos.
+const SAMPLE_RATE = 48000
+const START_LEAD = (2 * 128) / SAMPLE_RATE
 
 const mem = vi.hoisted(() => ({
   db: new Map<string, unknown>(),
@@ -97,6 +100,7 @@ const audioNode = () => ({ connect() {}, disconnect() {} })
 
 class FakeAudioContext {
   currentTime = 0
+  sampleRate = SAMPLE_RATE
   state = 'running'
   destination = audioNode()
   constructor() { mem.ctx = this }
