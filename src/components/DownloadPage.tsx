@@ -6,6 +6,7 @@ import {
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark'
 import { InstallAppGuide } from './InstallAppGuide'
 import { SiteLegalInfo } from './SiteLegalInfo'
+import { useFreeZoom } from '../hooks/useFreeZoom'
 import { detectInstallPlatform } from '../hooks/usePWAInstall'
 
 const GH = 'https://github.com/arynelson11/multitracks/releases/latest/download'
@@ -31,6 +32,7 @@ export function DownloadPage() {
   const isMac = /Macintosh|Mac OS X/.test(ua) && !isMobile
   const isWin = /Windows/.test(ua)
   const [showHelp, setShowHelp] = useState<'mac' | 'win' | null>(null)
+  useFreeZoom()
 
   // App de celular/tablet = o site instalado na tela de início (PWA).
   const mobileSection = (

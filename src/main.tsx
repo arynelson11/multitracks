@@ -6,6 +6,11 @@ import './index.css'
 import App from './App.tsx'
 import { SettingsProvider } from './contexts/SettingsContext'
 import { UpdateBanner } from './components/UpdateBanner'
+import { setZoomLocked } from './lib/viewportZoom'
+
+// O app nasce com o zoom travado, como sempre foi (o iPhone não dá zoom sozinho ao tocar
+// num campo). Landing e /download liberam enquanto estão na tela (useFreeZoom).
+setZoomLocked(true)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

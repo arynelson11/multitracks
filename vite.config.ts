@@ -16,8 +16,9 @@ const isDesktop = !!process.env.DESKTOP
 // Limpa o index.html publicado (site e desktop): nenhum comentário sai no HTML e a meta
 // do Google Search Console só sai quando tiver o código de verdade.
 // Notas do index.html que antes eram comentários dentro dele:
-// - viewport: maximum-scale=1 faz o iPhone não dar zoom sozinho ao tocar num campo
-//   (o zoom com dois dedos continua no iOS).
+// - viewport: sai sem maximum-scale (zoom livre pra acessibilidade). O app trava o zoom em
+//   main.tsx (src/lib/viewportZoom.ts) pro iPhone não dar zoom sozinho ao tocar num campo;
+//   landing e /download liberam enquanto estão na tela.
 // - apple-touch-icon: quadrado com fundo cheio (180x180); o iOS aplica os cantos e
 //   canto transparente viraria preto.
 // - mobile-web-app-capable: o app instalado na tela de início abre sem a barra do navegador.

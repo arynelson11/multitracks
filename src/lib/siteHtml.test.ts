@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { applyPageHead, dropUnsetSearchConsoleTag, SEARCH_CONSOLE_PLACEHOLDER, stripHtmlComments } from './siteHtml'
 import { OG_IMAGE, PAGE_HEADS, SITE_URL } from '../content/site'
+import { VIEWPORT_FREE } from './viewportZoom'
 
 const indexHtml = readFileSync(fileURLToPath(new URL('../../index.html', import.meta.url)), 'utf8')
 const attr = (html: string, re: RegExp) => html.match(re)?.[1]
@@ -10,6 +11,11 @@ const attr = (html: string, re: RegExp) => html.match(re)?.[1]
 describe('index.html', () => {
   it('não tem comentário nenhum (o HTML publicado sai limpo)', () => {
     expect(indexHtml).not.toContain('<!--')
+  })
+
+  it('não trava o zoom (o app trava sozinho em main.tsx; landing e /download liberam)', () => {
+    expect(indexHtml).toContain(`<meta name="viewport" content="${VIEWPORT_FREE}" />`)
+    expect(indexHtml).not.toContain('maximum-scale')
   })
 
   it('não tem travessão', () => {

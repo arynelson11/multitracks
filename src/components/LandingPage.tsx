@@ -12,6 +12,7 @@ import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark'
 import { FAQS, PRICES, WHATSAPP_URL } from '../content/site'
 import { annualPerMonth, annualSavings, formatReais } from '../lib/prices'
 import { SiteLegalInfo } from './SiteLegalInfo'
+import { useFreeZoom } from '../hooks/useFreeZoom'
 
 function WhatsappIcon({ className }: { className?: string }) {
   return (
@@ -127,6 +128,7 @@ const MAX_ANNUAL_DISCOUNT = Math.max(
 export function LandingPage({ onEnter }: LandingPageProps) {
   const [billing, setBilling] = useState<'monthly' | 'annual'>('annual')
   const [openFaq, setOpenFaq] = useState<number | null>(null)
+  useFreeZoom()
 
   const goToCheckout = (planId: string, price: number) => {
     if (price > 0) {
