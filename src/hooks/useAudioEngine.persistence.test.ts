@@ -16,7 +16,14 @@ import src from './useAudioEngine.ts?raw'
 
 type FakeParam = { value: number; cancelScheduledValues(): void; setValueAtTime(v: number): void; setTargetAtTime(v: number): void }
 type FakeSource = { offset: number; dest: unknown }
-type FakePitchNode = { closed: boolean; disconnected: boolean }
+// Worklet de tom falso com a API real do pacote: start/stop/schedule/latency, sem
+// close() (o pacote não tem). `active` diz se o DSP está rodando (start sem stop).
+type FakePitchNode = { active: boolean; starts: number; stops: number; connectedTo: unknown }
+type FakeDelay = { delayTime: FakeParam; connectedTo: unknown }
+// Latência do worklet no modo ao vivo, como o pacote informa (~0,12 s).
+const PITCH_LATENCY = 0.12
+// O motor agenda todas as faixas um pouco à frente do relógio (START_LEAD_S).
+const START_LEAD = 0.04
 
 const mem = vi.hoisted(() => ({
   db: new Map<string, unknown>(),
@@ -51,10 +58,13 @@ vi.mock('tone', () => ({ setContext: () => {} }))
 vi.mock('signalsmith-stretch', () => ({
   default: async () => {
     const node = {
-      closed: false, disconnected: false,
-      connect() {}, start() {}, schedule() {},
-      disconnect() { node.disconnected = true },
-      close() { node.closed = true },
+      active: false, starts: 0, stops: 0, connectedTo: null as unknown,
+      connect(dest: unknown) { node.connectedTo = dest },
+      disconnect() { node.connectedTo = null },
+      start: async () => { node.active = true; node.starts++ },
+      stop: async () => { node.active = false; node.stops++ },
+      schedule: async () => {},
+      latency: async () => PITCH_LATENCY,
     }
     mem.pitchNodes.push(node)
     return node
@@ -87,6 +97,14 @@ class FakeAudioContext {
   constructor() { mem.ctx = this }
   createGain() { return { ...audioNode(), gain: param(1) } }
   createStereoPanner() { return { ...audioNode(), pan: param(0) } }
+  createDelay(): FakeDelay & { connect(dest: unknown): void; disconnect(): void } {
+    const delay = {
+      delayTime: param(0), connectedTo: null as unknown,
+      connect(dest: unknown) { delay.connectedTo = dest },
+      disconnect() { delay.connectedTo = null },
+    }
+    return delay
+  }
   createBufferSource() {
     const source = {
       offset: -1, dest: null as unknown, buffer: null as unknown, loop: false, playbackRate: param(1),
@@ -303,50 +321,62 @@ describe('setChannelMeta', () => {
     expect(channel(result, 'a').gainNode.gain.value).toBe(0)
   })
 
-  it('tocando com tom diferente de 0, reinicia na mesma posição sem deixar worklet sobrando', async () => {
+  it('tocando com tom diferente de 0, reinicia na mesma posição e o worklet volta pra reserva', async () => {
     seed(v1)
     const { result } = await openApp()
     await act(async () => { await result.current.play() })
+    const sourceOf = (id: string) => mem.sources[ids(result, 's1').indexOf(id)]
     // Tom -2: só o baixo (b) e a guitarra (c) ganham worklet; o Click não.
     expect(mem.pitchNodes).toHaveLength(2)
     const [nodeB, nodeC] = mem.pitchNodes
-    expect(channel(result, 'c').pitchShiftNode).toBe(nodeC)
+    expect(sourceOf('c').dest).toBe(nodeC)
 
     mem.ctx!.currentTime = 10
     mem.sources.length = 0
     await act(async () => { result.current.setChannelMeta('c', { role: 'guide' }) })
 
     expect(result.current.isPlaying).toBe(true)
-    expect(nodeC).toMatchObject({ closed: true, disconnected: true })
-    expect(nodeB.closed).toBe(false)
-    expect(channel(result, 'c').pitchShiftNode).toBeNull()
+    // O worklet da guitarra parou (stop(); o pacote não tem close) e saiu do panner.
+    expect(nodeC).toMatchObject({ active: false, connectedTo: null })
+    expect(nodeB).toMatchObject({ active: true, connectedTo: channel(result, 'b').pannerNode })
     expect(mem.pitchNodes).toHaveLength(2)
     expect(mem.sources).toHaveLength(3)
-    expect(mem.sources.every((s) => s.offset === 10)).toBe(true)
-    const sourceOf = (id: string) => mem.sources[ids(result, 's1').indexOf(id)]
-    expect(sourceOf('c').dest).toBe(channel(result, 'c').pannerNode)
+    // Todas as faixas retomam do ponto da troca (o play anterior começou em START_LEAD).
+    for (const s of mem.sources) expect(s.offset).toBeCloseTo(10 - START_LEAD, 6)
+    // A Guia toca sem o worklet, pelo atraso igual à latência dele (alinhada com a banda).
+    expect(sourceOf('c').dest).toMatchObject({ delayTime: { value: PITCH_LATENCY }, connectedTo: channel(result, 'c').pannerNode })
 
-    // O Click que vira Normal entra na troca de tom: ganha worklet no reinício.
+    // O Click que vira Normal entra na troca de tom: reaproveita o worklet da reserva
+    // em vez de criar outro.
     mem.sources.length = 0
     await act(async () => { result.current.setChannelMeta('a', { role: 'normal' }) })
-    expect(mem.pitchNodes).toHaveLength(3)
-    expect(channel(result, 'a').pitchShiftNode).toBe(mem.pitchNodes[2])
-    expect(sourceOf('a').dest).toBe(mem.pitchNodes[2])
+    expect(mem.pitchNodes).toHaveLength(2)
+    expect(sourceOf('a').dest).toBe(nodeC)
+    expect(nodeC).toMatchObject({ active: true, connectedTo: channel(result, 'a').pannerNode })
   })
 
-  it('parado com tom diferente de 0, solta o worklet do canal que virou Click', async () => {
+  it('parado com tom diferente de 0, devolve pra reserva o worklet do canal que virou Click', async () => {
     seed(v1)
     const { result } = await openApp()
     await act(async () => { await result.current.play() })
     act(() => { result.current.pause() })
     const nodeC = mem.pitchNodes[1]
+    // A pausa para o DSP de todos e desliga do panner.
+    expect(mem.pitchNodes.every((n) => !n.active && n.connectedTo === null)).toBe(true)
     mem.sources.length = 0
 
     await act(async () => { result.current.setChannelMeta('c', { role: 'click' }) })
     expect(result.current.isPlaying).toBe(false)
-    expect(nodeC).toMatchObject({ closed: true, disconnected: true })
-    expect(channel(result, 'c').pitchShiftNode).toBeNull()
     expect(mem.sources).toHaveLength(0)
+
+    // O worklet da guitarra ficou na reserva: o Click que vira Normal reaproveita no
+    // próximo play, sem worklet novo.
+    await act(async () => { result.current.setChannelMeta('a', { role: 'normal' }) })
+    await act(async () => { await result.current.play() })
+    const sourceOf = (id: string) => mem.sources[ids(result, 's1').indexOf(id)]
+    expect(mem.pitchNodes).toHaveLength(2)
+    expect(sourceOf('a').dest).toBe(nodeC)
+    expect(sourceOf('c').dest).toMatchObject({ delayTime: { value: PITCH_LATENCY }, connectedTo: channel(result, 'c').pannerNode })
   })
 
   it('no tom 0, trocar o papel tocando não reinicia o áudio', async () => {
