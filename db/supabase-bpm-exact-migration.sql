@@ -14,13 +14,22 @@
 -- app (web e desktop) e a API que gravam estas colunas. O app novo tolera o
 -- banco sem elas (lê o inteiro e regrava sem as colunas novas), mas o BPM
 -- decimal e o compasso só ficam salvos na nuvem depois desta migration.
+--
+-- O ALTER pede lock exclusivo da tabela. Se houver transação longa aberta em
+-- songs, ele desiste em 5 s em vez de ficar na fila travando as leituras do
+-- app; aí é só rodar de novo. No fim, o PostgREST relê o esquema pra API já
+-- enxergar as colunas novas. O Supabase costuma recarregar sozinho depois de
+-- DDL; o notify garante, senão a regravação tolerante do app continuaria
+-- descartando o BPM exato e o compasso sem ninguém ver.
 -- ============================================================
+
+set lock_timeout = '5s';
 
 -- aditiva e segura: apps antigos continuam lendo o bpm inteiro
 alter table public.songs add column if not exists bpm_exact numeric(6,2) null check (bpm_exact is null or (bpm_exact > 0 and bpm_exact < 400));
 alter table public.songs add column if not exists time_signature text null check (time_signature is null or time_signature in ('3/4','4/4','5/4','6/8','7/8','12/8'));
 
-comment on column public.songs.bpm_exact is 'BPM com 2 casas. Vale só quando round(bpm_exact) = bpm; senão o app usa bpm (inteiro, lido pelos apps antigos).';
+comment on column public.songs.bpm_exact is 'BPM com 2 casas. Vale só quando round(bpm_exact) = bpm, senão o app usa bpm (inteiro, lido pelos apps antigos).';
 comment on column public.songs.time_signature is 'Compasso da música (3/4, 4/4, 5/4, 6/8, 7/8 ou 12/8). Vazio = não informado.';
 
 -- Verificação
@@ -29,3 +38,6 @@ from information_schema.columns
 where table_schema = 'public' and table_name = 'songs'
   and column_name in ('bpm', 'bpm_exact', 'time_signature')
 order by column_name;
+
+-- API (PostgREST) enxerga as colunas novas na hora.
+notify pgrst, 'reload schema';

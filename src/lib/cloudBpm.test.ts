@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import {
   bpmColumns,
   editedBpmColumns,
@@ -199,6 +201,31 @@ describe('banco ainda sem as colunas novas', () => {
     expect(withoutMeterColumns(row)).toEqual({ name: 'Grande és Tu', bpm: 73 })
     expect(row.bpm_exact).toBe(72.5)
     expect(row.time_signature).toBe('6/8')
+  })
+})
+
+describe('migration (db/supabase-bpm-exact-migration.sql)', () => {
+  const sql = readFileSync(fileURLToPath(new URL('../../db/supabase-bpm-exact-migration.sql', import.meta.url)), 'utf8')
+  // Comandos sem os comentários de linha, um por ";".
+  const statements = sql
+    .split('\n').map(l => l.replace(/--.*$/, '')).join('\n')
+    .split(';').map(st => st.replace(/\s+/g, ' ').trim().toLowerCase()).filter(Boolean)
+
+  it('começa limitando a espera pelo lock da tabela', () => {
+    expect(statements[0]).toBe("set lock_timeout = '5s'")
+  })
+
+  it('termina pedindo ao PostgREST que releia o esquema', () => {
+    expect(statements[statements.length - 1]).toBe("notify pgrst, 'reload schema'")
+  })
+
+  it('é aditiva e idempotente: só cria coluna se não existe, nunca apaga nem regrava linha', () => {
+    const alters = statements.filter(st => st.startsWith('alter table'))
+    expect(alters).toHaveLength(2)
+    for (const st of alters) expect(st).toMatch(/^alter table public\.songs add column if not exists /)
+    expect(alters[0]).toContain("bpm_exact numeric(6,2) null check (bpm_exact is null or (bpm_exact > 0 and bpm_exact < 400))")
+    expect(alters[1]).toContain("time_signature text null check (time_signature is null or time_signature in ('3/4','4/4','5/4','6/8','7/8','12/8'))")
+    for (const st of statements) expect(st).not.toMatch(/^(drop|delete|update|truncate|insert)\b/)
   })
 })
 
