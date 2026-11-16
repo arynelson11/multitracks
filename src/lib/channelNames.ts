@@ -418,15 +418,26 @@ export function resolveChannelRole(ch: ChannelIdentity): ChannelRole {
   return legacyRoleFromName(ch.name) ?? 'normal'
 }
 
+// O nome que decide a família do instrumento e a família dele: o do usuário quando ele
+// é reconhecido; senão o do arquivo.
+function familySource(ch: ChannelIdentity): { name: string; family: ChannelFamily } {
+  if (hasCustomName(ch)) {
+    const fromCustom = recognizeChannel(ch.customName, { ignoreRoleFamilies: true }).family
+    if (fromCustom !== 'desconhecido') return { name: ch.customName, family: fromCustom }
+  }
+  return { name: ch.name, family: recognizeChannel(ch.name, { ignoreRoleFamilies: true }).family }
+}
+
+// Mesma regra do channelFamily, pra quem precisa olhar as palavras desse nome (tempoSources).
+export function familySourceName(ch: ChannelIdentity): string {
+  return familySource(ch).name
+}
+
 export function channelFamily(ch: ChannelIdentity): ChannelFamily {
   const role = resolveChannelRole(ch)
   if (role === 'click') return 'click'
   if (role === 'guide') return 'guia'
-  if (hasCustomName(ch)) {
-    const fromCustom = recognizeChannel(ch.customName, { ignoreRoleFamilies: true }).family
-    if (fromCustom !== 'desconhecido') return fromCustom
-  }
-  return recognizeChannel(ch.name, { ignoreRoleFamilies: true }).family
+  return familySource(ch).family
 }
 
 const ORIGINAL_NAME_ORDER = new Intl.Collator('pt-BR', { numeric: true, sensitivity: 'base' })

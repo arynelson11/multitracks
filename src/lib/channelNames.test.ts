@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  FAMILY_COLOR, arrangeChannels, buildChannelLabels, channelFamily, isDrumPieceToken, nameTokens, recognizeChannel,
+  FAMILY_COLOR, arrangeChannels, buildChannelLabels, channelFamily, familySourceName, isDrumPieceToken, nameTokens, recognizeChannel,
   resolveChannelRole, roleFromName, sortChannelsByDefault, type ChannelFamily, type ChannelIdentity,
 } from './channelNames'
 
@@ -566,5 +566,21 @@ describe('TOM é palavra fraca da bateria (M5, rodada 2)', () => {
   })
   it('TOM continua sendo token de peça pro kit inteiro', () => {
     expect(isDrumPieceToken('tom')).toBe(true)
+  })
+})
+
+// Rodada 2 da M5, item 2: o nome que decide a família, o mesmo pro channelFamily e pro tempoSources.
+describe('familySourceName', () => {
+  it('nome do usuário reconhecido decide; não reconhecido ou vazio volta pro nome do arquivo', () => {
+    expect(familySourceName({ id: '1', name: 'Drum Loop', customName: 'Bateria' })).toBe('Bateria')
+    expect(familySourceName({ id: '2', name: 'Drum Loop', customName: 'Batida' })).toBe('Drum Loop')
+    expect(familySourceName({ id: '3', name: 'DRUMS', customName: '   ' })).toBe('DRUMS')
+    expect(familySourceName({ id: '4', name: 'Track 9' })).toBe('Track 9')
+  })
+  it('bate com o channelFamily', () => {
+    for (const ch of [{ id: '1', name: 'Drum Loop', customName: 'Bateria' }, { id: '2', name: 'Drum Loop', customName: 'Batida' },
+      { id: '3', name: 'Track 9', customName: 'Violão do Zé' }, { id: '4', name: 'GTR', customName: 'Solo do Zé' }]) {
+      expect(channelFamily(ch)).toBe(recognizeChannel(familySourceName(ch), { ignoreRoleFamilies: true }).family)
+    }
   })
 })

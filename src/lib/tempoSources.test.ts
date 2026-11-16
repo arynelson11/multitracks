@@ -92,12 +92,19 @@ describe('pulso', () => {
     expect(pick([{ id: 'a', name: 'Track 3', customName: 'Bateria' }, { id: 'b', name: 'Pad' }]).pulse)
       .toEqual(['Bateria'])
   })
-  // Rodada 1, item 2: manual vence automático; com nome do usuário, só as palavras dele contam.
-  it('com nome do usuário, as palavras dele decidem o kit, sem somar as do arquivo', () => {
+  // Rodada 1, item 2: manual vence automático; com nome do usuário reconhecido, só as palavras dele contam.
+  it('com nome do usuário reconhecido, as palavras dele decidem o kit, sem somar as do arquivo', () => {
     expect(pick([{ id: 'a', name: 'Drum Loop', customName: 'Bateria' }, { id: 'b', name: 'LOOP' }]).pulse)
       .toEqual(['Bateria'])
-    expect(pick([{ id: 'a', name: 'DRUMS', customName: 'Loop do Zé' }, { id: 'b', name: 'Bateria' }]).pulse)
+    expect(pick([{ id: 'a', name: 'DRUMS', customName: 'Loop 2' }, { id: 'b', name: 'Bateria' }]).pulse)
       .toEqual(['Bateria'])
+  })
+  // Rodada 2, item 2: mesma regra do channelFamily; nome do usuário não reconhecido volta pro arquivo.
+  it('nome do usuário não reconhecido não decide: valem as palavras do arquivo', () => {
+    expect(pick([{ id: 'a', name: 'DRUMS' }, { id: 'b', name: 'Drum Loop', customName: 'Batida' }]).pulse)
+      .toEqual(['DRUMS'])
+    expect(pick([{ id: 'a', name: 'DRUMS', customName: 'Pulso' }, { id: 'b', name: 'Drum Loop' }]).pulse)
+      .toEqual(['Pulso'])
   })
   it('nome do usuário só com espaço não conta: valem as palavras do arquivo', () => {
     expect(pick([{ id: 'a', name: 'DRUMS', customName: '   ' }, { id: 'b', name: 'Drum Loop' }]).pulse)

@@ -5,7 +5,8 @@
 // canais (família, papel manual e palavra inteira do nome), nunca por pedaço de texto.
 // Puro: sem React, sem IndexedDB, sem Web Audio.
 import {
-  FAMILY_LABEL, FAMILY_RANK, channelFamily, isDrumPieceToken, nameTokens, type ChannelFamily, type ChannelIdentity,
+  FAMILY_LABEL, FAMILY_RANK, channelFamily, familySourceName, isDrumPieceToken, nameTokens, type ChannelFamily,
+  type ChannelIdentity,
 } from './channelNames'
 import { findClickChannel } from './channelRoles'
 
@@ -36,10 +37,10 @@ interface Candidate<T> {
   family: ChannelFamily
 }
 
-// Manual vence automático: com nome do usuário, só as palavras dele; senão, as do arquivo.
+// Manual vence automático, pela mesma regra do channelFamily: com nome do usuário
+// reconhecido, só as palavras dele; senão, as do arquivo.
 function wordsOf(ch: ChannelIdentity): Set<string> {
-  const custom = typeof ch.customName === 'string' && ch.customName.trim() !== '' ? ch.customName : undefined
-  return new Set(nameTokens(custom ?? ch.name))
+  return new Set(nameTokens(familySourceName(ch)))
 }
 
 const hasAnyWord = (words: ReadonlySet<string>, wanted: ReadonlySet<string>) => [...wanted].some((word) => words.has(word))
