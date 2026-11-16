@@ -90,6 +90,59 @@ describe('analyzeClickTrack: casos do plano', () => {
   it('5 minutos analisados em menos de 2 s', () => { const x = synthClick({ bpm: 120, seconds: 300, pulsesPerBar: 4, accent: 'loud', firstPulse: 0 }); const t0 = performance.now(); analyzeClickTrack(x, 48000); expect(performance.now() - t0).toBeLessThan(2000) })
 })
 
+describe('analyzeClickTrack: compasso composto', () => {
+  // No 6/8 e no 12/8 o click toca colcheias (6 ou 12 por compasso) ou semínimas pontuadas
+  // (2 ou 4 por compasso, cada uma valendo 3 colcheias). A grade sai sempre em colcheias,
+  // pra contagem e compasso baterem com o 6/8 do palco.
+  it('6/8 em colcheias com o 1 mais forte que o 4: 6 pulsos sem compasso salvo, o 1 no mais forte', () => {
+    const a = analyzeClickTrack(synthClick({ bpm: 180, seconds: 30, pulsesPerBar: 6, accent: 'compound', firstPulse: 0.1, pickupPulses: 3 }), 48000)!
+    expect(a.pulsesPerBar).toBe(6); expect(Math.abs(a.bpm - 180)).toBeLessThan(0.02)
+    expect(Math.abs(a.firstDownbeat! - 1.1)).toBeLessThan(0.002)
+  })
+  it('6/8 em colcheias com 1 e 4 iguais: 3 pulsos sem compasso salvo, 6 com o 6/8 salvo', () => {
+    const x = synthClick({ bpm: 180, seconds: 30, pulsesPerBar: 3, accent: 'loud', firstPulse: 0.1 })
+    expect(analyzeClickTrack(x, 48000)!.pulsesPerBar).toBe(3)
+    const a = analyzeClickTrack(x, 48000, '6/8')!
+    expect(a.pulsesPerBar).toBe(6); expect(Math.abs(a.bpm - 180)).toBeLessThan(0.02); expect(Math.abs(a.firstDownbeat! - 0.1)).toBeLessThan(0.002)
+  })
+  it('6/8 em semínima pontuada (2 pulsos por compasso): com o 6/8 salvo vira colcheia e 6 pulsos', () => {
+    const x = synthClick({ bpm: 60, seconds: 30, pulsesPerBar: 2, accent: 'loud', firstPulse: 0.2, pickupPulses: 1 })
+    const sem = analyzeClickTrack(x, 48000)!
+    expect(sem.pulsesPerBar).toBeNull(); expect(Math.abs(sem.bpm - 60)).toBeLessThan(0.02)
+    const a = analyzeClickTrack(x, 48000, '6/8')!
+    expect(Math.abs(a.bpm - 180)).toBeLessThan(0.05); expect(a.pulsesPerBar).toBe(6); expect(a.accent).toBe('loud')
+    expect(Math.abs(a.firstDownbeat! - 1.2)).toBeLessThan(0.002); expect(Math.abs(a.firstPulse - 0.2)).toBeLessThan(0.002)
+  })
+  it('12/8 em semínima pontuada (4 pulsos por compasso): com o 12/8 salvo vira colcheia e 12 pulsos', () => {
+    const x = synthClick({ bpm: 50, seconds: 40, pulsesPerBar: 4, accent: 'bright', firstPulse: 0.3 })
+    expect(analyzeClickTrack(x, 48000)!.pulsesPerBar).toBe(4)
+    const a = analyzeClickTrack(x, 48000, '12/8')!
+    expect(Math.abs(a.bpm - 150)).toBeLessThan(0.05); expect(a.pulsesPerBar).toBe(12); expect(Math.abs(a.firstDownbeat! - 0.3)).toBeLessThan(0.002)
+  })
+  it('12/8 em colcheias com acento só no 1 continua 12, com ou sem o 12/8 salvo', () => {
+    const x = synthClick({ bpm: 150, seconds: 40, pulsesPerBar: 12, accent: 'loud', firstPulse: 0 })
+    expect(analyzeClickTrack(x, 48000)!.pulsesPerBar).toBe(12)
+    const a = analyzeClickTrack(x, 48000, '12/8')!
+    expect(a.pulsesPerBar).toBe(12); expect(Math.abs(a.bpm - 150)).toBeLessThan(0.02)
+  })
+  it('composto salvo e click sem acento: o andamento decide entre pontuada e colcheia', () => {
+    const pontuada = analyzeClickTrack(synthClick({ bpm: 66, seconds: 30, pulsesPerBar: 2, accent: 'none', firstPulse: 0 }), 48000, '6/8')!
+    expect(Math.abs(pontuada.bpm - 198)).toBeLessThan(0.05); expect(pontuada.pulsesPerBar).toBeNull(); expect(pontuada.firstDownbeat).toBeNull()
+    const colcheia = analyzeClickTrack(synthClick({ bpm: 198, seconds: 30, pulsesPerBar: 6, accent: 'none', firstPulse: 0 }), 48000, '6/8')!
+    expect(Math.abs(colcheia.bpm - 198)).toBeLessThan(0.02); expect(colcheia.pulsesPerBar).toBeNull()
+  })
+  it('6/8 salvo por engano num 4/4 em colcheias (acento em cada semínima) não triplica o BPM', () => {
+    // Visto nos clicks reais da MultiTracks: colcheias a 132 com acento a cada 2.
+    const a = analyzeClickTrack(synthClick({ bpm: 132, seconds: 30, pulsesPerBar: 4, accent: 'every2', firstPulse: 0 }), 48000, '6/8')!
+    expect(Math.abs(a.bpm - 132)).toBeLessThan(0.02); expect(a.pulsesPerBar).toBeNull(); expect(a.firstDownbeat).toBeNull()
+  })
+  it('compasso simples salvo não muda a leitura', () => {
+    const x = synthClick({ bpm: 72.5, seconds: 40, pulsesPerBar: 4, accent: 'loud', firstPulse: 0.31 })
+    expect(analyzeClickTrack(x, 48000, '4/4')).toEqual(analyzeClickTrack(x, 48000))
+    expect(analyzeClickTrack(x, 48000, '3/4')).toEqual(analyzeClickTrack(x, 48000, null))
+  })
+})
+
 describe('analyzeClickTrack: o resto do contrato', () => {
   it('devolve o primeiro pulso, os ataques usados e o traço do acento', () => {
     const a = analyzeClickTrack(synthClick({ bpm: 120, seconds: 30, pulsesPerBar: 4, accent: 'loud', firstPulse: 0.2, pickupPulses: 2 }), 48000)!
