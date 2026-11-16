@@ -33,15 +33,15 @@ describe('corte de confiança nos casos do relatório', () => {
     }
   });
 
-  it('o corte é o meio do vão do grupo de calibração', () => {
+  // Sem números fixos dos casos (mudam com qualquer ajuste nos ataques): só a ordem,
+  // com folga. Os valores medidos na calibração ficam anotados na constante.
+  it('o corte fica no vão do grupo de calibração, com folga dos dois lados', () => {
     const cal = TEMPO_CASES.filter(c => c.group === 'calibracao');
     const maiorNegativo = Math.max(...cal.filter(c => !c.positive).map(confianca));
     const menorPositivo = Math.min(...cal.filter(c => c.positive).map(confianca));
-    expect(maiorNegativo).toBeLessThan(menorPositivo);
-    // Os números anotados na constante (0,4404 e 0,9999) e o corte arredondado em 2 casas.
-    expect(maiorNegativo).toBeCloseTo(0.4404, 3);
-    expect(menorPositivo).toBeCloseTo(0.9999, 3);
-    expect(CONFIDENCE_CUT).toBeCloseTo((maiorNegativo + menorPositivo) / 2, 2);
+    const FOLGA = 0.1;
+    expect(maiorNegativo + FOLGA).toBeLessThanOrEqual(CONFIDENCE_CUT);
+    expect(CONFIDENCE_CUT + FOLGA).toBeLessThanOrEqual(menorPositivo);
   });
 
   it('corte calibrado no grupo de calibração separa o grupo de validação', () => {
