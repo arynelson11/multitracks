@@ -11,8 +11,9 @@ export interface AppSettings {
     outputs: OutputSettings;
     // Palco novo ou antigo (R-25). Padrão: novo.
     stageVersion: StageVersion;
-    // O aparelho veio do pan automático (R-23): cada conta zera uma vez, na primeira
-    // restauração dela, os pans ±1 que ele gravou (o motor marca a conta; Ruling T25-legacy).
+    // Informativo: o aparelho veio do pan automático (R-23). O motor zera os pans ±1 antigos
+    // de cada conta uma vez, na primeira restauração dela, com ou sem este flag (Ruling
+    // T25-reset-sempre).
     legacyPanReset: boolean;
 }
 
@@ -60,7 +61,7 @@ function readStoredSettings(): { settings: AppSettings; warnings: OutputWarning[
             autoPan: migrated.autoPan,
             // Valor estranho vira o palco novo.
             stageVersion: raw.stageVersion === 'antigo' ? 'antigo' : 'novo',
-            // O pedido de zerar fica gravado: vale pra cada conta que ainda não abriu.
+            // Fica gravado (informativo; o motor não depende dele).
             legacyPanReset: migrated.resetLegacyPans || raw.legacyPanReset === true,
         },
         warnings: migrated.warnings,
