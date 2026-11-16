@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react'
 import { TWO_TAP_MIN_GAP_MS, TWO_TAP_WINDOW_MS } from '../../hooks/useTwoTapConfirm'
@@ -8,8 +9,11 @@ import { TIME_SIGNATURES } from '../../lib/stageContracts'
 import type { MeterSource, SongGrid, StageSection, TimeSignature } from '../../lib/stageContracts'
 import { MeterEditor } from './MeterEditor'
 import type { MeterEditorProps } from './MeterEditor'
+import { PadPanel } from './PadPanel'
+import { TWO_TAP_ARM_EVENT } from './panelDismiss'
 import { SectionEditBar } from './SectionEditBar'
 import type { SectionEditBarProps } from './SectionEditBar'
+import { TwoTapTrashButton } from './TwoTapTrashButton'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
 const PROIBIDAS = /\b(next|play|cancel|start|repeat|section|edit|settings|upgrade)\b/i
@@ -53,7 +57,7 @@ const SECTIONS: StageSection[] = [
 
 const renderBar = (over: Partial<SectionEditBarProps> = {}) => {
   const props: SectionEditBarProps = {
-    sections: SECTIONS, selected: null, hasGrid: true,
+    sections: SECTIONS, selected: null, hasPhase: true,
     onSelect: vi.fn(), onMark: vi.fn(), onNudge: vi.fn(), onRemove: vi.fn(), ...over,
   }
   const r = render(<SectionEditBar {...props} />)
@@ -110,8 +114,8 @@ describe('SectionEditBar', () => {
     expect(props.onNudge).toHaveBeenLastCalledWith(1, 1)
   })
 
-  it('sem grade o ajuste é de 1 s', () => {
-    renderBar({ selected: 2, hasGrid: false })
+  it('sem fase (sem grade ou só o BPM salvo) o ajuste é de 1 s', () => {
+    renderBar({ selected: 2, hasPhase: false })
     const tras = screen.getByRole('button', { name: 'Mover Refrão 1 segundo pra trás' })
     expect(tras.textContent).toBe('1 s')
     expect(screen.getByRole('button', { name: 'Mover Refrão 1 segundo pra frente' }).textContent).toBe('1 s')
@@ -129,6 +133,7 @@ describe('SectionEditBar', () => {
     expect(lixeira().getAttribute('aria-label')).toBe('Toque de novo para apagar a seção Verso')
     expect(lixeira().textContent).toContain('Apagar?')
     expect(lixeira().className).toContain('bg-ps-alert')
+    expect(lixeira().getAttribute('data-armed')).toBe('true')
 
     // Segundo toque colado no primeiro (duplo clique) não conta.
     fireEvent.click(lixeira())
@@ -146,7 +151,42 @@ describe('SectionEditBar', () => {
     fireEvent.click(lixeira())
     rerenderWith({ selected: 2 })
     expect(screen.getByRole('button', { name: /apagar a seção Refrão/i }).getAttribute('aria-label')).toBe('Apagar a seção Refrão')
+    // E quando a selecionada anda (o ajuste mudou o início dela).
+    fireEvent.click(screen.getByRole('button', { name: /apagar a seção Refrão/i }))
+    rerenderWith({ selected: 2, sections: SECTIONS.map((s) => (s.index === 2 ? { ...s, start: 24 } : s)) })
+    expect(screen.getByRole('button', { name: /apagar a seção Refrão/i }).getAttribute('data-armed')).toBe('false')
     expect(props.onRemove).toHaveBeenCalledTimes(1)
+  })
+
+  it('só uma lixeira armada no palco: a de seção e a de canal se desarmam (Ruling T16-lixeira)', () => {
+    const canal = vi.fn()
+    const props: SectionEditBarProps = {
+      sections: SECTIONS, selected: 1, hasPhase: true, onSelect: vi.fn(), onMark: vi.fn(), onNudge: vi.fn(), onRemove: vi.fn(),
+    }
+    render(<>
+      <SectionEditBar {...props} />
+      <TwoTapTrashButton label="Apagar o canal Bateria" confirmLabel="Toque de novo para apagar o canal Bateria" onConfirm={canal} />
+    </>)
+    const secao = () => screen.getByRole('button', { name: /apagar a seção Verso/i })
+    const bateria = () => screen.getByRole('button', { name: /apagar o canal Bateria/i })
+    const avisos: string[] = []
+    const ouvir = (e: Event) => avisos.push((e as CustomEvent<string>).detail)
+    document.addEventListener(TWO_TAP_ARM_EVENT, ouvir)
+
+    fireEvent.click(bateria())
+    expect(bateria().getAttribute('data-armed')).toBe('true')
+    fireEvent.click(secao())
+    expect(secao().getAttribute('data-armed')).toBe('true')
+    expect(bateria().getAttribute('data-armed')).toBe('false')
+    expect(avisos).toHaveLength(2)
+    expect(avisos[0]).not.toBe(avisos[1])
+
+    fireEvent.click(bateria())
+    expect(bateria().getAttribute('data-armed')).toBe('true')
+    expect(secao().getAttribute('data-armed')).toBe('false')
+    expect(props.onRemove).not.toHaveBeenCalled()
+    expect(canal).not.toHaveBeenCalled()
+    document.removeEventListener(TWO_TAP_ARM_EVENT, ouvir)
   })
 
   it('seção na cor dela e nome antigo longo nunca cortado', () => {
@@ -313,13 +353,49 @@ describe('MeterEditor', () => {
     expect(props.onClose).toHaveBeenCalledTimes(2)
   })
 
+  it('com um painel do palco aberto antes, o Esc fecha o compasso e não o de baixo (Ruling T15-esc)', () => {
+    const fecharPads = vi.fn()
+    const fecharCompasso = vi.fn()
+    const pads = (
+      <PadPanel
+        open onClose={() => fecharPads()} view="pads" onViewChange={() => {}} notes={['C', 'D']} activeNote={null} songKeyIndex={null}
+        volume={0.5} setName={null} onPlayNote={() => {}} onVolume={() => {}} onOpenSets={() => {}} onEditPads={() => {}}
+      />
+    )
+    // onClose em arrow nova a cada renderização, como o App faria.
+    const meter = () => (
+      <MeterEditor grid={GRID} songBpm={120} busy={false} onChange={() => {}} onRedetect={() => {}} onClose={() => fecharCompasso()} />
+    )
+    const { rerender } = render(<>{pads}</>)
+    rerender(<>{pads}{meter()}</>)
+    rerender(<>{pads}{meter()}</>)
+    rerender(<>{pads}{meter()}</>)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(fecharCompasso).toHaveBeenCalledTimes(1)
+    expect(fecharPads).not.toHaveBeenCalled()
+    // Fechado o compasso, o próximo Esc é do painel de baixo.
+    rerender(<>{pads}</>)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(fecharPads).toHaveBeenCalledTimes(1)
+    expect(fecharCompasso).toHaveBeenCalledTimes(1)
+  })
+
   it('fechar devolve o foco pra quem abriu', () => {
     const opener = document.createElement('button')
     document.body.appendChild(opener)
     opener.focus()
     const { unmount } = renderMeter()
-    expect(document.activeElement).not.toBe(opener)
+    expect(document.activeElement).toBe(screen.getByRole('dialog'))
     unmount()
+    expect(document.activeElement).toBe(opener)
+    // No StrictMode (efeitos montam, desmontam e montam de novo) o foco também vai e volta certo.
+    const strict = render(
+      <StrictMode>
+        <MeterEditor grid={GRID} songBpm={120} busy={false} onChange={() => {}} onRedetect={() => {}} onClose={() => {}} />
+      </StrictMode>,
+    )
+    expect(document.activeElement).toBe(screen.getByRole('dialog'))
+    strict.unmount()
     expect(document.activeElement).toBe(opener)
     opener.remove()
   })

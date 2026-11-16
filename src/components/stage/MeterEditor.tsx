@@ -1,9 +1,10 @@
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import { TIME_SIGNATURES, countPulses, displayBpmFromPulseBpm, isCompound } from '../../lib/stageContracts'
 import type { MeterSource, SongGrid, TimeSignature } from '../../lib/stageContracts'
 import { Button, Segmented } from '../ui'
 import type { SegmentedOption } from '../ui'
 import { Icon } from './icons'
+import { usePanelDismiss } from './panelDismiss'
 
 export interface MeterEditorProps {
   grid: SongGrid | null; songBpm: number | null; busy: boolean
@@ -41,33 +42,26 @@ function shownBpm(g: SongGrid | null, songBpm: number | null): { value: number; 
  * compassos do contrato; no 6/8 e no 12/8, se a contagem conta todos os pulsos ou de 3 em 3; de
  * onde vieram o compasso e o BPM; e "Ler o click de novo" (relê BPM e fase e mantém o compasso
  * escolhido: `keepManualMeter`, no App). O que sai em `onChange` passa pelo `withMeter` e o
- * `sanitizeGrid` devolve igual: compasso simples sempre conta 1. Fecha no X e no Esc (na
- * captura, marcando o evento como tratado, como os painéis do palco).
+ * `sanitizeGrid` devolve igual: compasso simples sempre conta 1. Fecha no X e no Esc, que vem da
+ * pilha comum dos painéis do palco (`usePanelDismiss`): aberto por cima de outro painel, o Esc
+ * fecha o compasso primeiro.
  */
 export function MeterEditor({ grid, songBpm, busy, onChange, onRedetect, onClose }: MeterEditorProps) {
   const panelRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return
-      e.preventDefault()
-      onClose()
-    }
-    document.addEventListener('keydown', onKeyDown, true)
-    return () => document.removeEventListener('keydown', onKeyDown, true)
-  }, [onClose])
-
-  // Abrir leva o foco pro diálogo; fechar com o foco nele (ou perdido) devolve pra quem abriu.
+  // Fechar aqui é desmontar, e o React limpa os efeitos antes de tirar o diálogo da página: o foco
+  // ainda estaria nele e a pilha comum acharia que não se perdeu. Solta o foco antes (este efeito
+  // vem antes do usePanelDismiss, e a limpeza segue a mesma ordem) pra ela devolver a quem abriu.
   useLayoutEffect(() => {
     const panel = panelRef.current
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    panel?.focus({ preventScroll: true })
     return () => {
       const active = document.activeElement
-      const lost = !active || active === document.body || !active.isConnected || (panel?.contains(active) ?? false)
-      if (opener && opener !== panel && opener.isConnected && lost) opener.focus({ preventScroll: true })
+      if (active instanceof HTMLElement && panel?.contains(active)) active.blur()
     }
   }, [])
+  // Esc e foco pela pilha comum dos painéis do palco (Rulings T15-esc e T15-dup): o Esc fecha o
+  // aberto por último, e fechar devolve o foco pra quem abriu. Aberto enquanto montado.
+  usePanelDismiss(true, onClose, panelRef)
 
   // Entrar no composto mantém a contagem de quem já era composto; senão conta de 3 em 3, como a leitura do click.
   const pickSignature = (sig: TimeSignature) => {
