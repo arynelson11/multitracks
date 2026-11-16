@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { Repeat, Infinity as InfinityIcon, CornerUpLeft, Plus, X, Minus, Lock } from 'lucide-react';
 import type { Marker } from '../types';
+import { computePeaks } from './stage/wavePeaks';
 
 interface SectionBarProps {
   markers: Marker[];
@@ -42,27 +43,6 @@ export const colorForSection = (label: string): string =>
 
 const WAVE_BUCKETS = 1100; // resolução horizontal da forma de onda
 
-// Reduz o AudioBuffer a um array de picos (0..1) pra desenhar a waveform.
-// Pega o maior valor absoluto de cada balde — leitura visual fiel e barata.
-function computePeaks(buffer: AudioBuffer, buckets: number): number[] {
-  const data = buffer.getChannelData(0);
-  const block = Math.floor(data.length / buckets) || 1;
-  const peaks: number[] = [];
-  let max = 0.0001;
-  for (let i = 0; i < buckets; i++) {
-    let peak = 0;
-    const start = i * block;
-    for (let j = 0; j < block; j++) {
-      const v = Math.abs(data[start + j] || 0);
-      if (v > peak) peak = v;
-    }
-    peaks.push(peak);
-    if (peak > max) max = peak;
-  }
-  // Normaliza pra usar toda a altura.
-  return peaks.map((p) => p / max);
-}
-
 export function SectionBar({
   markers,
   currentMarkerId,
@@ -95,7 +75,7 @@ export function SectionBar({
   const dur = duration || 1;
 
   // Picos da waveform: recalcula só quando a música (buffer) muda.
-  const peaks = useMemo(() => (waveBuffer ? computePeaks(waveBuffer, WAVE_BUCKETS) : null), [waveBuffer]);
+  const peaks = useMemo(() => (waveBuffer ? computePeaks(waveBuffer.getChannelData(0), WAVE_BUCKETS) : null), [waveBuffer]);
 
   // Blocos: cada seção vai do seu marcador ao próximo (ou ao fim da música).
   const blocks = markers.map((m, i) => {
