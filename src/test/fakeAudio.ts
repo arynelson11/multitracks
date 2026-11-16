@@ -145,10 +145,15 @@ const curveAt = (c: Curve, t: number) =>
  * Valor do parâmetro no instante `t` (tempo do contexto), pelas regras do Web Audio: 'set'
  * salta, 'linear' e 'exp' andam do evento anterior até o tempo delas, 'target' se aproxima
  * do alvo com a constante de tempo, 'cancel' apaga o que vinha depois. Rampa depois de um
- * 'target' parte do início dele (simplificação: substitui o alvo).
+ * 'target' parte do início dele (simplificação: substitui o alvo). Como no navegador, o
+ * resultado fica preso em [minValue, maxValue] (pan 1,5 lê 1).
  */
 export function valueAt(param: FakeAudioParam | AudioParam, t: number): number {
   if (!(param instanceof FakeAudioParam)) throw new TypeError('valueAt: o parâmetro não é do AudioContext falso')
+  return Math.min(param.maxValue, Math.max(param.minValue, automationAt(param, t)))
+}
+
+function automationAt(param: FakeAudioParam, t: number): number {
   let curve: Curve = { kind: 'const', value: param.defaultValue }
   let prevTime: number | null = null
   for (const e of timeline(param)) {
@@ -177,11 +182,11 @@ export class FakeAudioNode extends FakeEventTarget {
   readonly kind: string
   readonly numberOfInputs: number
   readonly numberOfOutputs: number
-  channelCountMode: ChannelCountMode
-  channelInterpretation: ChannelInterpretation
   readonly connections: FakeConnection[] = []
   readonly #context: FakeAudioContext
   #channelCount: number
+  #channelCountMode: ChannelCountMode
+  #channelInterpretation: ChannelInterpretation
 
   constructor(context: FakeAudioContext, kind: string, shape: NodeShape) {
     super()
@@ -190,20 +195,33 @@ export class FakeAudioNode extends FakeEventTarget {
     this.numberOfInputs = shape.inputs
     this.numberOfOutputs = shape.outputs
     this.#channelCount = shape.channelCount ?? 2
-    this.channelCountMode = shape.mode ?? 'max'
-    this.channelInterpretation = shape.interpretation ?? 'speakers'
+    this.#channelCountMode = shape.mode ?? 'max'
+    this.#channelInterpretation = shape.interpretation ?? 'speakers'
   }
 
   /** O contexto falso, com o tipo do Web Audio: assim o nó do fake entra onde o código pede AudioNode. */
   get context(): BaseAudioContext { return asAudioContext(this.#context) }
 
+  // Os três campos de canal passam pelas regras de cada tipo de nó (as mesmas do navegador).
   get channelCount(): number { return this.#channelCount }
   set channelCount(n: number) {
     if (!Number.isInteger(n) || n < 1 || n > 32) throw domError(`channelCount ${n} fora de 1 a 32`, 'NotSupportedError')
     this.checkChannelCount(n)
     this.#channelCount = n
   }
+  get channelCountMode(): ChannelCountMode { return this.#channelCountMode }
+  set channelCountMode(mode: ChannelCountMode) {
+    this.checkChannelCountMode(mode)
+    this.#channelCountMode = mode
+  }
+  get channelInterpretation(): ChannelInterpretation { return this.#channelInterpretation }
+  set channelInterpretation(interpretation: ChannelInterpretation) {
+    this.checkChannelInterpretation(interpretation)
+    this.#channelInterpretation = interpretation
+  }
   protected checkChannelCount(n: number): void { void n }
+  protected checkChannelCountMode(mode: ChannelCountMode): void { void mode }
+  protected checkChannelInterpretation(interpretation: ChannelInterpretation): void { void interpretation }
 
   connect<T extends FakeAudioNode | AudioNode>(destination: T, output?: number, input?: number): T
   connect(destination: FakeAudioParam | AudioParam, output?: number): void
@@ -241,6 +259,13 @@ export class FakeAudioNode extends FakeEventTarget {
       this.#keep((c) => c.output !== target)
       return
     }
+    if (output !== undefined && (!Number.isInteger(output) || output < 0 || output >= this.numberOfOutputs)) {
+      throw domError(`${this.kind} não tem a saída ${output}`, 'IndexSizeError')
+    }
+    const inputs = target instanceof FakeAudioParam ? 1 : target instanceof FakeAudioNode ? target.numberOfInputs : Number.POSITIVE_INFINITY
+    if (input !== undefined && (!Number.isInteger(input) || input < 0 || input >= inputs)) {
+      throw domError(`o alvo não tem a entrada ${input}`, 'IndexSizeError')
+    }
     const removed = this.#keep((c) => !(c.to === target && (output === undefined || c.output === output) && (input === undefined || c.input === input)))
     if (removed === 0) throw domError(`${this.kind} não estava ligado nesse alvo`, 'InvalidAccessError')
   }
@@ -277,6 +302,12 @@ export class FakeStereoPannerNode extends FakeAudioNode {
   constructor(ctx: FakeAudioContext) {
     super(ctx, 'StereoPannerNode', { inputs: 1, outputs: 1, mode: 'clamped-max' })
     this.pan = new FakeAudioParam(this, 0, -1, 1)
+  }
+  protected checkChannelCount(n: number): void {
+    if (n > 2) throw domError(`StereoPannerNode aceita no máximo 2 canais (pedido ${n})`, 'NotSupportedError')
+  }
+  protected checkChannelCountMode(mode: ChannelCountMode): void {
+    if (mode === 'max') throw domError('StereoPannerNode não aceita channelCountMode max', 'NotSupportedError')
   }
 }
 
@@ -318,12 +349,29 @@ export class FakeChannelMergerNode extends FakeAudioNode {
     if (!Number.isInteger(inputs) || inputs < 1 || inputs > 32) throw domError(`merger com ${inputs} entradas`, 'IndexSizeError')
     super(ctx, 'ChannelMergerNode', { inputs, outputs: 1, channelCount: 1, mode: 'explicit' })
   }
+  // Cada entrada do merger é mono e fixa.
+  protected checkChannelCount(n: number): void {
+    if (n !== 1) throw domError('ChannelMergerNode fica com channelCount 1', 'InvalidStateError')
+  }
+  protected checkChannelCountMode(mode: ChannelCountMode): void {
+    if (mode !== 'explicit') throw domError('ChannelMergerNode fica em explicit', 'InvalidStateError')
+  }
 }
 
 export class FakeChannelSplitterNode extends FakeAudioNode {
   constructor(ctx: FakeAudioContext, outputs: number) {
     if (!Number.isInteger(outputs) || outputs < 1 || outputs > 32) throw domError(`splitter com ${outputs} saídas`, 'IndexSizeError')
     super(ctx, 'ChannelSplitterNode', { inputs: 1, outputs, channelCount: outputs, mode: 'explicit', interpretation: 'discrete' })
+  }
+  // Um canal por saída, sem mistura: nada disso muda depois de criado.
+  protected checkChannelCount(n: number): void {
+    if (n !== this.numberOfOutputs) throw domError(`ChannelSplitterNode fica com channelCount ${this.numberOfOutputs}`, 'InvalidStateError')
+  }
+  protected checkChannelCountMode(mode: ChannelCountMode): void {
+    if (mode !== 'explicit') throw domError('ChannelSplitterNode fica em explicit', 'InvalidStateError')
+  }
+  protected checkChannelInterpretation(interpretation: ChannelInterpretation): void {
+    if (interpretation !== 'discrete') throw domError('ChannelSplitterNode fica em discrete', 'InvalidStateError')
   }
 }
 
@@ -451,7 +499,7 @@ export interface FakeAudioContextOptions {
   /** Canais do aparelho padrão (o `destination.maxChannelCount` antes de qualquer setSinkId). */
   maxChannelCount?: number
   outputLatency?: number
-  /** Canais de cada aparelho por id, pro setSinkId; id fora do mapa volta aos canais do padrão. */
+  /** Canais de cada aparelho por id, pro setSinkId. '' e 'default' são o aparelho padrão; outro id fora do mapa rejeita com NotFoundError (aparelho que sumiu). */
   sinks?: Readonly<Record<string, number>>
   /** Decodificação do teste; sem ela, decodeAudioData devolve 300 s de silêncio em 2 canais. */
   decode?: (data: ArrayBuffer) => FakeAudioBuffer | Promise<FakeAudioBuffer>
@@ -500,9 +548,11 @@ export class FakeAudioContext extends FakeEventTarget {
   async suspend(): Promise<void> { this.#setState('suspended') }
   async close(): Promise<void> { this.#setState('closed') }
 
-  /** Troca o aparelho: `destination.maxChannelCount` vem do mapa `sinks` e o evento sinkchange avisa. O channelCount desce se passar do novo limite. */
+  /** Troca o aparelho: `destination.maxChannelCount` vem do mapa `sinks` e o evento sinkchange avisa. O channelCount desce se passar do novo limite. Aparelho desconhecido rejeita com NotFoundError sem mudar nada. */
   async setSinkId(sinkId: string): Promise<void> {
     if (this.state === 'closed') throw domError('contexto fechado', 'InvalidStateError')
+    const known = sinkId === '' || sinkId === 'default' || (this.#opts.sinks !== undefined && Object.hasOwn(this.#opts.sinks, sinkId))
+    if (!known) throw domError(`o aparelho ${sinkId} não existe`, 'NotFoundError')
     if (sinkId === this.sinkId) return
     this.sinkId = sinkId
     const max = this.#opts.sinks?.[sinkId] ?? this.#opts.maxChannelCount ?? 2

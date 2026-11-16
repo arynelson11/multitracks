@@ -91,6 +91,17 @@ describe('AudioParam falso', () => {
     expect(() => { p.value = Number.NaN }).toThrow(TypeError)
     expect(p.events).toEqual([])
   })
+  it('valueAt prende o valor no intervalo do parâmetro, como o navegador', () => {
+    const ctx = createFakeAudioContext(); const pan = ctx.createStereoPanner().pan
+    pan.setValueAtTime(1.5, 0); pan.linearRampToValueAtTime(-3, 2)
+    expect(valueAt(pan, 0)).toBe(1); expect(pan.value).toBe(1)
+    expect(valueAt(pan, 1)).toBeCloseTo(-0.75, 10)
+    expect(valueAt(pan, 2)).toBe(-1)
+    const delay = ctx.createDelay(0.5).delayTime
+    delay.value = 2
+    expect(delay.value).toBe(0.5)
+    expect(delay.events).toEqual([{ kind: 'set', value: 2, time: 0 }])
+  })
   it('valueAt recusa parâmetro que não é do contexto falso', () => {
     expect(() => valueAt({ value: 1 } as unknown as AudioParam, 0)).toThrow(TypeError)
   })
@@ -155,6 +166,35 @@ describe('ligações', () => {
     expect(() => sp.disconnect(y)).toThrow(domError('InvalidAccessError'))
     sp.disconnect()
     expect(sp.connections).toEqual([])
+  })
+  it('disconnect com saída ou entrada fora do intervalo lança IndexSizeError', () => {
+    const ctx = createFakeAudioContext(); const sp = ctx.createChannelSplitter(2); const m = ctx.createChannelMerger(2)
+    sp.connect(m, 1, 1)
+    expect(() => sp.disconnect(m, 2)).toThrow(domError('IndexSizeError'))
+    expect(() => sp.disconnect(m, 1, 2)).toThrow(domError('IndexSizeError'))
+    expect(() => sp.disconnect(m, 0)).toThrow(domError('InvalidAccessError'))
+    const g = ctx.createGain(); const lfo = ctx.createOscillator(); lfo.connect(g.gain)
+    expect(() => lfo.disconnect(g.gain, 1)).toThrow(domError('IndexSizeError'))
+    sp.disconnect(m, 1, 1); lfo.disconnect(g.gain, 0)
+    expect([sp.connections, lfo.connections]).toEqual([[], []])
+  })
+  it('merger, splitter e panner recusam mudar canais como o navegador; os outros mudam', () => {
+    const ctx = createFakeAudioContext()
+    const m = ctx.createChannelMerger(4)
+    expect(() => { m.channelCount = 2 }).toThrow(domError('InvalidStateError'))
+    expect(() => { m.channelCountMode = 'max' }).toThrow(domError('InvalidStateError'))
+    m.channelCount = 1; m.channelCountMode = 'explicit'
+    const sp = ctx.createChannelSplitter(2)
+    expect(() => { sp.channelCount = 4 }).toThrow(domError('InvalidStateError'))
+    expect(() => { sp.channelCountMode = 'max' }).toThrow(domError('InvalidStateError'))
+    expect(() => { sp.channelInterpretation = 'speakers' }).toThrow(domError('InvalidStateError'))
+    const pan = ctx.createStereoPanner()
+    expect(() => { pan.channelCount = 3 }).toThrow(domError('NotSupportedError'))
+    expect(() => { pan.channelCountMode = 'max' }).toThrow(domError('NotSupportedError'))
+    pan.channelCount = 1; pan.channelCountMode = 'explicit'
+    const g = ctx.createGain(); g.channelCount = 6; g.channelCountMode = 'explicit'; g.channelInterpretation = 'discrete'
+    expect([m.channelCount, sp.channelInterpretation, pan.channelCount, pan.channelCountMode, g.channelCount, g.channelCountMode, g.channelInterpretation])
+      .toEqual([1, 'discrete', 1, 'explicit', 6, 'explicit', 'discrete'])
   })
   it('connectedTo olha só a ligação direta, com a entrada se pedida', () => {
     const ctx = createFakeAudioContext(); const a = ctx.createGain(); const m = ctx.createChannelMerger(2)
@@ -251,6 +291,16 @@ describe('contexto', () => {
     ctx.removeEventListener('sinkchange', listener)
     await ctx.setSinkId('placa')
     expect(listener).toHaveBeenCalledTimes(2)
+  })
+  it('setSinkId com aparelho que não existe rejeita com NotFoundError e não muda nada', async () => {
+    const ctx = createFakeAudioContext({ maxChannelCount: 2, sinks: { placa: 8 } })
+    const listener = vi.fn(); ctx.addEventListener('sinkchange', listener)
+    await expect(ctx.setSinkId('sumiu')).rejects.toMatchObject({ name: 'NotFoundError' })
+    expect([ctx.sinkId, ctx.destination.maxChannelCount, listener.mock.calls.length]).toEqual(['', 2, 0])
+    await ctx.setSinkId('placa'); await ctx.setSinkId('default')
+    expect([ctx.sinkId, ctx.destination.maxChannelCount]).toEqual(['default', 2])
+    await expect(createFakeAudioContext().setSinkId('placa')).rejects.toMatchObject({ name: 'NotFoundError' })
+    await expect(createFakeAudioContext().setSinkId('')).resolves.toBeUndefined()
   })
   it('destino com os campos de canal e limite do aparelho', () => {
     const ctx = createFakeAudioContext({ maxChannelCount: 4 })
