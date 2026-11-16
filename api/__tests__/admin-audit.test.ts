@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createFakeDb, type FakeDb } from './fakeSupabase.js'
 import { BillingError } from '../_lib/billing.js'
+import { AsaasError } from '../_lib/asaas.js'
 import { AdminError, toHttpError, type AdminCtx } from '../_lib/admin/http.js'
 import { auditFinish, auditStart, withAudit } from '../_lib/admin/audit.js'
 
@@ -66,6 +67,7 @@ describe('registro das ações do admin', () => {
   })
 
   it('BillingError partial fecha como partial e relança', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     const err = new BillingError('partial', 'O Asaas trocou o plano, mas o app não.', 500)
     await expect(withAudit(ctxOf(), { action: 'change_plan', targetUserId: USER_ID }, async () => { throw err })).rejects.toBe(err)
     expect(finishArgs()).toEqual({ p_id: 41, p_result: 'partial', p_after: null, p_message: 'O Asaas trocou o plano, mas o app não.' })
@@ -79,10 +81,55 @@ describe('registro das ações do admin', () => {
     expect(finishArgs()).toEqual({ p_id: 41, p_result: 'failed', p_after: null, p_message: 'Erro inesperado no servidor.' })
   })
 
-  it('BillingError que não é partial fecha como failed com a frase dela', async () => {
+  it('erro do Asaas com frase pronta fecha failed com a frase e o status do Asaas', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     const err = new BillingError('asaas_unavailable', 'O Asaas não respondeu.', 502)
     await expect(withAudit(ctxOf(), { action: 'cancel_subscription', targetUserId: USER_ID }, async () => { throw err })).rejects.toBe(err)
-    expect(finishArgs()).toMatchObject({ p_result: 'failed', p_message: 'O Asaas não respondeu.' })
+    expect(finishArgs()).toMatchObject({ p_result: 'failed', p_message: 'O Asaas não respondeu. Status do Asaas: sem dado.' })
+  })
+
+  it('misconfigured fecha failed com a frase genérica', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const err = new BillingError('misconfigured', 'Troca de plano indisponível (servidor sem ASAAS_API_KEY).', 500)
+    await expect(withAudit(ctxOf(), { action: 'change_plan', targetUserId: USER_ID }, async () => { throw err })).rejects.toBe(err)
+    expect(finishArgs()).toEqual({ p_id: 41, p_result: 'failed', p_after: null, p_message: 'Configuração do servidor incompleta. Avise o suporte.' })
+    expect(JSON.stringify(finishArgs())).not.toContain('ASAAS_API_KEY')
+    expect(log.mock.calls.flat().join(' ')).toContain('ASAAS_API_KEY')
+  })
+
+  it('o registro não leva o texto técnico do Asaas e o log leva', async () => {
+    const cases: [unknown, string, string][] = [
+      [new BillingError('asaas_rejected', 'O Asaas não trocou o plano: Asaas recusou (400): O valor informado é inválido. Nada mudou.', 502),
+        'O Asaas recusou o pedido. Status do Asaas: 400.', 'Asaas recusou (400): O valor informado é inválido'],
+      [new BillingError('asaas_unavailable', 'O Asaas não trocou o plano: Asaas respondeu 503. Nada mudou.', 502),
+        'O Asaas não respondeu. Status do Asaas: 503.', 'Asaas respondeu 503'],
+      [new BillingError('asaas_unavailable', 'O Asaas não trocou o plano: Asaas sem resposta (ECONNABORTED). Nada mudou.', 502),
+        'O Asaas não respondeu. Status do Asaas: sem dado.', 'ECONNABORTED'],
+      [new AsaasError('not_found', 'não encontrado no Asaas', 404), 'O Asaas não achou o que foi pedido. Status do Asaas: 404.', 'não encontrado no Asaas'],
+      [new AsaasError('rejected', 'Asaas recusou (400): Cliente sem CPF', 400), 'O Asaas recusou o pedido. Status do Asaas: 400.', 'Cliente sem CPF'],
+    ]
+    for (const [err, saved, logged] of cases) {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      db.rpcCalls.length = 0
+      // quem chama (a T16) pega o erro e responde sozinho: o detalhe tem que ir pro log mesmo assim
+      const caught = await withAudit(ctxOf(), { action: 'change_plan', targetUserId: USER_ID }, async () => { throw err }).catch((e: unknown) => e)
+      expect(caught).toBe(err)
+      const message = String(finishArgs()?.p_message)
+      expect(message, saved).toBe(saved)
+      expect(message).not.toMatch(/Asaas recusou \(|Asaas respondeu|ECONNABORTED|CPF/)
+      expect(log.mock.calls.flat().join(' '), saved).toContain(logged)
+      log.mockRestore()
+    }
+  })
+
+  it('partial e erro comum também vão pro log com o detalhe', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const partial = new BillingError('partial', 'O Asaas trocou o plano, mas o banco respondeu not_found. Conferir à mão.', 500)
+    await withAudit(ctxOf(), { action: 'change_plan', targetUserId: USER_ID }, async () => { throw partial }).catch(() => null)
+    await withAudit(ctxOf(), { action: 'retry_event', targetRef: 'evt_1' }, async () => { throw new BillingError('db_error', 'Falha no banco (x): deadlock detected', 500) }).catch(() => null)
+    const text = log.mock.calls.flat().join(' ')
+    expect(text).toContain('respondeu not_found')
+    expect(text).toContain('deadlock detected')
   })
 
   it('sem conseguir registrar o início a ação não roda', async () => {

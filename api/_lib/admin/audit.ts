@@ -1,5 +1,5 @@
 import { BillingError } from '../billing.js'
-import { AdminError, toHttpError, type AdminCtx } from './http.js'
+import { AdminError, asaasFailure, toHttpError, type AdminCtx } from './http.js'
 
 // Registro de cada ação do admin (tabela admin_audit_log, SQL da T5): quem,
 // quando, o quê (ação e alvo), antes, depois e resultado. Decisão D7:
@@ -9,6 +9,10 @@ import { AdminError, toHttpError, type AdminCtx } from './http.js'
 //   chamada e o resultado depois. Sem conseguir gravar o pendente, a ação não
 //   roda. Se só o fechamento falhar, a ação já feita segue e o registro fica
 //   pendente, visível como "sem confirmação".
+// * O registro nunca guarda texto técnico: na falha, a frase pronta (a mesma
+//   da resposta) e, se a falha foi do Asaas, o status do Asaas (Ruling
+//   ADM-T3-registro). O erro cru vai pro log aqui mesmo, porque quem chama
+//   pode responder sozinho sem deixar o erro chegar ao roteador.
 
 export type AuditAction =
   | 'resolve_flag' | 'close_action' | 'retry_action' | 'retry_event'
@@ -35,11 +39,22 @@ function toLogId(data: unknown): number | null {
 }
 
 function errorText(e: unknown): string {
+  if (e instanceof Error) {
+    const code = (e as { code?: unknown }).code
+    return `${e.name}${typeof code === 'string' ? ` ${code}` : ''}: ${e.message}`.slice(0, 300)
+  }
   if (e && typeof e === 'object' && 'message' in e) {
     const { code, message } = e as { code?: unknown; message?: unknown }
     return `${typeof code === 'string' ? `${code} ` : ''}${String(message)}`.slice(0, 300)
   }
   return 'erro sem mensagem'
+}
+
+// Frase gravada no registro quando a ação falha.
+function failureMessage(err: unknown): string {
+  const asaas = asaasFailure(err)
+  if (!asaas) return toHttpError(err).error
+  return `${asaas.phrase} Status do Asaas: ${asaas.status ?? 'sem dado'}.`
 }
 
 export async function auditStart(ctx: AdminCtx, e: AuditStartInput): Promise<number> {
@@ -81,8 +96,8 @@ export async function auditFinish(ctx: AdminCtx, id: number, result: AuditResult
 }
 
 // Envolve uma ação que fala com o Asaas. Erro fecha 'partial' quando a Fase 3
-// diz que parte foi feita (BillingError 'partial'), senão 'failed'; a
-// mensagem gravada é a mesma frase que o admin vê. O erro original é relançado
+// diz que parte foi feita (BillingError 'partial'), senão 'failed', com a
+// frase de failureMessage; o erro cru vai pro log. O erro original é relançado
 // pra quem chamou traduzir a resposta.
 export async function withAudit<T>(ctx: AdminCtx, e: AuditStartInput, fn: () => Promise<T>, after?: (r: T) => unknown): Promise<T> {
   const id = await auditStart(ctx, e)
@@ -91,7 +106,8 @@ export async function withAudit<T>(ctx: AdminCtx, e: AuditStartInput, fn: () => 
     value = await fn()
   } catch (err) {
     const partial = err instanceof BillingError && err.code === 'partial'
-    await auditFinish(ctx, id, partial ? 'partial' : 'failed', null, toHttpError(err).error)
+    console.error(`[admin] ${e.action} falhou (registro ${id}):`, errorText(err))
+    await auditFinish(ctx, id, partial ? 'partial' : 'failed', null, failureMessage(err))
     throw err
   }
   let afterValue: unknown = null

@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { applyCors } from '../cors.js'
 import { verifyAdmin } from '../auth.js'
-import { asaasFromEnv, type AsaasApi } from '../asaas.js'
+import { AsaasError, asaasFromEnv, type AsaasApi, type AsaasErrorKind } from '../asaas.js'
 import { BillingError } from '../billing.js'
 
 // Roteador das ações do admin: /api/admin-stats?action=<nome>.
@@ -9,7 +9,10 @@ import { BillingError } from '../billing.js'
 //   profiles.is_admin com a chave de serviço). O front só esconde botão.
 // * Ação nova entra num módulo de api/_lib/admin e no registry.ts, nunca como
 //   arquivo novo em api/: o plano Hobby da Vercel aceita no máximo 12 funções.
-// * GET lê a query; POST lê o corpo JSON. Nenhuma resposta fica em cache.
+// * GET lê a query; POST lê o corpo JSON. Campo que a ação não declarou é
+//   recusado com 400 (Ruling ADM-T3-estrito). Nenhuma ação espalha ctx.body
+//   ou ctx.query nos argumentos de uma RPC: cada campo passa por um validador.
+// * Nenhuma resposta fica em cache.
 // * Erro vira frase pronta em português, sem detalhe do banco nem do Asaas; a
 //   mensagem original vai só pro log.
 
@@ -22,7 +25,13 @@ export type AdminCtx = {
   body: Record<string, unknown>
 }
 
-export type AdminHandler = { method: 'GET' | 'POST'; run: (ctx: AdminCtx) => Promise<unknown> }
+export type AdminHandler = {
+  method: 'GET' | 'POST'
+  // Campos que a ação aceita: da query no GET, do corpo no POST. Qualquer
+  // outro é recusado antes de rodar. Ação sem entrada declara [].
+  fields: readonly string[]
+  run: (ctx: AdminCtx) => Promise<unknown>
+}
 export type AdminHandlers = Record<string, AdminHandler>
 
 // Erro com o status HTTP e a frase que o admin vai ler.
@@ -37,11 +46,60 @@ export class AdminError extends Error {
 
 const MSG_UNEXPECTED = 'Erro inesperado no servidor.'
 const MSG_NO_DB = 'Servidor sem configuração do banco.'
+const MSG_MISCONFIGURED = 'Configuração do servidor incompleta. Avise o suporte.'
+const MSG_FORBIDDEN = 'Forbidden: admin required'
+
+// ── Texto técnico do Asaas. O cliente (api/_lib/asaas.ts, toAsaasError) monta
+// frases como "Asaas recusou (400): <descrição do Asaas>", e a troca de plano
+// da Fase 3 embute essa frase na mensagem dela. Isso nunca sai na resposta nem
+// no registro: vira uma frase genérica, e o status do Asaas, quando se sabe,
+// vai pro registro (Ruling ADM-T3-registro). O teste confere estas marcas
+// contra o asaas.ts.
+
+const ASAAS_TECH = /Asaas recusou \(\d{3}\)|Asaas respondeu \d{3}|Asaas sem resposta \(|não encontrado no Asaas|falha inesperada ao falar com o Asaas/
+
+const ASAAS_PHRASE: Record<AsaasErrorKind, string> = {
+  rejected: 'O Asaas recusou o pedido.',
+  unavailable: 'O Asaas não respondeu.',
+  not_found: 'O Asaas não achou o que foi pedido.',
+}
+
+function asaasKindInText(text: string): AsaasErrorKind {
+  if (/Asaas recusou \(/.test(text)) return 'rejected'
+  if (/não encontrado no Asaas/.test(text)) return 'not_found'
+  return 'unavailable'
+}
+
+function asaasStatusInText(text: string): number | null {
+  const m = /Asaas recusou \((\d{3})\)|Asaas respondeu (\d{3})/.exec(text)
+  if (m) return Number(m[1] ?? m[2])
+  return /não encontrado no Asaas/.test(text) ? 404 : null
+}
+
+export type AsaasFailure = { kind: AsaasErrorKind; status: number | null; phrase: string }
+
+// Falha do Asaas (AsaasError cru, ou BillingError asaas_* da Fase 3) com a
+// frase sem detalhe técnico e o status HTTP do Asaas (null quando não se sabe:
+// sem resposta, ou frase pronta da Fase 3 sem o status). null se não é do Asaas.
+export function asaasFailure(e: unknown): AsaasFailure | null {
+  if (e instanceof AsaasError) return { kind: e.kind, status: e.status ?? null, phrase: ASAAS_PHRASE[e.kind] }
+  if (e instanceof BillingError && (e.code === 'asaas_rejected' || e.code === 'asaas_unavailable')) {
+    const kind = ASAAS_TECH.test(e.message) ? asaasKindInText(e.message) : e.code === 'asaas_rejected' ? 'rejected' : 'unavailable'
+    return { kind, status: asaasStatusInText(e.message), phrase: toHttpError(e).error }
+  }
+  return null
+}
 
 export function toHttpError(e: unknown): { status: number; error: string } {
   if (e instanceof AdminError) return { status: e.status, error: e.message }
-  // db_error traz o nome da função e a mensagem do Postgres: fica só no log.
-  if (e instanceof BillingError && e.code !== 'db_error') return { status: e.httpStatus, error: e.message }
+  if (e instanceof BillingError) {
+    // db_error traz o nome da função e a mensagem do Postgres; misconfigured
+    // pode citar nome de variável de ambiente. O detalhe fica só no log.
+    if (e.code === 'db_error') return { status: 500, error: MSG_UNEXPECTED }
+    if (e.code === 'misconfigured') return { status: e.httpStatus, error: MSG_MISCONFIGURED }
+    if (ASAAS_TECH.test(e.message)) return { status: e.httpStatus, error: ASAAS_PHRASE[asaasKindInText(e.message)] }
+    return { status: e.httpStatus, error: e.message }
+  }
   return { status: 500, error: MSG_UNEXPECTED }
 }
 
@@ -70,6 +128,14 @@ const isMissing = (v: unknown): boolean => v === undefined || v === null || (typ
 const capitalize = (label: string): string => label.charAt(0).toUpperCase() + label.slice(1)
 const invalid = (message: string): AdminError => new AdminError(400, message)
 const badFormat = (label: string): AdminError => invalid(`${capitalize(label)} está em formato inválido.`)
+
+// Recusa campo que a ação não declarou (Ruling ADM-T3-estrito). O roteador
+// chama isto antes de rodar a ação, com os fields dela.
+export function onlyKeys(src: Src, allowed: readonly string[]): void {
+  const extra = Object.keys(src).filter((k) => !allowed.includes(k)).map((k) => k.slice(0, 40))
+  if (extra.length === 1) throw invalid(`Campo não esperado: ${extra[0]}.`)
+  if (extra.length > 1) throw invalid(`Campos não esperados: ${extra.slice(0, 5).join(', ')}.`)
+}
 
 type StrOpts = { label: string; min?: number; max?: number; pattern?: RegExp; optional?: boolean }
 
@@ -158,7 +224,7 @@ export function day(src: Src, key: string, opts: DayOpts): string | null {
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v) && !Buffer.isBuffer(v)
 
-// Só os valores em texto (?a=1&a=2 chega como lista e fica de fora).
+// Só os valores em texto (o roteador já recusou campo repetido, que chega como lista).
 function stringQuery(raw: unknown): Record<string, string> {
   if (!isObject(raw)) return {}
   return Object.fromEntries(Object.entries(raw).filter((e): e is [string, string] => typeof e[1] === 'string'))
@@ -205,6 +271,11 @@ export function createAdminRouter(handlers: AdminHandlers, options: AdminRouterO
         res.status(auth.status).json({ error: auth.error })
         return
       }
+      // Defesa a mais: ok sem o papel (se alguém trocar verifyAdmin por verifyUser) não passa.
+      if (auth.isAdmin !== true) {
+        res.status(403).json({ error: MSG_FORBIDDEN })
+        return
+      }
 
       if (options.legacy && req.method === 'GET' && req.query?.source !== undefined) {
         await options.legacy(req, res)
@@ -223,6 +294,15 @@ export function createAdminRouter(handlers: AdminHandlers, options: AdminRouterO
         return
       }
 
+      // Só os campos que a ação declarou, no lugar certo (query no GET, corpo
+      // no POST). O nome da ação é do roteador e não conta como campo.
+      const queryInput = Object.fromEntries(Object.entries(isObject(req.query) ? req.query : {}).filter(([k]) => k !== 'action'))
+      const body = objectBody(req.body)
+      onlyKeys(queryInput, handler.method === 'GET' ? handler.fields : [])
+      onlyKeys(body, handler.method === 'POST' ? handler.fields : [])
+      const repeated = Object.keys(queryInput).find((k) => typeof queryInput[k] !== 'string')
+      if (repeated !== undefined) throw invalid(`Campo repetido: ${repeated.slice(0, 40)}.`)
+
       const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
       const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
       if (!supabaseUrl || !serviceKey) {
@@ -236,8 +316,8 @@ export function createAdminRouter(handlers: AdminHandlers, options: AdminRouterO
         asaas: asaasFromEnv(5000),
         admin: { userId: auth.userId, email: auth.email },
         now: new Date(),
-        query: stringQuery(req.query),
-        body: objectBody(req.body),
+        query: stringQuery(queryInput),
+        body,
       }
       const result = await handler.run(ctx)
       res.status(200).json(result)

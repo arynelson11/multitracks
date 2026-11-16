@@ -12,6 +12,7 @@ import {
   int,
   mergeHandlers,
   oneOf,
+  onlyKeys,
   str,
   toHttpError,
   uuid,
@@ -36,6 +37,9 @@ vi.mock('../_lib/auth.js', () => ({
     if (!header) return { ok: false, status: 401, error: 'Missing Bearer token' }
     if (header === 'Bearer comum') return { ok: false, status: 403, error: 'Forbidden: admin required' }
     if (header === 'Bearer admin') return { ok: true, userId: ADMIN_ID, email: 'admin@igreja.com', isAdmin: true, blocked: false }
+    // ok sem papel de admin: o que viria se alguém trocasse verifyAdmin por verifyUser
+    if (header === 'Bearer quase') return { ok: true, userId: ADMIN_ID, email: 'quem@igreja.com', isAdmin: false, blocked: false }
+    if (header === 'Bearer explode') throw new Error('getaddrinfo ENOTFOUND fake.supabase.co')
     return { ok: false, status: 401, error: 'Invalid or expired token' }
   }),
 }))
@@ -58,7 +62,7 @@ let echo: Mock<Run>
 let router: (req: unknown, res: unknown) => Promise<void>
 
 // Roteador com uma só ação que lança o erro dado.
-const failing = (err: unknown) => createAdminRouter({ quebra: { method: 'GET', run: async () => { throw err } } })
+const failing = (err: unknown) => createAdminRouter({ quebra: { method: 'GET', fields: [], run: async () => { throw err } } })
 
 beforeEach(() => {
   vi.stubEnv('VITE_SUPABASE_URL', 'https://fake.supabase.co')
@@ -66,7 +70,7 @@ beforeEach(() => {
   db = createFakeDb()
   ping = vi.fn(async (ctx: AdminCtx) => ({ pong: true, admin: ctx.admin, query: ctx.query }))
   echo = vi.fn(async (ctx: AdminCtx) => ({ body: ctx.body }))
-  router = createAdminRouter({ ping: { method: 'GET', run: ping }, echo: { method: 'POST', run: echo } })
+  router = createAdminRouter({ ping: { method: 'GET', fields: ['page'], run: ping }, echo: { method: 'POST', fields: ['note'], run: echo } })
   vi.mocked(legacyStats).mockClear()
 })
 afterEach(() => {
@@ -155,9 +159,10 @@ describe('roteador do admin', () => {
   })
 
   it('admin chega na ação com o próprio id e e-mail, query só com texto e corpo só objeto', async () => {
-    const get = await call(router, { method: 'GET', query: { action: 'ping', page: '2', tags: ['a', 'b'] } })
+    const get = await call(router, { method: 'GET', query: { action: 'ping', page: '2' } })
     expect(get.statusCode).toBe(200)
-    expect(get.body).toEqual({ pong: true, admin: { userId: ADMIN_ID, email: 'admin@igreja.com' }, query: { action: 'ping', page: '2' } })
+    // o nome da ação é do roteador e não chega na query da ação
+    expect(get.body).toEqual({ pong: true, admin: { userId: ADMIN_ID, email: 'admin@igreja.com' }, query: { page: '2' } })
     const ctx = ping.mock.calls[0][0] as AdminCtx
     expect(ctx.db).toBe(db)
     expect(ctx.now).toBeInstanceOf(Date)
@@ -172,6 +177,30 @@ describe('roteador do admin', () => {
     }
   })
 
+  it('resposta ok do auth sem papel de admin não passa', async () => {
+    const res = await call(router, { method: 'GET', query: { action: 'ping' }, token: 'quase' })
+    expect(res.statusCode).toBe(403)
+    expect(ping).not.toHaveBeenCalled()
+  })
+
+  it('verifyAdmin que lança vira 500 genérico e não roda a ação', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const res = await call(router, { method: 'GET', query: { action: 'ping' }, token: 'explode' })
+    expect(res.statusCode).toBe(500)
+    expect(res.body).toEqual({ error: 'Erro inesperado no servidor.' })
+    expect(ping).not.toHaveBeenCalled()
+    expect(log.mock.calls.flat().join(' ')).toContain('ENOTFOUND')
+  })
+
+  it('PUT e DELETE numa ação respondem 405', async () => {
+    for (const method of ['PUT', 'DELETE', 'PATCH']) {
+      const res = await call(router, { method, query: { action: 'ping' } })
+      expect(res.statusCode, method).toBe(405)
+      expect(res.body, method).toEqual({ error: 'Esta ação usa GET.' })
+    }
+    expect(ping).not.toHaveBeenCalled()
+  })
+
   it('sem env do Supabase responde 500 com a frase e não roda a ação', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', '')
@@ -184,6 +213,7 @@ describe('roteador do admin', () => {
 
 describe('erros viram resposta em português', () => {
   it('BillingError vira o status e a mensagem dela', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     const res = await call(failing(new BillingError('asaas_unavailable', 'O Asaas não respondeu.', 502)), { method: 'GET', query: { action: 'quebra' } })
     expect(res.statusCode).toBe(502)
     expect(res.body).toEqual({ error: 'O Asaas não respondeu.' })
@@ -211,10 +241,35 @@ describe('erros viram resposta em português', () => {
     expect(res.body).toEqual({ error: 'Erro inesperado no servidor.' })
   })
 
+  it('BillingError misconfigured vira a frase genérica sem nome de variável', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const res = await call(failing(new BillingError('misconfigured', 'Troca de plano indisponível (servidor sem ASAAS_API_KEY).', 500)), { method: 'GET', query: { action: 'quebra' } })
+    expect(res.statusCode).toBe(500)
+    expect(res.body).toEqual({ error: 'Configuração do servidor incompleta. Avise o suporte.' })
+    expect(JSON.stringify(res.body)).not.toContain('ASAAS_API_KEY')
+    // o detalhe técnico vai só pro log
+    expect(log.mock.calls.flat().join(' ')).toContain('ASAAS_API_KEY')
+  })
+
+  it('texto técnico do cliente do Asaas não sai na resposta', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const cases: [BillingError, string][] = [
+      [new BillingError('asaas_rejected', 'O Asaas não trocou o plano: Asaas recusou (400): O valor informado é inválido. Nada mudou.', 502), 'O Asaas recusou o pedido.'],
+      [new BillingError('asaas_unavailable', 'O Asaas não trocou o plano: Asaas respondeu 503. Nada mudou.', 502), 'O Asaas não respondeu.'],
+      [new BillingError('asaas_unavailable', 'O Asaas não trocou o plano: Asaas sem resposta (ECONNABORTED). Nada mudou.', 502), 'O Asaas não respondeu.'],
+    ]
+    for (const [err, phrase] of cases) {
+      const res = await call(failing(err), { method: 'GET', query: { action: 'quebra' } })
+      expect(res.statusCode, err.message).toBe(502)
+      expect(res.body, err.message).toEqual({ error: phrase })
+    }
+  })
+
   it('toHttpError: AdminError usa status, BillingError usa httpStatus, o resto vira 500', () => {
     expect(toHttpError(new AdminError(404, 'Conta não encontrada.'))).toEqual({ status: 404, error: 'Conta não encontrada.' })
     expect(toHttpError(new BillingError('partial', 'Parte foi feita.', 207))).toEqual({ status: 207, error: 'Parte foi feita.' })
     expect(toHttpError(new BillingError('db_error', 'Falha no banco (x): y', 500))).toEqual({ status: 500, error: 'Erro inesperado no servidor.' })
+    expect(toHttpError(new BillingError('misconfigured', 'O cancelamento está indisponível agora.', 500))).toEqual({ status: 500, error: 'Configuração do servidor incompleta. Avise o suporte.' })
     expect(toHttpError('texto solto')).toEqual({ status: 500, error: 'Erro inesperado no servidor.' })
   })
 })
@@ -251,6 +306,56 @@ describe('painel antigo (?source=) até a T28', () => {
     const res = await call(router, { method: 'GET', query: { source: 'asaas' } })
     expect(res.statusCode).toBe(400)
     expect(legacyStats).not.toHaveBeenCalled()
+  })
+})
+
+describe('campo a mais é recusado (ADM-T3-estrito)', () => {
+  it('a validação recusa um campo extra', () => {
+    expect(() => onlyKeys({ userId: ADMIN_ID, planKey: 'pro_mensal' }, ['userId', 'planKey'])).not.toThrow()
+    let err: unknown
+    try { onlyKeys({ userId: ADMIN_ID, planKey: 'pro_mensal', p_admin: ADMIN_ID }, ['userId', 'planKey']) } catch (e) { err = e }
+    expect(err).toBeInstanceOf(AdminError)
+    expect(err).toMatchObject({ status: 400, message: 'Campo não esperado: p_admin.' })
+    expect(() => onlyKeys({ a: 1, b: 2 }, [])).toThrow('Campos não esperados: a, b.')
+  })
+
+  it('POST com campo a mais no corpo responde 400 e não roda a ação', async () => {
+    const res = await call(router, { method: 'POST', query: { action: 'echo' }, body: { note: 'conferido', p_admin: ADMIN_ID } })
+    expect(res.statusCode).toBe(400)
+    expect(res.body).toEqual({ error: 'Campo não esperado: p_admin.' })
+    expect(echo).not.toHaveBeenCalled()
+  })
+
+  it('POST com campo na query também responde 400', async () => {
+    const res = await call(router, { method: 'POST', query: { action: 'echo', note: 'pela query' }, body: { note: 'conferido' } })
+    expect(res.statusCode).toBe(400)
+    expect(res.body).toEqual({ error: 'Campo não esperado: note.' })
+    expect(echo).not.toHaveBeenCalled()
+  })
+
+  it('GET com campo a mais na query, ou com corpo, responde 400', async () => {
+    const extra = await call(router, { method: 'GET', query: { action: 'ping', page: '1', userId: ADMIN_ID } })
+    expect(extra.statusCode).toBe(400)
+    expect(extra.body).toEqual({ error: 'Campo não esperado: userId.' })
+    const withBody = await call(router, { method: 'GET', query: { action: 'ping' }, body: { page: '1' } })
+    expect(withBody.statusCode).toBe(400)
+    expect(withBody.body).toEqual({ error: 'Campo não esperado: page.' })
+    expect(ping).not.toHaveBeenCalled()
+  })
+
+  it('campo repetido na query responde 400', async () => {
+    const res = await call(router, { method: 'GET', query: { action: 'ping', page: ['1', '2'] } })
+    expect(res.statusCode).toBe(400)
+    expect(res.body).toEqual({ error: 'Campo repetido: page.' })
+    expect(ping).not.toHaveBeenCalled()
+  })
+
+  it('nenhum módulo do admin espalha ctx.body ou ctx.query', () => {
+    const dir = fileURLToPath(new URL('../_lib/admin/', import.meta.url))
+    const spread = /\.\.\.\s*ctx\.(body|query)\b|Object\.assign\([^)]*ctx\.(body|query)/
+    for (const file of readdirSync(dir).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))) {
+      expect(spread.test(readFileSync(join(dir, file), 'utf8')), file).toBe(false)
+    }
   })
 })
 
@@ -322,18 +427,27 @@ describe('mergeHandlers', () => {
   const run = async () => null
 
   it('mergeHandlers recusa ação repetida', () => {
-    const a: AdminHandlers = { review: { method: 'GET', run } }
-    const b: AdminHandlers = { review: { method: 'POST', run } }
+    const a: AdminHandlers = { review: { method: 'GET', fields: [], run } }
+    const b: AdminHandlers = { review: { method: 'POST', fields: [], run } }
     expect(() => mergeHandlers(a, b)).toThrow('Ação repetida no admin: review')
   })
 
   it('mergeHandlers junta os módulos', () => {
-    const merged = mergeHandlers({ review: { method: 'GET', run } }, {}, { block: { method: 'POST', run } })
+    const merged = mergeHandlers({ review: { method: 'GET', fields: [], run } }, {}, { block: { method: 'POST', fields: ['userId', 'reason'], run } })
     expect(Object.keys(merged).sort()).toEqual(['block', 'review'])
   })
 })
 
 describe('arquivos do roteador', () => {
+  it('as marcas de texto técnico seguem as do cliente do Asaas', () => {
+    // http.ts reconhece o texto técnico pelas frases que toAsaasError monta;
+    // se o cliente mudar a frase, este teste avisa.
+    const src = readFileSync(new URL('../_lib/asaas.ts', import.meta.url), 'utf8')
+    for (const mark of ['`Asaas recusou (${status}): ', '`Asaas respondeu ${status}`', "'não encontrado no Asaas'", '`Asaas sem resposta (', "'falha inesperada ao falar com o Asaas'"]) {
+      expect(src, mark).toContain(mark)
+    }
+  })
+
   it('nenhum arquivo do roteador tem travessão', () => {
     const root = fileURLToPath(new URL('..', import.meta.url))
     const dir = join(root, '_lib', 'admin')
