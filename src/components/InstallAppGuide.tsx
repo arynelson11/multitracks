@@ -37,7 +37,7 @@ export function InstallAppGuide({ onInstalled }: { onInstalled?: () => void }) {
         >
           <Download className="w-5 h-5" /> Instalar app
         </button>
-        <p className="text-xs text-zinc-500">O ícone aparece na tela de início e o app abre em tela cheia, sem a barra do navegador.</p>
+        <p className="text-xs text-zinc-400">O ícone aparece na tela de início e o app abre em tela cheia, sem a barra do navegador.</p>
       </div>
     )
   }
@@ -63,7 +63,7 @@ export function InstallAppGuide({ onInstalled }: { onInstalled?: () => void }) {
           Role a lista e toque em <strong className="text-white">Adicionar à Tela de Início</strong> <PlusSquare className="inline w-4 h-4 align-text-bottom" />.
         </Step>
         <Step n={3}>Toque em <strong className="text-white">Adicionar</strong>. Pronto: abra pelo ícone na tela de início.</Step>
-        <li className="text-xs text-zinc-500 pl-9">No app instalado você entra na sua conta uma vez de novo (o iPhone guarda o login separado do Safari).</li>
+        <li className="text-xs text-zinc-400 pl-9">No app instalado você entra na sua conta uma vez de novo (o iPhone guarda o login separado do Safari).</li>
       </ol>
     )
   }
@@ -73,7 +73,7 @@ export function InstallAppGuide({ onInstalled }: { onInstalled?: () => void }) {
   return (
     <div className="flex flex-col sm:flex-row items-center gap-5">
       <div className="bg-white p-3 rounded-xl shrink-0">
-        <QRCodeSVG value={SITE_URL} size={120} />
+        <QRCodeSVG value={SITE_URL} size={120} title="QR code com o endereço do Playback Studio" />
       </div>
       <ol className="space-y-3">
         <Step n={1}>Aponte a câmera do celular ou tablet pro código e abra o site.</Step>

@@ -25,6 +25,8 @@ const fakeDb = vi.hoisted(() => {
   }
   const next = (): Reply => state.replies.shift() ?? { data: { id: 'nova' }, error: null }
   const client = {
+    // O supabase.ts liga a escuta da recuperação de senha ao criar o cliente (v1.4.17).
+    auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }) },
     from: () => ({
       update: (payload: Record<string, unknown>) => {
         state.calls.push({ op: 'update', payload })

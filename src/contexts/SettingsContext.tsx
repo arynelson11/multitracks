@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { canPickAudioOutput, listAudioOutputs } from '../lib/audioOutputs';
 
 export interface AppSettings {
     autoPan: boolean;
@@ -15,6 +16,8 @@ interface SettingsContextType {
     updateSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void;
     availableAudioDevices: MediaDeviceInfo[];
     refreshAudioDevices: () => Promise<void>;
+    // false no iPhone, iPad, Safari e Firefox: o navegador não deixa trocar a saída de áudio.
+    canPickOutput: boolean;
 }
 
 const SettingsContext = createContext<SettingsContextType | null>(null);
@@ -23,6 +26,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     const [settings, setSettings] = useState<AppSettings>(defaultSettings);
     const [availableAudioDevices, setAvailableAudioDevices] = useState<MediaDeviceInfo[]>([]);
     const [isLoaded, setIsLoaded] = useState(false);
+    const [canPickOutput] = useState(canPickAudioOutput);
 
     useEffect(() => {
         const stored = localStorage.getItem('mt_app_settings');
@@ -44,36 +48,37 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         });
     };
 
-    const refreshAudioDevices = async () => {
+    // Lista as saídas e, se faltar o nome delas, pede o microfone (o navegador só
+    // mostra os nomes com essa permissão). Quem chama é a aba Geral das Configurações,
+    // que só existe depois do login: a carga do site e a landing nunca pedem microfone.
+    // Navegador que não troca a saída (canPickOutput falso) não lista nem pede nada.
+    const refreshAudioDevices = useCallback(async () => {
+        if (!canPickOutput) return;
         try {
-            // Requesting microphone permission briefly is sometimes needed in browsers to get the full labels of output devices
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                stream.getTracks().forEach(track => track.stop());
-            } catch (e) {
-                console.warn("User denied or no mic, device labels might be empty.", e);
-            }
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            const audioOutputs = devices.filter(device => device.kind === 'audiooutput');
-            setAvailableAudioDevices(audioOutputs);
+            setAvailableAudioDevices(await listAudioOutputs(navigator.mediaDevices, { askLabels: true, canPickOutput }));
         } catch (e) {
             console.error("Failed to enumerate audio devices", e);
         }
-    };
+    }, [canPickOutput]);
 
-    // Keep devices fresh if permissions change
+    // Troca de aparelho (fone ou interface plugada): atualiza a lista sem pedir nada.
     useEffect(() => {
-        refreshAudioDevices();
-        navigator.mediaDevices?.addEventListener('devicechange', refreshAudioDevices);
-        return () => {
-            navigator.mediaDevices?.removeEventListener('devicechange', refreshAudioDevices);
+        if (!canPickOutput) return;
+        const onDeviceChange = () => {
+            listAudioOutputs(navigator.mediaDevices, { askLabels: false, canPickOutput })
+                .then(setAvailableAudioDevices)
+                .catch(e => console.error("Failed to enumerate audio devices", e));
         };
-    }, []);
+        navigator.mediaDevices?.addEventListener?.('devicechange', onDeviceChange);
+        return () => {
+            navigator.mediaDevices?.removeEventListener?.('devicechange', onDeviceChange);
+        };
+    }, [canPickOutput]);
 
     if (!isLoaded) return null;
 
     return (
-        <SettingsContext.Provider value={{ settings, updateSetting, availableAudioDevices, refreshAudioDevices }}>
+        <SettingsContext.Provider value={{ settings, updateSetting, availableAudioDevices, refreshAudioDevices, canPickOutput }}>
             {children}
         </SettingsContext.Provider>
     );

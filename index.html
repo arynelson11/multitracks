@@ -2,38 +2,40 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <!-- Browser tab favicon: transparent SVG (sits on browser chrome bg) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Playback Studio: multitracks de qualquer música pra igreja</title>
+    <meta name="description" content="Separação de faixas com IA pra banda da igreja: qualquer música vira multitracks pro VS. Grátis no Livre; troca de tom, BPM e voz guia no Pro e no Studio." />
+    <link rel="canonical" href="https://playbackstudio.com.br/" />
+    <meta name="google-site-verification" content="COLE_AQUI_O_CODIGO_DO_SEARCH_CONSOLE" />
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
-    <!-- iOS home screen / Apple touch icon: backgrounded so iOS doesn't paint white behind -->
-    <!-- Quadrado com fundo cheio (180x180): o iOS aplica os cantos; canto transparente vira preto -->
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <!-- maximum-scale=1: o iPhone não dá zoom sozinho ao tocar num campo (o zoom com dois dedos continua no iOS) -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <meta name="theme-color" content="#FF6B35" />
-    <!-- App instalado na tela de início (iPhone/iPad/Android): abre sem a barra do navegador -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <!-- 'black' (e não 'black-translucent'): o app fica ABAIXO do relógio/notch.
-         Com translucent ele desenha por baixo e o CSS não trata safe-area, então
-         VOLTAR/SALVAR do topo ficariam escondidos atrás do relógio. -->
     <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="Playback Studio" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&family=Caveat:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <title>Playback Studio · A plataforma do domingo</title>
-    <meta name="description" content="O Playback Studio separa qualquer música em stems prontos. Pra sua banda chegar no domingo com tudo na mão. Feito por quem toca." />
-    <meta property="og:title" content="Playback Studio · A plataforma do domingo" />
-    <meta property="og:description" content="Stems pra qualquer música. Pra sua banda chegar pronta no domingo. Feito por quem toca." />
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&amp;family=Inter:wght@400;500;600;700;800;900&amp;family=JetBrains+Mono:wght@400;500;600;700;800&amp;display=swap" onload="this.onload=null;this.rel='stylesheet'" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&amp;family=Inter:wght@400;500;600;700;800;900&amp;family=JetBrains+Mono:wght@400;500;600;700;800&amp;display=swap" /></noscript>
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500&amp;text=domingo.&amp;display=swap" onload="this.onload=null;this.rel='stylesheet'" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500&amp;text=domingo.&amp;display=swap" /></noscript>
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Playback Studio" />
     <meta property="og:locale" content="pt_BR" />
-    <!-- Social preview: backgrounded icon (avoids white bg on WhatsApp/Twitter/Facebook cards) -->
-    <meta property="og:image" content="/app-icon.png" />
-    <meta property="og:image:width" content="512" />
-    <meta property="og:image:height" content="512" />
+    <meta property="og:url" content="https://playbackstudio.com.br/" />
+    <meta property="og:title" content="Playback Studio: multitracks de qualquer música pra igreja" />
+    <meta property="og:description" content="Separe qualquer música em multitracks pro VS da igreja. Grátis no Livre; troca de tom, BPM e voz guia no Pro e no Studio." />
+    <meta property="og:image" content="https://playbackstudio.com.br/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta property="og:image:type" content="image/png" />
-    <meta name="twitter:card" content="summary" />
-    <meta name="twitter:image" content="/app-icon.png" />
+    <meta property="og:image:alt" content="Logo do Playback Studio: o triângulo de play laranja cortado em faixas, sobre fundo escuro" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Playback Studio: multitracks de qualquer música pra igreja" />
+    <meta name="twitter:description" content="Separe qualquer música em multitracks pro VS da igreja. Grátis no Livre; troca de tom, BPM e voz guia no Pro e no Studio." />
+    <meta name="twitter:image" content="https://playbackstudio.com.br/og-image.png" />
+    <meta name="twitter:image:alt" content="Logo do Playback Studio: o triângulo de play laranja cortado em faixas, sobre fundo escuro" />
   </head>
   <body>
     <div id="root"></div>

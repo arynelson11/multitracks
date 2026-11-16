@@ -11,6 +11,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.17',
+    date: '2026-11-16',
+    title: 'Site mais fácil de achar e nova senha',
+    items: [
+      'O app não pede mais o microfone ao abrir. O pedido só pode aparecer na hora de escolher a saída de áudio nas Configurações.',
+      'Esqueceu a senha? O link do e-mail agora abre uma tela pra você criar a senha nova.',
+      'O site ficou mais fácil de achar no Google e os textos foram atualizados.',
+      'Quem recebe o link do site no WhatsApp vê uma prévia com a logo e a descrição do Playback Studio.',
+    ],
+  },
+  {
     version: '1.4.16',
     date: '2026-11-16',
     title: 'Troca de tom ainda melhor',
