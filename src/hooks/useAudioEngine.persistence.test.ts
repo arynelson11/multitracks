@@ -160,6 +160,8 @@ beforeEach(() => {
   mem.onStart = null
   mem.settings.autoPan = true
   mem.settings.outputs = undefined
+  // A conta já passou pelo reset dos pans ±1 antigos (T25, testado em useAudioEngine.outputs.test.ts).
+  localStorage.setItem('mt_legacy_pans_reset:u1', '1')
   vi.stubGlobal('AudioContext', FakeAudioContext)
   vi.stubGlobal('requestAnimationFrame', () => 0)
   vi.stubGlobal('cancelAnimationFrame', () => {})
@@ -698,8 +700,9 @@ describe('ZIP de repertório', () => {
     cleanup()
     const { result } = await openApp()
     expect(ids(result, 's9')).toEqual(['c', 'a', 'b'])
+    // Pans ±1 de ZIP antigo são do pan automático: entram no centro (T25, Ruling T25-reset-sempre).
     expect(song(result, 's9').channels.map((c) => [c.volume, c.muted, c.soloed, c.pan])).toEqual(
-      [chC, chA, chB].map((c) => [c.volume, c.muted, c.soloed, c.pan]),
+      [chC, chA, chB].map((c) => [c.volume, c.muted, c.soloed, Math.abs(c.pan) === 1 ? 0 : c.pan]),
     )
   })
 })

@@ -8,6 +8,7 @@ import {
 import { measure, type Sig } from '../test/signalMeasure'
 import type { SavedSong } from '../lib/repertoireSchema'
 import type { OutputSettings } from '../lib/stageContracts'
+import JSZip from 'jszip'
 import { useAudioEngine } from './useAudioEngine'
 
 // T25: o motor liga o fader de cada canal no barramento do papel (grafo da T12), põe o pan
@@ -145,14 +146,23 @@ const panOf = (hook: Hook, id: string) => valueAt(asFake(chan(hook, id).pannerNo
 const savedPans = (id: string, uid = 'u1') => (mem.db.get(metaKey(uid)) as SavedSong[]).find((s) => s.id === id)!.channels.map((c) => [c.pan, c.bus])
 
 // Barramentos e principal da T12: os cinco primeiros GainNode que o initEngine cria (click,
-// guia, VS, principal, mudo geral), conferidos pela forma do grafo.
+// guia, VS, principal, mudo geral), conferidos pela forma do grafo. Depois deles, os três
+// cortes do motor (Ruling T25-corte), um na frente de cada barramento.
 function graphOf(ctx: FakeAudioContext) {
-  const [click, guide, vs, master, masterMute] = nodesOf(ctx, 'GainNode')
+  const [click, guide, vs, master, masterMute, cutClick, cutGuide, cutVs] = nodesOf(ctx, 'GainNode')
   expect(connectedTo(masterMute, ctx.destination)).toBe(true)
   expect(connectedTo(master, masterMute)).toBe(true)
   expect(reaches(nodesOf(ctx, 'DelayNode')[0], click)).toBe(true) // a contagem da T12 entra no Click
   expect(connectedTo(guide, master)).toBe(false) // a Guia passa pelo panner do barramento
-  return { click, guide, vs, master, masterMute }
+  const cut = { click: cutClick, guide: cutGuide, vs: cutVs }
+  expect([connectedTo(cut.click, click), connectedTo(cut.guide, guide), connectedTo(cut.vs, vs)]).toEqual([true, true, true])
+  return { click, guide, vs, master, masterMute, cut }
+}
+// Relógio do áudio andando (o fake não anda sozinho) enquanto uma troca com corte espera o fundo.
+async function letAudioRun(ms = 40) {
+  const ctx = ctxOf()
+  const timer = setInterval(() => { ctx.currentTime += 0.001 }, 1)
+  try { await act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)) }) } finally { clearInterval(timer) }
 }
 
 // Sinal de cada canal tocando: base com 2 posições por canal (L e R do arquivo; mono usa só a 1ª).
@@ -202,9 +212,9 @@ describe('barramento por papel', () => {
     seed(song('s1'))
     const hook = await openApp()
     const bus = graphOf(ctxOf())
-    expect(connectedTo(asFake(chan(hook, 's1-click').gainNode), bus.click)).toBe(true)
-    expect(connectedTo(asFake(chan(hook, 's1-guide').gainNode), bus.guide)).toBe(true)
-    expect(connectedTo(asFake(chan(hook, 's1-bass').gainNode), bus.vs)).toBe(true)
+    expect(connectedTo(asFake(chan(hook, 's1-click').gainNode), bus.cut.click)).toBe(true)
+    expect(connectedTo(asFake(chan(hook, 's1-guide').gainNode), bus.cut.guide)).toBe(true)
+    expect(connectedTo(asFake(chan(hook, 's1-bass').gainNode), bus.cut.vs)).toBe(true)
     // Fader nenhum direto no principal ou no destino.
     for (const c of hook.result.current.channels) {
       expect(connectedTo(asFake(c.gainNode), bus.master)).toBe(false)
@@ -218,10 +228,10 @@ describe('barramento por papel', () => {
     await act(async () => { await hook.result.current.addChannelToActiveSong(new File(['mono'], 'GUIDE VOX.wav', { type: 'audio/wav' })) })
     await act(async () => { await hook.result.current.createEndlessMetronomeSong(120) })
     const byName = (name: string) => hook.result.current.playlist.flatMap((s) => s.channels).find((c) => c.name === name)!
-    expect(connectedTo(asFake(byName('Click').gainNode), bus.click)).toBe(true)
-    expect(connectedTo(asFake(byName('BASS_2').gainNode), bus.vs)).toBe(true)
-    expect(connectedTo(asFake(byName('GUIDE VOX').gainNode), bus.guide)).toBe(true)
-    expect(connectedTo(asFake(byName('Metronomo Loop').gainNode), bus.click)).toBe(true)
+    expect(connectedTo(asFake(byName('Click').gainNode), bus.cut.click)).toBe(true)
+    expect(connectedTo(asFake(byName('BASS_2').gainNode), bus.cut.vs)).toBe(true)
+    expect(connectedTo(asFake(byName('GUIDE VOX').gainNode), bus.cut.guide)).toBe(true)
+    expect(connectedTo(asFake(byName('Metronomo Loop').gainNode), bus.cut.click)).toBe(true)
     expect(valueAt(asFake(byName('Metronomo Loop').pannerNode).pan, 1)).toBe(-1)
   })
 
@@ -235,8 +245,8 @@ describe('barramento por papel', () => {
     bass.connect(meter)
 
     await act(async () => { hook.result.current.setChannelMeta('s1-bass', { role: 'guide' }) })
-    expect(connectedTo(bass, bus.guide)).toBe(true)
-    expect(connectedTo(bass, bus.vs)).toBe(false)
+    expect(connectedTo(bass, bus.cut.guide)).toBe(true)
+    expect(connectedTo(bass, bus.cut.vs)).toBe(false)
     expect(connectedTo(bass, meter)).toBe(true)
     // Em separados o lado sai do papel novo; o pan gravado (0,4) não muda.
     expect(panOf(hook, 's1-bass')).toBe(-1)
@@ -247,11 +257,14 @@ describe('barramento por papel', () => {
     expect(part(sig, 0, 2)).toBeGreaterThan(0.5)
     expect(part(sig, 1, 2)).toBeLessThan(1e-6)
 
+    // Tocando: a troca do papel vai num corte de 3 ms e acontece no fundo dele.
     await act(async () => { hook.result.current.setChannelMeta('s1-bass', { role: null }) })
-    expect(connectedTo(bass, bus.vs)).toBe(true)
-    expect(connectedTo(bass, bus.guide)).toBe(false)
+    await letAudioRun()
+    expect(connectedTo(bass, bus.cut.vs)).toBe(true)
+    expect(connectedTo(bass, bus.cut.guide)).toBe(false)
     expect(connectedTo(bass, meter)).toBe(true)
     expect(panOf(hook, 's1-bass')).toBe(1)
+    act(() => { hook.result.current.pause() })
   })
 })
 
@@ -281,6 +294,7 @@ describe('pan efetivo', () => {
   })
 
   it('em tudo junto vale o knob', async () => {
+    localStorage.setItem('mt_legacy_pans_reset:u1', '1') // conta já passou pelo reset dos ±1 antigos
     mem.settings = { ...mem.settings, outputs: STEREO }
     seed(song('s1', { click: 0.6, guide: 0, bass: -1, keys: 0.2 }))
     const hook = await openApp()
@@ -314,6 +328,67 @@ describe('pan efetivo', () => {
     const again = await openApp()
     expect(again.result.current.channels.map((c) => c.pan)).toEqual([-1, 0, 1, 0])
     expect(savedPans('s3')[0]).toEqual([-1, '1/2'])
+  })
+
+  it('aparelho que já estava sem pan automático: a conta também zera os ±1 antigos uma vez', async () => {
+    // Ruling T25-reset-sempre: não depende do legacyPanReset nem do pan automático de agora.
+    mem.settings = { ...mem.settings, autoPan: false, legacyPanReset: false, outputs: STEREO }
+    seed(song('s1', { click: -1, bass: 1, keys: 0.5 }))
+    const hook = await openApp()
+    expect(hook.result.current.channels.map((c) => c.pan)).toEqual([0, 0, 0, 0.5])
+    expect(savedPans('s1').map(([p]) => p)).toEqual([0, 0, 0, 0.5])
+    // Depois do reset, o knob que o operador puser em ±1 fica.
+    await act(async () => { hook.result.current.updatePan('s1-bass', 1) })
+    cleanup()
+    const again = await openApp()
+    expect(again.result.current.channels.find((c) => c.id === 's1-bass')!.pan).toBe(1)
+  })
+
+  it('ZIP da v1.4.15 com ±1 entra com pan 0; ZIP exportado agora guarda o knob', async () => {
+    localStorage.setItem('mt_legacy_pans_reset:u1', '1') // conta já zerada antes
+    // O import termina com location.reload(), que o jsdom não implementa e avisa pelo console
+    // virtual; o export baixa por um <a download>. Os dois ficam capturados aqui.
+    type Listener = (error: Error) => void
+    const vc = (globalThis as unknown as { jsdom: { virtualConsole: { listeners(e: 'jsdomError'): Listener[]; removeAllListeners(e: 'jsdomError'): void; on(e: 'jsdomError', l: Listener): void } } }).jsdom.virtualConsole
+    const importZip = async (hook: Hook, zip: Blob) => {
+      const original = vc.listeners('jsdomError')
+      const jsdomErrors: string[] = []
+      vc.removeAllListeners('jsdomError')
+      vc.on('jsdomError', (e) => { jsdomErrors.push(e.message) })
+      try { await act(async () => { await hook.result.current.importPlaylist(zip as File) }) } finally {
+        vc.removeAllListeners('jsdomError')
+        for (const l of original) vc.on('jsdomError', l)
+      }
+      expect(jsdomErrors).toEqual(['Not implemented: navigation (except hash changes)'])
+    }
+    const old = new JSZip()
+    const antigo = { id: 'z1', name: 'Antiga', duration: 0.1, pitch: 0, channels: song('z1', { click: -1, bass: 1, keys: 0.3 }).channels }
+    old.file('manifest.json', JSON.stringify({ version: 5, songs: [antigo] }))
+    for (const c of antigo.channels) old.file(`audio/${c.id}.wav`, /BASS|KEYS/.test(c.name) ? 'stereo' : 'mono')
+    const hook = await openApp()
+    await importZip(hook, await old.generateAsync({ type: 'blob' }))
+    expect(savedPans('z1')).toEqual([[0, '1/2'], [0, '1/2'], [0, '1/2'], [0.3, '1/2']])
+
+    // Exportado por esta versão: o ±1 do knob volta igual.
+    cleanup()
+    seed(song('s9', { bass: 1 }))
+    const next = await openApp()
+    const blobs: Blob[] = []
+    const realCreate = URL.createObjectURL
+    const realRevoke = URL.revokeObjectURL
+    URL.createObjectURL = (b: Blob | MediaSource) => { blobs.push(b as Blob); return 'blob:repertorio' }
+    URL.revokeObjectURL = () => {}
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    try { await act(async () => { await next.result.current.exportPlaylist() }) } finally {
+      URL.createObjectURL = realCreate
+      URL.revokeObjectURL = realRevoke
+    }
+    const manifest = JSON.parse(await (await JSZip.loadAsync(blobs[0])).file('manifest.json')!.async('string'))
+    expect(manifest.knobPans).toBe(true)
+    cleanup()
+    const back = await openApp()
+    await importZip(back, blobs[0])
+    expect(savedPans('s9')[2]).toEqual([1, '1/2'])
   })
 
   it('duas contas no mesmo aparelho: cada uma zera os pans antigos dela uma vez', async () => {
@@ -650,40 +725,45 @@ describe('mudo geral', () => {
 })
 
 describe('nunca sem som e nunca Click na VS nas trocas', () => {
-  it('troca de aparelho fica no mudo geral até o plano novo valer', async () => {
+  it('troca de aparelho tocando: corte até o plano novo valer, e o mudo do operador fica', async () => {
     mem.ctxOpts = { maxChannelCount: 2, sinks: { placa: 8 } }
     mem.settings = { ...mem.settings, outputs: MULTI }
     seed(song('s1'))
     const hook = await openApp()
     const bus = graphOf(ctxOf())
     const ctx = ctxOf()
+    await act(async () => { await hook.result.current.play() })
     const original = ctx.setSinkId.bind(ctx)
-    let muteDuringSwitch = -1
+    let cutAtSwitch = -1
     ctx.setSinkId = async (id: string) => {
-      muteDuringSwitch = valueAt(bus.masterMute.gain, ctx.currentTime)
+      cutAtSwitch = valueAt(bus.cut.click.gain, ctx.currentTime)
       await original(id)
     }
     mem.settings = { ...mem.settings, audioDeviceId: 'placa' }
     await act(async () => { hook.rerender() })
-    await act(async () => { await Promise.resolve() })
-    expect(muteDuringSwitch).toBe(0)
+    await letAudioRun(80)
+    expect(cutAtSwitch).toBe(0)
+    // Um corte só: o sinkchange no meio do setSinkId não pede outro (a rota já está certa).
+    expect(bus.cut.click.gain.events.filter((e) => e.kind === 'linear').map((e) => e.value)).toEqual([0, 1])
     expect(hook.result.current.outputPlan.mode).toBe('multi')
-    expect(valueAt(bus.masterMute.gain, ctx.currentTime + 1)).toBeGreaterThan(1 - 1e-6)
-    // Com o mudo geral ligado pelo operador, a troca não desfaz o mudo.
+    for (const g of Object.values(bus.cut)) expect(valueAt(g.gain, ctx.currentTime + 0.05)).toBe(1)
+    // Mudo geral do operador: a troca não desfaz.
     act(() => { hook.result.current.toggleMasterMute() })
     mem.settings = { ...mem.settings, audioDeviceId: 'default' }
     await act(async () => { hook.rerender() })
-    await act(async () => { await Promise.resolve() })
+    await letAudioRun(80)
     expect(valueAt(bus.masterMute.gain, ctx.currentTime + 1)).toBeLessThan(1e-6)
+    act(() => { hook.result.current.pause() })
   })
 
   it('aparelho que recusa o plano ao ligar: cai em 2 canais com o Click fora da VS', async () => {
     seed(song('s1'))
     const hook = await openApp()
-    // O aparelho diz 8 canais na leitura do motor e 2 na hora de ligar (o grafo lança RangeError).
+    // O aparelho diz 8 canais nas leituras do motor (a do pedido e a da troca) e 2 na hora de
+    // ligar (o grafo lança RangeError).
     const dest = ctxOf().destination
     let reads = 0
-    Object.defineProperty(dest, 'maxChannelCount', { configurable: true, get: () => (reads++ === 0 ? 8 : 2) })
+    Object.defineProperty(dest, 'maxChannelCount', { configurable: true, get: () => (reads++ < 2 ? 8 : 2) })
     mem.settings = { ...mem.settings, outputs: MULTI }
     await act(async () => { hook.rerender() })
     expect(warn.mock.calls.some((c) => String(c[0]).includes('Usando 2 canais'))).toBe(true)
@@ -731,9 +811,10 @@ describe('nunca sem som e nunca Click na VS nas trocas', () => {
     expect(hook.result.current.outputPlan.mode).toBe('split2')
     const sig = await playAndMeasure(hook, IDS)
     close(sig, legacyMeasure([{ stereo: false, pan: -1 }, { stereo: false, pan: -1 }, { stereo: true, pan: 1 }, { stereo: true, pan: 1 }]))
-    // "4 ou mais" não existe na reserva (placa de 8): cai em separados com aviso.
+    // "4 ou mais" não existe na reserva (placa de 8): cai em separados com aviso (tocando, no corte).
     mem.settings = { ...mem.settings, outputs: MULTI }
     await act(async () => { hook.rerender() })
+    await letAudioRun()
     expect(hook.result.current.outputPlan.mode).toBe('split2')
     expect(warn.mock.calls.some((c) => String(c[0]).includes('Usando 2 canais'))).toBe(true)
   })
@@ -748,4 +829,83 @@ describe('nunca sem som e nunca Click na VS nas trocas', () => {
     expect(hook.result.current.activeSongIndex).toBe(0)
     expect(hook.result.current.isPlaying).toBe(false)
   }, 30000)
+})
+
+describe('corte curto nas trocas de rota (Ruling T25-corte e T25-sincrono)', () => {
+  // Eventos do corte de um barramento: desce em 3 ms a partir de t0 e sobe em 3 ms a partir do fundo.
+  const cutEvents = (g: FakeGainNode) => g.gain.events.filter((e) => e.kind !== 'cancel')
+
+  it('tocando, a troca de modo desce o corte, troca roteador e pans no fundo e sobe', async () => {
+    mem.settings = { ...mem.settings, autoPan: true, outputs: { ...SPLIT, earOnSecond: true } }
+    seed(song('s1'))
+    const hook = await openApp()
+    const bus = graphOf(ctxOf())
+    const ctx = ctxOf()
+    await act(async () => { await hook.result.current.play() })
+    const click = asFake(chan(hook, 's1-click').pannerNode)
+    const clickPan = asFake(bus.click.connections[0].to as AudioNode) // panner do barramento do Click (T12)
+    const t0 = ctx.currentTime
+    // Na hora do pedido, nada muda ainda: o corte começa a descer.
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    await act(async () => { hook.rerender() })
+    expect(valueAt(click.pan, t0)).toBe(1)
+    // Começa com folga à frente do relógio (a thread do áudio calcula adiantado): 10 ms.
+    expect(cutEvents(bus.cut.click).map((e) => [e.kind, e.value, +(e.time - t0).toFixed(6)])).toEqual([['set', 1, 0.01], ['linear', 0, 0.013]])
+    // O relógio passa do fundo: roteador e pans do canal trocam juntos, depois o corte sobe.
+    await letAudioRun()
+    const events = cutEvents(bus.cut.click)
+    expect(events.map((e) => [e.kind, e.value])).toEqual([['set', 1], ['linear', 0], ['set', 0], ['linear', 1]])
+    const up = events[2].time
+    expect(up).toBeGreaterThanOrEqual(t0 + 0.013)
+    expect(events[3].time).toBeCloseTo(up + 0.003, 9)
+    // Os dois pans do Click (o do canal e o do barramento) foram escritos no fundo, no mesmo instante.
+    const chSet = click.pan.events.at(-1)!
+    const busSet = (clickPan as unknown as { pan: { events: { time: number; value?: number }[] } }).pan.events.at(-1)!
+    expect([chSet.value, busSet.value]).toEqual([-1, 0])
+    expect(chSet.time).toBe(busSet.time)
+    expect(chSet.time).toBeGreaterThanOrEqual(t0 + 0.013)
+    expect(chSet.time).toBeLessThanOrEqual(up)
+    // Os três barramentos cortam juntos; a Guia pelo corte próprio, nunca pelo guideGain da T17.
+    for (const g of [bus.cut.guide, bus.cut.vs]) expect(cutEvents(g).map((e) => e.kind)).toEqual(['set', 'linear', 'set', 'linear'])
+    expect(bus.guide.gain.events).toEqual([])
+    act(() => { hook.result.current.pause() })
+  })
+
+  it('pan automático e papel tocando também vão no corte; parado, troca na hora sem corte', async () => {
+    mem.settings = { ...mem.settings, autoPan: false, outputs: STEREO }
+    seed(song('s1'))
+    const hook = await openApp()
+    const bus = graphOf(ctxOf())
+    // Parado: nada soando, a troca é na hora e o corte nem mexe.
+    mem.settings = { ...mem.settings, autoPan: true }
+    await act(async () => { hook.rerender() })
+    expect(panOf(hook, 's1-click')).toBe(-1)
+    expect(cutEvents(bus.cut.click)).toEqual([])
+
+    await act(async () => { await hook.result.current.play() })
+    mem.settings = { ...mem.settings, autoPan: false }
+    await act(async () => { hook.rerender() })
+    expect(panOf(hook, 's1-click')).toBe(-1) // ainda descendo o corte
+    await letAudioRun()
+    expect(panOf(hook, 's1-click')).toBe(0)
+    expect(cutEvents(bus.cut.click).map((e) => e.kind)).toEqual(['set', 'linear', 'set', 'linear'])
+
+    await act(async () => { hook.result.current.setChannelMeta('s1-keys', { role: 'guide' }) })
+    expect(connectedTo(asFake(chan(hook, 's1-keys').gainNode), bus.cut.vs)).toBe(true) // ainda descendo
+    await letAudioRun()
+    expect(connectedTo(asFake(chan(hook, 's1-keys').gainNode), bus.cut.guide)).toBe(true)
+    expect(cutEvents(bus.cut.click)).toHaveLength(8)
+    act(() => { hook.result.current.pause() })
+  })
+
+  it('a pré-contagem entra pelo corte do Click (o corte também vale pra ela)', async () => {
+    localStorage.setItem('precount_enabled', 'true')
+    seed(song('s1'))
+    const hook = await openApp()
+    const bus = graphOf(ctxOf())
+    await act(async () => { await hook.result.current.playWithPrecount() })
+    const panners = nodesOf(ctxOf(), 'StereoPannerNode').filter((p) => p.connections.some((c) => c.to === bus.cut.click))
+    expect(panners.length).toBeGreaterThanOrEqual(4)
+    act(() => { hook.result.current.cancelCountIn() })
+  })
 })

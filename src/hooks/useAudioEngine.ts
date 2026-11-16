@@ -78,6 +78,38 @@ type SinkAudioContext = AudioContext & {
 // Constante de tempo do mudo geral: some em ~30 ms, sem estalo.
 const MASTER_MUTE_TC = 0.005;
 
+// Corte das trocas de rota (Ruling T25-corte): 3 ms descendo e 3 ms subindo. Medido no Chrome
+// pelo revisor: degrau 0,0069 por amostra com 3 ms (2 ms passa de 0,01).
+const ROUTE_CUT_S = 0.003;
+// Um ganho do motor na frente de cada barramento, só pro corte (a Guia nunca usa o guideGain).
+type RouteCuts = Record<ChannelRole, GainNode>;
+// Folga antes de o corte começar: a thread do áudio calcula blocos adiantados em relação ao
+// currentTime (até um buffer do aparelho; medido no Chrome 157 em tempo real: rampa marcada no
+// currentTime às vezes começava no passado e descia em 0,3 ms, degrau 0,019). Pelo menos 10 ms
+// ou duas latências do aparelho.
+const ROUTE_CUT_LEAD_S = 0.01;
+const cutLead = (ctx: BaseAudioContext): number =>
+    Math.max(ROUTE_CUT_LEAD_S, 2 * ((ctx as AudioContext).baseLatency || 0));
+// Relógio do áudio parado esse tempo = nada sai (contexto suspenso ou travado): troca assim mesmo.
+const FROZEN_CLOCK_MS = 50;
+// Teto da espera pelo fundo do corte (thread de áudio atrasada): troca assim mesmo.
+const MAX_CUT_WAIT_MS = 300;
+
+/** Espera o relógio do áudio passar de `t`. Desiste se ele parar, se o contexto não estiver tocando ou se passar do teto. */
+function waitForAudioTime(ctx: BaseAudioContext, t: number): Promise<void> {
+    return new Promise((resolve) => {
+        const started = performance.now();
+        const clockAtStart = ctx.currentTime;
+        const tick = () => {
+            const waited = performance.now() - started;
+            const frozen = waited > FROZEN_CLOCK_MS && ctx.currentTime === clockAtStart;
+            if (ctx.currentTime >= t || ctx.state !== 'running' || frozen || waited > MAX_CUT_WAIT_MS) resolve();
+            else setTimeout(tick, 1);
+        };
+        tick();
+    });
+}
+
 // Canais do aparelho de saída. Medido no Chrome 157 (AudioContext de tempo real): o
 // maxChannelCount é o do aparelho e não acompanha o channelCount que o grafo escreve, então
 // dá pra ler de novo a cada troca. Valor estranho conta como 2 (o planOutputs faz o mesmo).
@@ -112,7 +144,8 @@ function routeOutputs(ctx: BaseAudioContext, graph: OutputGraph, outputs: Output
     const previous = graph.plan;
     const wanted = planOutputs(outputs, maxChannels);
     if (samePlan(previous, wanted) && destinationMatches(ctx, wanted)) return wanted;
-    for (const plan of [wanted, planOutputs(outputs, 2)]) {
+    // Plano de reserva em 2 canais, ou no canal único de um aparelho mono (Ruling T6-mono).
+    for (const plan of [wanted, planOutputs(outputs, Math.min(maxChannels, 2))]) {
         try {
             graph.apply(plan);
             return plan;
@@ -178,7 +211,7 @@ function buildOutputGraph(ctx: AudioContext, outputs: OutputSettings, maxChannel
         if (e instanceof RangeError) console.warn(`[saídas] o aparelho não aceitou o plano (${e.message}). Usando 2 canais.`);
         else console.error('[saídas] o grafo das saídas não montou; tentando em 2 canais.', e);
     }
-    plan = planOutputs(outputs, 2);
+    plan = planOutputs(outputs, Math.min(maxChannels, 2));
     try {
         return { graph: createOutputGraph(ctx, plan), plan };
     } catch (e) {
@@ -254,17 +287,19 @@ export function useAudioEngine(userId?: string) {
     // ou o papel novo mexe só no que mudou, e religar o fader solta só o barramento antigo
     // (o AnalyserNode que o App liga no gainNode continua).
     const pannerPanRef = useRef(new WeakMap<StereoPannerNode, number>());
+    // Cortes das trocas de rota (um por barramento) e o repertório mais novo pra quem troca
+    // a rota fora da renderização.
+    const routeCutsRef = useRef<RouteCuts | null>(null);
+    const playlistRef = useRef<Song[]>([]);
     const faderBusRef = useRef(new WeakMap<GainNode, ChannelRole>());
     // Valores da renderização mais nova pra quem roda fora dela (initEngine, sinkchange,
     // canal que nasce depois de um await). O pan automático só vale em "Tudo junto" e só
     // no panner (channelPanFor).
     const outputsRef = useRef(outputs);
     const autoPanRef = useRef(settings.autoPan);
-    const legacyPanResetRef = useRef(settings.legacyPanReset);
     useEffect(() => {
         autoPanRef.current = settings.autoPan;
-        legacyPanResetRef.current = settings.legacyPanReset;
-    }, [settings.autoPan, settings.legacyPanReset]);
+    }, [settings.autoPan]);
     // Timer do fade da "próxima" (1,5 s): a pausa cancela, senão a troca e o play automático
     // cairiam depois da pausa (e no meio de uma pré-contagem).
     const nextSongTimerRef = useRef<number | null>(null);
@@ -532,19 +567,22 @@ export function useAudioEngine(userId?: string) {
         saveStateToDB(newList);
     };
 
+    // O repertório mais novo pra troca de rota fora da renderização (antes dos efeitos abaixo).
+    useEffect(() => { playlistRef.current = playlist; }, [playlist]);
+
     // Canal novo (restauração, arquivo, canal avulso, metrônomo): pan efetivo no panner e o
-    // fader no barramento do papel. Nunca direto no principal.
-    const connectChannel = (graph: OutputGraph, ch: ChannelIdentity & { pan: number }, panner: StereoPannerNode, gain: GainNode) => {
+    // fader no corte do barramento do papel. Nunca direto no principal.
+    const connectChannel = (cuts: RouteCuts, graph: OutputGraph, ch: ChannelIdentity & { pan: number }, panner: StereoPannerNode, gain: GainNode) => {
         const role = resolveChannelRole(ch);
         const pan = channelPanFor(ch, graph.plan, autoPanRef.current);
         panner.pan.value = pan;
         pannerPanRef.current.set(panner, pan);
-        gain.connect(graph.input(role));
+        gain.connect(cuts[role]);
         faderBusRef.current.set(gain, role);
     };
 
     // Pan efetivo no panner do canal, só se mudou. `smooth` só pro knob (a rampa curta de
-    // antes). Troca de plano, de papel ou do pan automático vai na hora, junto com a rota:
+    // antes). Troca de plano, de papel ou do pan automático vai no fundo do corte, sem rampa:
     // numa rampa o Click passaria pelo lado da VS (ex.: Click na saída 2 indo pra esquerda).
     const syncChannelPan = (ctx: BaseAudioContext, ch: Channel, plan: OutputPlan, autoPan: boolean, smooth: boolean) => {
         const pan = channelPanFor(ch, plan, autoPan);
@@ -553,28 +591,123 @@ export function useAudioEngine(userId?: string) {
         else ch.pannerNode.pan.setValueAtTime(pan, ctx.currentTime);
         pannerPanRef.current.set(ch.pannerNode, pan);
     };
+    // Todos os canais de todas as músicas (o repertório mais novo).
+    const allChannels = () => playlistRef.current.flatMap((song) => song.channels);
+    const panPending = (plan: OutputPlan, autoPan: boolean) =>
+        allChannels().some((ch) => pannerPanRef.current.get(ch.pannerNode) !== channelPanFor(ch, plan, autoPan));
+    const syncAllPans = (ctx: BaseAudioContext, plan: OutputPlan, autoPan: boolean) => {
+        for (const ch of allChannels()) syncChannelPan(ctx, ch, plan, autoPan, false);
+    };
 
-    // Papel novo: o fader sai só do barramento antigo e entra no do papel novo.
-    const moveFaderToRole = (graph: OutputGraph, ch: Channel) => {
+    // Papel novo: o fader sai só do corte do barramento antigo e entra no do papel novo.
+    const moveFaderToRole = (cuts: RouteCuts, ch: Channel) => {
         const role = resolveChannelRole(ch);
         const was = faderBusRef.current.get(ch.gainNode);
         if (was === role) return;
         if (was) {
-            try { ch.gainNode.disconnect(graph.input(was)); } catch { /* já estava desligado */ }
+            try { ch.gainNode.disconnect(cuts[was]); } catch { /* já estava desligado */ }
         }
-        ch.gainNode.connect(graph.input(role));
+        ch.gainNode.connect(cuts[role]);
         faderBusRef.current.set(ch.gainNode, role);
     };
 
-    // Refaz o plano com os canais do aparelho de agora e liga no grafo (troca de modo, de
-    // lado, de mapa ou de aparelho). Os pans dos canais acompanham no efeito do plano.
-    const refreshOutputs = useCallback(() => {
+    // === Corte curto das trocas de rota (Ruling T25-corte e T25-sincrono) ===
+    // Algo soando pelo motor agora (faixas tocando ou pré-contagem)? Sem som não há estalo
+    // nem vazamento possível: a troca vai na hora.
+    const isSounding = () => liveSourcesRef.current.size > 0 || countInOscsRef.current.length > 0;
+    const needsCut = () => {
+        const ctx = audioCtxRef.current;
+        return !!ctx && !!routeCutsRef.current && ctx.state === 'running' && isSounding();
+    };
+    /**
+     * Troca no fundo de um corte de 3 ms nos três barramentos: desce (âncora com
+     * setValueAtTime e rampa linear, nunca depois de setTarget: o corte não tem outra
+     * automação), a partir de uma folga à frente do relógio, espera o relógio do áudio passar
+     * do fundo, faz a troca inteira na mesma tarefa e sobe em 3 ms (também com folga). Sem
+     * som, só a troca.
+     */
+    const withRouteCut = async (change: () => void | Promise<void>): Promise<void> => {
+        const ctx = audioCtxRef.current;
+        const cuts = routeCutsRef.current;
+        if (!ctx || !cuts || !needsCut()) {
+            await change();
+            return;
+        }
+        const nodes = Object.values(cuts);
+        const t0 = ctx.currentTime + cutLead(ctx);
+        const bottom = t0 + ROUTE_CUT_S;
+        for (const g of nodes) {
+            g.gain.cancelScheduledValues(t0);
+            g.gain.setValueAtTime(1, t0);
+            g.gain.linearRampToValueAtTime(0, bottom);
+        }
+        await waitForAudioTime(ctx, bottom + 128 / ctx.sampleRate);
+        try {
+            await change();
+        } finally {
+            const up = Math.max(ctx.currentTime + cutLead(ctx), bottom);
+            for (const g of nodes) {
+                g.gain.setValueAtTime(0, up);
+                g.gain.linearRampToValueAtTime(1, up + ROUTE_CUT_S);
+            }
+            await waitForAudioTime(ctx, up + ROUTE_CUT_S);
+        }
+    };
+    // As trocas vão numa fila, na ordem: uma nunca começa no meio do corte de outra.
+    const routeQueueRef = useRef<Promise<void>>(Promise.resolve());
+    const routeJobsRef = useRef(0);
+    const enqueueRoute = (job: () => Promise<void>) => {
+        routeJobsRef.current++;
+        routeQueueRef.current = routeQueueRef.current
+            .then(job)
+            .catch((e) => console.error('[saídas] a troca de rota falhou', e))
+            .finally(() => { routeJobsRef.current--; });
+    };
+    // Troca síncrona (plano, papel, pan automático): fila vazia e nada soando, na hora.
+    const switchRoute = (change: () => void) => {
+        if (routeJobsRef.current === 0 && !needsCut()) {
+            change();
+            return;
+        }
+        enqueueRoute(() => withRouteCut(change));
+    };
+
+    // Plano e pans de todos os canais na mesma tarefa (Ruling T25-sincrono): o roteador e os
+    // panners mudam juntos, no fundo do corte.
+    const applyOutputsNow = () => {
         const ctx = audioCtxRef.current;
         const graph = graphRef.current;
         if (!ctx || !graph) return;
         const max = deviceChannels(ctx);
+        const plan = routeOutputs(ctx, graph, outputsRef.current, max);
+        syncAllPans(ctx, graph.plan, autoPanRef.current);
         setMaxOutputChannels(max);
-        setOutputPlan(routeOutputs(ctx, graph, outputsRef.current, max));
+        setOutputPlan(plan);
+    };
+
+    // A rota de agora já é a que as saídas e o aparelho pedem (plano, destino e pans)?
+    const outputsUpToDate = (): boolean => {
+        const ctx = audioCtxRef.current;
+        const graph = graphRef.current;
+        if (!ctx || !graph) return true;
+        const wanted = planOutputs(outputsRef.current, deviceChannels(ctx));
+        return samePlan(graph.plan, wanted) && destinationMatches(ctx, wanted) && !panPending(graph.plan, autoPanRef.current);
+    };
+    // Refaz o plano com os canais do aparelho de agora (troca de modo, de lado, de mapa ou de
+    // aparelho). Nada a mudar: só atualiza o aviso, sem corte; senão troca no corte. Com outra
+    // troca na fila (ex.: o sinkchange no meio do setSinkId), decide na vez dela.
+    const refreshOutputs = useCallback(() => {
+        if (!audioCtxRef.current || !graphRef.current) return;
+        if (routeJobsRef.current > 0) {
+            enqueueRoute(async () => {
+                if (outputsUpToDate()) applyOutputsNow();
+                else await withRouteCut(applyOutputsNow);
+            });
+            return;
+        }
+        if (outputsUpToDate()) applyOutputsNow();
+        else switchRoute(applyOutputsNow);
+    // Só refs e funções que leem refs: a mesma função serve pra sempre (sinkchange).
     }, []);
 
     // Saídas mudaram nas Configurações: plano novo.
@@ -583,19 +716,23 @@ export function useAudioEngine(userId?: string) {
         refreshOutputs();
     }, [outputs, refreshOutputs]);
 
-    // Apply Audio Device Output Routing
+    // Pan automático ligado ou desligado: os panners trocam de lado no corte.
+    useEffect(() => {
+        const ctx = audioCtxRef.current;
+        const graph = graphRef.current;
+        if (!ctx || !graph || !panPending(graph.plan, settings.autoPan)) return;
+        switchRoute(() => syncAllPans(ctx, graph.plan, autoPanRef.current));
+    }, [settings.autoPan]);
+
+    // Apply Audio Device Output Routing. Até o plano novo valer, o aparelho novo tocaria a
+    // rota antiga (ex.: o Click da saída 1 do fone caindo na saída 1 de uma placa onde 1/2 é
+    // a VS): o setSinkId e o plano novo acontecem os dois no fundo do mesmo corte.
     useEffect(() => {
         const ctx = audioCtxRef.current as SinkAudioContext | null;
         if (!ctx) return;
-        const applyDevice = async () => {
-            const graph = graphRef.current;
-            const deviceId = settings.audioDeviceId === 'default' ? '' : settings.audioDeviceId;
-            // Até o plano novo valer, o aparelho novo tocaria a rota antiga (ex.: o Click da
-            // saída 1 do fone caindo na saída 1 de uma placa onde 1/2 é a VS): mudo geral
-            // durante a troca, sem rampa (Ruling ÁUDIO), e volta no estado do operador.
-            const switching = typeof ctx.setSinkId === 'function' && ctx.sinkId !== deviceId && graph !== null;
-            if (switching) graph.masterMute.gain.setValueAtTime(0, ctx.currentTime);
-            if (typeof ctx.setSinkId === 'function') {
+        const deviceId = settings.audioDeviceId === 'default' ? '' : settings.audioDeviceId;
+        enqueueRoute(() => withRouteCut(async () => {
+            if (typeof ctx.setSinkId === 'function' && ctx.sinkId !== deviceId) {
                 try {
                     await ctx.setSinkId(deviceId);
                 } catch (e) {
@@ -603,21 +740,18 @@ export function useAudioEngine(userId?: string) {
                 }
             }
             // O aparelho novo pode ter outro número de canais: plano novo com o máximo dele.
-            refreshOutputs();
-            if (switching) graph.masterMute.gain.setTargetAtTime(masterMutedRef.current ? 0 : 1, ctx.currentTime, MASTER_MUTE_TC);
-        };
-        void applyDevice();
-    }, [settings.audioDeviceId, isReady, refreshOutputs]);
+            applyOutputsNow();
+        }));
+    }, [settings.audioDeviceId, isReady]);
 
-    // Plano novo (modo, lado, aparelho), pan automático ligado ou desligado, ou canal novo:
-    // cada panner com o pan efetivo, na hora, sem recriar canais e sem gravar nada no
-    // repertório. Só escreve no panner que precisa mudar.
+    // Rede de segurança: canal novo ou repertório trocado fora de uma troca de rota. Os
+    // canais já nascem com o pan certo; aqui só corrige o que tiver ficado pra trás.
     useEffect(() => {
         const ctx = audioCtxRef.current;
         const graph = graphRef.current;
-        if (!ctx || !graph) return;
-        for (const song of playlist) for (const ch of song.channels) syncChannelPan(ctx, ch, graph.plan, settings.autoPan, false);
-    }, [playlist, outputPlan, settings.autoPan]);
+        if (!ctx || !graph || routeJobsRef.current > 0) return;
+        syncAllPans(ctx, graph.plan, autoPanRef.current);
+    }, [playlist, outputPlan]);
 
     // Sync pitch ref whenever the active song or its pitch changes
     useEffect(() => {
@@ -633,6 +767,10 @@ export function useAudioEngine(userId?: string) {
             const max = deviceChannels(ctx);
             const { graph, plan } = buildOutputGraph(ctx, outputsRef.current, max);
             graph.master.gain.value = 1;
+            // Corte de cada barramento (criado uma vez): os faders ligam nele, ele no barramento.
+            const cuts: RouteCuts = { click: ctx.createGain(), guide: ctx.createGain(), normal: ctx.createGain() };
+            for (const role of ['click', 'guide', 'normal'] as const) cuts[role].connect(graph.input(role));
+            routeCutsRef.current = cuts;
             // Aparelho trocado (pelo setSinkId ou pelo sistema): plano novo com os canais dele.
             ctx.onsinkchange = () => refreshOutputs();
 
@@ -647,11 +785,11 @@ export function useAudioEngine(userId?: string) {
             // Try Restore. Registro v1 (antes da Parte 1) migra pra v2 aqui; o
             // primeiro save depois grava v2 com a mesma ordem, nome e papel.
             const storedMeta = await get<SavedSong[]>(DB_KEY_META);
-            // Primeira restauração desta conta depois da migração das saídas (R-23, Ruling
-            // T25-legacy): os pans ±1 do pan automático antigo voltam ao centro e já ficam
-            // gravados, com todas as músicas (inclusive a que não abrir agora); depois a conta
-            // ganha a marca dela. O pedido do aparelho fica pras outras contas.
-            const resetLegacyPans = legacyPanResetRef.current === true && readLocal(LEGACY_PANS_DONE_KEY) !== '1';
+            // Primeira restauração desta conta (R-23, Rulings T25-legacy e T25-reset-sempre):
+            // os pans ±1 gravados antes desta versão (pan automático antigo, ligado ou já
+            // desligado) voltam ao centro e já ficam gravados, com todas as músicas (inclusive
+            // a que não abrir agora); depois a conta ganha a marca dela. Uma vez só por conta.
+            const resetLegacyPans = readLocal(LEGACY_PANS_DONE_KEY) !== '1';
             const migratedMeta = Array.isArray(storedMeta) ? storedMeta.map(migrateSavedSong) : [];
             const savedMeta = resetLegacyPans ? migratedMeta.map(withLegacyPansReset) : migratedMeta;
             if (resetLegacyPans) {
@@ -683,7 +821,7 @@ export function useAudioEngine(userId?: string) {
                             gain.gain.value = channelGain(metaCh, metaSong.channels);
 
                             panner.connect(gain);
-                            connectChannel(graph, metaCh, panner, gain);
+                            connectChannel(cuts, graph, metaCh, panner, gain);
 
                             // Worklet de tom é lazy: só nasce no play se houver transpose.
                             // Não guarda o blob (file) na memória viva: já está
@@ -1331,7 +1469,8 @@ export function useAudioEngine(userId?: string) {
                 }
 
                 const graph = graphRef.current;
-                if (!graph) return null;
+                const cuts = routeCutsRef.current;
+                if (!graph || !cuts) return null;
                 const panner = audioCtxRef.current.createStereoPanner();
                 setupPannerForBuffer(panner, audioBuffer);
                 const gain = audioCtxRef.current.createGain();
@@ -1340,7 +1479,7 @@ export function useAudioEngine(userId?: string) {
 
                 panner.connect(gain);
                 // Fader no barramento do papel (pelo nome do canal, como o Channel abaixo).
-                connectChannel(graph, { id: p.uuid, name: p.name, pan: p.pan }, panner, gain);
+                connectChannel(cuts, graph, { id: p.uuid, name: p.name, pan: p.pan }, panner, gain);
 
                 // Não retém o blob (file) na memória viva: já está persistido
                 // (cache offline ou per-stem) e é relido só p/ export. Segurar
@@ -1422,8 +1561,9 @@ export function useAudioEngine(userId?: string) {
     };
 
     const createEndlessMetronomeSong = async (bpm: number) => {
-        if (!audioCtxRef.current || !masterGainRef.current || !graphRef.current) return;
+        if (!audioCtxRef.current || !masterGainRef.current || !graphRef.current || !routeCutsRef.current) return;
         const graph = graphRef.current;
+        const cuts = routeCutsRef.current;
         setIsLoading(true);
 
         try {
@@ -1444,7 +1584,7 @@ export function useAudioEngine(userId?: string) {
 
             const uuid = crypto.randomUUID();
             panner.connect(gain);
-            connectChannel(graph, { id: uuid, name: 'Metronomo Loop', pan: 0 }, panner, gain);
+            connectChannel(cuts, graph, { id: uuid, name: 'Metronomo Loop', pan: 0 }, panner, gain);
 
             await set(fileKey(uuid), file);
 
@@ -1490,8 +1630,9 @@ export function useAudioEngine(userId?: string) {
     };
 
     const addChannelToActiveSong = async (file: File) => {
-        if (!audioCtxRef.current || !masterGainRef.current || !graphRef.current || playlist.length === 0 || activeSongIndex < 0) return;
+        if (!audioCtxRef.current || !masterGainRef.current || !graphRef.current || !routeCutsRef.current || playlist.length === 0 || activeSongIndex < 0) return;
         const graph = graphRef.current;
+        const cuts = routeCutsRef.current;
         setIsLoading(true);
 
         try {
@@ -1511,7 +1652,7 @@ export function useAudioEngine(userId?: string) {
             gain.gain.value = 1;
 
             panner.connect(gain);
-            connectChannel(graph, { id: uuid, name: channelName, pan: panValue }, panner, gain);
+            connectChannel(cuts, graph, { id: uuid, name: channelName, pan: panValue }, panner, gain);
 
             await set(fileKey(uuid), file);
 
@@ -1677,13 +1818,14 @@ export function useAudioEngine(userId?: string) {
             const gainNode = ctx.createGain();
             const panner = ctx.createStereoPanner();
             // Bipe mono entra ESTÉREO no barramento do Click por um panner próprio (o
-            // barramento espera estéreo: mono direto lá sairia +6 dB). Dali segue o
-            // StereoPanner do barramento e sai onde o Click sai: nunca na VS, nem em
-            // "4 ou mais". Mesmo nível da v1.4.16 com o principal em 1. A T26 refaz a contagem.
+            // barramento espera estéreo: mono direto lá sairia +6 dB), passando pelo corte
+            // do Click como os canais. Dali segue o StereoPanner do barramento e sai onde o
+            // Click sai: nunca na VS, nem em "4 ou mais". Mesmo nível da v1.4.16 com o
+            // principal em 1. A T26 refaz a contagem.
             panner.pan.value = countPan;
             osc.connect(gainNode);
             gainNode.connect(panner);
-            panner.connect(graph.input('click'));
+            panner.connect(routeCutsRef.current?.click ?? graph.input('click'));
             osc.type = 'square';
             osc.frequency.value = i === 0 ? 1200 : 880;
             gainNode.gain.setValueAtTime(0, startTime);
@@ -1893,13 +2035,17 @@ export function useAudioEngine(userId?: string) {
 
         const ctx = audioCtxRef.current;
         const graph = graphRef.current;
+        const cuts = routeCutsRef.current;
         if (roleChanged) {
             // Só o fader deste canal troca de barramento (o medidor do App continua ligado
             // nele) e o panner recebe o pan efetivo do papel novo (com o pan automático em
-            // "Tudo junto", o lado do papel). O pan gravado é o knob e não muda.
-            if (ctx && graph) {
-                moveFaderToRole(graph, after);
-                syncChannelPan(ctx, after, graph.plan, settings.autoPan, false);
+            // "Tudo junto", o lado do papel), os dois no fundo do mesmo corte. O pan gravado
+            // é o knob e não muda.
+            if (ctx && graph && cuts) {
+                switchRoute(() => {
+                    moveFaderToRole(cuts, after);
+                    syncChannelPan(ctx, after, graph.plan, autoPanRef.current, false);
+                });
             }
             // E quem continua tocando com Solo ligado: reaplica o ganho em todos, como o toggleSolo.
             next.forEach(ch => {
@@ -2050,7 +2196,9 @@ export function useAudioEngine(userId?: string) {
         // Ordem, nome e papel do usuário vão junto (repertoireSchema.ts).
         const manifest = playlist.map(toManifestSong);
 
-        zip.file('manifest.json', JSON.stringify({ version: 5, songs: manifest }, null, 2));
+        // knobPans: os pans deste ZIP são só o knob do usuário (T25). ZIP sem a marca é de
+        // antes e os ±1 dele são do pan automático antigo.
+        zip.file('manifest.json', JSON.stringify({ version: 5, knobPans: true, songs: manifest }, null, 2));
 
         // Add each audio file to the zip
         for (const song of playlist) {
@@ -2102,7 +2250,10 @@ export function useAudioEngine(userId?: string) {
 
             // Manifest de ZIP antigo não tem channelOrder: a ordem do arquivo é a que
             // o usuário deixou, então volta manual em vez de virar a ordem padrão.
-            const importedMeta: SavedSong[] = (data.songs as SavedSong[]).map(migrateManifestSong);
+            // ZIP de antes desta versão (sem knobPans): os pans ±1 são do pan automático antigo
+            // e entram no centro, como no reset da conta (Ruling T25-reset-sempre).
+            const fromLegacyZip = data.knobPans !== true;
+            const importedMeta: SavedSong[] = (data.songs as SavedSong[]).map(migrateManifestSong).map((s) => (fromLegacyZip ? withLegacyPansReset(s) : s));
 
             // Limpa o repertório anterior (Map legado + chaves por-stem órfãs)
             // antes de importar o novo, pra não deixar stems velhos no disco.
