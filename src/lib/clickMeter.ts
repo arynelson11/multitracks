@@ -45,6 +45,12 @@ export interface ClickAnalysis {
    * marcadas quando houver e mostra o compasso assumido em âmbar).
    */
   downbeatSource: 'accent' | 'assumed'
+  /**
+   * A leitura tem duas saídas plausíveis que nem o acento nem o compasso e o BPM salvos
+   * decidem (acento a cada 3, 2, 6 ou 8 pulsos sem desempate; no 6/8 em colcheias com o 1 e o
+   * 4 iguais, o "1" pode ser o 4): a tela pede conferência.
+   */
+  ambiguous: boolean
   /** Ataques que caíram na grade e entraram na conta. */
   onsets: number
   /** Traço que marcou o acento: mais forte (`loud`) ou mais agudo (`bright`). Nulo junto com `pulsesPerBar`. */
@@ -88,6 +94,11 @@ const BAR_CANDIDATES = [3, 4, 5, 6, 7, 8, 12] as const
  * disto: colcheia mais lenta daria semínima abaixo de 50 por minuto.
  */
 const MIN_SUBDIVIDED_PULSE_BPM = 100
+/**
+ * Acento a cada 3 pulsos sem compasso nem BPM salvo que decida: a partir disto tende a 6/8 em
+ * colcheias (pontuada a 47 por minuto ou mais); abaixo, a 3/4 em semínimas.
+ */
+const COMPOUND_THREE_MIN_PULSE_BPM = 140
 /** O BPM salvo da música desempata quando bate com pulsos / 1, 2 ou 3 até esta fração. */
 const KNOWN_BPM_TOLERANCE = 0.03
 /**
@@ -356,6 +367,7 @@ interface Interpretation {
   downbeat: MeterReading | null
   /** Pulso do click (índice mod subdivisão) que cai no tempo. */
   beatPhase: number
+  ambiguous: boolean
 }
 
 /** 1, 2 ou 3 quando o BPM salvo bate com pulsos / esse número; nulo sem BPM salvo ou sem bater. */
@@ -367,8 +379,22 @@ function knownRatio(pulseBpm: number, knownBpm: number | null | undefined): 1 | 
   return null
 }
 
-function interpretation(subdivision: 1 | 2 | 3, compound: boolean, meter: number | null, downbeat: MeterReading | null, beat: MeterReading | null = downbeat): Interpretation {
-  return { subdivision, compound, meter, downbeat, beatPhase: beat ? beat.phase % subdivision : 0 }
+interface InterpretationParts {
+  subdivision: 1 | 2 | 3
+  compound: boolean
+  meter: number | null
+  downbeat: MeterReading | null
+  /** Acento que marca os tempos quando não é o do "1" (o acento a cada 2). */
+  beat?: MeterReading | null
+  ambiguous?: boolean
+}
+
+function interpretation(o: InterpretationParts): Interpretation {
+  const beat = o.beat ?? o.downbeat
+  return {
+    subdivision: o.subdivision, compound: o.compound, meter: o.meter, downbeat: o.downbeat,
+    beatPhase: beat ? beat.phase % o.subdivision : 0, ambiguous: o.ambiguous ?? false,
+  }
 }
 
 /**
@@ -383,31 +409,45 @@ function interpretation(subdivision: 1 | 2 | 3, compound: boolean, meter: number
 function compoundFrame(pulseBpm: number, bar: MeterReading | null, two: MeterReading | null, eighths: number): Interpretation {
   if (pulseBpm >= DOTTED_PULSE_MAX_BPM) {
     const fits = bar !== null && bar.m % 3 === 0 && eighths % bar.m === 0
-    return interpretation(3, true, fits ? eighths : null, fits ? bar : null)
+    return interpretation({
+      subdivision: 3, compound: true, meter: fits ? eighths : null, downbeat: fits ? bar : null,
+      ambiguous: fits && bar.m < eighths && !bar.compoundEvidence,
+    })
   }
   const dotted = eighths / 3
   const dottedBar = bar?.m === dotted ? bar : dotted === 2 ? two : null
-  return interpretation(1, true, dottedBar ? eighths : null, dottedBar)
+  return interpretation({ subdivision: 1, compound: true, meter: dottedBar ? eighths : null, downbeat: dottedBar })
 }
 
 /** Acento que fecha um compasso de `bar.m` pulsos, sem compasso conhecido que decida. */
 function fromBar(pulseBpm: number, bar: MeterReading, two: MeterReading | null, k: 1 | 2 | 3 | null): Interpretation {
+  const simple = (subdivision: 1 | 2 | 3, meter: number, ambiguous = false) =>
+    interpretation({ subdivision, compound: false, meter, downbeat: bar, ambiguous })
+  const compound = (meter: number, ambiguous = false) =>
+    interpretation({ subdivision: 3, compound: true, meter, downbeat: bar, ambiguous })
   switch (bar.m) {
+    case 3:
+      // 3/4 em semínimas ou 6/8 em colcheias com o 1 e o 4 iguais. BPM salvo igual a pulsos/3
+      // (pontuada) ou pulsos/2 (a semínima do 6/8, como a MultiTracks escreve) é 6/8.
+      if (k === 2 || k === 3) return compound(6)
+      if (k === 1) return simple(1, 3)
+      return pulseBpm >= COMPOUND_THREE_MIN_PULSE_BPM ? compound(6, true) : simple(1, 3, true)
     case 6:
       // 6/8 em colcheias, 3/4 em colcheias ou 3/4 com acento de 2 em 2 compassos.
-      if (bar.compoundEvidence || k === 3) return interpretation(3, true, 6, bar)
-      if (k === 2 || two) return interpretation(2, false, 3, bar)
-      if (k === 1) return interpretation(1, false, 3, bar)
-      return interpretation(3, true, 6, bar)
+      if (bar.compoundEvidence || k === 3) return compound(6)
+      if (two) return simple(2, 3)
+      if (k === 2) return simple(2, 3, true) // ou 6/8 com o BPM salvo em semínima
+      if (k === 1) return simple(1, 3)
+      return compound(6, true)
     case 8: {
       // 4/4 em colcheias, ou 4/4 com acento de 2 em 2 compassos (BPM salvo igual aos pulsos).
-      const s = k === 1 || k === 2 ? k : two || pulseBpm >= MIN_SUBDIVIDED_PULSE_BPM ? 2 : 1
-      return interpretation(s, false, 4, bar)
+      if (k === 1 || k === 2) return simple(k, 4)
+      return simple(two || pulseBpm >= MIN_SUBDIVIDED_PULSE_BPM ? 2 : 1, 4, !two)
     }
     case 12:
-      return interpretation(3, true, 12, bar)
+      return compound(12)
     default:
-      return interpretation(1, false, bar.m, bar)
+      return simple(1, bar.m)
   }
 }
 
@@ -427,17 +467,21 @@ function interpret(
     const beats = knownSignature ? signaturePulses(knownSignature) : null
     if (beats !== null && bar.m % beats === 0 && bar.m / beats <= 3) {
       const ratio = bar.m / beats
-      const s = k !== null && bar.m % (k * beats) === 0 ? k : ratio
-      return interpretation(s as 1 | 2 | 3, false, beats, bar)
+      const byBpm = k !== null && bar.m % (k * beats) === 0
+      return interpretation({
+        subdivision: (byBpm ? k : ratio) as 1 | 2 | 3, compound: false, meter: beats, downbeat: bar,
+        ambiguous: !byBpm && ratio > 1 && !two,
+      })
     }
     return fromBar(pulseBpm, bar, two, k)
   }
   if (two) {
-    const s = k === 1 || k === 2 ? k : pulseBpm >= MIN_SUBDIVIDED_PULSE_BPM ? 2 : 1
-    return interpretation(s, false, null, null, two)
+    const byBpm = k === 1 || k === 2
+    const subdivision = byBpm ? k : pulseBpm >= MIN_SUBDIVIDED_PULSE_BPM ? 2 : 1
+    return interpretation({ subdivision, compound: false, meter: null, downbeat: null, beat: two, ambiguous: !byBpm })
   }
-  const s = k ?? 1
-  return interpretation(s, s === 3, null, null)
+  const subdivision = k ?? 1
+  return interpretation({ subdivision, compound: subdivision === 3, meter: null, downbeat: null })
 }
 
 /**
@@ -472,6 +516,7 @@ export function analyzeClickTrack(
     pulsesPerBar: it.meter,
     firstDownbeat,
     downbeatSource: downbeat ? 'accent' : 'assumed',
+    ambiguous: it.ambiguous,
     onsets: grid.length,
     accent: downbeat?.trait ?? null,
   }

@@ -221,6 +221,57 @@ describe('analyzeClickTrack: de onde vem o "1"', () => {
   })
 })
 
+describe('analyzeClickTrack: acento a cada 3 e leituras ambíguas', () => {
+  // Acento a cada 3 pulsos: 3/4 em semínimas ou 6/8 em colcheias com o 1 e o 4 iguais. O
+  // compasso salvo decide; sem ele, 140 pulsos por minuto ou mais tende a 6/8 e menos a 3/4,
+  // e a leitura sai marcada como ambígua pra tela pedir conferência.
+  const tres = (bpm: number) => synthClick({ bpm, seconds: 30, pulsesPerBar: 3, accent: 'loud', firstPulse: 0.1 })
+  it('sem compasso salvo: rápido tende a 6/8 em colcheias, lento a 3/4, os dois ambíguos', () => {
+    expect(analyzeClickTrack(tres(180), 48000)!).toMatchObject({ pulsesPerBar: 6, subdivision: 3, compound: true, ambiguous: true })
+    expect(Math.abs(analyzeClickTrack(tres(180), 48000)!.bpm - 60)).toBeLessThan(0.01)
+    // A medida tem frações (140 sai 139,99999): perto do corte, folga de 2 pulsos por minuto.
+    expect(analyzeClickTrack(tres(142), 48000)!).toMatchObject({ pulsesPerBar: 6, subdivision: 3, ambiguous: true })
+    expect(analyzeClickTrack(tres(138), 48000)!).toMatchObject({ pulsesPerBar: 3, subdivision: 1, compound: false, ambiguous: true })
+    expect(analyzeClickTrack(tres(90), 48000)!).toMatchObject({ pulsesPerBar: 3, subdivision: 1, ambiguous: true })
+  })
+  it('com compasso salvo, ele decide; no 6/8 o 1 ainda pode ser o 4', () => {
+    const tresQuartos = analyzeClickTrack(tres(180), 48000, '3/4')!
+    expect(tresQuartos).toMatchObject({ pulsesPerBar: 3, subdivision: 1, compound: false, ambiguous: false })
+    expect(Math.abs(tresQuartos.bpm - 180)).toBeLessThan(0.02)
+    expect(analyzeClickTrack(tres(90), 48000, '6/8')!).toMatchObject({ compound: true, ambiguous: false }) // pontuada: sem 1 e 4
+    expect(analyzeClickTrack(tres(180), 48000, '6/8')!).toMatchObject({ pulsesPerBar: 6, subdivision: 3, ambiguous: true })
+  })
+  it('o BPM salvo também decide: pulsos/3 ou pulsos/2 (semínima do 6/8) é 6/8, igual aos pulsos é 3/4', () => {
+    expect(analyzeClickTrack(tres(180), 48000, null, 60)!).toMatchObject({ pulsesPerBar: 6, subdivision: 3, ambiguous: false })
+    expect(analyzeClickTrack(tres(156), 48000, null, 78)!).toMatchObject({ pulsesPerBar: 6, subdivision: 3, ambiguous: false })
+    expect(analyzeClickTrack(tres(156), 48000, null, 156)!).toMatchObject({ pulsesPerBar: 3, subdivision: 1, ambiguous: false })
+  })
+  it('o 1 mais forte que o 4 prova o 6/8: não é ambíguo', () => {
+    const a = analyzeClickTrack(synthClick({ bpm: 120, seconds: 30, pulsesPerBar: 6, accent: 'compound', firstPulse: 0 }), 48000)!
+    expect(a).toMatchObject({ pulsesPerBar: 6, subdivision: 3, ambiguous: false })
+  })
+  it('outras leituras de duas saídas: ambíguas sem desempate, decididas com ele', () => {
+    const cada2 = synthClick({ bpm: 132, seconds: 30, pulsesPerBar: 4, accent: 'every2', firstPulse: 0 })
+    expect(analyzeClickTrack(cada2, 48000)!.ambiguous).toBe(true)
+    expect(analyzeClickTrack(cada2, 48000, null, 66)!.ambiguous).toBe(false)
+    const cada8 = synthClick({ bpm: 128, seconds: 40, pulsesPerBar: 8, accent: 'loud', firstPulse: 0 })
+    expect(analyzeClickTrack(cada8, 48000)!.ambiguous).toBe(true)
+    expect(analyzeClickTrack(cada8, 48000, '4/4')!.ambiguous).toBe(true)
+    expect(analyzeClickTrack(cada8, 48000, null, 64)!.ambiguous).toBe(false)
+    expect(analyzeClickTrack(synthClick({ bpm: 210, seconds: 30, pulsesPerBar: 8, accent: 'beatsAndOne', firstPulse: 0 }), 48000)!.ambiguous).toBe(false)
+    const cada6 = synthClick({ bpm: 140, seconds: 40, pulsesPerBar: 6, accent: 'loud', firstPulse: 0 })
+    expect(analyzeClickTrack(cada6, 48000)!.ambiguous).toBe(true)
+    expect(analyzeClickTrack(cada6, 48000, '3/4')!.ambiguous).toBe(true) // colcheias ou acento de 2 em 2 compassos
+    expect(analyzeClickTrack(cada6, 48000, '3/4', 70)!.ambiguous).toBe(false)
+    expect(analyzeClickTrack(cada6, 48000, null, 140 / 3)!.ambiguous).toBe(false)
+  })
+  it('leituras claras não são ambíguas', () => {
+    expect(analyzeClickTrack(synthClick({ bpm: 120, seconds: 30, pulsesPerBar: 4, accent: 'loud', firstPulse: 0 }), 48000)!.ambiguous).toBe(false)
+    expect(analyzeClickTrack(synthClick({ bpm: 100, seconds: 30, pulsesPerBar: 4, accent: 'none', firstPulse: 0 }), 48000)!.ambiguous).toBe(false)
+    expect(analyzeClickTrack(synthClick({ bpm: 150, seconds: 40, pulsesPerBar: 12, accent: 'loud', firstPulse: 0 }), 48000)!.ambiguous).toBe(false)
+  })
+})
+
 describe('da faixa de click à grade do palco', () => {
   const gridOf = (a: ClickAnalysis) => { const like: ClickAnalysisLike = a; return gridFromClick(like) }
   it('4/4 em colcheias com cada tempo acentuado: grade e contagem em semínimas', () => {
