@@ -30,8 +30,10 @@ const FIT_MARGIN = 4
 function overflowsY(el: HTMLElement, margin?: number): boolean {
   const cs = getComputedStyle(el)
   const box = el.getBoundingClientRect()
-  const top = box.top + (margin ?? (parseFloat(cs.paddingTop) || 0)) - 0.5
-  const bottom = box.bottom - (margin ?? (parseFloat(cs.paddingBottom) || 0)) + 0.5
+  // A folga mínima não tem tolerância (3,7 px não é 4); a caixa de conteúdo aceita meio px de arredondamento.
+  const slack = margin === undefined ? 0.5 : 0
+  const top = box.top + (margin ?? (parseFloat(cs.paddingTop) || 0)) - slack
+  const bottom = box.bottom - (margin ?? (parseFloat(cs.paddingBottom) || 0)) + slack
   for (const child of el.children) {
     if (getComputedStyle(child).position === 'absolute') continue
     const r = child.getBoundingClientRect()

@@ -678,6 +678,19 @@ describe('faixa do meio', () => {
     frame()
     expect(fit()).toBe('1')
   })
+  it('a 3,7 px da borda já não cabe: a folga de 4 px não tem tolerância', () => {
+    const rect = (top: number, height: number) => ({ top, bottom: top + height, height, left: 0, right: 100, width: 100, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      if (this.hasAttribute('data-fit-height')) return rect(0, 168)
+      const cell = this.closest('[data-cell="musica"]') as HTMLElement | null
+      const k = Number(cell?.style.getPropertyValue('--ps-fit') || 1)
+      // Na música: a 3,7 px da borda de cima no tamanho cheio; a 4 px a partir do degrau seguinte.
+      return cell && k === 1 ? rect(3.7, 100) : rect(4, 100)
+    })
+    renderStrip()
+    expect(q('[data-cell="musica"]').style.getPropertyValue('--ps-fit')).toBe('0.875')
+    expect(q('[data-cell="tempo"]').style.getPropertyValue('--ps-fit')).toBe('1')
+  })
   it('os tamanhos que encolhem param em 12 px (texto) e 48 px (capa)', () => {
     renderStrip()
     const minOf = (el: Element, min: string) => expect(el.className).toMatch(new RegExp(`calc\\(${min}_\\+_.*var\\(--ps-fit,1\\)`))
