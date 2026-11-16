@@ -539,3 +539,32 @@ describe('Bajo Synth é Synth Bass (M5, rodada 1)', () => {
     expect(recognizeChannel('SYNTH BASS')).toEqual({ label: 'Synth Bass', family: 'synthBass' })
   })
 })
+
+// Rodada 2 da M5, item 1: TOM é palavra fraca da bateria. Só é a peça Tom sozinho, com
+// número, lado ou posição (FLOOR, RACK), ou junto de outra palavra da bateria. Com palavra
+// de outra família, vale a outra família, como antes ("tom" também é tonalidade).
+describe('TOM é palavra fraca da bateria (M5, rodada 2)', () => {
+  it.each([
+    ['TOM', 'Tom'], ['Tom', 'Tom'], ['TOM 1', 'Tom'], ['Tom_2.wav', 'Tom'], ['TOM L', 'Tom L'], ['Tom R', 'Tom R'],
+    ['FLOOR TOM', 'Tom'], ['Floor Tom', 'Tom'], ['Rack Tom 2', 'Tom'], ['Hi Tom', 'Tom'], ['Low Tom', 'Tom'],
+    ['Tom Drum', 'Tom'], ['Drums Tom 1', 'Tom'], ['TOMS', 'Tons'], ['Toms L', 'Tons L'],
+  ])('%s vira a peça %s da bateria, papel Normal', (raw, label) => {
+    expect(recognizeChannel(raw)).toEqual({ label, family: 'bateria' })
+    expect(roleFromName(raw)).toBe('normal')
+  })
+  it.each([
+    ['Voz Tom', 'Vocal', 'vocal'], ['Vocal Tom', 'Vocal', 'vocal'], ['Tom Vocal', 'Vocal', 'vocal'],
+    ['Lead Tom', 'Vocal', 'vocal'], ['Voz do Tom', 'Vocal', 'vocal'], ['Tom Amb', 'Ambiência', 'ambiencia'],
+    ['Perc Tom', 'Percussão', 'percussao'], ['Pad Tom', 'Pad', 'pad'], ['Tom Zé', 'Tom Zé', 'desconhecido'],
+  ])('%s fica na família da outra palavra, como antes: %s (%s)', (raw, label, family) => {
+    expect(recognizeChannel(raw)).toEqual({ label, family })
+    expect(channelFamily({ id: '1', name: raw })).toBe(family)
+    expect(roleFromName(raw)).toBe('normal')
+  })
+  it('com Click ou Guia o papel continua o mesmo', () => {
+    expect([roleFromName('Tom Guia'), roleFromName('Tom Click'), roleFromName('Guia do Tom')]).toEqual(['guide', 'click', 'guide'])
+  })
+  it('TOM continua sendo token de peça pro kit inteiro', () => {
+    expect(isDrumPieceToken('tom')).toBe(true)
+  })
+})

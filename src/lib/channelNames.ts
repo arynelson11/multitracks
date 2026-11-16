@@ -65,9 +65,12 @@ interface FamilyRule {
   // de andamento ("Beat 01", "Tempo_120bpm"). "Beat Loop" não é Click.
   weakWords: ReadonlySet<string>
   // Palavras que podem ficar ao lado da palavra fraca sem tirar dela a família, além de
-  // número e andamento: lado do par estéreo e variação ("Loop L", "Loop A"). Só a
-  // Percussão tem; a marca de andamento do Click (isTempoMark) não muda.
+  // número e andamento: lado do par estéreo, variação ou posição ("Loop L", "Loop A",
+  // "Floor Tom"). Só Percussão e Bateria têm; a marca de andamento do Click (isTempoMark) não muda.
   weakCompanions: ReadonlySet<string>
+  // A palavra fraca também conta quando o nome já tem palavra forte da família
+  // ("Tom Drum" é a peça Tom). Só a Bateria tem.
+  weakJoinsStrong: boolean
   sequences: readonly (readonly string[])[]
   // Peças com rótulo próprio dentro da família (bateria e percussão). Peça que também
   // é palavra fraca só dá o rótulo quando decide a família ("Loop 2" é Loop; "PERC LOOP"
@@ -81,6 +84,7 @@ const rule = (
   extra: {
     weakWords?: readonly string[]
     weakCompanions?: readonly string[]
+    weakJoinsStrong?: boolean
     sequences?: readonly (readonly string[])[]
     pieces?: Record<string, string>
   } = {},
@@ -89,6 +93,7 @@ const rule = (
   words: new Set(words),
   weakWords: new Set(extra.weakWords ?? []),
   weakCompanions: new Set(extra.weakCompanions ?? []),
+  weakJoinsStrong: extra.weakJoinsStrong ?? false,
   sequences: extra.sequences ?? [],
   pieces: extra.pieces ? new Map(Object.entries(extra.pieces)) : undefined,
 })
@@ -126,8 +131,14 @@ const FAMILY_RULES: readonly FamilyRule[] = [
   rule('pad', ['PAD', 'PADS']),
   rule('teclado', ['KEY', 'KEYS', 'KEYBOARD', 'KEYBOARDS', 'TECLADO', 'TECLADOS', 'TECL', 'TEC', 'SYNTH',
     'SYNTHS', 'SYN', 'ORGAN', 'ORGAO', 'RHODES', 'WURLI', 'EP']),
+  // TOM é fraca ("tom" também é tonalidade): só é a peça Tom sozinho, com número, lado ou
+  // posição ("TOM 1", "Floor Tom"), ou junto de outra palavra da bateria ("Tom Drum").
+  // "Voz Tom" continua Vocal.
   rule('bateria', ['DRUMS', 'DRUM', 'DRM', 'BATERIA', 'BATERIAS', 'BATERA', 'BAT', 'KIT', 'DRUMSET', 'DRUMKIT'], {
     pieces: DRUM_PIECES,
+    weakWords: ['TOM'],
+    weakCompanions: ['FLOOR', 'RACK', 'HI', 'MID', 'LOW', 'L', 'R', 'LEFT', 'RIGHT', 'ESQ', 'DIR'],
+    weakJoinsStrong: true,
   }),
   // LOOP é fraca: só é Percussão quando é a única palavra do nome, fora número,
   // andamento, lado do par estéreo e variação ("Loop 2", "Loop L", "Loop A", "Loop Fx").
@@ -245,9 +256,10 @@ function weakHits(tokens: readonly string[], familyRule: FamilyRule): Set<number
 }
 
 // Índices dos tokens que casaram a família (palavra inteira, sequência de palavras
-// ou palavra fraca com o resto em número/andamento).
+// ou palavra fraca com o resto em número/andamento; na Bateria, a fraca também vale ao
+// lado de palavra forte dela).
 function familyHits(tokens: readonly string[], familyRule: FamilyRule): Set<number> {
-  const hits = weakHits(tokens, familyRule)
+  const hits = new Set<number>()
   tokens.forEach((token, i) => {
     const isStrongPiece = familyRule.pieces?.has(token) && !familyRule.weakWords.has(token)
     if (familyRule.words.has(token) || isStrongPiece) hits.add(i)
@@ -259,6 +271,10 @@ function familyHits(tokens: readonly string[], familyRule: FamilyRule): Set<numb
       }
     }
   }
+  const weak = hits.size > 0 && familyRule.weakJoinsStrong
+    ? new Set(tokens.flatMap((token, i) => (familyRule.weakWords.has(token) ? [i] : [])))
+    : weakHits(tokens, familyRule)
+  for (const i of weak) hits.add(i)
   return hits
 }
 

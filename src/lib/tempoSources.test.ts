@@ -157,6 +157,12 @@ describe('baixo e harmonia', () => {
 })
 
 describe('Guia, Vocal, Backing e Click nunca entram na análise', () => {
+  // Rodada 2, item 1: "tom" em canal de voz não puxa a voz pra bateria.
+  it('voz com "tom" no nome nunca vira pulso', () => {
+    expect(pick(mk(['Click', 'Pad', 'Voz Tom', 'Bass']))).toEqual({
+      click: 'Click', pulse: ['Bass'], bass: 'Bass', harmony: ['Pad'], label: 'Baixo',
+    })
+  })
   it('pelo nome', () => {
     expect(pick(mk(['Guía', 'Voz Guia', 'Cues', 'VOX', 'Vocais', 'BV', 'Coro', 'Click', 'Metrônomo']))).toEqual({
       click: 'Click', pulse: [], bass: null, harmony: [], label: '',
