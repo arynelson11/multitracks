@@ -140,6 +140,19 @@ describe('grade da música', () => {
     expect(gridFromClick({ bpm: 180, firstPulse: 0, pulsesPerBar: 6, firstDownbeat: 0 })).toMatchObject({ signature: '6/8', meterSource: 'acento' })
     expect(gridFromClick({ bpm: 180, firstPulse: 0, pulsesPerBar: 9, firstDownbeat: 0 })).toMatchObject({ signature: '4/4', meterSource: 'padrao' })
   })
+  it('click com fase quebrada não inventa o 1: grade recusada e aviso de sem grade', () => {
+    const base = { bpm: 120, firstPulse: 0.3, pulsesPerBar: 4, firstDownbeat: 0.8 }
+    const quebradas = [
+      { ...base, firstDownbeat: NaN }, { ...base, firstDownbeat: Infinity }, { ...base, firstDownbeat: -Infinity },
+      { ...base, firstPulse: NaN }, { ...base, firstPulse: Infinity }, { ...base, firstPulse: NaN, firstDownbeat: null },
+    ]
+    for (const a of quebradas) {
+      const grid = gridFromClick(a)
+      expect(grid.firstDownbeat).not.toBe(0)
+      expect(sanitizeGrid(grid)).toBeNull(); expect(gridWarning(grid)).toBe('sem-grade')
+      expect(snapToBar(4.6, grid)).toBe(4.6)
+    }
+  })
   it('click com BPM quebrado não vira NaN na fase e cai em sem grade', () => {
     const quebrada = gridFromClick({ bpm: NaN, firstPulse: 0.3, pulsesPerBar: 4, firstDownbeat: null })
     expect(Number.isNaN(quebrada.firstDownbeat)).toBe(false)

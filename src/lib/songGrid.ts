@@ -137,10 +137,13 @@ export function gridFromBpm(bpm: number, savedSignature?: TimeSignature | null):
 /** O que a grade precisa da leitura da faixa de click (a `ClickAnalysis` da T3 encaixa por estrutura). */
 export interface ClickAnalysisLike { bpm: number; firstPulse: number; pulsesPerBar: number | null; firstDownbeat: number | null }
 
-/** Traz `x` pra dentro de `[0, bar)`. Compasso inválido: só tira o negativo e o não finito. */
+/**
+ * Traz `x` pra dentro de `[0, bar)`. Fase não finita continua NaN (nunca inventa o 1); com
+ * compasso inválido `x` fica como veio. Nos dois casos o `sanitizeGrid` recusa a grade.
+ */
 function intoFirstBar(x: number, bar: number): number {
-  if (!Number.isFinite(x)) return 0
-  if (!Number.isFinite(bar) || bar <= 0) return Math.max(0, x)
+  if (!Number.isFinite(x)) return NaN
+  if (!Number.isFinite(bar) || bar <= 0) return x
   const r = ((x % bar) + bar) % bar
   return r < bar ? r : 0
 }
@@ -148,7 +151,9 @@ function intoFirstBar(x: number, bar: number): number {
 /**
  * Grade lida na faixa de click. Compasso: o salvo (`'salvo'`), senão o que o acento mostrou
  * (`'acento'`), senão 4/4 (`'padrao'`). O primeiro 1 (`firstDownbeat`, ou o primeiro pulso sem
- * acento) vai pra dentro do primeiro compasso do compasso que vale.
+ * acento) vai pra dentro do primeiro compasso do compasso que vale. Leitura com `firstPulse` ou
+ * `firstDownbeat` não finito é leitura quebrada: a fase sai NaN, a grade é recusada pelo
+ * `sanitizeGrid` e o `gridWarning` dá `'sem-grade'` (nunca um 1 chutado em 0:00).
  */
 export function gridFromClick(a: ClickAnalysisLike, savedSignature?: TimeSignature | null): SongGrid {
   const saved = knownSignature(savedSignature)
@@ -156,7 +161,8 @@ export function gridFromClick(a: ClickAnalysisLike, savedSignature?: TimeSignatu
   const signature = saved ?? accent ?? '4/4'
   const meterSource: MeterSource = saved ? 'salvo' : accent ? 'acento' : 'padrao'
   const bar = (60 / a.bpm) * pulsesPerBar(signature)
-  const firstDownbeat = intoFirstBar(a.firstDownbeat ?? a.firstPulse, bar)
+  const phaseOk = Number.isFinite(a.firstPulse) && (a.firstDownbeat == null || Number.isFinite(a.firstDownbeat))
+  const firstDownbeat = phaseOk ? intoFirstBar(a.firstDownbeat ?? a.firstPulse, bar) : NaN
   return { bpm: a.bpm, firstDownbeat, signature, countEvery: 1, source: 'click', meterSource }
 }
 
