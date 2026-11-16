@@ -4,7 +4,9 @@
 // acorde. Guia, voz, backing e click nunca entram. Reconhece só pela regra central de
 // canais (família, papel manual e palavra inteira do nome), nunca por pedaço de texto.
 // Puro: sem React, sem IndexedDB, sem Web Audio.
-import { FAMILY_LABEL, FAMILY_RANK, channelFamily, nameTokens, type ChannelFamily, type ChannelIdentity } from './channelNames'
+import {
+  FAMILY_LABEL, FAMILY_RANK, channelFamily, isDrumPieceToken, nameTokens, type ChannelFamily, type ChannelIdentity,
+} from './channelNames'
 import { findClickChannel } from './channelRoles'
 
 export interface TempoSources<T extends ChannelIdentity> {
@@ -23,8 +25,9 @@ const PULSE_FAMILIES: ReadonlySet<ChannelFamily> = new Set(['bateria', 'percussa
 const HARMONY_FAMILIES: ReadonlySet<ChannelFamily> = new Set(['pad', 'teclado', 'piano', 'violao'])
 const HARMONY_MAX = 2
 
-// Kit inteiro: o canal da bateria toda. Loop e virada tocam só parte da música.
-// "Kit" e "Bat" sozinhos são ambíguos e não contam.
+// Kit inteiro: o canal da bateria toda. Loop e virada tocam só parte da música, e
+// peça ("Snare Drum", "Kick Drum") é só uma parte do kit separado. "Kit" e "Bat"
+// sozinhos são ambíguos e não contam.
 const FULL_KIT_WORDS: ReadonlySet<string> = new Set(['drum', 'drums', 'bateria', 'batera'])
 const PARTIAL_KIT_WORDS: ReadonlySet<string> = new Set(['loop', 'loops', 'fill', 'fills'])
 
@@ -44,7 +47,8 @@ const hasAnyWord = (words: ReadonlySet<string>, wanted: ReadonlySet<string>) => 
 function pickPulse<T extends ChannelIdentity>(percussive: readonly Candidate<T>[]): Candidate<T>[] {
   const words = percussive.map((c) => wordsOf(c.ch))
   const isPartial = words.map((w) => hasAnyWord(w, PARTIAL_KIT_WORDS))
-  const fullKit = percussive.filter((_, i) => hasAnyWord(words[i], FULL_KIT_WORDS) && !isPartial[i])
+  const fullKit = percussive.filter((_, i) => hasAnyWord(words[i], FULL_KIT_WORDS) && !isPartial[i]
+    && ![...words[i]].some(isDrumPieceToken))
   return fullKit.length > 0 && isPartial.some(Boolean) ? fullKit : [...percussive]
 }
 

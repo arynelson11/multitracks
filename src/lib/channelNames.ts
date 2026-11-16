@@ -87,6 +87,14 @@ const rule = (
   pieces: extra.pieces ? new Map(Object.entries(extra.pieces)) : undefined,
 })
 
+// Peças da bateria com rótulo próprio: "Snare Drum" é a peça Caixa, não o kit inteiro.
+const DRUM_PIECES: Record<string, string> = {
+  KICK: 'Bumbo', BASSDRUM: 'Bumbo', BUMBO: 'Bumbo', SNARE: 'Caixa', CAIXA: 'Caixa',
+  HAT: 'Chimbal', HIHAT: 'Chimbal', HH: 'Chimbal', CHIMBAL: 'Chimbal',
+  OH: 'Overhead', OVERHEAD: 'Overhead', OVERHEADS: 'Overhead', TOM: 'Tom', TOMS: 'Tons',
+}
+const DRUM_PIECE_TOKENS: ReadonlySet<string> = new Set(Object.keys(DRUM_PIECES))
+
 // Ordem de prioridade: vence a primeira família que tiver alguma palavra no nome.
 const FAMILY_RULES: readonly FamilyRule[] = [
   // BEAT e TEMPO são fracas: "Beat" e "Tempo 120" são Click; "Ambient Beat Pad" é Pad.
@@ -113,11 +121,7 @@ const FAMILY_RULES: readonly FamilyRule[] = [
   rule('teclado', ['KEY', 'KEYS', 'KEYBOARD', 'KEYBOARDS', 'TECLADO', 'TECLADOS', 'TECL', 'TEC', 'SYNTH',
     'SYNTHS', 'SYN', 'ORGAN', 'ORGAO', 'RHODES', 'WURLI', 'EP']),
   rule('bateria', ['DRUMS', 'DRUM', 'DRM', 'BATERIA', 'BATERIAS', 'BATERA', 'BAT', 'KIT', 'DRUMSET', 'DRUMKIT'], {
-    pieces: {
-      KICK: 'Bumbo', BASSDRUM: 'Bumbo', BUMBO: 'Bumbo', SNARE: 'Caixa', CAIXA: 'Caixa',
-      HAT: 'Chimbal', HIHAT: 'Chimbal', HH: 'Chimbal', CHIMBAL: 'Chimbal',
-      OH: 'Overhead', OVERHEAD: 'Overhead', OVERHEADS: 'Overhead', TOMS: 'Tons',
-    },
+    pieces: DRUM_PIECES,
   }),
   // LOOP é fraca: só é Percussão quando é a única palavra do nome, fora número e
   // andamento ("Loop 2"). "Drum Loop" é Bateria Loop; "Beat Loop" fica não reconhecido.
@@ -208,6 +212,12 @@ function tokenize(cleaned: string): string[] {
 // olhar palavra inteira do nome sem `includes` em pedaço de texto.
 export function nameTokens(raw: string): string[] {
   return tokenize(stripFileName(raw)).map((token) => token.toLowerCase())
+}
+
+// Palavra (de nameTokens ou em qualquer caixa) que é peça da bateria: bumbo, caixa,
+// chimbal, overhead, tom. Quem procura o kit inteiro usa isto pra não tratar peça como kit.
+export function isDrumPieceToken(token: string): boolean {
+  return DRUM_PIECE_TOKENS.has(token.toUpperCase())
 }
 
 // Marca de andamento: número ("01", "120") ou BPM ("120bpm" vira 120 e BPM).

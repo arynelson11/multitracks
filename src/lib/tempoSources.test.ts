@@ -83,6 +83,19 @@ describe('pulso', () => {
       click: 'Click', pulse: ['BASS'], bass: 'BASS', harmony: ['Pad'], label: 'Baixo',
     })
   })
+  // Rodada 1, item 1: peça com "Drum" no nome é peça, nunca kit inteiro.
+  it('peça com "Drum" no nome não derruba o resto do kit separado', () => {
+    expect(pick(mk(['Snare Drum', 'Kick', 'HH', 'OH', 'Drum Loop'])).pulse)
+      .toEqual(['Snare Drum', 'Kick', 'HH', 'OH', 'Drum Loop'])
+    expect(pick(mk(['Click', 'Kick Drum', 'Snare Drum', 'Hi Hat', 'OH', 'Drum Loop', 'Bass']))).toEqual({
+      click: 'Click', pulse: ['Kick Drum', 'Snare Drum', 'Hi Hat', 'OH', 'Drum Loop'], bass: 'Bass', harmony: [],
+      label: 'Bateria e Baixo',
+    })
+    expect(pick(mk(['Tom Drum', 'Bass Drum', 'Drum Fills'])).pulse).toEqual(['Tom Drum', 'Bass Drum', 'Drum Fills'])
+  })
+  it('com kit inteiro, peça com "Drum" no nome não é kit e sai junto com o loop', () => {
+    expect(pick(mk(['DRUMS', 'Snare Drum', 'Drum Loop'])).pulse).toEqual(['DRUMS'])
+  })
   // Ajuste do coordenador: pacote só com Synth Bass não pode cair em sem-faixa.
   it('sem Baixo, o pulso tirado do baixo usa o primeiro Synth Bass', () => {
     expect(pick(mk(['SYNTH BASS', 'Pad']))).toEqual({

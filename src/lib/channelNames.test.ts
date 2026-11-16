@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  FAMILY_COLOR, arrangeChannels, buildChannelLabels, channelFamily, nameTokens, recognizeChannel,
+  FAMILY_COLOR, arrangeChannels, buildChannelLabels, channelFamily, isDrumPieceToken, nameTokens, recognizeChannel,
   resolveChannelRole, roleFromName, sortChannelsByDefault, type ChannelFamily, type ChannelIdentity,
 } from './channelNames'
 
@@ -454,5 +454,29 @@ describe('nameTokens', () => {
   })
   it('nome ausente não lança', () => {
     expect(nameTokens(undefined as unknown as string)).toEqual([])
+  })
+})
+
+// Rodada 1 da M5, item 1: o teste de peça que o tempoSources usa pra não tratar peça como kit inteiro.
+describe('isDrumPieceToken', () => {
+  it.each(['kick', 'KICK', 'Kick', 'bassdrum', 'bumbo', 'snare', 'caixa', 'hat', 'hihat', 'hh', 'chimbal', 'oh',
+    'overhead', 'overheads', 'tom', 'toms'])('%s é peça da bateria', (token) => {
+    expect(isDrumPieceToken(token)).toBe(true)
+  })
+  it.each(['drum', 'drums', 'bateria', 'batera', 'kit', 'bat', 'loop', 'perc', 'shaker', 'bass', ''])('%s não é peça da bateria', (token) => {
+    expect(isDrumPieceToken(token)).toBe(false)
+  })
+  it('cada token de peça do nome é reconhecido como peça pelo reconhecimento', () => {
+    for (const raw of ['Snare Drum', 'Kick Drum', 'HH', 'OH', 'Bass Drum', 'Bumbo', 'Chimbal']) {
+      expect(nameTokens(raw).some(isDrumPieceToken)).toBe(true)
+      expect(recognizeChannel(raw).family).toBe('bateria')
+    }
+  })
+  it('TOM vira a peça Tom da bateria, sem mudar o papel de Click e Guia', () => {
+    expect(recognizeChannel('TOM')).toEqual({ label: 'Tom', family: 'bateria' })
+    expect(recognizeChannel('Tom 1')).toEqual({ label: 'Tom', family: 'bateria' })
+    expect(recognizeChannel('Floor Tom')).toEqual({ label: 'Tom', family: 'bateria' })
+    expect(recognizeChannel('TOMS')).toEqual({ label: 'Tons', family: 'bateria' })
+    expect([roleFromName('Tom Guia'), roleFromName('Tom Click'), roleFromName('TOM')]).toEqual(['guide', 'click', 'normal'])
   })
 })
