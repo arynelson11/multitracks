@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { asAudioContext, asFake, connectedTo, createFakeAudioContext, nodesOf, reaches, valueAt, type FakeAudioContext } from '../test/fakeAudio'
+import { FakeWorkletNode, asAudioContext, asFake, connectedTo, createFakeAudioContext, nodesOf, reaches, valueAt, type FakeAudioContext } from '../test/fakeAudio'
 import { fadeOutVoices, restoreVoices, startVoice, startVoicesForSwitch, stopVoices, type Voice, type VoiceSpec } from './voices'
 
 const buf = (ctx: FakeAudioContext, seconds: number) => ctx.createBuffer(2, Math.round(seconds * 48000), 48000)
@@ -64,9 +64,12 @@ describe('startVoicesForSwitch', () => {
     expect(asFake(v.source).starts).toEqual([{ when: 10, offset: 0.003 }])
     expect(valueAt(v.env.gain, 10)).toBe(1)
   })
-  it('uma voz por canal, cada uma na sua entrada, todas no mesmo instante e offset', () => {
+  it('uma voz por canal, cada uma na sua entrada (panner, atraso ou worklet de tom), todas no mesmo instante e offset', () => {
     const ctx = createFakeAudioContext()
-    const entries = [ctx.createStereoPanner(), ctx.createDelay(1), ctx.createGain()]
+    // Canal transposto: a entrada é o worklet de tom do canal, que segue pro panner dele.
+    const worklet = new FakeWorkletNode(ctx, 'signalsmith-stretch'); const pannerDoTom = ctx.createStereoPanner()
+    worklet.connect(pannerDoTom)
+    const entries = [ctx.createStereoPanner(), ctx.createDelay(1), worklet]
     const specs = entries.map((entry, i) => ({ channelId: `c${i}`, buffer: buf(ctx, 30), entry }))
     const before = ctx.created.length
     const voices = startVoicesForSwitch(asAudioContext(ctx), specs, 20, 16, 0.005)
@@ -76,8 +79,13 @@ describe('startVoicesForSwitch', () => {
       entries.forEach((other, j) => { if (j !== i) expect(reaches(v.source, other)).toBe(false) })
       expect(asFake(v.source).starts).toEqual([{ when: 19.995, offset: 15.995 }])
     })
-    expect(ctx.created.slice(before)).toHaveLength(6)
-    expect(nodesOf(ctx, 'AudioWorkletNode')).toHaveLength(0)
+    // A voz do canal transposto passa pelo worklet e chega no panner dele, com o envelope no caminho.
+    expect(reaches(voices[2].source, pannerDoTom)).toBe(true)
+    expect(valueAt(voices[2].env.gain, 19.995)).toBe(0); expect(valueAt(voices[2].env.gain, 20)).toBe(1)
+    expect(reaches(voices[0].source, pannerDoTom)).toBe(false)
+    // Só fontes e envelopes nasceram: o worklet continua o mesmo (nenhum worklet novo por pulo).
+    expect(ctx.created.slice(before).map((n) => n.kind).sort()).toEqual(['AudioBufferSourceNode', 'AudioBufferSourceNode', 'AudioBufferSourceNode', 'GainNode', 'GainNode', 'GainNode'])
+    expect(nodesOf(ctx, 'AudioWorkletNode')).toEqual([worklet])
   })
   it('com velocidade diferente de 1 a pré-rolagem anda fade x velocidade na música, pra chegar no alvo em T', () => {
     const ctx = createFakeAudioContext(); const entry = ctx.createGain()
