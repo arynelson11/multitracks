@@ -593,6 +593,18 @@ describe('volta seguinte do REPETIR', () => {
     }
   })
 
+  it('folga 0 com seção crua de 1 compasso + 0,1 s: o 1 da volta seguinte não sai adiantado, mas a guia não reabre', () => {
+    flags.minLead = 0
+    try {
+      const spans: SectionSpan[] = [{ index: 0, start: 0, end: 2.1 }, { index: 1, start: 2.1, end: 20 }]
+      const h = play({ spans, intent: { target: 0, plays: 2 }, armAt: 0.04, until: 5 })
+      expect(sounding(h.ctx)).toEqual(['0.1(1)', '0.6', '1.1', '1.6', '2.2(1)', '2.7', '3.2', '3.7'])
+      expect(openAt(h.guide, 0.111, 4.2)).toEqual([])
+    } finally {
+      flags.minLead = 0.05
+    }
+  })
+
   it('seção crua de 1 compasso + 0,1 s: o 1 da volta seguinte (0,1 s depois do pouso) soa e a guia segue calada', () => {
     const spans: SectionSpan[] = [{ index: 0, start: 0, end: 2.1 }, { index: 1, start: 2.1, end: 20 }]
     const h = play({ spans, intent: { target: 0, plays: 2 }, armAt: 0.04, until: 5 })

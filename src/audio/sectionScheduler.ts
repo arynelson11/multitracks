@@ -86,11 +86,12 @@ interface Beat { t: number; label: number; at: number }
 // Guia calada: desce em `from` e sobe em `to` (tempo do contexto, já com a latência da entrada).
 interface Interval { from: number; to: number }
 
-// Bipes da volta seguinte que saíram junto com o pulo. `from`, `switchAt` e `countTotal` dizem de
-// que plano eles são (a volta confere antes de adotar); `T` é o "1" dessa volta no contexto;
-// `mutesGuide`: a guia fica calada do pulo até esse "1". Depois do pouso, `iv` é o trecho da guia
-// que vem emendado e `baseEnd` é onde ele acabaria sem a emenda (nulo se só existe por ela).
-interface NextPass { from: number; switchAt: number; countTotal: number; beats: Beat[]; count: ScheduledCount | null; T: number; mutesGuide: boolean; iv: Interval | null; baseEnd: number | null }
+// Volta seguinte, preparada junto com o pulo. `beats`: os bipes dela que já saíram (podem ser
+// nenhum). `from`, `switchAt` e `countTotal` dizem de que plano ela é (a volta confere antes de
+// adotar); `T` é o "1" dela no contexto e `muteFrom`, o primeiro bipe dela; `mutesGuide`: a guia
+// fica calada do pulo até esse "1". Depois do pouso, `iv` é o trecho da guia que vem emendado e
+// `baseEnd` é onde ele acabaria sem a emenda (nulo se só existe por ela).
+interface NextPass { from: number; switchAt: number; countTotal: number; beats: Beat[]; count: ScheduledCount | null; T: number; muteFrom: number; mutesGuide: boolean; iv: Interval | null; baseEnd: number | null }
 
 // O pulo marcado no áudio. `plan` em segundos da música, com todos os bipes desta volta (inclusive
 // os que saíram adiantados); `position` e `minLead` dizem de onde ele foi visto (pra trocar o alvo
@@ -453,7 +454,9 @@ export class SectionScheduler {
   }
 
   // Volta seguinte do mesmo pedido, vista do pouso: os bipes dela que caem antes do pouso mais um
-  // tique (com a folga mínima) saem agora, convertidos pelo segmento novo (Ruling T17-volta).
+  // tique (com a folga mínima) saem agora, convertidos pelo segmento novo (Ruling T17-volta). A
+  // guia emenda quando a contagem dela começa a menos de um tempo do pouso, tenha o bipe saído
+  // adiantado ou não (com folga 0 o bipe 0,1 s depois do pouso fica pro plano dela).
   #nextPass(s: Scheduled, spans: readonly SectionSpan[], grid: SongGrid | null): NextPass | null {
     const next = afterLanding(s.intent)
     if (next === null || isSelfLoop(next, s.plan.to)) return null
@@ -461,10 +464,11 @@ export class SectionScheduler {
     if (np === null || np.from !== s.plan.to || np.countTimes.length === 0) return null
     const toCtx = (t: number) => s.T + (t - s.plan.targetOffset) / s.rate
     const cutoff = s.T + FADE + RELEASE_AFTER + this.#tickPeriod() + MIN_LEAD
+    const muteFrom = toCtx(np.countTimes[0])
     const beats = np.countTimes.map((t, i) => ({ t, label: np.countLabels[i], at: toCtx(t) })).filter((b) => b.at < cutoff)
-    if (beats.length === 0) return null
-    const mutesGuide = GUIDE_MUTE_ON_JUMP && s.step !== null && (beats[0].at - s.T) * s.rate < s.step - EPS
-    return { from: np.from, switchAt: np.switchAt, countTotal: np.countTotal, beats, count: this.#scheduleBeats(beats), T: toCtx(np.switchAt), mutesGuide, iv: null, baseEnd: null }
+    const mutesGuide = GUIDE_MUTE_ON_JUMP && s.step !== null && (muteFrom - s.T) * s.rate < s.step - EPS
+    if (beats.length === 0 && !mutesGuide) return null
+    return { from: np.from, switchAt: np.switchAt, countTotal: np.countTotal, beats, count: this.#scheduleBeats(beats), T: toCtx(np.switchAt), muteFrom, mutesGuide, iv: null, baseEnd: null }
   }
 
   // Trecho da guia calada desta volta: do primeiro bipe (mais L) ao "1", ou ao "1" da volta seguinte
@@ -474,7 +478,7 @@ export class SectionScheduler {
     const L = this.#latency()
     const n = s.next?.mutesGuide ? s.next : null
     if (s.guideFrom !== null) return { from: s.guideFrom, to: (n ? n.T : s.T) + L }
-    if (n) return { from: n.beats[0].at + L, to: n.T + L }
+    if (n) return { from: n.muteFrom + L, to: n.T + L }
     return null
   }
 
@@ -561,15 +565,24 @@ export class SectionScheduler {
 
   // Vozes do pulo desfeito. Antes de `T - FADE` nenhuma começou: param já. Entre `T - FADE` e `T`
   // (só o reset chega aqui) a que já subia segura o envelope em `now` e desce em FADE, espelho da
-  // antiga que volta pelo restoreVoices (a soma das duas fica 1); para depois, já em silêncio.
-  // Alvo em 0:00 não tem pré-rolagem: a voz nova só começaria em `T`.
+  // antiga que volta pelo restoreVoices (a soma das duas fica 1); para depois, já em silêncio. O
+  // jeito de segurar é o mesmo do restoreVoices da T7: cancelAndHoldAtTime (a subida cruza `now`,
+  // então o ponto entra) ou, sem ele, o valor atual do parâmetro. Valor de outra fonte deixaria a
+  // soma fora de 1 (medido no Chrome sem cancelAndHoldAtTime: 0,004 com a receita aqui e o valor
+  // atual na antiga). Alvo em 0:00 não tem pré-rolagem: a voz nova só começaria em `T`.
   #silenceNewVoices(s: Scheduled, now: number): void {
     const rising = now >= s.T - FADE && s.plan.targetOffset >= FADE * s.rate
     if (!rising) { stopVoices(s.newVoices, now); return }
-    const value = Math.min(1, (now - (s.T - FADE)) / FADE)
     for (const v of s.newVoices) {
-      holdParam(v.env.gain, now, value, now > s.T - FADE)
-      v.env.gain.linearRampToValueAtTime(0, now + FADE)
+      const gain = v.env.gain
+      if (typeof gain.cancelAndHoldAtTime === 'function') {
+        gain.cancelAndHoldAtTime(now)
+      } else {
+        const held = gain.value
+        gain.cancelScheduledValues(now)
+        gain.setValueAtTime(held, now)
+      }
+      gain.linearRampToValueAtTime(0, now + FADE)
     }
     stopVoices(s.newVoices, now + FADE)
   }
