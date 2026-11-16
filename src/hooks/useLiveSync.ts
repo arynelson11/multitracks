@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import type { Marker, WsMessage } from '../types';
+import type { LiveArmed, Marker, WsMessage } from '../types';
 import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -27,12 +27,24 @@ export interface FollowerState {
   activeLoop: { index: number; remaining: number | 'infinite' } | null;
   // Banda pode controlar loop/seções pelo celular? (exclusivo do Studio)
   bandSectionsEnabled: boolean;
+  // Pulo armado no host e a contagem aproximada dele (ver HOST_STATE em types.ts).
+  // Sempre null quando o host não manda (versão anterior).
+  armed: LiveArmed | null;
+  countBeat: number | null;
+  countTotal: number | null;
 }
+
+type HostStatePayload = Extract<WsMessage, { type: 'HOST_STATE' }>['payload'];
+
+// Estado que o líder entrega ao hook: os campos do pulo armado são opcionais
+// enquanto o App não os informa; ausente vai como null.
+type LiveJumpField = 'armed' | 'countBeat' | 'countTotal';
+export type LeaderLiveState = Omit<FollowerState, LiveJumpField> & Partial<Pick<FollowerState, LiveJumpField>>;
 
 // Hosts privados (rede local) — usados pra distinguir o follower da LAN do site público.
 const PRIVATE_HOST = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
 
-const INITIAL_STATE: FollowerState = {
+export const INITIAL_STATE: FollowerState = {
   isPlaying: false,
   currentTime: 0,
   songName: null,
@@ -54,9 +66,12 @@ const INITIAL_STATE: FollowerState = {
   sections: [],
   activeLoop: null,
   bandSectionsEnabled: false,
+  armed: null,
+  countBeat: null,
+  countTotal: null,
 };
 
-function buildPayload(state: FollowerState) {
+export function buildPayload(state: LeaderLiveState): HostStatePayload {
   return {
     isPlaying: state.isPlaying,
     currentTime: state.currentTime,
@@ -79,11 +94,40 @@ function buildPayload(state: FollowerState) {
     sections: state.sections,
     activeLoop: state.activeLoop,
     bandSectionsEnabled: state.bandSectionsEnabled,
+    armed: state.armed ?? null,
+    countBeat: state.countBeat ?? null,
+    countTotal: state.countTotal ?? null,
+  };
+}
+
+function readArmed(value: unknown): LiveArmed | null {
+  if (!value || typeof value !== 'object') return null;
+  const a = value as Record<string, unknown>;
+  if (typeof a.index !== 'number' || typeof a.label !== 'string' || typeof a.color !== 'string') return null;
+  if (a.kind !== 'proxima' && a.kind !== 'repete') return null;
+  if (a.plays !== 'infinite' && typeof a.plays !== 'number') return null;
+  return { index: a.index, label: a.label, color: a.color, kind: a.kind, plays: a.plays };
+}
+
+function readCount(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+// Leitura do HOST_STATE no celular, igual nos dois caminhos (rede local e nuvem).
+// Host da versão anterior não manda o pulo armado nem a contagem: viram null.
+// Valor malformado também vira null, pra tela nunca quebrar no meio do culto.
+export function readHostState(payload: HostStatePayload, controlEnabled: boolean): FollowerState {
+  return {
+    ...payload,
+    armed: readArmed(payload.armed),
+    countBeat: readCount(payload.countBeat),
+    countTotal: readCount(payload.countTotal),
+    controlEnabled,
   };
 }
 
 // sessionCode: ativo no líder quando "convidar remoto" está ligado (publica na nuvem).
-export function useLiveSync(leaderState: FollowerState, sessionCode?: string | null) {
+export function useLiveSync(leaderState: LeaderLiveState, sessionCode?: string | null) {
   const isLeader = !!window.playbackDesktop?.isElectron;
   const remoteSession = !isLeader ? new URLSearchParams(window.location.search).get('s') : null;
   const isFollowerRemote = !isLeader && !!remoteSession;
@@ -149,7 +193,7 @@ export function useLiveSync(leaderState: FollowerState, sessionCode?: string | n
             const payload = data.payload;
             const myIp = myIpRef.current;
             const effectiveControl = !!myIp && payload.approvedIps.includes(myIp);
-            setFollowerState({ ...payload, controlEnabled: effectiveControl });
+            setFollowerState(readHostState(payload, effectiveControl));
           }
         } catch (e) {
           console.error('Failed to parse WS message:', e);
@@ -181,7 +225,7 @@ export function useLiveSync(leaderState: FollowerState, sessionCode?: string | n
     const sb = supabase;
     const channel = sb.channel(`live:${remoteSession}`);
     channel.on('broadcast', { event: 'host-state' }, ({ payload }) => {
-      setFollowerState({ ...(payload as FollowerState), controlEnabled: false });
+      setFollowerState(readHostState(payload as HostStatePayload, false));
       setIsConnected(true);
     });
     channel.subscribe();
@@ -205,7 +249,8 @@ export function useLiveSync(leaderState: FollowerState, sessionCode?: string | n
   return {
     isFollowerMode,
     isConnected,
-    followerState: isLeader ? leaderState : followerState,
+    // No líder: o mesmo estado que o celular leria (pulo ausente vira null).
+    followerState: isLeader ? readHostState(buildPayload(leaderState), leaderState.controlEnabled) : followerState,
     sendCommand,
   };
 }

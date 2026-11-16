@@ -83,6 +83,17 @@ declare global {
   }
 }
 
+// Pulo armado no host, como o celular da banda vê: seção alvo (índice na lista
+// `sections` do HOST_STATE), rótulo e cor dela, e se é a próxima ou a repetição
+// da atual. `plays` é quantas vezes ela vai tocar ('infinite' no loop ∞).
+export interface LiveArmed {
+  index: number;
+  label: string;
+  color: string;
+  kind: 'proxima' | 'repete';
+  plays: number | 'infinite';
+}
+
 export type WsMessage =
   | { type: 'CLIENT_JOINED'; clientId?: string; ip?: string }
   | { 
@@ -109,6 +120,12 @@ export type WsMessage =
         sections: { label: string; color: string }[];
         activeLoop: { index: number; remaining: number | 'infinite' } | null;
         bandSectionsEnabled: boolean;
+        // Opcionais: o host da versão anterior não manda. Contagem aproximada
+        // (a rede atrasa; o tempo exato é o click no ouvido): `countBeat` é o
+        // tempo ouvido agora (1..countTotal), null antes do último compasso.
+        armed?: LiveArmed | null;
+        countBeat?: number | null;
+        countTotal?: number | null;
       }
     }
   | { type: 'COMMAND'; action: string; index?: number; id?: string; value?: number }

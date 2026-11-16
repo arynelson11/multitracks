@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { Wifi, WifiOff, FastForward, Music, FileText, Music2, Eye, EyeOff, Play, Pause, SkipBack, SkipForward, ListMusic, X, Check, SlidersHorizontal, LayoutGrid, Plus, Minus, Repeat, Infinity as InfinityIcon, CornerUpLeft } from 'lucide-react';
 import type { FollowerState } from '../hooks/useLiveSync';
+import type { LiveArmed } from '../types';
 
 interface SyncedLine { time: number; text: string }
 
@@ -52,6 +53,49 @@ function displayKey(originalKey: string | null, pitch: number): string {
 function pitchDelta(pitch: number): string | null {
   if (pitch === 0) return null;
   return pitch > 0 ? `+${pitch}` : `${pitch}`;
+}
+
+// Maior contagem possível: 12/8 contando todos os pulsos. Protege a tela de um
+// número absurdo vindo da rede.
+const MAX_COUNT_DOTS = 12;
+
+// Faixa do pulo armado no host: "PRÓXIMA: <seção>" ou "REPETE: <seção>" na cor
+// da seção, com as bolinhas da contagem. A contagem é aproximada (a rede atrasa;
+// o tempo exato é o click no ouvido).
+function ArmedStrip({ armed, countBeat, countTotal }: { armed: LiveArmed; countBeat: number | null; countTotal: number | null }) {
+  const color = armed.color || '#FF6B35';
+  const total = countTotal ? Math.min(MAX_COUNT_DOTS, Math.max(0, Math.floor(countTotal))) : 0;
+  const lit = countBeat ?? 0;
+  const Icon = armed.kind === 'repete' ? Repeat : FastForward;
+  return (
+    <div
+      data-testid="faixa-armada"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 rounded-lg"
+      style={{ backgroundColor: `${color}1f`, border: `1px solid ${color}55`, color }}
+    >
+      <Icon className="w-4 h-4 shrink-0" />
+      <span className="min-w-0 break-words text-sm sm:text-base font-bold">
+        <span className="tracking-widest">{armed.kind === 'repete' ? 'REPETE:' : 'PRÓXIMA:'}</span> {armed.label}
+      </span>
+      {total > 0 && (
+        <span
+          role="img"
+          aria-label={lit > 0 ? `Contagem ${Math.min(lit, total)} de ${total}` : `Contagem de ${total} tempos`}
+          className="flex items-center gap-1.5 shrink-0"
+        >
+          {Array.from({ length: total }, (_, i) => (
+            <span
+              key={i}
+              data-testid="bolinha-contagem"
+              data-acesa={i < lit ? 'true' : 'false'}
+              className="w-2.5 h-2.5 rounded-full"
+              style={i < lit ? { backgroundColor: color } : { border: `1px solid ${color}88` }}
+            />
+          ))}
+        </span>
+      )}
+    </div>
+  );
 }
 
 export function FollowerView({ state, isConnected, sendCommand }: FollowerViewProps) {
@@ -153,6 +197,13 @@ export function FollowerView({ state, isConnected, sendCommand }: FollowerViewPr
           </div>
         </div>
 
+        {/* Pulo armado no host (acima das seções) */}
+        {state.armed && (
+          <div className="mt-3">
+            <ArmedStrip armed={state.armed} countBeat={state.countBeat} countTotal={state.countTotal} />
+          </div>
+        )}
+
         {/* Seção atual + próxima seção */}
         <div className="flex items-center justify-between gap-3 mt-3">
           {state.currentMarker ? (
@@ -166,7 +217,8 @@ export function FollowerView({ state, isConnected, sendCommand }: FollowerViewPr
             <span className="text-zinc-600 text-sm italic">Sem seção marcada</span>
           )}
 
-          {state.nextMarkerLabel && (
+          {/* Com pulo armado a faixa acima já diz a próxima: não mostra duas. */}
+          {state.nextMarkerLabel && !state.armed && (
             <div className="flex items-center gap-2 text-zinc-500 text-sm shrink-0">
               <span className="uppercase tracking-widest text-[10px] font-semibold hidden sm:inline">Próxima</span>
               <FastForward className="w-4 h-4" />
@@ -288,6 +340,13 @@ export function FollowerView({ state, isConnected, sendCommand }: FollowerViewPr
             </h2>
             <button onClick={() => setShowSections(false)} className="p-2 text-zinc-400 hover:text-white cursor-pointer"><X className="w-5 h-5" /></button>
           </div>
+
+          {/* O overlay cobre o topo: a faixa do pulo armado aparece aqui também. */}
+          {state.armed && (
+            <div className="shrink-0 px-4 pt-3" onClick={(e) => e.stopPropagation()}>
+              <ArmedStrip armed={state.armed} countBeat={state.countBeat} countTotal={state.countTotal} />
+            </div>
+          )}
 
           {/* Estado do loop + seletor de repetições */}
           <div className="shrink-0 px-4 py-3 border-b border-white/10 flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
