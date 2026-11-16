@@ -342,12 +342,15 @@ export async function runPendingActions(
           const ofCycle = live.filter((p) => toBrtDate(p.originalDueDate) === a.due_date)
           const candidates = ofCycle.length > 0 ? ofCycle : live.filter((p) => toBrtDate(p.dueDate) === a.due_date)
           const paid = candidates.find((p) => PAID_STATUSES.has(p.status ?? ''))
-          // Q3/S1: cobrança já vencida sem pagamento, em qualquer status (removida não conta)
+          // Q3/S1: cobrança já vencida sem pagamento, em qualquer status (removida
+          // não conta; estornada também não: não é dívida, COB-FINAL)
           const unpaidPast = live.some((p) => {
             const d = toBrtDate(p.dueDate)
-            return !!d && d < today && !PAID_STATUSES.has(p.status ?? '')
+            return !!d && d < today && !PAID_STATUSES.has(p.status ?? '') && !REFUNDED_STATUSES.has(p.status ?? '')
           })
-          if (paid) {
+          // COB-S1 / COB-FINAL: com outra cobrança vencida sem pagamento nada é
+          // desfeito, nem o pago em dia: cai no ramo de baixo (corte mantido, marca e inativa).
+          if (paid && !unpaidPast) {
             const r = await rpc<EndResult>(deps.db, 'billing_payment_confirmed', {
               p_id: a.subscription_ref, p_due_date: toBrtDate(paid.originalDueDate) ?? a.due_date,
               p_paid_on: paidOn(paid), p_real_due: toBrtDate(paid.dueDate),
@@ -356,11 +359,11 @@ export async function runPendingActions(
             if (r.result === 'reactivated') { await enforceSinglePaid(deps, row?.user_id ?? null); out.done++; continue }
             if (r.result === 'already_counted') {
               // COB-R1 com a COB-S1: ciclo já contado só é corte indevido se o
-              // pagamento foi EM DIA (até o vencimento da própria cobrança) e não há
-              // cobrança vencida sem pagamento. Aí desfaz e marca, nunca inativa.
+              // pagamento foi EM DIA (até o vencimento da própria cobrança); a outra
+              // vencida sem pagamento já foi excluída acima. Aí desfaz e marca, nunca inativa.
               const paidDay = paidOn(paid)
               const onTime = !!paidDay && paidDay <= (toBrtDate(paid.dueDate) ?? a.due_date)
-              if (onTime && !unpaidPast) {
+              if (onTime) {
                 const u = await rpc<EndResult>(deps.db, 'billing_undo_counted_cut', { p_id: a.subscription_ref, p_cut_due: a.due_date })
                 if (u.result !== 'refused_late') {
                   await enforceSinglePaid(deps, row?.user_id ?? null)
@@ -368,11 +371,11 @@ export async function runPendingActions(
                   continue
                 }
               }
-              // Atraso (já contado antes desta pendência) ou outra vencida sem
-              // pagamento: regra do N1, plano até o fim do período e inativa mesmo assim.
+              // Atraso já contado antes desta pendência: regra do N1, plano até o
+              // fim daquele período e inativa mesmo assim.
               await rpc<null>(deps.db, 'billing_flag_review', {
                 p_id: a.subscription_ref,
-                p_note: `rede de seguranca: ciclo ${a.due_date} pago com atraso ou com cobranca vencida sem pagamento: sem renovacao, inativa no Asaas`,
+                p_note: `rede de seguranca: ciclo ${a.due_date} pago com atraso: sem renovacao, inativa no Asaas`,
               })
             }
             // Pago depois do vencimento: plano até o fim daquele período, mas a

@@ -761,8 +761,38 @@ describe('rodada 5: a rede só desfaz o corte com pagamento EM DIA e sem vencida
     await cron()
     expect(db.rpcCalls.some((c) => c.name === 'billing_undo_counted_cut')).toBe(false)
     expect(stopCalls()).toEqual([['/subscriptions/sub_1', { status: 'INACTIVE' }]])
+    // COB-FINAL: com outra vencida sem pagamento o corte fica (Livre), inativa e marca
+    expect(db.tables.billing_subscriptions[0]).toMatchObject({ status: 'canceled', needs_admin_review: true, access_until: '2026-11-16T06:15:00.000Z' })
+    expect(String(db.tables.billing_subscriptions[0].admin_note)).toContain('corte mantido, ha cobranca vencida sem pagamento')
+    expect(db.tables.profiles[0].plan).toBe('free')
+  })
+
+  it('COB-FINAL (B1): ciclo pago em dia e ainda não contado, com o ciclo seguinte já vencido: não reativa, inativa e marca', async () => {
+    // a pendência da rede atrasou um mês: o ciclo cortado (14/10) foi pago em dia e o aviso se perdeu; o de 14/11 venceu sem pagamento
+    Object.assign(db.tables.billing_subscriptions[0], { last_paid_due_date: '2026-09-14', next_due_date: '2026-10-14' })
+    Object.assign(db.tables.billing_pending_actions[0], { due_date: '2026-10-14', asaas_payment_id: 'p_out' })
+    asaas!.get.mockResolvedValue({ data: [
+      payment({ id: 'p_out', subscription: 'sub_1', dueDate: '2026-10-14', originalDueDate: '2026-10-14', confirmedDate: '2026-10-14', status: 'CONFIRMED' }),
+      payment({ id: 'p_nov', subscription: 'sub_1', dueDate: '2026-11-14', originalDueDate: '2026-11-14', confirmedDate: null, status: 'OVERDUE' }),
+    ], hasMore: false })
+    await cron()
+    expect(db.rpcCalls.some((c) => c.name === 'billing_payment_confirmed')).toBe(false)
+    expect(stopCalls()).toEqual([['/subscriptions/sub_1', { status: 'INACTIVE' }]])
     expect(db.tables.billing_subscriptions[0]).toMatchObject({ status: 'canceled', needs_admin_review: true })
-    expect(String(db.tables.billing_subscriptions[0].admin_note)).toContain('sem renovacao')
+    expect(String(db.tables.billing_subscriptions[0].admin_note)).toContain('corte mantido, ha cobranca vencida sem pagamento')
+    expect(db.tables.profiles[0].plan).toBe('free')
+  })
+
+  it('COB-FINAL (T2): cobrança antiga estornada não é dívida: não corta nem inativa quem paga', async () => {
+    // o ciclo cortado (14/11) foi pago em dia e o aviso se perdeu; uma cobrança antiga foi estornada à mão
+    asaas!.get.mockResolvedValue({ data: [
+      payment({ id: 'p_estornada', subscription: 'sub_1', dueDate: '2026-09-14', originalDueDate: '2026-09-14', confirmedDate: '2026-09-14', status: 'REFUNDED' }),
+      payment({ id: 'p_x', subscription: 'sub_1', dueDate: '2026-11-14', originalDueDate: '2026-11-14', confirmedDate: '2026-11-14', status: 'CONFIRMED' }),
+    ], hasMore: false })
+    await cron()
+    expect(stopCalls()).toEqual([])
+    expect(db.tables.billing_subscriptions[0]).toMatchObject({ status: 'active' })
+    expect(db.tables.profiles[0].plan).toBe('essencial_mensal')
   })
 
   it('S2: cobrança de um ciclo antigo adiada pra data do ciclo cortado não faz desfazer: vale a do ciclo pelo vencimento original', async () => {
