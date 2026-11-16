@@ -107,7 +107,8 @@ Confirmado por prints do produto em produção (2026-07-08):
 
 ## 6. Histórico de mudanças (para saber o que foi feito sem rodar tudo)
 
-### 2026-11-16: Ajustes da troca de tom [v1.4.16] (NÃO publicado ainda)
+### 2026-11-16: Ajustes da troca de tom [v1.4.16]
+**Publicado:** v1.4.16 em 2026-11-16 (site + Mac + Windows), autorizado pelo dono.
 Rodada de ajustes pedida pela revisão do hotfix da v1.4.14 (`.superpowers/sdd/hotfix-tom-review.md`). Feita no branch `fix/tom-v1.4.15` a partir da v1.4.14, um commit por item, e reaplicada sobre a Parte 1 (`b53a95c`, a v1.4.15) no branch `fix/tom-v1.4.16`: mesmas mensagens com hash novo, mais os commits `[juncao-tom]` do encaixe.
 1. **Faixa mono transposta no mesmo volume do tom original:** ao trocar o tom, toda faixa mono subia uns 6 dB com o autoPan (a banda ficava mais alta que o click no fone e subia no PA) e uns 3 dB no centro. Agora o nível fica igual ao do tom original (medido: 0,07 dB de diferença, o próprio erro do processamento de tom). Faixa estéreo não mudou.
 2. **Loop, salto de seção e seek tocando sem o tropeço de 40 ms:** a v1.4.14 colocava 40 ms de silêncio em todo reinício com a música tocando, inclusive no tom original. Agora a folga é de 2 blocos de áudio (5,3 ms; na v1.4.9 era zero), sem nenhuma espera quando o processamento de tom já está pronto, e as faixas continuam começando juntas. Transposto, o seek soma só a latência do tom, que já era compensada (120 ms). Se o aparelho travar bem na hora do reinício, o player refaz o agendamento com a folga antiga em vez de deixar faixas separadas (raro: 1 vez em cerca de 300 inícios de música nos testes). O loop que volta exatamente no fim da seção, sem depender da tela, fica pra depois.
