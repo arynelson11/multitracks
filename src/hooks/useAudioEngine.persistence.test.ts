@@ -34,6 +34,8 @@ const mem = vi.hoisted(() => ({
   ctx: null as { currentTime: number } | null,
   // Segura a leitura do repertório até o teste liberar (ver openApp).
   metaGate: null as Promise<void> | null,
+  // Segura o nascimento do worklet de tom (play pendente) até o teste liberar.
+  pitchGate: null as Promise<void> | null,
   sources: [] as FakeSource[],
   pitchNodes: [] as FakePitchNode[],
 }))
@@ -57,6 +59,7 @@ vi.mock('idb-keyval', () => ({
 vi.mock('tone', () => ({ setContext: () => {} }))
 vi.mock('signalsmith-stretch', () => ({
   default: async () => {
+    if (mem.pitchGate) await mem.pitchGate
     const node = {
       active: false, starts: 0, stops: 0, connectedTo: null as unknown,
       connect(dest: unknown) { node.connectedTo = dest },
@@ -139,6 +142,7 @@ beforeEach(() => {
   mem.sources.length = 0
   mem.pitchNodes.length = 0
   mem.metaGate = null
+  mem.pitchGate = null
   mem.settings.autoPan = true
   vi.stubGlobal('AudioContext', FakeAudioContext)
   vi.stubGlobal('requestAnimationFrame', () => 0)
@@ -377,6 +381,37 @@ describe('setChannelMeta', () => {
     expect(mem.pitchNodes).toHaveLength(2)
     expect(sourceOf('a').dest).toBe(nodeC)
     expect(sourceOf('c').dest).toMatchObject({ delayTime: { value: PITCH_LATENCY }, connectedTo: channel(result, 'c').pannerNode })
+  })
+
+  it('papel trocado com um play pendente retoma do ponto certo e o play antigo não agenda nada', async () => {
+    seed({ ...v1, pitch: 0 })
+    const { result } = await openApp()
+    await act(async () => { await result.current.play() })
+
+    // Tocando no tom 0, aos 10 s o tom vai pra +2: o play() novo fica esperando os
+    // worklets nascerem (pendente) e nada está tocando.
+    mem.ctx!.currentTime = 10
+    let releaseWorklets!: () => void
+    mem.pitchGate = new Promise<void>((resolve) => { releaseWorklets = resolve })
+    mem.sources.length = 0
+    act(() => { result.current.changePitch(2) })
+    expect(mem.sources).toHaveLength(0)
+
+    // Nesse meio tempo a guitarra vira Guia: reinicia curto, do mesmo ponto.
+    await act(async () => { result.current.setChannelMeta('c', { role: 'guide' }) })
+    await act(async () => {
+      releaseWorklets()
+      for (let i = 0; i < 10; i++) await Promise.resolve()
+    })
+
+    expect(result.current.isPlaying).toBe(true)
+    // Só uma leva de fontes (o play antigo desistiu), todas do ponto da troca de tom.
+    expect(mem.sources).toHaveLength(3)
+    for (const s of mem.sources) expect(s.offset).toBeCloseTo(10 - START_LEAD, 6)
+    // A Guia nova não passa pelo worklet; o baixo sim.
+    const sourceOf = (id: string) => mem.sources[ids(result, 's1').indexOf(id)]
+    expect(mem.pitchNodes.some((n) => sourceOf('c').dest === n)).toBe(false)
+    expect(mem.pitchNodes.some((n) => sourceOf('b').dest === n)).toBe(true)
   })
 
   it('no tom 0, trocar o papel tocando não reinicia o áudio', async () => {

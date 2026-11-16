@@ -1603,12 +1603,6 @@ export function useAudioEngine(userId?: string) {
         updatePlaylistAndSave(newPlaylist);
     }, [playlist, activeSongIndex, activeSong]);
 
-    // Posição do playhead tocando agora (mesma conta do updateTime), dentro da música.
-    const playheadNow = useCallback((ctx: AudioContext) => {
-        const elapsed = (ctx.currentTime - startTimeRef.current) * timeStretch + pausedAtRef.current;
-        return Math.min(Math.max(elapsed, 0), duration || elapsed);
-    }, [timeStretch, duration]);
-
     const changePitch = useCallback((newPitch: number) => {
         if (!activeSong) return;
 
@@ -1653,18 +1647,24 @@ export function useAudioEngine(userId?: string) {
     // Papel trocado tocando com tom diferente de 0 (setChannelMeta): o canal entra
     // ou sai da troca de tom, o que muda o roteamento. O reinício roda aqui, depois
     // do render, porque o play precisa enxergar a lista nova de canais; chamado
-    // dentro do setChannelMeta, ele tocaria a lista antiga.
+    // dentro do setChannelMeta, ele tocaria a lista antiga. A posição vem do
+    // getPlaybackPosition (com um play ainda pendente, é a de onde ele ia retomar;
+    // a conta direta somava o tempo do play anterior e a música pulava pra frente)
+    // e o play() novo pega outro número em playGenRef: um play antigo que ainda
+    // esperava o worklet nascer desiste sem agendar fontes.
     useEffect(() => {
         if (!restartAfterMetaRef.current) return;
         restartAfterMetaRef.current = false;
         const ctx = audioCtxRef.current;
         if (!isPlaying || !ctx) return;
-        pausedAtRef.current = playheadNow(ctx);
+        const elapsed = getPlaybackPosition(ctx);
+        pausedAtRef.current = Math.min(Math.max(elapsed, 0), duration || elapsed);
         stopAllNodes();
-        // Canal que virou Click ou Guia toca sem a engine de tom: nenhum worklet sobrando.
+        // Canal que virou Click ou Guia toca sem a engine de tom: o worklet dele para
+        // e volta pra reserva (por id), pro próximo canal que precisar.
         channels.forEach(ch => { if (isPitchExempt(ch)) releasePitchNode(ch.id); });
         void play();
-    }, [channels, isPlaying, play, stopAllNodes, playheadNow]);
+    }, [channels, isPlaying, play, stopAllNodes, duration, timeStretch]);
 
     // Clear Session
     const clearSession = async () => {
