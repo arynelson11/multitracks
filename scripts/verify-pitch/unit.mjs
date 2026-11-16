@@ -54,6 +54,12 @@ if (formant) {
   check(5, '"VozGuia" marcada Normal com formantes', formant('VozGuia', false), true);
   check(5, '"Vocal" marcado Guia sem formantes', formant('Vocal', true), false);
   check(5, '"Bateria" marcada Normal sem formantes', formant('Bateria', false), false);
+  // Rodada 1, item 7: "lead" só é voz sem nome de instrumento; VOC e BGV são voz.
+  for (const n of ['Lead', 'LEAD', 'Lead 2', 'Lead Vocal', 'Lead Vox', 'VOC', 'Voc 1', 'voc', 'BGV', 'bgv 2', 'BGVs'])
+    check('R1-7', `"${n}" com formantes`, formant(n), true);
+  for (const n of ['Lead Guitar', 'Guitarra Lead', 'Lead Gtr', 'GTR Lead', 'Lead Guit', 'Synth Lead', 'Lead Synth', 'Lead Key', 'Lead Keys',
+    'Keys Lead', 'Piano Lead', 'Lead Bass', 'Baixo Lead'])
+    check('R1-7', `"${n}" sem formantes`, formant(n), false);
 }
 
 console.log('\n== item 6: tom em qualquer formato, nunca NaN ==');
