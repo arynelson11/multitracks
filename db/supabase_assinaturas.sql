@@ -2,7 +2,8 @@
 -- ║  Assinaturas: cancelamento, inadimplência, estorno, cortesia, pendências  ║
 -- ║  com o Asaas, job diário e histórico completo de pagamentos.              ║
 -- ║  Rodar UMA vez no Supabase > SQL Editor, DEPOIS de                         ║
--- ║  db/supabase_cota_mensal.sql e ANTES do merge/deploy do código.           ║
+-- ║  db/supabase_admin_papel.sql e de db/supabase_cota_mensal.sql, e ANTES    ║
+-- ║  do merge/deploy do código.                                               ║
 -- ║  Idempotente: rodar de novo não muda nada.                                ║
 -- ║  Liga a extensão pg_cron e agenda o job diário (OBRIGATÓRIO).             ║
 -- ╚══════════════════════════════════════════════════════════════════════╝
@@ -1264,7 +1265,8 @@ begin
 end;
 $$;
 
--- ─── 19. Biblioteca em nuvem respeita o fim do plano ────────────────────────
+-- ─── 19. Biblioteca em nuvem respeita o fim do plano e o bloqueio ───────────
+-- Admin pelo papel profiles.is_admin (db/supabase_admin_papel.sql), não pelo e-mail.
 create or replace function public.user_has_cloud_library()
 returns boolean
 language sql
@@ -1272,15 +1274,11 @@ security definer
 set search_path = public, pg_temp
 stable
 as $$
-  select
-    coalesce(
-      (select p.plan in ('essencial_mensal', 'essencial_anual', 'pro_mensal', 'pro_anual')
-              and (p.plan_expires_at is null or p.plan_expires_at > now())
-         from public.profiles p
-        where p.id = auth.uid()),
-      false
-    )
-    or coalesce(auth.jwt() ->> 'email', '') = 'arynelson11@gmail.com';
+  select coalesce((select p.plan in ('essencial_mensal','essencial_anual','pro_mensal','pro_anual')
+                          and (p.plan_expires_at is null or p.plan_expires_at > now())
+                          and p.blocked_at is null
+                     from public.profiles p where p.id = auth.uid()), false)
+         or public.is_admin();
 $$;
 revoke execute on function public.user_has_cloud_library() from public, anon;
 grant  execute on function public.user_has_cloud_library() to authenticated;

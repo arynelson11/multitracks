@@ -1,3 +1,4 @@
+-- SUPERADO: as regras de admin deste arquivo foram trocadas pelo papel profiles.is_admin (db/supabase_admin_papel.sql). Não rodar de novo.
 -- ============================================
 -- 🔒 SECURITY HARDENING (C2): Habilitar RLS em songs e stems
 -- ============================================
