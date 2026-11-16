@@ -14,7 +14,7 @@ interface Row {
   revenueBRL: number; revenueExact: boolean; totalPaid: number; costUSD: number; marginBRL: number;
 }
 
-export function UsersTab() {
+export function SubscribersTab() {
   const { stats, loading, error, refetch } = useAdminUsers();
   const { stats: ai } = useAiCostStats();
   const [q, setQ] = useState('');
@@ -63,7 +63,7 @@ export function UsersTab() {
       <span title={r.revenueExact ? 'Valor exato (pagamento registrado)' : 'Aproximado pelo plano atual'}>
         {fmtBRL(r.revenueBRL)}{r.revenueExact ? '' : ' ~'}
       </span>) },
-    { key: 'ltv', header: 'Total pago', className: 'w-20 text-right text-[10px] text-accent-green/70 font-mono hidden sm:block', render: r => r.totalPaid > 0 ? fmtBRL(r.totalPaid) : '—' },
+    { key: 'ltv', header: 'Total pago', className: 'w-20 text-right text-[10px] text-accent-green/70 font-mono hidden sm:block', render: r => r.totalPaid > 0 ? fmtBRL(r.totalPaid) : 'sem dado' },
     { key: 'cost', header: 'Custa IA', className: 'w-20 text-right text-[10px] text-cyan-400 font-mono', render: r => fmtUSD(r.costUSD) },
     { key: 'margin', header: 'Margem/mês', className: 'w-24 text-right text-[10px] font-mono font-bold', render: r => (
       <span className={r.marginBRL < 0 ? 'text-accent-red' : 'text-accent-green'}>{fmtBRL(r.marginBRL)}</span>) },
@@ -75,10 +75,10 @@ export function UsersTab() {
       {error && <div className="p-3 bg-accent-red/10 border border-accent-red/20 rounded-lg text-accent-red text-xs font-mono">{error}</div>}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard icon={Users}     label="Total"       value={stats?.totalUsers ?? '—'} color="#FF6B35" iconBg="#FF6B3510" />
-        <StatCard icon={UserCheck} label="Ativos 30d"  value={stats?.activeUsers ?? '—'} color="#10b981" iconBg="#10b98110" />
-        <StatCard icon={UserX}     label="Inativos"    value={stats?.inactiveUsers ?? '—'} color="#ef4444" iconBg="#ef444410" />
-        <StatCard icon={Users}     label="Pagantes"    value={stats?.paidSubscribers ?? '—'} subtext={`${stats?.newUsers30d ?? 0} novos 30d`} color="#8b5cf6" iconBg="#8b5cf610" />
+        <StatCard icon={Users}     label="Total"       value={stats?.totalUsers ?? 'sem dado'} color="#FF6B35" iconBg="#FF6B3510" />
+        <StatCard icon={UserCheck} label="Ativos 30d"  value={stats?.activeUsers ?? 'sem dado'} color="#10b981" iconBg="#10b98110" />
+        <StatCard icon={UserX}     label="Inativos"    value={stats?.inactiveUsers ?? 'sem dado'} color="#ef4444" iconBg="#ef444410" />
+        <StatCard icon={Users}     label="Pagantes"    value={stats?.paidSubscribers ?? 'sem dado'} subtext={`${stats?.newUsers30d ?? 0} novos 30d`} color="#8b5cf6" iconBg="#8b5cf610" />
       </div>
 
       <div className="flex items-center gap-2">

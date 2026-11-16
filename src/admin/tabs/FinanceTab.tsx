@@ -35,10 +35,10 @@ export function FinanceTab() {
       {error && <div className="p-3 bg-accent-red/10 border border-accent-red/20 rounded-lg text-accent-red text-xs font-mono">{error}</div>}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard icon={TrendingUp} label="Receita total" value={stats ? fmtBRL(stats.totalRevenueBRL) : '—'} subtext={stats ? `${stats.paidCount} pagos` : ''} color="#10b981" iconBg="#10b98110" />
-        <StatCard icon={DollarSign} label="MRR"           value={stats ? fmtBRL(stats.mrrBRL) : '—'} color="#FF6B35" iconBg="#FF6B3510" />
-        <StatCard icon={Activity}   label="Assinaturas"   value={stats?.activeSubscriptions ?? '—'} subtext={stats ? `${stats.totalSubscriptions} total` : ''} color="#8b5cf6" iconBg="#8b5cf610" />
-        <StatCard icon={TrendingUp} label="Checkouts"     value={stats?.totalCheckouts ?? '—'} color="#06b6d4" iconBg="#06b6d410" />
+        <StatCard icon={TrendingUp} label="Receita total" value={stats ? fmtBRL(stats.totalRevenueBRL) : 'sem dado'} subtext={stats ? `${stats.paidCount} pagos` : ''} color="#10b981" iconBg="#10b98110" />
+        <StatCard icon={DollarSign} label="MRR"           value={stats ? fmtBRL(stats.mrrBRL) : 'sem dado'} color="#FF6B35" iconBg="#FF6B3510" />
+        <StatCard icon={Activity}   label="Assinaturas"   value={stats?.activeSubscriptions ?? 'sem dado'} subtext={stats ? `${stats.totalSubscriptions} total` : ''} color="#8b5cf6" iconBg="#8b5cf610" />
+        <StatCard icon={TrendingUp} label="Checkouts"     value={stats?.totalCheckouts ?? 'sem dado'} color="#06b6d4" iconBg="#06b6d410" />
       </div>
 
       <div className="space-y-2">

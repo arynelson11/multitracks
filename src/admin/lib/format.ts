@@ -12,10 +12,10 @@ export function fmtTime(seconds: number): string {
   return r > 0 ? `${m}m ${r}s` : `${m}m`;
 }
 export function fmtDate(iso: string | null): string {
-  if (!iso) return '—';
+  if (!iso) return 'sem dado';
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 export function fmtShortDate(iso: string | null): string {
-  if (!iso) return '—';
+  if (!iso) return 'sem dado';
   return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
 }

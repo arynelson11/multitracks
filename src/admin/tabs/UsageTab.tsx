@@ -36,8 +36,8 @@ export function UsageTab() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <StatCard icon={Activity} label="Separações totais" value={stats?.totalSeparations ?? '—'} color="#FF6B35" iconBg="#FF6B3510" />
-        <StatCard icon={Zap}      label="Taxa de sucesso"   value={ai && ai.total > 0 ? `${Math.round((ai.succeeded / ai.total) * 100)}%` : '—'} subtext={ai ? `${ai.failed} erros` : ''} color="#10b981" iconBg="#10b98110" />
+        <StatCard icon={Activity} label="Separações totais" value={stats?.totalSeparations ?? 'sem dado'} color="#FF6B35" iconBg="#FF6B3510" />
+        <StatCard icon={Zap}      label="Taxa de sucesso"   value={ai && ai.total > 0 ? `${Math.round((ai.succeeded / ai.total) * 100)}%` : 'sem dado'} subtext={ai ? `${ai.failed} erros` : ''} color="#10b981" iconBg="#10b98110" />
         <StatCard icon={UserX}    label="Pagantes sumidos"  value={churned.length} subtext="risco de churn" color="#ef4444" iconBg="#ef444410" />
       </div>
 

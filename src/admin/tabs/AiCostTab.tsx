@@ -32,9 +32,9 @@ export function AiCostTab() {
       {error && <div className="p-3 bg-accent-red/10 border border-accent-red/20 rounded-lg text-accent-red text-xs font-mono">{error}</div>}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard icon={TrendingUp} label="Gasto 30d"   value={stats ? fmtUSD(stats.recentCostUSD) : '—'} subtext={stats ? `${stats.recentTotal} runs` : ''} color="#ef4444" iconBg="#ef444410" />
-        <StatCard icon={Clock}      label="Gasto total" value={stats ? fmtUSD(stats.totalCostUSD) : '—'} subtext={stats ? `${stats.total} runs` : ''} color="#f59e0b" iconBg="#f59e0b10" />
-        <StatCard icon={Activity}   label="Sucesso"      value={stats && stats.total > 0 ? `${Math.round((stats.succeeded / stats.total) * 100)}%` : '—'} subtext={stats ? `${stats.failed} erros` : ''} color="#10b981" iconBg="#10b98110" />
+        <StatCard icon={TrendingUp} label="Gasto 30d"   value={stats ? fmtUSD(stats.recentCostUSD) : 'sem dado'} subtext={stats ? `${stats.recentTotal} runs` : ''} color="#ef4444" iconBg="#ef444410" />
+        <StatCard icon={Clock}      label="Gasto total" value={stats ? fmtUSD(stats.totalCostUSD) : 'sem dado'} subtext={stats ? `${stats.total} runs` : ''} color="#f59e0b" iconBg="#f59e0b10" />
+        <StatCard icon={Activity}   label="Sucesso"      value={stats && stats.total > 0 ? `${Math.round((stats.succeeded / stats.total) * 100)}%` : 'sem dado'} subtext={stats ? `${stats.failed} erros` : ''} color="#10b981" iconBg="#10b98110" />
         <StatCard icon={Cpu}        label="Custo/sep."   value={fmtUSD(avgPerRun)} color="#06b6d4" iconBg="#06b6d410" />
       </div>
 
@@ -51,8 +51,8 @@ export function AiCostTab() {
           columns={[
             { key: 'id', header: 'ID', className: 'flex-1 text-[10px] text-text-muted font-mono truncate', render: r => r.id },
             { key: 'status', header: 'Status', className: 'w-16 text-center text-[9px] font-bold', render: r => <span className={r.status === 'succeeded' ? 'text-accent-green' : r.status === 'failed' ? 'text-accent-red' : 'text-text-muted'}>{r.status === 'succeeded' ? 'ok' : r.status === 'failed' ? 'erro' : r.status}</span> },
-            { key: 'time', header: 'Tempo', className: 'w-16 text-right text-[10px] text-text-muted font-mono hidden sm:block', render: r => r.predict_time != null ? fmtTime(r.predict_time) : '—' },
-            { key: 'cost', header: 'Custo', className: 'w-20 text-right text-[10px] text-cyan-400 font-mono hidden sm:block', render: r => r.estimated_cost > 0 ? fmtUSD(r.estimated_cost) : '—' },
+            { key: 'time', header: 'Tempo', className: 'w-16 text-right text-[10px] text-text-muted font-mono hidden sm:block', render: r => r.predict_time != null ? fmtTime(r.predict_time) : 'sem dado' },
+            { key: 'cost', header: 'Custo', className: 'w-20 text-right text-[10px] text-cyan-400 font-mono hidden sm:block', render: r => r.estimated_cost > 0 ? fmtUSD(r.estimated_cost) : 'sem dado' },
             { key: 'date', header: 'Data', className: 'w-16 text-right text-[10px] text-text-muted font-mono hidden md:block', render: r => fmtShortDate(r.created_at) },
           ]}
           rows={stats?.recentList ?? []} empty="Sem separações" />
