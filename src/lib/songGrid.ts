@@ -63,7 +63,7 @@ export function snapToBar(t: number, g: SongGrid | null): number {
 
 // ---------- Seções ----------
 
-interface SpanEntry { span: SectionSpan; markerId: string }
+interface SpanEntry { span: SectionSpan; markerId: string | null }
 
 /**
  * Trechos das seções com a marca de cada um. Regras além do plano, pra nenhum trecho sair do
@@ -73,8 +73,9 @@ interface SpanEntry { span: SectionSpan; markerId: string }
  */
 function spanEntries(markers: readonly Marker[], duration: number, grid: SongGrid | null): SpanEntry[] {
   if (!Number.isFinite(duration) || duration <= 0) return []
+  // As marcas da nuvem chegam sem limpeza (any[]): item nulo ou sem tempo numérico fica de fora.
   const valid = markers
-    .filter((m) => Number.isFinite(m.time) && m.time >= 0 && m.time < duration)
+    .filter((m) => m != null && Number.isFinite(m.time) && m.time >= 0 && m.time < duration)
     .sort((a, b) => a.time - b.time)
   if (valid.length === 0) return []
   const starts = valid.map((m) => {
@@ -88,7 +89,7 @@ function spanEntries(markers: readonly Marker[], duration: number, grid: SongGri
   valid.forEach((m, i) => {
     const start = starts[i]
     const end = i + 1 < starts.length ? starts[i + 1] : lastEnd
-    if (end - start > EPS) out.push({ span: { index: out.length, start, end }, markerId: m.id })
+    if (end - start > EPS) out.push({ span: { index: out.length, start, end }, markerId: typeof m.id === 'string' ? m.id : null })
   })
   return out
 }

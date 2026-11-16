@@ -93,6 +93,15 @@ describe('seções', () => {
     expect(sectionSpans(m, 30, null)).toEqual([{ index: 0, start: 2, end: 10 }, { index: 1, start: 10, end: 30 }])
     expect(m.map((x) => x.id)).toEqual(['b', 'neg', 'fim', 'a'])
   })
+  it('marcas da nuvem sem limpeza: item nulo, vazio ou sem tempo numérico é ignorado, nunca lança', () => {
+    const sujas = [null, {}, { time: 'x' }, { time: 10 }] as unknown as Marker[]
+    expect(() => sectionSpans(sujas, 30, g)).not.toThrow()
+    expect(sectionSpans(sujas, 30, null)).toEqual([{ index: 0, start: 10, end: 30 }])
+    expect(markerIdForSpan(sujas, 30, null, 0)).toBeNull() // a marca não tem id
+    const comVazio = [undefined, ...sujas, { id: 'ok', time: 20 }] as unknown as Marker[]
+    expect(() => markerIdForSpan(comVazio, 30, g, 1)).not.toThrow()
+    expect(markerIdForSpan(comVazio, 30, null, 1)).toBe('ok')
+  })
   it('índice fora da lista não acha marca', () => {
     const m = [mk('a', 0), mk('b', 8.2)]
     for (const i of [-1, 2, 0.5, NaN]) expect(markerIdForSpan(m, 20, g, i)).toBeNull()
