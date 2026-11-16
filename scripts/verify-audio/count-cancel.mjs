@@ -2,7 +2,7 @@
 // Verificação no Chrome real: cancelar a contagem com um bipe soando não pode dar degrau.
 // Empacota o src/audio/countTones.ts de verdade (esbuild, o que já vem com o Vite), renderiza
 // o bipe num OfflineAudioContext do Chrome headless e cancela em cada quantum de 128 amostras
-// ao longo do bipe (81 instantes a 48 kHz), no acento e no tempo comum, a 48 e a 44,1 kHz, com
+// ao longo do bipe, do ataque à parada (82 instantes a 48 kHz), no acento e no tempo comum, a 48 e a 44,1 kHz, com
 // e sem cancelAndHoldAtTime (o Firefox não tem). Critério: em nenhum instante o envelope muda
 // mais que 0,01 de uma amostra pra outra, e depois da janela do cancel a saída é silêncio.
 // Existe porque o fake dos testes não segue a especificação do cancelAndHoldAtTime (T7, rodada 2).

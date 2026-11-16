@@ -58,7 +58,7 @@ async function withoutCancelAndHold(fn) {
 async function sweep(sr, label) {
   const baseline = await render({ sr, label, cancelAt: null })
   const instants = []
-  for (let k = Math.ceil((AT * sr) / QUANTUM) + 1; (k * QUANTUM) / sr < AT + BEEP_LEN; k++) {
+  for (let k = Math.ceil((AT * sr) / QUANTUM); (k * QUANTUM) / sr < AT + BEEP_LEN; k++) {
     instants.push(await render({ sr, label, cancelAt: (k * QUANTUM) / sr }))
   }
   return { baseline, instants }
