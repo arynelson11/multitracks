@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChannelRole } from '../types'
 import type { OutputPlan, OutputSettings } from './stageContracts'
-import { DEFAULT_OUTPUTS, OUTPUT_WARNING_TEXT, effectivePan, migrateOutputs, multiChoices, outputSummary, planOutputs, sanitizeOutputs } from './outputPlan'
+import { DEFAULT_OUTPUTS, OUTPUTS_MIGRATED_KEY, OUTPUTS_MIGRATED_VALUE, OUTPUT_WARNING_TEXT, effectivePan, migrateOutputs, multiChoices, outputSummary, planOutputs, sanitizeOutputs } from './outputPlan'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
 const PROIBIDAS = ['next', 'play', 'cancel', 'start', 'repeat', 'section', 'edit', 'settings', 'upgrade']
@@ -244,6 +244,55 @@ describe('migrateOutputs', () => {
     m.outputs.mode = 'stereo'
     expect(DEFAULT_OUTPUTS).toEqual({ mode: 'split2', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } })
     expect(migrateOutputs({ autoPan: false }).outputs.multi).not.toBe(DEFAULT_OUTPUTS.multi)
+  })
+})
+
+describe('depois da migração (Ruling T6-1)', () => {
+  // Os 6 valores estragados da sonda da revisão.
+  const ESTRAGADOS: unknown[] = [undefined, null, '{', {}, { mode: 'SPLIT2' }, { mode: null, earOnSecond: true }]
+
+  it('marcador numa chave própria do aparelho, fora das configurações', () => {
+    expect(OUTPUTS_MIGRATED_KEY).toBe('mt_outputs_migrated')
+    expect(OUTPUTS_MIGRATED_KEY).not.toBe('mt_app_settings')
+    expect(OUTPUTS_MIGRATED_VALUE).toBe('1')
+  })
+
+  it('com o marcador, modo ilegível vira Click e Guia separados, nunca tudo junto, e não zera pan nenhum', () => {
+    for (const outputs of ESTRAGADOS) for (const autoPan of [false, true, undefined, 'x']) {
+      const m = migrateOutputs({ autoPan, outputs, outputsMigrated: true })
+      expect(m.outputs.mode).toBe('split2')
+      expect(m.resetLegacyPans).toBe(false)
+      expect(m.autoPan).toBe(autoPan === true)
+    }
+    expect(migrateOutputs({ autoPan: false, outputs: { mode: null, earOnSecond: true }, outputsMigrated: true }).outputs).toEqual({ ...DEFAULT_OUTPUTS, earOnSecond: true })
+  })
+
+  it('com o marcador, guarda o lado e o mapa quando dá pra ler', () => {
+    expect(migrateOutputs({ outputs: { mode: 'quatro', earOnSecond: true, multi: { vsPair: 4, click: 0, guide: '1' } }, outputsMigrated: true }).outputs)
+      .toEqual({ mode: 'split2', earOnSecond: true, multi: { vsPair: 4, click: 0, guide: 1 } })
+  })
+
+  it('com o marcador, saídas gravadas e válidas continuam como estão (tudo junto também)', () => {
+    expect(migrateOutputs({ autoPan: true, outputs: STEREO, outputsMigrated: true })).toMatchObject({ outputs: STEREO, autoPan: true, resetLegacyPans: false })
+    expect(migrateOutputs({ autoPan: false, outputs: multi(4, 0, 1), outputsMigrated: true })).toMatchObject({ outputs: multi(4, 0, 1), resetLegacyPans: false })
+  })
+
+  it('só true conta como marcador', () => {
+    for (const outputsMigrated of ['true', '1', 1, {}, null, false]) {
+      expect(migrateOutputs({ autoPan: false, outputs: undefined, outputsMigrated })).toMatchObject({ outputs: STEREO, resetLegacyPans: false })
+      expect(migrateOutputs({ autoPan: true, outputsMigrated })).toMatchObject({ outputs: DEFAULT_OUTPUTS, autoPan: false, resetLegacyPans: true })
+    }
+  })
+
+  it('sanitizeOutputs com migrated nunca é nulo e o modo ilegível vira separados', () => {
+    for (const raw of [...ESTRAGADOS, 'split2', 2, [], { mode: 'mono' }]) {
+      const out = sanitizeOutputs(raw, { migrated: true })
+      expect(out).not.toBeNull()
+      expect(out.mode).toBe('split2')
+      expect(sanitizeOutputs(raw)).toBeNull()
+      expect(sanitizeOutputs(raw, { migrated: 'true' as unknown as boolean })).toBeNull()
+    }
+    expect(sanitizeOutputs(STEREO, { migrated: true })).toEqual(STEREO)
   })
 })
 

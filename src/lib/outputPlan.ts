@@ -132,28 +132,46 @@ export function effectivePan(pan: number, role: ChannelRole, plan: OutputPlan): 
 }
 
 /**
- * Configuração de saídas lida do aparelho. Nulo sem um modo conhecido. Com o modo certo e o
- * resto estragado, guarda o modo (é a escolha que importa pra não mandar click pra PA) e
- * completa com o padrão: lado do ouvido na saída 1 e, se o mapa de "4 ou mais" não vale em
- * placa nenhuma, o mapa padrão. Um mapa escolhido numa placa maior fica guardado mesmo que
- * não caiba na de agora: quem decide na hora é o `planOutputs`.
+ * Chave própria do aparelho (localStorage, fora de `mt_app_settings`) com o marcador "já
+ * migrado" (Ruling T6-1). A T25 grava `OUTPUTS_MIGRATED_VALUE` nela na primeira carga e passa
+ * `outputsMigrated: localStorage.getItem(OUTPUTS_MIGRATED_KEY) === OUTPUTS_MIGRATED_VALUE`.
+ * Chave própria pra um `mt_app_settings` que não abre não disparar um segundo reset de pans.
  */
-export function sanitizeOutputs(raw: unknown): OutputSettings | null {
-  if (!isRecord(raw) || !MODES.includes(raw.mode as OutputMode)) return null
-  const m = resolveMap(readMap(raw.multi), MAX_OUTPUTS)
+export const OUTPUTS_MIGRATED_KEY = 'mt_outputs_migrated'
+export const OUTPUTS_MIGRATED_VALUE = '1'
+
+/**
+ * Configuração de saídas lida do aparelho. Sem um modo conhecido é nula, a não ser depois da
+ * migração (`migrated: true`): aí vira "Click e Guia separados", nunca "Tudo junto" (Ruling
+ * T6-1), porque o modo ilegível não pode mandar click pra PA. Com o modo certo e o resto
+ * estragado, guarda o modo e completa: lado do ouvido na saída 1; mapa de "4 ou mais"
+ * corrigido campo a campo (texto de select vira número; Click e Guia nunca no par da VS).
+ * Um mapa escolhido numa placa maior fica guardado mesmo que não caiba na de agora: quem
+ * decide na hora é o `planOutputs`.
+ */
+export function sanitizeOutputs(raw: unknown, opts: { migrated: true }): OutputSettings
+export function sanitizeOutputs(raw: unknown, opts?: { migrated?: boolean }): OutputSettings | null
+export function sanitizeOutputs(raw: unknown, opts: { migrated?: boolean } = {}): OutputSettings | null {
+  const rec = isRecord(raw) ? raw : {}
+  const known = MODES.includes(rec.mode as OutputMode)
+  if (!known && opts.migrated !== true) return null
+  const m = resolveMap(readMap(rec.multi), MAX_OUTPUTS)
   const multi: OutputMap = { vsPair: m.vsPair, click: m.click ?? DEFAULT_OUTPUTS.multi.click, guide: m.guide ?? DEFAULT_OUTPUTS.multi.guide }
-  return { mode: raw.mode as OutputMode, earOnSecond: raw.earOnSecond === true, multi }
+  return { mode: known ? (rec.mode as OutputMode) : 'split2', earOnSecond: rec.earOnSecond === true, multi }
 }
 
 /**
- * Primeira carga com o plano de saídas (R-23). Saídas já gravadas e válidas vencem, sem
- * mexer em pan nenhum (o interruptor do pan automático fica como está). Sem elas, quem tinha
- * o pan automático desligado fica em "Tudo junto"; qualquer outro valor (ligado era o padrão)
- * passa pra "Click e Guia separados", desliga o pan automático e pede pra zerar uma vez os
- * pans ±1 que ele gravou nos canais.
+ * Carga das saídas (R-23). Saídas já gravadas e válidas vencem, sem mexer em pan nenhum (o
+ * interruptor do pan automático fica como está). Com o marcador "já migrado"
+ * (`outputsMigrated`, só `true` conta) nunca zera pans nem cai em "Tudo junto": modo
+ * ilegível vira "Click e Guia separados" (Ruling T6-1). Sem marcador e sem saídas válidas é a
+ * primeira carga: quem tinha o pan automático desligado fica em "Tudo junto"; qualquer outro
+ * valor (ligado era o padrão) passa pra "Click e Guia separados", desliga o pan automático e
+ * pede pra zerar uma vez os pans ±1 que ele gravou nos canais. A T25 chama com o JSON cru do
+ * aparelho, nunca com o objeto já mesclado com os padrões.
  */
-export function migrateOutputs(stored: { autoPan?: unknown; outputs?: unknown }): { outputs: OutputSettings; autoPan: boolean; resetLegacyPans: boolean } {
-  const saved = sanitizeOutputs(stored.outputs)
+export function migrateOutputs(stored: { autoPan?: unknown; outputs?: unknown; outputsMigrated?: unknown }): { outputs: OutputSettings; autoPan: boolean; resetLegacyPans: boolean } {
+  const saved = sanitizeOutputs(stored.outputs, { migrated: stored.outputsMigrated === true })
   if (saved) return { outputs: saved, autoPan: stored.autoPan === true, resetLegacyPans: false }
   if (stored.autoPan === false) return { outputs: { ...copyOutputs(DEFAULT_OUTPUTS), mode: 'stereo' }, autoPan: false, resetLegacyPans: false }
   return { outputs: copyOutputs(DEFAULT_OUTPUTS), autoPan: false, resetLegacyPans: true }
