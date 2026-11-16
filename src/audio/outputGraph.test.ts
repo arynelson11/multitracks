@@ -410,6 +410,34 @@ describe('createOutputGraph: apply, levels e dispose', () => {
     }
   })
 
+  it('aparelho de 1 canal (Ruling T12-mono): Tudo junto e separados montam sem lançar e Click e VS saem no canal único', () => {
+    const planos = [planOutputs({ ...DEFAULT_OUTPUTS, mode: 'stereo' }, 1), planOutputs({ ...DEFAULT_OUTPUTS, mode: 'split2' }, 1), split2(), split2(true), stereo()]
+    expect(planos[0]).toMatchObject({ mode: 'stereo', channels: 1, warning: 'mono' })
+    for (const plan of planos) {
+      for (const role of ['click', 'normal'] as const) {
+        const ctx = createFakeAudioContext({ maxChannelCount: 1 })
+        let g: OutputGraph | undefined
+        expect(() => { g = createOutputGraph(asAudioContext(ctx), plan) }).not.toThrow()
+        if (!g) throw new Error('grafo não montou')
+        expect([ctx.destination.channelCount, ctx.destination.channelCountMode, ctx.destination.channelInterpretation]).toEqual([1, 'explicit', 'speakers'])
+        const out = measureChannel(ctx, channel(ctx, g.input(role), { mono: false, pan: effectivePan(0, role, plan), gain: 1 }))
+        expect(out).toHaveLength(1)
+        // O navegador junta L e R em (L + R) / 2: a faixa estéreo inteira cai no canal único,
+        // nos dois modos (em separados o pan ±1 já pôs L + R num lado só).
+        expect(out[0][0]).toBeCloseTo(0.5, 12)
+        expect(out[0][1]).toBeCloseTo(0.5, 12)
+        expect(reaches(g.countDelay, ctx.destination)).toBe(true)
+      }
+    }
+    // Trocar entre os dois no aparelho mono também não lança; só "4 ou mais" maior que o aparelho lança.
+    const ctx = createFakeAudioContext({ maxChannelCount: 1 })
+    const g = createOutputGraph(asAudioContext(ctx), planos[0])
+    expect(() => { g.apply(split2()); g.apply(stereo()); g.apply(planos[0]) }).not.toThrow()
+    expect(ctx.destination.channelCount).toBe(1)
+    expect(() => g.apply(multi(8))).toThrow(RangeError)
+    for (const role of ROLES) expect(reaches(g.input(role), ctx.destination)).toBe(true)
+  })
+
   it('apply com plano maior que o aparelho lança antes de mexer na rota', () => {
     const { ctx, g } = setup(split2(), 2)
     const created = ctx.created.length

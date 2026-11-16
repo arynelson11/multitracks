@@ -41,10 +41,12 @@ export interface OutputGraph {
   readonly plan: OutputPlan
   /**
    * Religa barramentos -> roteador -> principal com o plano novo; barramentos, panners, atraso,
-   * principal, mudo e canais ficam. Lança RangeError, SEM mexer na rota de agora, se o plano tem
-   * mais canais que o aparelho (`destination.maxChannelCount`) ou um "4 ou mais" fora de 1 a 32
+   * principal, mudo e canais ficam. Lança RangeError, SEM mexer na rota de agora, só num "4 ou
+   * mais" que pede mais canais que o aparelho (`destination.maxChannelCount`) ou fora de 1 a 32
    * saídas: refaça o plano com `planOutputs(config, destination.maxChannelCount)` e chame de
-   * novo. Depois de `dispose` não faz nada.
+   * novo. "Tudo junto" e "Click e Guia separados" nunca lançam: num aparelho de 1 canal o destino
+   * fica com 1 canal e o navegador junta tudo nele (Ruling T12-mono; o plano da T19 traz o aviso
+   * `mono`). Depois de `dispose` não faz nada.
    */
   apply(plan: OutputPlan): void
   levels(): { l: number; r: number } // pico das saídas 1 e 2 (0..1) pro medidor do PRINCIPAL
@@ -73,10 +75,15 @@ function unwire(w: Wire): void {
   try { w.from.disconnect(w.to) } catch { /* já desligado */ }
 }
 
-/** Lança RangeError se o plano não cabe no aparelho (ou no roteador). Não mexe em nada. */
+/**
+ * Lança RangeError se um "4 ou mais" não cabe no aparelho (ou no roteador). Não mexe em nada.
+ * "Tudo junto" e "Click e Guia separados" nunca lançam: num aparelho de 1 canal eles saem no
+ * canal único (Ruling T12-mono, ver `stereoChannels`).
+ */
 function checkChannels(ctx: AudioContext, p: OutputPlan): void {
-  const channels = p.mode === 'multi' ? p.channels : 2
-  if (p.mode === 'multi' && !(Number.isInteger(channels) && channels >= 1 && channels <= MAX_ROUTER_OUTPUTS)) {
+  if (p.mode !== 'multi') return
+  const channels = p.channels
+  if (!(Number.isInteger(channels) && channels >= 1 && channels <= MAX_ROUTER_OUTPUTS)) {
     throw new RangeError(`plano de "4 ou mais" com ${channels} saídas: o roteador aceita de 1 a ${MAX_ROUTER_OUTPUTS}`)
   }
   const dest = ctx.destination
@@ -85,14 +92,25 @@ function checkChannels(ctx: AudioContext, p: OutputPlan): void {
   }
 }
 
+/**
+ * Canais do destino em "Tudo junto" e em "Click e Guia separados": 2, ou o máximo do aparelho
+ * quando ele tem menos (aparelho mono, Ruling T12-mono): o destino fica com 1 canal e o próprio
+ * navegador junta L e R nele. Aparelho que não diz um número válido fica com 2, como antes.
+ */
+function stereoChannels(dest: AudioDestinationNode): number {
+  const max = dest.maxChannelCount
+  return Number.isInteger(max) && max >= 1 && max < 2 ? max : 2
+}
+
 /** Saída contada a partir de 1 pro texto do aviso (valor estranho aparece como veio). */
 const outputName = (o: number) => (Number.isInteger(o) ? String(o + 1) : String(o))
 
 /**
  * Monta os barramentos, o principal, o mudo e o medidor uma vez, e o roteador de `initial`.
  * Os barramentos nascem com ganho 1 e o atraso da contagem com 0. Lança RangeError ANTES de
- * criar qualquer nó, nas mesmas condições do `apply` (plano com mais canais que o aparelho):
- * nada fica meio montado nem ligado no destino.
+ * criar qualquer nó, nas mesmas condições do `apply` (só "4 ou mais" com mais canais que o
+ * aparelho): nada fica meio montado nem ligado no destino. Aparelho de 1 canal com "Tudo
+ * junto" ou separados monta normalmente, no canal único.
  */
 export function createOutputGraph(ctx: AudioContext, initial: OutputPlan): OutputGraph {
   checkChannels(ctx, initial)
@@ -167,7 +185,7 @@ export function createOutputGraph(ctx: AudioContext, initial: OutputPlan): Outpu
 
   function configureDestination(p: OutputPlan): void {
     const dest = ctx.destination
-    const channels = p.mode === 'multi' ? p.channels : 2
+    const channels = p.mode === 'multi' ? p.channels : stereoChannels(dest)
     if (dest.channelCount !== channels) dest.channelCount = channels
     dest.channelCountMode = 'explicit'
     dest.channelInterpretation = p.mode === 'multi' ? 'discrete' : 'speakers'

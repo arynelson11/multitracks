@@ -254,6 +254,50 @@ async function countLevel() {
   return rows
 }
 
+// ---------- F: aparelho de 1 canal (Ruling T12-mono) ----------
+// OfflineAudioContext de 1 canal de verdade (sem simular aparelho). "Tudo junto" (o plano mono
+// da T19 e o de 2 canais) e "Click e Guia separados" montam sem lançar e trocam entre si no meio
+// do som. No canal único o navegador junta L e R em (L + R) / 2, então Click e VS saem com
+// (l + r) / 2 x fader x principal, antes e depois da troca, com qualquer pan.
+async function monoDevice() {
+  const plans = {
+    stereoMono: planOutputs(settings('stereo'), 1),
+    split2Mono: planOutputs(settings('split2'), 1),
+    stereo: PLANS.stereo(),
+    split2L: PLANS.split2L(),
+    split2R: PLANS.split2R(),
+  }
+  const rows = []
+  for (const [name, plan] of Object.entries(plans)) for (const role of ['click', 'guide', 'normal']) {
+    const ctx = new OfflineAudioContext(1, LEN, SR)
+    let error = null
+    let destCount = null
+    let switchedAt = null
+    let ch = null
+    try {
+      const g = createOutputGraph(ctx, plan)
+      g.master.gain.value = MASTER
+      destCount = ctx.destination.channelCount
+      ch = channel(ctx, g.input(role), { mono: false, pan: effectivePan(0, role, plan) })
+      const next = plan.mode === 'stereo' ? PLANS.split2L() : plans.stereoMono
+      ctx.suspend(SWITCH_AT).then(() => {
+        switchedAt = ctx.currentTime
+        try { g.apply(next) } catch (e) { error = String(e) }
+        return ctx.resume()
+      })
+    } catch (e) { error = String(e) }
+    if (error) { rows.push({ plan: name, role, error }); continue }
+    const out = await ctx.startRendering()
+    const d = out.getChannelData(0)
+    const [l, r] = channelsOf(ch.src.buffer)
+    let maxDiff = 0
+    for (let i = 0; i < LEN; i++) maxDiff = Math.max(maxDiff, Math.abs(d[i] - 0.5 * (l[i] + r[i]) * FADER * MASTER))
+    const at = Math.round(switchedAt * SR)
+    rows.push({ plan: name, mode: plan.mode, warning: plan.warning, role, error, channels: out.numberOfChannels, destCount, peakDbBefore: db(stats(d, 0, at).peak), peakDbAfter: db(stats(d, at, LEN).peak), maxDiff })
+  }
+  return rows
+}
+
 // ---------- D: medidor do PRINCIPAL (saídas 1 e 2) ----------
 async function meter() {
   const plan = PLANS.split2L()
@@ -270,7 +314,7 @@ async function meter() {
 }
 
 async function main() {
-  return { userAgent: navigator.userAgent, sampleRate: SR, quantum: QUANTUM, leaks: await leaks(), levels: await levels(), switches: await switches(), countLevel: await countLevel(), meter: await meter() }
+  return { userAgent: navigator.userAgent, sampleRate: SR, quantum: QUANTUM, leaks: await leaks(), levels: await levels(), switches: await switches(), countLevel: await countLevel(), mono: await monoDevice(), meter: await meter() }
 }
 
 const name = new URLSearchParams(location.search).get('name') || 'output-graph'

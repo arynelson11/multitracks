@@ -12,7 +12,9 @@
 //    nada de Click, Guia ou contagem na VS do plano novo (< -90 dBFS) e o ouvido com som;
 // D) medidor: levels() lê o pico das saídas 1 e 2 (erro < 0,02);
 // E) contagem (mono) no mesmo nível no ouvido sozinha ou com um canal estéreo no barramento do
-//    Click (erro <= 0,1 dB e diferença por amostra < 1e-6).
+//    Click (erro <= 0,1 dB e diferença por amostra < 1e-6);
+// F) aparelho de 1 canal (Ruling T12-mono): "Tudo junto" e separados montam e trocam sem lançar,
+//    e Click, Guia e VS saem no canal único com (L + R) / 2 (diferença por amostra < 1e-6).
 //
 // Uso: source ~/.nvm/nvm.sh && nvm use 24
 //      node scripts/verify-audio/output-graph.mjs
@@ -137,6 +139,12 @@ function report(data) {
   const cBad = data.countLevel.filter((r) => !(r.maxDiff < MAX_COUNT_DIFF) || !(r.levelErrorDb <= MAX_LEVEL_ERROR_DB))
   ok &&= cBad.length === 0
   console.log(`${cBad.length ? 'FALHA' : 'OK  '} E) contagem sozinha x com canal estéreo no barramento do Click: ${data.countLevel.map((r) => `${r.plan} pico ${fmtDb(r.countPeakDb)} dBFS, erro ${r.levelErrorDb.toExponential(2)} dB, diferença ${r.maxDiff.toExponential(2)}`).join(' · ')}`)
+
+  const monoBad = data.mono.filter((r) => r.error || r.channels !== 1 || r.destCount !== 1 || !(num(r.peakDbBefore) > MIN_EAR_DB) || !(num(r.peakDbAfter) > MIN_EAR_DB) || !(r.maxDiff < MAX_COUNT_DIFF))
+  ok &&= monoBad.length === 0
+  const monoDiff = data.mono.reduce((a, r) => Math.max(a, r.maxDiff ?? Infinity), 0)
+  console.log(`${monoBad.length ? 'FALHA' : 'OK  '} F) aparelho de 1 canal: ${data.mono.length} casos (Tudo junto mono da T19, Tudo junto, separados nos dois lados; Click, Guia e VS; troca no meio), ${data.mono.filter((r) => r.error).length} erros; destino com 1 canal; maior diferença x (L + R) / 2 ${monoDiff.toExponential(2)}`)
+  for (const r of monoBad) console.log(`      ${r.plan} ${r.role}: ${r.error ?? `canais ${r.channels}, destino ${r.destCount}, antes ${fmtDb(r.peakDbBefore)}, depois ${fmtDb(r.peakDbAfter)} dBFS, diferença ${r.maxDiff}`}`)
 
   const mOk = data.meter.error < MAX_METER_ERROR
   ok &&= mOk
