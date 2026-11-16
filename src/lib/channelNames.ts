@@ -92,8 +92,10 @@ const FAMILY_RULES: readonly FamilyRule[] = [
     weakWords: ['TEMPO', 'BEAT'],
   }),
   rule('guia', ['GUIA', 'GUIAS', 'GUIDE', 'GUIDES', 'CUE', 'CUES']),
-  // CORAL e CORAIS: nome comum de coro em pt-BR (antes só a regra de formantes pegava).
-  rule('backing', ['BV', 'BVS', 'BGV', 'BGVS', 'BACKING', 'BACKINGS', 'CORO', 'CORAL', 'CORAIS', 'CHOIR'], {
+  // CORAL e CORAIS: nome comum de coro em pt-BR. BACKVOCAL, BACKVOX e BVOX (grudados),
+  // COROS e CHOIRS: grafias que a regra antiga de formantes pegava por pedaço do nome.
+  rule('backing', ['BV', 'BVS', 'BGV', 'BGVS', 'BACKING', 'BACKINGS', 'CORO', 'COROS', 'CORAL', 'CORAIS', 'CHOIR', 'CHOIRS',
+    'BACKVOCAL', 'BACKVOCALS', 'BACKVOX', 'BVOX'], {
     sequences: [['BACK', 'VOCAL'], ['BACK', 'VOX']],
   }),
   rule('synthBass', ['SUB', 'SUBBASS', 'SYNTHBASS'], {
@@ -115,7 +117,8 @@ const FAMILY_RULES: readonly FamilyRule[] = [
     },
   }),
   rule('percussao', ['PERC', 'PERCS', 'PERCUSSION', 'PERCUSSAO', 'PERCUSSOES', 'SHAKER', 'CAJON', 'CONGA', 'CONGAS']),
-  rule('vocal', ['VOX', 'VOCAL', 'VOCALS', 'VOCAIS', 'VOC', 'VOZ', 'VOZES', 'VOICE', 'LEAD', 'LV']),
+  // LEADVOCAL, LEADVOX (grudados) e VOCALISTA: grafias que a regra antiga de formantes pegava.
+  rule('vocal', ['VOX', 'VOCAL', 'VOCALS', 'VOCAIS', 'VOC', 'VOZ', 'VOZES', 'VOICE', 'LEAD', 'LV', 'LEADVOCAL', 'LEADVOX', 'VOCALISTA']),
   rule('ambiencia', ['AMB', 'AMBIENCE', 'AMBIENT', 'AMBIENCIA']),
 ]
 

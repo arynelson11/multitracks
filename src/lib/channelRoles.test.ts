@@ -220,7 +220,8 @@ describe('formantes só em voz, pela família da regra central', () => {
     'DRUMS', 'BASS', 'Strings', 'Click', 'Metrônomo', 'Voz Guia'])('%s: sem formantes', (name) => {
     expect(wantsFormantCompensation({ id: '1', name })).toBe(false)
   })
-  it.each(['Vocal', 'VOC', 'BGV', 'Backing', 'Lead Vox', 'Lead', 'Voz 2', 'Coro', 'Coral', 'Choir', 'BV alto'])('%s: com formantes', (name) => {
+  it.each(['Vocal', 'VOC', 'BGV', 'Backing', 'Lead Vox', 'Lead', 'Voz 2', 'Coro', 'Coral', 'Choir', 'BV alto',
+    'Backvocal', 'BACKVOX', 'BVox', 'LEADVOCAL', 'LEADVOX', 'Coros', 'Choirs', 'Vocalista'])('%s: com formantes', (name) => {
     expect(wantsFormantCompensation({ id: '1', name })).toBe(true)
   })
   it('vale o nome dado pelo usuário: "FX" renomeado "Voz" ganha, "Lead" renomeado "Guitarra Solo" perde', () => {
