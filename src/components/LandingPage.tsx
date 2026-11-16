@@ -143,7 +143,10 @@ export function LandingPage({ onEnter }: LandingPageProps) {
   }
 
   return (
-    <div className="brand-context-dark min-h-screen overflow-x-hidden">
+    <div className="brand-context-dark site-public min-h-screen overflow-x-hidden">
+      <a href="#conteudo" className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] focus:rounded-lg focus:bg-bone focus:px-4 focus:py-2 focus:text-tinta focus:font-semibold">
+        Pular para o conteúdo
+      </a>
       {/* ── NAV ── */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-tinta/85 backdrop-blur-xl border-b border-tinta-border">
         <div className="max-w-6xl mx-auto px-5 sm:px-8 h-14 flex items-center justify-between">
@@ -171,6 +174,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         </div>
       </nav>
 
+      <main id="conteudo" tabIndex={-1} className="outline-none">
       {/* ════════ HERO ════════ */}
       <section className="relative min-h-screen flex flex-col items-center justify-center px-5 sm:px-8 pt-28 pb-20 overflow-hidden">
         {/* Atmosphere (warm dark) */}
@@ -332,7 +336,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                 <div className="w-10 h-10 rounded-xl bg-musgo/15 group-hover:bg-musgo/25 flex items-center justify-center mb-4 transition-colors">
                   <a.icon size={20} className="text-musgo-light" />
                 </div>
-                <h4 className="font-display font-semibold text-[16px] text-bone mb-2">{a.title}</h4>
+                <h3 className="font-display font-semibold text-[16px] text-bone mb-2">{a.title}</h3>
                 <p className="text-[13px] text-warm-200 leading-relaxed">{a.desc}</p>
               </div>
             ))}
@@ -360,12 +364,12 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                 <div className="w-10 h-10 rounded-xl bg-laranja/15 group-hover:bg-laranja/25 flex items-center justify-center mb-4 transition-colors">
                   <f.icon size={20} className="text-laranja" />
                 </div>
-                <h4 className="font-display font-semibold text-[16px] text-bone mb-2">
+                <h3 className="font-display font-semibold text-[16px] text-bone mb-2">
                   {f.title}
                   {f.pro && (
                     <span className="ml-2 align-middle text-[10px] font-sans font-bold uppercase tracking-wider text-laranja bg-laranja/15 border border-laranja/30 px-1.5 py-0.5 rounded">Pro</span>
                   )}
-                </h4>
+                </h3>
                 <p className="text-[13px] text-warm-200 leading-relaxed">{f.desc}</p>
               </div>
             ))}
@@ -502,22 +506,35 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             Perguntas frequentes
           </h2>
           <div className="space-y-2.5">
-            {FAQS.map((faq, i) => (
-              <div key={i} className="border border-tinta-border rounded-xl overflow-hidden bg-tinta-raised">
-                <button
-                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                  className="w-full flex items-center justify-between px-5 py-4 text-left cursor-pointer hover:bg-tinta-border/40 transition-colors"
-                >
-                  <span className="font-semibold text-[14px] text-bone pr-4">{faq.q}</span>
-                  <ChevronDown size={15} className={`text-warm-400 shrink-0 transition-transform ${openFaq === i ? 'rotate-180' : ''}`} />
-                </button>
-                {openFaq === i && (
-                  <div className="px-5 pb-5 pt-4 text-[13px] text-warm-200 leading-relaxed border-t border-tinta-border">
+            {FAQS.map((faq, i) => {
+              const open = openFaq === i
+              return (
+                <div key={i} className="border border-tinta-border rounded-xl overflow-hidden bg-tinta-raised">
+                  <h3 className="font-sans tracking-normal text-[14px]">
+                    <button
+                      id={`faq-pergunta-${i}`}
+                      onClick={() => setOpenFaq(open ? null : i)}
+                      aria-expanded={open}
+                      aria-controls={`faq-resposta-${i}`}
+                      className="w-full flex items-center justify-between px-5 py-4 text-left cursor-pointer hover:bg-tinta-border/40 transition-colors"
+                    >
+                      <span className="font-semibold text-[14px] text-bone pr-4">{faq.q}</span>
+                      <ChevronDown size={15} aria-hidden="true" className={`text-warm-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+                    </button>
+                  </h3>
+                  {/* A resposta fica sempre no HTML (o Google lê); fechada, só some da tela. */}
+                  <div
+                    id={`faq-resposta-${i}`}
+                    role="region"
+                    aria-labelledby={`faq-pergunta-${i}`}
+                    hidden={!open}
+                    className="px-5 pb-5 pt-4 text-[13px] text-warm-200 leading-relaxed border-t border-tinta-border"
+                  >
                     {faq.a}
                   </div>
-                )}
-              </div>
-            ))}
+                </div>
+              )
+            })}
           </div>
         </div>
       </section>
@@ -552,6 +569,8 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           </div>
         </div>
       </section>
+
+      </main>
 
       {/* ════════ FOOTER ════════ */}
       <footer className="border-t border-tinta-border py-10 px-5 sm:px-8">

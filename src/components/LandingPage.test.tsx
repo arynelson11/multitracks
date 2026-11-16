@@ -69,3 +69,31 @@ describe('LandingPage: textos', () => {
     expect(FAQS.find(f => f.q === 'Posso cancelar quando quiser?')?.a).toMatch(/WhatsApp .* email/)
   })
 })
+
+describe('LandingPage: estrutura acessível', () => {
+  it('tem um <main> e o link de pular para o conteúdo', () => {
+    renderLanding()
+    expect(document.querySelectorAll('main#conteudo')).toHaveLength(1)
+    expect(screen.getByRole('link', { name: 'Pular para o conteúdo' }).getAttribute('href')).toBe('#conteudo')
+  })
+
+  it('títulos não pulam nível (um h1, sem h4)', () => {
+    renderLanding()
+    const levels = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].map(h => Number(h.tagName[1]))
+    expect(levels.filter(l => l === 1)).toHaveLength(1)
+    for (let i = 1; i < levels.length; i++) expect(levels[i] - levels[i - 1]).toBeLessThanOrEqual(1)
+  })
+
+  it('respostas da FAQ ficam no HTML, escondidas até abrir, com aria-expanded', () => {
+    renderLanding()
+    const pergunta = screen.getByRole('button', { name: FAQS[0].q })
+    const resposta = document.getElementById(pergunta.getAttribute('aria-controls') ?? '')
+    expect(resposta?.textContent).toBe(FAQS[0].a)
+    expect(resposta?.hidden).toBe(true)
+    expect(pergunta.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(pergunta)
+    expect(pergunta.getAttribute('aria-expanded')).toBe('true')
+    expect(resposta?.hidden).toBe(false)
+    for (const f of FAQS) expect(text()).toContain(f.a)
+  })
+})

@@ -48,7 +48,10 @@ export function DownloadPage() {
   )
 
   return (
-    <div className="min-h-screen bg-[#0a0a0c] text-white font-sans">
+    <div className="site-public min-h-screen bg-[#0a0a0c] text-white font-sans">
+      <a href="#conteudo" className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-black focus:font-semibold">
+        Pular para o conteúdo
+      </a>
       {/* Glow de fundo */}
       <div className="fixed inset-0 pointer-events-none" style={{ background: 'radial-gradient(60% 40% at 50% 0%, rgba(249,115,22,0.10) 0%, transparent 70%)' }} />
 
@@ -61,6 +64,7 @@ export function DownloadPage() {
           <PlaybackStudioWordmark size="sm" />
         </header>
 
+        <main id="conteudo" tabIndex={-1} className="outline-none">
         {/* Hero */}
         <div className="text-center mb-12">
           <span className="inline-block px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-400 text-[11px] font-bold uppercase tracking-widest mb-5">
@@ -187,6 +191,8 @@ export function DownloadPage() {
             <li>Login com a sua conta Playback Studio (a mesma do site).</li>
           </ul>
         </div>
+
+        </main>
 
         <footer className="text-center text-xs pb-8 border-t border-white/10 pt-8">
           <p className="text-zinc-400 mb-4">Playback Studio · A plataforma do domingo</p>
