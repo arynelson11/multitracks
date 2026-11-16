@@ -3,7 +3,7 @@
 > **Última atualização:** 2026-11-16
 > **Para que serve:** este é o documento canônico dos fatos do produto. Qualquer pessoa ou agente que for criar conteúdo, copy, proposta ou tomar decisão DEVE ler este arquivo primeiro. Se algo em outro doc contradiz isto, este vence.
 > **Regra:** toda alteração de produto (preço, plano, feature, provedor, stack) atualiza este arquivo no mesmo passo. Ver seção "Histórico de mudanças".
-> **Fontes de verdade no código:** `src/lib/plans.ts` (tiers e capabilities), `src/components/PricingModal.tsx` (cards e preços), `api/checkout.ts` (preços reais cobrados), `api/separate-audio.ts` (cotas).
+> **Fontes de verdade no código:** `src/lib/plans.ts` (tiers e capabilities), `src/components/PricingModal.tsx` (cards e preços), `api/_lib/pricing.ts` (preços reais cobrados; antes ficava em `api/checkout.ts`), `api/separate-audio.ts` (cotas), `api/_lib/billing.ts` + `db/supabase_assinaturas.sql` (cancelamento, vencimento, estorno, cortesia; NÃO publicado ainda, ver entrada de 2026-11-16).
 
 ---
 
@@ -55,6 +55,19 @@ Os nomes internos (no banco `profiles.plan`, no checkout e no webhook) são: `fr
 - **A banda controla loop e seções pelo celular** (controle remoto total).
 - Prioridade no processamento.
 
+### Cobrança, cota e cancelamento (regras de 2026-11-16, NÃO publicadas ainda)
+Valem quando sair a versão com a entrada "2026-11-16: Cancelamento de assinatura e cota mensal que renova". Até lá, em produção, a cota é vitalícia na prática e não existe cancelamento no app.
+- **Cota mensal:** as separações contam por **mês civil no horário de Brasília**. Todo dia 1º, às 00:00 de Brasília, o contador volta a zero (Livre 5, Pro 50, Studio 150). Vale igual pro mensal e pro anual. O contador da aba Assinatura e do Separador vem do banco (o mesmo número que o servidor usa).
+- **Cancelar pelo app (botão na aba Assinatura):** a renovação para na hora e nada mais é cobrado; a pessoa **continua com o plano até o fim do período já pago** (mensal: até o dia da próxima renovação; anual: até o fim do ano pago, sem reembolso proporcional) e depois volta pro Livre.
+- **Arrependimento (7 dias):** se a pessoa cancela em até 7 dias corridos do pagamento da **primeira** cobrança (nenhuma renovação ainda), o app **estorna o valor integral no cartão** e a conta **volta pro Livre na hora**. O estorno aparece na fatura em até 10 dias úteis (prazo do Asaas).
+- **Renovação não paga:** se a cobrança da renovação (mensal ou anual) vence sem pagamento (evento `PAYMENT_OVERDUE` do Asaas), **no mesmo dia** a conta volta pro Livre e a assinatura é **cancelada no Asaas**. Sem carência. Se um pagamento atrasado daquela cobrança chegar mesmo assim, o plano volta **até o fim daquele período** (a assinatura continua cancelada) e o caso fica marcado pro admin (`needs_admin_review`).
+- **Estorno feito no painel do Asaas** (do período atual): volta pro Livre na hora e a assinatura é cancelada no Asaas.
+- **Assinatura removida ou inativada no painel do Asaas:** o plano vale até o fim do período pago.
+- **Trocar de plano pelo app** ("Alterar Plano" gera checkout novo): quando o novo é pago, a assinatura anterior é encerrada no Asaas na hora (não cobra duas vezes; sem crédito proporcional do período antigo).
+- **Aviso de vencimento (só mensal):** aviso dentro do app de 3 dias antes até o dia ("Sua assinatura vence em 3 dias"; "vence hoje"). Os avisos do próprio Asaas ao cliente por e-mail e SMS (10 dias antes, no dia e cobrança vencida) vêm ligados por padrão pra todo cliente; o servidor confere e religa por cliente quando o checkout é pago. Têm tarifa por envio no Asaas.
+- **Arquivos não somem:** voltar pro Livre não apaga nada. As separações da nuvem continuam guardadas e voltam a aparecer se assinar de novo; no Livre o app usa a biblioteca local do aparelho.
+- **Cortesia:** o admin pode dar um plano pago sem cobrança, com ou sem data pra acabar (`grantCourtesy` em `api/_lib/billing.ts`; ainda sem tela).
+
 ### Admin
 Conta admin (`arynelson11@gmail.com`) tem tudo ilimitado e fura todas as travas.
 
@@ -83,7 +96,7 @@ Confirmado no código (2026-07-08):
 - **Frontend:** Vite + React 19 + TypeScript.
 - **Backend:** Supabase (auth, banco, storage) + Cloudflare R2 (áudio) + endpoints serverless em `api/*` na Vercel.
 - **IA de separação:** Replicate (htdemucs).
-- **Pagamento:** **Asaas** (BRL, checkout hospedado, cartão, assinatura recorrente). Migrou do AbacatePay. Preço é definido no backend (`api/checkout.ts`), não em painel.
+- **Pagamento:** **Asaas** (BRL, checkout hospedado, cartão, assinatura recorrente). Migrou do AbacatePay. Preço é definido no backend (`api/_lib/pricing.ts`, usado por `api/checkout.ts`), não em painel. Webhook em `api/webhook/asaas.ts` (token `asaas-access-token`, idempotente pelo id do evento); regras de cobrança em `api/_lib/billing.ts` e cliente da API em `api/_lib/asaas.ts` (NÃO publicado ainda: hoje em produção o webhook só trata `CHECKOUT_PAID`). A Vercel do plano atual aceita no máximo **12 funções** em `api/` e já são 12: endpoint novo entra como `?action=` num arquivo existente (ex.: `POST /api/checkout?action=cancel`); `api/_lib/` e `api/__tests__/` não contam (pasta com sublinhado).
 - **Deploy:** Vercel (web) + Electron builder (desktop Mac/Windows). Toda atualização sai junto para web e desktop.
 - **Testes:** Vitest + Testing Library (jsdom), `npm test`. Tipos do app e dos testes com `npm run typecheck`. (Entrou na Parte 1 do palco novo, v1.4.15.)
 - **Fontes:** Inter e JetBrains Mono empacotadas no app (`@fontsource-variable`, funcionam offline no desktop). Por enquanto só as peças novas usam (`font-ps-sans` e `font-ps-mono`); as telas atuais seguem com as fontes do Google Fonts até a Parte 3. (Parte 1, v1.4.15.)
@@ -106,6 +119,35 @@ Confirmado por prints do produto em produção (2026-07-08):
 - Transport ao vivo: Auto / Parar / Fade, com anterior / play / próxima.
 
 ## 6. Histórico de mudanças (para saber o que foi feito sem rodar tudo)
+
+### 2026-11-16: Cancelamento de assinatura e cota mensal que renova (NÃO publicado ainda)
+
+**O que é:** corrige os itens 3 e 6 da auditoria de conteúdo (`.superpowers/sdd/site-auditoria-conteudo.md`): não existia cancelamento no app, o webhook só tratava `CHECKOUT_PAID` (cancelar não voltava pro Livre) e `profiles.tokens_used` nunca zerava (a cota "por mês" era vitalícia; a aba Assinatura lia o contador do navegador). Branch `fix/cobranca` sobre a v1.4.15, commits com `[cobranca]` no assunto. Regras de cobrança decididas pelo dono no mesmo dia (seção 2, "Cobrança, cota e cancelamento"). Relatório completo: `.superpowers/sdd/cobranca-report.md`.
+
+**Cota mensal** (`db/supabase_cota_mensal.sql`): coluna `profiles.tokens_period_start`; o RPC `consume_separation_token` zera o contador sozinho na primeira separação do mês, dentro do próprio UPDATE (sem cron, sem corrida: duas separações juntas na virada contam 2). A assinatura do RPC não mudou (código velho e novo funcionam com o SQL novo). `refund_separation_token` só devolve no mês corrente. `get_my_separation_usage()` (o usuário lê o próprio contador e a data da virada). Ponto de partida: o contador vira o número de separações feitas no mês corrente, contado na tabela `predictions`. Mensagem de cota esgotada em português ("Você já usou as 5 separações deste mês. O contador volta a zero no dia 1º.").
+
+**Assinaturas e pagamentos** (`db/supabase_assinaturas.sql`): `profiles.plan_expires_at` (até quando o plano vale depois de cancelado; app, servidor e a RLS da biblioteca em nuvem tratam como Livre depois da data), `billing_subscriptions` (por assinatura: cliente e assinatura no Asaas, status, ciclo, próximo vencimento, fim do período pago, motivo do cancelamento, marcação pro admin), `billing_payments` (toda cobrança, inclusive renovações, vencidas e estornos, com o valor que o Asaas mandou; nunca dados do cartão), `asaas_webhook_events` (idempotência). O usuário só lê algumas colunas da própria assinatura; o resto é só do backend. `pending_checkouts` deixa de ser apagado no `CHECKOUT_PAID` (liga os eventos novos ao usuário). A tabela antiga `payments` continua sendo gravada no `CHECKOUT_PAID` (o painel admin atual lê dela).
+
+**Webhook do Asaas** (eventos conferidos na documentação oficial em 2026-11-16: docs.asaas.com, "Eventos para assinaturas", "Eventos para cobranças", "Eventos para Checkout"): `CHECKOUT_PAID`, `SUBSCRIPTION_CREATED/UPDATED/INACTIVATED/DELETED` e `PAYMENT_*` (criada, alterada, confirmada, recebida, vencida, removida, restaurada, estornada, chargeback). Mesmo token de antes (`asaas-access-token` contra `ASAAS_WEBHOOK_TOKEN`, comparação em tempo constante). Evento repetido não roda duas vezes. Cobrança avulsa (fora de assinatura do app) é ignorada e não é guardada. O webhook passa a chamar a API do Asaas (usa `ASAAS_API_KEY`, que já existe na Vercel) pra cancelar a assinatura no caso de vencida, estorno e troca de plano.
+
+**Cancelar pelo app:** botão "Cancelar assinatura" na aba Assinatura, com confirmação que diz o que acontece (até o fim do período pago; 7 dias com estorno; arquivos não somem). Chama `POST /api/checkout?action=cancel` (JWT do usuário; o corpo do pedido é ignorado, então só cancela a assinatura de quem está logado). Ordem: lê as cobranças no Asaas, estorna se couber, remove a assinatura no Asaas e só então grava. Asaas fora do ar antes de qualquer passo: erro claro e nada muda. Quem assinou antes desta versão (sem linha em `billing_subscriptions`) é achado pelo checkout guardado em `payments` e pela API do Asaas (filtro `checkoutSession`).
+
+**Funções pro futuro admin** (`api/_lib/billing.ts`, testadas): `activateFromCheckout`, `cancelSubscriptionForUser` (com corte imediato opcional pro admin), `changePlan` (troca valor e ciclo no Asaas a partir da próxima cobrança e o plano na hora), `grantCourtesy` / `endCourtesy`.
+
+**Aviso de vencimento:** banner no app pro plano mensal, de 3 dias antes até o dia; "Entendi" esconde até o dia seguinte.
+
+**Testes:** 362 passando (eram 282), com Supabase e Asaas falsos (nenhuma chamada externa), cobrindo: duas separações simultâneas na virada do mês, webhook repetido, webhook com token falso, usuário tentando cancelar a assinatura de outro, Asaas fora do ar no cancelamento, arrependimento, vencida, pagamento atrasado, estorno. O SQL das duas migrations foi rodado duas vezes seguidas (idempotente) e testado só num Postgres local descartável da imagem do Supabase: 74 verificações (17 da cota, 57 de assinatura, inclusive permissões) e três corridas reais com duas sessões ao mesmo tempo (virada do mês: conta 2; mesmo mês no limite: só uma passa; vencida repetida em paralelo: corta uma vez só). **Nada foi rodado no Supabase de produção**. O erro de tipo antigo em `api/webhook/asaas.ts:95` sumiu porque o arquivo foi reescrito.
+
+**Pra lançar, nesta ordem:**
+1. No Supabase de produção (SQL Editor), rodar `db/supabase_cota_mensal.sql` e depois `db/supabase_assinaturas.sql`, **antes** do deploy do código. Os dois são idempotentes e têm `lock_timeout`; cada um termina com uma consulta de conferência.
+2. Deploy normal (web + Mac + Windows). Sem variável nova na Vercel: o webhook usa `ASAAS_API_KEY`, `ASAAS_WEBHOOK_TOKEN` e `ASAAS_ENV`, que já existem.
+3. No painel do Asaas (Integrações > Webhooks > o webhook atual), **depois** dos passos 1 e 2: manter `CHECKOUT_PAID` e marcar `SUBSCRIPTION_CREATED`, `SUBSCRIPTION_UPDATED`, `SUBSCRIPTION_INACTIVATED`, `SUBSCRIPTION_DELETED`, `PAYMENT_CREATED`, `PAYMENT_UPDATED`, `PAYMENT_CONFIRMED`, `PAYMENT_RECEIVED`, `PAYMENT_OVERDUE`, `PAYMENT_DELETED`, `PAYMENT_RESTORED`, `PAYMENT_REFUNDED`, `PAYMENT_PARTIALLY_REFUNDED`, `PAYMENT_REFUND_IN_PROGRESS`, `PAYMENT_CHARGEBACK_REQUESTED`, `PAYMENT_CHARGEBACK_DISPUTE` e `PAYMENT_AWAITING_CHARGEBACK_REVERSAL`. Tipo de envio: **Sequencial**. (Marcar antes do SQL faz os eventos falharem; 15 falhas seguidas pausam a fila do webhook, inclusive o `CHECKOUT_PAID`.)
+4. No painel do Asaas, conferir que as notificações padrão ao cliente (e-mail e SMS: 10 dias antes, dia do vencimento, cobrança vencida) estão ligadas e que a tarifa está ok.
+5. Opcional: ligar o `pg_cron` no Supabase e agendar a faxina que grava 'free' em quem passou da data (`select cron.schedule('expirar-planos', '15 * * * *', $$select public.billing_expire_due_plans()$$);`). Sem isso tudo funciona; só o painel admin atual pode contar como pagante quem já passou da data.
+6. Antes de produção, se der: um ciclo completo no sandbox do Asaas (assinar, cancelar em até 7 dias, cancelar depois, cobrança vencida).
+7. Depois de publicar: atualizar o site (FAQ "Posso cancelar quando quiser?" passa a ser verdade; dizer "5 separações por mês, renova todo dia 1º"; política de cancelamento e arrependimento; o texto "renovado a cada ciclo de faturamento" já saiu do app).
+
+**QA do dono antes de publicar:** aba Assinatura mostra o contador do banco e "volta a zero em 01/12/2026"; separar no Livre até 5 e ver a mensagem nova; cancelar uma assinatura de teste depois de 7 dias (continua Pro até a data, renovação some no Asaas) e outra em até 7 dias (estorno no Asaas, Livre na hora); aviso de vencimento num mensal a 3 dias da renovação; o mesmo no app de computador.
 
 ### 2026-11-15: Parte 1 do palco novo: linguagem nova + canais organizados [v1.4.15]
 
