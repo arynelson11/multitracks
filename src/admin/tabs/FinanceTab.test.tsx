@@ -184,8 +184,12 @@ describe('FinanceTab', () => {
     expect(text(tile('Líquido'))).toContain('R$ 1.180,25')
     expect(text(tile('Pagas'))).toContain('42')
     expect(text(tile('Estornado'))).toContain('R$ 59,80')
-    expect(text(tile('Vencido'))).toContain('R$ 299,00')
-    expect(text(tile('Vencido'))).toContain('1 cobrança')
+    // Só estorno confirmado entra no total (Ruling ADM-T22-totais).
+    expect(text(tile('Estornado'))).toContain('Só estorno confirmado')
+    // Vencimento dentro do período e ainda não paga (Ruling ADM-T22-totais).
+    expect(text(tile('Vencido no período'))).toContain('R$ 299,00')
+    expect(text(tile('Vencido no período'))).toContain('1 cobrança')
+    expect(text(tile('Vencido no período'))).not.toContain('1 cobranças')
     expect(screen.getByText('De 01/11/2026 a 30/11/2026')).toBeTruthy()
     expect(screen.getByText(RULE)).toBeTruthy()
     expect(container.textContent).not.toContain(TRAVESSAO)
@@ -206,7 +210,7 @@ describe('FinanceTab', () => {
     expect(text(tile('Pagas'))).not.toMatch(/\b0\b/)
     // Zero de verdade continua zero.
     expect(text(tile('Estornado'))).toContain('R$ 0,00')
-    expect(text(tile('Vencido'))).toContain('sem dado')
+    expect(text(tile('Vencido no período'))).toContain('sem dado')
     const row = rowItem('pay_1')
     expect(text(row)).not.toContain('R$ 0,00')
     expect(text(within(row).getByText('Valor').parentElement)).toContain('sem dado')
@@ -224,15 +228,16 @@ describe('FinanceTab', () => {
     // Valor escrito ao lado, separado por plano.
     const oct = monthItem('out/2026')
     expect(text(oct)).toContain('R$ 500,00')
-    expect(text(oct)).toContain('R$ 480,00')
-    expect(text(oct)).toContain('Pro Mensal R$ 200,00')
+    // O líquido fica sozinho na linha dele; os planos repartem o BRUTO (Ruling ADM-T22-byPlan).
+    expect(text(within(oct).getByText('Líquido'))).toBe('Líquido R$ 480,00')
+    expect(text(oct)).toContain('Bruto por plano: Pro Mensal R$ 200,00')
     expect(text(oct)).toContain('Studio Anual R$ 300,00')
   })
 
   it('mês sem valor fica fora da escala, sem barra, e aparece como sem dado', async () => {
     const byMonth = [
       { month: '2026-09', grossBrl: 200, netBrl: 190, byPlan: {} },
-      { month: '2026-10', netBrl: null, byPlan: {} },
+      { month: '2026-10', netBrl: null },
       { month: '2026-11', grossBrl: 400, netBrl: 380, byPlan: {} },
     ] as unknown as FinanceMonth[]
     serve({ finance: () => json(financePage({ byMonth })) })
@@ -243,6 +248,9 @@ describe('FinanceTab', () => {
     expect(bar(container, '2026-09')?.style.width).toBe('50%')
     expect(bar(container, '2026-10')).toBeNull()
     expect(text(monthItem('out/2026'))).toContain('sem dado')
+    expect(text(monthItem('out/2026'))).toContain('Bruto por plano: sem dado')
+    // Mês sem plano nenhum não mostra a linha vazia.
+    expect(text(monthItem('nov/2026'))).not.toContain('Bruto por plano')
     expect(container.textContent).not.toContain('NaN')
   })
 
@@ -321,6 +329,53 @@ describe('FinanceTab', () => {
     fireEvent.click(within(rowItem('pay_1')).getByRole('button', { name: 'Ver no Asaas' }))
     await waitFor(() => expect(text(rowItem('pay_1'))).toContain('O Asaas não respondeu agora.'))
     expect(tab.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('dois cliques seguidos em Ver no Asaas abrem uma aba só e pedem a fatura uma vez', async () => {
+    let release: (r: Response) => void = () => {}
+    const fetch = serve({
+      finance: () => json(financePage()),
+      'payment-link': () => new Promise<Response>((resolve) => (release = resolve)),
+    })
+    const tab = fakeTab()
+    const open = vi.spyOn(window, 'open').mockImplementation(() => tab as unknown as Window)
+    setup()
+    await screen.findByText('pay_1')
+    const verNoAsaas = within(rowItem('pay_1')).getByRole('button', { name: 'Ver no Asaas' })
+    fireEvent.click(verNoAsaas)
+    fireEvent.click(verNoAsaas)
+    expect(open).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(callsOf(fetch, 'payment-link')).toHaveLength(1))
+    await act(async () => release(json({ paymentId: 'pay_1', status: 'RECEIVED', invoiceUrl: 'https://www.asaas.com/i/abc1' })))
+    await waitFor(() => expect(tab.location.replace).toHaveBeenCalledWith('https://www.asaas.com/i/abc1'))
+    expect(callsOf(fetch, 'payment-link')).toHaveLength(1)
+    expect(open).toHaveBeenCalledTimes(1)
+  })
+
+  it('Ver no Asaas com endereço que não é https fecha a aba e avisa', async () => {
+    for (const invoiceUrl of ['http://www.asaas.com/i/abc1', 'javascript:alert(1)', '']) {
+      serve({
+        finance: () => json(financePage()),
+        'payment-link': () => json({ paymentId: 'pay_1', status: 'RECEIVED', invoiceUrl }),
+      })
+      const tab = fakeTab()
+      vi.spyOn(window, 'open').mockImplementation(() => tab as unknown as Window)
+      setup()
+      await screen.findByText('pay_1')
+      fireEvent.click(within(rowItem('pay_1')).getByRole('button', { name: 'Ver no Asaas' }))
+      await waitFor(() => expect(text(rowItem('pay_1'))).toContain('O Asaas não mandou o link da fatura.'))
+      expect(tab.close).toHaveBeenCalledTimes(1)
+      expect(tab.location.replace).not.toHaveBeenCalled()
+      cleanup()
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('o total de cobranças sai com separador de milhar', async () => {
+    serve({ finance: () => json(financePage({ total: 1234 })) })
+    setup()
+    await screen.findByText('pay_1')
+    expect(text(screen.getByRole('region', { name: 'Cobranças' }))).toContain('1.234')
   })
 
   it('Copiar id copia pay_1', async () => {

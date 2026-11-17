@@ -3,14 +3,13 @@
 // ("No vermelho") e, em cada cobrança, a fatura no Asaas e o id pra buscar no painel. Nenhum
 // caminho estorna: o estorno é feito no painel do Asaas (FATOS). Valor que falta aparece como
 // `sem dado`, nunca como zero.
-import { useId, useRef, useState } from 'react'
+import { Fragment, useId, useRef, useState } from 'react'
 import type React from 'react'
 import { Loader2, RefreshCw } from 'lucide-react'
 import { Button, Panel, Segmented, cx, type SegmentedOption } from '../../components/ui'
-import { openExternalUrlLater } from '../../lib/desktop'
 import { useAdminQuery } from '../hooks/useAdminQuery'
-import { AdminApiError, adminGet } from '../lib/adminApi'
 import { EMPTY, fmtBRL, fmtDay, paymentStatusLabel, planLabel } from '../lib/fmt'
+import { copyPaymentId, openPaymentInvoice, type PaymentFeedback } from '../lib/invoiceLink'
 import { brtTodayLocal } from '../lib/period'
 import {
   barWidths,
@@ -34,9 +33,6 @@ import type { Navigate, TabProps } from '../lib/tabs'
 const MAX_PAGE = 1000
 const RULE = 'Estorno é feito no painel do Asaas. Antes de estornar, confira se a cobrança já não está estornada.'
 const MSG_BAD_SHAPE = 'Não deu pra carregar o financeiro. Tente de novo.'
-const MSG_NO_INVOICE = 'O Asaas não mandou o link da fatura. Busque a cobrança pelo id no painel do Asaas.'
-const MSG_INVOICE_FAILED = 'Não deu pra abrir a fatura. Tente de novo.'
-const MSG_TAB_BLOCKED = 'O navegador bloqueou a aba nova. Libere as janelas deste site e clique de novo.'
 
 const PERIODS: SegmentedOption<FinancePeriod>[] = [
   { value: 'month', label: 'Este mês' },
@@ -61,8 +57,6 @@ const ACCOUNT_LINK =
   'inline-flex max-w-full min-h-ps-touch items-center rounded-ps-sm text-left text-ps-base text-ps-bone underline underline-offset-2 decoration-ps-line-3 break-all hover:text-ps-or focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
 
 type View = { period: FinancePeriod; status: FinanceStatus; page: number }
-type Feedback = { tone: 'ok' | 'alert'; text: string }
-type PaymentLink = { invoiceUrl?: unknown }
 
 export function FinanceTab({ onNavigate }: TabProps) {
   const [view, setView] = useState<View>({ period: 'month', status: 'all', page: 1 })
@@ -114,7 +108,7 @@ export function FinanceTab({ onNavigate }: TabProps) {
             <h2 id={rowsHeading} className={H2}>
               Cobranças
             </h2>
-            <span className="ps-num text-ps-base text-ps-mut">{current.total}</span>
+            <span className="ps-num text-ps-base text-ps-mut">{fmtCount(current.total)}</span>
           </div>
           <p className="text-ps-sm text-ps-mut">
             Entram no período pela data de pagamento, ou pelo vencimento quando não foram pagas.
@@ -185,10 +179,11 @@ function Totals({ totals }: { totals: FinanceTotals }) {
   const headingId = useId()
   const overdueCount = totals.overdueCount
   const hasOverdue = typeof overdueCount === 'number' && overdueCount > 0
+  // Ruling ADM-T22-totais: vencimento dentro do período e ainda não paga hoje, contada por cobrança.
   const overdueSub =
     typeof overdueCount === 'number' && Number.isFinite(overdueCount)
-      ? `${fmtCount(overdueCount)} ${overdueCount === 1 ? 'cobrança vencida' : 'cobranças vencidas'}`
-      : `Cobranças vencidas: ${EMPTY}`
+      ? `${fmtCount(overdueCount)} ${overdueCount === 1 ? 'cobrança' : 'cobranças'}`
+      : `Cobranças: ${EMPTY}`
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
       <h2 id={headingId} className={H2}>
@@ -199,8 +194,9 @@ function Totals({ totals }: { totals: FinanceTotals }) {
         <Tile label="Recebido bruto" value={fmtBRL(totals.grossBrl)} sub="Valor das cobranças pagas" />
         <Tile label="Líquido" value={fmtBRL(totals.netBrl)} sub="Depois das taxas do Asaas" />
         <Tile label="Pagas" value={fmtCount(totals.paidCount)} sub="Cobranças pagas" />
-        <Tile label="Estornado" value={fmtBRL(totals.refundedBrl)} sub="Cobranças estornadas" />
-        <Tile label="Vencido" value={fmtBRL(totals.overdueBrl)} sub={overdueSub} alert={hasOverdue} />
+        {/* Estorno pedido ou em andamento fica fora do total (Ruling ADM-T22-totais). */}
+        <Tile label="Estornado" value={fmtBRL(totals.refundedBrl)} sub="Só estorno confirmado" />
+        <Tile label="Vencido no período" value={fmtBRL(totals.overdueBrl)} sub={overdueSub} alert={hasOverdue} />
       </div>
     </section>
   )
@@ -258,17 +254,28 @@ function MonthItem({ month, width }: { month: FinanceMonth; width: number | null
       <div aria-hidden="true" className="h-2 w-full overflow-hidden rounded-ps-pill bg-ps-well inset-ring inset-ring-ps-line">
         {width !== null && <div data-bar={month.month} className="h-full rounded-ps-pill bg-ps-mut" style={{ width: `${width}%` }} />}
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-ps-sm text-ps-mut">
-        <span>
-          Líquido <span className="ps-num text-ps-bone">{fmtBRL(month.netBrl)}</span>
-        </span>
-        {!plansKnown && <span>Por plano: {EMPTY}</span>}
-        {plans.map((p) => (
-          <span key={p.key}>
-            {planLabel(p.key)} <span className="ps-num text-ps-bone">{fmtBRL(p.value as number | null)}</span>
-          </span>
-        ))}
-      </div>
+      <p className="text-ps-sm text-ps-mut">
+        Líquido <span className="ps-num text-ps-bone">{fmtBRL(month.netBrl)}</span>
+      </p>
+      {/* Os planos repartem o BRUTO do mês, não o líquido (Ruling ADM-T22-byPlan). Mês sem plano
+          nenhum não mostra a linha. */}
+      {(!plansKnown || plans.length > 0) && (
+        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-ps-sm text-ps-mut">
+          <span>Bruto por plano:</span>{' '}
+          {plansKnown ? (
+            plans.map((p, i) => (
+              <Fragment key={p.key}>
+                {i > 0 && ' '}
+                <span>
+                  {planLabel(p.key)} <span className="ps-num text-ps-bone">{fmtBRL(p.value as number | null)}</span>
+                </span>
+              </Fragment>
+            ))
+          ) : (
+            <span>{EMPTY}</span>
+          )}
+        </div>
+      )}
     </li>
   )
 }
@@ -316,7 +323,7 @@ function Overdue({ rows, onNavigate }: { rows: FinanceOverdue[]; onNavigate: Nav
 }
 
 function PaymentItem({ row, onNavigate }: { row: FinanceRow; onNavigate: Navigate }) {
-  const [feedback, setFeedback] = useState<Feedback | null>(null)
+  const [feedback, setFeedback] = useState<PaymentFeedback | null>(null)
   const [opening, setOpening] = useState(false)
   // Trava síncrona: dois cliques seguidos não abrem duas abas.
   const busy = useRef(false)
@@ -324,22 +331,12 @@ function PaymentItem({ row, onNavigate }: { row: FinanceRow; onNavigate: Navigat
   const openInvoice = async () => {
     if (busy.current) return
     busy.current = true
-    // A aba abre aqui, ainda dentro do clique (Ruling ADM-T8-aba); o endereço chega depois do pedido.
-    const tab = openExternalUrlLater()
+    // A aba abre aqui, ainda dentro do clique (Ruling ADM-T8-aba): antes do primeiro await.
+    const opened = openPaymentInvoice(row.paymentId)
     setOpening(true)
     setFeedback(null)
     try {
-      const r = await adminGet<PaymentLink>('payment-link', { id: row.paymentId })
-      const url = r?.invoiceUrl
-      if (typeof url === 'string' && url.startsWith('https://')) {
-        if (!tab.go(url)) setFeedback({ tone: 'alert', text: MSG_TAB_BLOCKED })
-      } else {
-        tab.cancel()
-        setFeedback({ tone: 'alert', text: MSG_NO_INVOICE })
-      }
-    } catch (e) {
-      tab.cancel()
-      setFeedback({ tone: 'alert', text: e instanceof AdminApiError ? e.message : MSG_INVOICE_FAILED })
+      setFeedback(await opened)
     } finally {
       busy.current = false
       setOpening(false)
@@ -348,12 +345,7 @@ function PaymentItem({ row, onNavigate }: { row: FinanceRow; onNavigate: Navigat
 
   const copyId = async () => {
     setFeedback(null)
-    try {
-      await navigator.clipboard.writeText(row.paymentId)
-      setFeedback({ tone: 'ok', text: 'Id copiado.' })
-    } catch {
-      setFeedback({ tone: 'alert', text: `Não deu pra copiar. O id é ${row.paymentId}.` })
-    }
+    setFeedback(await copyPaymentId(row.paymentId))
   }
 
   return (

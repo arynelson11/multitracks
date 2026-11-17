@@ -12,11 +12,11 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import type React from 'react'
 import { Loader2, RefreshCw } from 'lucide-react'
 import { Button, Led, Panel, cx } from '../../components/ui'
-import { openExternalUrlLater } from '../../lib/desktop'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import type { AdminQueryState } from '../hooks/useAdminQuery'
-import { AdminApiError, adminGet, adminPost } from '../lib/adminApi'
+import { AdminApiError, adminPost } from '../lib/adminApi'
 import { EMPTY, fmtBRL, fmtDateTimeBR, fmtDay, planLabel } from '../lib/fmt'
+import { copyPaymentId, openPaymentInvoice } from '../lib/invoiceLink'
 import {
   actionTitle,
   closeDialogText,
@@ -41,9 +41,6 @@ const RULE = 'Antes de estornar à mão, confira no Asaas se a cobrança já nã
 const MSG_CHANGED = 'A marcação mudou desde que você abriu. Atualize a lista.'
 // Erro que não veio do adminPost: não dá pra saber se a ação saiu, então vale como incerto.
 const MSG_UNEXPECTED_ACTION = 'Erro inesperado. Confira no Registro se a ação foi feita antes de tentar de novo.'
-const MSG_NO_INVOICE = 'O Asaas não mandou o link da fatura. Busque a cobrança pelo id no painel do Asaas.'
-const MSG_INVOICE_FAILED = 'Não deu pra abrir a fatura. Tente de novo.'
-const MSG_TAB_BLOCKED = 'O navegador bloqueou a aba nova. Libere as janelas deste site e clique de novo.'
 const MSG_BAD_SHAPE = 'Não deu pra carregar as pendências. Tente de novo.'
 
 const SPINNER = <Loader2 size={16} className="animate-spin motion-reduce:animate-none" />
@@ -62,7 +59,6 @@ type Feedback = { tone: 'ok' | 'alert'; text: string; label: string }
 
 type RetryActionResult = { status?: unknown; attempts?: unknown; lastError?: unknown }
 type RetryEventResult = { processed?: unknown; result?: unknown }
-type PaymentLink = { invoiceUrl?: unknown }
 
 const actionItem = (a: ReviewAction): ActionItem => ({ kind: 'action', key: `acao:${a.id}`, title: actionTitle(a.action), data: a })
 const flagItem = (f: ReviewFlag): FlagItem => ({ kind: 'flag', key: `marcacao:${f.subscriptionRef}`, title: flagTitle(f.kind), data: f })
@@ -313,22 +309,12 @@ export function ReviewTab({ onNavigate, review }: TabProps & { review: AdminQuer
     const id = item.data.paymentId
     if (!id) return
     return runLocked(invoiceKey(item), async () => {
-      // A aba abre aqui, ainda dentro do clique (Ruling ADM-T8-aba); o endereço chega depois do pedido.
-      const tab = openExternalUrlLater()
+      // A aba abre aqui, ainda dentro do clique (Ruling ADM-T8-aba): o openPaymentInvoice abre antes
+      // do primeiro await, e o endereço chega depois do pedido (Ruling ADM-T18-fatura).
+      const opened = openPaymentInvoice(id)
       forget(item.key)
-      try {
-        const r = await adminGet<PaymentLink>('payment-link', { id })
-        const url = r?.invoiceUrl
-        if (typeof url === 'string' && url.startsWith('https://')) {
-          if (!tab.go(url)) say(item, { tone: 'alert', text: MSG_TAB_BLOCKED })
-        } else {
-          tab.cancel()
-          say(item, { tone: 'alert', text: MSG_NO_INVOICE })
-        }
-      } catch (e) {
-        tab.cancel()
-        say(item, { tone: 'alert', text: e instanceof AdminApiError ? e.message : MSG_INVOICE_FAILED })
-      }
+      const problem = await opened
+      if (problem) say(item, problem)
       return 'free'
     })
   }
@@ -337,12 +323,7 @@ export function ReviewTab({ onNavigate, review }: TabProps & { review: AdminQuer
     const id = item.data.paymentId
     if (!id) return
     forget(item.key)
-    try {
-      await navigator.clipboard.writeText(id)
-      say(item, { tone: 'ok', text: 'Id copiado.' })
-    } catch {
-      say(item, { tone: 'alert', text: `Não deu pra copiar. O id é ${id}.` })
-    }
+    say(item, await copyPaymentId(id))
   }
 
   const groups = data ? splitQueue(data) : null
