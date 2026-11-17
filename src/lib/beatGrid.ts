@@ -92,25 +92,25 @@ export interface SongGridDetection extends BeatGrid {
   /**
    * De onde veio o "1" (`downbeat`), pra quem mostra o "1" (M7, T27) marcar quando ele
    * é incerto: `baixo` (o baixo votou), `harmonia` (só a harmonia votou), `bumbo`,
-   * `bumbo-lidera` (com faixas que não votam, o bumbo de 0,41 a 1,25 dB acima do
-   * segundo, dentro do empate; sempre incerto, Ruling M3-r4), `inicio-da-bateria`
-   * (empate do bumbo desfeito por onde a bateria começa) ou `reserva`. Medido na M3,
-   * marcando como incerto todo "1" que não vem de `baixo` ou `bumbo` com
-   * `downbeatMargin` de 0,3 ou mais: nos sintéticos sem baixo da revisão (pads, drones
-   * e o bumbo do 3 de 0,5 a 1 dB mais alto), todo "1" errado fica marcado; nas
-   * multitracks reais (140 leituras), ficam marcados 12 dos 18 errados e 58 dos 122
-   * certos (os 6 errados sem marca vêm do baixo ou do bumbo sozinho). Limite
-   * conhecido: com o bumbo do 3 a +1,3 dB (fora do empate), 12 de 14 errados saem
-   * `bumbo` com folga 0,55, acima do corte de 0,3; a M7 mede o corte da dúvida com
-   * esse caso. Ausente só na grade de reserva sem faixa de pulso que dê pra medir (aí
-   * o "1" é o 0, como `reserva`).
+   * `bumbo-lidera` (com faixas que não votam, o bumbo pelo menos 10% acima do segundo
+   * dentro do empate de 25%: de 0,41 a 1,25 dB quando a faixa tem bumbo, `hasKick`,
+   * senão na banda grave; sempre incerto, Ruling M3-M7), `inicio-da-bateria` (empate
+   * do bumbo desfeito por onde a bateria começa) ou `reserva`. A regra da dúvida é a
+   * `autoClickChecks` (src/lib/autoClick.ts): incerto todo "1" que não vem de `baixo`,
+   * `harmonia` ou `bumbo` com `downbeatMargin` de 0,76 ou mais. Nos runs oficiais das
+   * multitracks reais (140 leituras julgadas: 17 errados e 123 certos) ela marca 15
+   * dos 17 errados e 53 dos 123 certos (a regra da M3, "baixo, ou bumbo com folga de
+   * 0,3 ou mais", marcava 6 dos 17 e 50 dos 123); nos sintéticos sem baixo, inclusive
+   * o bumbo do 3 a +1,3 dB (`bumbo` com folga de 0,557 a 0,561), todo "1" errado fica
+   * marcado. Ausente só na grade de reserva sem faixa de pulso que dê pra medir (aí o
+   * "1" é o 0, como `reserva`).
    */
   downbeatFrom?: DownbeatSource;
   /**
-   * Folga do "1" sobre o segundo tempo, na conta que decidiu (perfis com média 1: com
-   * voto, a soma dos desvios; sem voto, o perfil do bumbo). 0 quando saiu de um empate
-   * do bumbo (desfeito por onde a bateria começa ou pelo mais forte dele) ou da
-   * reserva. Ausente junto com `downbeatFrom`.
+   * Folga do "1" sobre o segundo tempo, na conta que decidiu: diferença de perfis com
+   * média 1 (com voto, a soma dos desvios; sem voto, o perfil do bumbo), não dB. 0
+   * quando saiu de um empate do bumbo (desfeito por onde a bateria começa ou pelo mais
+   * forte dele) ou da reserva. Ausente junto com `downbeatFrom`.
    */
   downbeatMargin?: number;
   /** Metade e dobro do `bpm` (em semínima), pra oferecer (vazio na grade de reserva). */
