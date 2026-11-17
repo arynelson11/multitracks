@@ -8,8 +8,12 @@ import { useSettings } from '../contexts/SettingsContext';
 import { detectKey, generateEndlessClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { loadClickSelection } from '../lib/clickLibrary';
 import { attackSeconds } from '../lib/clickAttack';
-import { analyzeClickTrack, type ClickAnalysis } from '../lib/clickMeter';
-import { autoClickChecks, planAutoClick, renderAutoClick, type AutoClickCheck, type AutoClickOkPlan } from '../lib/autoClick';
+import type { ClickAnalysis } from '../lib/clickMeter';
+import { autoClickChecks, renderAutoClick, type AutoClickCheck, type AutoClickOkPlan } from '../lib/autoClick';
+// A conta pesada da grade roda neste Worker (Ruling T27-worker). `?worker&inline`: o código dele
+// vai dentro do pacote e nasce por Blob URL (funciona em file:// no app de computador).
+import GridWorker from '../workers/gridWorker?worker&inline';
+import { tempoChannelsForPlan, type GridWorkerChannel, type GridWorkerResponse, type GridWorkerTask } from '../workers/gridWorker';
 import { sanitizeTimeSignature } from '../lib/cloudBpm';
 import { barSeconds, gridFromBpm, gridFromClick, gridWarning, keepManualMeter, pulseSeconds, sanitizeGrid, withMeter } from '../lib/songGrid';
 import { isCompound, type GridWarning, type SongGrid, type StageGates, type StageMode, type TimeSignature } from '../lib/stageContracts';
@@ -402,10 +406,21 @@ const CLICK_MIN_SECONDS = 4;
 /** Canal de click abaixo disto (-60 dBFS) do começo ao fim é silêncio: nada a ler. */
 const CLICK_SILENCE = 1e-3;
 /**
- * Folga antes de cada leitura síncrona (até 450 ms por canal de click; o planAutoClick, até uns
- * 4 s numa música de 5 min): a tela mostra "lendo a grade" antes, como no Metrônomo (M7).
+ * Folga entre os pedaços de trabalho da grade que ainda ficam na thread principal (a cópia das
+ * amostras de cada canal pro Worker, o WAV do click gerado): a tela e o play passam entre eles.
  */
 const GRID_YIELD_MS = 30;
+/**
+ * Worker da grade que não responde nisso (a leitura mais longa medida, o plano do click numa
+ * música de 5 min, leva uns 4 s) é dado como quebrado: é encerrado e a leitura automática para.
+ */
+const GRID_WORKER_TIMEOUT_MS = 120_000;
+/**
+ * Amostras copiadas por vez pro Worker (1 MB). Medido no Chrome 157 com uma música de 10 min: o
+ * canal inteiro de uma vez travava a thread principal ~70 ms; em pedaços de 4 MB um play no meio
+ * esperava até 11 ms; de 1 MB, até 6 ms (sem leitura nenhuma, 2 ms). A cópia leva ~0,6 s.
+ */
+const GRID_COPY_CHUNK = 1 << 18;
 /**
  * Dúvidas do plano que barram o click gerado: com o tempo incerto (contratempo, BPM salvo que
  * não bate, família 3:2 escolhida pelo BPM salvo) o click sairia fora do que a banda toca, e
@@ -416,8 +431,13 @@ const AUTO_CLICK_BLOCKERS: ReadonlySet<AutoClickCheck> = new Set<AutoClickCheck>
 
 /** Grade e se o "1" dela é assumido (o click não provou onde ele cai e as seções não decidiram). */
 interface ReadGrid { grid: SongGrid; oneAssumed: boolean }
-/** Pedido na fila da grade: ler o click e, nos planos pagos, gerar o que falta. */
-interface GridJob { read: boolean; generate: boolean; done: (() => void)[] }
+/**
+ * Pedido na fila da grade: ler o click e, nos planos pagos, gerar o que falta. `plan` guarda o
+ * plano que o Worker devolveu com a VS já tocando: o WAV do click só é feito na próxima parada.
+ */
+interface GridJob { read: boolean; generate: boolean; plan?: AutoClickOkPlan; done: (() => void)[] }
+/** Worker da grade vivo e os pedidos esperando resposta. */
+interface GridWorkerLink { worker: Worker; calls: Map<number, (r: GridWorkerResponse | null) => void>; next: number }
 
 /** Amostras do canal 0 de um canal de click que dá pra ler (4 s ou mais, com som); null se não dá. */
 function readableClick(buffer: AudioBuffer | undefined): Float32Array | null {
@@ -2380,10 +2400,14 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // === Grade da música (T27) ===
     // A leitura fica fora do caminho do play: cada música que precisa (carregada agora, ficou
     // ativa sem grade de click, ganhou um canal de click ou pediu "Ler o click de novo") entra
-    // numa fila, que só anda com a VS parada (nada agendado, nenhum play pendente nem contagem
-    // esperando) e cede a tela antes de cada leitura síncrona (GRID_YIELD_MS). Leitura que
-    // encontra a VS tocando espera a próxima parada; o click gerado espera também a próxima
-    // música do AUTO entrar. Sem geração em lote: só a música carregada ou que ficou ativa.
+    // numa fila, que só começa um pedido com a VS parada (nada agendado, nenhum play pendente
+    // nem contagem esperando). A conta pesada (a leitura do click e o plano do click que falta)
+    // roda no Worker da grade (Ruling T27-worker): um play no meio dela começa na hora. Na
+    // thread principal ficam só a cópia das amostras pro Worker (canal por canal, cedendo a
+    // tela entre eles e desistindo se a VS for tocar) e o WAV do click gerado (só parado). Sem
+    // Worker (ausente ou quebrado) a grade não é lida sozinha, nunca na thread principal; fica
+    // a do BPM salvo e o Metrônomo, a pedido. Sem geração em lote: só a música carregada ou que
+    // ficou ativa.
     const gridJobsRef = useRef(new Map<string, GridJob>());
     const [gridPending, setGridPending] = useState<readonly string[]>([]);
     const gridRunningRef = useRef(false);
@@ -2396,10 +2420,83 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // no EDITAR (Ruling W3). Sem compasso escolhido ele já fica na grade salva ('padrao').
     const [oneAssumedSongs, setOneAssumedSongs] = useState<ReadonlySet<string>>(() => new Set());
 
+    // Worker da grade: nasce no primeiro pedido e fica até o motor sair de cena. 'sem-worker' =
+    // não nasceu ou quebrou: a leitura automática para de vez nesta sessão.
+    const gridWorkerRef = useRef<GridWorkerLink | 'sem-worker' | null>(null);
+    const gridWorkerUsable = () => gridWorkerRef.current !== 'sem-worker' && typeof Worker !== 'undefined';
+    // Encerra o Worker e responde nulo a quem esperava (aquela leitura desiste, sem mexer na grade).
+    const dropGridWorker = (link: GridWorkerLink, why: unknown) => {
+        if (gridWorkerRef.current === link) gridWorkerRef.current = 'sem-worker';
+        link.worker.terminate();
+        const waiting = [...link.calls.values()];
+        link.calls.clear();
+        waiting.forEach((done) => done(null));
+        console.error('[grade] o Worker da grade parou: a grade não é mais lida sozinha nesta sessão', why);
+    };
+    const gridWorkerLink = (): GridWorkerLink | null => {
+        const current = gridWorkerRef.current;
+        if (current === 'sem-worker') return null;
+        if (current) return current;
+        try {
+            if (typeof GridWorker !== 'function') throw new Error('pacote sem o Worker da grade');
+            const link: GridWorkerLink = { worker: new GridWorker({ name: 'grade-da-musica' }), calls: new Map(), next: 1 };
+            link.worker.onmessage = (e: MessageEvent<GridWorkerResponse>) => {
+                const done = link.calls.get(e.data.id);
+                link.calls.delete(e.data.id);
+                done?.(e.data);
+            };
+            link.worker.onerror = (e) => dropGridWorker(link, e);
+            link.worker.onmessageerror = (e) => dropGridWorker(link, e);
+            gridWorkerRef.current = link;
+            return link;
+        } catch (e) {
+            gridWorkerRef.current = 'sem-worker';
+            console.error('[grade] sem o Worker da grade: a grade não é lida sozinha (fica a do BPM salvo e o Metrônomo)', e);
+            return null;
+        }
+    };
+    // Um pedido ao Worker, com as amostras transferidas (o motor já mandou cópias). Nulo = sem Worker.
+    const askGridWorker = (task: GridWorkerTask, transfer: Transferable[]): Promise<GridWorkerResponse | null> => {
+        const link = gridWorkerLink();
+        if (!link) return Promise.resolve(null);
+        return new Promise((resolve) => {
+            const id = link.next++;
+            const timer = setTimeout(() => dropGridWorker(link, new Error('sem resposta')), GRID_WORKER_TIMEOUT_MS);
+            link.calls.set(id, (r) => { clearTimeout(timer); resolve(r); });
+            try {
+                link.worker.postMessage({ ...task, id }, transfer);
+            } catch (e) {
+                dropGridWorker(link, e);
+            }
+        });
+    };
+    useEffect(() => () => {
+        const link = gridWorkerRef.current;
+        gridWorkerRef.current = null;
+        if (link && link !== 'sem-worker') {
+            link.worker.terminate();
+            const waiting = [...link.calls.values()];
+            link.calls.clear();
+            waiting.forEach((done) => done(null));
+        }
+    }, []);
+
     // A VS toca ou vai tocar: algo agendado no relógio, play pendente ou contagem esperando a troca de papel.
     const engineBusy = () => playPendingRef.current || recountQueuedRef.current || timelineRef.current.length > 0;
     // A próxima música vai entrar sozinha (AUTO, 5 s depois do fim; ou o fade da "próxima").
     const nextSongPending = () => autoNextTimeoutRef.current !== null || nextSongTimerRef.current !== null;
+    // Cópia das amostras pro Worker (o original continua no AudioBuffer que toca), em pedaços e
+    // cedendo a thread antes de cada um: a tela e o play passam entre eles. Null se a VS for
+    // tocar no meio (a leitura recomeça na próxima parada).
+    const copyForGridWorker = async (src: Float32Array): Promise<Float32Array | null> => {
+        const out = new Float32Array(src.length);
+        for (let i = 0; i < src.length; i += GRID_COPY_CHUNK) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            if (engineBusy()) return null;
+            out.set(src.subarray(i, Math.min(src.length, i + GRID_COPY_CHUNK)), i);
+        }
+        return out;
+    };
 
     const enqueueGridJob = (songId: string, want: { read: boolean; generate: boolean }): Promise<void> => new Promise((resolve) => {
         const job = gridJobsRef.current.get(songId) ?? { read: false, generate: false, done: [] };
@@ -2429,6 +2526,8 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // com áudio; gera o click que falta só com `generate` (carregada agora, ou ficou ativa com a
     // VS parada), no plano que pode e sem canal de Click.
     const scheduleSongGrid = (song: Song, want: { read: boolean; generate: boolean }) => {
+        // Sem Worker, nada é lido sozinho (nunca na thread principal).
+        if (!gridWorkerUsable()) return;
         const read = want.read && sanitizeGrid(song.grid)?.source !== 'click' && clickChannelsOf(song).some((ch) => readableClick(ch.buffer) !== null);
         const generate = want.generate && autoClickRef.current && !findClickChannel(song.channels);
         if (read || generate) void enqueueGridJob(song.id, { read, generate });
@@ -2436,7 +2535,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
 
     // Passos 1 e 3: lê cada canal de Click até um dar grade (o "Click - No Drums" do Morada dá
     // nulo); sem nenhum, vale a grade do BPM salvo (songGridOf). O compasso escolhido no EDITAR
-    // fica (keepManualMeter, depois do sanitizeGrid). 'espera' = a VS começou a tocar no meio.
+    // fica (keepManualMeter, depois do sanitizeGrid). A leitura é no Worker; aqui só a cópia do
+    // canal 0 (transferida). 'espera' = a VS vai tocar antes de mandar o próximo canal (o que já
+    // está no Worker termina lá e o resultado vale, mesmo tocando: aplicar é barato).
     const readSongGrid = async (songId: string): Promise<'feita' | 'espera'> => {
         const song = playlistRef.current.find((s) => s.id === songId);
         if (!song) return 'feita';
@@ -2453,12 +2554,14 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             if (!samples) continue;
             if (analyzed++ > 0) await new Promise((resolve) => setTimeout(resolve, GRID_YIELD_MS));
             if (engineBusy()) return 'espera';
-            let a: ClickAnalysis | null = null;
-            try {
-                a = analyzeClickTrack(samples, ch.buffer.sampleRate, known, bpm);
-            } catch (e) {
-                console.error(`[grade] leitura do click "${ch.name}" falhou`, e);
-            }
+            // A cópia vai embora (transferida); o original continua no AudioBuffer que toca.
+            const copy = await copyForGridWorker(samples);
+            if (!copy) return 'espera';
+            const resp = await askGridWorker({ kind: 'click', samples: copy, sampleRate: ch.buffer.sampleRate, known, bpm }, [copy.buffer]);
+            // Sem Worker: desiste sem mexer na grade (nunca lê aqui).
+            if (!resp) return 'feita';
+            if (resp.kind === 'erro') console.error(`[grade] leitura do click "${ch.name}" falhou: ${resp.message}`);
+            const a: ClickAnalysis | null = resp.kind === 'click' ? resp.analysis : null;
             found = a ? gridFromReading(withLead(a, generatedClickLead(ch)), known, song.markers) : null;
             if (found) break;
         }
@@ -2476,22 +2579,49 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
 
     // Passo 2: o click que falta, pelo fluxo do Metrônomo (M7), com o BPM salvo como referência
     // e o compasso conhecido. Sem plano bom, ou com o tempo em dúvida, não gera (a música fica
-    // como hoje). Só o planAutoClick é síncrono (pesado); tocar durante o resto não atrapalha: o
-    // canal entra pelo addLiveVoice.
-    const generateMissingClick = async (songId: string): Promise<void> => {
+    // como hoje). O plano (planAutoClick) é feito no Worker, com cópias só das faixas que ele lê
+    // (tempoChannelsForPlan: o mesmo plano que com a música inteira). O WAV do click só sai com
+    // a VS parada: plano que volta com ela tocando fica guardado no pedido ('espera') e o click
+    // é feito na próxima parada. O canal entra pelo addLiveVoice se a VS já estiver tocando.
+    const generateMissingClick = async (songId: string, job: GridJob): Promise<'feita' | 'espera'> => {
         const song = playlistRef.current.find((s) => s.id === songId);
-        if (!song || !autoClickRef.current || findClickChannel(song.channels)) return;
+        if (!song || !autoClickRef.current || findClickChannel(song.channels)) return 'feita';
         const before = sanitizeGrid(song.grid);
         const signature = (before?.meterSource === 'manual' ? before.signature : sanitizeTimeSignature(song.timeSignature)) ?? undefined;
-        const plan = planAutoClick(song.channels, { songBpm: song.bpm, signature });
-        if (!plan.ok || autoClickChecks(plan.detection).some((c) => AUTO_CLICK_BLOCKERS.has(c))) return;
+        let plan = job.plan;
+        if (!plan) {
+            const picked = tempoChannelsForPlan(song.channels);
+            // Sem bateria, percussão nem baixo: o "sem-faixa" do planAutoClick, sem acordar o Worker.
+            if (picked.length === 0) return 'feita';
+            const sent: GridWorkerChannel[] = [];
+            for (const ch of picked) {
+                const data: Float32Array[] = [];
+                for (let c = 0; c < ch.buffer.numberOfChannels; c++) {
+                    // A VS vai tocar no meio: desiste das cópias (refaz na parada).
+                    const copy = await copyForGridWorker(ch.buffer.getChannelData(c));
+                    if (!copy) return 'espera';
+                    data.push(copy);
+                }
+                sent.push({ id: ch.id, name: ch.name, customName: ch.customName, role: ch.role, sampleRate: ch.buffer.sampleRate, data });
+            }
+            const resp = await askGridWorker({ kind: 'plano', channels: sent, songBpm: song.bpm, signature }, sent.flatMap((ch) => ch.data.map((d) => d.buffer)));
+            if (!resp) return 'feita';
+            if (resp.kind === 'erro') console.error(`[grade] o plano do click que falta falhou: ${resp.message}`);
+            if (resp.kind !== 'plano' || !resp.plan.ok || autoClickChecks(resp.plan.detection).some((c) => AUTO_CLICK_BLOCKERS.has(c))) return 'feita';
+            plan = resp.plan;
+            if (engineBusy()) {
+                job.plan = plan;
+                return 'espera';
+            }
+        }
         const made = gridFromAutoClick(plan, signature !== undefined);
-        if (!made) return;
+        if (!made) return 'feita';
         const blob = await renderAutoClick(plan, song.duration, loadClickSelection());
         const added = await appendChannelToSong(songId, new File([blob], `${GENERATED_CLICK_NAME}.wav`, { type: 'audio/wav' }));
-        if (!added) return;
+        if (!added) return 'feita';
         patchSong(songId, (s) => ({ ...s, grid: sanitizeGrid(keepManualMeter(made.grid, sanitizeGrid(s.grid))) ?? undefined }));
         markOneAssumed(songId, made.oneAssumed);
+        return 'feita';
     };
 
     // Os passos da renderização mais nova: a fila pode ter começado a andar numa renderização
@@ -2519,14 +2649,15 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
                 finishGridJob(songId);
                 continue;
             }
-            // Cede a tela (o "lendo a grade" aparece) antes do trabalho síncrono.
+            // Cede a tela (o "lendo a grade" aparece) antes de começar.
             await new Promise((resolve) => setTimeout(resolve, GRID_YIELD_MS));
             if (engineBusy()) return 'espera';
             if (job.generate && nextSongPending()) continue;
             try {
                 if (job.generate) {
+                    if (await gridStepsRef.current.generate(songId, job) === 'espera') return 'espera';
                     job.generate = false;
-                    await gridStepsRef.current.generate(songId);
+                    job.plan = undefined;
                 }
                 if (job.read) {
                     if (await gridStepsRef.current.read(songId) === 'espera') return 'espera';
@@ -2536,6 +2667,11 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
                 console.error('[grade] a grade da música não foi lida', e);
             }
             finishGridJob(songId);
+            // Worker quebrou no meio: o resto da fila desiste (nada é lido na thread principal).
+            if (!gridWorkerUsable()) {
+                for (const id of [...gridJobsRef.current.keys()]) finishGridJob(id);
+                return 'vazia';
+            }
         }
     };
     // Põe a fila pra andar (um corredor só). Chamado ao pedir e quando a VS para; quem decide se
@@ -2579,7 +2715,8 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // "Ler o click de novo": refaz os passos 1 e 3 e mantém o compasso escolhido. Pela fila: com a
     // VS tocando, a leitura (e a promessa) espera a parada.
     const redetectSongGrid = async (songId: string): Promise<void> => {
-        if (!playlistRef.current.some((s) => s.id === songId)) return;
+        // Sem Worker não lê (nunca na thread principal): fica a grade de agora.
+        if (!gridWorkerUsable() || !playlistRef.current.some((s) => s.id === songId)) return;
         await enqueueGridJob(songId, { read: true, generate: false });
     };
 

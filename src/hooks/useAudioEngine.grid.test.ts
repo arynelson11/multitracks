@@ -5,13 +5,14 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type MockIn
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { makeClickShims } from '../test/clickShims'
 import { mixToMono, parseWav } from '../test/clickProbe'
-import { createFakeAudioContext, FakeAudioBuffer } from '../test/fakeAudio'
+import { createFakeAudioContext, FakeAudioBuffer, nodesOf, type FakeAudioContext } from '../test/fakeAudio'
 import type { AutoClickPlan } from '../lib/autoClick'
 import type { SongGridDetection } from '../lib/beatGrid'
 import { resolveChannelRole } from '../lib/channelNames'
 import type { SavedSong } from '../lib/repertoireSchema'
 import type { StageGates, StageMode, TimeSignature } from '../lib/stageContracts'
 import type { Marker } from '../types'
+import { handleGridRequest, type GridWorkerRequest, type GridWorkerResponse } from '../workers/gridWorker'
 import { useAudioEngine } from './useAudioEngine'
 
 // T27: a grade de cada música sai da faixa de click (analyzeClickTrack da T3 + gridFromClick da
@@ -36,12 +37,45 @@ const mem = vi.hoisted(() => ({
   opts: undefined as EngineOpts | undefined,
   // O que o planAutoClick mockado devolve, e as chamadas dele e do renderAutoClick.
   plan: null as unknown,
-  planCalls: [] as { ids: string[]; opts: unknown }[],
+  planCalls: [] as { ids: string[]; opts: unknown; worker: boolean }[],
   renderCalls: [] as unknown[][],
   // Cada leitura do click: compasso e BPM passados e se a VS estava tocando naquele instante.
-  analyzeCalls: [] as { known: unknown; bpm: unknown; playing: boolean }[],
+  analyzeCalls: [] as { known: unknown; bpm: unknown; playing: boolean; worker: boolean }[],
   playing: () => false,
+  // Worker da grade falso (Ruling T27-worker): roda o handleGridRequest do arquivo do Worker
+  // fora do pedido (num setTimeout), como uma thread à parte. `inWorker` marca o que rodou nele;
+  // `workerGate` segura as respostas até o teste liberar; `workerMode` faz ele não nascer ou quebrar.
+  inWorker: false,
+  workerGate: null as Promise<void> | null,
+  workerMode: 'ok' as 'ok' | 'nao-nasce' | 'quebra',
+  workers: [] as unknown[],
+  requests: [] as { req: GridWorkerRequest; transfer: Transferable[] }[],
+  ctx: null as unknown,
 }))
+
+class FakeGridWorker {
+  onmessage: ((e: { data: GridWorkerResponse }) => void) | null = null
+  onerror: ((e: unknown) => void) | null = null
+  onmessageerror: ((e: unknown) => void) | null = null
+  terminated = false
+  constructor() {
+    if (mem.workerMode === 'nao-nasce') throw new Error('Worker bloqueado (teste)')
+    mem.workers.push(this)
+  }
+  postMessage(req: GridWorkerRequest, transfer: Transferable[]) {
+    mem.requests.push({ req, transfer })
+    const run = () => {
+      if (this.terminated) return
+      if (mem.workerMode === 'quebra') { this.onerror?.(new Event('error')); return }
+      mem.inWorker = true
+      let resp: GridWorkerResponse
+      try { resp = handleGridRequest(req) } finally { mem.inWorker = false }
+      this.onmessage?.({ data: resp })
+    }
+    void (mem.workerGate ?? Promise.resolve()).then(() => setTimeout(run, 0))
+  }
+  terminate() { this.terminated = true }
+}
 
 const isMetaKey = (key: string) => key.startsWith('mt_meta_playlist')
 vi.mock('idb-keyval', () => ({
@@ -75,7 +109,7 @@ vi.mock('../lib/clickMeter', async (importOriginal) => {
   return {
     ...real,
     analyzeClickTrack: (...args: Parameters<typeof real.analyzeClickTrack>) => {
-      mem.analyzeCalls.push({ known: args[2], bpm: args[3], playing: mem.playing() })
+      mem.analyzeCalls.push({ known: args[2], bpm: args[3], playing: mem.playing(), worker: mem.inWorker })
       return real.analyzeClickTrack(...args)
     },
   }
@@ -85,7 +119,7 @@ vi.mock('../lib/autoClick', async (importOriginal) => {
   return {
     ...real,
     planAutoClick: (channels: readonly { id: string }[], opts: unknown) => {
-      mem.planCalls.push({ ids: channels.map((c) => c.id), opts })
+      mem.planCalls.push({ ids: channels.map((c) => c.id), opts, worker: mem.inWorker })
       return mem.plan
     },
     renderAutoClick: async (...args: unknown[]) => {
@@ -174,6 +208,12 @@ beforeEach(() => {
   mem.renderCalls.length = 0
   mem.analyzeCalls.length = 0
   mem.playing = () => false
+  mem.inWorker = false
+  mem.workerGate = null
+  mem.workerMode = 'ok'
+  mem.workers.length = 0
+  mem.requests.length = 0
+  mem.ctx = null
   mem.settings = { autoPan: false, audioDeviceId: 'default', outputs: { mode: 'split2', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } } }
   localStorage.setItem('mt_legacy_pans_reset:u1', '1')
   mem.buffers.clear()
@@ -189,7 +229,12 @@ beforeEach(() => {
     if (samples) buffer.copyToChannel(samples, 0)
     return buffer
   }
-  vi.stubGlobal('AudioContext', function () { return createFakeAudioContext({ decode }) })
+  vi.stubGlobal('AudioContext', function () {
+    const ctx = createFakeAudioContext({ decode })
+    mem.ctx = ctx
+    return ctx
+  })
+  vi.stubGlobal('Worker', FakeGridWorker)
   vi.stubGlobal('requestAnimationFrame', () => 0)
   vi.stubGlobal('cancelAnimationFrame', () => {})
   vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -264,7 +309,7 @@ describe('grade da música lida na faixa de click', () => {
     expect(grid.firstDownbeat).toBeCloseTo(0.5, 3)
     expect(hook.result.current.gridWarning).toBeNull()
     // Lida uma vez, com o BPM salvo da música e sem compasso conhecido, e com a VS parada.
-    expect(mem.analyzeCalls).toEqual([{ known: null, bpm: 100, playing: false }])
+    expect(mem.analyzeCalls).toEqual([{ known: null, bpm: 100, playing: false, worker: true }])
     expect(saved()[0].grid).toEqual(grid)
   })
 
@@ -306,7 +351,7 @@ describe('grade da música lida na faixa de click', () => {
 
     // "Ler o click de novo": relê BPM e fase com o compasso escolhido e mantém ele.
     await act(async () => { await hook.result.current.redetectSongGrid(songId) })
-    expect(mem.analyzeCalls).toEqual([{ known: '3/4', bpm: 120, playing: false }])
+    expect(mem.analyzeCalls).toEqual([{ known: '3/4', bpm: 120, playing: false, worker: true }])
     const again = hook.result.current.songGrid!
     expect(again).toMatchObject({ signature: '3/4', meterSource: 'manual', source: 'click' })
     expect(again.bpm).toBeCloseTo(120, 2)
@@ -374,7 +419,7 @@ describe('grade da música lida na faixa de click', () => {
     seedSongs([v2('s1', 120), v2('s2', 100)], (id) => (id === 's1-c' ? 'click44' : id === 's2-c' ? 'click34' : 'bateria'))
     const hook = await openApp()
     await waitFor(() => expect(hook.result.current.playlist.map((s) => s.grid?.signature)).toEqual(['4/4', '3/4']), { timeout: 5000 })
-    expect(mem.analyzeCalls).toEqual([{ known: null, bpm: 120, playing: false }, { known: null, bpm: 100, playing: false }])
+    expect(mem.analyzeCalls).toEqual([{ known: null, bpm: 120, playing: false, worker: true }, { known: null, bpm: 100, playing: false, worker: true }])
     await waitFor(() => expect(saved().map((s) => s.grid?.source)).toEqual(['click', 'click']))
     // A segunda, ao ficar ativa, não lê de novo.
     act(() => { hook.result.current.jumpToSong(1) })
@@ -424,7 +469,7 @@ describe('grade da música lida na faixa de click', () => {
 
     act(() => { hook.result.current.pause() })
     await waitFor(() => expect(hook.result.current.playlist[1].grid?.source).toBe('click'), { timeout: 5000 })
-    expect(mem.analyzeCalls).toEqual([{ known: null, bpm: 120, playing: false }])
+    expect(mem.analyzeCalls).toEqual([{ known: null, bpm: 120, playing: false, worker: true }])
   })
 })
 
@@ -437,7 +482,7 @@ describe('click que falta (planos pagos)', () => {
     await settled(hook)
 
     const song = hook.result.current.playlist[0]
-    expect(mem.planCalls).toEqual([{ ids: expect.any(Array), opts: { songBpm: 120, signature: '4/4' } }])
+    expect(mem.planCalls).toEqual([{ ids: expect.any(Array), opts: { songBpm: 120, signature: '4/4' }, worker: true }])
     expect(mem.planCalls[0].ids).toHaveLength(2)
     // O WAV do tamanho da música, no click escolhido na biblioteca.
     expect(mem.renderCalls).toEqual([[mem.plan, 20, { type: 'Percussive', subdivision: 'quarter' }]])
@@ -516,6 +561,134 @@ describe('click que falta (planos pagos)', () => {
     await waitFor(() => expect(hook.result.current.playlist[1].channels.some((c) => c.name === 'Click gerado')).toBe(true), { timeout: 5000 })
     await settled(hook)
     expect(mem.planCalls.map((c) => c.ids)).toEqual([['s1-d', 's1-b'], ['s2-d', 's2-b']])
+  })
+})
+
+describe('Worker da grade (Ruling T27-worker)', () => {
+  const ctxOf = () => mem.ctx as FakeAudioContext
+  // Instante comum do play: 2 blocos de 128 amostras depois do relógio, na grade de blocos.
+  const startAt = (now: number) => (Math.floor(now / (128 / SR) + 1e-6) + 2) * (128 / SR)
+
+  it('a leitura roda no Worker, com uma cópia do canal transferida; nada é lido na thread principal', async () => {
+    const hook = await openApp()
+    await load(hook, [['CLICK.wav', 'click44'], ['BASS.wav', 'bateria']], { bpm: 120 })
+    await settled(hook)
+    expect(hook.result.current.songGrid).toMatchObject({ signature: '4/4', source: 'click' })
+    expect(mem.analyzeCalls).toEqual([{ known: null, bpm: 120, playing: false, worker: true }])
+    expect(mem.workers).toHaveLength(1)
+    const [{ req, transfer }] = mem.requests
+    if (req.kind !== 'click') throw new Error(`pedido ${req.kind}`)
+    // Cópia: o canal que toca continua com as amostras dele (a cópia é que foi transferida).
+    const click = hook.result.current.playlist[0].channels.find((c) => c.name === 'CLICK')!
+    const original = click.buffer.getChannelData(0)
+    // (comparação por identidade sem o not.toBe, que compara os 960 mil números pra montar a mensagem)
+    expect(req.samples === original).toBe(false)
+    expect(req.samples.buffer === original.buffer).toBe(false)
+    expect(req.samples.length).toBe(original.length)
+    expect(req.samples.findIndex((v, i) => v !== original[i])).toBe(-1)
+    expect(transfer).toHaveLength(1)
+    expect(transfer[0]).toBe(req.samples.buffer)
+  })
+
+  it('play pedido durante uma leitura começa sem esperar por ela', async () => {
+    let release!: () => void
+    mem.workerGate = new Promise<void>((resolve) => { release = resolve })
+    const hook = await openApp()
+    await load(hook, [['CLICK.wav', 'click44'], ['BASS.wav', 'bateria']], { bpm: 120 })
+    // A leitura já foi pro Worker e ainda não voltou.
+    await waitFor(() => expect(mem.requests).toHaveLength(1), { timeout: 5000 })
+    expect(hook.result.current.isReadingGrid).toBe(true)
+
+    // Relógio do áudio parado em 2 s: o play agenda as vozes no instante comum de sempre.
+    ctxOf().currentTime = 2
+    await act(async () => { await hook.result.current.play() })
+    expect(hook.result.current.isPlaying).toBe(true)
+    const sources = nodesOf(ctxOf(), 'AudioBufferSourceNode')
+    expect(sources).toHaveLength(2)
+    for (const s of sources) expect(s.starts[0].when).toBeCloseTo(startAt(2), 9)
+    expect(mem.analyzeCalls).toHaveLength(0)
+
+    // A leitura termina no Worker com a VS tocando e a grade entra (aplicar é barato).
+    release()
+    await waitFor(() => expect(hook.result.current.songGrid?.source).toBe('click'), { timeout: 5000 })
+    expect(mem.analyzeCalls).toEqual([{ known: null, bpm: 120, playing: true, worker: true }])
+    expect(hook.result.current.isPlaying).toBe(true)
+    act(() => { hook.result.current.pause() })
+  })
+
+  it('sem Worker no navegador: a grade não é lida sozinha nem a pedido, e nada roda na thread principal', async () => {
+    vi.stubGlobal('Worker', undefined)
+    const hook = await openApp()
+    await load(hook, [['CLICK.wav', 'click44'], ['BASS.wav', 'bateria']], { bpm: 90 })
+    await wait(120)
+    expect(hook.result.current.isReadingGrid).toBe(false)
+    expect(mem.analyzeCalls).toHaveLength(0)
+    // Fica a grade do BPM salvo, com o aviso.
+    expect(hook.result.current.songGrid).toMatchObject({ bpm: 90, source: 'bpm' })
+    expect(hook.result.current.gridWarning).toBe('sem-click-lido')
+    await act(async () => { await hook.result.current.redetectSongGrid(hook.result.current.playlist[0].id) })
+    expect(mem.analyzeCalls).toHaveLength(0)
+  })
+
+  it('Worker que não nasce ou quebra no meio: a leitura para de vez, sem cair na thread principal', async () => {
+    mem.workerMode = 'nao-nasce'
+    const hook = await openApp()
+    await load(hook, [['CLICK.wav', 'click44']], { bpm: 120 })
+    await settled(hook)
+    expect(error).toHaveBeenCalledTimes(1)
+    error.mockClear()
+    // Não tenta de novo: a próxima música também fica sem leitura, sem outro erro.
+    await load(hook, [['CLICK.wav', 'click34']], { name: 'Outra', bpm: 100 })
+    await wait(120)
+    expect(mem.analyzeCalls).toHaveLength(0)
+    expect(hook.result.current.playlist.map((s) => s.grid)).toEqual([undefined, undefined])
+    cleanup()
+
+    // Nasce e quebra na primeira leitura: aquela desiste, a grade não muda e não nasce outro.
+    mem.workerMode = 'quebra'
+    const again = await openApp()
+    await waitFor(() => expect(error).toHaveBeenCalledTimes(1), { timeout: 5000 })
+    error.mockClear()
+    await settled(again)
+    await load(again, [['CLICK.wav', 'click44']], { name: 'Terceira', bpm: 120 })
+    await wait(120)
+    expect(mem.workers).toHaveLength(1)
+    expect(mem.analyzeCalls).toHaveLength(0)
+    expect(again.result.current.playlist.every((s) => s.grid === undefined)).toBe(true)
+  })
+
+  it('click que falta: só as faixas do tempo vão pro Worker, e o plano que volta com a VS tocando só vira click na parada', async () => {
+    mem.opts = { autoClick: true }
+    mem.plan = okPlan()
+    let release!: () => void
+    mem.workerGate = new Promise<void>((resolve) => { release = resolve })
+    const hook = await openApp()
+    await load(hook, [['DRUMS.wav', 'bateria'], ['BASS.wav', 'bateria'], ['VOX.wav', 'bateria']], { bpm: 120, timeSignature: '4/4' })
+    await waitFor(() => expect(mem.requests).toHaveLength(1), { timeout: 5000 })
+    const { req, transfer } = mem.requests[0]
+    if (req.kind !== 'plano') throw new Error(`pedido ${req.kind}`)
+    const names = (ids: string[]) => ids.map((id) => hook.result.current.playlist[0].channels.find((c) => c.id === id)!.name)
+    expect(names(req.channels.map((c) => c.id))).toEqual(['DRUMS', 'BASS'])
+    const sentBuffers = req.channels.flatMap((c) => c.data.map((d) => d.buffer))
+    expect(transfer).toHaveLength(sentBuffers.length)
+    transfer.forEach((t, i) => expect(t).toBe(sentBuffers[i]))
+
+    // Toca antes de o plano voltar: o click não é feito tocando.
+    await act(async () => { await hook.result.current.play() })
+    release()
+    await waitFor(() => expect(mem.planCalls).toHaveLength(1), { timeout: 5000 })
+    expect(mem.planCalls[0].worker).toBe(true)
+    await wait(120)
+    expect(mem.renderCalls).toHaveLength(0)
+    expect(hook.result.current.isReadingGrid).toBe(true)
+
+    // Parou: o click sai do plano guardado, sem pedir outro ao Worker.
+    act(() => { hook.result.current.pause() })
+    await settled(hook)
+    expect(mem.renderCalls).toHaveLength(1)
+    expect(mem.planCalls).toHaveLength(1)
+    expect(hook.result.current.playlist[0].channels.some((c) => c.name === 'Click gerado')).toBe(true)
+    expect(hook.result.current.songGrid).toMatchObject({ bpm: 120, source: 'click', meterSource: 'salvo' })
   })
 })
 
