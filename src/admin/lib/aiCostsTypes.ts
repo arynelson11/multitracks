@@ -19,6 +19,11 @@ export type AiJob = {
   costBrl: number | null
   fxRate: number | null
   fxDate: string | null
+  /**
+   * Sem custo e a varredura ainda completa (nunca gravado, ou com dólar e sem real). Falso com
+   * custo, e falso no já tentado sem preço conhecido (versão sem preço, sem dado do Replicate).
+   */
+  costPending: boolean
 }
 
 export type AiCosts = {
@@ -29,7 +34,12 @@ export type AiCosts = {
     failed: number
     canceled: number
     unknown: number
+    /** Todos os sem custo: withoutCostPending mais withoutCostUnpriced (a Visão geral usa este). */
     withoutCost: number
+    /** Sem custo que a varredura ainda completa: só estes acendem o alerta e o botão. */
+    withoutCostPending: number
+    /** Já tentados e sem preço conhecido (versão sem preço, sem dado do Replicate): fora da soma, sem ação. */
+    withoutCostUnpriced: number
     costUsd: number
     costBrl: number
     avgBrlPerSucceeded: number | null
@@ -64,7 +74,19 @@ export function hasCost(job: Pick<AiJob, 'costUsd' | 'costBrl'>): boolean {
   return isNumber(job.costUsd) && isNumber(job.costBrl)
 }
 
-const TOTAL_COUNTS = ['jobs', 'succeeded', 'failed', 'canceled', 'unknown', 'withoutCost', 'costUsd', 'costBrl', 'predictSeconds']
+const TOTAL_COUNTS = [
+  'jobs',
+  'succeeded',
+  'failed',
+  'canceled',
+  'unknown',
+  'withoutCost',
+  'withoutCostPending',
+  'withoutCostUnpriced',
+  'costUsd',
+  'costBrl',
+  'predictSeconds',
+]
 
 /**
  * A resposta tem a forma que a tela usa (Ruling ADM-T7-forma): números onde a tela soma, conta e

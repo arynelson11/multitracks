@@ -7,8 +7,12 @@ import type { AiCosts, AiJob } from '../lib/aiCostsTypes'
 
 // O caractere montado em tempo de execução: assim este arquivo nunca o contém.
 const TRAVESSAO = String.fromCharCode(0x2014)
-// Frase do Registro: a resposta da ação não chegou e o servidor pode ter feito (Ruling ADM-T4-incerto).
+// Frase do adminApi quando a resposta de uma ação não chega (Ruling ADM-T4-incerto). A varredura
+// não grava no Registro, então a tela troca por frases próprias (Ajuste ADM-sem-custo).
 const LOST = 'A resposta do servidor não chegou. Confira no Registro se a ação foi feita antes de tentar de novo.'
+const SWEEP_LOST = 'A resposta da varredura não chegou, e ela pode ter completado parte dos custos.'
+const SWEEP_UNEXPECTED = 'Erro inesperado, e a varredura pode ter completado parte dos custos.'
+const HELD = 'Clique em Atualizar pra ver os números de agora.'
 const SWEEP = 'Completar custos que faltam'
 
 const h = vi.hoisted(() => ({ adminPost: vi.fn(), adminGet: vi.fn(), served: null as unknown }))
@@ -33,10 +37,13 @@ const JOB_OK: AiJob = {
   costUsd: 0.018765,
   costBrl: 0.11,
   fxRate: 5.8612,
-  fxDate: '2026-11-17',
+  fxDate: '2026-11-16',
+  costPending: false,
 }
-// Gravado sem câmbio: tem dólar e não tem real. Conta como sem custo (Aviso T19).
-const JOB_USD_ONLY: AiJob = { ...JOB_OK, replicateId: 'r_usd_only', costUsd: 0.05, costBrl: null, fxRate: null, fxDate: null }
+// Gravado sem câmbio: tem dólar e não tem real. Conta como sem custo (Aviso T19), e a varredura
+// completa o real (pendente).
+const JOB_USD_ONLY: AiJob = { ...JOB_OK, replicateId: 'r_usd_only', costUsd: 0.05, costBrl: null, fxRate: null, fxDate: null, costPending: true }
+// Fechado sem dado do Replicate: a varredura não volta nele (sem preço conhecido).
 const JOB_UNKNOWN: AiJob = {
   ...JOB_OK,
   replicateId: 'r_9x8y7z',
@@ -47,6 +54,7 @@ const JOB_UNKNOWN: AiJob = {
   costBrl: null,
   fxRate: null,
   fxDate: null,
+  costPending: false,
 }
 const JOB_DELETED: AiJob = { ...JOB_OK, replicateId: 'r_deleted', userId: null, email: null }
 
@@ -60,6 +68,8 @@ function costs(over: Partial<AiCosts> = {}): AiCosts {
       canceled: 0,
       unknown: 1,
       withoutCost: 3,
+      withoutCostPending: 2,
+      withoutCostUnpriced: 1,
       costUsd: 2.1,
       costBrl: 12.34,
       avgBrlPerSucceeded: 1.1218,
@@ -84,7 +94,9 @@ function costs(over: Partial<AiCosts> = {}): AiCosts {
   }
 }
 
-const noCost = (n: number) => costs({ totals: { ...costs().totals, withoutCost: n } })
+/** Sem custo: `pending` a varredura ainda completa, `unpriced` já tentados sem preço conhecido. */
+const noCost = (pending: number, unpriced = 0) =>
+  costs({ totals: { ...costs().totals, withoutCost: pending + unpriced, withoutCostPending: pending, withoutCostUnpriced: unpriced } })
 
 function deferred<T>() {
   let resolve!: (v: T) => void
@@ -120,13 +132,14 @@ afterEach(() => {
 })
 
 describe('AiCostTab', () => {
-  it('mostra "3 trabalhos sem custo" e a data do câmbio', async () => {
+  it('mostra "2 trabalhos ainda sem custo" (só os pendentes) e a data do câmbio', async () => {
     const { container } = setup()
     await ready()
-    expect(screen.getByRole('heading', { name: '3 trabalhos sem custo' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: '2 trabalhos ainda sem custo' })).toBeTruthy()
     expect(sweepButton().disabled).toBe(false)
     const text = container.textContent ?? ''
     expect(text).toContain('Câmbio PTAX de venda do Banco Central, de 03/11/2026 a 17/11/2026, sem IOF nem spread do cartão')
+    expect(text).toContain('Cada trabalho usa a PTAX do próprio dia.')
     expect(text).toContain('Preço do hardware conferido em 17/11/2026 (replicate.com/pricing)')
     expect(text).toContain('gpu-t4')
     expect(text).toContain('0,000225')
@@ -135,11 +148,51 @@ describe('AiCostTab', () => {
     expect(h.adminGet).toHaveBeenCalledWith('ai-costs', { from: '2026-11-01', to: '2026-11-30', page: 1 })
   })
 
-  it('um trabalho sem custo fica no singular', async () => {
-    h.served = noCost(1)
+  it('um trabalho sem custo fica no singular, e um sem preço também', async () => {
+    h.served = noCost(1, 1)
+    const { container } = setup()
+    await ready()
+    expect(screen.getByRole('heading', { name: '1 trabalho ainda sem custo' })).toBeTruthy()
+    expect(container.textContent).toContain('1 trabalho sem preço conhecido (fora da soma)')
+  })
+
+  it('pendentes e sem preço ao mesmo tempo: o âmbar e o botão contam só os pendentes, o sem preço fica neutro', async () => {
+    h.served = noCost(4, 7)
     setup()
     await ready()
-    expect(screen.getByRole('heading', { name: '1 trabalho sem custo' })).toBeTruthy()
+    const alert = screen.getByRole('region', { name: '4 trabalhos ainda sem custo' })
+    expect(within(alert).getByRole('button', { name: SWEEP })).toBeTruthy()
+    expect(alert.textContent).not.toContain('sem preço')
+    expect(alert.textContent).not.toContain('11')
+    // O número fica num span (fonte de número): procura o parágrafo inteiro.
+    const line = screen.getByText((_, el) => el?.tagName === 'P' && el.textContent === '7 trabalhos sem preço conhecido (fora da soma)')
+    expect(alert.contains(line)).toBe(false)
+    expect(line.closest('.text-ps-alert, .bg-ps-alert-soft')).toBeNull()
+    expect(line.className).not.toContain('ps-alert')
+  })
+
+  it('só sem preço conhecido: nada em âmbar e sem o botão, com a frase neutra', async () => {
+    h.served = { ...noCost(0, 5), rows: [JOB_OK, JOB_UNKNOWN], total: 2 }
+    const { container } = setup()
+    await ready()
+    expect(screen.queryByRole('heading', { name: /sem custo/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: SWEEP })).toBeNull()
+    expect(container.textContent).toContain('5 trabalhos sem preço conhecido (fora da soma)')
+    expect(container.querySelector('[class*="ps-alert"]')).toBeNull()
+  })
+
+  it('linha do trabalho: com custo mostra o dia do câmbio, pendente em âmbar, sem preço em neutro', async () => {
+    setup()
+    await ready()
+    const ok = jobRow('r_ok_1a2b3c')
+    expect(ok.textContent).toContain('PTAX de 16/11/2026')
+    const pending = jobRow('r_usd_only')
+    expect(within(pending).getByText('sem custo').className).toContain('text-ps-alert')
+    expect(pending.textContent).not.toContain('PTAX de')
+    const unpriced = jobRow('r_9x8y7z')
+    expect(unpriced.textContent).toContain('sem preço conhecido')
+    expect(unpriced.textContent).not.toContain('sem custo')
+    expect(unpriced.querySelector('[class*="ps-alert"]')).toBeNull()
   })
 
   it('mostra os totais do servidor: R$, US$, trabalhos, concluídos, falhas, média e tempo', async () => {
@@ -216,10 +269,13 @@ describe('AiCostTab', () => {
 
   it('resposta incerta segura o botão até recarregar, sem recarregar sozinha', async () => {
     h.adminPost.mockRejectedValue(new AdminApiError(LOST, 0, true))
-    setup()
+    const { container } = setup()
     await ready()
     fireEvent.click(sweepButton())
-    expect(await screen.findByText(LOST)).toBeTruthy()
+    // A varredura não grava no Registro: a frase manda clicar em Atualizar, não conferir o Registro.
+    expect(await screen.findByText(SWEEP_LOST)).toBeTruthy()
+    expect(screen.getByText(HELD)).toBeTruthy()
+    expect(container.textContent).not.toContain('Registro')
     expect(sweepButton().disabled).toBe(true)
     fireEvent.click(sweepButton())
     expect(h.adminPost).toHaveBeenCalledTimes(1)
@@ -233,10 +289,12 @@ describe('AiCostTab', () => {
 
   it('erro que não veio do adminApi também segura', async () => {
     h.adminPost.mockRejectedValue(new Error('quebrou'))
-    setup()
+    const { container } = setup()
     await ready()
     fireEvent.click(sweepButton())
-    expect(await screen.findByText('Erro inesperado. Confira no Registro se a ação foi feita antes de tentar de novo.')).toBeTruthy()
+    expect(await screen.findByText(SWEEP_UNEXPECTED)).toBeTruthy()
+    expect(screen.getByText(HELD)).toBeTruthy()
+    expect(container.textContent).not.toContain('Registro')
     expect(sweepButton().disabled).toBe(true)
     expect(h.adminGet).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByRole('button', { name: 'Atualizar' }))
@@ -285,7 +343,7 @@ describe('AiCostTab', () => {
     await Promise.resolve()
     setup()
     await ready()
-    expect(screen.getByText(LOST)).toBeTruthy()
+    expect(screen.getByText(SWEEP_LOST)).toBeTruthy()
     // A volta trouxe números novos: isso já é o recarregar que solta o botão.
     await waitFor(() => expect(sweepButton().disabled).toBe(false))
     expect(h.adminPost).toHaveBeenCalledTimes(1)
@@ -298,6 +356,7 @@ describe('AiCostTab', () => {
     expect(screen.queryByRole('heading', { name: /sem custo/ })).toBeNull()
     expect(screen.queryByRole('button', { name: SWEEP })).toBeNull()
     expect(container.querySelector('.bg-ps-alert')).toBeNull()
+    expect(container.textContent).not.toContain('sem preço conhecido (fora da soma)')
   })
 
   it('status unknown vira sem dado do Replicate', async () => {
@@ -368,6 +427,17 @@ describe('AiCostTab', () => {
     await waitFor(() => expect(h.adminGet).toHaveBeenLastCalledWith('ai-costs', { from: '2026-11-01', to: '2026-11-30', page: 2 }))
     fireEvent.click(screen.getByRole('radio', { name: 'Mês passado' }))
     await waitFor(() => expect(h.adminGet).toHaveBeenLastCalledWith('ai-costs', expect.objectContaining({ page: 1 })))
+  })
+
+  it('resposta sem a divisão do sem custo (servidor de antes) mostra a frase pronta', async () => {
+    const old: Record<string, unknown> = { ...costs().totals }
+    delete old.withoutCostPending
+    delete old.withoutCostUnpriced
+    h.served = { ...costs(), totals: old }
+    setup()
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe('Não deu pra carregar os custos de IA. Tente de novo.')
+    expect(screen.queryByRole('button', { name: SWEEP })).toBeNull()
   })
 
   it('resposta fora do formato mostra a frase pronta e Tentar de novo', async () => {

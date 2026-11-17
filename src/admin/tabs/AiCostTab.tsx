@@ -2,7 +2,11 @@
 // e o preço do hardware que entraram na conta.
 // * Período por Segmented (este mês, mês passado, últimos 90 dias), em dias de Brasília.
 // * As somas vêm do servidor e só contam trabalho com dólar e real gravados. O resto aparece contado
-//   à parte ("N trabalhos sem custo"), e a linha com dólar e sem real mostra "sem custo".
+//   à parte, em dois números (Ajuste ADM-sem-custo): o alerta âmbar e o botão contam só o que a
+//   varredura ainda completa ("N trabalhos ainda sem custo"); o já tentado sem preço conhecido
+//   aparece neutro ("N trabalhos sem preço conhecido (fora da soma)"), porque não há o que fazer.
+//   Na linha do trabalho é igual: "sem custo" em âmbar no pendente, "sem preço conhecido" neutro.
+// * Cada trabalho usa a PTAX do próprio dia: a linha mostra o dia do câmbio dela.
 // * "Completar custos que faltam" não tem diálogo. A trava contra mandar duas vezes e o segurar da
 //   resposta incerta ficam no módulo e sobrevivem à troca de aba, como o "Tentar agora" das
 //   Pendências (Rulings ADM-T4-incerto e ADM-T8-trava). Deu certo ou erro certo: recarrega e solta
@@ -21,8 +25,11 @@ import { addDaysLocal, brtTodayLocal, monthRange } from '../lib/period'
 import type { Navigate, TabProps } from '../lib/tabs'
 
 const MSG_BAD_SHAPE = 'Não deu pra carregar os custos de IA. Tente de novo.'
+// Incerto: a varredura pode ter completado custos. Ela não grava no Registro, então as frases não
+// mandam conferir lá; o MSG_HELD embaixo manda clicar em Atualizar enquanto o botão estiver preso.
+const MSG_SWEEP_LOST = 'A resposta da varredura não chegou, e ela pode ter completado parte dos custos.'
 // Erro que não veio do adminPost: não dá pra saber se a varredura saiu, então vale como incerto.
-const MSG_UNEXPECTED_ACTION = 'Erro inesperado. Confira no Registro se a ação foi feita antes de tentar de novo.'
+const MSG_SWEEP_UNEXPECTED = 'Erro inesperado, e a varredura pode ter completado parte dos custos.'
 const MSG_HELD = 'Clique em Atualizar pra ver os números de agora.'
 
 const SPINNER = <Loader2 size={16} className="animate-spin motion-reduce:animate-none" />
@@ -133,9 +140,10 @@ async function runSweep(): Promise<void> {
     uncertain = false
   } catch (e) {
     const known = e instanceof AdminApiError
-    feedback = { tone: 'alert', text: known ? e.message : MSG_UNEXPECTED_ACTION }
     // Erro certo: nada foi feito, e os números podem estar velhos. Incerto: pode ter sido feito.
     uncertain = !known || e.uncertain
+    const text = !known ? MSG_SWEEP_UNEXPECTED : e.uncertain ? MSG_SWEEP_LOST : e.message
+    feedback = { tone: 'alert', text }
   }
   change(() => ({ feedback, lock: { running: false, seen: memory.lastData, uncertain } }))
   if (!uncertain) void memory.reload?.()
@@ -263,9 +271,10 @@ export function AiCostTab({ onNavigate }: TabProps) {
           </div>
         )}
 
-        {t.withoutCost > 0 ? (
+        {/* Só os pendentes: o já tentado sem preço não tem o que completar (fica neutro nos totais). */}
+        {t.withoutCostPending > 0 ? (
           <WithoutCost
-            count={t.withoutCost}
+            count={t.withoutCostPending}
             locked={locked}
             running={running}
             feedback={feedback}
@@ -348,7 +357,7 @@ function WithoutCost({
         <div className="flex items-center gap-2">
           <Led state="alert" />
           <h3 id={id} className="text-ps-md font-bold text-ps-alert">
-            <span className="ps-num">{n}</span> {n === 1 ? 'trabalho sem custo' : 'trabalhos sem custo'}
+            <span className="ps-num">{n}</span> {n === 1 ? 'trabalho ainda sem custo' : 'trabalhos ainda sem custo'}
           </h3>
         </div>
         <p className="text-ps-base text-ps-mut">
@@ -390,6 +399,13 @@ function Totals({ totals: t }: { totals: AiCosts['totals'] }) {
         <Stat label="Tempo de processamento" value={fmtSeconds(t.predictSeconds)} />
       </dl>
       <p className="text-ps-sm text-ps-mut">As somas só contam trabalhos com custo gravado em US$ e R$.</p>
+      {/* Neutro: a varredura já tentou e não há preço pra calcular, então não há ação possível. */}
+      {t.withoutCostUnpriced > 0 && (
+        <p className="text-ps-base text-ps-bone break-words">
+          <span className="ps-num">{t.withoutCostUnpriced}</span>{' '}
+          {t.withoutCostUnpriced === 1 ? 'trabalho sem preço conhecido' : 'trabalhos sem preço conhecido'} (fora da soma)
+        </p>
+      )}
     </section>
   )
 }
@@ -534,14 +550,22 @@ function JobRow({ job, onNavigate }: { job: AiJob; onNavigate: Navigate }) {
           </span>
         </p>
         <p className="flex flex-wrap items-baseline gap-x-2 text-ps-base">
-          {/* Com dólar e sem real conta como sem custo: o dólar sozinho não aparece, como na soma. */}
+          {/* Com dólar e sem real conta como sem custo: o dólar sozinho não aparece, como na soma.
+              Âmbar só no que a varredura ainda completa; o já tentado sem preço fica neutro. */}
           {hasCost(job) ? (
             <>
               <span className="ps-num text-ps-bone">{fmtBRL(job.costBrl)}</span>
               <span className="ps-num text-ps-sm text-ps-mut">{fmtUSD(job.costUsd)}</span>
+              {job.fxDate && (
+                <span className="text-ps-sm text-ps-mut">
+                  PTAX de <span className="ps-num">{fmtDay(job.fxDate)}</span>
+                </span>
+              )}
             </>
-          ) : (
+          ) : job.costPending ? (
             <span className="text-ps-alert">sem custo</span>
+          ) : (
+            <span className="text-ps-mut">sem preço conhecido</span>
           )}
         </p>
         <p className="ps-num text-ps-sm text-ps-mut break-all">{job.replicateId}</p>
@@ -559,6 +583,7 @@ function Basis({ fx, prices }: { fx: AiCosts['fx']; prices: AiCosts['prices'] })
           Câmbio e preço
         </h3>
         <p className="text-ps-base text-ps-bone break-words">{fxText(fx)}</p>
+        <p className="text-ps-base text-ps-bone break-words">Cada trabalho usa a PTAX do próprio dia.</p>
         <p className="text-ps-base text-ps-bone break-words">
           Preço do hardware conferido em <span className="ps-num">{fmtDay(prices.checkedAt)}</span> ({sourceLabel(prices.source)})
         </p>
