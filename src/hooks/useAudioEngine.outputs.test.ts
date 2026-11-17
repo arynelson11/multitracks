@@ -290,6 +290,8 @@ describe('pan efetivo', () => {
     const sig = await playAndMeasure(hook, IDS)
     close(sig, legacyMeasure([{ stereo: false, pan: -1 }, { stereo: false, pan: -1 }, { stereo: true, pan: 1 }, { stereo: true, pan: 1 }]))
     act(() => { hook.result.current.pause() })
+    // Passada a cauda da soltura (T26: até 40 ms, dentro do corte), parado troca na hora.
+    ctxOf().currentTime += 0.05
 
     // Lado trocado: Click e Guia na saída 2, a VS na 1.
     mem.settings = { ...mem.settings, outputs: { ...SPLIT, earOnSecond: true } }
@@ -440,6 +442,8 @@ describe('pan automático (só no pan efetivo, nunca no ch.pan)', () => {
     const sig = await playAndMeasure(hook, IDS)
     close(sig, legacyMeasure([{ stereo: false, pan: -1 }, { stereo: false, pan: -1 }, { stereo: true, pan: 1 }, { stereo: true, pan: 1 }]))
     act(() => { hook.result.current.pause() })
+    // Passada a cauda da soltura (T26: até 40 ms, dentro do corte), parado troca na hora.
+    ctxOf().currentTime += 0.05
 
     // Troca de papel, arquivo novo, canal avulso e metrônomo: o pan gravado é só o knob.
     await act(async () => { hook.result.current.setChannelMeta('s1-bass', { role: 'click' }) })
