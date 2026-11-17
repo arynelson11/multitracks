@@ -29,7 +29,7 @@ const NO_SECTIONS = 'Esta música ainda não tem seções. Marque no EDITAR.'
 // v5 .tb: ícone em cima e rótulo embaixo, 56px de altura, largura pelo texto (no mínimo 72px).
 // O Button da Parte 1 é em linha (ícone ao lado do texto, 44 ou 56px, padding de 12px), por isso a classe própria.
 const TB =
-  'relative inline-flex shrink-0 flex-col items-center justify-center gap-1.5 min-w-[72px] h-14 px-4 whitespace-nowrap select-none transition-[background-color,box-shadow,color,transform] duration-150 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or disabled:opacity-35 disabled:pointer-events-none'
+  'relative inline-flex shrink-0 flex-col items-center justify-center gap-1.5 min-w-[72px] h-14 px-4 max-xl:min-w-[56px] max-xl:px-2 whitespace-nowrap select-none transition-[background-color,box-shadow,color,transform] duration-150 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or disabled:opacity-35 disabled:pointer-events-none'
 const TB_OFF = 'bg-ps-s1 text-ps-bone inset-ring inset-ring-ps-line hover:inset-ring-ps-line-2'
 const TB_ON = 'bg-ps-or-soft text-ps-or inset-ring inset-ring-ps-or-line'
 const TB_LABEL = 'text-ps-micro leading-none font-bold tracking-[0.1em]'
@@ -41,7 +41,7 @@ const SUB =
   'inline-flex shrink-0 items-center justify-center min-w-ps-touch h-14 px-2.5 rounded-l-[4px] rounded-r-ps-lg bg-ps-s1 inset-ring inset-ring-ps-line hover:inset-ring-ps-line-2 select-none transition-[box-shadow,color,transform] duration-150 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
 // v5 .secnav: dois botões de 62px com o rótulo SEÇÃO embaixo; foco por dentro (a caixa corta o lado de fora).
 const SECNAV_BTN =
-  'flex min-w-[62px] h-14 items-start justify-center pt-[9px] text-ps-bone transition-colors duration-150 hover:bg-ps-s2 active:scale-[0.96] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ps-or disabled:opacity-35 disabled:pointer-events-none'
+  'flex min-w-[62px] max-xl:min-w-[48px] h-14 items-start justify-center pt-[9px] text-ps-bone transition-colors duration-150 hover:bg-ps-s2 active:scale-[0.96] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ps-or disabled:opacity-35 disabled:pointer-events-none'
 
 interface TransportButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   icon: IconName
@@ -93,21 +93,28 @@ export function TransportBar({ view, actions, clock, pulse }: TransportBarProps)
   // numa linha e o nome em 2 linhas, ao lado do X e do lugar reservado): de ~1360 px pra cima tudo
   // fica centralizado; em 1280 o centro fica fixo um pouco à esquerda do meio. O mínimo não depende
   // do conteúdo, então o centro nunca anda durante o uso. A linha tem a altura do transporte: nada
-  // mais alto empurra o centro pra baixo. Abaixo de 1280 quem decide é a T20.
+  // mais alto empurra o centro pra baixo. Abaixo de 1280 (Ruling T18-1024): o fim da música e o
+  // centro ficam com a largura do conteúdo (nada se cobre), o centro fica mais justo (botões com
+  // 8 px de folga, vãos menores) e o aviso fica com o resto (241 px em 1024: o nome cabe em 2 linhas
+  // e a linha do transporte nunca passa da altura dela). As larguras não dependem do aviso, então
+  // armar não mexe no centro.
   return (
     <section
       ref={barRef}
       aria-label="Transporte"
-      className="grid h-[clamp(72px,9vh,88px)] shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] items-center xl:grid-cols-[minmax(0,1fr)_auto_minmax(328px,1fr)] gap-x-3.5 border-b border-ps-line px-ps-gutter font-ps-sans"
+      className="grid h-[clamp(72px,9vh,88px)] shrink-0 grid-rows-[minmax(0,1fr)] items-center max-xl:grid-cols-[auto_auto_minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_auto_minmax(328px,1fr)] gap-x-3.5 max-xl:gap-x-2.5 border-b border-ps-line px-ps-gutter font-ps-sans"
     >
       <div className="flex min-w-0 items-center">
         <div data-tour="modos" className="flex flex-col gap-[5px]">
           <span className="ps-label leading-none">Fim da música</span>
-          <Segmented aria-label="Fim da música" options={END_MODES} value={view.endMode} onChange={actions.setEndMode} />
+          <Segmented
+            aria-label="Fim da música" options={END_MODES} value={view.endMode} onChange={actions.setEndMode}
+            className="max-xl:[&>button]:min-w-ps-touch max-xl:[&>button]:px-2"
+          />
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 max-xl:gap-1.5">
         <TransportButton icon="start" label="COMEÇO" title="Volta a VS pro 0:00" onClick={actions.goToStart} />
         <PlayButton
           isPlaying={view.isPlaying} isCountingIn={view.isCountingIn} precountTimes={precount.times}
@@ -146,7 +153,7 @@ export function TransportBar({ view, actions, clock, pulse }: TransportBarProps)
             {precount.beats}
           </button>
         </div>
-        <span aria-hidden="true" className="mx-1 h-9 w-px shrink-0 bg-ps-line" />
+        <span aria-hidden="true" className="mx-1 max-xl:mx-0 h-9 w-px shrink-0 bg-ps-line" />
         <div
           role="group" aria-label="Seção" title={noSections ? NO_SECTIONS : undefined}
           className="relative grid shrink-0 grid-cols-2 overflow-hidden rounded-ps-lg bg-ps-s1 inset-ring inset-ring-ps-line"

@@ -3,7 +3,7 @@ import { armLabel, isSelfLoop } from '../../lib/sectionArm'
 import { GRID_WARNING_TEXT } from '../../lib/stageContracts'
 import type { ArmIntent, GridWarning, StageClock, StageSection, TransitionView } from '../../lib/stageContracts'
 import { countState, transitionWaitText } from '../../lib/transitionView'
-import { Button, cx } from '../ui'
+import { Button, Led, cx } from '../ui'
 import { Icon } from './icons'
 import { setFlag, setText } from './stageDom'
 import { useFrame } from './useFrame'
@@ -136,7 +136,14 @@ export function NextPill({ transition, intent, sections, currentSection, gridWar
         <div className="flex min-w-0 flex-col">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <span className={cx(TAG, 'whitespace-nowrap text-ps-arm')}>{label}</span>
-            {warning && <span title={warning.title} className={cx(TAG, 'text-ps-alert')}>{warning.label}</span>}
+            {/* Abaixo de 1280 o aviso da grade vira uma luz âmbar (o texto inteiro fica no title, na região
+                viva e na descrição do X): rótulo e aviso numa linha só, e o aviso nunca passa da altura do transporte. */}
+            {warning && <span title={warning.title} className={cx(TAG, 'text-ps-alert max-xl:hidden')}>{warning.label}</span>}
+            {warning && (
+              <span data-grid-warning-led="" title={warning.title} className="inline-flex self-center xl:hidden">
+                <Led state="alert" size="sm" />
+              </span>
+            )}
           </div>
           <strong
             ref={nameRef}

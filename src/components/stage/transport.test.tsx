@@ -167,6 +167,18 @@ describe('aviso PRÓXIMA', () => {
     renderPill({ gridWarning: 'sem-click-lido', intent: null, transition: null })
     expect(screen.queryByText('SEM CLICK LIDO')).toBeNull()
   })
+  it('abaixo de 1280 o aviso da grade vira uma luz âmbar ao lado do rótulo (o nome continua em até 2 linhas)', () => {
+    renderPill({ gridWarning: 'compasso-assumido' })
+    const w = screen.getByText('COMPASSO ASSUMIDO')
+    expect(w.className).toContain('max-xl:hidden')
+    const led = w.parentElement!.querySelector('[data-grid-warning-led]') as HTMLElement
+    expect(led).not.toBeNull()
+    expect(led.className).toContain('xl:hidden')
+    expect(led.getAttribute('title')).toBe(GRID_WARNING_TEXT['compasso-assumido'].title)
+    expect(led.querySelector('.bg-ps-alert')).not.toBeNull()
+    // O leitor de tela continua ouvindo o aviso inteiro (região viva e descrição do X).
+    expect(announcer().textContent).toContain('COMPASSO ASSUMIDO')
+  })
   it('região viva fora do aviso: anuncia armou e desarmou uma vez, nunca por bipe', () => {
     heard = 10
     const { rerender } = renderPill({ intent: null, transition: null, gridWarning: 'sem-click-lido' })
@@ -399,6 +411,25 @@ describe('transporte', () => {
     expect(bar.className).toContain('xl:grid-cols-[minmax(0,1fr)_auto_minmax(328px,1fr)]')
     // Nada mais alto que o transporte aumenta a linha da grade e empurra o centro pra baixo.
     expect(bar.className).toContain('grid-rows-[minmax(0,1fr)]')
+  })
+  // Ruling T18-1024: em 1024 o FADE não fica atrás do COMEÇO e o PRÓXIMA armado tem largura de verdade.
+  it('abaixo de 1280: fim da música e centro com a largura do conteúdo, e o aviso fica com o resto (nada se cobre)', () => {
+    render(<TransportBar view={view({ intent: { target: 2, plays: 1 }, transition: T })} actions={actions()} clock={clock} pulse={null} />)
+    const bar = screen.getByRole('region', { name: 'Transporte' })
+    // As duas primeiras colunas não encolhem abaixo do conteúdo; a do aviso não depende dele (o centro não anda).
+    expect(bar.className).toContain('max-xl:grid-cols-[auto_auto_minmax(0,1fr)]')
+    expect(bar.className).toContain('max-xl:gap-x-2.5')
+    // Centro mais justo: botões pelo texto com 8 px de folga (piso de 56), SEÇÃO com dois alvos de 48.
+    for (const n of ['COMEÇO', 'LOOP', 'CLICK', 'Pré-contagem']) {
+      expect(btn(n).className).toContain('max-xl:min-w-[56px]')
+      expect(btn(n).className).toContain('max-xl:px-2')
+    }
+    for (const n of ['Armar seção anterior', 'Armar seção seguinte']) expect(btn(n).className).toContain('max-xl:min-w-[48px]')
+    expect(btn('COMEÇO').parentElement!.className).toContain('max-xl:gap-1.5')
+    // Fim da música: opções com 8 px de folga e alvo de 44.
+    const seg = screen.getByRole('radiogroup', { name: 'Fim da música' })
+    expect(seg.className).toContain('max-xl:[&>button]:min-w-ps-touch')
+    expect(seg.className).toContain('max-xl:[&>button]:px-2')
   })
   it('rótulo "Fim da música" sem altura de linha sobrando (não encosta na borda de baixo)', () => {
     render(<TransportBar view={view()} actions={actions()} clock={clock} pulse={null} />)
