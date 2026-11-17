@@ -23,7 +23,7 @@ const norm = (s: string | null | undefined) => (s ?? '').replace(/\u00a0/g, ' ')
 function subscription(over: Partial<SubscriptionRow> = {}): SubscriptionRow {
   return {
     id: 'sub-1', kind: 'asaas', planKey: 'essencial_mensal', cycle: 'MONTHLY', status: 'active', startedAt: '2026-10-01T12:00:00Z',
-    nextDueDate: '2026-12-01', paidUntil: '2026-12-01', accessUntil: null, cancelSource: null, canceledAt: null,
+    nextDueDate: '2026-12-01', paidUntil: '2026-12-02T03:00:00+00:00', accessUntil: null, cancelSource: null, canceledAt: null,
     asaasSubscriptionId: 'sub_abc123', asaasStoppedAt: null, lastPaidDueDate: '2026-11-01', needsAdminReview: false, adminNote: null, ...over,
   }
 }
@@ -118,7 +118,7 @@ describe('SubscriberDetail', () => {
 
   it('conta bloqueada mostra desde quando e o motivo; sem último acesso fica sem dado', async () => {
     h.responses.subscriber = detail({
-      profile: { ...detail().profile, blockedAt: '2026-11-16T15:00:00Z', blockedReason: 'Pediu reembolso no cartão e segue usando', lastSeenAt: null, planExpiresAt: '2026-12-16' },
+      profile: { ...detail().profile, blockedAt: '2026-11-16T15:00:00Z', blockedReason: 'Pediu reembolso no cartão e segue usando', lastSeenAt: null, planExpiresAt: '2026-12-17T03:00:00+00:00' },
     })
     render(<SubscriberDetail {...props} />)
     await screen.findByRole('heading', { name: 'Ana Souza' })
@@ -134,23 +134,27 @@ describe('SubscriberDetail', () => {
       subscriptions: [
         subscription(),
         subscription({
-          id: 'sub-0', planKey: 'pro_mensal', status: 'canceled', nextDueDate: null, paidUntil: '2026-09-01', accessUntil: '2026-09-01T02:59:59Z',
+          id: 'sub-0', planKey: 'pro_mensal', status: 'canceled', nextDueDate: null, paidUntil: '2026-09-01T03:00:00+00:00', accessUntil: '2026-09-01T03:00:00+00:00',
           cancelSource: 'admin', canceledAt: '2026-09-15T12:00:00Z', needsAdminReview: true, adminNote: 'Valor do Asaas diferente | Conferir estorno',
         }),
         subscription({ id: 'cor-1', kind: 'courtesy', planKey: 'pro_anual', cycle: null, nextDueDate: null, paidUntil: null, asaasSubscriptionId: null, adminNote: 'Cortesia pro líder de louvor' }),
+        // cortesia de 30 dias pedida às 22:00 de Brasília do dia 16/11 (courtesyUntil da T16)
+        subscription({ id: 'cor-2', kind: 'courtesy', planKey: 'pro_mensal', cycle: null, nextDueDate: null, paidUntil: null, asaasSubscriptionId: null, accessUntil: '2026-12-17T03:00:00.000Z' }),
       ],
     })
     render(<SubscriberDetail {...props} />)
     await screen.findByRole('heading', { name: 'Ana Souza' })
     const subs = region('Assinaturas')
     const items = within(subs).getAllByRole('listitem')
-    expect(items).toHaveLength(3)
+    expect(items).toHaveLength(4)
 
+    // O banco guarda os fins como 00:00 de Brasília do dia seguinte: a tela mostra o último dia.
     const active = items[0]
     expect(within(active).getByText('Pro Mensal, assinatura paga')).toBeTruthy()
     expect(within(active).getByText('ativa')).toBeTruthy()
     expect(field(active, 'Ciclo')).toBe('mensal')
     expect(field(active, 'Próxima cobrança')).toBe('01/12/2026')
+    expect(field(active, 'Pago até')).toBe('01/12/2026')
     expect(field(active, 'Id no Asaas')).toBe('sub_abc123')
 
     const canceled = items[1]
@@ -158,6 +162,7 @@ describe('SubscriberDetail', () => {
     expect(field(canceled, 'Motivo')).toBe('pelo admin')
     expect(field(canceled, 'Encerrada em')).toBe('15/09/2026 09:00')
     expect(field(canceled, 'Acesso até')).toBe('31/08/2026')
+    expect(field(canceled, 'Pago até')).toBe('31/08/2026')
     const review = within(canceled).getByText('Para conferir')
     expect(review.className).toContain('text-ps-alert')
     expect(within(canceled).getByText('Valor do Asaas diferente')).toBeTruthy()
@@ -167,6 +172,10 @@ describe('SubscriberDetail', () => {
     expect(within(courtesy).getByText('Studio Anual, cortesia')).toBeTruthy()
     expect(field(courtesy, 'Acesso até')).toBe('sem data para acabar')
     expect(within(courtesy).getByText('Nota: Cortesia pro líder de louvor')).toBeTruthy()
+
+    const dated = items[3]
+    expect(within(dated).getByText('Studio Mensal, cortesia')).toBeTruthy()
+    expect(field(dated, 'Acesso até')).toBe('16/12/2026')
   })
 
   it('pagamentos com status, valor, líquido, vencimento e pagamento', async () => {

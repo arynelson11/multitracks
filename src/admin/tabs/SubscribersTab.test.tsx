@@ -105,6 +105,18 @@ describe('SubscribersTab', () => {
     expect(within(noEmail).getByText('Sumido há 30 dias')).toBeTruthy()
   })
 
+  it('fim do acesso e da cortesia mostram o último dia, não o começo do dia seguinte que o banco guarda', async () => {
+    h.responses.subscribers = pageOf([
+      row({ userId: 'u-fim', name: 'Cancelou', status: 'ending', nextDueDate: null, accessUntil: '2026-12-02T03:00:00+00:00', flags: [] }),
+      row({ userId: 'u-cor', name: 'Davi', status: 'courtesy', nextDueDate: null, accessUntil: '2026-12-17T03:00:00.000Z', flags: [] }),
+    ])
+    render(<SubscribersTab {...tabProps} />)
+    const ending = (await screen.findByText('Cancelou')).closest('li') as HTMLElement
+    expect(within(ending).getByText('Acesso até').nextElementSibling?.textContent).toBe('01/12/2026')
+    const courtesy = screen.getByText('Davi').closest('li') as HTMLElement
+    expect(within(courtesy).getByText('Cortesia até').nextElementSibling?.textContent).toBe('16/12/2026')
+  })
+
   it('filtros viram parâmetros', async () => {
     render(<SubscribersTab {...tabProps} />)
     await screen.findByText('Ana Souza')

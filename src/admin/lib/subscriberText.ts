@@ -51,6 +51,22 @@ export function lastAccessText(row: { lastSeenAt: string | null; lastSignInAt: s
   return EMPTY
 }
 
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * Último dia com acesso, em Brasília. O banco guarda o fim do acesso, do período pago, da cortesia
+ * e do plano como 00:00 de Brasília do dia SEGUINTE ao último dia (billing_access_end, courtesyUntil,
+ * plan_expires_at): 1 segundo antes cai no último dia, como o lastAccessDay da T16. Um dia
+ * AAAA-MM-DD já é o último dia e passa como está.
+ */
+export function fmtLastDay(end: string | null): string {
+  if (!end) return EMPTY
+  if (DAY_RE.test(end)) return fmtDay(end)
+  const t = Date.parse(end)
+  if (Number.isNaN(t)) return EMPTY
+  return fmtDay(new Date(t - 1000).toISOString())
+}
+
 export type DateText = { label: string; value: string }
 
 /**
@@ -62,12 +78,12 @@ export function billingDateText(row: Pick<SubscriberRow, 'status' | 'nextDueDate
     case 'paid_active':
       return { label: 'Próxima cobrança', value: fmtDay(row.nextDueDate) }
     case 'ending':
-      return { label: 'Acesso até', value: fmtDay(row.accessUntil) }
+      return { label: 'Acesso até', value: fmtLastDay(row.accessUntil) }
     case 'courtesy':
-      return { label: 'Cortesia até', value: row.accessUntil ? fmtDay(row.accessUntil) : 'sem data para acabar' }
+      return { label: 'Cortesia até', value: row.accessUntil ? fmtLastDay(row.accessUntil) : 'sem data para acabar' }
     default:
       if (row.nextDueDate) return { label: 'Próxima cobrança', value: fmtDay(row.nextDueDate) }
-      if (row.accessUntil) return { label: 'Acesso até', value: fmtDay(row.accessUntil) }
+      if (row.accessUntil) return { label: 'Acesso até', value: fmtLastDay(row.accessUntil) }
       return null
   }
 }

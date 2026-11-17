@@ -16,6 +16,7 @@ import type { ReviewAction } from '../lib/reviewTypes'
 import {
   asaasStatusLabel,
   cycleLabel,
+  fmtLastDay,
   jobsWithoutCostText,
   providerLabel,
   quotaText,
@@ -227,7 +228,7 @@ function AccountSection({ detail }: { detail: SubscriberDetailData }) {
         <Field label="Último acesso" value={fmtDateTimeBR(p.lastSeenAt)} num />
         <Field label="Último login" value={fmtDateTimeBR(p.lastSignInAt)} num />
         <Field label="Entra com" value={providerLabel(p.provider)} />
-        <Field label="Plano no app" value={p.planExpiresAt ? `${planLabel(p.plan)}, até ${fmtDay(p.planExpiresAt)}` : planLabel(p.plan)} />
+        <Field label="Plano no app" value={p.planExpiresAt ? `${planLabel(p.plan)}, até ${fmtLastDay(p.planExpiresAt)}` : planLabel(p.plan)} />
         {p.isAdmin && <Field label="Papel" value="Admin" />}
         <Field label="Bloqueio" value={p.blockedAt ? `Bloqueada desde ${fmtDateTimeBR(p.blockedAt)}` : 'Não bloqueada'} />
         {p.blockedAt && <Field label="Motivo do bloqueio" value={p.blockedReason || EMPTY} />}
@@ -265,8 +266,9 @@ function SubscriptionItem({ s }: { s: SubscriptionRow }) {
         {paid && <Field label="Ciclo" value={cycleLabel(s.cycle)} />}
         <Field label="Início" value={fmtDay(s.startedAt)} num />
         {paid && s.status === 'active' && <Field label="Próxima cobrança" value={fmtDay(s.nextDueDate)} num />}
-        {paid && <Field label="Pago até" value={fmtDay(s.paidUntil)} num />}
-        {(s.accessUntil || !paid) && <Field label="Acesso até" value={s.accessUntil ? fmtDay(s.accessUntil) : 'sem data para acabar'} num />}
+        {/* Os fins guardados são o começo do dia seguinte: a tela mostra o último dia (fmtLastDay). */}
+        {paid && <Field label="Pago até" value={fmtLastDay(s.paidUntil)} num />}
+        {(s.accessUntil || !paid) && <Field label="Acesso até" value={s.accessUntil ? fmtLastDay(s.accessUntil) : 'sem data para acabar'} num />}
         {s.status === 'canceled' && <Field label="Encerrada em" value={fmtDateTimeBR(s.canceledAt)} num />}
         {s.status === 'canceled' && <Field label="Motivo" value={cancelSourceLabel(s.cancelSource)} />}
         {s.asaasSubscriptionId && <Field label="Id no Asaas" value={s.asaasSubscriptionId} num breakAll />}
