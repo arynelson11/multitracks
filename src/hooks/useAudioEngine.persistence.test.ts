@@ -15,7 +15,9 @@ import src from './useAudioEngine.ts?raw'
 // e src/lib/channelRoles.test.ts.
 
 type FakeParam = { value: number; cancelScheduledValues(): void; setValueAtTime(v: number): void; setTargetAtTime(v: number): void; linearRampToValueAtTime(): void; exponentialRampToValueAtTime(): void }
-type FakeSource = { offset: number; dest: unknown; buffer: unknown }
+type FakeSource = { offset: number; when: number; dest: unknown; buffer: unknown }
+// Envelope da voz (T26) e passa-baixa do bipe da contagem: guardam pra onde ligam.
+type FakeLink = { connectedTo: unknown }
 // Worklet de tom falso com a API real do pacote: start/stop/schedule/latency, sem
 // close() (o pacote não tem). `active` diz se o DSP está rodando (start sem stop).
 type FakePitchNode = { active: boolean; starts: number; stops: number; connectedTo: unknown }
@@ -42,6 +44,8 @@ const mem = vi.hoisted(() => ({
   pitchGate: null as Promise<void> | null,
   sources: [] as FakeSource[],
   pitchNodes: [] as FakePitchNode[],
+  // Passa-baixa de cada bipe da contagem (um por tempo): a saída dele é a entrada da contagem.
+  beeps: [] as FakeLink[],
   // Chamado em cada start() de fonte (simula o relógio andando no meio do laço).
   onStart: null as (() => void) | null,
 }))
@@ -99,7 +103,17 @@ function param(value: number): FakeParam {
   }
   return p
 }
-const audioNode = () => ({ connect() {}, disconnect() {} })
+const audioNode = () => ({ connect() {}, disconnect() {}, addEventListener() {} })
+// Nó que guarda a última ligação (a voz liga o envelope na entrada do canal; o bipe, o passa-baixa).
+function linkNode<T extends object>(extra: T): T & FakeLink & { connect(dest: unknown): void; disconnect(): void; addEventListener(): void } {
+  const node = {
+    ...extra, connectedTo: null as unknown,
+    connect(dest: unknown) { node.connectedTo = dest },
+    disconnect() { node.connectedTo = null },
+    addEventListener() {},
+  }
+  return node
+}
 
 class FakeAudioContext {
   currentTime = 0
@@ -107,7 +121,7 @@ class FakeAudioContext {
   state = 'running'
   destination = audioNode()
   constructor() { mem.ctx = this }
-  createGain() { return { ...audioNode(), gain: param(1) } }
+  createGain() { return linkNode({ gain: param(1) }) }
   createStereoPanner() { return { ...audioNode(), pan: param(0) } }
   createDelay(): FakeDelay & { connect(dest: unknown): void; disconnect(): void } {
     const delay = {
@@ -119,16 +133,21 @@ class FakeAudioContext {
   }
   createBufferSource() {
     const source = {
-      offset: -1, dest: null as unknown, buffer: null as unknown, loop: false, playbackRate: param(1),
+      offset: -1, when: -1, dest: null as unknown, buffer: null as unknown, loop: false, playbackRate: param(1),
       connect(dest: unknown) { source.dest = dest },
-      disconnect() {}, stop() {},
-      start(_when: number, offset: number) { source.offset = offset; mem.onStart?.() },
+      disconnect() {}, stop() {}, addEventListener() {},
+      start(when: number, offset: number) { source.when = when; source.offset = offset; mem.onStart?.() },
     }
     mem.sources.push(source)
     return source
   }
-  // Bipes da pré-contagem.
-  createOscillator() { return { ...audioNode(), type: 'square', frequency: param(0), start() {}, stop() {} } }
+  // Bipes da pré-contagem (receita da T7: dois osciladores, ganhos e um passa-baixa por tempo).
+  createOscillator() { return { ...audioNode(), type: 'sine', frequency: param(0), start() {}, stop() {} } }
+  createBiquadFilter() {
+    const filter = linkNode({ type: 'lowpass', frequency: param(350), Q: param(1) })
+    mem.beeps.push(filter)
+    return filter
+  }
   // Roteador das saídas e medidor do principal (grafo da T12, montado no initEngine desde a T25).
   createChannelSplitter() { return audioNode() }
   createAnalyser() { return { ...audioNode(), fftSize: 2048, smoothingTimeConstant: 0.8, getFloatTimeDomainData() {} } }
@@ -155,6 +174,7 @@ beforeEach(() => {
   mem.metaWrites.length = 0
   mem.sources.length = 0
   mem.pitchNodes.length = 0
+  mem.beeps.length = 0
   mem.metaGate = null
   mem.pitchGate = null
   mem.onStart = null
@@ -193,8 +213,12 @@ const song = (r: Engine, id: string) => r.current.playlist.find((s) => s.id === 
 const ids = (r: Engine, songId: string) => song(r, songId).channels.map((c) => c.id)
 const channel = (r: Engine, id: string) => r.current.channels.find((c) => c.id === id)!
 // Fonte que toca o canal, achada pelo buffer dele (não pela posição: um play pode ter
-// agendado a lista numa ordem que já mudou).
-const sourceOf = (r: Engine, id: string) => mem.sources.find((s) => s.buffer === channel(r, id).buffer)!
+// agendado a lista numa ordem que já mudou). Desde a T26 a fonte liga no envelope da voz e o
+// envelope na entrada do canal: `dest` é essa entrada (worklet, atraso ou panner).
+const sourceOf = (r: Engine, id: string) => {
+  const s = mem.sources.find((x) => x.buffer === channel(r, id).buffer)!
+  return { ...s, dest: (s.dest as FakeLink | null)?.connectedTo ?? null }
+}
 const savedSong = (id: string) => saved().find((s) => s.id === id)!
 
 // Registro v1 real (o mesmo da T5): gravado pela versão de antes da Parte 1,
@@ -482,27 +506,63 @@ describe('setChannelMeta', () => {
     expect(channel(result, 'b').gainNode.gain.value).toBe(0)
   })
 
-  it('papel trocado durante a pré-contagem já vale no play que ela dispara', async () => {
+  // Pré-contagem da T26: os bipes e as vozes saem juntos do play, e a contagem entra pela
+  // entrada do canal de click. Papel que entra ou sai de Click na contagem: ela para, a troca de
+  // rota acontece e ela recomeça do 1 com a lista nova, e as vozes saem com a lista nova (o
+  // Normal novo transpõe com a banda, o Click novo fica fora do worklet). Tom -2.
+  it('papel trocado durante a pré-contagem recomeça a contagem depois da troca, com a lista nova', async () => {
     localStorage.setItem('precount_enabled', 'true')
     localStorage.setItem('precount_beats', '1')
     try {
       seed(v1)
       const { result } = await openApp()
-      act(() => { void result.current.playWithPrecount() })
+      await act(async () => { await result.current.playWithPrecount() })
       expect(result.current.isCountingIn).toBe(true)
+      expect(result.current.isPlaying).toBe(true)
+      // 1 tempo a 72 BPM (o BPM da música): o bipe no instante comum, as vozes um pulso depois.
+      const pulse = 60 / 72
+      expect(mem.beeps).toHaveLength(1)
+      // O bipe entra pelo Click (com o tom -2, pelo atraso igual à latência do worklet).
+      expect(mem.beeps[0].connectedTo).toMatchObject({ delayTime: { value: PITCH_LATENCY } })
+      expect((mem.beeps[0].connectedTo as FakeLink).connectedTo).toBe(channel(result, 'a').pannerNode)
+      expect(mem.sources).toHaveLength(3)
+      for (const s of mem.sources) expect(s.when).toBeCloseTo(START_LEAD + pulse, 9)
 
-      // Durante a contagem (1 tempo a 100 BPM = 600 ms): o Click vira Normal e a
-      // guitarra vira Click. Tom -2.
+      // Na contagem o Click vira Normal: a contagem para na hora e recomeça do 1 depois da troca
+      // de rota (aqui sem corte: com tudo parado não há o que cortar). Sem canal de click no meio
+      // tempo, ela passa pelo atraso da contagem do grafo, com a latência do worklet.
+      const firstBeep = mem.beeps[0]
+      mem.sources.length = 0
+      mem.beeps.length = 0
       await act(async () => { result.current.setChannelMeta('a', { role: 'normal' }) })
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 150)) })
+      expect(firstBeep.connectedTo).toBeNull() // o bipe antigo saiu da entrada do Click que virou Normal
+      expect(result.current.isCountingIn).toBe(true)
+      expect(mem.beeps).toHaveLength(1)
+      expect(mem.beeps[0].connectedTo).toMatchObject({ delayTime: { value: PITCH_LATENCY } })
+      expect(channel(result, 'a').pannerNode).not.toBe((mem.beeps[0].connectedTo as FakeLink).connectedTo)
+      expect(mem.sources).toHaveLength(3)
+
+      // Ainda na contagem a guitarra vira Click: ela recomeça de novo, agora pela guitarra.
+      mem.sources.length = 0
+      mem.beeps.length = 0
       await act(async () => { result.current.setChannelMeta('c', { role: 'click' }) })
-      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 700)) })
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 150)) })
 
       expect(result.current.isPlaying).toBe(true)
+      expect(result.current.isCountingIn).toBe(true)
+      // O bipe agora entra pela guitarra, o Click novo (pelo atraso dela).
+      expect(mem.beeps).toHaveLength(1)
+      expect((mem.beeps[0].connectedTo as FakeLink).connectedTo).toBe(channel(result, 'c').pannerNode)
+      expect(mem.beeps[0].connectedTo).toMatchObject({ delayTime: { value: PITCH_LATENCY } })
+      // Uma leva só de vozes, do começo da música.
       expect(mem.sources).toHaveLength(3)
-      // O Normal novo transpõe junto com a banda (não sai desafinado na PA); o Click
-      // novo fica fora do worklet.
+      for (const s of mem.sources) expect(s.offset).toBe(0)
+      // O Normal novo transpõe junto com a banda (não sai desafinado na PA); o Click novo fica
+      // fora do worklet, que voltou parado pra reserva: só o baixo e o Normal novo rodam o DSP.
       expect(mem.pitchNodes.some((n) => sourceOf(result, 'a').dest === n)).toBe(true)
       expect(mem.pitchNodes.some((n) => sourceOf(result, 'c').dest === n)).toBe(false)
+      expect(mem.pitchNodes.filter((n) => n.active).map((n) => n.connectedTo)).toEqual([channel(result, 'b').pannerNode, channel(result, 'a').pannerNode])
     } finally {
       localStorage.removeItem('precount_enabled')
       localStorage.removeItem('precount_beats')
