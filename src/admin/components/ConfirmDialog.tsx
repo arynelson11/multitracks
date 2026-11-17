@@ -15,6 +15,8 @@ type ConfirmNote = {
   minLength?: number
   /** Teto do campo; o servidor confere de novo. Padrão 500. */
   maxLength?: number
+  /** Uma linha sob o campo, pra quem escreve saber quem vai ler (ex.: o motivo do bloqueio). */
+  hint?: string
 }
 
 type ConfirmDialogProps = {
@@ -139,6 +141,7 @@ function OpenDialog({
   }
 
   const minHint = note?.minLength ? `Pelo menos ${note.minLength} caracteres.` : null
+  const hints = [minHint, note?.hint ?? null].filter((h): h is string => !!h)
 
   return (
     // tabIndex -1: um clique fora dos controles deixa o foco aqui, e o Esc continua valendo.
@@ -176,14 +179,18 @@ function OpenDialog({
               maxLength={note.maxLength ?? 500}
               required={note.required}
               disabled={busy}
-              aria-describedby={minHint ? hintId : undefined}
+              aria-describedby={hints.length > 0 ? hintId : undefined}
               onChange={(e) => setText(e.target.value)}
               className={FIELD}
             />
-            {minHint && (
-              <p id={hintId} className="text-ps-sm text-ps-mut">
-                {minHint}
-              </p>
+            {hints.length > 0 && (
+              <div id={hintId} className="flex flex-col gap-1">
+                {hints.map((h) => (
+                  <p key={h} className="text-ps-sm text-ps-mut break-words">
+                    {h}
+                  </p>
+                ))}
+              </div>
             )}
           </div>
         )}

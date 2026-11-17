@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { SubscriberActions } from './SubscriberActions'
 import { SubscribersTab } from '../tabs/SubscribersTab'
 import { AdminApiError } from '../lib/adminApi'
-import { BILLING_CONTINUES, LEGACY_BILLING_WARNING, LEGACY_COURTESY_WARNING, LEGACY_STOPPED_LABEL, cancelText, changePlanText, courtesyLastDay, courtesyText, quotaText } from '../lib/actionText'
+import { BILLING_CONTINUES, LEGACY_BILLING_WARNING, LEGACY_COURTESY_WARNING, LEGACY_STOPPED_LABEL, cancelText, changePlanText, courtesyLastDay, courtesyText, noCourtesyText, onlyHigherText, quotaText } from '../lib/actionText'
 import { brtTodayLocal, monthRange } from '../lib/period'
 import type { SubscriberDetailData, SubscriptionRow } from '../lib/subscribersTypes'
 
@@ -228,6 +228,69 @@ describe('SubscriberActions: cada ação manda o pedido certo', () => {
     expect(h.adminPost).toHaveBeenCalledWith('grant-courtesy', { userId: USER, planKey: 'essencial_mensal', days: 45 })
   })
 
+  // Ruling ADM-FINAL-onda: a tela espelha o servidor e nem oferece cortesia de plano igual ou menor
+  // que a paga ativa.
+  it('paga ativa: Dar cortesia lista só os planos maiores que o pago e diz por quê', () => {
+    setup()
+    const dialog = open('Dar cortesia')
+    const select = within(dialog).getByLabelText('Plano da cortesia') as HTMLSelectElement
+    expect(Array.from(select.options).filter((o) => o.value !== '').map((o) => o.value)).toEqual(['pro_mensal', 'pro_anual'])
+    expect(dialog.textContent).toContain(onlyHigherText('essencial_mensal'))
+    cleanup()
+
+    // Paga de Pro Anual: o mesmo nível (Pro Mensal) também fica de fora.
+    setup(detail({ subscriptions: [paid({ planKey: 'essencial_anual', cycle: 'YEARLY' })] }, { plan: 'essencial_anual' }))
+    const anual = open('Dar cortesia')
+    const options = Array.from((within(anual).getByLabelText('Plano da cortesia') as HTMLSelectElement).options)
+    expect(options.filter((o) => o.value !== '').map((o) => o.value)).toEqual(['pro_mensal', 'pro_anual'])
+  })
+
+  it('quem paga Studio não vê Dar cortesia, e o painel diz por quê', () => {
+    setup(detail({ subscriptions: [paid({ planKey: 'pro_mensal' })] }, { plan: 'pro_mensal' }))
+    expect(panelButton('Dar cortesia')).toBeNull()
+    expect(screen.getByRole('region', { name: 'Ações' }).textContent).toContain(noCourtesyText('pro_mensal'))
+    // As outras ações da paga seguem.
+    expect(panelButton('Mudar plano')).toBeTruthy()
+    expect(panelButton('Cancelar assinatura')).toBeTruthy()
+  })
+
+  it('sem paga ativa, Dar cortesia lista os 4 planos e não fala da paga', () => {
+    setup(detail({ subscriptions: [] }, { plan: 'free' }))
+    const dialog = open('Dar cortesia')
+    const select = within(dialog).getByLabelText('Plano da cortesia') as HTMLSelectElement
+    expect(Array.from(select.options).filter((o) => o.value !== '').map((o) => o.value)).toEqual(PLANS.map((p) => p.key))
+    expect(dialog.textContent).not.toContain('Só planos maiores')
+    expect(screen.getByRole('region', { name: 'Ações' }).textContent).not.toContain('Dar cortesia não aparece')
+  })
+
+  // T26 Minor 3: a frase do Encerrar cortesia segue a regra do billing_sync_profile.
+  it('Encerrar cortesia sem paga ativa: a outra cortesia vale antes da paga cancelada no período', () => {
+    const graced = paid({ id: 'sub-old', planKey: 'pro_mensal', status: 'canceled', accessUntil: '2099-12-17T03:00:00+00:00' })
+    const other = courtesy({ id: 'cortesia:pro', planKey: 'essencial_mensal', startedAt: '2026-11-01T12:00:00Z' })
+    setup(detail({ subscriptions: [courtesy(), other, graced] }, { plan: 'pro_anual' }))
+    const dialog = open('Encerrar cortesia de Studio Anual')
+    expect(dialog.textContent).toContain('A cortesia de Studio Anual acaba agora. Nada muda no Asaas. A conta fica com a outra cortesia, de Pro Mensal.')
+  })
+
+  it('Encerrar cortesia sem outra cortesia: vale a paga cancelada no período de início mais recente', () => {
+    const olderStudio = paid({ id: 'sub-1', planKey: 'pro_mensal', status: 'canceled', startedAt: '2026-09-01T12:00:00Z', accessUntil: '2099-12-31T03:00:00+00:00' })
+    const newerPro = paid({ id: 'sub-2', planKey: 'essencial_mensal', status: 'canceled', startedAt: '2026-10-01T12:00:00Z', accessUntil: '2099-12-17T03:00:00+00:00' })
+    setup(detail({ subscriptions: [courtesy(), olderStudio, newerPro] }, { plan: 'pro_anual' }))
+    const dialog = open('Encerrar cortesia')
+    expect(dialog.textContent).toContain('A conta volta para o Pro Mensal pago até 16/12/2099 e depois para o Livre.')
+  })
+
+  it('Encerrar cortesia com paga ativa: a outra cortesia só vale se for de plano maior que a paga', () => {
+    const studio = courtesy({ id: 'cortesia:studio', planKey: 'pro_mensal' })
+    setup(detail({ subscriptions: [paid(), courtesy(), studio] }, { plan: 'pro_anual' }))
+    expect(open('Encerrar cortesia de Studio Anual').textContent).toContain('A conta fica com a outra cortesia, de Studio Mensal.')
+    cleanup()
+    // A outra cortesia é do mesmo nível da paga (Pro): vale a paga.
+    const pro = courtesy({ id: 'cortesia:pro', planKey: 'essencial_anual' })
+    setup(detail({ subscriptions: [paid(), courtesy(), pro] }, { plan: 'pro_anual' }))
+    expect(open('Encerrar cortesia de Studio Anual').textContent).toContain('A conta volta para o Pro Mensal pago.')
+  })
+
   it('Encerrar cortesia manda end-courtesy com o id e diz pra onde a conta volta', async () => {
     setup(detail({ subscriptions: [paid(), courtesy()] }))
     const dialog = open('Encerrar cortesia')
@@ -278,6 +341,9 @@ describe('SubscriberActions: cada ação manda o pedido certo', () => {
     const button = confirmButton(dialog, 'Bloquear')
     expect(button.className).toContain('bg-ps-alert-soft')
     expect(button.disabled).toBe(true)
+    // O motivo fica legível pra própria pessoa: a linha sob o campo avisa quem escreve.
+    const reason = within(dialog).getByLabelText('Motivo')
+    expect(document.getElementById(reason.getAttribute('aria-describedby') ?? '')?.textContent).toContain('A pessoa pode ver este motivo.')
     fireEvent.change(within(dialog).getByLabelText('Motivo'), { target: { value: 'Estorno no cartão e segue usando' } })
     expect(button.disabled).toBe(false)
     fireEvent.click(button)

@@ -34,21 +34,40 @@ export function courtesyLastDay(days: number, now: Date = new Date()): string {
 }
 
 /**
+ * Os planos que a cortesia pode ter (Ruling ADM-FINAL-onda): com assinatura paga ativa, só os de nível
+ * maior que o pago (o mais alto, se houver mais de uma); sem paga ativa, todos. A cortesia de plano
+ * igual ou menor não muda nada agora e, se a paga for cancelada depois, passa por cima dela ainda no
+ * período pago. É a mesma fórmula do servidor (courtesyRefusal, em api/_lib/admin/subscriberActions.ts),
+ * que recusa o resto.
+ */
+export function courtesyPlanKeys(keys: string[], paidActivePlans: string[]): string[] {
+  if (paidActivePlans.length === 0) return keys
+  const top = Math.max(...paidActivePlans.map(planRank))
+  return keys.filter((key) => planRank(key) > top)
+}
+
+/** Sob a escolha do plano da cortesia, com paga ativa: por que só aparecem os planos maiores. */
+export function onlyHigherText(paidPlan: string): string {
+  return `Só planos maiores que o ${planLabel(paidPlan)} pago: cortesia de plano igual ou menor não muda nada agora e, se a assinatura for cancelada, pode tirar o plano pago antes da hora.`
+}
+
+/** No painel da ficha, quando quem paga já tem o plano mais alto: por que Dar cortesia não aparece. */
+export function noCourtesyText(paidPlan: string): string {
+  return `Dar cortesia não aparece: esta conta já paga o ${planLabel(paidPlan)}, e a cortesia só pode ser de plano maior que o pago.`
+}
+
+/**
  * Dar cortesia. `lastDay` é o último dia (AAAA-MM-DD) ou null sem data; `paidPlan` é o plano da
- * assinatura paga ativa, que continua sendo cobrada.
+ * assinatura paga ativa, que continua sendo cobrada (a cortesia é de plano maior que ele).
  */
 export function courtesyText(plan: string, lastDay: string | null, paidPlan: string | null): string {
   const name = planLabel(plan)
-  let text = lastDay
+  return lastDay
     ? `${name} sem cobrança até ${fmtDay(lastDay)} (fim do dia). Nada muda no Asaas. ` +
-      (paidPlan
-        ? `No fim, a conta volta para o ${planLabel(paidPlan)}, que continua sendo cobrado normalmente.`
-        : 'No fim, a conta volta sozinha para o Livre.')
+        (paidPlan
+          ? `No fim, a conta volta para o ${planLabel(paidPlan)}, que continua sendo cobrado normalmente.`
+          : 'No fim, a conta volta sozinha para o Livre.')
     : `${name} sem cobrança e sem data para acabar. Nada muda no Asaas. Para encerrar, use Encerrar cortesia.`
-  if (paidPlan && planRank(plan) <= planRank(paidPlan)) {
-    text += ' A cortesia de um plano igual ou menor que o pago não muda nada para esta conta.'
-  }
-  return text
 }
 
 /** O que a conta tem quando a cortesia acaba: o plano que vale depois dela. */

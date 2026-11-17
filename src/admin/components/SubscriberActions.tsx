@@ -18,6 +18,7 @@ import {
   cancelText,
   changePlanText,
   courtesyLastDay,
+  courtesyPlanKeys,
   courtesyText,
   doneText,
   endCourtesyText,
@@ -25,6 +26,8 @@ import {
   isFuture,
   isLegacyPaid,
   lastDayOf,
+  noCourtesyText,
+  onlyHigherText,
   planRank,
   quotaText,
   unblockText,
@@ -44,6 +47,8 @@ const MSG_DAYS_RANGE = 'Escreva um número de dias de 1 a 365.'
 const MSG_PICK_WHEN = 'Escolha quando cancelar.'
 const MSG_PICK_MODE = 'Escolha entre Zerar e Somar.'
 const MSG_AMOUNT_RANGE = 'Escreva um número de separações de 1 a 500.'
+// O motivo fica no perfil da pessoa, que ela mesma consegue ler (FINAL-review, Minor 3): escrever pra ela.
+const BLOCK_REASON_VISIBLE = 'A pessoa pode ver este motivo.'
 
 // 16px (text-ps-md): abaixo disso o Safari do iPhone e do iPad amplia a tela ao focar o campo.
 const CONTROL =
@@ -120,6 +125,8 @@ function daysOf(form: Form): number | null | undefined {
 type Account = {
   /** A paga ativa de início mais recente (a mesma escolha do servidor). */
   paid: SubscriptionRow | null
+  /** Os planos de todas as pagas ativas, do nível mais alto pro mais baixo (a regra da cortesia usa o mais alto). */
+  paidPlans: string[]
   /** Cortesias que ainda valem. */
   courtesies: SubscriptionRow[]
   /** Pagas canceladas ainda dentro do período pago. */
@@ -135,31 +142,38 @@ type Account = {
 function accountOf(detail: SubscriberDetailData, now: Date = new Date()): Account {
   const subs = detail.subscriptions
   const future = (at: string | null) => isFuture(at, now)
-  const paid = subs
-    .filter((s) => s.kind === 'asaas' && s.status === 'active')
-    .sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))[0] ?? null
+  const paidRows = subs.filter((s) => s.kind === 'asaas' && s.status === 'active')
+  const paid = [...paidRows].sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))[0] ?? null
   return {
     paid,
+    paidPlans: paidRows.map((s) => s.planKey).sort((a, b) => planRank(b) - planRank(a)),
     courtesies: subs.filter((s) => s.kind === 'courtesy' && s.status === 'active' && (s.accessUntil === null || future(s.accessUntil))),
     graced: subs.filter((s) => s.kind === 'asaas' && s.status === 'canceled' && future(s.accessUntil)),
     legacy: isLegacyPaid(detail.profile, subs, now) || hasLegacyCharge(detail.profile, subs, detail.legacyPayments, now),
   }
 }
 
-/** O plano que vale quando esta cortesia acabar: o de nível mais alto que sobra (empate: a paga). */
+const newestFirst = (a: SubscriptionRow, b: SubscriptionRow) => (a.startedAt < b.startedAt ? 1 : a.startedAt > b.startedAt ? -1 : 0)
+
+/**
+ * O plano que vale quando esta cortesia acabar, pela mesma regra do billing_sync_profile (SQL da
+ * cobrança): com paga ativa, a outra cortesia só vale se for de nível maior que a paga; sem paga
+ * ativa, a outra cortesia vale (a de nível mais alto), mesmo com uma paga cancelada ainda no período;
+ * sem cortesia, a paga cancelada no período de início mais recente; sem nada, o Livre.
+ */
 function afterCourtesy(ending: SubscriptionRow, account: Account): AfterCourtesy {
-  const options: { rank: number; after: AfterCourtesy }[] = []
-  if (account.paid) options.push({ rank: planRank(account.paid.planKey), after: { kind: 'paid', planKey: account.paid.planKey } })
-  for (const c of account.courtesies) {
-    if (c.id !== ending.id) options.push({ rank: planRank(c.planKey), after: { kind: 'courtesy', planKey: c.planKey } })
+  const [other] = account.courtesies
+    .filter((c) => c.id !== ending.id)
+    .sort((a, b) => planRank(b.planKey) - planRank(a.planKey) || newestFirst(a, b))
+  if (account.paid) {
+    return other && planRank(other.planKey) > planRank(account.paid.planKey)
+      ? { kind: 'courtesy', planKey: other.planKey }
+      : { kind: 'paid', planKey: account.paid.planKey }
   }
-  for (const g of account.graced) {
-    const lastDay = lastDayOf(g.accessUntil)
-    if (lastDay) options.push({ rank: planRank(g.planKey), after: { kind: 'paid_until', planKey: g.planKey, lastDay } })
-  }
-  // sort é estável: no empate fica a primeira (paga ativa, depois cortesia, depois paga no período).
-  options.sort((a, b) => b.rank - a.rank)
-  return options[0]?.after ?? { kind: 'free' }
+  if (other) return { kind: 'courtesy', planKey: other.planKey }
+  const [graced] = [...account.graced].sort(newestFirst)
+  const lastDay = graced ? lastDayOf(graced.accessUntil) : null
+  return graced && lastDay ? { kind: 'paid_until', planKey: graced.planKey, lastDay } : { kind: 'free' }
 }
 
 function priceOf(detail: SubscriberDetailData, key: string): PlanPrice {
@@ -311,7 +325,10 @@ export function SubscriberActions({ detail, reload }: { detail: SubscriberDetail
       </Button>,
     )
   if (paid) add('change-plan', 'Mudar plano', { kind: 'change-plan' })
-  add('grant-courtesy', 'Dar cortesia', { kind: 'grant-courtesy' })
+  // Com paga ativa, só cortesia de plano maior que o pago (a regra do servidor): quem paga o plano
+  // mais alto não tem o botão, e o painel diz por quê.
+  const courtesyKeys = courtesyPlanKeys(detail.plans.map((p) => p.key), account.paidPlans)
+  if (courtesyKeys.length > 0) add('grant-courtesy', 'Dar cortesia', { kind: 'grant-courtesy' })
   for (const c of courtesies) {
     add(`end-${c.id}`, courtesies.length > 1 ? `Encerrar cortesia de ${planLabel(c.planKey)}` : 'Encerrar cortesia', { kind: 'end-courtesy', courtesy: c })
   }
@@ -332,7 +349,7 @@ export function SubscriberActions({ detail, reload }: { detail: SubscriberDetail
         confirmLabel={confirmLabelOf(current, form)}
         tone={tone}
         confirmDisabled={account.legacy && isCourtesy(current) && !form.legacyStopped}
-        note={current.kind === 'block' ? { label: 'Motivo', required: true, minLength: 3, maxLength: 300 } : undefined}
+        note={current.kind === 'block' ? { label: 'Motivo', required: true, minLength: 3, maxLength: 300, hint: BLOCK_REASON_VISIBLE } : undefined}
         busy={busy}
         error={error}
         onConfirm={(note) => void confirm(note)}
@@ -351,6 +368,9 @@ export function SubscriberActions({ detail, reload }: { detail: SubscriberDetail
         </h3>
         <p className="text-ps-sm text-ps-mut">Cada ação pede confirmação, diz o que muda no Asaas e fica no Registro.</p>
         <div className="flex flex-wrap gap-2">{buttons}</div>
+        {courtesyKeys.length === 0 && account.paidPlans.length > 0 && (
+          <p className="text-ps-sm text-ps-mut break-words">{noCourtesyText(account.paidPlans[0])}</p>
+        )}
         <div role="status">{notice && <p className={notice.tone === 'ok' ? OK_TEXT : ALERT_BOX}>{notice.text}</p>}</div>
       </Panel>
       {dialog}
@@ -477,10 +497,12 @@ function DialogBody({ open, form, set, busy, detail, account }: BodyProps) {
       const days = daysOf(form)
       const text =
         form.plan && days !== undefined ? courtesyText(form.plan, days === null ? null : courtesyLastDay(days), paid?.planKey ?? null) : null
+      const keys = courtesyPlanKeys(detail.plans.map((p) => p.key), account.paidPlans)
       return (
         <div className="flex flex-col gap-3">
           <Group label="Plano da cortesia" htmlFor={planId}>
-            <PlanSelect id={planId} value={form.plan} keys={detail.plans.map((p) => p.key)} busy={busy} onChange={(plan) => set({ plan })} />
+            <PlanSelect id={planId} value={form.plan} keys={keys} busy={busy} onChange={(plan) => set({ plan })} />
+            {account.paidPlans.length > 0 && <p className="text-ps-sm text-ps-mut break-words">{onlyHigherText(account.paidPlans[0])}</p>}
           </Group>
           <Group label="Por quanto tempo">
             <Segmented

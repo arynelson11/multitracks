@@ -8,6 +8,7 @@ import {
   cancelText,
   changePlanText,
   courtesyLastDay,
+  courtesyPlanKeys,
   courtesyText,
   doneText,
   endCourtesyText,
@@ -15,6 +16,8 @@ import {
   isFuture,
   isLegacyPaid,
   lastDayOf,
+  noCourtesyText,
+  onlyHigherText,
   quotaText,
   unblockText,
 } from './actionText'
@@ -68,15 +71,36 @@ describe('courtesyText', () => {
     )
   })
 
-  it('cortesia de plano igual ou menor que o pago avisa que não muda nada', () => {
-    const NADA = ' A cortesia de um plano igual ou menor que o pago não muda nada para esta conta.'
-    expect(courtesyText('essencial_anual', '2026-12-16', 'pro_mensal')).toBe(
-      'Pro Anual sem cobrança até 16/12/2026 (fim do dia). Nada muda no Asaas. No fim, a conta volta para o Studio Mensal, que continua sendo cobrado normalmente.' + NADA,
+})
+
+// Ruling ADM-FINAL-onda: a mesma fórmula do servidor (courtesyRefusal).
+describe('courtesyPlanKeys', () => {
+  const ALL = ['essencial_mensal', 'essencial_anual', 'pro_mensal', 'pro_anual']
+
+  it('sem paga ativa: todos os planos', () => {
+    expect(courtesyPlanKeys(ALL, [])).toEqual(ALL)
+  })
+
+  it('com paga ativa: só os de nível maior que o pago', () => {
+    expect(courtesyPlanKeys(ALL, ['essencial_mensal'])).toEqual(['pro_mensal', 'pro_anual'])
+    // O mesmo nível (mensal e anual do Pro) não entra.
+    expect(courtesyPlanKeys(ALL, ['essencial_anual'])).toEqual(['pro_mensal', 'pro_anual'])
+    // Quem paga Studio não tem plano maior.
+    expect(courtesyPlanKeys(ALL, ['pro_mensal'])).toEqual([])
+    expect(courtesyPlanKeys(ALL, ['pro_anual'])).toEqual([])
+  })
+
+  it('com duas pagas ativas vale a de nível mais alto', () => {
+    expect(courtesyPlanKeys(ALL, ['essencial_mensal', 'pro_anual'])).toEqual([])
+  })
+
+  it('as frases dizem o plano pago e por que só o maior', () => {
+    expect(onlyHigherText('essencial_mensal')).toBe(
+      'Só planos maiores que o Pro Mensal pago: cortesia de plano igual ou menor não muda nada agora e, se a assinatura for cancelada, pode tirar o plano pago antes da hora.',
     )
-    // Mesmo nível (mensal e anual do Pro) também não muda nada.
-    expect(courtesyText('essencial_anual', null, 'essencial_mensal').endsWith(NADA)).toBe(true)
-    // Plano maior muda.
-    expect(courtesyText('pro_mensal', null, 'essencial_mensal')).not.toContain('não muda nada')
+    expect(noCourtesyText('pro_anual')).toBe(
+      'Dar cortesia não aparece: esta conta já paga o Studio Anual, e a cortesia só pode ser de plano maior que o pago.',
+    )
   })
 })
 
@@ -278,8 +302,10 @@ describe('sem travessão', () => {
       changePlanText(PRO_MENSAL, STUDIO_MENSAL, '2026-12-16'),
       changePlanText(PRO_MENSAL, PRO_ANUAL, null),
       courtesyText('pro_anual', '2026-12-16', null),
-      courtesyText('essencial_anual', '2026-12-16', 'pro_mensal'),
+      courtesyText('pro_anual', '2026-12-16', 'essencial_mensal'),
       courtesyText('pro_anual', null, null),
+      onlyHigherText('essencial_mensal'),
+      noCourtesyText('pro_mensal'),
       endCourtesyText('pro_anual', { kind: 'free' }),
       endCourtesyText('pro_anual', { kind: 'paid', planKey: 'essencial_mensal' }),
       endCourtesyText('pro_anual', { kind: 'paid_until', planKey: 'essencial_mensal', lastDay: '2026-12-16' }),

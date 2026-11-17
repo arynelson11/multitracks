@@ -151,6 +151,20 @@ describe('ConfirmDialog', () => {
     expect(onConfirm).toHaveBeenCalledTimes(1)
   })
 
+  it('a linha de ajuda da nota aparece sob o campo e descreve o campo, junto com o mínimo', () => {
+    setup({ note: { label: 'Motivo', required: true, minLength: 3, hint: 'A pessoa pode ver este motivo.' } })
+    const field = screen.getByLabelText('Motivo') as HTMLTextAreaElement
+    const described = document.getElementById(field.getAttribute('aria-describedby') ?? '')
+    expect(described?.textContent).toBe('Pelo menos 3 caracteres.A pessoa pode ver este motivo.')
+    // Sob o campo: depois dele no documento.
+    const hint = screen.getByText('A pessoa pode ver este motivo.')
+    expect(field.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    cleanup()
+    // Sem mínimo nem ajuda, o campo não aponta pra nada.
+    setup({ note: { label: 'Nota', required: false } })
+    expect(screen.getByLabelText('Nota').getAttribute('aria-describedby')).toBeNull()
+  })
+
   it('nota opcional deixa confirmar vazio', () => {
     const { onConfirm, confirm } = setup({ note: { label: 'Nota (opcional)', required: false } })
     expect(confirm().disabled).toBe(false)
