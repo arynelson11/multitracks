@@ -23,8 +23,17 @@ export type Overview = {
     legacyPaid: number
   }
   cancellations: { total: number; bySource: Partial<Record<CancelSource, number>> }
-  // withoutCost: todos os trabalhos sem custo do mês, fora da soma (as notas do custo e da margem)
-  aiCost: { jobs: number; succeeded: number; failed: number; costBrl: number; costUsd: number; withoutCost: number }
+  // withoutCost: todos os trabalhos sem custo do mês, fora da soma (as notas do custo e da margem);
+  // withoutCostPending: os que a varredura de Custos de IA ainda completa (o servidor põe em alerts)
+  aiCost: {
+    jobs: number
+    succeeded: number
+    failed: number
+    costBrl: number
+    costUsd: number
+    withoutCost: number
+    withoutCostPending: number
+  }
   // servidor: receita líquida menos o custo de IA
   marginBrl: number
   // ageDays: servidor, em dias de Brasília

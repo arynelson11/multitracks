@@ -21,7 +21,9 @@ const FX_SOURCE = '(PTAX de venda do Banco Central, sem IOF nem spread).'
 // Sem custo (Ruling ADM-sem-custo-visao): o alerta conta só o que a varredura ainda completa
 // (alerts.withoutCostPending); as notas do custo e da margem contam o total (aiCost.withoutCost).
 const QUIET = { manual: 0, auto: 0, blockedWithActiveSub: 0, withoutCostPending: 0, fxOld: false }
-const aiCostWith = (withoutCost: number) => ({ jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31, withoutCost })
+// aiCost do servidor (Ruling ADM-sem-custo-sql): o total e os pendentes vêm do mesmo admin_overview.
+const aiCostWith = (withoutCost: number, withoutCostPending = 0) =>
+  ({ jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31, withoutCost, withoutCostPending })
 
 // A resposta de `?action=overview` no formato do contrato (seção Arquitetura B do plano).
 function overview(over: Partial<Overview> = {}): Overview {
@@ -38,7 +40,7 @@ function overview(over: Partial<Overview> = {}): Overview {
       legacyPaid: 0,
     },
     cancellations: { total: 2, bySource: { user: 1, unpaid: 1 } },
-    aiCost: { jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31, withoutCost: 0 },
+    aiCost: { jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31, withoutCost: 0, withoutCostPending: 0 },
     marginBrl: 439.9,
     fx: { date: '2026-11-16', rate: 5.37, ageDays: 0 },
     alerts: QUIET,
@@ -117,7 +119,7 @@ describe('OverviewTab', () => {
 
   it('trabalhos sem custo e câmbio velho levam pra Custos de IA; bloqueados com assinatura ativa, pra Assinantes', async () => {
     const data = overview({
-      aiCost: { jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31, withoutCost: 3 },
+      aiCost: aiCostWith(3, 3),
       fx: { date: '2026-11-10', rate: 5.41, ageDays: 6 },
       alerts: { manual: 0, auto: 0, blockedWithActiveSub: 2, withoutCostPending: 3, fxOld: true },
     })
@@ -184,7 +186,7 @@ describe('OverviewTab', () => {
 
   it('trabalhos sem custo ficam fora da soma e a tela diz isso no custo e na margem', async () => {
     await show(overview({
-      aiCost: { jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31, withoutCost: 3 },
+      aiCost: aiCostWith(3, 3),
       alerts: { ...QUIET, withoutCostPending: 3 },
     }))
     expect(text(group('Custo de IA no mês'))).toContain('3 trabalhos sem custo, fora da soma')
@@ -203,7 +205,7 @@ describe('OverviewTab', () => {
   })
 
   it('com pendentes, âmbar: o alerta conta os pendentes e as notas o total', async () => {
-    const { onNavigate } = await show(overview({ aiCost: aiCostWith(7), alerts: { ...QUIET, withoutCostPending: 2 } }))
+    const { onNavigate } = await show(overview({ aiCost: aiCostWith(7, 2), alerts: { ...QUIET, withoutCostPending: 2 } }))
     const button = within(alertsList()).getAllByRole('button').find((b) => text(b) === '2 trabalhos ainda sem custo no mês') as HTMLElement
     expect(button).toBeTruthy()
     expect(button.querySelector('.bg-ps-alert')).not.toBeNull()
@@ -326,7 +328,7 @@ describe('OverviewTab', () => {
   })
 
   it('botões com alvo de 44 px, só tokens ps-* e texto sem travessão', async () => {
-    const data = overview({ aiCost: aiCostWith(1), alerts: { manual: 1, auto: 2, blockedWithActiveSub: 1, withoutCostPending: 1, fxOld: true } })
+    const data = overview({ aiCost: aiCostWith(1, 1), alerts: { manual: 1, auto: 2, blockedWithActiveSub: 1, withoutCostPending: 1, fxOld: true } })
     const { container } = await show({ ...data, subscribers: { ...data.subscribers, legacyPaid: 1 } })
     const buttons = screen.getAllByRole('button')
     expect(buttons.length).toBe(7)
