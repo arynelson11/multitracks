@@ -28,6 +28,15 @@
 -- * Custo de IA: trabalho sem custo = cost_recorded_at, cost_usd ou cost_brl
 --   nulo; conta à parte (withoutCost) e fica fora das duas somas. US$ e R$
 --   somam os MESMOS trabalhos (igual à aba Custos de IA, T10).
+-- * Plano de cada cobrança no Financeiro: o da hora da cobrança (Ruling
+--   ADM-T22-plano-historico). "Mudar plano" reescreve o plan_key da mesma
+--   assinatura e grava no registro do admin (change_plan, ok, target_ref = id
+--   da assinatura, before.planKey = plano antigo; o registro só aceita inserir
+--   e fechar). Vale o before.planKey da primeira troca confirmada feita depois
+--   do dia da cobrança (pagamento, ou vencimento quando não paga); sem troca
+--   depois, o plano atual da assinatura. Troca no mesmo dia conta no plano novo.
+-- * Plano pago = billing_plan_rank > 0 (os 4 planos), igual à lista de
+--   Assinantes (T21): 'gratuito' e nomes fora da tabela não contam.
 -- * Só o backend (service_role) executa.
 
 begin;
@@ -45,7 +54,8 @@ set local statement_timeout = '60s';
 --                courtesyByPlan cortesias ativas com acesso válido;
 --                overdueAccounts      contas distintas com cobrança vencida;
 --                blockedWithActiveSub contas bloqueadas com paga ativa;
---                legacyPaid     perfis com plano efetivo pago, sem nenhuma linha
+--                legacyPaid     perfis com plano efetivo pago (um dos 4
+--                               planos, sem ter vencido), sem nenhuma linha
 --                               paga (assinante de antes da Fase 3) e sem
 --                               cortesia ativa (essa já conta em courtesyByPlan).
 -- cancellations: pagas canceladas no mês por motivo, sem troca de plano
@@ -122,7 +132,7 @@ begin
            'legacyPaid', (
              select count(*)
                from public.profiles p
-              where coalesce(p.plan, 'free') <> 'free'
+              where public.billing_plan_rank(p.plan) > 0
                 and (p.plan_expires_at is null or p.plan_expires_at > v_now)
                 and not exists (select 1 from public.billing_subscriptions s where s.user_id = p.id and s.kind = 'asaas')
                 and not exists (select 1 from ativa a where a.user_id = p.id and a.kind = 'courtesy')))
@@ -191,11 +201,12 @@ $$;
 --          overdueBrl e overdueCount pelas vencidas com vencimento no período.
 -- byMonth: os 12 meses até o mês de p_to (até o próprio dia p_to), do mais
 --          velho pro mais novo, pela data de pagamento; byPlan é o BRUTO por
---          plano da assinatura e soma o grossBrl do mês.
+--          plano (o da hora do pagamento) e soma o grossBrl do mês.
 -- overdue: todas as vencidas, de qualquer período, do vencimento mais velho.
 -- rows:    as cobranças do período (pela data de pagamento, ou pelo vencimento
 --          quando não paga), mais novas primeiro; página de 1 a 200 linhas.
--- O plano de cada cobrança vem da assinatura (subscription_ref).
+-- O plano de cada cobrança (byPlan, rows[].planKey e overdue[].planKey) é o da
+-- hora da cobrança, pelo registro das trocas de plano (regra no cabeçalho).
 create or replace function public.admin_finance(p_from date, p_to date, p_status text, p_limit int, p_offset int)
 returns jsonb
 language plpgsql
@@ -228,11 +239,23 @@ begin
   end if;
 
   with cob as (
-    select b.asaas_payment_id, b.user_id, u.email, s.plan_key, b.status, b.value, b.net_value,
+    select b.asaas_payment_id, b.user_id, u.email, b.status, b.value, b.net_value,
            b.due_date, b.payment_date, b.confirmed_date, b.refunded_at, b.last_event, b.last_event_at,
            b.status = any (v_paid) as paga,
            coalesce(b.confirmed_date, b.payment_date) as dia_pago,
-           coalesce(b.confirmed_date, b.payment_date, b.due_date) as dia
+           coalesce(b.confirmed_date, b.payment_date, b.due_date) as dia,
+           -- plano da hora da cobrança: o antigo da primeira troca confirmada depois do dia dela
+           coalesce((select a.before ->> 'planKey'
+                       from public.admin_audit_log a
+                      where a.action = 'change_plan'
+                        and a.result = 'ok'
+                        and a.target_ref = b.subscription_ref
+                        and coalesce(a.finished_at, a.created_at)
+                            >= (coalesce(b.confirmed_date, b.payment_date, b.due_date) + 1)::timestamp
+                               at time zone 'America/Sao_Paulo'
+                      order by coalesce(a.finished_at, a.created_at), a.id
+                      limit 1),
+                    s.plan_key) as plan_key
       from public.billing_payments b
       left join public.billing_subscriptions s on s.id = b.subscription_ref
       left join auth.users u on u.id = b.user_id
