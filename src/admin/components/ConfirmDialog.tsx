@@ -1,6 +1,7 @@
 // Confirmação de uma ação do admin: o que vai acontecer, uma nota (quando a ação pede) e o
 // erro do servidor dentro do próprio diálogo. Uma trava interna segura o segundo clique em
-// Confirmar até `busy` voltar a falso ou o diálogo reabrir, pra ação não sair duas vezes.
+// Confirmar até `busy` voltar a falso, chegar um erro novo ou o diálogo reabrir, pra ação não
+// sair duas vezes.
 import { useEffect, useId, useRef, useState } from 'react'
 import type React from 'react'
 import { Loader2 } from 'lucide-react'
@@ -71,6 +72,12 @@ function OpenDialog({
   useEffect(() => {
     if (!busy) locked.current = false
   }, [busy])
+
+  // Chegou um erro novo: o pedido já terminou, então solta também. Assim quem chama sem ligar
+  // `busy` não deixa Confirmar com cara de ligado e sem fazer nada.
+  useEffect(() => {
+    if (error) locked.current = false
+  }, [error])
 
   // Abre com o foco na nota (sem nota, no próprio diálogo, pra um Enter solto não confirmar)
   // e, ao fechar, devolve o foco a quem abriu.
@@ -172,13 +179,17 @@ function OpenDialog({
           <Button tone="ghost" onClick={onCancel} disabled={busy}>
             Cancelar
           </Button>
+          {/* O Button não quebra texto: um rótulo comprido (Cancelar a assinatura agora sem estorno)
+              estouraria o diálogo a 320 px. Aqui o botão vai no máximo até a largura do diálogo e o
+              rótulo quebra linha dentro dele. */}
           <Button
             tone={tone}
             onClick={confirm}
             disabled={busy || !valid}
             icon={busy ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : undefined}
+            className="max-w-full"
           >
-            {confirmLabel}
+            <span className="min-w-0 whitespace-normal text-center">{confirmLabel}</span>
           </Button>
         </div>
       </Panel>

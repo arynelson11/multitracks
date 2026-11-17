@@ -8,6 +8,9 @@ export type AdminParams = Record<string, string | number | undefined>
 const MSG_SESSION = 'Sua sessão expirou. Entre de novo.'
 const MSG_FORBIDDEN = 'Esta conta não é admin.'
 const MSG_NETWORK = 'Não deu pra falar com o servidor. Confira a internet e tente de novo.'
+// Numa ação, a resposta pode ter se perdido depois de o servidor agir: repetir às cegas pode
+// fazer duas vezes (Somar na cota, por exemplo). Por isso a frase manda olhar o Registro antes.
+const MSG_NETWORK_ACTION = 'A resposta do servidor não chegou. Confira no Registro se a ação foi feita antes de tentar de novo.'
 
 /** Erro com a frase pronta pra tela. `status` 0 = não chegou ao servidor. */
 export class AdminApiError extends Error {
@@ -50,7 +53,7 @@ async function send<T>(action: string, params: AdminParams | undefined, init: Re
     const headers = await getAuthHeaders()
     res = await fetch(actionUrl(action, params), { ...init, headers })
   } catch {
-    throw new AdminApiError(MSG_NETWORK, 0)
+    throw new AdminApiError(init.method === 'POST' ? MSG_NETWORK_ACTION : MSG_NETWORK, 0)
   }
   const body = await readBody(res)
   if (res.status === 401) throw new AdminApiError(MSG_SESSION, 401)

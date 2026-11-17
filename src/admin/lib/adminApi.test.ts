@@ -17,6 +17,13 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 const mockFetch = () => vi.spyOn(globalThis, 'fetch')
 
+/** Cada chamada ao fetch fica parada até o teste responder, na ordem em que foi feita. */
+function holdFetch(): Array<(r: Response) => void> {
+  const pending: Array<(r: Response) => void> = []
+  mockFetch().mockImplementation(() => new Promise<Response>((resolve) => pending.push(resolve)))
+  return pending
+}
+
 async function errorOf(p: Promise<unknown>): Promise<AdminApiError> {
   try {
     await p
@@ -70,9 +77,17 @@ describe('adminApi', () => {
 
   it('falha de rede vira a mensagem de internet', async () => {
     mockFetch().mockRejectedValue(new TypeError('Failed to fetch'))
-    const e = await errorOf(adminPost('retry-action', { actionId: 1 }))
+    const e = await errorOf(adminGet('review'))
     expect(e.status).toBe(0)
     expect(e.message).toBe('Não deu pra falar com o servidor. Confira a internet e tente de novo.')
+  })
+
+  it('falha de rede numa ação manda conferir o Registro antes de repetir', async () => {
+    // A resposta pode ter se perdido depois de o servidor agir: repetir às cegas pode somar duas vezes.
+    mockFetch().mockRejectedValue(new TypeError('Failed to fetch'))
+    const e = await errorOf(adminPost('adjust-quota', { userId: 'u1', mode: 'add', amount: 5 }))
+    expect(e.status).toBe(0)
+    expect(e.message).toBe('A resposta do servidor não chegou. Confira no Registro se a ação foi feita antes de tentar de novo.')
   })
 
   it('409 usa o erro do servidor', async () => {
@@ -125,6 +140,123 @@ describe('useAdminQuery', () => {
 
     expect(result.current.data).toEqual({ q: 'nova' })
     expect(result.current.loading).toBe(false)
+  })
+
+  // Ruling ADM-T4-id: dois pedidos nunca dividem o mesmo id. Fluxo da T8 e da T26: duas ações
+  // terminam e cada uma chama refetch pela mesma closure, criada no mesmo render.
+  it('dois refetch pela mesma closure: a velha chegando por último não sobrescreve a nova', async () => {
+    const pending = holdFetch()
+    const { result } = renderHook(() => useAdminQuery<{ v: string }>('review'))
+    await waitFor(() => expect(pending).toHaveLength(1))
+    await act(async () => pending[0](json({ v: 'inicial' })))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    const refetch = result.current.refetch
+    let first!: Promise<void>
+    let second!: Promise<void>
+    act(() => {
+      first = refetch()
+      second = refetch()
+    })
+    await waitFor(() => expect(pending).toHaveLength(3))
+    expect(result.current.loading).toBe(true)
+
+    await act(async () => pending[2](json({ v: 'nova' })))
+    await waitFor(() => expect(result.current.data).toEqual({ v: 'nova' }))
+    expect(result.current.loading).toBe(false)
+    await act(async () => pending[1](json({ v: 'velha' })))
+    await act(async () => {
+      await Promise.all([first, second])
+    })
+    expect(result.current.data).toEqual({ v: 'nova' })
+    expect(result.current.loading).toBe(false)
+  })
+
+  it('dois refetch pela mesma closure: o carregando só desliga com a resposta mais nova', async () => {
+    const pending = holdFetch()
+    const { result } = renderHook(() => useAdminQuery<{ v: string }>('review'))
+    await waitFor(() => expect(pending).toHaveLength(1))
+    await act(async () => pending[0](json({ v: 'inicial' })))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    const refetch = result.current.refetch
+    act(() => {
+      void refetch()
+      void refetch()
+    })
+    await waitFor(() => expect(pending).toHaveLength(3))
+    await act(async () => pending[1](json({ v: 'velha' })))
+    expect(result.current.loading).toBe(true)
+    expect(result.current.data).toEqual({ v: 'inicial' })
+
+    await act(async () => pending[2](json({ v: 'nova' })))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.data).toEqual({ v: 'nova' })
+  })
+
+  it('filtro A, depois B, depois A de novo: a velha de A chegando por último não sobrescreve a nova', async () => {
+    const pending = holdFetch()
+    const { result, rerender } = renderHook(
+      ({ q }: { q: string }) => useAdminQuery<{ v: string }>('subscribers', { q }),
+      { initialProps: { q: 'A' } },
+    )
+    await waitFor(() => expect(pending).toHaveLength(1))
+    rerender({ q: 'B' })
+    await waitFor(() => expect(pending).toHaveLength(2))
+    rerender({ q: 'A' })
+    await waitFor(() => expect(pending).toHaveLength(3))
+
+    await act(async () => pending[2](json({ v: 'A nova' })))
+    await waitFor(() => expect(result.current.data).toEqual({ v: 'A nova' }))
+    expect(result.current.loading).toBe(false)
+    await act(async () => pending[1](json({ v: 'B' })))
+    await act(async () => pending[0](json({ v: 'A velha' })))
+    expect(result.current.data).toEqual({ v: 'A nova' })
+    expect(result.current.loading).toBe(false)
+  })
+
+  it('filtro A, depois B, depois A de novo: o carregando só desliga com a resposta mais nova', async () => {
+    const pending = holdFetch()
+    const { result, rerender } = renderHook(
+      ({ q }: { q: string }) => useAdminQuery<{ v: string }>('subscribers', { q }),
+      { initialProps: { q: 'A' } },
+    )
+    await waitFor(() => expect(pending).toHaveLength(1))
+    rerender({ q: 'B' })
+    await waitFor(() => expect(pending).toHaveLength(2))
+    rerender({ q: 'A' })
+    await waitFor(() => expect(pending).toHaveLength(3))
+
+    await act(async () => pending[0](json({ v: 'A velha' })))
+    await act(async () => pending[1](json({ v: 'B' })))
+    expect(result.current.loading).toBe(true)
+    expect(result.current.data).toBeNull()
+
+    await act(async () => pending[2](json({ v: 'A nova' })))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.data).toEqual({ v: 'A nova' })
+  })
+
+  it('voltar a um filtro que já tinha resposta liga o carregando até o pedido novo chegar', async () => {
+    const pending = holdFetch()
+    const { result, rerender } = renderHook(
+      ({ q }: { q: string }) => useAdminQuery<{ v: string }>('subscribers', { q }),
+      { initialProps: { q: 'A' } },
+    )
+    await waitFor(() => expect(pending).toHaveLength(1))
+    await act(async () => pending[0](json({ v: 'A 1' })))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    rerender({ q: 'B' })
+    await waitFor(() => expect(pending).toHaveLength(2))
+    rerender({ q: 'A' })
+    await waitFor(() => expect(pending).toHaveLength(3))
+    expect(result.current.loading).toBe(true)
+
+    await act(async () => pending[1](json({ v: 'B' })))
+    expect(result.current.loading).toBe(true)
+    await act(async () => pending[2](json({ v: 'A 2' })))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.data).toEqual({ v: 'A 2' })
   })
 
   it('o mesmo parâmetro em objeto novo não busca de novo', async () => {

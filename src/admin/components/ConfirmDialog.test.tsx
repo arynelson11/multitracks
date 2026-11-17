@@ -54,6 +54,27 @@ describe('ConfirmDialog', () => {
     expect(onConfirm).toHaveBeenCalledTimes(2)
   })
 
+  it('um erro novo solta a trava mesmo sem busy, pra Confirmar não ficar morto', () => {
+    const { onConfirm, confirm, props, rerender } = setup()
+    fireEvent.click(confirm())
+    rerender(<ConfirmDialog {...props} error="Não deu certo." />)
+    fireEvent.click(confirm())
+    fireEvent.click(confirm())
+    expect(onConfirm).toHaveBeenCalledTimes(2)
+  })
+
+  it('rótulo comprido quebra linha dentro do botão em vez de estourar o diálogo', () => {
+    const label = 'Cancelar a assinatura agora sem estorno'
+    setup({ confirmLabel: label, tone: 'alert' })
+    const button = screen.getByRole('button', { name: label })
+    // O Button não quebra texto (whitespace-nowrap); o rótulo vai num span que quebra, e o botão
+    // fica no máximo da largura do diálogo.
+    expect(button.className).toContain('max-w-full')
+    const span = screen.getByText(label)
+    expect(span.tagName).toBe('SPAN')
+    expect(span.className).toContain('whitespace-normal')
+  })
+
   it('a trava solta quando o diálogo reabre', () => {
     const { onConfirm, confirm, props, rerender } = setup()
     fireEvent.click(confirm())

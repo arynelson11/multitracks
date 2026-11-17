@@ -56,6 +56,14 @@ describe('AdminApp', () => {
     await waitFor(() => expect(h.adminGet).toHaveBeenCalled())
   })
 
+  it('o botão de saída fica dentro do respiro de 16 px, sem margem negativa até a borda', async () => {
+    const { rerender } = render(<AdminApp onClose={() => {}} />)
+    expect(screen.getByRole('button', { name: 'Voltar ao app' }).className).not.toMatch(/(^|\s)-m[rx]-/)
+    rerender(<AdminApp />)
+    expect(screen.getByRole('button', { name: 'Sair' }).className).not.toMatch(/(^|\s)-m[rx]-/)
+    await waitFor(() => expect(h.adminGet).toHaveBeenCalled())
+  })
+
   it('abas na ordem do Corte A, com Pendências aberta primeiro', async () => {
     render(<AdminApp />)
     expect(screen.getByRole('tablist')).toBeTruthy()

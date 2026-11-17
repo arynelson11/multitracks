@@ -56,11 +56,11 @@ export function AdminShell({ email, tabs, active, onSelect, onClose, onSignOut, 
               <span className="ps-label">Admin</span>
             </div>
             {onClose ? (
-              <Button tone="ghost" onClick={onClose} className="-mr-ps-pad-x">
+              <Button tone="ghost" onClick={onClose}>
                 Voltar ao app
               </Button>
             ) : (
-              <Button tone="ghost" onClick={onSignOut} className="-mr-ps-pad-x">
+              <Button tone="ghost" onClick={onSignOut}>
                 Sair
               </Button>
             )}

@@ -8,8 +8,8 @@ export type AdminQueryState<T> = {
   refetch: () => Promise<void>
 }
 
-// Resultado da última busca que terminou: `id` diz qual pedido foi, `query` qual ação e parâmetros.
-type Settled<T> = { id: string; query: string; data: T | null; error: string | null }
+// Resultado do último pedido que gravou: `seq` diz qual foi, `query` de que ação e parâmetros.
+type Settled<T> = { seq: number; query: string; data: T | null; error: string | null }
 
 const MSG_UNKNOWN = 'Não deu pra carregar. Tente de novo.'
 
@@ -34,16 +34,16 @@ async function load<T>(action: string, key: string): Promise<Outcome<T>> {
 }
 
 /** Com erro, os dados anteriores só ficam se forem da mesma ação e dos mesmos parâmetros. */
-function settle<T>(prev: Settled<T>, id: string, query: string, out: Outcome<T>): Settled<T> {
-  if (out.ok) return { id, query, data: out.data, error: null }
-  return { id, query, data: prev.query === query ? prev.data : null, error: out.error }
+function settle<T>(prev: Settled<T>, seq: number, query: string, out: Outcome<T>): Settled<T> {
+  if (out.ok) return { seq, query, data: out.data, error: null }
+  return { seq, query, data: prev.query === query ? prev.data : null, error: out.error }
 }
 
 /**
- * Lê uma ação GET do admin. Cada pedido tem um id (ação, parâmetros e quantas vezes o refetch
- * rodou) e só o pedido mais novo grava o resultado: trocar o filtro no meio de uma busca
- * descarta a resposta velha, que nunca sobrescreve a nova. Enquanto a nova não chega, os
- * dados anteriores continuam com `loading` ligado.
+ * Lê uma ação GET do admin. Todo pedido (do efeito ou do refetch) ganha um número novo de um
+ * contador que só cresce, e só o pedido mais novo grava: dois refetch seguidos, ou voltar a um
+ * filtro com o pedido antigo dele ainda no ar, nunca deixam a resposta velha sobrescrever a nova
+ * (Ruling ADM-T4-id). Enquanto a nova não chega, os dados anteriores continuam com `loading`.
  */
 export function useAdminQuery<T>(
   action: string,
@@ -52,38 +52,42 @@ export function useAdminQuery<T>(
 ): AdminQueryState<T> {
   const enabled = opts?.enabled ?? true
   const key = paramsKey(params)
-  const [nonce, setNonce] = useState(0)
-  const [settled, setSettled] = useState<Settled<T>>({ id: '', query: '', data: null, error: null })
-  // Id do pedido que pode gravar o resultado; vazio = nenhum.
-  const latest = useRef('')
-
   const query = `${action}?${key}`
-  const id = `${query}#${nonce}`
+  // Contador de pedidos (só cresce) e o número do pedido que ainda pode gravar (0 = nenhum).
+  const seq = useRef(0)
+  const latest = useRef(0)
+  // Número do último refetch: o carregando fica ligado até um pedido igual ou mais novo gravar.
+  const [refetchSeq, setRefetchSeq] = useState(0)
+  const [settled, setSettled] = useState<Settled<T>>({ seq: 0, query: '', data: null, error: null })
+  // Na troca de ação ou parâmetro, só vale resultado gravado depois dela: voltar a um filtro que
+  // já tinha resposta também liga o carregando até o pedido novo chegar.
+  const [watched, setWatched] = useState({ query, floor: 0 })
+  if (watched.query !== query) setWatched({ query, floor: settled.seq + 1 })
 
   useEffect(() => {
     if (!enabled) return
-    // Se o refetch já começou este pedido, aqui só fica a vigia de troca e de desmontar.
-    if (latest.current !== id) {
-      latest.current = id
-      load<T>(action, key).then((out) => {
-        if (latest.current === id) setSettled((prev) => settle(prev, id, query, out))
-      })
-    }
+    const mine = ++seq.current
+    latest.current = mine
+    const q = `${action}?${key}`
+    load<T>(action, key).then((out) => {
+      if (latest.current === mine) setSettled((prev) => settle(prev, mine, q, out))
+    })
+    // Trocou a ação, o parâmetro ou desmontou: este pedido perde a vez.
     return () => {
-      if (latest.current === id) latest.current = ''
+      if (latest.current === mine) latest.current = 0
     }
-  }, [enabled, id, action, key, query])
+  }, [enabled, action, key])
 
   const refetch = useCallback(async () => {
     if (!enabled) return
-    const next = nonce + 1
-    const reqId = `${query}#${next}`
-    latest.current = reqId
-    setNonce(next)
+    const mine = ++seq.current
+    latest.current = mine
+    setRefetchSeq(mine)
+    const q = `${action}?${key}`
     const out = await load<T>(action, key)
-    if (latest.current === reqId) setSettled((prev) => settle(prev, reqId, query, out))
-  }, [enabled, nonce, query, action, key])
+    if (latest.current === mine) setSettled((prev) => settle(prev, mine, q, out))
+  }, [enabled, action, key])
 
-  const loading = enabled && settled.id !== id
+  const loading = enabled && (settled.query !== query || settled.seq < Math.max(refetchSeq, watched.floor))
   return { data: settled.data, loading, error: loading ? null : settled.error, refetch }
 }
