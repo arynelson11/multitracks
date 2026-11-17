@@ -5,30 +5,35 @@ import { Button, Chip, Panel } from '../../components/ui'
 import { useAdminQuery } from '../hooks/useAdminQuery'
 import { fmtDateTimeBR } from '../lib/fmt'
 import { accountLabel, actionLabel, displayResult, entryMessage, jsonText } from '../lib/auditText'
-import type { AuditEntry, AuditPage } from '../lib/auditTypes'
+import { isAuditPage, type AuditEntry, type AuditPage } from '../lib/auditTypes'
 import type { TabProps } from '../lib/tabs'
 
 // Teto de página do servidor (?action=audit aceita de 1 a 1000).
 const MAX_PAGE = 1000
+const MSG_BAD_SHAPE = 'Não deu pra carregar o registro. Tente de novo.'
 
 export function AuditTab({ userId }: TabProps & { userId?: string }) {
   // Trocar de conta volta pra primeira página.
   const [view, setView] = useState({ userId, page: 1 })
   const page = view.userId === userId ? view.page : 1
   const goTo = (next: number) => setView({ userId, page: next })
-  const { data, loading, error, refetch } = useAdminQuery<AuditPage>('audit', { page, userId })
+  const query = useAdminQuery<AuditPage>('audit', { page, userId })
+  const { loading, error, refetch } = query
+  // Resposta fora do formato (servidor antigo, corpo de outra ação) vale como erro, nunca quebra o render.
+  const data = isAuditPage(query.data) ? query.data : null
 
-  const errorBox = error && (
+  const errorBox = (message: string) => (
     <div className="flex flex-wrap items-center gap-ps-gap">
-      <p role="alert" className="text-ps-base text-ps-alert">
-        {error}
+      <p role="alert" className="text-ps-base text-ps-alert break-words">
+        {message}
       </p>
       <Button onClick={() => void refetch()}>Tentar de novo</Button>
     </div>
   )
 
   if (!data) {
-    return errorBox || <p role="status" className="text-ps-base text-ps-mut">Carregando...</p>
+    if (loading) return <p role="status" className="text-ps-base text-ps-mut">Carregando...</p>
+    return errorBox(error ?? MSG_BAD_SHAPE)
   }
 
   const lastPage = Math.min(MAX_PAGE, Math.max(1, Math.ceil(data.total / data.pageSize)))
@@ -43,7 +48,7 @@ export function AuditTab({ userId }: TabProps & { userId?: string }) {
           novo pro mais antigo.
         </p>
       </header>
-      {errorBox}
+      {error && errorBox(error)}
       {data.rows.length === 0 ? (
         <p className="text-ps-base text-ps-mut">{data.total === 0 ? 'Nenhuma ação registrada ainda.' : 'Nada nesta página.'}</p>
       ) : (
@@ -91,7 +96,7 @@ function AuditRow({ entry }: { entry: AuditEntry }) {
           <span className="ps-num">{fmtDateTimeBR(entry.createdAt)}</span>
           <span className="break-all">por {entry.adminEmail}</span>
         </p>
-        {message && <p className="text-ps-sm text-ps-bone">{message}</p>}
+        {message && <p className="text-ps-sm text-ps-bone break-words">{message}</p>}
         {entry.note && <p className="text-ps-sm text-ps-mut break-words">Nota: {entry.note}</p>}
         <Button
           tone="ghost"

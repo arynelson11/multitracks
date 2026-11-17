@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import AdminApp from './AdminApp'
+import { AdminApiError } from './lib/adminApi'
 import type { GuardStatus } from './hooks/useAdminGuard'
 
 type Guard = { status: GuardStatus; email: string | null; signOut: () => Promise<void> }
@@ -10,6 +11,7 @@ const h = vi.hoisted(() => ({
   guard: null as unknown as Guard,
   adminGet: vi.fn(),
   signOut: vi.fn(async () => {}),
+  responses: {} as Record<string, unknown>,
 }))
 
 vi.mock('./hooks/useAdminGuard', () => ({ useAdminGuard: () => h.guard }))
@@ -26,10 +28,17 @@ const REVIEW = {
   counts: { manual: 2, auto: 1, total: 3 },
   generatedAt: '2026-11-16T15:00:00Z',
 }
+const AUDIT_EMPTY = { total: 0, page: 1, pageSize: 50, rows: [] }
 
 beforeEach(() => {
   h.adminGet.mockReset()
-  h.adminGet.mockResolvedValue(REVIEW)
+  // Responde por ação, como o servidor: cada aba recebe o formato dela, e ação sem resposta
+  // aqui é recusada como desconhecida (400), nunca com o corpo de outra ação.
+  h.responses = { review: REVIEW, audit: AUDIT_EMPTY }
+  h.adminGet.mockImplementation(async (action: string) => {
+    if (Object.hasOwn(h.responses, action)) return h.responses[action]
+    throw new AdminApiError(`Ação desconhecida: ${action}`, 400)
+  })
   h.signOut.mockClear()
   h.guard = { status: 'ok', email: 'admin@exemplo.com', signOut: h.signOut }
 })
@@ -84,7 +93,7 @@ describe('AdminApp', () => {
   })
 
   it('sem pendência manual a aba não acende o alerta', async () => {
-    h.adminGet.mockResolvedValue({ ...REVIEW, counts: { manual: 0, auto: 1, total: 1 } })
+    h.responses.review = { ...REVIEW, counts: { manual: 0, auto: 1, total: 1 } }
     const { container } = render(<AdminApp />)
     const pend = screen.getByRole('tab', { name: /Pendências/ })
     await waitFor(() => expect(pend.textContent).toContain('1'))
@@ -98,7 +107,9 @@ describe('AdminApp', () => {
     expect(audit.getAttribute('aria-selected')).toBe('true')
     expect(screen.getByRole('tab', { name: /Pendências/ }).getAttribute('aria-selected')).toBe('false')
     expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe(audit.id)
-    await waitFor(() => expect(h.adminGet).toHaveBeenCalled())
+    // o Registro pede a ação dele e recebe o formato dele
+    expect(await screen.findByText('Nenhuma ação registrada ainda.')).toBeTruthy()
+    expect(h.adminGet).toHaveBeenCalledWith('audit', { page: 1 })
   })
 
   it('setas do teclado andam entre as abas', async () => {

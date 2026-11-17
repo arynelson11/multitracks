@@ -191,6 +191,36 @@ describe('AuditTab', () => {
     expect(h.adminGet).toHaveBeenCalledTimes(2)
   })
 
+  it('resposta fora do formato mostra a frase pronta e Tentar de novo, sem derrubar a tela', async () => {
+    const REVIEW = { actions: [], flags: [], events: [], counts: { manual: 0, auto: 0, total: 0 }, generatedAt: '2026-11-16T15:00:00Z' }
+    const bad: unknown[] = [
+      REVIEW,
+      null,
+      { total: 1, page: 1, pageSize: 50, rows: 'x' },
+      { total: '1', page: 1, pageSize: 50, rows: [] },
+      { total: 1, page: 1, pageSize: 0, rows: [] },
+      { total: 1, page: 1, pageSize: 50, rows: [null] },
+    ]
+    for (const shape of bad) {
+      h.adminGet.mockReset()
+      h.adminGet.mockResolvedValueOnce(shape)
+      h.adminGet.mockResolvedValueOnce(pageOf([entry()]))
+      render(<AuditTab {...tabProps} />)
+      expect(await screen.findByText('Não deu pra carregar o registro. Tente de novo.'), JSON.stringify(shape)).toBeTruthy()
+      expect(screen.queryByText('conferiu marcação')).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+      expect(await screen.findByText('conferiu marcação')).toBeTruthy()
+      cleanup()
+    }
+  })
+
+  it('mensagem comprida quebra a linha em vez de vazar', async () => {
+    h.adminGet.mockResolvedValue(pageOf([entry({ result: 'failed', message: 'O Asaas recusou remover as cobranças futuras: pay_abcdefghijklmnopqrstuvwxyz0123456789.' })]))
+    render(<AuditTab {...tabProps} />)
+    const msg = await screen.findByText(/O Asaas recusou remover/)
+    expect(msg.className).toContain('break-words')
+  })
+
   it('nenhum texto da tela tem travessão', async () => {
     h.adminGet.mockResolvedValue(pageOf([
       entry({ id: 3, result: 'pending', finishedAt: null, before: null, after: null }),
