@@ -89,18 +89,33 @@ export function paymentStatusName(status: string): string {
 
 // ── Último erro de pendência ou aviso (last_error) em frase pronta (Ruling
 // ADM-T6-lastError). O texto cru (com a descrição do Asaas ou do banco) fica
-// só no banco e no log. Mapa fechado: o que não é uma das duas formas do
-// cliente do Asaas (toAsaasError) vira a frase genérica. A T7 usa a mesma
+// só no banco e no log. Mapa fechado: as formas do cliente do Asaas
+// (toAsaasError) e a remoção recusada da Fase 3 (Ruling
+// ADM-T6-lastError-mapa); o resto vira a frase genérica. A T7 usa a mesma
 // função ao ler o Registro.
 
 const ASAAS_REFUSED_RE = /^Asaas recusou \((\d{3})\)/
+const ASAAS_DOWN_STATUS_RE = /^Asaas respondeu (\d{3})$/
+const REMOVAL_REFUSED_PREFIX = 'Asaas recusou remover '
+
+// "Asaas recusou remover <ids>" (runPendingActions): os ids ajudam o dono a
+// achar as cobranças no painel, e só passam se todos têm cara de id de cobrança.
+function removalRefusedLabel(ids: string): string {
+  const list = ids.split(', ')
+  return list.every((id) => PAY_ID_RE.test(id))
+    ? `O Asaas recusou remover as cobranças futuras: ${list.join(', ')}.`
+    : 'O Asaas recusou remover as cobranças futuras.'
+}
 
 export function lastErrorLabel(raw: unknown): string | null {
   if (raw === null || raw === undefined) return null
   if (typeof raw !== 'string') return MSG_UNEXPECTED
   if (raw.startsWith('Asaas sem resposta')) return 'O Asaas não respondeu.'
+  const down = ASAAS_DOWN_STATUS_RE.exec(raw)
+  if (down) return `O Asaas não respondeu. Status do Asaas: ${down[1]}.`
   const refused = ASAAS_REFUSED_RE.exec(raw)
   if (refused) return `O Asaas recusou o pedido. Status do Asaas: ${refused[1]}.`
+  if (raw.startsWith(REMOVAL_REFUSED_PREFIX)) return removalRefusedLabel(raw.slice(REMOVAL_REFUSED_PREFIX.length))
   return MSG_UNEXPECTED
 }
 

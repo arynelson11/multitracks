@@ -741,6 +741,25 @@ describe('tentar agora (retry-action)', () => {
     expect(db.rpcCalls.find((c) => c.name === 'admin_log_start')?.args.p_before).toMatchObject({ lastError: MSG.unexpected })
   })
 
+  it('remoção de cobrança futura recusada pelo Asaas cita as cobranças, e o Asaas fora cita o status (Ruling ADM-T6-lastError-mapa)', async () => {
+    Object.assign(actionRow(4), { attempts: 1, last_error: 'Asaas respondeu 503' })
+    setAsaas({
+      get: (path) => (path === '/payments'
+        ? { data: [payment({ id: 'pay_9', status: 'PENDING', dueDate: '2026-12-16' })], hasMore: false }
+        : payment({ id: 'pay_9', status: 'PENDING', dueDate: '2026-12-16' })),
+      del: () => { throw new AsaasError('rejected', 'Asaas recusou (400): Não é possível remover a cobrança do cliente João.', 400) },
+    })
+    const res = await post('retry-action', { actionId: 4 })
+    expect(res.statusCode).toBe(200)
+    expect(actionRow(4).last_error).toBe('Asaas recusou remover pay_9')
+    expect(res.body).toEqual({ status: 'pending', attempts: 2, lastError: 'O Asaas recusou remover as cobranças futuras: pay_9.' })
+    expect(db.rpcCalls.find((c) => c.name === 'admin_log_start')?.args.p_before).toEqual({
+      action: 'delete_future_payments', status: 'pending', attempts: 1, lastError: 'O Asaas não respondeu. Status do Asaas: 503.',
+    })
+    expect(db.rpcCalls.find((c) => c.name === 'admin_log_finish')?.args.p_after).toEqual(res.body)
+    expect(JSON.stringify(db.rpcCalls.filter((c) => c.name.startsWith('admin_log_')))).not.toContain('João')
+  })
+
   it('tentar agora com id fora do padrão responde 400 sem o teto na frase', async () => {
     for (const actionId of ['sete', 0, -7, 7.5, 2 ** 53, null]) {
       const res = await post('retry-action', { actionId })
@@ -984,14 +1003,25 @@ describe('último erro em frase pronta (lastErrorLabel)', () => {
     expect(lastErrorLabel(undefined)).toBeNull()
   })
 
+  it('Asaas fora com status e remoção recusada das cobranças futuras (Ruling ADM-T6-lastError-mapa)', () => {
+    expect(lastErrorLabel('Asaas respondeu 503')).toBe('O Asaas não respondeu. Status do Asaas: 503.')
+    expect(lastErrorLabel('Asaas respondeu 429')).toBe('O Asaas não respondeu. Status do Asaas: 429.')
+    expect(lastErrorLabel('Asaas recusou remover pay_9')).toBe('O Asaas recusou remover as cobranças futuras: pay_9.')
+    expect(lastErrorLabel('Asaas recusou remover pay_9, pay_19')).toBe('O Asaas recusou remover as cobranças futuras: pay_9, pay_19.')
+    // id fora do padrão: a frase sai sem os ids
+    for (const raw of ['Asaas recusou remover pay_9, <script>', 'Asaas recusou remover pay_9, pay_', 'Asaas recusou remover sub_1', 'Asaas recusou remover ', 'Asaas recusou remover pay_9 do cliente João']) {
+      expect(lastErrorLabel(raw), raw).toBe('O Asaas recusou remover as cobranças futuras.')
+    }
+  })
+
   it('frase que não está no mapa vira "Erro inesperado no servidor."', () => {
-    // a Ruling ADM-T6-lastError só deixa passar as duas formas acima
+    // o mapa da Ruling ADM-T6-lastError (com a Ruling ADM-T6-lastError-mapa) é fechado
     const unknown: unknown[] = [
       'deadlock detected',
       'Falha no banco (billing_action_done): permission denied for table billing_pending_actions',
-      'Asaas recusou remover pay_9',
       'Asaas recusou (abc): x',
-      'Asaas respondeu 503',
+      'Asaas respondeu',
+      'Asaas respondeu muito devagar',
       'reiniciado pelo admin',
       'erro',
       '',
