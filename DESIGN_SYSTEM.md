@@ -97,7 +97,7 @@ Definidos em `src/index.css` no bloco `@theme` — consumidos via Tailwind v4 (`
 
 ### 1.7 Linguagem nova (palco v5): tokens `ps-*`
 
-> Entrou na Parte 1 do palco novo (2026-11-15, publicada na v1.4.15). Por enquanto só o painel "Editar canal", o lápis e a lixeira do EDITAR CANAIS usam; as Partes 2 e 3 migram o palco e as outras telas.
+> Entrou na Parte 1 do palco novo (2026-11-15, publicada na v1.4.15). No app publicado, por enquanto só o painel "Editar canal", o lápis e a lixeira do EDITAR CANAIS usam; as Partes 2 e 3 migram o palco e as outras telas.
 >
 > O admin (`src/admin/`) usa só a linguagem nova: tokens `ps-*` e as peças de `src/components/ui/`, sem o dourado `primary` (admin central, 2026-11-17, NÃO publicado ainda). Falta uma tela: o login da web em `/admin` (`src/admin/AdminLogin.tsx`), que ainda está no estilo antigo e só aparece pra quem abre `/admin` sem estar logado.
 
