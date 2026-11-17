@@ -114,9 +114,26 @@ describe('AdminErrorBoundary', () => {
     expect(screen.queryByText(MSG)).toBeNull()
   })
 
+  it('Tentar de novo chama onRetry, quando vem, antes de montar a aba', () => {
+    shouldThrow = true
+    const onRetry = vi.fn()
+    render(
+      <AdminErrorBoundary onSignOut={() => {}} onRetry={onRetry}>
+        <Flaky />
+      </AdminErrorBoundary>,
+    )
+    expect(onRetry).not.toHaveBeenCalled()
+    shouldThrow = false
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Conteúdo da aba')).toBeTruthy()
+  })
+
   it('no AdminApp, a aba que lança não deixa a tela em branco: a casca e as outras abas continuam', async () => {
     const onClose = vi.fn()
     render(<AdminApp onClose={onClose} />)
+    // a Visão geral abre primeiro (T28); a Pendências está de pé
+    fireEvent.click(screen.getByRole('tab', { name: /Pendências/ }))
     await screen.findByText('Nada pendente agora.')
     fireEvent.click(screen.getByRole('tab', { name: 'Registro' }))
 

@@ -10,6 +10,9 @@ type AdminErrorBoundaryProps = {
   // Dentro do app: "Voltar ao app". Na web em /admin (sem onClose): "Sair", como a casca.
   onClose?: () => void
   onSignOut: () => void
+  // Pede de novo o que a aba recebe de fora (a fila de Pendências mora na casca): a aba que
+  // lança no render não chega a rodar o pedido de entrada dela.
+  onRetry?: () => void
 }
 
 type AdminErrorBoundaryState = { failed: boolean }
@@ -23,7 +26,10 @@ export class AdminErrorBoundary extends Component<AdminErrorBoundaryProps, Admin
   }
 
   // Monta a aba de novo, do zero (o estado dela se perdeu no erro, então ela pede os dados outra vez).
-  private retry = () => this.setState({ failed: false })
+  private retry = () => {
+    this.props.onRetry?.()
+    this.setState({ failed: false })
+  }
 
   render() {
     if (!this.state.failed) return this.props.children

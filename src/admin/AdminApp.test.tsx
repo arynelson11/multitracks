@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   adminPost: vi.fn(),
   signOut: vi.fn(async () => {}),
   responses: {} as Record<string, unknown>,
+  reviewThrows: false,
 }))
 
 vi.mock('./hooks/useAdminGuard', () => ({ useAdminGuard: () => h.guard }))
@@ -22,6 +23,17 @@ vi.mock('./lib/adminApi', async (importOriginal) => ({
   adminPost: h.adminPost,
 }))
 vi.mock('../lib/supabase', () => ({ supabase: null, getAuthHeaders: async () => ({}) }))
+// A aba Pendências de verdade, que pode lançar no render quando o teste pede.
+vi.mock('./tabs/ReviewTab', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./tabs/ReviewTab')>()
+  return {
+    ...real,
+    ReviewTab: (props: Parameters<typeof real.ReviewTab>[0]) => {
+      if (h.reviewThrows) throw new Error('aba quebrada no teste')
+      return <real.ReviewTab {...props} />
+    },
+  }
+})
 
 const REVIEW = {
   actions: [],
@@ -61,11 +73,12 @@ beforeEach(() => {
   h.adminPost.mockReset()
   h.adminPost.mockResolvedValue({ result: 'blocked' })
   h.signOut.mockClear()
+  h.reviewThrows = false
   h.guard = { status: 'ok', email: 'admin@exemplo.com', signOut: h.signOut }
 })
 afterEach(cleanup)
 
-const CORTE_A = ['Pendências', 'Visão geral', 'Assinantes', 'Financeiro', 'Custos de IA', 'Registro', 'Uso']
+const FINAL = ['Visão geral', 'Assinantes', 'Financeiro', 'Custos de IA', 'Pendências', 'Registro']
 const tabLabels = () => screen.getAllByRole('tab').map((t) => (t.textContent ?? '').replace(/\d+/g, '').trim())
 
 describe('AdminApp', () => {
@@ -94,21 +107,25 @@ describe('AdminApp', () => {
     await waitFor(() => expect(h.adminGet).toHaveBeenCalled())
   })
 
-  it('abas na ordem do Corte A, com Pendências aberta primeiro', async () => {
+  it('abas finais na ordem e Visão geral primeiro', async () => {
     render(<AdminApp />)
     expect(screen.getByRole('tablist')).toBeTruthy()
-    expect(tabLabels()).toEqual(CORTE_A)
+    expect(tabLabels()).toEqual(FINAL)
     const tabs = screen.getAllByRole('tab')
     expect(tabs[0].getAttribute('aria-selected')).toBe('true')
     expect(tabs.slice(1).every((t) => t.getAttribute('aria-selected') === 'false')).toBe(true)
-    await waitFor(() => expect(h.adminGet).toHaveBeenCalled())
+    expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe(tabs[0].id)
+    // a aba Uso saiu; a Visão geral pede a ação dela e a casca pede a fila pro número de Pendências
+    expect(screen.queryByRole('tab', { name: 'Uso' })).toBeNull()
+    await waitFor(() => expect(h.adminGet.mock.calls.map((c) => c[0])).toEqual(expect.arrayContaining(['overview', 'review'])))
   })
 
   it('a aba Pendências mostra o total vindo de review', async () => {
     const { container } = render(<AdminApp />)
     const pend = screen.getByRole('tab', { name: /Pendências/ })
     await waitFor(() => expect(pend.textContent).toContain('3'))
-    expect(h.adminGet.mock.calls[0][0]).toBe('review')
+    expect(h.adminGet.mock.calls.map((c) => c[0])).toContain('review')
+    expect(pend.getAttribute('aria-selected')).toBe('false')
     // Há pendência manual: o Led de alerta acende na aba.
     expect(container.querySelector('[role="tab"] .bg-ps-alert')).not.toBeNull()
   })
@@ -156,13 +173,39 @@ describe('AdminApp', () => {
 
   it('setas do teclado andam entre as abas', async () => {
     render(<AdminApp />)
-    const first = screen.getByRole('tab', { name: /Pendências/ })
+    const first = screen.getByRole('tab', { name: 'Visão geral' })
     fireEvent.keyDown(first, { key: 'ArrowRight' })
-    expect(screen.getByRole('tab', { name: 'Visão geral' }).getAttribute('aria-selected')).toBe('true')
-    fireEvent.keyDown(screen.getByRole('tab', { name: 'Visão geral' }), { key: 'End' })
-    expect(screen.getByRole('tab', { name: 'Uso' }).getAttribute('aria-selected')).toBe('true')
-    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Uso' }))
+    expect(screen.getByRole('tab', { name: 'Assinantes' }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Assinantes' }), { key: 'End' })
+    expect(screen.getByRole('tab', { name: 'Registro' }).getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Registro' }))
     await waitFor(() => expect(h.adminGet).toHaveBeenCalled())
+  })
+
+  it('na Pendências, o Tentar de novo da rede de segurança também pede a fila de novo', async () => {
+    // O React escreve no console o erro que a rede de segurança pegou.
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(<AdminApp />)
+    const pend = screen.getByRole('tab', { name: /Pendências/ })
+    await waitFor(() => expect(pend.textContent).toContain('3'))
+    h.reviewThrows = true
+    fireEvent.click(pend)
+    const box = await screen.findByRole('alert')
+    expect(within(box).getByText('Esta aba teve um problema. Tente de novo ou volte ao app.')).toBeTruthy()
+
+    // A aba lança de novo antes de rodar o próprio pedido de entrada: quem pede é a casca.
+    const reviewCalls = () => h.adminGet.mock.calls.filter((c) => c[0] === 'review').length
+    const before = reviewCalls()
+    h.responses.review = { ...REVIEW, counts: { manual: 4, auto: 1, total: 5 } }
+    fireEvent.click(within(box).getByRole('button', { name: 'Tentar de novo' }))
+    await waitFor(() => expect(reviewCalls()).toBe(before + 1))
+    await waitFor(() => expect(pend.textContent).toContain('5'))
+
+    // Com a aba boa, o Tentar de novo mostra a fila.
+    h.reviewThrows = false
+    fireEvent.click(within(await screen.findByRole('alert')).getByRole('button', { name: 'Tentar de novo' }))
+    expect(await screen.findByText('Nada pendente agora.')).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('tela de acesso negado não usa text-primary nem bg-[#0e0e10]', () => {
