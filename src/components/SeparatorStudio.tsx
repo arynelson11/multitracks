@@ -10,6 +10,7 @@ import { canDownloadStems, canUseVoiceGuide, canUseBpmDetection, planTier, maxSe
 import { PricingModal } from './PricingModal';
 import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { detectBeatGrid, formatBpm, type BeatGrid } from '../lib/beatGrid';
+import { separatorGridUsable } from '../lib/autoClick';
 import { SyncedTrackPlayer } from '../lib/syncedTrackPlayer';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
 import { useSeparationLibrary, type SavedSeparation } from '../hooks/useSeparationLibrary';
@@ -1366,7 +1367,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       if (!res) { setGridInfo('Nenhuma faixa pra analisar.'); return; }
       setBpm(formatBpm(res.grid.bpm));
       setDownbeatShift(0);
-      setGridInfo(res.grid.confidence < 0.15
+      setGridInfo(!separatorGridUsable(res.grid)
         ? `Pulso pouco claro nessa música (${res.source.name}). Confira o BPM no TAP.`
         : `${res.grid.bpm.toFixed(2)} BPM medido na faixa ${res.source.name}.`);
     } catch (e) {
@@ -1406,10 +1407,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       } catch (e) {
         console.warn('[Click] análise falhou, gerando no BPM digitado a partir de 0:00', e);
       }
-      const aligned = !!grid && grid.confidence >= 0.1;
-      const clickBpm = aligned ? grid!.bpm : bpmNum;
-      const firstBeat = (aligned ? grid!.firstBeat : 0) + offsetMs / 1000;
-      const downbeat = (aligned ? grid!.downbeat : 0) + downbeatShift;
+      const aligned = separatorGridUsable(grid) ? grid : null;
+      const clickBpm = aligned ? aligned.bpm : bpmNum;
+      const firstBeat = (aligned ? aligned.firstBeat : 0) + offsetMs / 1000;
+      const downbeat = (aligned ? aligned.downbeat : 0) + downbeatShift;
 
       const master = getMasterWs();
       const duration = (master && master.getDuration() > 0 ? master.getDuration() : 0) || songDuration || 600;
