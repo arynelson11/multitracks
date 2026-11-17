@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   BILLING_CONTINUES,
   LEGACY_BILLING_WARNING,
+  LEGACY_COURTESY_WARNING,
+  LEGACY_STOPPED_LABEL,
   blockText,
   cancelText,
   changePlanText,
@@ -9,6 +11,7 @@ import {
   courtesyText,
   doneText,
   endCourtesyText,
+  hasLegacyCharge,
   isFuture,
   isLegacyPaid,
   lastDayOf,
@@ -171,6 +174,31 @@ describe('isLegacyPaid', () => {
   })
 })
 
+describe('hasLegacyCharge', () => {
+  const NOW = new Date('2026-11-17T12:00:00Z')
+  const old = { id: 'chk_old', planKey: 'essencial_mensal' }
+  const row = (over: Partial<{ id: string; kind: string; status: string; accessUntil: string | null }> = {}) => ({
+    id: 'cortesia:1', kind: 'courtesy', status: 'active', accessUntil: null, ...over,
+  })
+
+  it('a regra do servidor: sem paga ativa, plano pago valendo e pagamento antigo que não virou linha', () => {
+    expect(hasLegacyCharge({ plan: 'essencial_mensal', planExpiresAt: null }, [], [old], NOW)).toBe(true)
+    // Com cortesia ativa também (o perfil fica no plano da cortesia): é o caso do Encerrar cortesia.
+    expect(hasLegacyCharge({ plan: 'pro_anual', planExpiresAt: null }, [row()], [old], NOW)).toBe(true)
+    // Paga da Fase 3 cancelada não adota o checkout antigo.
+    expect(hasLegacyCharge({ plan: 'pro_mensal', planExpiresAt: '2026-12-01T03:00:00Z' }, [row({ id: 'chk_new', kind: 'asaas', status: 'canceled', accessUntil: '2026-12-01T03:00:00Z' })], [old], NOW)).toBe(true)
+  })
+
+  it('não tem: paga ativa, pagamento já adotado, plano Livre ou vencido, sem pagamento antigo de plano pago', () => {
+    expect(hasLegacyCharge({ plan: 'essencial_mensal', planExpiresAt: null }, [row({ id: 'chk_new', kind: 'asaas' })], [old], NOW)).toBe(false)
+    expect(hasLegacyCharge({ plan: 'essencial_mensal', planExpiresAt: null }, [row({ id: 'chk_old', kind: 'asaas', status: 'canceled' })], [old], NOW)).toBe(false)
+    expect(hasLegacyCharge({ plan: 'free', planExpiresAt: null }, [], [old], NOW)).toBe(false)
+    expect(hasLegacyCharge({ plan: 'essencial_mensal', planExpiresAt: '2026-11-17T12:00:00Z' }, [], [old], NOW)).toBe(false)
+    expect(hasLegacyCharge({ plan: 'essencial_mensal', planExpiresAt: null }, [], [], NOW)).toBe(false)
+    expect(hasLegacyCharge({ plan: 'essencial_mensal', planExpiresAt: null }, [], [{ id: 'x', planKey: 'free' }], NOW)).toBe(false)
+  })
+})
+
 describe('blockText e unblockText', () => {
   it('bloquear diz o que a pessoa perde', () => {
     expect(blockText(false)).toBe('A pessoa perde o acesso ao app agora: separar, biblioteca em nuvem, enviar arquivos e assinar.')
@@ -188,6 +216,13 @@ describe('blockText e unblockText', () => {
       'Esta conta pode ter uma cobrança antiga no Asaas que o app não controla. Bloquear não para essa cobrança; confira no painel do Asaas.',
     )
     expect(LEGACY_BILLING_WARNING).not.toContain(TRAVESSAO)
+  })
+
+  it('assinante antigo na cortesia: o aviso e a caixa', () => {
+    expect(LEGACY_COURTESY_WARNING).toBe(
+      'Esta conta tem uma cobrança antiga no Asaas que o app não controla. A cortesia muda o plano no app, mas não para essa cobrança.',
+    )
+    expect(LEGACY_STOPPED_LABEL).toBe('Já parei a cobrança antiga no painel do Asaas')
   })
 
   it('desbloquear', () => {

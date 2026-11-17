@@ -25,6 +25,8 @@ type ConfirmDialogProps = {
   tone?: 'primary' | 'alert'
   note?: ConfirmNote
   busy?: boolean
+  /** Confirmar desligado por uma condição de quem chama (uma caixa que precisa estar marcada). */
+  confirmDisabled?: boolean
   /**
    * Erro da ação, mostrado dentro do diálogo. Passe o AdminApiError do adminPost (ou a frase dele):
    * com erro incerto, Confirmar fica desligado até fechar e abrir de novo.
@@ -62,6 +64,7 @@ function OpenDialog({
   tone = 'primary',
   note,
   busy = false,
+  confirmDisabled = false,
   error,
   onConfirm,
   onCancel,
@@ -107,7 +110,7 @@ function OpenDialog({
 
   const valid = noteIsValid(note, text)
   const confirm = () => {
-    if (busy || !valid || held || locked.current) return
+    if (busy || !valid || held || confirmDisabled || locked.current) return
     locked.current = true
     onConfirm(text.trim())
   }
@@ -201,7 +204,7 @@ function OpenDialog({
           <Button
             tone={tone}
             onClick={confirm}
-            disabled={busy || !valid || held}
+            disabled={busy || !valid || held || confirmDisabled}
             icon={busy ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : undefined}
             className="max-w-full"
           >

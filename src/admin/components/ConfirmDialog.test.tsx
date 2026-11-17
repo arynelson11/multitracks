@@ -138,6 +138,19 @@ describe('ConfirmDialog', () => {
     expect(onConfirm).toHaveBeenCalledWith('estornei hoje')
   })
 
+  it('confirmDisabled desliga Confirmar e o clique não chama onConfirm; ligado de novo, confirma', () => {
+    const { rerender, props, onConfirm, confirm } = setup({ confirmDisabled: true })
+    expect(confirm().disabled).toBe(true)
+    fireEvent.click(confirm())
+    expect(onConfirm).not.toHaveBeenCalled()
+    // Cancelar continua valendo
+    expect((screen.getByRole('button', { name: 'Cancelar' }) as HTMLButtonElement).disabled).toBe(false)
+    rerender(<ConfirmDialog {...props} confirmDisabled={false} />)
+    expect(confirm().disabled).toBe(false)
+    fireEvent.click(confirm())
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+  })
+
   it('nota opcional deixa confirmar vazio', () => {
     const { onConfirm, confirm } = setup({ note: { label: 'Nota (opcional)', required: false } })
     expect(confirm().disabled).toBe(false)

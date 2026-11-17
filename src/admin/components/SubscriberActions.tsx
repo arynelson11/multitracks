@@ -12,6 +12,8 @@ import { AdminApiError, adminPost } from '../lib/adminApi'
 import {
   BILLING_CONTINUES,
   LEGACY_BILLING_WARNING,
+  LEGACY_COURTESY_WARNING,
+  LEGACY_STOPPED_LABEL,
   blockText,
   cancelText,
   changePlanText,
@@ -19,6 +21,7 @@ import {
   courtesyText,
   doneText,
   endCourtesyText,
+  hasLegacyCharge,
   isFuture,
   isLegacyPaid,
   lastDayOf,
@@ -56,9 +59,19 @@ type Open = { kind: Exclude<Kind, 'end-courtesy'> } | { kind: 'end-courtesy'; co
 type DaysChoice = '7' | '30' | '90' | 'other' | 'none'
 type When = 'now' | 'period_end'
 type Mode = 'reset' | 'add'
-type Form = { plan: string; days: DaysChoice | null; otherDays: string; note: string; when: When | null; mode: Mode | null; amount: string }
+type Form = {
+  plan: string
+  days: DaysChoice | null
+  otherDays: string
+  note: string
+  when: When | null
+  mode: Mode | null
+  amount: string
+  /** Assinante antigo: o admin marcou que já parou a cobrança antiga no painel do Asaas. */
+  legacyStopped: boolean
+}
 
-const EMPTY_FORM: Form = { plan: '', days: null, otherDays: '', note: '', when: null, mode: null, amount: '' }
+const EMPTY_FORM: Form = { plan: '', days: null, otherDays: '', note: '', when: null, mode: null, amount: '', legacyStopped: false }
 
 const DAYS_OPTIONS: { value: DaysChoice; label: string }[] = [
   { value: '7', label: '7 dias' },
@@ -111,7 +124,10 @@ type Account = {
   courtesies: SubscriptionRow[]
   /** Pagas canceladas ainda dentro do período pago. */
   graced: SubscriptionRow[]
-  /** Assinante antigo, sem linha de assinatura: pode ter cobrança no Asaas que o app não vê. */
+  /**
+   * Assinante antigo: pode ter cobrança no Asaas que o app não vê. A regra da lista (sem linha de
+   * assinatura) ou a do servidor (pagamento antigo que não virou linha, também com cortesia ativa).
+   */
   legacy: boolean
 }
 
@@ -125,7 +141,7 @@ function accountOf(detail: SubscriberDetailData, now: Date = new Date()): Accoun
     paid,
     courtesies: subs.filter((s) => s.kind === 'courtesy' && s.status === 'active' && (s.accessUntil === null || future(s.accessUntil))),
     graced: subs.filter((s) => s.kind === 'asaas' && s.status === 'canceled' && future(s.accessUntil)),
-    legacy: isLegacyPaid(detail.profile, subs, now),
+    legacy: isLegacyPaid(detail.profile, subs, now) || hasLegacyCharge(detail.profile, subs, detail.legacyPayments, now),
   }
 }
 
@@ -156,7 +172,16 @@ type Request = { ok: true; action: string; body: Record<string, unknown> } | { o
 
 const fail = (message: string): Request => ({ ok: false, message })
 
-function requestOf(open: Open, form: Form, note: string, userId: string): Request {
+/** As ações de cortesia num assinante antigo levam a confirmação de que a cobrança antiga parou. */
+const isCourtesy = (open: Open) => open.kind === 'grant-courtesy' || open.kind === 'end-courtesy'
+
+function requestOf(open: Open, form: Form, note: string, userId: string, legacy: boolean): Request {
+  const req = baseRequest(open, form, note, userId)
+  if (!req.ok || !legacy || !isCourtesy(open)) return req
+  return { ...req, body: { ...req.body, legacyChargeStopped: true } }
+}
+
+function baseRequest(open: Open, form: Form, note: string, userId: string): Request {
   switch (open.kind) {
     case 'change-plan':
       return form.plan ? { ok: true, action: 'change-plan', body: { userId, planKey: form.plan } } : fail(MSG_PICK_PLAN)
@@ -241,7 +266,9 @@ export function SubscriberActions({ detail, reload }: { detail: SubscriberDetail
 
   const confirm = async (note: string) => {
     if (!current || sending.current) return
-    const req = requestOf(current, form, note, profile.userId)
+    // Assinante antigo na cortesia: sem a caixa marcada nada sai (o Confirmar também fica desligado).
+    if (account.legacy && isCourtesy(current) && !form.legacyStopped) return
+    const req = requestOf(current, form, note, profile.userId, account.legacy)
     // Escolha que falta ou número fora da faixa: nada sai. Erro novo a cada vez, pra o diálogo soltar.
     if (!req.ok) {
       setError(new AdminApiError(req.message, 0))
@@ -303,6 +330,7 @@ export function SubscriberActions({ detail, reload }: { detail: SubscriberDetail
         title={TITLES[current.kind]}
         confirmLabel={confirmLabelOf(current, form)}
         tone={tone}
+        confirmDisabled={account.legacy && isCourtesy(current) && !form.legacyStopped}
         note={current.kind === 'block' ? { label: 'Motivo', required: true, minLength: 3, maxLength: 300 } : undefined}
         busy={busy}
         error={error}
@@ -399,6 +427,25 @@ function NumberField({ id, value, busy, onChange }: { id: string; value: string;
   )
 }
 
+/** Assinante antigo na cortesia: o aviso em âmbar e a caixa que libera o Confirmar. */
+function LegacyStopped({ checked, busy, onChange }: { checked: boolean; busy: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <p className={ALERT_BOX}>{LEGACY_COURTESY_WARNING}</p>
+      <label className="flex min-h-ps-touch cursor-pointer items-center gap-3 text-ps-base text-ps-bone">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={busy}
+          onChange={(e) => onChange(e.target.checked)}
+          className="size-5 shrink-0 accent-ps-or disabled:opacity-35"
+        />
+        <span className="min-w-0 break-words">{LEGACY_STOPPED_LABEL}</span>
+      </label>
+    </div>
+  )
+}
+
 const withBusy = <T extends string>(options: { value: T; label: string }[], busy: boolean) =>
   options.map((o) => ({ ...o, disabled: busy }))
 
@@ -449,6 +496,7 @@ function DialogBody({ open, form, set, busy, detail, account }: BodyProps) {
             </Group>
           )}
           <Effect text={text} hint="Escolha o plano e por quanto tempo pra ver o efeito." />
+          {account.legacy && <LegacyStopped checked={form.legacyStopped} busy={busy} onChange={(legacyStopped) => set({ legacyStopped })} />}
           <Group label="Nota (opcional)" htmlFor={noteId}>
             <textarea
               id={noteId}
@@ -464,7 +512,12 @@ function DialogBody({ open, form, set, busy, detail, account }: BodyProps) {
       )
     }
     case 'end-courtesy':
-      return <Effect text={endCourtesyText(open.courtesy.planKey, afterCourtesy(open.courtesy, account))} />
+      return (
+        <div className="flex flex-col gap-3">
+          <Effect text={endCourtesyText(open.courtesy.planKey, afterCourtesy(open.courtesy, account))} />
+          {account.legacy && <LegacyStopped checked={form.legacyStopped} busy={busy} onChange={(legacyStopped) => set({ legacyStopped })} />}
+        </div>
+      )
     case 'cancel': {
       if (!paid) return null
       const lastPaidDay = isFuture(paid.paidUntil) ? lastDayOf(paid.paidUntil) : null

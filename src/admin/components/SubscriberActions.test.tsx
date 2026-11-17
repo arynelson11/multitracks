@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { SubscriberActions } from './SubscriberActions'
 import { SubscribersTab } from '../tabs/SubscribersTab'
 import { AdminApiError } from '../lib/adminApi'
-import { BILLING_CONTINUES, LEGACY_BILLING_WARNING, cancelText, changePlanText, courtesyLastDay, courtesyText, quotaText } from '../lib/actionText'
+import { BILLING_CONTINUES, LEGACY_BILLING_WARNING, LEGACY_COURTESY_WARNING, LEGACY_STOPPED_LABEL, cancelText, changePlanText, courtesyLastDay, courtesyText, quotaText } from '../lib/actionText'
 import { brtTodayLocal, monthRange } from '../lib/period'
 import type { SubscriberDetailData, SubscriptionRow } from '../lib/subscribersTypes'
 
@@ -194,7 +194,7 @@ describe('SubscriberActions: cada ação manda o pedido certo', () => {
   })
 
   it('Sem data manda days null (e sem nota não manda o campo)', async () => {
-    setup(detail({ subscriptions: [] }))
+    setup(detail({ subscriptions: [] }, { plan: 'free' }))
     const dialog = open('Dar cortesia')
     fireEvent.change(within(dialog).getByLabelText('Plano da cortesia'), { target: { value: 'pro_anual' } })
     fireEvent.click(within(dialog).getByRole('radio', { name: 'Sem data' }))
@@ -205,7 +205,7 @@ describe('SubscriberActions: cada ação manda o pedido certo', () => {
   })
 
   it('Outro manda o número escrito; vazio ou fora de 1 a 365 não manda nada', async () => {
-    setup(detail({ subscriptions: [] }))
+    setup(detail({ subscriptions: [] }, { plan: 'free' }))
     const dialog = open('Dar cortesia')
     fireEvent.change(within(dialog).getByLabelText('Plano da cortesia'), { target: { value: 'essencial_mensal' } })
     // Sem escolher a duração, nada sai.
@@ -301,6 +301,67 @@ describe('SubscriberActions: cada ação manda o pedido certo', () => {
     const warning = within(dialog).getByText(LEGACY_BILLING_WARNING)
     expect(warning.className).toContain('bg-ps-alert-soft')
     expect(dialog.textContent).not.toContain(BILLING_CONTINUES)
+  })
+
+  it('assinante antigo: Dar cortesia avisa em âmbar e só confirma com a caixa marcada, que vai no pedido', async () => {
+    const LEGACY = { id: 'chk_old', planKey: 'essencial_mensal', value: 49.9, cycle: 'MONTHLY', paidAt: '2026-10-20T12:00:00Z' }
+    setup(detail({ subscriptions: [], legacyPayments: [LEGACY] }, { plan: 'essencial_mensal' }))
+    const dialog = open('Dar cortesia')
+    expect(within(dialog).getByText(LEGACY_COURTESY_WARNING).className).toContain('bg-ps-alert-soft')
+    const box = within(dialog).getByRole('checkbox', { name: LEGACY_STOPPED_LABEL }) as HTMLInputElement
+    expect(box.checked).toBe(false)
+    fireEvent.change(within(dialog).getByLabelText('Plano da cortesia'), { target: { value: 'pro_anual' } })
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Sem data' }))
+    // Caixa desmarcada: Confirmar desligado e nada sai.
+    expect(confirmButton(dialog, 'Dar cortesia').disabled).toBe(true)
+    fireEvent.click(confirmButton(dialog, 'Dar cortesia'))
+    expect(h.adminPost).not.toHaveBeenCalled()
+    fireEvent.click(box)
+    expect(box.checked).toBe(true)
+    expect(confirmButton(dialog, 'Dar cortesia').disabled).toBe(false)
+    fireEvent.click(confirmButton(dialog, 'Dar cortesia'))
+    await waitFor(() => expect(h.adminPost).toHaveBeenCalledTimes(1))
+    expect(h.adminPost).toHaveBeenCalledWith('grant-courtesy', { userId: USER, planKey: 'pro_anual', days: null, legacyChargeStopped: true })
+  })
+
+  it('assinante antigo com cortesia ativa: Encerrar cortesia também pede a caixa', async () => {
+    const LEGACY = { id: 'chk_old', planKey: 'essencial_mensal', value: 49.9, cycle: 'MONTHLY', paidAt: '2026-10-20T12:00:00Z' }
+    setup(detail({ subscriptions: [courtesy()], legacyPayments: [LEGACY] }, { plan: 'pro_anual' }))
+    let dialog = open('Encerrar cortesia')
+    expect(dialog.textContent).toContain(LEGACY_COURTESY_WARNING)
+    expect(confirmButton(dialog, 'Encerrar cortesia').disabled).toBe(true)
+    // Reabrir começa com a caixa desmarcada.
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: LEGACY_STOPPED_LABEL }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }))
+    dialog = open('Encerrar cortesia')
+    const box = within(dialog).getByRole('checkbox', { name: LEGACY_STOPPED_LABEL }) as HTMLInputElement
+    expect(box.checked).toBe(false)
+    fireEvent.click(box)
+    fireEvent.click(confirmButton(dialog, 'Encerrar cortesia'))
+    await waitFor(() => expect(h.adminPost).toHaveBeenCalledTimes(1))
+    expect(h.adminPost).toHaveBeenCalledWith('end-courtesy', { userId: USER, courtesyId: 'cortesia:abc', legacyChargeStopped: true })
+  })
+
+  it('conta normal: a cortesia não tem caixa nem aviso e não manda o campo', () => {
+    setup(detail({ subscriptions: [paid(), courtesy()] }))
+    for (const name of ['Dar cortesia', 'Encerrar cortesia']) {
+      const dialog = open(name)
+      expect(within(dialog).queryByRole('checkbox')).toBeNull()
+      expect(dialog.textContent).not.toContain(LEGACY_COURTESY_WARNING)
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }))
+    }
+  })
+
+  it('a caixa do assinante antigo fica desligada com o pedido no ar, e tem alvo de 44 px', async () => {
+    h.adminPost.mockImplementation(() => new Promise(() => {}))
+    const LEGACY = { id: 'chk_old', planKey: 'essencial_mensal', value: 49.9, cycle: 'MONTHLY', paidAt: '2026-10-20T12:00:00Z' }
+    setup(detail({ subscriptions: [courtesy()], legacyPayments: [LEGACY] }, { plan: 'pro_anual' }))
+    const dialog = open('Encerrar cortesia')
+    const box = within(dialog).getByRole('checkbox', { name: LEGACY_STOPPED_LABEL }) as HTMLInputElement
+    expect(box.closest('label')?.className).toContain('min-h-ps-touch')
+    fireEvent.click(box)
+    fireEvent.click(confirmButton(dialog, 'Encerrar cortesia'))
+    await waitFor(() => expect(box.disabled).toBe(true))
   })
 
   it('cortesia ativa ou plano vencido não é assinante antigo', () => {

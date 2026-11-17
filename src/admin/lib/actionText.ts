@@ -125,6 +125,33 @@ export function isLegacyPaid(
   return !subscriptions.some((s) => s.kind === 'courtesy' && s.status === 'active' && (s.accessUntil === null || isFuture(s.accessUntil, now)))
 }
 
+/**
+ * Assinante antigo na cortesia (Ruling ADM-T26-cortesia-legado): dar ou encerrar muda o plano no app
+ * e não para a cobrança antiga. O Confirmar só liga com a caixa marcada, e o servidor confere.
+ */
+export const LEGACY_COURTESY_WARNING =
+  'Esta conta tem uma cobrança antiga no Asaas que o app não controla. A cortesia muda o plano no app, mas não para essa cobrança.'
+export const LEGACY_STOPPED_LABEL = 'Já parei a cobrança antiga no painel do Asaas'
+
+/**
+ * A detecção do servidor (a do MSG_LEGACY_PAID, em subscriberActions.ts): sem assinatura paga
+ * ativa, plano pago valendo no perfil e um pagamento antigo de plano pago que não virou linha de
+ * assinatura (a linha adotada tem o id do checkout, que é o id do pagamento). Vale também com
+ * cortesia ativa, que é o caso do Encerrar cortesia.
+ */
+export function hasLegacyCharge(
+  profile: { plan: string; planExpiresAt: string | null },
+  subscriptions: { id: string; kind: string; status: string }[],
+  legacyPayments: { id: string; planKey: string }[],
+  now: Date = new Date(),
+): boolean {
+  if (subscriptions.some((s) => s.kind === 'asaas' && s.status === 'active')) return false
+  const plan = profile.planExpiresAt !== null && !isFuture(profile.planExpiresAt, now) ? 'free' : profile.plan
+  if (planRank(plan) === 0) return false
+  const rows = new Set(subscriptions.map((s) => s.id))
+  return legacyPayments.some((p) => planRank(p.planKey) > 0 && !rows.has(p.id))
+}
+
 const BLOCK_EFFECT = 'A pessoa perde o acesso ao app agora: separar, biblioteca em nuvem, enviar arquivos e assinar.'
 
 export function blockText(hasActivePaid: boolean): string {
