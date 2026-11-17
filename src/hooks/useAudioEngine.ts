@@ -1441,7 +1441,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
                         // primeiro save de um v3 reaberto apagaria a grade (achado 67 do preflight);
                         // a grade salva não é lida de novo ao reabrir.
                         grid: metaSong.grid,
-                        timeSignature: metaSong.timeSignature
+                        timeSignature: metaSong.timeSignature,
+                        // O 1 não provado (Ruling T27-campo): o COMPASSO ASSUMIDO volta com a música.
+                        downbeatAssumed: metaSong.downbeatAssumed
                     };
                 };
 
@@ -2416,9 +2418,6 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     const gridReadSeenRef = useRef(new Set<string>());
     const gridGenSeenRef = useRef(new Set<string>());
     const lastActiveIdRef = useRef<string | null>(null);
-    // "1" assumido na última leitura de cada música: o aviso vale também com o compasso escolhido
-    // no EDITAR (Ruling W3). Sem compasso escolhido ele já fica na grade salva ('padrao').
-    const [oneAssumedSongs, setOneAssumedSongs] = useState<ReadonlySet<string>>(() => new Set());
 
     // Worker da grade: nasce no primeiro pedido e fica até o motor sair de cena. 'sem-worker' =
     // não nasceu ou quebrou: a leitura automática para de vez nesta sessão.
@@ -2513,23 +2512,21 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         setGridPending([...gridJobsRef.current.keys()]);
         job?.done.forEach((resolve) => resolve());
     };
-    const markOneAssumed = (songId: string, assumed: boolean) => {
-        setOneAssumedSongs((prev) => {
-            if (prev.has(songId) === assumed) return prev;
-            const next = new Set(prev);
-            if (assumed) next.add(songId); else next.delete(songId);
-            return next;
-        });
-    };
+
+    // A música precisa do click gerado: não tem canal de Click nem grade de click salva. A grade de
+    // click fica quando o usuário apaga o click (o gerado ou o dele), e é ela que impede o click
+    // apagado de voltar na sessão seguinte (manual vence automático).
+    const wantsGeneratedClick = (song: Song) => !findClickChannel(song.channels) && sanitizeGrid(song.grid)?.source !== 'click';
 
     // Põe a música na fila: lê o click quando ainda não há grade de click e há um canal de Click
     // com áudio; gera o click que falta só com `generate` (carregada agora, ou ficou ativa com a
-    // VS parada), no plano que pode e sem canal de Click.
+    // VS parada), no plano que pode, sem canal de Click e sem grade de click salva.
     const scheduleSongGrid = (song: Song, want: { read: boolean; generate: boolean }) => {
         // Sem Worker, nada é lido sozinho (nunca na thread principal).
         if (!gridWorkerUsable()) return;
-        const read = want.read && sanitizeGrid(song.grid)?.source !== 'click' && clickChannelsOf(song).some((ch) => readableClick(ch.buffer) !== null);
-        const generate = want.generate && autoClickRef.current && !findClickChannel(song.channels);
+        const hasClickGrid = sanitizeGrid(song.grid)?.source === 'click';
+        const read = want.read && !hasClickGrid && clickChannelsOf(song).some((ch) => readableClick(ch.buffer) !== null);
+        const generate = want.generate && autoClickRef.current && wantsGeneratedClick(song);
         if (read || generate) void enqueueGridJob(song.id, { read, generate });
     };
 
@@ -2543,6 +2540,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         if (!song) return 'feita';
         const before = sanitizeGrid(song.grid);
         const clicks = clickChannelsOf(song);
+        // Sem canal de Click, nada a ler: a grade fica como está (a de um click que o usuário
+        // apagou continua, e o click gerado não volta; ver wantsGeneratedClick).
+        if (clicks.length === 0) return 'feita';
         // O click que o motor gerou já nasce com a grade dele (gridFromAutoClick): ler de novo só pioraria.
         if (before?.source === 'click' && clicks.some((ch) => ch.name === GENERATED_CLICK_NAME)) return 'feita';
         const known = before?.meterSource === 'manual' ? before.signature : sanitizeTimeSignature(song.timeSignature);
@@ -2572,8 +2572,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         const next = found
             ? sanitizeGrid(keepManualMeter(found.grid, prev)) ?? undefined
             : prev?.meterSource === 'manual' ? { ...prev, source: 'bpm' as const } : undefined;
-        markOneAssumed(songId, found?.oneAssumed ?? false);
-        if (!sameGrid(next, prev)) patchSong(songId, (s) => ({ ...s, grid: next }));
+        // O 1 não provado vai junto da grade, salvo no repertório (Ruling T27-campo).
+        const downbeatAssumed = found?.oneAssumed ? true : undefined;
+        if (!sameGrid(next, prev) || latest.downbeatAssumed !== downbeatAssumed) patchSong(songId, (s) => ({ ...s, grid: next, downbeatAssumed }));
         return 'feita';
     };
 
@@ -2585,7 +2586,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // é feito na próxima parada. O canal entra pelo addLiveVoice se a VS já estiver tocando.
     const generateMissingClick = async (songId: string, job: GridJob): Promise<'feita' | 'espera'> => {
         const song = playlistRef.current.find((s) => s.id === songId);
-        if (!song || !autoClickRef.current || findClickChannel(song.channels)) return 'feita';
+        if (!song || !autoClickRef.current || !wantsGeneratedClick(song)) return 'feita';
         const before = sanitizeGrid(song.grid);
         const signature = (before?.meterSource === 'manual' ? before.signature : sanitizeTimeSignature(song.timeSignature)) ?? undefined;
         let plan = job.plan;
@@ -2617,10 +2618,14 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         const made = gridFromAutoClick(plan, signature !== undefined);
         if (!made) return 'feita';
         const blob = await renderAutoClick(plan, song.duration, loadClickSelection());
+        // O usuário pôs um click (ou ele ganhou grade) enquanto o plano e o WAV saíam: o dele vence.
+        const latest = playlistRef.current.find((s) => s.id === songId);
+        if (!latest || !wantsGeneratedClick(latest)) return 'feita';
         const added = await appendChannelToSong(songId, new File([blob], `${GENERATED_CLICK_NAME}.wav`, { type: 'audio/wav' }));
         if (!added) return 'feita';
-        patchSong(songId, (s) => ({ ...s, grid: sanitizeGrid(keepManualMeter(made.grid, sanitizeGrid(s.grid))) ?? undefined }));
-        markOneAssumed(songId, made.oneAssumed);
+        patchSong(songId, (s) => ({
+            ...s, grid: sanitizeGrid(keepManualMeter(made.grid, sanitizeGrid(s.grid))) ?? undefined, downbeatAssumed: made.oneAssumed ? true : undefined,
+        }));
         return 'feita';
     };
 
@@ -2722,7 +2727,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
 
     // Aviso âmbar da grade da música ativa; o 1 assumido avisa também com o compasso escolhido.
     const songGridWarning: GridWarning | null = !activeSong ? null
-        : gridWarning(activeGrid) ?? (activeGrid?.source === 'click' && oneAssumedSongs.has(activeSong.id) ? 'compasso-assumido' : null);
+        : gridWarning(activeGrid) ?? (activeGrid?.source === 'click' && activeSong.downbeatAssumed ? 'compasso-assumido' : null);
     const isReadingGrid = !!activeSongId && gridPending.includes(activeSongId);
 
     // Update markers on a song

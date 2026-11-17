@@ -437,6 +437,30 @@ describe('grade da música lida na faixa de click', () => {
     expect(hook.result.current.gridWarning).toBe('compasso-assumido')
   })
 
+  it('1 não provado com o compasso escolhido no EDITAR: o COMPASSO ASSUMIDO continua depois de reabrir', async () => {
+    const first = await openApp()
+    // 3/4 salvo e click sem acento: o 1 assumido no primeiro pulso.
+    await load(first, [['CLICK.wav', 'semAcento']], { bpm: 90, timeSignature: '3/4' })
+    // Click com acento: o 1 provado, pra comparar.
+    await load(first, [['CLICK.wav', 'click44']], { name: 'Com acento', bpm: 120 })
+    await waitFor(() => expect(first.result.current.playlist.map((s) => s.grid?.source)).toEqual(['click', 'click']), { timeout: 5000 })
+    const [assumida, provada] = first.result.current.playlist.map((s) => s.id)
+    act(() => { first.result.current.setSongMeter(assumida, '3/4', 1) })
+    act(() => { first.result.current.setSongMeter(provada, '3/4', 1) })
+    expect(first.result.current.gridWarning).toBe('compasso-assumido')
+    await waitFor(() => expect(saved().map((s) => s.grid?.meterSource)).toEqual(['manual', 'manual']))
+    expect(saved().map((s) => s.downbeatAssumed)).toEqual([true, undefined])
+    cleanup()
+
+    const hook = await openApp()
+    await wait(80)
+    expect(hook.result.current.songGrid).toMatchObject({ source: 'click', meterSource: 'manual', signature: '3/4' })
+    expect(hook.result.current.gridWarning).toBe('compasso-assumido')
+    act(() => { hook.result.current.jumpToSong(1) })
+    expect(hook.result.current.songGrid).toMatchObject({ source: 'click', meterSource: 'manual', signature: '3/4' })
+    expect(hook.result.current.gridWarning).toBeNull()
+  })
+
   it('repertório de antes da grade: ao abrir, a grade de cada música com click é lida, sem esperar ela ficar ativa', async () => {
     const v2 = (id: string, bpm: number): SavedSong => ({
       id, name: `Música ${id}`, duration: 20, pitch: 0, originalKey: 'C', bpm, schemaVersion: 2, channelOrder: 'auto',
@@ -527,6 +551,39 @@ describe('click que falta (planos pagos)', () => {
     await act(async () => { await hook.result.current.redetectSongGrid(song.id) })
     expect(mem.analyzeCalls).toHaveLength(0)
     expect(hook.result.current.songGrid).toEqual(saved()[0].grid)
+  })
+
+  it('o "Click gerado" que o usuário apagou não volta ao reabrir, nem depois de "Ler o click de novo"', async () => {
+    mem.opts = { autoClick: true }
+    mem.plan = okPlan()
+    const first = await openApp()
+    await load(first, [['DRUMS.wav', 'bateria'], ['BASS.wav', 'bateria']], { bpm: 120, timeSignature: '4/4' })
+    await settled(first)
+    const songId = first.result.current.playlist[0].id
+    const gerado = first.result.current.playlist[0].channels.find((c) => c.name === 'Click gerado')!
+    await act(async () => { await first.result.current.removeChannel(gerado.id) })
+    // Sem click pra ler, a grade que o click deixou fica (manual vence automático).
+    await act(async () => { await first.result.current.redetectSongGrid(songId) })
+    await waitFor(() => expect(saved()[0].channels.map((c) => c.name)).toEqual(['DRUMS', 'BASS']))
+    expect(saved()[0].grid).toMatchObject({ source: 'click', bpm: 120 })
+    cleanup()
+
+    mem.planCalls.length = 0
+    mem.renderCalls.length = 0
+    const hook = await openApp()
+    await wait(150)
+    expect(mem.planCalls).toHaveLength(0)
+    expect(mem.renderCalls).toHaveLength(0)
+    expect(hook.result.current.playlist[0].channels.map((c) => c.name)).toEqual(['DRUMS', 'BASS'])
+    expect(hook.result.current.songGrid).toMatchObject({ source: 'click', bpm: 120 })
+    // Também não volta ao ficar ativa de novo nesta sessão.
+    await load(hook, [['DRUMS.wav', 'bateria']], { name: 'Outra', bpm: 120 })
+    await settled(hook)
+    act(() => { hook.result.current.jumpToSong(1) })
+    act(() => { hook.result.current.jumpToSong(0) })
+    await wait(150)
+    expect(mem.planCalls.map((c) => c.ids)).toHaveLength(1) // só o da música nova, carregada agora
+    expect(hook.result.current.playlist[0].channels.map((c) => c.name)).toEqual(['DRUMS', 'BASS'])
   })
 
   it('sem click, com autoClick e confiança baixa: não gera nada', async () => {
