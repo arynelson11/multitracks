@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   rows: {} as Record<string, Row>,
   listeners: [] as ((event: string, session: unknown) => void)[],
   hold: null as Promise<void> | null,
+  failFor: null as string | null,
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -28,6 +29,7 @@ vi.mock('../../lib/supabase', () => ({
         eq: (_col: string, id: string) => ({
           maybeSingle: async () => {
             if (h.hold) await h.hold
+            if (id === h.failFor) return { data: null, error: { message: 'rede caiu' } }
             return { data: h.rows[id] ?? null, error: null }
           },
         }),
@@ -40,6 +42,7 @@ vi.mock('../../lib/supabase', () => ({
 vi.mock('../../lib/subscription', () => ({ syncBillingOnLogin: async () => {} }))
 
 import { useAdminGuard, type GuardStatus } from './useAdminGuard'
+import { useAuth } from '../../hooks/useAuth'
 
 const OWNER = ['arynelson11', 'gmail.com'].join('@')
 const row = (isAdmin: boolean): Row => ({ plan: 'pro_mensal', plan_expires_at: null, is_admin: isAdmin, blocked_at: null })
@@ -50,6 +53,7 @@ beforeEach(() => {
   h.rows = {}
   h.listeners.length = 0
   h.hold = null
+  h.failFor = null
 })
 afterEach(cleanup)
 
@@ -111,5 +115,81 @@ describe('useAdminGuard', () => {
     h.hold = new Promise<void>(() => {})
     act(() => { for (const cb of h.listeners) cb('TOKEN_REFRESHED', sessionOf('u-adm', 'equipe@exemplo.com')) })
     expect(result.current.status).toBe('ok')
+  })
+})
+
+describe('useAuth: papel e bloqueio da conta da sessão', () => {
+  const emit = (event: string, session: FakeSession | null) => act(() => { for (const cb of h.listeners) cb(event, session) })
+  const reloadPlan = () => act(async () => { window.dispatchEvent(new Event('playback-plan-changed')) })
+  const blockedRow: Row = { plan: 'free', plan_expires_at: null, is_admin: false, blocked_at: '2026-11-10T12:00:00Z' }
+
+  it('SIGNED_OUT zera o papel e o bloqueio', async () => {
+    h.session = sessionOf('u-adm', 'equipe@exemplo.com')
+    h.rows['u-adm'] = row(true)
+    const admin = renderHook(() => useAuth())
+    await waitFor(() => expect(admin.result.current.isAdmin).toBe(true))
+    emit('SIGNED_OUT', null)
+    expect(admin.result.current.isAdmin).toBe(false)
+    expect(admin.result.current.user).toBeNull()
+    admin.unmount()
+
+    h.session = sessionOf('u-blq', 'bloqueado@exemplo.com')
+    h.rows['u-blq'] = blockedRow
+    const blocked = renderHook(() => useAuth())
+    await waitFor(() => expect(blocked.result.current.blockedAt).toBe('2026-11-10T12:00:00Z'))
+    emit('SIGNED_OUT', null)
+    expect(blocked.result.current.blockedAt).toBeNull()
+  })
+
+  it('na falha de rede a mesma conta mantém o papel', async () => {
+    h.session = sessionOf('u-adm', 'equipe@exemplo.com')
+    h.rows['u-adm'] = row(true)
+    const { result } = renderHook(() => useAuth())
+    await waitFor(() => expect(result.current.isAdmin).toBe(true))
+    h.failFor = 'u-adm'
+    await reloadPlan()
+    await act(async () => {})
+    expect(result.current.isAdmin).toBe(true)
+  })
+
+  it('outra conta com a leitura falhando não herda o papel nem o bloqueio', async () => {
+    h.session = sessionOf('u-blq', 'bloqueado@exemplo.com')
+    h.rows['u-blq'] = blockedRow
+    const blocked = renderHook(() => useAuth())
+    await waitFor(() => expect(blocked.result.current.blockedAt).not.toBeNull())
+    h.failFor = 'u-outra'
+    emit('SIGNED_IN', sessionOf('u-outra', 'outra@exemplo.com'))
+    await waitFor(() => expect(blocked.result.current.loading).toBe(false))
+    expect(blocked.result.current.blockedAt).toBeNull()
+    blocked.unmount()
+
+    h.listeners.length = 0
+    h.failFor = null
+    h.session = sessionOf('u-adm', 'equipe@exemplo.com')
+    h.rows['u-adm'] = row(true)
+    const admin = renderHook(() => useAuth())
+    await waitFor(() => expect(admin.result.current.isAdmin).toBe(true))
+    h.failFor = 'u-outra'
+    emit('SIGNED_IN', sessionOf('u-outra', 'outra@exemplo.com'))
+    await waitFor(() => expect(admin.result.current.loading).toBe(false))
+    expect(admin.result.current.user?.id).toBe('u-outra')
+    expect(admin.result.current.isAdmin).toBe(false)
+  })
+
+  it('resposta atrasada da conta que saiu não devolve o papel', async () => {
+    h.session = sessionOf('u-adm', 'equipe@exemplo.com')
+    h.rows['u-adm'] = row(true)
+    const { result } = renderHook(() => useAuth())
+    await waitFor(() => expect(result.current.isAdmin).toBe(true))
+
+    let release = () => {}
+    h.hold = new Promise<void>((r) => { release = r })
+    await reloadPlan()
+    emit('SIGNED_OUT', null)
+    expect(result.current.isAdmin).toBe(false)
+
+    await act(async () => { release() })
+    await act(async () => {})
+    expect(result.current.isAdmin).toBe(false)
   })
 })

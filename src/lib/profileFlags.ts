@@ -27,12 +27,14 @@ export async function fetchProfileFlags(userId: string): Promise<ProfileFlags> {
 }
 
 // Última abertura do app, que o admin vê na ficha. O banco só regrava depois de 1 hora;
-// esta trava evita um pedido por tela, já que cada componente tem sua instância do useAuth.
-let touched = false
+// esta trava, por conta, evita um pedido por tela (cada componente tem sua instância do
+// useAuth) e ainda grava a conta que entrar depois no mesmo app aberto. O banco grava
+// pela sessão (auth.uid()); o id aqui só separa as contas.
+const touched = new Set<string>()
 
-export function touchLastSeen(): void {
-  if (touched || !supabase) return
-  touched = true
+export function touchLastSeen(userId: string): void {
+  if (touched.has(userId) || !supabase) return
+  touched.add(userId)
   try {
     // O pedido do supabase-js só sai quando alguém chama then. Sem esperar; erro ignorado.
     void supabase.rpc('touch_last_seen').then(() => undefined, () => undefined)

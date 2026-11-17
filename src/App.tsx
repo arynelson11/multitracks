@@ -127,6 +127,11 @@ export default function App() {
   // Admin dentro do app (web e computador): estado interno, nunca o endereço, porque o
   // app de computador roda de file://. O isAdminOpen abaixo é o envio de músicas.
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false)
+  // O painel só vale com o papel. Sem ele (a sessão caiu, a conta perdeu o papel, a leitura
+  // falhou), fecha de vez: não reabre sozinho por cima do player na próxima leitura boa.
+  if (isAdminPanelOpen && !isAdmin) setIsAdminPanelOpen(false)
+  // A mesma condição decide se o painel aparece e se os atalhos do player param.
+  const adminPanelShown = isAdminPanelOpen && isAdmin
   const [forceShowSplash, setForceShowSplash] = useState(false)
   const [isMetronomeModalOpen, setIsMetronomeModalOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -293,7 +298,7 @@ export default function App() {
       // separados, não a playlist). Enquanto ela estiver aberta, o App não responde
       // ao teclado pra não controlar a playback errada. O admin também: lá Espaço e
       // setas são dos botões e das abas, e uma letra não pode marcar seção na música.
-      if (isSeparatorOpen || isAdminPanelOpen) return
+      if (isSeparatorOpen || adminPanelShown) return
       const el = e.target as HTMLElement | null
       const tag = el?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return
@@ -321,7 +326,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker, isSeparatorOpen, isAdminPanelOpen])
+  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker, isSeparatorOpen, adminPanelShown])
 
   const handleStartLiveMode = async () => {
     // Modo Ao Vivo é exclusivo dos planos pagos.
@@ -664,7 +669,7 @@ export default function App() {
   }
 
   // ───────────────── ADMIN (dentro do app, só pra quem tem o papel) ─────────────────
-  if (isAdminPanelOpen && isAdmin) {
+  if (adminPanelShown) {
     return (
       <Suspense fallback={
         <div className="min-h-screen bg-ps-ink text-ps-bone font-ps-sans flex flex-col items-center justify-center gap-3 px-ps-gutter text-center" role="status">

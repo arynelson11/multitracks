@@ -79,32 +79,36 @@ describe('touchLastSeen', () => {
     return (await import('./profileFlags')).touchLastSeen
   }
 
-  it('touchLastSeen chama o banco uma vez só', async () => {
+  it('touchLastSeen chama o banco uma vez só por conta', async () => {
     h.rpc.mockReturnValue(Promise.resolve({ data: null, error: null }))
     const touchLastSeen = await freshTouch()
-    touchLastSeen()
-    touchLastSeen()
+    touchLastSeen('u1')
+    touchLastSeen('u1')
     expect(h.rpc).toHaveBeenCalledTimes(1)
     expect(h.rpc).toHaveBeenCalledWith('touch_last_seen')
+    // Outra conta entrando no mesmo app aberto também grava a última abertura dela.
+    touchLastSeen('u2')
+    touchLastSeen('u2')
+    expect(h.rpc).toHaveBeenCalledTimes(2)
   })
 
   it('dispara o pedido sem esperar (o supabase-js só manda quando alguém chama then)', async () => {
     const then = vi.fn()
     h.rpc.mockReturnValue({ then })
     const touchLastSeen = await freshTouch()
-    expect(touchLastSeen()).toBeUndefined()
+    expect(touchLastSeen('u1')).toBeUndefined()
     expect(then).toHaveBeenCalledTimes(1)
   })
 
   it('erro do banco é ignorado', async () => {
     h.rpc.mockReturnValue(Promise.reject(new Error('function touch_last_seen does not exist')))
     const touchLastSeen = await freshTouch()
-    expect(() => touchLastSeen()).not.toThrow()
+    expect(() => touchLastSeen('u1')).not.toThrow()
     await new Promise((r) => setTimeout(r, 0))
 
     h.rpc.mockReset()
     h.rpc.mockImplementation(() => { throw new Error('cliente quebrado') })
     const touchAgain = await freshTouch()
-    expect(() => touchAgain()).not.toThrow()
+    expect(() => touchAgain('u1')).not.toThrow()
   })
 })

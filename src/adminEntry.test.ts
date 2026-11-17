@@ -32,7 +32,13 @@ describe('entrada do admin pelo app', () => {
     expect(app).not.toMatch(NAVIGATES_TO_ADMIN)
     // Abre por estado interno, só pra quem tem o papel, com a volta pro app.
     expect(app).toMatch(/const \[isAdminPanelOpen, setIsAdminPanelOpen\] = useState\(false\)/)
-    expect(app).toMatch(/if \(isAdminPanelOpen && isAdmin\)/)
+    // Uma condição só pro painel aparecer e pros atalhos do player pararem.
+    expect(app).toMatch(/const adminPanelShown = isAdminPanelOpen && isAdmin\n/)
+    expect(app).toMatch(/if \(adminPanelShown\) \{/)
+    expect(app).toMatch(/if \(isSeparatorOpen \|\| adminPanelShown\) return/)
+    expect(app).not.toMatch(/isSeparatorOpen \|\| isAdminPanelOpen\b/)
+    // Sem o papel, o painel fecha de vez (não reabre sozinho na próxima leitura boa).
+    expect(app).toMatch(/if \(isAdminPanelOpen && !isAdmin\) setIsAdminPanelOpen\(false\)/)
     expect(app).toMatch(/<AdminApp onClose=\{\(\) => setIsAdminPanelOpen\(false\)\} \/>/)
     expect(app.match(/<AdminEntryButton\b/g)?.length).toBe(2)
   })

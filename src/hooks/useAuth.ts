@@ -22,12 +22,26 @@ export function useAuth() {
     // De quem já foi lido o perfil: num login nesta aba o carregando volta até o papel
     // chegar (senão a guarda do admin mostraria "Acesso negado" por um instante).
     const profileUserRef = useRef<string | null>(null);
+    // Conta da sessão agora: resposta que chega de outra conta (saiu ou trocou) é descartada.
+    const sessionUserRef = useRef<string | null>(null);
 
     // Plano, papel e bloqueio vêm juntos: o carregando cobre os três.
     const fetchPlan = useCallback(async (userId: string) => {
         const [state, flags] = await Promise.all([fetchPlanState(userId), fetchProfileFlags(userId)]);
+        if (sessionUserRef.current !== userId) return;
+        const sameAccount = profileUserRef.current === userId;
         profileUserRef.current = userId;
-        if (!state) return; // erro de rede: mantém o que já tinha (plano, papel e bloqueio)
+        if (!state) {
+            // Erro de rede: a mesma conta mantém o que já tinha (plano, papel e bloqueio);
+            // outra conta não herda nada da anterior.
+            if (!sameAccount) {
+                setRawPlan('free');
+                setPlanExpiresAt(null);
+                setIsAdmin(false);
+                setBlockedAt(null);
+            }
+            return;
+        }
         setRawPlan(state.plan);
         setPlanExpiresAt(state.planExpiresAt);
         setIsAdmin(flags.isAdmin);
@@ -56,9 +70,10 @@ export function useAuth() {
         supabase!.auth.getSession().then(({ data: { session } }) => {
             setSession(session);
             setUser(session?.user ?? null);
+            sessionUserRef.current = session?.user?.id ?? null;
             if (session?.user) {
                 void syncBillingOnLogin(session.user.id);
-                touchLastSeen();
+                touchLastSeen(session.user.id);
                 fetchPlan(session.user.id).finally(() => setLoading(false));
             } else {
                 setLoading(false);
@@ -69,11 +84,12 @@ export function useAuth() {
         const { data: { subscription } } = supabase!.auth.onAuthStateChange((_event, session) => {
             setSession(session);
             setUser(session?.user ?? null);
+            sessionUserRef.current = session?.user?.id ?? null;
             if (session?.user) {
                 // Outra conta (login nesta aba): espera o perfil dela. A mesma conta
                 // (renovação do token, volta pra aba) segue com o que já tem.
                 if (profileUserRef.current !== session.user.id) setLoading(true);
-                touchLastSeen();
+                touchLastSeen(session.user.id);
                 fetchPlan(session.user.id).finally(() => setLoading(false));
             } else {
                 profileUserRef.current = null;
