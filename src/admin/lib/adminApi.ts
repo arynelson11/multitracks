@@ -13,22 +13,42 @@ const MSG_NETWORK = 'Não deu pra falar com o servidor. Confira a internet e ten
 const MSG_NETWORK_ACTION = 'A resposta do servidor não chegou. Confira no Registro se a ação foi feita antes de tentar de novo.'
 const MSG_TIMEOUT = 'O servidor demorou demais pra responder. Tente de novo.'
 
-// Teto de tempo (Ruling ADM-T4-teto): uma rede pendurada (Wi-Fi sem internet) não deixa a tela
-// carregando nem o diálogo ocupado pra sempre. A ação tem o teto do maxDuration da função (30 s);
-// estourado, vale a mesma frase da falha de rede, porque o servidor pode ter agido.
+// Tetos de tempo (Rulings ADM-T4-teto e ADM-T4-incerto): uma rede pendurada (Wi-Fi sem internet)
+// não deixa a tela carregando nem o diálogo ocupado pra sempre. Os tetos contam a partir do fetch,
+// depois da renovação do token. A ação espera 35 s, acima do maxDuration de 30 s da função: quando
+// a frase aparece, a função já terminou ou foi cortada. A renovação do token tem teto próprio.
 const GET_TIMEOUT_MS = 15_000
-const POST_TIMEOUT_MS = 30_000
+const POST_TIMEOUT_MS = 35_000
+const AUTH_TIMEOUT_MS = 15_000
 
 /** Erro com a frase pronta pra tela. `status` 0 = não chegou ao servidor. */
 export class AdminApiError extends Error {
   readonly status: number
+  /**
+   * Só numa ação (POST): a resposta não chegou ou não veio do nosso servidor (rede, teto estourado,
+   * 5xx sem a frase pronta), então a ação pode ter sido feita. Quem mostra o erro não deixa
+   * repetir na hora (o ConfirmDialog segura Confirmar até fechar e abrir de novo).
+   */
+  readonly uncertain: boolean
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, uncertain = false) {
     super(message)
     this.name = 'AdminApiError'
     this.status = status
+    this.uncertain = uncertain
   }
 }
+
+/**
+ * Diz se o erro de uma ação é incerto: o AdminApiError marcado ou, pra quem guardou só o texto,
+ * a frase do Registro (que só sai em erro incerto).
+ */
+export function isUncertainError(error: unknown): boolean {
+  if (error instanceof AdminApiError) return error.uncertain
+  return error === MSG_NETWORK_ACTION
+}
+
+const actionLost = (status: number) => new AdminApiError(MSG_NETWORK_ACTION, status, true)
 
 function actionUrl(action: string, params?: AdminParams): string {
   const query = new URLSearchParams({ action })
@@ -54,41 +74,64 @@ function serverError(body: unknown): string | null {
   return null
 }
 
-async function request<T>(url: string, init: RequestInit, isAction: boolean): Promise<T> {
+/** Cabeçalhos com o token renovado. Até aqui nada saiu pro nosso servidor: o erro é certo. */
+async function authHeaders(): Promise<Record<string, string>> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      getAuthHeaders(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('renovação do token sem resposta')), AUTH_TIMEOUT_MS)
+      }),
+    ])
+  } catch {
+    throw new AdminApiError(MSG_NETWORK, 0)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function exchange<T>(url: string, init: RequestInit, isAction: boolean): Promise<T> {
   let res: Response
   try {
-    const headers = await getAuthHeaders()
-    res = await fetch(url, { ...init, headers })
+    res = await fetch(url, init)
   } catch {
-    throw new AdminApiError(isAction ? MSG_NETWORK_ACTION : MSG_NETWORK, 0)
+    // Numa ação, o pedido pode ter chegado ao servidor antes de a rede cair.
+    throw isAction ? actionLost(0) : new AdminApiError(MSG_NETWORK, 0)
   }
   const body = await readBody(res)
   if (res.status === 401) throw new AdminApiError(MSG_SESSION, 401)
   if (res.status === 403) throw new AdminApiError(MSG_FORBIDDEN, 403)
-  if (!res.ok || body === null) {
-    throw new AdminApiError(serverError(body) ?? `Erro inesperado (código ${res.status}).`, res.status)
-  }
-  return body as T
+  if (res.ok && body !== null) return body as T
+  // Frase pronta do nosso servidor (400, 409, 500, 502 "Nada foi marcado"): ele respondeu, e a
+  // ação com certeza não foi feita. Pode tentar de novo.
+  const message = serverError(body)
+  if (message) throw new AdminApiError(message, res.status)
+  // Numa ação, 5xx sem a frase (504 da Vercel, função que caiu no meio) ou 2xx sem corpo legível:
+  // o servidor pode ter agido.
+  if (isAction && (res.status >= 500 || res.ok)) throw actionLost(res.status)
+  throw new AdminApiError(`Erro inesperado (código ${res.status}).`, res.status)
 }
 
 /** Faz o pedido com teto de tempo. Estourado, corta o fetch (AbortController) e responde a frase pronta. */
 async function send<T>(action: string, params: AdminParams | undefined, init: RequestInit): Promise<T> {
   const isAction = init.method === 'POST'
+  const headers = await authHeaders()
   const controller = new AbortController()
   let timer: ReturnType<typeof setTimeout> | undefined
-  // O teto corre contra o pedido inteiro, inclusive a renovação do token e a leitura do corpo.
+  // O teto corre contra o fetch e a leitura do corpo.
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(
       () => {
         controller.abort()
-        reject(new AdminApiError(isAction ? MSG_NETWORK_ACTION : MSG_TIMEOUT, 0))
+        reject(isAction ? actionLost(0) : new AdminApiError(MSG_TIMEOUT, 0))
       },
       isAction ? POST_TIMEOUT_MS : GET_TIMEOUT_MS,
     )
   })
   try {
     return await Promise.race([
-      request<T>(actionUrl(action, params), { ...init, signal: controller.signal }, isAction),
+      exchange<T>(actionUrl(action, params), { ...init, headers, signal: controller.signal }, isAction),
       timeout,
     ])
   } finally {

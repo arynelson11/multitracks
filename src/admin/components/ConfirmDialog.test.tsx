@@ -2,8 +2,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { ConfirmDialog } from './ConfirmDialog'
+import { AdminApiError } from '../lib/adminApi'
+
+// O adminApi (de onde vem o AdminApiError) lê o token do supabase; aqui nada vai pra rede.
+vi.mock('../../lib/supabase', () => ({ getAuthHeaders: async () => ({}) }))
 
 afterEach(cleanup)
+
+// Frase do Registro: a resposta da ação não chegou e o servidor pode ter feito (Ruling ADM-T4-incerto).
+const LOST = 'A resposta do servidor não chegou. Confira no Registro se a ação foi feita antes de tentar de novo.'
+const lost = () => new AdminApiError(LOST, 0, true)
 
 type Props = Parameters<typeof ConfirmDialog>[0]
 
@@ -143,6 +151,77 @@ describe('ConfirmDialog', () => {
     const msg = screen.getByText('Esta marcação já foi conferida.')
     expect(dialog.contains(msg)).toBe(true)
     expect(msg.className).toContain('text-ps-alert')
+  })
+
+  it('erro incerto segura Confirmar até fechar e abrir de novo', () => {
+    const { onConfirm, confirm, props, rerender } = setup()
+    fireEvent.click(confirm())
+    rerender(<ConfirmDialog {...props} busy />)
+    rerender(<ConfirmDialog {...props} busy={false} error={lost()} />)
+    const alert = screen.getByRole('alert')
+    expect(alert.textContent).toBe(LOST)
+    expect(alert.className).toContain('text-ps-alert')
+    expect(confirm().disabled).toBe(true)
+    fireEvent.click(confirm())
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+    // Nem limpando o erro nem trocando por outro: só fechar e abrir solta.
+    rerender(<ConfirmDialog {...props} error={null} />)
+    expect(confirm().disabled).toBe(true)
+    rerender(<ConfirmDialog {...props} error={new AdminApiError('Esta marcação já foi conferida.', 409)} />)
+    expect(confirm().disabled).toBe(true)
+    fireEvent.click(confirm())
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+    // Cancelar continua valendo, pra pessoa ir conferir no Registro.
+    expect((screen.getByRole('button', { name: 'Cancelar' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('erro incerto segura Confirmar também sem busy', () => {
+    const { onConfirm, confirm, props, rerender } = setup()
+    fireEvent.click(confirm())
+    rerender(<ConfirmDialog {...props} error={lost()} />)
+    expect(confirm().disabled).toBe(true)
+    fireEvent.click(confirm())
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+  })
+
+  it('a frase do Registro passada em texto também segura Confirmar', () => {
+    const { onConfirm, confirm, props, rerender } = setup()
+    fireEvent.click(confirm())
+    rerender(<ConfirmDialog {...props} busy />)
+    rerender(<ConfirmDialog {...props} busy={false} error={LOST} />)
+    expect(confirm().disabled).toBe(true)
+    fireEvent.click(confirm())
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+  })
+
+  it('erro certo do servidor rearma Confirmar', () => {
+    const { onConfirm, confirm, props, rerender } = setup()
+    fireEvent.click(confirm())
+    rerender(<ConfirmDialog {...props} busy />)
+    rerender(<ConfirmDialog {...props} busy={false} error={new AdminApiError('Esta marcação já foi conferida.', 409)} />)
+    expect(screen.getByRole('alert').textContent).toBe('Esta marcação já foi conferida.')
+    expect(confirm().disabled).toBe(false)
+    fireEvent.click(confirm())
+    expect(onConfirm).toHaveBeenCalledTimes(2)
+  })
+
+  it('fechar e abrir de novo solta Confirmar depois do erro incerto', () => {
+    const uncertain = lost()
+    const { onConfirm, confirm, props, rerender } = setup()
+    fireEvent.click(confirm())
+    rerender(<ConfirmDialog {...props} busy />)
+    rerender(<ConfirmDialog {...props} busy={false} error={uncertain} />)
+    expect(confirm().disabled).toBe(true)
+    rerender(<ConfirmDialog {...props} open={false} error={uncertain} />)
+    // Quem chama pode esquecer de limpar o erro ao reabrir: o aviso antigo aparece, mas não segura.
+    rerender(<ConfirmDialog {...props} open error={uncertain} />)
+    expect(confirm().disabled).toBe(false)
+    fireEvent.click(confirm())
+    expect(onConfirm).toHaveBeenCalledTimes(2)
+    // E um erro incerto novo nesta abertura segura de novo.
+    rerender(<ConfirmDialog {...props} open busy />)
+    rerender(<ConfirmDialog {...props} open busy={false} error={lost()} />)
+    expect(confirm().disabled).toBe(true)
   })
 
   it('tom de alerta no botão de confirmar', () => {

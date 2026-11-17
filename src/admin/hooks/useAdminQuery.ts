@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AdminApiError, adminGet, type AdminParams } from '../lib/adminApi'
 
 export type AdminQueryState<T> = {
@@ -44,6 +44,8 @@ function settle<T>(prev: Settled<T>, seq: number, query: string, out: Outcome<T>
  * contador que só cresce, e só o pedido mais novo grava: dois refetch seguidos, ou voltar a um
  * filtro com o pedido antigo dele ainda no ar, nunca deixam a resposta velha sobrescrever a nova
  * (Ruling ADM-T4-id). Enquanto a nova não chega, os dados anteriores continuam com `loading`.
+ * O refetch pede sempre com a ação e os parâmetros de agora, mesmo guardado de um render antigo
+ * (Ruling ADM-T4-refetch).
  */
 export function useAdminQuery<T>(
   action: string,
@@ -63,6 +65,12 @@ export function useAdminQuery<T>(
   // já tinha resposta também liga o carregando até o pedido novo chegar.
   const [watched, setWatched] = useState({ query, floor: 0 })
   if (watched.query !== query) setWatched({ query, floor: settled.seq + 1 })
+  // O que vale agora, pro refetch: quem guardou o refetch de um render antigo (a varredura da T19,
+  // que termina depois de o período mudar) pede o filtro de agora, e não o de quando guardou.
+  const current = useRef({ enabled, action, key })
+  useLayoutEffect(() => {
+    current.current = { enabled, action, key }
+  })
 
   useEffect(() => {
     if (!enabled) return
@@ -79,14 +87,15 @@ export function useAdminQuery<T>(
   }, [enabled, action, key])
 
   const refetch = useCallback(async () => {
-    if (!enabled) return
+    const now = current.current
+    if (!now.enabled) return
     const mine = ++seq.current
     latest.current = mine
     setRefetchSeq(mine)
-    const q = `${action}?${key}`
-    const out = await load<T>(action, key)
+    const q = `${now.action}?${now.key}`
+    const out = await load<T>(now.action, now.key)
     if (latest.current === mine) setSettled((prev) => settle(prev, mine, q, out))
-  }, [enabled, action, key])
+  }, [])
 
   const loading = enabled && (settled.query !== query || settled.seq < Math.max(refetchSeq, watched.floor))
   return { data: settled.data, loading, error: loading ? null : settled.error, refetch }

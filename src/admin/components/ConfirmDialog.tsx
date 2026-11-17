@@ -1,11 +1,13 @@
 // Confirmação de uma ação do admin: o que vai acontecer, uma nota (quando a ação pede) e o
 // erro do servidor dentro do próprio diálogo. Uma trava interna segura o segundo clique em
 // Confirmar até `busy` voltar a falso, chegar um erro novo ou o diálogo reabrir, pra ação não
-// sair duas vezes.
+// sair duas vezes. Erro incerto (a resposta da ação não chegou) segura Confirmar até fechar e
+// abrir de novo, pra pessoa conferir no Registro antes de repetir (Ruling ADM-T4-incerto).
 import { useEffect, useId, useRef, useState } from 'react'
 import type React from 'react'
 import { Loader2 } from 'lucide-react'
 import { Button, Panel } from '../../components/ui'
+import { isUncertainError, type AdminApiError } from '../lib/adminApi'
 
 type ConfirmNote = {
   label: string
@@ -23,7 +25,11 @@ type ConfirmDialogProps = {
   tone?: 'primary' | 'alert'
   note?: ConfirmNote
   busy?: boolean
-  error?: string | null
+  /**
+   * Erro da ação, mostrado dentro do diálogo. Passe o AdminApiError do adminPost (ou a frase dele):
+   * com erro incerto, Confirmar fica desligado até fechar e abrir de novo.
+   */
+  error?: string | AdminApiError | null
   onConfirm: (note: string) => void
   onCancel: () => void
 }
@@ -62,6 +68,16 @@ function OpenDialog({
 }: ConfirmDialogProps) {
   const [text, setText] = useState('')
   const locked = useRef(false)
+  // Erro incerto que chegou com o diálogo aberto: o servidor pode ter feito a ação, então
+  // Confirmar só volta ao fechar e abrir de novo (o diálogo nasce do zero). Um erro que já estava
+  // aqui ao abrir (quem chama esqueceu de limpar) não segura quem acabou de reabrir.
+  const [seenError, setSeenError] = useState(error)
+  const [held, setHeld] = useState(false)
+  if (error !== seenError) {
+    setSeenError(error)
+    if (isUncertainError(error)) setHeld(true)
+  }
+  const errorText = typeof error === 'string' ? error : (error?.message ?? null)
   const overlayRef = useRef<HTMLDivElement>(null)
   const fieldRef = useRef<HTMLTextAreaElement>(null)
   const titleId = useId()
@@ -91,7 +107,7 @@ function OpenDialog({
 
   const valid = noteIsValid(note, text)
   const confirm = () => {
-    if (busy || !valid || locked.current) return
+    if (busy || !valid || held || locked.current) return
     locked.current = true
     onConfirm(text.trim())
   }
@@ -169,9 +185,9 @@ function OpenDialog({
           </div>
         )}
 
-        {error && (
+        {errorText && (
           <p role="alert" className="rounded-ps-md bg-ps-alert-soft px-3 py-2.5 text-ps-base text-ps-alert break-words">
-            {error}
+            {errorText}
           </p>
         )}
 
@@ -185,7 +201,7 @@ function OpenDialog({
           <Button
             tone={tone}
             onClick={confirm}
-            disabled={busy || !valid}
+            disabled={busy || !valid || held}
             icon={busy ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : undefined}
             className="max-w-full"
           >
