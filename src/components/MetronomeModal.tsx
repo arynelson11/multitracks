@@ -1,28 +1,82 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Loader2, X, CheckCircle, Minus, Plus, Wand2 } from 'lucide-react';
-import { analyzeBufferAndGenerateClick, generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
-import { detectBeatGrid, formatBpm } from '../lib/beatGrid';
+import { useState, useRef, useCallback } from 'react';
+import { Play, Loader2, X, Minus, Plus, Wand2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
+import { formatBpm } from '../lib/beatGrid';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
 import type { ClickTrackType, ClickSubdivision } from '../lib/clickLibrary';
-import { pickTempoSourceChannel } from '../lib/channelRoles';
-import type { Channel } from '../types';
-
-export type TimeSignature = '3/4' | '4/4' | '5/4' | '6/8' | '7/8' | '12/8';
-
-const BEATS_PER_BAR: Record<TimeSignature, number> = { '3/4': 3, '4/4': 4, '5/4': 5, '6/8': 6, '7/8': 7, '12/8': 12 };
+import {
+  adjustAutoClick, autoClickChecks, clickChannelLabel, planAutoClick, renderAutoClick,
+  type AutoClickCheck, type AutoClickOkPlan, type AutoClickPlan,
+} from '../lib/autoClick';
+import { TIME_SIGNATURES, pulsesPerBar, type TimeSignature } from '../lib/stageContracts';
+import type { Song } from '../types';
+import { Button, Chip } from './ui';
 
 interface MetronomeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  playlistCurrentSong: { name: string, duration: number, channels: Channel[] } | null;
+  playlistCurrentSong: (Pick<Song, 'name' | 'duration' | 'channels'> & Partial<Pick<Song, 'id' | 'bpm'>>) | null;
   onAddClick: (file: File) => void;
+  /** Compasso da grade da música (T29). Sem ele vale o guardado pra esta música, senão 4/4. */
+  initialSignature?: TimeSignature;
+  /** Música tocando: a análise do click IA trava a tela por alguns segundos, então fica bloqueada. */
+  isPlaying?: boolean;
 }
+
+// ─── Compasso lembrado por música (mt_meter_<id da música>) ───
+const meterKey = (songId: string | undefined) => (songId ? `mt_meter_${songId}` : null);
+
+function initialMeter(songId: string | undefined, initial: TimeSignature | undefined): TimeSignature {
+  const known = (v: unknown) => TIME_SIGNATURES.find(s => s === v) ?? null;
+  const fromProp = known(initial);
+  if (fromProp) return fromProp;
+  const key = meterKey(songId);
+  if (key) {
+    try {
+      const saved = known(localStorage.getItem(key));
+      if (saved) return saved;
+    } catch { /* armazenamento indisponível: fica o padrão */ }
+  }
+  return '4/4';
+}
+
+// ─── Click IA: o que mostrar depois da análise ───
+type AutoState =
+  | { step: 'parado' }
+  | { step: 'pronto'; plan: AutoClickOkPlan; moveOne: number; halfBeat: boolean }
+  | { step: 'falhou'; reason: Extract<AutoClickPlan, { ok: false }>['reason'] | 'erro' };
+
+const FAIL_TEXT: Record<Extract<AutoState, { step: 'falhou' }>['reason'], string> = {
+  'confianca-baixa': 'Não deu pra ter certeza do tempo desta música. Confira o BPM ou use o modo manual.',
+  'sem-faixa': 'Nenhuma faixa de bateria, percussão ou baixo pra analisar. Use o modo manual.',
+  'ja-tem-click': 'Esta música já tem click.',
+  erro: 'Não deu pra analisar a música. Tente de novo ou use o modo manual.',
+};
+
+function checkText(check: AutoClickCheck, songBpm: number | undefined): string {
+  switch (check) {
+    case 'um': return 'Confira o 1: se o acento cair fora do compasso, use Mover o 1.';
+    case 'contratempo': return 'Confira o tempo: o click pode cair no contratempo. Se cair, use Deslocar meio tempo.';
+    case 'bpm-salvo': return `O BPM salvo${songBpm ? ` (${formatBpm(songBpm)})` : ''} não bate com o áudio. Confira o andamento.`;
+    case 'andamento': return 'Confira o andamento: o BPM salvo decidiu entre dois tempos parecidos.';
+  }
+}
+
+// Trocar o BPM achado: refaz a grade em volta do BPM escolhido (metade, dobro e a família 3:2, Ruling M2b-2).
+const BPM_FACTORS: { factor: number; label: string; name: string }[] = [
+  { factor: 1 / 2, label: '½×', name: 'Metade' },
+  { factor: 2 / 3, label: '⅔×', name: 'Dois terços' },
+  { factor: 3 / 2, label: '3⁄2×', name: 'Uma vez e meia' },
+  { factor: 2, label: '2×', name: 'Dobro' },
+];
+const BPM_RANGE = { min: 30, max: 300 };
 
 // ─── Click sound preview: plays the actual sample file ───
 const previewClickSound = async (type: ClickTrackType, subdivision: ClickSubdivision) => {
   try {
     const url = getClickSampleUrl(type, subdivision);
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    const AudioCtx = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
     const ctx = new AudioCtx();
     const res = await fetch(url);
     if (!res.ok) return;
@@ -36,18 +90,85 @@ const previewClickSound = async (type: ClickTrackType, subdivision: ClickSubdivi
   } catch { /* ignore preview errors */ }
 };
 
-export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClick }: MetronomeModalProps) {
+interface AutoClickResultProps {
+  sectionRef: (el: HTMLElement | null) => void;
+  plan: AutoClickOkPlan;
+  moveOne: number;
+  halfBeat: boolean;
+  songBpm: number | undefined;
+  busy: boolean;
+  onAnalyze: (nearBpm: number) => void;
+  onAdjust: (patch: Partial<{ moveOne: number; halfBeat: boolean }>) => void;
+  onInsert: () => void;
+}
+
+// Resultado do click IA antes de inserir: BPM e faixas analisadas, metade/dobro/3:2, Mover o 1,
+// Deslocar meio tempo (só com risco de contratempo) e o que conferir, em âmbar.
+function AutoClickResult({ sectionRef, plan, moveOne, halfBeat, songBpm, busy, onAnalyze, onAdjust, onInsert }: AutoClickResultProps) {
+  const d = plan.detection;
+  const beats = pulsesPerBar(plan.signature);
+  const step = ((moveOne % beats) + beats) % beats;
+  const shownMove = step > beats / 2 ? step - beats : step;
+  return (
+    <section ref={sectionRef} aria-label="Resultado da análise"
+      className="mt-3 flex flex-col gap-3 rounded-ps-xl bg-ps-s1 inset-ring inset-ring-ps-line p-3">
+      <p className="text-ps-bone text-ps-base font-bold text-center px-1">
+        <span className="ps-num">BPM {d.bpm.toFixed(1)}</span> · analisado em {plan.label}
+      </p>
+      <div className="flex flex-wrap justify-center gap-1.5">
+        {BPM_FACTORS.map(f => {
+          const target = Math.round(d.bpm * f.factor * 100) / 100;
+          const inRange = target >= BPM_RANGE.min && target <= BPM_RANGE.max;
+          return (
+            <Chip key={f.label} title={`${f.name}: ${formatBpm(target)} BPM`} disabled={busy || !inRange} onClick={() => onAnalyze(target)}>
+              {f.label}
+            </Chip>
+          );
+        })}
+      </div>
+      <div className="flex items-center justify-between gap-2 px-1">
+        <span className="ps-label">Mover o 1</span>
+        <div className="flex items-center gap-1.5">
+          <Button aria-label="Mover o 1 pra trás" icon={<ChevronLeft size={16} />} disabled={busy} onClick={() => onAdjust({ moveOne: moveOne - 1 })} />
+          <span className="ps-num text-ps-bone text-ps-base font-bold min-w-8 text-center">{shownMove > 0 ? '+' : ''}{shownMove}</span>
+          <Button aria-label="Mover o 1 pra frente" icon={<ChevronRight size={16} />} disabled={busy} onClick={() => onAdjust({ moveOne: moveOne + 1 })} />
+        </div>
+      </div>
+      {d.offbeatRisk && (
+        <Button tone={halfBeat ? 'on' : 'default'} pressed={halfBeat} disabled={busy} onClick={() => onAdjust({ halfBeat: !halfBeat })}>
+          Deslocar meio tempo
+        </Button>
+      )}
+      {autoClickChecks(d).map(c => (
+        <p key={c} className="text-ps-alert text-ps-sm font-bold px-1">{checkText(c, songBpm)}</p>
+      ))}
+      <Button tone="primary" disabled={busy} onClick={onInsert}>Inserir click</Button>
+    </section>
+  );
+}
+
+export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClick, initialSignature, isPlaying = false }: MetronomeModalProps) {
   const [activeTab, setActiveTab] = useState<'manual' | 'ai'>('manual');
   const [bpm, setBpm] = useState<number>(120);
   const [bpmInput, setBpmInput] = useState<string>('120');
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
-  const [detectedBpm, setDetectedBpm] = useState<number | null>(null);
+  const [auto, setAuto] = useState<AutoState>({ step: 'parado' });
 
   // Click library selection (persisted in localStorage)
   const [clickSel, setClickSel] = useState(() => loadClickSelection());
   const [accentBeat1, setAccentBeat1] = useState(true);
-  const [timeSignature, setTimeSignature] = useState<TimeSignature>('4/4');
+  const songId = playlistCurrentSong?.id;
+  const [timeSignature, setTimeSignature] = useState<TimeSignature>(() => initialMeter(songId, initialSignature));
+
+  // Toda troca de compasso fica guardada pra esta música; a análise feita em outro compasso deixa de valer.
+  const changeMeter = (ts: TimeSignature) => {
+    setTimeSignature(ts);
+    setAuto({ step: 'parado' });
+    const key = meterKey(songId);
+    if (!key) return;
+    try { localStorage.setItem(key, ts); } catch { /* armazenamento indisponível */ }
+  };
 
   const updateClickSel = (partial: Partial<typeof clickSel>) => {
     const next = { ...clickSel, ...partial };
@@ -56,12 +177,13 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
     previewClickSound(next.type, next.subdivision);
   };
   
+  // O resultado do click IA aparece embaixo dos botões: rola até ele quando surge.
+  const revealResult = useCallback((el: HTMLElement | null) => { el?.scrollIntoView?.({ block: 'nearest' }); }, []);
+
   // Tap tempo state
   const tapTimesRef = useRef<number[]>([]);
   const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [tapCount, setTapCount] = useState(0);
-
-  if (!isOpen) return null;
 
   const handleBpmChange = (value: number) => {
     const clamped = Math.max(40, Math.min(300, value));
@@ -146,64 +268,51 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
     }
   };
 
-  const handleAIGenerate = async () => {
-    if (!playlistCurrentSong) return;
+  // ─── Click IA (fluxo único, src/lib/autoClick.ts) ───
+  const channels = (playlistCurrentSong?.channels ?? []).filter(ch => ch.buffer);
+  const existingClick = clickChannelLabel(channels);
+  const songBpm = playlistCurrentSong?.bpm;
 
-    // Regra central: bateria, depois baixo, depois o primeiro canal normal (fora Click e Guia), senão o primeiro.
-    const targetChannel = pickTempoSourceChannel(playlistCurrentSong.channels);
-
-    if (!targetChannel?.buffer) {
-      alert('Nenhuma faixa disponível para análise.');
-      return;
-    }
-
+  // A detecção é síncrona (até alguns segundos): só com a música parada, depois de pintar a mensagem.
+  const analyze = async (nearBpm?: number) => {
+    if (!playlistCurrentSong || isPlaying) return;
+    setActiveTab('ai');
     setIsSynthesizing(true);
-    setDetectedBpm(null);
-    setStatusMsg(`Analisando faixa "${targetChannel.name}"...`);
-
+    setStatusMsg(nearBpm ? `Refazendo a grade em ${formatBpm(nearBpm)} BPM...` : 'Analisando o tempo da música...');
     try {
-      // Mede BPM exato + onde cai o 1º tempo (antes o click "IA" começava em 0:00
-      // com BPM inteiro e saía fora da música, igual ao bug do Separador).
-      const buf = targetChannel.buffer;
-      const channelsData: Float32Array[] = [];
-      for (let c = 0; c < buf.numberOfChannels; c++) channelsData.push(buf.getChannelData(c));
-      await new Promise(r => setTimeout(r, 30)); // deixa a mensagem pintar antes do cálculo
-      const grid = detectBeatGrid(channelsData, buf.sampleRate, { beatsPerBar: BEATS_PER_BAR[timeSignature] ?? 4 });
-      const detected = Math.round(grid.bpm);
-      setStatusMsg(`BPM ${formatBpm(grid.bpm)} detectado. Gerando click alinhado...`);
-      const { clickTrackUrl } = grid.confidence >= 0.1
-        ? await generateManualClickTrackFromSample(
-            clickSel.type, clickSel.subdivision, grid.bpm, buf.duration, accentBeat1, timeSignature,
-            { firstBeat: grid.firstBeat, downbeat: grid.downbeat }
-          )
-        : await analyzeBufferAndGenerateClick(buf, setStatusMsg);
-
-      setDetectedBpm(detected);
-
-      if (clickTrackUrl) {
-        setStatusMsg('Inserindo canal de click...');
-        const res = await fetch(clickTrackUrl);
-        const blob = await res.blob();
-        const file = new File([blob], `Click_IA_${detected}bpm.wav`, { type: 'audio/wav' });
-        onAddClick(file);
-        URL.revokeObjectURL(clickTrackUrl);
-      } else {
-        alert(`BPM detectado: ${detected}, mas não foi possível gerar o click. Tente o modo manual.`);
-      }
+      await new Promise(r => setTimeout(r, 30));
+      const plan = planAutoClick(channels, { songBpm, signature: timeSignature, allowExistingClick: existingClick !== null, nearBpm });
+      setAuto(plan.ok ? { step: 'pronto', plan, moveOne: 0, halfBeat: false } : { step: 'falhou', reason: plan.reason });
     } catch (e) {
       console.error(e);
-      alert('Erro ao analisar a música.');
+      setAuto({ step: 'falhou', reason: 'erro' });
     } finally {
       setIsSynthesizing(false);
       setStatusMsg('');
-      onClose();
     }
   };
 
-  // Sync input string with bpm state
-  useEffect(() => {
-    setBpmInput(String(bpm));
-  }, [bpm]);
+  const handleInsertAuto = async () => {
+    if (auto.step !== 'pronto') return;
+    setIsSynthesizing(true);
+    setStatusMsg('Gerando o click...');
+    try {
+      const plan = adjustAutoClick(auto.plan, { moveOne: auto.moveOne, halfBeat: auto.halfBeat });
+      const blob = await renderAutoClick(plan, songDuration, clickSel);
+      onAddClick(new File([blob], `Click_IA_${formatBpm(plan.detection.bpm)}bpm.wav`, { type: 'audio/wav' }));
+      onClose();
+    } catch (e) {
+      console.error(e);
+      alert('Erro ao gerar o click.');
+    } finally {
+      setIsSynthesizing(false);
+      setStatusMsg('');
+    }
+  };
+
+  const adjustAuto = (patch: Partial<{ moveOne: number; halfBeat: boolean }>) => {
+    if (auto.step === 'pronto') setAuto({ ...auto, ...patch });
+  };
 
   const getTempoName = (currentBpm: number) => {
     if (currentBpm < 60) return 'Largo';
@@ -216,7 +325,7 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
     return 'Presto';
   };
 
-  const timeSignatures: TimeSignature[] = ['3/4', '4/4', '5/4', '6/8', '7/8', '12/8'];
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
@@ -333,11 +442,12 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
         <div className="mb-4">
           <div className="text-white/40 text-[10px] font-bold uppercase tracking-widest mb-2">Compasso</div>
           <div className="grid grid-cols-6 gap-1.5">
-            {timeSignatures.map(ts => (
+            {TIME_SIGNATURES.map(ts => (
               <button
                 key={ts}
-                onClick={() => setTimeSignature(ts)}
+                onClick={() => changeMeter(ts)}
                 disabled={isSynthesizing}
+                aria-pressed={timeSignature === ts}
                 className={`py-2.5 rounded-lg text-[11px] font-bold tracking-wide transition-all cursor-pointer active:scale-95 border disabled:opacity-50 ${
                   timeSignature === ts
                     ? 'bg-primary/15 border-primary text-primary shadow-[0_0_12px_rgba(212,168,67,0.15)]'
@@ -374,17 +484,12 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
             {statusMsg}
           </div>
         )}
-        
-        {detectedBpm && !isSynthesizing && (
-          <div className="flex items-center justify-center gap-2 text-accent-green mb-4 text-xs font-bold uppercase tracking-wider">
-            <CheckCircle size={14} /> Detectado: {detectedBpm} BPM
-          </div>
-        )}
+
 
         {/* Actions */}
         <div className="flex flex-col gap-3 mt-auto">
           <button 
-            onClick={handleManualGenerate}
+            onClick={() => { setActiveTab('manual'); handleManualGenerate(); }}
             disabled={isSynthesizing || !playlistCurrentSong}
             className="w-full bg-[#2a2a2d] hover:bg-[#343438] text-white py-3.5 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-xs tracking-wider cursor-pointer border border-white/5 active:scale-95"
           >
@@ -392,15 +497,32 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
             GERAR CLICK MANUAL
           </button>
 
+          {existingClick !== null && (
+            <p className="text-ps-mut text-ps-sm font-bold text-center px-2">Esta música já tem click ({existingClick}).</p>
+          )}
+          {isPlaying && (
+            <p className="text-ps-alert text-ps-sm font-bold text-center px-2">Pare a música pra analisar o tempo.</p>
+          )}
           <button 
-            onClick={() => { setActiveTab('ai'); handleAIGenerate(); }}
-            disabled={isSynthesizing || !playlistCurrentSong}
-            className="w-full bg-primary hover:bg-primary-dim text-black py-3.5 rounded-xl font-black transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-xs tracking-wider cursor-pointer shadow-[0_4px_15px_rgba(212,168,67,0.2)] active:scale-95"
+            onClick={() => analyze()}
+            disabled={isSynthesizing || !playlistCurrentSong || isPlaying}
+            className="w-full bg-primary hover:bg-primary-dim text-black py-3.5 rounded-xl font-black transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-xs tracking-wider uppercase cursor-pointer shadow-[0_4px_15px_rgba(212,168,67,0.2)] active:scale-95"
           >
             {isSynthesizing && activeTab === 'ai' ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
-            AUTO-DETECTAR E GERAR CLICK
+            {existingClick !== null ? 'Gerar outro click' : 'Gerar click IA'}
           </button>
         </div>
+
+        {auto.step === 'falhou' && (
+          <p ref={revealResult} className="mt-3 text-ps-alert text-ps-base font-bold text-center px-2">{FAIL_TEXT[auto.reason]}</p>
+        )}
+
+        {auto.step === 'pronto' && (
+          <AutoClickResult
+            sectionRef={revealResult} plan={auto.plan} moveOne={auto.moveOne} halfBeat={auto.halfBeat} songBpm={songBpm}
+            busy={isSynthesizing} onAnalyze={analyze} onAdjust={adjustAuto} onInsert={handleInsertAuto}
+          />
+        )}
       </div>
     </div>
   );
