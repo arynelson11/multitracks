@@ -12,7 +12,6 @@ import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark';
 import { ProfileTab } from './ProfileTab';
 import { CHANGELOG } from '../lib/changelog';
 import { Sparkles } from 'lucide-react';
-import { isAdminEmail } from '../lib/admin';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -30,11 +29,9 @@ type Tab = 'Perfil' | 'Geral' | 'Buses' | 'Novidades' | 'Assinatura' | 'Sobre';
 export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin, onReplayTour, desktopUpdate, onInstallUpdate }: SettingsModalProps) {
     const { settings, updateSetting, availableAudioDevices, refreshAudioDevices } = useSettings();
     // Plano efetivo (cancelado vale até a data de fim, depois é Livre).
-    const { user, userPlan, refreshPlan, updateProfile, updatePassword, signOutEverywhere, deleteAccount } = useAuth();
+    const { user, userPlan, isAdmin, refreshPlan, updateProfile, updatePassword, signOutEverywhere, deleteAccount } = useAuth();
     const [activeTab, setActiveTab] = useState<Tab>('Perfil');
     const [isPricingOpen, setIsPricingOpen] = useState(false);
-
-    const isAdmin = isAdminEmail(user?.email);
 
     // Nome organizado de cada canal, só pra exibição (o original segue em ch.name).
     // Fechado, não calcula: os canais mudam a cada mexida no mixer.

@@ -3,7 +3,6 @@ import { get, set } from 'idb-keyval';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
 import { planTier } from '../lib/plans';
-import { isAdminEmail } from '../lib/admin';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -84,12 +83,12 @@ function separationToRow(sep: SavedSeparation, userId: string) {
 // ─── Hook ──────────────────────────────────────────────────────────────────
 
 export function useSeparationLibrary() {
-  const { user, userPlan } = useAuth();
+  const { user, userPlan, isAdmin } = useAuth();
   const userId = user?.id ?? null;
   // Biblioteca em nuvem é recurso pago. O Livre usa só o local (IndexedDB).
   // A trava real está na RLS de user_separations; aqui roteamos o Livre pro local
   // para ele NÃO perder a biblioteca quando o insert na nuvem for negado pela RLS.
-  const hasCloud = isAdminEmail(user?.email) || planTier(userPlan) !== 'free';
+  const hasCloud = isAdmin || planTier(userPlan) !== 'free';
   const useCloud = !!(userId && supabase && hasCloud);
 
   const [separations, setSeparations] = useState<SavedSeparation[]>([]);

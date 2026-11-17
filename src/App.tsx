@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
-import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Pencil, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut, Shield, Home, Disc, Repeat, Square, Menu, Server } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Pencil, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut, Home, Disc, Repeat, Square, Menu, Server } from 'lucide-react'
 const AdminApp = lazy(() => import('./admin/AdminApp'))
 import { BrandLogo } from './components/BrandLogo'
 import { PlayMark } from './components/brand/PlayMark'
@@ -22,7 +22,7 @@ import { GuidedTour, type TourStep } from './components/GuidedTour'
 import { WhatsNewModal } from './components/WhatsNewModal'
 import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/SectionBar'
 import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections } from './lib/plans'
-import { isAdminEmail } from './lib/admin'
+import { AdminEntryButton } from './components/AdminEntryButton'
 import { keyToSemitone, semitonesBetweenKeys } from './lib/pitchRules'
 import { InstallAppBanner } from './components/InstallAppBanner'
 import { RenewalNoticeBanner } from './components/RenewalNoticeBanner'
@@ -68,7 +68,7 @@ import { useTwoTapConfirm } from './hooks/useTwoTapConfirm'
 import { Button } from './components/ui'
 
 export default function App() {
-  const { user, loading, signOut, userPlan } = useAuth()
+  const { user, loading, signOut, userPlan, isAdmin } = useAuth()
   const isOnline = useNetworkStatus()
 
   const {
@@ -124,6 +124,9 @@ export default function App() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [isChannelEditMode, setIsChannelEditMode] = useState(false)
   const [isSeparatorOpen, setIsSeparatorOpen] = useState(false)
+  // Admin dentro do app (web e computador): estado interno, nunca o endereço, porque o
+  // app de computador roda de file://. O isAdminOpen abaixo é o envio de músicas.
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false)
   const [forceShowSplash, setForceShowSplash] = useState(false)
   const [isMetronomeModalOpen, setIsMetronomeModalOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -288,8 +291,9 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       // A página de separação tem seus próprios atalhos (Espaço toca os multitracks
       // separados, não a playlist). Enquanto ela estiver aberta, o App não responde
-      // ao teclado pra não controlar a playback errada.
-      if (isSeparatorOpen) return
+      // ao teclado pra não controlar a playback errada. O admin também: lá Espaço e
+      // setas são dos botões e das abas, e uma letra não pode marcar seção na música.
+      if (isSeparatorOpen || isAdminPanelOpen) return
       const el = e.target as HTMLElement | null
       const tag = el?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return
@@ -317,7 +321,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker, isSeparatorOpen])
+  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker, isSeparatorOpen, isAdminPanelOpen])
 
   const handleStartLiveMode = async () => {
     // Modo Ao Vivo é exclusivo dos planos pagos.
@@ -659,6 +663,20 @@ export default function App() {
     return <SeparatorStudio onClose={() => setIsSeparatorOpen(false)} />
   }
 
+  // ───────────────── ADMIN (dentro do app, só pra quem tem o papel) ─────────────────
+  if (isAdminPanelOpen && isAdmin) {
+    return (
+      <Suspense fallback={
+        <div className="min-h-screen bg-ps-ink text-ps-bone font-ps-sans flex flex-col items-center justify-center gap-3 px-ps-gutter text-center" role="status">
+          <Loader2 size={32} aria-hidden="true" className="text-ps-mut animate-spin motion-reduce:animate-none" />
+          <p className="text-ps-base text-ps-mut">Carregando...</p>
+        </div>
+      }>
+        <AdminApp onClose={() => setIsAdminPanelOpen(false)} />
+      </Suspense>
+    )
+  }
+
   // ───────────────── SPLASH ─────────────────
   if (!isReady || forceShowSplash) {
     return (
@@ -951,13 +969,9 @@ export default function App() {
               <span className="hidden min-[1680px]:inline">{isEditMode ? 'OK' : 'EDITAR'}</span>
             </button>
 
-            {/* Admin Dashboard - only for admin */}
-            {(isAdminEmail(user?.email)) && (
-              <button onClick={() => { window.location.href = '/admin' }}
-                className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-primary/70 hover:text-primary border border-primary/20 hover:border-primary/40 transition-all">
-                <Shield size={14} /><span className="hidden min-[1680px]:inline">ADMIN</span>
-              </button>
-            )}
+            {/* Admin: abre dentro do app, só pra quem tem o papel */}
+            <AdminEntryButton isAdmin={isAdmin} variant="toolbar"
+              onOpen={() => { setIsAdminPanelOpen(true); setIsMobileDrawerOpen(false) }} />
 
             {/* Live Mode - only for Electron */}
             {window.playbackDesktop?.isElectron && (
@@ -1398,7 +1412,7 @@ export default function App() {
                 }}
               />
               {/* Ferramentas avançadas (admin): cor/letra por marcador + salvar na nuvem */}
-              {isAdminEmail(user?.email) && (
+              {isAdmin && (
                 <div className="flex items-center gap-1.5 mt-1.5">
                   <button
                     onClick={() => setIsMarkerEditorOpen(!isMarkerEditorOpen)}
@@ -1418,7 +1432,7 @@ export default function App() {
           )}
 
           {/* ─── Marker Editor Panel (Admin) ─── */}
-          {isMarkerEditorOpen && isAdminEmail(user?.email) && (
+          {isMarkerEditorOpen && isAdmin && (
             <div className="mt-1.5 bg-black/40 rounded-lg border border-white/10 p-2 sm:p-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Editor de Marcadores</span>
@@ -1984,7 +1998,7 @@ export default function App() {
       />
 
       {/* Admin Modal */}
-      {isAdminEmail(user?.email) && (
+      {isAdmin && (
         <AdminModal
         isOpen={isAdminOpen}
         onClose={() => setIsAdminOpen(false)}
@@ -2051,7 +2065,7 @@ export default function App() {
         onClose={() => setIsPadSetsModalOpen(false)}
         onSelect={selectPadSet}
         selectedPadSet={selectedPadSet}
-        isAdmin={isAdminEmail(user?.email)}
+        isAdmin={isAdmin}
       />
 
       {/* ═══ TELEPROMPTER OVERLAY ═══ */}
@@ -2183,17 +2197,9 @@ export default function App() {
 
                   <hr className="border-border my-2" />
 
-                  {/* ADMIN */}
-                  {(isAdminEmail(user?.email)) && (
-                    <button onClick={() => { window.location.href = '/admin' }}
-                      className="w-full text-left px-3 py-3 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors border border-transparent hover:border-border">
-                      <span className="text-white text-sm font-bold flex items-center gap-3">
-                        <Shield size={16} className="text-primary" />
-                        Admin
-                      </span>
-                      <ChevronRight size={14} className="text-text-muted" />
-                    </button>
-                  )}
+                  {/* ADMIN: abre dentro do app, só pra quem tem o papel */}
+                  <AdminEntryButton isAdmin={isAdmin} variant="drawer"
+                    onOpen={() => { setIsAdminPanelOpen(true); setIsMobileDrawerOpen(false) }} />
 
                   {/* CONFIG */}
                   <button onClick={() => { setIsSettingsOpen(true); setIsMobileDrawerOpen(false); }}

@@ -16,7 +16,6 @@ import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection
 import { useSeparationLibrary, type SavedSeparation } from '../hooks/useSeparationLibrary';
 import { audioBlobToMp3Blob } from '../lib/audioExport';
 import { GuidedTour, type TourStep } from './GuidedTour';
-import { isAdminEmail } from '../lib/admin';
 import { channelFamily, resolveChannelRole } from '../lib/channelNames';
 
 const SEP_TOUR_STEPS: TourStep[] = [
@@ -159,8 +158,7 @@ function getAudioContext() {
 }
 
 export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => {
-  const { user, userPlan } = useAuth();
-  const isAdmin = isAdminEmail(user?.email);
+  const { user, userPlan, isAdmin } = useAuth();
   const canDownload = isAdmin || canDownloadStems(userPlan);
   const canVoiceGuide = isAdmin || canUseVoiceGuide(userPlan);
   const canBpm = isAdmin || canUseBpmDetection(userPlan);

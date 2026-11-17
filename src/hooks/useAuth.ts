@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { apiUrl } from '../lib/api';
 import { effectivePlan, fetchPlanState } from '../lib/planState';
 import { syncBillingOnLogin } from '../lib/subscription';
+import { fetchProfileFlags, touchLastSeen } from '../lib/profileFlags';
 import type { User, Session } from '@supabase/supabase-js';
 
 const PLAN_CHANGED_EVENT = 'playback-plan-changed';
@@ -15,12 +16,22 @@ export function useAuth() {
     // Depois de cancelada, a assinatura vale até esta data; daí em diante é Livre.
     const [planExpiresAt, setPlanExpiresAt] = useState<string | null>(null);
     const [expiryTick, setExpiryTick] = useState(0);
+    // Papel de admin e bloqueio, do próprio perfil (profiles.is_admin e blocked_at).
+    const [isAdmin, setIsAdmin] = useState(false);
+    const [blockedAt, setBlockedAt] = useState<string | null>(null);
+    // De quem já foi lido o perfil: num login nesta aba o carregando volta até o papel
+    // chegar (senão a guarda do admin mostraria "Acesso negado" por um instante).
+    const profileUserRef = useRef<string | null>(null);
 
+    // Plano, papel e bloqueio vêm juntos: o carregando cobre os três.
     const fetchPlan = useCallback(async (userId: string) => {
-        const state = await fetchPlanState(userId);
-        if (!state) return; // erro de rede: mantém o que já tinha
+        const [state, flags] = await Promise.all([fetchPlanState(userId), fetchProfileFlags(userId)]);
+        profileUserRef.current = userId;
+        if (!state) return; // erro de rede: mantém o que já tinha (plano, papel e bloqueio)
         setRawPlan(state.plan);
         setPlanExpiresAt(state.planExpiresAt);
+        setIsAdmin(flags.isAdmin);
+        setBlockedAt(flags.blockedAt);
     }, []);
 
     // Se a data de fim chegar com o app aberto, reavalia sozinho.
@@ -47,6 +58,7 @@ export function useAuth() {
             setUser(session?.user ?? null);
             if (session?.user) {
                 void syncBillingOnLogin(session.user.id);
+                touchLastSeen();
                 fetchPlan(session.user.id).finally(() => setLoading(false));
             } else {
                 setLoading(false);
@@ -58,10 +70,17 @@ export function useAuth() {
             setSession(session);
             setUser(session?.user ?? null);
             if (session?.user) {
+                // Outra conta (login nesta aba): espera o perfil dela. A mesma conta
+                // (renovação do token, volta pra aba) segue com o que já tem.
+                if (profileUserRef.current !== session.user.id) setLoading(true);
+                touchLastSeen();
                 fetchPlan(session.user.id).finally(() => setLoading(false));
             } else {
+                profileUserRef.current = null;
                 setRawPlan('free');
                 setPlanExpiresAt(null);
+                setIsAdmin(false);
+                setBlockedAt(null);
                 setLoading(false);
             }
         });
@@ -143,6 +162,8 @@ export function useAuth() {
         loading,
         userPlan,
         planExpiresAt,
+        isAdmin,
+        blockedAt,
         refreshPlan,
         signOut,
         signOutEverywhere,

@@ -6,7 +6,6 @@ import { updateSong, type CloudSong } from '../lib/supabase';
 import { updateCachedSongMeta } from '../lib/offlineCache';
 import { uploadToR2 } from '../lib/r2';
 import { type Marker } from '../types';
-import { isAdminEmail } from '../lib/admin';
 
 interface LibraryModalProps {
     isOpen: boolean;
@@ -33,8 +32,7 @@ export function LibraryModal({ isOpen, onClose, onDownload, onSongEdited }: Libr
         isOnline
     } = useCloudLibrary();
 
-    const { user } = useAuth();
-    const isAdmin = isAdminEmail(user?.email);
+    const { user, isAdmin } = useAuth();
 
     const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
     const [editingSong, setEditingSong] = useState<Partial<CloudSong> & { file?: File | null }>({});
