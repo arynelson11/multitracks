@@ -375,7 +375,7 @@ export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardE
             {meterOpen && view.editMode && (
               <div data-stage-meter="" className="absolute bottom-full left-ps-gutter z-40 max-w-[calc(100%-32px)]">
                 <MeterEditor
-                  grid={view.grid} songBpm={view.song?.bpm ?? null} busy={view.isReadingGrid}
+                  grid={view.grid} songBpm={view.song?.bpm ?? null} busy={view.isReadingGrid} hasClickChannel={view.click.channelId !== null}
                   onChange={(sig, countEvery) => actions.setMeter(sig, countEvery)} onRedetect={() => actions.redetectMeter()}
                   onClose={() => setMeterOpen(false)}
                 />

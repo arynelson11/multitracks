@@ -227,7 +227,7 @@ const FE: SongGrid = { bpm: 156, firstDownbeat: 0.1, signature: '6/8', countEver
 
 const renderMeter = (over: Partial<MeterEditorProps> = {}) => {
   const props: MeterEditorProps = {
-    grid: GRID, songBpm: 120, busy: false, onChange: vi.fn(), onRedetect: vi.fn(), onClose: vi.fn(), ...over,
+    grid: GRID, songBpm: 120, busy: false, hasClickChannel: true, onChange: vi.fn(), onRedetect: vi.fn(), onClose: vi.fn(), ...over,
   }
   const r = render(<MeterEditor {...props} />)
   return { ...r, props, rerenderWith: (more: Partial<MeterEditorProps>) => r.rerender(<MeterEditor {...props} {...more} />) }
@@ -323,6 +323,21 @@ describe('MeterEditor', () => {
     expect(props.onRedetect).toHaveBeenCalledTimes(1)
   })
 
+  it('sem canal de Click, "Ler o click de novo" fica desligado com o motivo (Ruling T27-reler)', () => {
+    const { props, rerenderWith } = renderMeter({ hasClickChannel: false })
+    const ler = screen.getByRole('button', { name: 'Ler o click de novo' }) as HTMLButtonElement
+    expect(ler.disabled).toBe(true)
+    // O botão desligado não recebe o ponteiro: o motivo fica no invólucro e no nome acessível da dica.
+    const motivo = ler.closest('[title]')
+    expect(motivo?.getAttribute('title')).toBe('Esta música não tem canal de Click: não há click pra ler de novo.')
+    fireEvent.click(ler)
+    expect(props.onRedetect).not.toHaveBeenCalled()
+    rerenderWith({ hasClickChannel: true })
+    const ligado = screen.getByRole('button', { name: 'Ler o click de novo' }) as HTMLButtonElement
+    expect(ligado.disabled).toBe(false)
+    expect(ligado.closest('[title]')).toBeNull()
+  })
+
   it('sem grade: nada escolhido e o BPM salvo, se houver', () => {
     const { rerenderWith } = renderMeter({ grid: null, songBpm: null })
     expect(checked('Compasso')).toBeNull()
@@ -364,7 +379,7 @@ describe('MeterEditor', () => {
     )
     // onClose em arrow nova a cada renderização, como o App faria.
     const meter = () => (
-      <MeterEditor grid={GRID} songBpm={120} busy={false} onChange={() => {}} onRedetect={() => {}} onClose={() => fecharCompasso()} />
+      <MeterEditor grid={GRID} songBpm={120} busy={false} hasClickChannel onChange={() => {}} onRedetect={() => {}} onClose={() => fecharCompasso()} />
     )
     const { rerender } = render(<>{pads}</>)
     rerender(<>{pads}{meter()}</>)
@@ -391,7 +406,7 @@ describe('MeterEditor', () => {
     // No StrictMode (efeitos montam, desmontam e montam de novo) o foco também vai e volta certo.
     const strict = render(
       <StrictMode>
-        <MeterEditor grid={GRID} songBpm={120} busy={false} onChange={() => {}} onRedetect={() => {}} onClose={() => {}} />
+        <MeterEditor grid={GRID} songBpm={120} busy={false} hasClickChannel onChange={() => {}} onRedetect={() => {}} onClose={() => {}} />
       </StrictMode>,
     )
     expect(document.activeElement).toBe(screen.getByRole('dialog'))

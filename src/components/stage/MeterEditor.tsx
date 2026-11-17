@@ -8,6 +8,8 @@ import { usePanelDismiss } from './panelDismiss'
 
 export interface MeterEditorProps {
   grid: SongGrid | null; songBpm: number | null; busy: boolean
+  /** A música tem canal de Click? Sem ele "Ler o click de novo" não tem o que ler (Ruling T27-reler). */
+  hasClickChannel: boolean
   onChange(sig: TimeSignature, countEvery: 1 | 3): void; onRedetect(): void; onClose(): void
 }
 
@@ -19,6 +21,7 @@ const METER_ORIGIN: Record<Exclude<MeterSource, 'padrao'>, string> = {
 }
 const BPM_FROM_CLICK = 'Lido no click'
 const BPM_SAVED = 'BPM salvo da música, sem o 1 do compasso'
+const NO_CLICK_TO_READ = 'Esta música não tem canal de Click: não há click pra ler de novo.'
 
 /** De onde veio o compasso. O assumido diz qual (4/4, ou 6/8 quando a leitura do click é composta). */
 function meterOrigin(g: SongGrid | null): string {
@@ -46,7 +49,7 @@ function shownBpm(g: SongGrid | null, songBpm: number | null): { value: number; 
  * pilha comum dos painéis do palco (`usePanelDismiss`): aberto por cima de outro painel, o Esc
  * fecha o compasso primeiro.
  */
-export function MeterEditor({ grid, songBpm, busy, onChange, onRedetect, onClose }: MeterEditorProps) {
+export function MeterEditor({ grid, songBpm, busy, hasClickChannel, onChange, onRedetect, onClose }: MeterEditorProps) {
   const panelRef = useRef<HTMLDivElement>(null)
 
   // Fechar aqui é desmontar, e o React limpa os efeitos antes de tirar o diálogo da página: o foco
@@ -117,9 +120,13 @@ export function MeterEditor({ grid, songBpm, busy, onChange, onRedetect, onClose
         </dd>
       </dl>
 
-      <Button onClick={onRedetect} disabled={busy} icon={<Icon name="rev" className="size-4" />} className="self-start">
-        {busy ? 'Lendo o click...' : 'Ler o click de novo'}
-      </Button>
+      {/* Sem canal de Click a releitura não faz nada no motor: desligado, com o motivo no invólucro
+          (o botão desligado não recebe o ponteiro, então a dica fica em quem está por fora). */}
+      <span className="inline-flex self-start" title={hasClickChannel ? undefined : NO_CLICK_TO_READ}>
+        <Button onClick={onRedetect} disabled={busy || !hasClickChannel} icon={<Icon name="rev" className="size-4" />}>
+          {busy ? 'Lendo o click...' : 'Ler o click de novo'}
+        </Button>
+      </span>
     </div>
   )
 }
