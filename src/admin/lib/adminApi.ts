@@ -11,6 +11,13 @@ const MSG_NETWORK = 'Não deu pra falar com o servidor. Confira a internet e ten
 // Numa ação, a resposta pode ter se perdido depois de o servidor agir: repetir às cegas pode
 // fazer duas vezes (Somar na cota, por exemplo). Por isso a frase manda olhar o Registro antes.
 const MSG_NETWORK_ACTION = 'A resposta do servidor não chegou. Confira no Registro se a ação foi feita antes de tentar de novo.'
+const MSG_TIMEOUT = 'O servidor demorou demais pra responder. Tente de novo.'
+
+// Teto de tempo (Ruling ADM-T4-teto): uma rede pendurada (Wi-Fi sem internet) não deixa a tela
+// carregando nem o diálogo ocupado pra sempre. A ação tem o teto do maxDuration da função (30 s);
+// estourado, vale a mesma frase da falha de rede, porque o servidor pode ter agido.
+const GET_TIMEOUT_MS = 15_000
+const POST_TIMEOUT_MS = 30_000
 
 /** Erro com a frase pronta pra tela. `status` 0 = não chegou ao servidor. */
 export class AdminApiError extends Error {
@@ -47,13 +54,13 @@ function serverError(body: unknown): string | null {
   return null
 }
 
-async function send<T>(action: string, params: AdminParams | undefined, init: RequestInit): Promise<T> {
+async function request<T>(url: string, init: RequestInit, isAction: boolean): Promise<T> {
   let res: Response
   try {
     const headers = await getAuthHeaders()
-    res = await fetch(actionUrl(action, params), { ...init, headers })
+    res = await fetch(url, { ...init, headers })
   } catch {
-    throw new AdminApiError(init.method === 'POST' ? MSG_NETWORK_ACTION : MSG_NETWORK, 0)
+    throw new AdminApiError(isAction ? MSG_NETWORK_ACTION : MSG_NETWORK, 0)
   }
   const body = await readBody(res)
   if (res.status === 401) throw new AdminApiError(MSG_SESSION, 401)
@@ -62,6 +69,31 @@ async function send<T>(action: string, params: AdminParams | undefined, init: Re
     throw new AdminApiError(serverError(body) ?? `Erro inesperado (código ${res.status}).`, res.status)
   }
   return body as T
+}
+
+/** Faz o pedido com teto de tempo. Estourado, corta o fetch (AbortController) e responde a frase pronta. */
+async function send<T>(action: string, params: AdminParams | undefined, init: RequestInit): Promise<T> {
+  const isAction = init.method === 'POST'
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  // O teto corre contra o pedido inteiro, inclusive a renovação do token e a leitura do corpo.
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => {
+        controller.abort()
+        reject(new AdminApiError(isAction ? MSG_NETWORK_ACTION : MSG_TIMEOUT, 0))
+      },
+      isAction ? POST_TIMEOUT_MS : GET_TIMEOUT_MS,
+    )
+  })
+  try {
+    return await Promise.race([
+      request<T>(actionUrl(action, params), { ...init, signal: controller.signal }, isAction),
+      timeout,
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 export async function adminGet<T>(action: string, params?: AdminParams): Promise<T> {

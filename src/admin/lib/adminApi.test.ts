@@ -10,9 +10,16 @@ vi.mock('../../lib/supabase', () => ({
   getAuthHeaders: async () => ({ Authorization: 'Bearer t', 'Content-Type': 'application/json' }),
 }))
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 
 const HEADERS = { Authorization: 'Bearer t', 'Content-Type': 'application/json' }
+// Toda chamada leva o sinal do teto de tempo (Ruling ADM-T4-teto).
+const SIGNAL = expect.any(AbortSignal)
+const MSG_TIMEOUT_GET = 'O servidor demorou demais pra responder. Tente de novo.'
+const MSG_ACTION_LOST = 'A resposta do servidor não chegou. Confira no Registro se a ação foi feita antes de tentar de novo.'
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 const mockFetch = () => vi.spyOn(globalThis, 'fetch')
@@ -38,7 +45,10 @@ describe('adminApi', () => {
   it('adminApi usa apiUrl (no computador vira https://playbackstudio.com.br/api/...)', async () => {
     const f = mockFetch().mockResolvedValue(json({ ok: true }))
     await expect(adminGet('review')).resolves.toEqual({ ok: true })
-    expect(f).toHaveBeenCalledWith('https://playbackstudio.com.br/api/admin-stats?action=review', { headers: HEADERS })
+    expect(f).toHaveBeenCalledWith('https://playbackstudio.com.br/api/admin-stats?action=review', {
+      headers: HEADERS,
+      signal: SIGNAL,
+    })
   })
 
   it('adminGet monta os parâmetros e descarta undefined', async () => {
@@ -46,7 +56,7 @@ describe('adminApi', () => {
     await adminGet('subscribers', { q: 'ana maria', page: 2, plan: undefined })
     expect(f).toHaveBeenCalledWith(
       'https://playbackstudio.com.br/api/admin-stats?action=subscribers&q=ana+maria&page=2',
-      { headers: HEADERS },
+      { headers: HEADERS, signal: SIGNAL },
     )
   })
 
@@ -58,6 +68,7 @@ describe('adminApi', () => {
       method: 'POST',
       headers: HEADERS,
       body: JSON.stringify({ subscriptionRef: 'sub_1', note: 'conferi' }),
+      signal: SIGNAL,
     })
   })
 
@@ -87,7 +98,48 @@ describe('adminApi', () => {
     mockFetch().mockRejectedValue(new TypeError('Failed to fetch'))
     const e = await errorOf(adminPost('adjust-quota', { userId: 'u1', mode: 'add', amount: 5 }))
     expect(e.status).toBe(0)
-    expect(e.message).toBe('A resposta do servidor não chegou. Confira no Registro se a ação foi feita antes de tentar de novo.')
+    expect(e.message).toBe(MSG_ACTION_LOST)
+  })
+
+  it('GET pendurado desiste em 15 s, corta o pedido e manda tentar de novo', async () => {
+    vi.useFakeTimers()
+    const f = mockFetch().mockImplementation(() => new Promise<Response>(() => {}))
+    let settled = false
+    const p = errorOf(adminGet('review')).finally(() => {
+      settled = true
+    })
+    await vi.advanceTimersByTimeAsync(14_999)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    const e = await p
+    expect(e.status).toBe(0)
+    expect(e.message).toBe(MSG_TIMEOUT_GET)
+    expect((f.mock.calls[0][1] as RequestInit).signal?.aborted).toBe(true)
+  })
+
+  it('POST pendurado desiste em 30 s e manda conferir o Registro antes de repetir', async () => {
+    vi.useFakeTimers()
+    const f = mockFetch().mockImplementation(() => new Promise<Response>(() => {}))
+    let settled = false
+    const p = errorOf(adminPost('adjust-quota', { userId: 'u1', mode: 'add', amount: 5 })).finally(() => {
+      settled = true
+    })
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(14_999)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    const e = await p
+    expect(e.status).toBe(0)
+    expect(e.message).toBe(MSG_ACTION_LOST)
+    expect((f.mock.calls[0][1] as RequestInit).signal?.aborted).toBe(true)
+  })
+
+  it('resposta a tempo não deixa o teto disparar depois', async () => {
+    vi.useFakeTimers()
+    mockFetch().mockResolvedValue(json({ ok: true }))
+    await expect(adminGet('review')).resolves.toEqual({ ok: true })
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('409 usa o erro do servidor', async () => {
@@ -278,6 +330,21 @@ describe('useAdminQuery', () => {
     await act(() => result.current.refetch())
     expect(result.current.data).toEqual({ n: 2 })
     expect(f).toHaveBeenCalledTimes(2)
+  })
+
+  it('GET pendurado: em 15 s a tela recebe a mensagem e o carregando desliga', async () => {
+    vi.useFakeTimers()
+    mockFetch().mockImplementation(() => new Promise<Response>(() => {}))
+    const { result } = renderHook(() => useAdminQuery('review'))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(14_999)
+    })
+    expect(result.current.loading).toBe(true)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    expect(result.current.loading).toBe(false)
+    expect(result.current.error).toBe(MSG_TIMEOUT_GET)
   })
 
   it('com enabled falso não chama o servidor', async () => {
