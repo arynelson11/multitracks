@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { createFakeDb, createRes, type FakeDb, type Row } from './fakeSupabase.js'
+import { createFakeDb, createRes, type DbError, type DbResult, type FakeDb, type Row } from './fakeSupabase.js'
+import { DEMUCS_VERSION } from '../_lib/aiCost.js'
 
 // Cota mensal: o contador volta a zero no dia 1º (horário de Brasília) e a
 // virada acontece dentro do próprio RPC de consumo, num UPDATE só. Aqui o
@@ -45,6 +46,8 @@ function consume(row: Row, limit: number): boolean {
 function setup(profile: Row) {
   db = createFakeDb({
     tables: { profiles: [profile], predictions: [] },
+    // a chave de predictions é o id do Replicate (db/supabase_predictions.sql)
+    primaryKeys: { predictions: 'replicate_id' },
     rpc: {
       consume_separation_token: async (args) => {
         // devolve o controle ao event loop antes de aplicar: as duas
@@ -62,13 +65,13 @@ function setup(profile: Row) {
   })
 }
 
-async function separate() {
+async function separate(stemCount = 2) {
   const { default: handler } = await import('../separate-audio.js')
   const res = createRes()
   const req = {
     method: 'POST',
     headers: { authorization: 'Bearer x' },
-    body: { audioUrl: 'https://r2.exemplo.com/temp/musica.mp3', stemCount: 2 },
+    body: { audioUrl: 'https://r2.exemplo.com/temp/musica.mp3', stemCount },
   }
   await handler(req as unknown as VercelRequest, res as unknown as VercelResponse)
   return res
@@ -218,5 +221,85 @@ describe('separate-audio: cota extra do mês', () => {
     expect(warn).toHaveBeenCalledTimes(1)
     expect(warn.mock.calls.flat().map(String).join(' ')).not.toContain(USER)
     warn.mockRestore()
+  })
+})
+
+// Trabalho gravado ao começar (T23): modelo do demucs, versão, faixas e status,
+// pro custo de IA. A gravação nunca muda a resposta da separação.
+describe('separate-audio: grava o trabalho ao começar', () => {
+  // Conta os inserts em predictions e, se `fail` disser, devolve erro no lugar do insert.
+  function watchInserts(fail: (payload: Row) => DbError | null) {
+    const inserts: Row[] = []
+    const from = db.from.bind(db)
+    db.from = (table: string) => {
+      const q = from(table)
+      if (table !== 'predictions') return q
+      const insert = q.insert.bind(q)
+      q.insert = ((payload: Row) => {
+        inserts.push({ ...payload })
+        const error = fail(payload)
+        if (error) return { then: (ok: (v: DbResult) => unknown, bad: (e: unknown) => unknown) => Promise.resolve<DbResult>({ data: null, error }).then(ok, bad) }
+        return insert(payload)
+      }) as typeof q.insert
+      return q
+    }
+    return inserts
+  }
+
+  it.each([
+    [2, 'htdemucs'],
+    [4, 'htdemucs'],
+    [6, 'htdemucs_6s'],
+  ] as const)('separar grava modelo, versão, faixas e status (%i faixas)', async (stems, model) => {
+    vi.setSystemTime(new Date('2026-11-16T15:00:00Z'))
+    setup({ id: USER, plan: 'pro_mensal', plan_expires_at: null, tokens_used: 0, tokens_period_start: '2026-11-01T03:00:00.000Z' })
+
+    const res = await separate(stems)
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toEqual({ success: true, prediction: { id: 'pred_1', status: 'starting' }, model_name: model })
+    expect(createPrediction).toHaveBeenCalledWith(expect.objectContaining({ version: DEMUCS_VERSION }))
+    expect(db.tables.predictions).toEqual([
+      { replicate_id: 'pred_1', user_id: USER, model, version: DEMUCS_VERSION, stem_count: stems, status: 'starting' },
+    ])
+  })
+
+  it.each(['42703', 'PGRST204'])('com a coluna ausente grava só o dono (%s)', async (code) => {
+    vi.setSystemTime(new Date('2026-11-16T15:00:00Z'))
+    setup({ id: USER, plan: 'free', tokens_used: 0, tokens_period_start: '2026-11-01T03:00:00.000Z' })
+    // SQL do Corte B ainda não rodado: as colunas do custo de IA não existem
+    const inserts = watchInserts((payload) => ('model' in payload ? { message: 'column "model" of relation "predictions" does not exist', code } : null))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const res = await separate()
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toEqual({ success: true, prediction: { id: 'pred_1', status: 'starting' }, model_name: 'htdemucs' })
+    expect(inserts).toHaveLength(2)
+    expect(db.tables.predictions).toEqual([{ replicate_id: 'pred_1', user_id: USER }])
+    expect(error).not.toHaveBeenCalled()
+    expect(warn.mock.calls.flat().map(String).join(' ')).not.toContain(USER)
+    warn.mockRestore()
+    error.mockRestore()
+  })
+
+  it('banco que falha na gravação não muda a resposta e não repete com outro erro', async () => {
+    vi.setSystemTime(new Date('2026-11-16T15:00:00Z'))
+    setup({ id: USER, plan: 'free', tokens_used: 0, tokens_period_start: '2026-11-01T03:00:00.000Z' })
+    const inserts = watchInserts(() => ({ message: 'connection reset', code: '08006' }))
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const res = await separate()
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toEqual({ success: true, prediction: { id: 'pred_1', status: 'starting' }, model_name: 'htdemucs' })
+    expect(inserts).toHaveLength(1)
+    // a separação gasta continua gasta: o trabalho foi criado no Replicate
+    expect(db.tables.profiles[0].tokens_used).toBe(1)
+    expect(db.rpcCalls.map((c) => c.name)).toEqual(['consume_separation_token'])
+    expect(error).toHaveBeenCalledTimes(1)
+    expect(error.mock.calls.flat().map(String).join(' ')).not.toContain(USER)
+    error.mockRestore()
   })
 })

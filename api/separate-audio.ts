@@ -4,12 +4,17 @@ import { createClient } from '@supabase/supabase-js';
 import { verifyActiveUser } from './_lib/auth.js';
 import { applyCors } from './_lib/cors.js';
 import { PAID_PLANS, PLAN_LIMITS, getQuotaBonus, getUserPlan } from './_lib/plan.js';
-
-const DEMUCS_VERSION = '25a173108cff36ef9f80f854c162d01df9e6528be175794b81158fa03836d953';
+import { DEMUCS_VERSION } from './_lib/aiCost.js';
 
 // Planos pagos podem separar em 2/4/6 faixas. O Livre (free) só 2 (vocal+instrumental).
 // PAID_PLANS vem de _lib/plan (fonte única, compartilhada com insert-song/insert-stems).
 const VALID_STEM_COUNTS = new Set([2, 4, 6]);
+
+// Coluna que não existe: 42703 no Postgres, PGRST204 no PostgREST (cache do schema).
+// Quer dizer que db/supabase_admin_custos.sql ainda não rodou.
+function isMissingColumn(e: { code?: string } | null): boolean {
+    return !!e && (e.code === '42703' || e.code === 'PGRST204');
+}
 
 function getAllowedAudioPrefix(): string | null {
     const raw = process.env.VITE_R2_PUBLIC_URL || process.env.R2_PUBLIC_URL;
@@ -119,12 +124,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
 
         // Registra ownership da prediction para o check-separation validar depois
-        // (impede que outro usuário consulte esta separação por ID). Best-effort:
-        // falha aqui não deve derrubar a resposta, mas é logada.
+        // (impede que outro usuário consulte esta separação por ID), junto com o
+        // modelo do demucs, a versão, as faixas e o status pro custo de IA.
+        // Best-effort: falha aqui não deve derrubar a resposta, mas é logada.
         if (prediction?.id) {
-            const { error: ownErr } = await supabase
+            const owner = { replicate_id: prediction.id, user_id: auth.userId };
+            let { error: ownErr } = await supabase
                 .from('predictions')
-                .insert({ replicate_id: prediction.id, user_id: auth.userId });
+                .insert({ ...owner, model: model_name, version: DEMUCS_VERSION, stem_count: requestedStems, status: 'starting' });
+            if (isMissingColumn(ownErr)) {
+                // Sem as colunas do custo, grava só o dono: a consulta da separação segue funcionando.
+                console.warn('[separate-audio] colunas do custo de IA ausentes, grava so o dono:', ownErr?.code);
+                ({ error: ownErr } = await supabase.from('predictions').insert(owner));
+            }
             if (ownErr) {
                 console.error('[separate-audio] ownership insert failed:', ownErr.message);
             }
