@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRes, type FakeDb, type FakeRes, type Row } from './fakeSupabase.js'
 import { USER_A, USER_B, USER_C, asaasDown, asaasRejected, createBillingDb, createFakeAsaas, payment, subRow, type FakeAsaas } from './billingHarness.js'
 import { AsaasError } from '../_lib/asaas.js'
-import { cancelSubscriptionForUser, changePlan, grantCourtesy } from '../_lib/billing.js'
+import { BillingError, cancelSubscriptionForUser, changePlan, grantCourtesy } from '../_lib/billing.js'
 import { createAdminRouter, type AdminCtx } from '../_lib/admin/http.js'
 import { UncertainAdminError, courtesyUntil, handlers, writeMayHaveLanded } from '../_lib/admin/subscriberActions.js'
 
@@ -27,7 +27,9 @@ const MSG = {
   planSubNotFound: 'O Asaas não achou esta assinatura. Nada mudou.',
   noAsaasKey: 'O servidor está sem a chave do Asaas.',
   planHalf: 'O Asaas trocou o plano, mas o app não. A ficha ficou marcada em Pendências; use Mudar plano de novo para terminar.',
-  planHalfUnmarked: 'O Asaas pode ter trocado o plano, mas o app não, e não deu pra marcar a ficha em Pendências. Use Mudar plano de novo para terminar.',
+  planHalfUnmarked: 'O Asaas trocou o plano, mas o app não, e não deu pra marcar a ficha em Pendências. Use Mudar plano de novo para terminar.',
+  planNotSent: 'Erro no servidor antes de pedir a troca ao Asaas. Nada mudou.',
+  legacyPaid: 'Esta conta tem uma assinatura antiga, de antes da cobrança nova, que pode estar cobrando no Asaas. Mudar plano não vale pra ela, e uma cortesia não para essa cobrança. Confira no painel do Asaas.',
   cancelDown: 'O Asaas não respondeu. Nada foi cancelado.',
   cancelNone: 'Esta conta não tem assinatura ativa.',
   courtesyNotOurs: 'Esta cortesia não é desta conta.',
@@ -40,7 +42,7 @@ const MSG = {
   quotaMax: 'A cota extra deste mês já está no máximo (1000).',
   amountRange: 'A quantidade precisa ser um número de 1 a 500.',
   resetNoAmount: 'Zerar não leva quantidade.',
-  quotaUnconfirmed: 'Não deu pra confirmar o ajuste da cota. Confira no Registro antes de tentar de novo.',
+  quotaUnconfirmed: 'Não deu pra confirmar o ajuste da cota. Ele pode ter sido feito; confira no Registro antes de repetir.',
   badAccount: 'A conta está em formato inválido.',
   unexpected: 'Erro inesperado no servidor.',
 }
@@ -348,6 +350,56 @@ describe('mudar plano', () => {
     expect(res.statusCode).toBe(500)
     expect(res.body).toEqual({ error: MSG.planHalfUnmarked })
     expect(logs[0].finish).toMatchObject({ p_result: 'partial', p_message: MSG.planHalfUnmarked })
+  })
+
+  it('erro antes do PUT não diz que o Asaas trocou e não marca a ficha', async () => {
+    // Falha do banco dentro da troca, antes de qualquer pedido sair pro Asaas.
+    vi.mocked(changePlan).mockImplementationOnce(async () => {
+      throw new BillingError('db_error', 'Falha no banco (billing_subscriptions): connection reset', 500)
+    })
+    const fake = setAsaas()
+    const before = snapshot()
+    const res = await post('change-plan', { userId: USER_A, planKey: 'pro_mensal' })
+    expect(asaasCalls(fake)).toEqual([])
+    expect(res.statusCode).toBe(500)
+    expect(res.body).toEqual({ error: MSG.planNotSent })
+    expect(JSON.stringify(res.body)).not.toContain('O Asaas trocou')
+    expect(rpcNames()).not.toContain('billing_flag_review')
+    expect(snapshot()).toEqual(before)
+    expect(logs[0].finish).toMatchObject({ p_result: 'failed', p_message: MSG.planNotSent })
+  })
+
+  it('PUT que falha com erro fora do cliente do Asaas é incerto, não "O Asaas trocou"', async () => {
+    setAsaas({ put: () => { throw new TypeError('Cannot read properties of undefined') } })
+    const res = await post('change-plan', { userId: USER_A, planKey: 'pro_mensal' })
+    expect(res.statusCode).toBe(502)
+    expect(res.body).toEqual({ error: MSG_UNCERTAIN, uncertain: true })
+    expect(rpcArgs('billing_flag_review')).toEqual([{ p_id: 'chk_a', p_note: NOTE_UNCERTAIN_PLAN }])
+    expect(logs[0].finish).toMatchObject({ p_result: 'partial', p_message: MSG_UNCERTAIN })
+  })
+
+  it('assinante antigo que ainda paga não recebe a dica da cortesia', async () => {
+    // B assinou antes da Fase 3: plano pago no perfil, pagamento antigo e nenhuma linha de assinatura.
+    Object.assign(profile(USER_B), { plan: 'essencial_mensal', plan_expires_at: null })
+    db.tables.payments.push({ id: 'pay_old', user_id: USER_B, asaas_checkout_id: 'chk_old', plan_key: 'essencial_mensal', paid_at: '2026-10-20T12:00:00.000Z' })
+    const res = await post('change-plan', { userId: USER_B, planKey: 'pro_mensal' })
+    expect(res.statusCode).toBe(409)
+    expect(res.body).toEqual({ error: MSG.legacyPaid })
+    expect(JSON.stringify(res.body)).not.toContain('Dar cortesia')
+    expect(changePlan).not.toHaveBeenCalled()
+    expect(asaasCalls()).toEqual([])
+    expect(logs).toEqual([])
+    // com o plano antigo já vencido no perfil, a conta está no Livre: vale a dica da cortesia
+    profile(USER_B).plan_expires_at = '2026-11-01T03:00:00.000Z'
+    const expired = await post('change-plan', { userId: USER_B, planKey: 'pro_mensal' })
+    expect(expired.statusCode).toBe(404)
+    expect(expired.body).toEqual({ error: MSG.noPaid })
+    // assinatura antiga já adotada pela Fase 3 (linha com o id do checkout) não conta como antiga
+    profile(USER_B).plan_expires_at = null
+    db.tables.billing_subscriptions.push(subRow({ id: 'chk_old', user_id: USER_B, status: 'canceled', cancel_source: 'admin', access_until: NOW.toISOString() }))
+    const adopted = await post('change-plan', { userId: USER_B, planKey: 'pro_mensal' })
+    expect(adopted.statusCode).toBe(404)
+    expect(adopted.body).toEqual({ error: MSG.noPaid })
   })
 
   it('servidor sem a chave do Asaas responde 500 e não marca nada', async () => {
@@ -721,15 +773,17 @@ describe('ajustar cota', () => {
   })
 
   it('erro do banco no ajuste pede pra conferir o Registro antes de repetir', async () => {
+    // O "Somar" pode ter ficado (resposta perdida depois do commit): incerto,
+    // pra a tela segurar o Confirmar e não somar duas vezes.
     db.setRpc('admin_adjust_quota', () => { throw new Error('canceling statement due to statement timeout') })
     const res = await post('adjust-quota', { userId: USER_A, mode: 'add', amount: 5 })
     expect(res.statusCode).toBe(500)
-    expect(res.body).toEqual({ error: MSG.quotaUnconfirmed })
+    expect(res.body).toEqual({ error: MSG.quotaUnconfirmed, uncertain: true })
     // resultado que a função não conhece: também não diz que nada mudou
     db.setRpc('admin_adjust_quota', () => ({ result: 'talvez' }))
     const odd = await post('adjust-quota', { userId: USER_A, mode: 'add', amount: 5 })
     expect(odd.statusCode).toBe(500)
-    expect(odd.body).toEqual({ error: MSG.quotaUnconfirmed })
+    expect(odd.body).toEqual({ error: MSG.quotaUnconfirmed, uncertain: true })
     expect(JSON.stringify([res.body, odd.body])).not.toContain('statement')
   })
 })

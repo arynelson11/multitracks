@@ -37,7 +37,9 @@ const MSG_NO_PAID = 'Esta conta não tem assinatura paga ativa. Para dar um plan
 const MSG_PLAN_NOT_CHANGED = 'O Asaas não trocou o plano. Nada mudou.'
 const MSG_PLAN_SUB_NOT_FOUND = 'O Asaas não achou esta assinatura. Nada mudou.'
 const MSG_PLAN_HALF = 'O Asaas trocou o plano, mas o app não. A ficha ficou marcada em Pendências; use Mudar plano de novo para terminar.'
-const MSG_PLAN_HALF_UNMARKED = 'O Asaas pode ter trocado o plano, mas o app não, e não deu pra marcar a ficha em Pendências. Use Mudar plano de novo para terminar.'
+const MSG_PLAN_HALF_UNMARKED = 'O Asaas trocou o plano, mas o app não, e não deu pra marcar a ficha em Pendências. Use Mudar plano de novo para terminar.'
+const MSG_PLAN_NOT_SENT = 'Erro no servidor antes de pedir a troca ao Asaas. Nada mudou.'
+const MSG_LEGACY_PAID = 'Esta conta tem uma assinatura antiga, de antes da cobrança nova, que pode estar cobrando no Asaas. Mudar plano não vale pra ela, e uma cortesia não para essa cobrança. Confira no painel do Asaas.'
 const MSG_NO_ASAAS_KEY = 'O servidor está sem a chave do Asaas.'
 const MSG_CANCEL_DOWN = 'O Asaas não respondeu. Nada foi cancelado.'
 const MSG_CANCEL_NONE = 'Esta conta não tem assinatura ativa.'
@@ -52,7 +54,7 @@ const MSG_NOT_BLOCKED = 'Esta conta não está bloqueada.'
 const MSG_ACCOUNT_NOT_FOUND = 'Conta não encontrada.'
 const MSG_QUOTA_MAX = 'A cota extra deste mês já está no máximo (1000).'
 const MSG_RESET_NO_AMOUNT = 'Zerar não leva quantidade.'
-const MSG_QUOTA_UNCONFIRMED = 'Não deu pra confirmar o ajuste da cota. Confira no Registro antes de tentar de novo.'
+const MSG_QUOTA_UNCONFIRMED = 'Não deu pra confirmar o ajuste da cota. Ele pode ter sido feito; confira no Registro antes de repetir.'
 const MSG_UNCERTAIN = 'O Asaas não respondeu a tempo. A mudança pode ter sido feita. A ficha foi marcada pra conferir; confira em Pendências antes de repetir.'
 const MSG_UNCERTAIN_UNMARKED = 'O Asaas não respondeu a tempo. A mudança pode ter sido feita, e não deu pra marcar a ficha. Confira no painel do Asaas antes de repetir.'
 
@@ -132,6 +134,24 @@ async function subscriptionsOf(ctx: AdminCtx, userId: string): Promise<SubRow[]>
   const { data, error } = await ctx.db.from('billing_subscriptions').select(SUB_COLS).eq('user_id', userId)
   if (error) throw dbError('billing_subscriptions', error.message)
   return (data as SubRow[] | null) ?? []
+}
+
+// Assinante de antes da Fase 3 que ainda está num plano pago: o perfil tem
+// plano pago valendo e há pagamento antigo (payments) cujo checkout ainda não
+// virou linha de assinatura (a mesma regra de legacyCandidates da Fase 3, que
+// só o cancelamento adota; a troca de plano não). Só lido quando a conta não
+// tem paga ativa.
+async function isLegacyPaying(ctx: AdminCtx, userId: string, rows: SubRow[]): Promise<boolean> {
+  const prof = await ctx.db.from('profiles').select('plan, plan_expires_at').eq('id', userId).maybeSingle()
+  if (prof.error) throw dbError('profiles', prof.error.message)
+  const p = prof.data as { plan?: unknown; plan_expires_at?: unknown } | null
+  const expires = typeof p?.plan_expires_at === 'string' ? p.plan_expires_at : null
+  if (!p || !isPlanKey(p.plan) || (expires !== null && !inFuture(expires, ctx.now))) return false
+  const pays = await ctx.db.from('payments').select('asaas_checkout_id, plan_key').eq('user_id', userId)
+  if (pays.error) throw dbError('payments', pays.error.message)
+  const known = new Set(rows.map((r) => r.id))
+  return ((pays.data as { asaas_checkout_id?: unknown; plan_key?: unknown }[] | null) ?? [])
+    .some((x) => typeof x.asaas_checkout_id === 'string' && x.asaas_checkout_id !== '' && isPlanKey(x.plan_key) && !known.has(x.asaas_checkout_id))
 }
 
 // Pagas ativas, da de início mais recente pra mais antiga (a mesma escolha da
@@ -227,12 +247,16 @@ function tracedAsaas(api: AsaasApi | null): { asaas: AsaasApi | null; calls: Asa
   return { asaas, calls }
 }
 
-// O erro da Fase 3 veio de uma escrita no Asaas sem resposta que dê certeza.
+// O erro da Fase 3 veio de uma escrita no Asaas sem resposta que dê certeza:
+// a última chamada foi uma escrita que falhou assim, e o erro é ela (como a
+// Fase 3 traduz, asaas_unavailable, ou o próprio erro que não é do cliente).
 function uncertainWrite(e: unknown, calls: AsaasCall[]): boolean {
-  if (!(e instanceof BillingError) || e.code !== 'asaas_unavailable') return false
   const last = calls[calls.length - 1]
-  return !!last && last.write && last.failed && writeMayHaveLanded(last.error)
+  if (!last || !last.write || !last.failed || !writeMayHaveLanded(last.error)) return false
+  return (e instanceof BillingError && e.code === 'asaas_unavailable') || e === last.error
 }
+
+const writeSent = (calls: AsaasCall[]): boolean => calls.some((c) => c.write)
 
 const BRT_TIME = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 
@@ -359,8 +383,13 @@ export const handlers: AdminHandlers = {
     run: async (ctx) => {
       const userId = accountOf(ctx.body)
       const planKey = planKeyOf(ctx.body)
-      const [row] = paidActive(await subscriptionsOf(ctx, userId))
-      if (!row) throw new AdminError(404, MSG_NO_PAID)
+      const rows = await subscriptionsOf(ctx, userId)
+      const [row] = paidActive(rows)
+      if (!row) {
+        // A dica da cortesia daria um plano de graça a quem o Asaas ainda cobra.
+        if (await isLegacyPaying(ctx, userId, rows)) throw new AdminError(409, MSG_LEGACY_PAID)
+        throw new AdminError(404, MSG_NO_PAID)
+      }
       const before = { planKey: row.plan_key, value: priceOf(row.plan_key), cycle: row.cycle }
       const traced = tracedAsaas(ctx.asaas)
       let uncertain = false
@@ -378,9 +407,17 @@ export const handlers: AdminHandlers = {
                 throw await uncertainFailure(ctx, [row.id], `troca de plano para ${planLabel(planKey)}`, e)
               }
               if (e instanceof BillingError && PLAN_UNTOUCHED.has(e.code)) throw e
-              // O Asaas pode ter trocado e o banco não (partial, db_error ou
-              // qualquer outro): marca a ficha antes de responder e fecha o
-              // registro como partial, com a frase que diz se a marcação ficou.
+              // Nenhum pedido saiu pro Asaas (erro do banco antes do PUT): a
+              // falha antes de enviar é certeza de nada feito (Ruling
+              // ADM-T16-incerto). Não marca, e a frase não diz que o Asaas trocou.
+              if (!writeSent(traced.calls)) {
+                console.error(`[admin] change-plan falhou antes do PUT (${row.id}):`, describeError(e))
+                throw new AdminError(500, MSG_PLAN_NOT_SENT)
+              }
+              // O PUT saiu e o Asaas aceitou (falha ou recusa já saíram acima),
+              // mas o banco não gravou (partial, db_error ou outro): marca a
+              // ficha antes de responder e fecha o registro como partial, com a
+              // frase que diz se a marcação ficou.
               console.error(`[admin] change-plan pela metade (${row.id}):`, describeError(e))
               const flagged = await flagReview(ctx, [row.id], noteChangePlan(planKey))
               throw new BillingError('partial', flagged ? MSG_PLAN_HALF : MSG_PLAN_HALF_UNMARKED, 500)
@@ -507,21 +544,22 @@ export const handlers: AdminHandlers = {
       if (mode === 'add') amount = int(ctx.body, 'amount', { label: 'a quantidade', min: 1, max: 500 })
       else if (ctx.body.amount !== undefined && ctx.body.amount !== null) throw new AdminError(400, MSG_RESET_NO_AMOUNT)
       // "Somar" não é idempotente (D11: duas abas somam duas vezes). Erro do
-      // banco ou resposta fora do contrato não diz que nada mudou: o Registro,
-      // gravado na mesma transação, é quem mostra se o ajuste ficou.
+      // banco ou resposta fora do contrato não diz que nada mudou: responde
+      // incerto (uncertain: true), pra a tela segurar o Confirmar, e o
+      // Registro, gravado na mesma transação, mostra se o ajuste ficou.
       let out: unknown
       try {
         out = await rpc<unknown>(ctx, 'admin_adjust_quota', { p_admin: ctx.admin.userId, p_user: userId, p_mode: mode, p_amount: amount })
       } catch (e) {
         console.error('[admin] adjust-quota falhou:', describeError(e))
-        throw new AdminError(500, MSG_QUOTA_UNCONFIRMED)
+        throw new UncertainAdminError(500, MSG_QUOTA_UNCONFIRMED)
       }
       const r = typeof out === 'object' && out !== null && !Array.isArray(out) ? (out as Record<string, unknown>) : {}
       if (r.result === 'ok') return { used: numOrNull(r.used), bonus: numOrNull(r.bonus), periodStart: textOrNull(r.periodStart) }
       if (r.result === 'not_found') throw new AdminError(404, MSG_ACCOUNT_NOT_FOUND)
       if (r.result === 'over_limit') throw new AdminError(409, MSG_QUOTA_MAX)
       console.error('[admin] adjust-quota: resposta fora do contrato:', String(r.result).slice(0, 40))
-      throw new AdminError(500, MSG_QUOTA_UNCONFIRMED)
+      throw new UncertainAdminError(500, MSG_QUOTA_UNCONFIRMED)
     },
   },
 }
