@@ -1,13 +1,15 @@
 // Fluxo único do click automático (M7): faixas pela regra central, grade pelo
 // detectSongGrid com o BPM da música, porteiro de confiança, marcas de dúvida e o click
 // gerado da biblioteca. Nunca o caminho antigo (analyzeBufferAndGenerateClick).
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { analyzeBufferAndGenerateClick, generateManualClickTrackFromSample } from './AudioAnalyzer'
 import {
-  AUTO_CLICK_MIN_CONFIDENCE, DOWNBEAT_MIN_MARGIN, adjustAutoClick, autoClickChecks, planAutoClick, renderAutoClick, toTempoTracks,
-  type AutoClickChannel, type AutoClickOkPlan,
+  AUTO_CLICK_MIN_CONFIDENCE, DOWNBEAT_MIN_MARGIN, SEPARATOR_MIN_CONFIDENCE, adjustAutoClick, autoClickChecks, planAutoClick, renderAutoClick,
+  separatorGridUsable, toTempoTracks, type AutoClickChannel, type AutoClickOkPlan,
 } from './autoClick'
-import { detectSongGrid, type SongGridDetection } from './beatGrid'
+import { detectBeatGrid, detectSongGrid, type SongGridDetection } from './beatGrid'
 import type { TimeSignature } from './stageContracts'
 import { pickTempoSources } from './tempoSources'
 import { FakeAudioBuffer } from '../test/fakeAudio'
@@ -236,5 +238,35 @@ describe('renderAutoClick', () => {
     planAutoClick([channel('k', 'Drums')], {})
     planAutoClick([channel('p', 'Pad')], {})
     expect(analyzeBufferAndGenerateClick).not.toHaveBeenCalled()
+  })
+})
+
+// Click sincronizado do Separador (Rulings M2-5, M2-7, M2b-2 e M7-arquivos): corte próprio na
+// escala nova da confiança, medido com áudio real (relatório da M7), nunca o CONFIDENCE_CUT.
+describe('Separador: corte próprio da grade do click', () => {
+  it('abaixo do corte (ou sem grade) o click sai no BPM digitado a partir de 0:00; no corte, alinhado', () => {
+    expect(SEPARATOR_MIN_CONFIDENCE).toBe(0.14)
+    expect(separatorGridUsable(null)).toBe(false)
+    expect(separatorGridUsable(undefined)).toBe(false)
+    expect(separatorGridUsable({ confidence: SEPARATOR_MIN_CONFIDENCE - 0.001 })).toBe(false)
+    expect(separatorGridUsable({ confidence: SEPARATOR_MIN_CONFIDENCE })).toBe(true)
+    expect(separatorGridUsable({ confidence: Number.NaN })).toBe(false)
+  })
+
+  it('com o BPM digitado (nearBpm): bateria sintética alinha; ruído e voz não', () => {
+    const b = tempoCase('b').song({ votes: false, duration: 30 })
+    expect(separatorGridUsable(detectBeatGrid(b.tracks.drums, b.sr, { nearBpm: 120, beatsPerBar: 4 }))).toBe(true)
+    for (const id of ['ruido-branco', 'voz-glissando']) {
+      const song = tempoCase(id).song({ duration: 30 })
+      const grid = detectBeatGrid(song.tracks.drums, song.sr, { nearBpm: 120, beatsPerBar: 4 })
+      expect({ id, usable: separatorGridUsable(grid) }).toEqual({ id, usable: false })
+    }
+  }, LENTO)
+
+  it('o SeparatorStudio decide pelo corte próprio nos dois lugares, sem número solto', () => {
+    const src = readFileSync(fileURLToPath(new URL('../components/SeparatorStudio.tsx', import.meta.url)), 'utf8')
+    expect(src).not.toMatch(/confidence\s*(>=|<)\s*0?\.\d/)
+    expect(src).not.toMatch(/CONFIDENCE_CUT|AUTO_CLICK_MIN_CONFIDENCE/)
+    expect(src.match(/separatorGridUsable\(/g) ?? []).toHaveLength(2)
   })
 })
