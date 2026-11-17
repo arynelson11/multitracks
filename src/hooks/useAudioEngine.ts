@@ -153,6 +153,8 @@ function releaseVoices(ctx: BaseAudioContext, voices: readonly Voice[], startOf:
 
 /** FADE agendado no principal: rampa de `from` em `start` até 0 em `end` (tempo do contexto). */
 interface FadeRamp { start: number; end: number; from: number }
+/** Rampa linear curta no principal, de `v0` em `t0` até `v1` em `t1` (tempo do contexto). */
+interface VolumeRamp { t0: number; v0: number; t1: number; v1: number }
 
 /** Nível do FADE em `t`, pela própria receita (rampa linear). */
 function fadeLevelAt(f: FadeRamp, t: number): number {
@@ -740,6 +742,10 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     const fadeHeldRef = useRef<number | null>(null);
     // "1" do pulo marcado em que o principal volta pro volume (o FADE já tinha começado).
     const fadeRestoreRef = useRef<number | null>(null);
+    // Rampa curta (50 ms) que o próprio FADE marcou no principal: volume mexido com o FADE marcado
+    // ou a saída do FADE. Enquanto ela corre, mexer no volume de novo parte do valor dela (e nunca
+    // por setTarget, que seria seguido pela rampa, Ruling ÁUDIO).
+    const volumeRampRef = useRef<VolumeRamp | null>(null);
 
     const animationRef = useRef<number>(0);
     const pausedAtRef = useRef<number>(0);
@@ -1203,9 +1209,23 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         fadeRef.current = null;
         fadeHeldRef.current = null;
         fadeRestoreRef.current = null;
+        volumeRampRef.current = null;
     };
+    // A rampa curta do principal ainda corre em `t`?
+    const volumeRampAt = (t: number): VolumeRamp | null => {
+        const r = volumeRampRef.current;
+        return r && t < r.t1 ? r : null;
+    };
+    // Instante em que o FADE mexe no principal tocando: o relógio mais a folga do corte.
+    const masterHoldAt = (ctx: BaseAudioContext) => ctx.currentTime + cutLead(ctx);
     // Nível do principal em `t` pelo que o FADE marcou, e se ele está no meio de uma rampa.
     const masterLevelAt = (t: number): { level: number; inRamp: boolean } => {
+        // A rampa curta vem antes: o FADE (ou o nível segurado) que ela leva só vale depois dela.
+        const r = volumeRampAt(t);
+        if (r) {
+            if (t <= r.t0) return { level: r.v0, inRamp: false };
+            return { level: r.v0 + ((r.v1 - r.v0) * (t - r.t0)) / (r.t1 - r.t0), inRamp: true };
+        }
         const f = fadeRef.current;
         if (f) return { level: fadeLevelAt(f, t), inRamp: t > f.start && t < f.end };
         const held = fadeHeldRef.current;
@@ -1219,24 +1239,34 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     };
     // Tira o FADE do principal: rampa que não começou só sai; no meio dela (ou com o nível
     // segurado e a volta no "1" marcada) o principal fica no nível de agora. `toVolume`: e sobe
-    // pro volume em 50 ms (o operador saiu do FADE).
+    // pro volume em 50 ms (o operador saiu do FADE). O "agora" é o relógio mais a folga do corte
+    // (masterHoldAt): a thread do áudio calcula blocos adiantados, e segurar num instante já
+    // calculado dava degrau (medido no Chrome arrastando o volume: até 0,007 sem a folga).
     const dropFade = (ctx: BaseAudioContext, toVolume: boolean) => {
         const gain = masterGainRef.current?.gain;
         const f = fadeRef.current;
-        const now = ctx.currentTime;
+        const now = masterHoldAt(ctx);
         if (!gain) { clearFadeState(); return; }
-        if (f && now < f.start) {
+        const ramp = volumeRampAt(now);
+        // Rampa que ainda não começou (e nenhuma rampa curta indo até ela): só sai.
+        if (f && now < f.start && (!ramp || ramp.t1 < f.start)) {
             gain.cancelScheduledValues(f.start);
             fadeRef.current = null;
             return;
         }
+        // Só a rampa curta da saída do FADE correndo pro volume: ela termina sozinha.
         if (!f && fadeHeldRef.current === null) { fadeRestoreRef.current = null; return; }
         const { level, inRamp } = masterLevelAt(now);
         holdMasterAt(gain, now, level, inRamp);
         fadeRef.current = null;
         fadeRestoreRef.current = null;
         fadeHeldRef.current = toVolume ? null : level;
-        if (toVolume) gain.linearRampToValueAtTime(masterVolumeRef.current, now + MASTER_RAMP_S);
+        volumeRampRef.current = null;
+        if (toVolume) {
+            const volume = masterVolumeRef.current;
+            gain.linearRampToValueAtTime(volume, now + MASTER_RAMP_S);
+            volumeRampRef.current = { t0: now, v0: level, t1: now + MASTER_RAMP_S, v1: volume };
+        }
     };
     // Marca a rampa do FADE, se o modo é FADE e a música toca. `musicStart` (play): a música entra
     // ali, então começar no meio dos 5 s sai no nível proporcional sem degrau audível; tocando, a
@@ -1252,7 +1282,8 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         const rate = timeStretchRef.current;
         const start = ctxTimeOf(tl, dur - FADE_OUT_S, now, rate);
         const end = ctxTimeOf(tl, dur, now, rate);
-        const t0 = musicStart ?? now + cutLead(ctx);
+        // Tocando, depois da rampa curta que ainda corre (ela termina no nível de onde a nova parte).
+        const t0 = musicStart ?? Math.max(masterHoldAt(ctx), volumeRampAt(masterHoldAt(ctx))?.t1 ?? 0);
         if (!Number.isFinite(start) || !Number.isFinite(end) || end <= t0) return;
         const held = fadeHeldRef.current;
         const volume = masterVolumeRef.current;
@@ -1296,27 +1327,36 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // Volume principal mexido com o FADE marcado ou o principal segurado no meio dele: em 50 ms o
     // nível segue a mesma curva com o volume novo, só por rampa linear (um setTarget aqui seria
     // seguido pela rampa do FADE, Ruling ÁUDIO); a volta no "1" do pulo vai pro volume novo.
+    // O nível de agora sai do modelo (masterLevelAt), que conhece a rampa curta anterior: arrastar o
+    // volume (um evento por quadro) emenda as rampas sem degrau.
     const retimeFadeVolume = (ctx: BaseAudioContext, gain: AudioParam, volume: number) => {
-        const now = ctx.currentTime;
+        const now = masterHoldAt(ctx);
         const t1 = now + MASTER_RAMP_S;
         const old = masterVolumeRef.current;
         const scale = (v: number) => (old > 0 ? (v * volume) / old : volume);
         const { level, inRamp } = masterLevelAt(now);
         holdMasterAt(gain, now, level, inRamp);
+        // A rampa curta que vai até `v1` em `end` (o modelo e o parâmetro andam juntos).
+        const rampTo = (v1: number, end: number) => {
+            gain.linearRampToValueAtTime(v1, end);
+            volumeRampRef.current = { t0: now, v0: level, t1: end, v1 };
+        };
+        volumeRampRef.current = null;
         const f = fadeRef.current;
         if (f) {
             const curve = { ...f, from: scale(f.from) };
             if (t1 < f.start) {
-                gain.linearRampToValueAtTime(volume, t1);
+                rampTo(volume, t1);
                 gain.setValueAtTime(curve.from, f.start);
                 gain.linearRampToValueAtTime(0, f.end);
                 fadeRef.current = curve;
             } else if (t1 < f.end) {
                 const v1 = fadeLevelAt(curve, t1);
-                gain.linearRampToValueAtTime(v1, t1);
+                rampTo(v1, t1);
                 gain.linearRampToValueAtTime(0, f.end);
                 fadeRef.current = { start: t1, end: f.end, from: v1 };
             } else {
+                // O FADE acaba antes da rampa curta: segue dele até 0.
                 if (f.end > now) gain.linearRampToValueAtTime(0, f.end);
                 fadeRef.current = { start: now, end: Math.max(now, f.end), from: level };
             }
@@ -1325,15 +1365,19 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         const held = fadeHeldRef.current;
         const T = fadeRestoreRef.current;
         fadeRestoreRef.current = null;
-        if (held === null) return;
+        if (held === null) {
+            // Só a rampa curta da saída do FADE corria: termina no volume novo.
+            rampTo(volume, t1);
+            return;
+        }
         if (T !== null && T - SWITCH_FADE <= t1) {
             // A volta no "1" já está cruzando: termina no volume novo.
-            gain.linearRampToValueAtTime(volume, Math.max(T, t1));
+            rampTo(volume, Math.max(T, t1));
             fadeHeldRef.current = null;
             return;
         }
         const next = scale(held);
-        gain.linearRampToValueAtTime(next, t1);
+        rampTo(next, t1);
         fadeHeldRef.current = next;
         if (T !== null) {
             gain.setValueAtTime(next, T - SWITCH_FADE);
@@ -2213,7 +2257,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
                 dropFade(ctx, false);
                 fadeHeldRef.current = null;
                 dropSectionIntent();
-                masterGainRef.current.gain.setTargetAtTime(0.01, ctx.currentTime, 0.3);
+                // No mesmo instante em que o FADE segurou o principal (depois dele, o setTarget
+                // seria apagado pelo ponto segurado).
+                masterGainRef.current.gain.setTargetAtTime(0.01, masterHoldAt(ctx), 0.3);
             }
         } else {
             executeNextSong();
@@ -3542,9 +3588,11 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
 
     const updateMasterVolume = (volume: number) => {
         if (masterGainRef.current && audioCtxRef.current) {
-            // Com o FADE marcado, só rampa linear (retimeFadeVolume); sem ele, como sempre.
-            if (fadeRef.current || fadeHeldRef.current !== null) retimeFadeVolume(audioCtxRef.current, masterGainRef.current.gain, volume);
-            else masterGainRef.current.gain.setTargetAtTime(volume, audioCtxRef.current.currentTime, 0.05);
+            // Com o FADE marcado (ou a rampa curta dele ainda correndo depois de agora), só rampa
+            // linear (retimeFadeVolume); sem ele, como sempre.
+            const ctx = audioCtxRef.current;
+            if (fadeRef.current || fadeHeldRef.current !== null || volumeRampAt(ctx.currentTime)) retimeFadeVolume(ctx, masterGainRef.current.gain, volume);
+            else masterGainRef.current.gain.setTargetAtTime(volume, ctx.currentTime, 0.05);
             masterVolumeRef.current = volume;
             setMasterVolume(volume);
         }
@@ -3594,6 +3642,10 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
                 void play(opts);
             } else if (clampedPitch !== 0) {
                 song.channels.forEach(ch => applyPitchToChannel(ch, clampedPitch));
+                // O play de agora passa a ser neste tom: a entrada das vozes do pulo (entryFor)
+                // e o canal novo tocando (addLiveVoice) reprogramam o worklet com ele.
+                const chain = playChainRef.current;
+                if (chain) playChainRef.current = { ...chain, pitch: clampedPitch };
             }
         }
         // Parado: o próximo play() monta o roteamento certo pelo currentPitchRef.
