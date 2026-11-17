@@ -215,18 +215,18 @@ describe('SettingsProvider: saídas e palco na primeira carga', () => {
   beforeEach(() => { localStorage.clear(); latest.current = null; dropAudioContext() })
   afterEach(() => { cleanup(); localStorage.clear() })
 
-  it('quem tinha pan automático entra em separados, sem pan automático, e o palco novo é o padrão', async () => {
+  it('quem tinha pan automático entra em separados, sem pan automático, e o palco antigo é o padrão (Ruling T29-padrao)', async () => {
     const { settings, outputLoadWarnings } = await load({ autoPan: true, audioDeviceId: 'fone' })
-    expect(settings).toMatchObject({ outputs: SPLIT, autoPan: false, stageVersion: 'novo', legacyPanReset: true, audioDeviceId: 'fone' })
+    expect(settings).toMatchObject({ outputs: SPLIT, autoPan: false, stageVersion: 'antigo', legacyPanReset: true, audioDeviceId: 'fone' })
     expect(outputLoadWarnings).toEqual([])
     // Gravado na hora: as saídas nas configurações e o marcador na chave própria.
-    expect(storedNow()).toMatchObject({ outputs: SPLIT, autoPan: false, stageVersion: 'novo', legacyPanReset: true, audioDeviceId: 'fone' })
+    expect(storedNow()).toMatchObject({ outputs: SPLIT, autoPan: false, stageVersion: 'antigo', legacyPanReset: true, audioDeviceId: 'fone' })
     expect(localStorage.getItem(MARKER)).toBe('1')
   })
 
   it('quem nunca gravou nada (o pan automático era o padrão) também entra em separados', async () => {
     const { settings } = await load()
-    expect(settings).toMatchObject({ outputs: SPLIT, autoPan: false, stageVersion: 'novo', legacyPanReset: true, audioDeviceId: 'default' })
+    expect(settings).toMatchObject({ outputs: SPLIT, autoPan: false, stageVersion: 'antigo', legacyPanReset: true, audioDeviceId: 'default' })
     expect(localStorage.getItem(MARKER)).toBe('1')
   })
 
@@ -256,10 +256,16 @@ describe('SettingsProvider: saídas e palco na primeira carga', () => {
     error.mockRestore()
   })
 
-  it('palco antigo fica; valor estranho vira o novo', async () => {
+  it('palco novo só com a escolha do usuário; antigo, ausente ou valor estranho fica no antigo (Ruling T29-padrao)', async () => {
+    expect((await load({ autoPan: false, stageVersion: 'novo' })).settings.stageVersion).toBe('novo')
+    cleanup(); localStorage.clear()
     expect((await load({ autoPan: false, stageVersion: 'antigo' })).settings.stageVersion).toBe('antigo')
     cleanup(); localStorage.clear()
-    expect((await load({ autoPan: false, stageVersion: 'v7' })).settings.stageVersion).toBe('novo')
+    expect((await load({ autoPan: false })).settings.stageVersion).toBe('antigo')
+    cleanup(); localStorage.clear()
+    expect((await load({ autoPan: false, stageVersion: 'v7' })).settings.stageVersion).toBe('antigo')
+    cleanup(); localStorage.clear()
+    expect((await load({ autoPan: false, stageVersion: 'NOVO' })).settings.stageVersion).toBe('antigo')
   })
 
   it('o pedido de zerar os pans fica gravado nas cargas seguintes (cada conta zera uma vez no motor)', async () => {

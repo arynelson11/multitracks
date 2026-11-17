@@ -9,7 +9,8 @@ export interface AppSettings {
     audioDeviceId: string;
     // Saídas de áudio por papel (spec 5e): Tudo junto, Click e Guia separados ou 4 ou mais.
     outputs: OutputSettings;
-    // Palco novo ou antigo (R-25). Padrão: novo.
+    // Palco novo ou antigo (R-25). Padrão: antigo, por enquanto (Ruling T29-padrao): o novo só
+    // vale quando o próprio usuário escolheu 'novo' em CONFIG > Geral > Palco.
     stageVersion: StageVersion;
     // Informativo: o aparelho veio do pan automático (R-23). O motor zera os pans ±1 antigos
     // de cada conta uma vez, na primeira restauração dela, com ou sem este flag (Ruling
@@ -59,8 +60,8 @@ function readStoredSettings(): { settings: AppSettings; warnings: OutputWarning[
             audioDeviceId: typeof raw.audioDeviceId === 'string' ? raw.audioDeviceId : 'default',
             outputs: migrated.outputs,
             autoPan: migrated.autoPan,
-            // Valor estranho vira o palco novo.
-            stageVersion: raw.stageVersion === 'antigo' ? 'antigo' : 'novo',
+            // Só a escolha gravada 'novo' liga o palco novo; ausente ou valor estranho fica no antigo.
+            stageVersion: raw.stageVersion === 'novo' ? 'novo' : 'antigo',
             // Fica gravado (informativo; o motor não depende dele).
             legacyPanReset: migrated.resetLegacyPans || raw.legacyPanReset === true,
         },
