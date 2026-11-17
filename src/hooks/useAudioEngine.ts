@@ -570,6 +570,8 @@ export function useAudioEngine(userId?: string) {
     const playChainRef = useRef<{ songId: string | null; channels: Channel[]; pitch: number; compensation: number | null } | null>(null);
     // Instante (tempo do contexto) em que cada voz começa: a soltura para já a que ainda não começou.
     const voiceStartsRef = useRef(new WeakMap<Voice, number>());
+    // Entrada em que cada voz ligou (worklet, atraso de compensação ou panner).
+    const voiceEntriesRef = useRef(new WeakMap<Voice, AudioNode>());
     // Até quando ainda sai som do que já foi solto: a cauda da soltura das vozes (em ganho 1 até
     // a folga do corte, depois descendo) e o fim de um bipe cancelado. Conta como "algo soando"
     // pro corte das trocas de rota (rodada 1 da T26: I1 e Minor c da revisão).
@@ -685,6 +687,21 @@ export function useAudioEngine(userId?: string) {
         pitchSlotsRef.current.delete(channelId);
         stopPitchNode(slot);
         pitchPoolRef.current.push(slot.node);
+    };
+
+    // Canal que sai do ouvido (Click ou Guia virando Normal) com a música transposta: o atraso de
+    // compensação dele guarda os últimos L segundos (~0,12 s) do que entrou nele (o click, a guia,
+    // o bipe da contagem). Ligado na rota nova, ele soltaria isso na VS depois que o corte da
+    // troca já subiu. Chamado no fundo do corte: o atraso sai do caminho e é descartado com o que
+    // guarda (desligar e religar o mesmo nó não serve: ele soltaria o conteúdo ao ser religado);
+    // se ainda for preciso, o getLatencyDelay cria outro. Fica só se uma voz que toca agora já
+    // entrou nele (worklet que falhou: o canal toca pelo atraso, agora como Normal, de propósito).
+    const dropEarDelay = (channelId: string) => {
+        const comp = pitchDelaysRef.current.get(channelId);
+        if (!comp) return;
+        if (voicesRef.current.some((v) => voiceEntriesRef.current.get(v) === comp.delay)) return;
+        comp.delay.disconnect();
+        pitchDelaysRef.current.delete(channelId);
     };
 
     const releasePitchNodesExcept = (keep: Channel[]) => {
@@ -1255,9 +1272,11 @@ export function useAudioEngine(userId?: string) {
         countRef.current = null;
         if (count && ctx) {
             const now = ctx.currentTime;
-            // Bipe soando agora desce e para em 20 ms: até lá ele ainda conta como som.
+            // Bipe soando agora desce e para em 20 ms: até lá ele ainda conta como som. Com a
+            // música transposta a contagem entra num atraso de compensação (o do canal de click
+            // ou o da contagem, R-35) e ainda sai L depois.
             if (count.beats.some((b) => b.at <= now && now < b.at + COUNT_BEEP_LENGTH)) {
-                soundingUntilRef.current = Math.max(soundingUntilRef.current, now + COUNT_CANCEL_TAIL);
+                soundingUntilRef.current = Math.max(soundingUntilRef.current, now + COUNT_CANCEL_TAIL + (playChainRef.current?.compensation ?? 0));
             }
             count.cancel(now);
         }
@@ -1278,7 +1297,12 @@ export function useAudioEngine(userId?: string) {
         voicesRef.current = [];
         if (ctx && voices.length > 0) {
             const starts = voiceStartsRef.current;
-            soundingUntilRef.current = Math.max(soundingUntilRef.current, releaseVoices(ctx, voices, (v) => starts.get(v) ?? 0));
+            const until = releaseVoices(ctx, voices, (v) => starts.get(v) ?? 0);
+            // Click e Guia com a música transposta passam pelo atraso de compensação: a cauda
+            // deles ainda sai L depois (a pausa não esvazia o atraso).
+            if (until > ctx.currentTime) {
+                soundingUntilRef.current = Math.max(soundingUntilRef.current, until + (playChainRef.current?.compensation ?? 0));
+            }
         }
         timelineRef.current = [];
         for (const ch of [...channels, ...(playChainRef.current?.channels ?? [])]) ch.sourceNode = null;
@@ -1406,7 +1430,7 @@ export function useAudioEngine(userId?: string) {
             const count = beats > 0
                 ? scheduleCount(ctx, countDestination(), Array.from({ length: beats }, (_, k) => ({ at: t0 + k * pulse, label: k + 1 })))
                 : null;
-            return { t0, when, voices, count };
+            return { t0, when, voices, count, specs };
         };
 
         let scheduled = scheduleAll(START_LEAD_QUANTA);
@@ -1427,10 +1451,11 @@ export function useAudioEngine(userId?: string) {
             console.warn(`[tom] reinício reagendado com a folga de reserva (${++leadRetriesRef.current})`);
         }
 
-        const { when, voices, count } = scheduled;
+        const { when, voices, count, specs } = scheduled;
         voicesRef.current = voices;
         voices.forEach((v, i) => {
             voiceStartsRef.current.set(v, when);
+            voiceEntriesRef.current.set(v, specs[i].entry);
             channels[i].sourceNode = v.source;
         });
         timelineRef.current = [{ ctxStart: when, songStart: offset }];
@@ -2053,6 +2078,7 @@ export function useAudioEngine(userId?: string) {
         const at = Math.max(nextRenderQuantum(ctx, START_LEAD_QUANTA), first?.ctxStart ?? 0);
         const voice = startVoice(ctx, { channelId: ch.id, buffer: ch.buffer, entry, loop: isEndlessLoop(ch) }, at, positionAt(timelineRef.current, at, timeStretch), timeStretch);
         voiceStartsRef.current.set(voice, at);
+        voiceEntriesRef.current.set(voice, entry);
         voicesRef.current = [...voicesRef.current, voice];
         ch.sourceNode = voice.source;
         playChainRef.current = { ...chain, channels: [...chain.channels, ch] };
@@ -2448,8 +2474,12 @@ export function useAudioEngine(userId?: string) {
             // nele) e o panner recebe o pan efetivo do papel novo (com o pan automático em
             // "Tudo junto", o lado do papel), os dois no fundo do mesmo corte. O pan gravado
             // é o knob e não muda.
+            // Click ou Guia virando Normal: o atraso de compensação dele (música transposta) sai
+            // do caminho no mesmo fundo do corte, com o que guarda (nada dele na VS).
+            const leavesEar = resolveChannelRole(before) !== 'normal' && resolveChannelRole(after) === 'normal';
             if (ctx && graph && cuts) {
                 switchRoute(() => {
+                    if (leavesEar) dropEarDelay(after.id);
                     moveFaderToRole(cuts, after);
                     syncChannelPan(ctx, after, graph.plan, autoPanRef.current, false);
                 });
