@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type Res = { data: unknown; error: { message: string; code?: string } | null }
 
 const h = vi.hoisted(() => ({
   answer: null as Res | null,
   failRead: false,
+  hold: null as Promise<void> | null,
   reads: [] as { table: string; cols: string; col: string; value: string }[],
   rpc: vi.fn(),
 }))
@@ -16,6 +17,7 @@ vi.mock('./supabase', () => ({
         eq: (col: string, value: string) => ({
           maybeSingle: async () => {
             h.reads.push({ table, cols, col, value })
+            if (h.hold) await h.hold
             if (h.failRead) throw new Error('rede caiu')
             return h.answer ?? { data: null, error: null }
           },
@@ -26,13 +28,14 @@ vi.mock('./supabase', () => ({
   },
 }))
 
-import { fetchProfileFlags, shouldShowBlocked } from './profileFlags'
+import { fetchProfileFlags, fetchProfileFlagsWithin, PROFILE_FLAGS_TIMEOUT_MS, shouldShowBlocked } from './profileFlags'
 
 const NOT_ADMIN = { isAdmin: false, blockedAt: null }
 
 beforeEach(() => {
   h.answer = null
   h.failRead = false
+  h.hold = null
   h.reads.length = 0
   h.rpc.mockReset()
 })
@@ -135,5 +138,43 @@ describe('shouldShowBlocked', () => {
     expect(shouldShowBlocked({ user, blockedAt: '', isAdmin: false })).toBe(false)
     // Quem monta o App com um login falso sem o campo (testes antigos) também segue no app.
     expect(shouldShowBlocked({ user, blockedAt: undefined as unknown as null, isAdmin: false })).toBe(false)
+  })
+})
+
+describe('fetchProfileFlagsWithin (teto da leitura do papel, Ruling ADM-T27-teto)', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('o teto é de 4 s', () => {
+    expect(PROFILE_FLAGS_TIMEOUT_MS).toBe(4000)
+  })
+
+  it('leitura que chega antes do teto devolve o papel e não deixa relógio ligado', async () => {
+    h.answer = { data: { is_admin: true, blocked_at: null }, error: null }
+    await expect(fetchProfileFlagsWithin('u1')).resolves.toEqual({ isAdmin: true, blockedAt: null })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('leitura que falha antes do teto segue a regra de hoje (não admin)', async () => {
+    h.failRead = true
+    await expect(fetchProfileFlagsWithin('u1')).resolves.toEqual(NOT_ADMIN)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('leitura pendurada: null aos 4 s, e a resposta atrasada não muda o resultado', async () => {
+    let release = () => {}
+    h.hold = new Promise<void>((r) => { release = r })
+    h.answer = { data: { is_admin: true, blocked_at: '2026-11-17T15:00:00Z' }, error: null }
+    let result: unknown = 'pendente'
+    void fetchProfileFlagsWithin('u1').then((r) => { result = r })
+
+    await vi.advanceTimersByTimeAsync(PROFILE_FLAGS_TIMEOUT_MS - 1)
+    expect(result).toBe('pendente')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(result).toBeNull()
+
+    release()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(result).toBeNull()
   })
 })

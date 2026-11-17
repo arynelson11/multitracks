@@ -26,6 +26,22 @@ export async function fetchProfileFlags(userId: string): Promise<ProfileFlags> {
   }
 }
 
+// Teto da leitura do papel e do bloqueio no useAuth (Ruling ADM-T27-teto): uma leitura
+// pendurada não pode deixar o app no carregando. Estourou: null, e a resposta atrasada é
+// descartada; quem chama decide o que vale (o servidor segue sendo a trava).
+export const PROFILE_FLAGS_TIMEOUT_MS = 4000
+
+export function fetchProfileFlagsWithin(userId: string, ms: number = PROFILE_FLAGS_TIMEOUT_MS): Promise<ProfileFlags | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms)
+    const done = (flags: ProfileFlags) => {
+      clearTimeout(timer)
+      resolve(flags)
+    }
+    fetchProfileFlags(userId).then(done, () => done(notAdmin()))
+  })
+}
+
 // Tela de conta bloqueada: com login, com a data do bloqueio e sem ser admin (conta admin
 // nunca fica presa fora do app). Sem a data (não bloqueada, ou leitura do perfil que falhou),
 // o app segue normal; a trava de verdade é o servidor, que recusa as funções da conta.

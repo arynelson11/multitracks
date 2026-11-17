@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { apiUrl } from '../lib/api';
 import { effectivePlan, fetchPlanState } from '../lib/planState';
 import { syncBillingOnLogin } from '../lib/subscription';
-import { fetchProfileFlags, touchLastSeen } from '../lib/profileFlags';
+import { fetchProfileFlagsWithin, touchLastSeen } from '../lib/profileFlags';
 import type { User, Session } from '@supabase/supabase-js';
 
 const PLAN_CHANGED_EVENT = 'playback-plan-changed';
@@ -25,9 +25,10 @@ export function useAuth() {
     // Conta da sessão agora: resposta que chega de outra conta (saiu ou trocou) é descartada.
     const sessionUserRef = useRef<string | null>(null);
 
-    // Plano, papel e bloqueio vêm juntos: o carregando cobre os três.
+    // Plano, papel e bloqueio vêm juntos: o carregando cobre os três. A leitura do papel e do
+    // bloqueio tem teto de 4 s (Ruling ADM-T27-teto); a do plano segue como antes, sem teto.
     const fetchPlan = useCallback(async (userId: string) => {
-        const [state, flags] = await Promise.all([fetchPlanState(userId), fetchProfileFlags(userId)]);
+        const [state, flags] = await Promise.all([fetchPlanState(userId), fetchProfileFlagsWithin(userId)]);
         if (sessionUserRef.current !== userId) return;
         const sameAccount = profileUserRef.current === userId;
         profileUserRef.current = userId;
@@ -44,6 +45,16 @@ export function useAuth() {
         }
         setRawPlan(state.plan);
         setPlanExpiresAt(state.planExpiresAt);
+        if (!flags) {
+            // A leitura do papel estourou o teto: no carregamento de uma conta vale não admin e
+            // não bloqueado, e o app abre; a mesma conta (releitura) mantém o que já tinha. A
+            // resposta atrasada é descartada: nada reabre sozinho, só a próxima leitura.
+            if (!sameAccount) {
+                setIsAdmin(false);
+                setBlockedAt(null);
+            }
+            return;
+        }
         setIsAdmin(flags.isAdmin);
         setBlockedAt(flags.blockedAt);
     }, []);
