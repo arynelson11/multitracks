@@ -43,16 +43,20 @@ export const AUTO_CLICK_MIN_CONFIDENCE = 0.5
  * Folga mínima do "1" (`downbeatMargin`) pra ele sair sem pedir conferência, quando vem do
  * baixo, da harmonia ou do bumbo sozinho (Ruling M3-M7). A folga é diferença de perfis,
  * não dB. Medido na M7 (detector 57aab63, igual ao de hoje):
- * - nas 140 leituras julgadas das multitracks reais (45 músicas, inteira, cortes e com o
- *   BPM do nome), marca 15 dos 17 "1" errados e 53 dos 123 certos; o maior errado marcado
- *   tem folga 0,733 e o certo seguinte 0,795 (o corte fica no meio do vão);
+ * - calibração: nas 140 leituras julgadas das multitracks reais (45 músicas, inteira, cortes
+ *   e com o BPM do nome), marca 15 dos 17 "1" errados e 53 dos 123 certos; o maior errado
+ *   marcado tem folga 0,733 e o certo seguinte 0,795 (o corte fica no meio do vão);
  * - no fluxo do modal (BPM da música e compasso do click, música inteira), pede pra
- *   conferir o 1 em 21 das 44 músicas que passam no porteiro;
+ *   conferir o 1 em 21 das 44 músicas que passam no porteiro. Ali o 1 foi julgado em 38 e
+ *   saiu errado em 3: a regra avisa 1 (baixo com folga 0,30) e 2 passam sem aviso, os dois
+ *   de folga alta (baixo 2,62 num 6/8 e bumbo 1,34). A regra da M3 avisaria 0 dos 3 com as
+ *   mesmas 21 confirmações;
  * - nos 540 sintéticos da M3 (bateria sozinha, com pads, drone e o bumbo do 3 de +0,5 a
  *   +1,3 dB), nenhum "1" errado sai sem marca: o bumbo do 3 a +1,3 dB sai `bumbo` com folga
  *   de 0,557 a 0,561 e fica marcado. Com o baixo votando, nenhum certo é marcado.
- * Limite conhecido: 2 dos 17 errados do real têm folga alta (bumbo 1,35 numa leitura com o
- * BPM do nome; harmonia 3,35 num corte de 60 s com confiança 0,12, que o porteiro barra).
+ * Limite conhecido: o 1 errado com folga alta sai sem aviso. Na calibração, 2 dos 17 (bumbo
+ * 1,35 numa leitura com o BPM do nome; harmonia 3,35 num corte de 60 s com confiança 0,12,
+ * que o porteiro barra); no fluxo do modal, 2 dos 3 (acima).
  */
 export const DOWNBEAT_MIN_MARGIN = 0.76
 
