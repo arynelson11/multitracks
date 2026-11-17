@@ -558,7 +558,13 @@ export function useAudioEngine(userId?: string) {
     //     Vazio = nada agendado (a posição é pausedAtRef).
     //   entryFor(ch, pitch, compensation): entrada do canal, onde a voz liga: o worklet de tom
     //     (tom diferente de 0, canal que transpõe, já ligado e no tom), o atraso de
-    //     compensação (quem não transpõe com a música transposta) ou o panner (tom 0).
+    //     compensação (quem não transpõe com a música transposta) ou o panner (tom 0). Toda voz
+    //     nova entra por aqui, inclusive as do cruzamento da T28: quando o Click ou a Guia vira
+    //     Normal, o atraso velho já saiu do mapa (detachEarDelay) e a voz nova ganha um atraso
+    //     novo, sem nada a registrar (não há mais mapa de voz pra entrada).
+    //   soundingUntilRef: até quando ainda sai som do que já foi solto (cauda da soltura e
+    //     bipe cancelado, mais o L da compensação). Conta como "algo soando" pro corte das
+    //     trocas de rota; quem soltar vozes fora do stopAllNodes (o pulo da T28) atualiza junto.
     //   countDestination(): onde a contagem entra. A entrada do canal de click (pelo papel; a
     //     contagem passa pelo pan, fader e M dele) ou, sem canal de click, o atraso da
     //     contagem do grafo (graph.countDelay, R-35) com o mesmo atraso da compensação.
@@ -570,8 +576,6 @@ export function useAudioEngine(userId?: string) {
     const playChainRef = useRef<{ songId: string | null; channels: Channel[]; pitch: number; compensation: number | null } | null>(null);
     // Instante (tempo do contexto) em que cada voz começa: a soltura para já a que ainda não começou.
     const voiceStartsRef = useRef(new WeakMap<Voice, number>());
-    // Entrada em que cada voz ligou (worklet, atraso de compensação ou panner).
-    const voiceEntriesRef = useRef(new WeakMap<Voice, AudioNode>());
     // Até quando ainda sai som do que já foi solto: a cauda da soltura das vozes (em ganho 1 até
     // a folga do corte, depois descendo) e o fim de um bipe cancelado. Conta como "algo soando"
     // pro corte das trocas de rota (rodada 1 da T26: I1 e Minor c da revisão).
@@ -690,18 +694,21 @@ export function useAudioEngine(userId?: string) {
     };
 
     // Canal que sai do ouvido (Click ou Guia virando Normal) com a música transposta: o atraso de
-    // compensação dele guarda os últimos L segundos (~0,12 s) do que entrou nele (o click, a guia,
-    // o bipe da contagem). Ligado na rota nova, ele soltaria isso na VS depois que o corte da
-    // troca já subiu. Chamado no fundo do corte: o atraso sai do caminho e é descartado com o que
-    // guarda (desligar e religar o mesmo nó não serve: ele soltaria o conteúdo ao ser religado);
-    // se ainda for preciso, o getLatencyDelay cria outro. Fica só se uma voz que toca agora já
-    // entrou nele (worklet que falhou: o canal toca pelo atraso, agora como Normal, de propósito).
-    const dropEarDelay = (channelId: string) => {
+    // compensação dele guarda os últimos L segundos (~0,12 s) do que entrou nele como Click ou
+    // Guia (o click, a guia, o bipe da contagem). Esse conteúdo nunca pode sair na VS:
+    //   - no pedido, o atraso sai do mapa do canal (detachEarDelay): voz nova nenhuma entra nele,
+    //     nem a do reinício com o worklet que falhou (essa ganha um atraso novo e vazio pelo
+    //     getLatencyDelay e toca como Normal, de propósito);
+    //   - até o fundo do corte ele continua entregando no panner, com o fader ainda no barramento
+    //     do ouvido (é conteúdo de Click ou Guia, vai pro ouvido);
+    //   - no fundo do corte (todos os barramentos em 0) ele é desligado e descartado com o que
+    //     guarda, junto com a troca do fader. Desligar e religar o mesmo nó não serviria: ele
+    //     soltaria o conteúdo ao ser religado.
+    const detachEarDelay = (channelId: string): DelayNode | null => {
         const comp = pitchDelaysRef.current.get(channelId);
-        if (!comp) return;
-        if (voicesRef.current.some((v) => voiceEntriesRef.current.get(v) === comp.delay)) return;
-        comp.delay.disconnect();
+        if (!comp) return null;
         pitchDelaysRef.current.delete(channelId);
+        return comp.delay;
     };
 
     const releasePitchNodesExcept = (keep: Channel[]) => {
@@ -1275,8 +1282,10 @@ export function useAudioEngine(userId?: string) {
             // Bipe soando agora desce e para em 20 ms: até lá ele ainda conta como som. Com a
             // música transposta a contagem entra num atraso de compensação (o do canal de click
             // ou o da contagem, R-35) e ainda sai L depois.
-            if (count.beats.some((b) => b.at <= now && now < b.at + COUNT_BEEP_LENGTH)) {
-                soundingUntilRef.current = Math.max(soundingUntilRef.current, now + COUNT_CANCEL_TAIL + (playChainRef.current?.compensation ?? 0));
+            const lag = playChainRef.current?.compensation ?? 0;
+            // Conta também o bipe que já parou na fonte mas ainda sai do atraso (até L depois).
+            if (count.beats.some((b) => b.at <= now && now < b.at + COUNT_BEEP_LENGTH + lag)) {
+                soundingUntilRef.current = Math.max(soundingUntilRef.current, now + COUNT_CANCEL_TAIL + lag);
             }
             count.cancel(now);
         }
@@ -1430,7 +1439,7 @@ export function useAudioEngine(userId?: string) {
             const count = beats > 0
                 ? scheduleCount(ctx, countDestination(), Array.from({ length: beats }, (_, k) => ({ at: t0 + k * pulse, label: k + 1 })))
                 : null;
-            return { t0, when, voices, count, specs };
+            return { t0, when, voices, count };
         };
 
         let scheduled = scheduleAll(START_LEAD_QUANTA);
@@ -1451,11 +1460,10 @@ export function useAudioEngine(userId?: string) {
             console.warn(`[tom] reinício reagendado com a folga de reserva (${++leadRetriesRef.current})`);
         }
 
-        const { when, voices, count, specs } = scheduled;
+        const { when, voices, count } = scheduled;
         voicesRef.current = voices;
         voices.forEach((v, i) => {
             voiceStartsRef.current.set(v, when);
-            voiceEntriesRef.current.set(v, specs[i].entry);
             channels[i].sourceNode = v.source;
         });
         timelineRef.current = [{ ctxStart: when, songStart: offset }];
@@ -2078,7 +2086,6 @@ export function useAudioEngine(userId?: string) {
         const at = Math.max(nextRenderQuantum(ctx, START_LEAD_QUANTA), first?.ctxStart ?? 0);
         const voice = startVoice(ctx, { channelId: ch.id, buffer: ch.buffer, entry, loop: isEndlessLoop(ch) }, at, positionAt(timelineRef.current, at, timeStretch), timeStretch);
         voiceStartsRef.current.set(voice, at);
-        voiceEntriesRef.current.set(voice, entry);
         voicesRef.current = [...voicesRef.current, voice];
         ch.sourceNode = voice.source;
         playChainRef.current = { ...chain, channels: [...chain.channels, ch] };
@@ -2474,12 +2481,14 @@ export function useAudioEngine(userId?: string) {
             // nele) e o panner recebe o pan efetivo do papel novo (com o pan automático em
             // "Tudo junto", o lado do papel), os dois no fundo do mesmo corte. O pan gravado
             // é o knob e não muda.
-            // Click ou Guia virando Normal: o atraso de compensação dele (música transposta) sai
-            // do caminho no mesmo fundo do corte, com o que guarda (nada dele na VS).
+            // Click ou Guia virando Normal: o atraso de compensação dele (música transposta) não
+            // recebe mais voz nenhuma e sai do caminho no mesmo fundo do corte, com o que guarda
+            // (nada dele na VS; ver detachEarDelay).
             const leavesEar = resolveChannelRole(before) !== 'normal' && resolveChannelRole(after) === 'normal';
+            const earDelay = leavesEar ? detachEarDelay(after.id) : null;
             if (ctx && graph && cuts) {
                 switchRoute(() => {
-                    if (leavesEar) dropEarDelay(after.id);
+                    earDelay?.disconnect();
                     moveFaderToRole(cuts, after);
                     syncChannelPan(ctx, after, graph.plan, autoPanRef.current, false);
                 });

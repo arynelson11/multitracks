@@ -31,6 +31,8 @@ const mem = vi.hoisted(() => ({
   metaGate: null as Promise<void> | null,
   // Segura o nascimento do worklet de tom até o teste liberar.
   pitchGate: null as Promise<void> | null,
+  // Faz o worklet novo falhar (o motor toca a faixa sem transpor, pelo atraso de compensação).
+  pitchFail: false,
 }))
 
 const isMetaKey = (key: string) => key.startsWith('mt_meta_playlist')
@@ -50,6 +52,7 @@ vi.mock('signalsmith-stretch', async () => {
   return {
     default: async (ctx: BaseAudioContext) => {
       if (mem.pitchGate) await mem.pitchGate
+      if (mem.pitchFail) throw new Error('WASM do worklet de tom falhou (teste)')
       return Object.assign(new FakeWorkletNode(ctx, 'signalsmith-stretch'), {
         start: async () => {}, stop: async () => {}, schedule: async () => {}, latency: async () => PITCH_LATENCY,
       })
@@ -83,6 +86,7 @@ beforeEach(() => {
   mem.db.clear()
   mem.metaGate = null
   mem.pitchGate = null
+  mem.pitchFail = false
   mem.ctx = null
   mem.ctxOpts = {}
   mem.settings = { autoPan: false, audioDeviceId: 'default', outputs: SPLIT, legacyPanReset: false }
@@ -561,6 +565,63 @@ describe('cauda do bipe e da soltura dentro do corte das trocas', () => {
     await act(async () => { hook.rerender() })
     expect(hook.result.current.outputPlan.mode).toBe('split2')
     expect(cutRamps(cutVs())).toEqual([0, 1])
+  })
+})
+
+// Ajuste final (re-revisão da rodada 2, M1 e M2).
+describe('atraso de compensação de quem sai do ouvido', () => {
+  it('tom +2: bipe que já parou na fonte mas ainda sai do atraso conta como som (pausa e troca de rota passam pelo corte)', async () => {
+    precountOn(4)
+    seed(song({ bpm: 120, pitch: 2 }))
+    const hook = await openApp()
+    await act(async () => { await hook.result.current.playWithPrecount() })
+    const t0 = startAt(0)
+    // O 2º bipe parou na fonte há 10 ms (t0 + 0,5 + 0,22) e ainda sai do atraso até L depois.
+    ctxOf().currentTime = t0 + 0.5 + 0.22 + 0.01
+    act(() => { hook.result.current.pause() })
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    await act(async () => { hook.rerender() })
+    expect(cutRamps(cutVs())).toEqual([0])
+    await letAudioRun()
+    expect(cutRamps(cutVs())).toEqual([0, 1])
+    expect(hook.result.current.outputPlan.mode).toBe('stereo')
+  })
+
+  it('tom +2, worklet novo falhando: o Click que vira Normal toca por um atraso novo e nada do que o atraso velho guardava sai na VS', async () => {
+    seed(song({ pitch: 2 }))
+    const hook = await openApp()
+    await act(async () => { await hook.result.current.play() })
+    const click = () => chan(hook, 'click')
+    const oldDelay = asFake(entryOf(live(sourcesOf(hook, 'click'))[0]) as AudioNode)
+    expect(oldDelay.kind).toBe('DelayNode')
+    // Caminho do atraso velho até a saída da VS (saída 2) agora: 0, o fader está no Click.
+    const vsFrom = (node: FakeAudioNode) => {
+      const ctx = ctxOf()
+      const zeros = [...nodesOf(ctx, 'AudioBufferSourceNode'), ...nodesOf(ctx, 'AudioWorkletNode'), ...nodesOf(ctx, 'BiquadFilterNode')]
+        .filter((n) => n !== node).map((n): [unknown, Sig] => [n, [[0], [0]]])
+      return measure(ctx, new Map<unknown, Sig>([[node, [[1]]], ...zeros]), 1)[1][0]
+    }
+    expect(vsFrom(oldDelay)).toBe(0)
+    ctxOf().currentTime = 1
+    mem.pitchFail = true
+    await act(async () => { hook.result.current.setChannelMeta('click', { role: 'normal' }) })
+    // O reinício do papel trocado: o worklet do Click falha e a faixa toca pelo atraso, como Normal.
+    expect(error.mock.calls.some((c) => String(c[0]).includes('Worklet de tom falhou'))).toBe(true)
+    error.mockClear()
+    const [voice] = live(sourcesOf(hook, 'click'))
+    const newDelay = asFake(entryOf(voice) as AudioNode)
+    expect(newDelay.kind).toBe('DelayNode')
+    expect(newDelay).not.toBe(oldDelay)
+    expect(valueAt((newDelay as unknown as { delayTime: Parameters<typeof valueAt>[0] }).delayTime, ctxOf().currentTime)).toBe(PITCH_LATENCY)
+    expect(connectedTo(newDelay, click().pannerNode)).toBe(true)
+    // Até o fundo do corte o atraso velho ainda entrega no panner, mas o fader segue no Click.
+    expect(vsFrom(oldDelay)).toBe(0)
+    await letAudioRun()
+    expect(cutRamps(cutVs())).toEqual([0, 1])
+    // No fundo do corte ele saiu do caminho; só o atraso novo (o que entrou como Normal) chega na VS.
+    expect(oldDelay.connections).toEqual([])
+    expect(vsFrom(oldDelay)).toBe(0)
+    expect(vsFrom(newDelay)).toBeGreaterThan(0.5)
   })
 })
 
