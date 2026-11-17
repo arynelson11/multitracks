@@ -56,6 +56,30 @@ export const AUTO_CLICK_MIN_CONFIDENCE = 0.5
  */
 export const DOWNBEAT_MIN_MARGIN = 0.76
 
+/**
+ * Corte próprio do click sincronizado do Separador (Rulings M2-5, M2-7 e M7-arquivos): com
+ * confiança abaixo dele o click sai no BPM digitado a partir de 0:00 e o "detectar BPM" avisa
+ * "Pulso pouco claro". No Separador a grade sai de UMA faixa (`detectBeatGrid`): a bateria
+ * separada ou, na separação em 2 faixas, o instrumental; no click, refinada em volta do BPM
+ * digitado (`nearBpm`). Medido na M7 com as multitracks reais do dono (música inteira,
+ * gabarito pela faixa de click; bateria = soma das faixas de pulso, instrumental = tudo menos
+ * click, guia e vozes):
+ * - bateria com o BPM digitado: as 39 grades certas têm de 0,535 a 1 (nenhuma volta pro 0:00
+ *   com qualquer corte até 0,5);
+ * - instrumental com o BPM digitado: certas a partir de 0,056 e erradas até 0,127; o corte
+ *   fica no vão entre 0,127 e a certa seguinte (0,155): 2 de 42 certas voltam pro 0:00 e
+ *   nenhuma das 3 erradas passa. Com o porteiro 0,5 do Metrônomo, 30 das 42 voltariam;
+ * - stems separadas do demo (24 s, BPM digitado 135): bateria 0,40 (alinha; com 0,5 voltaria
+ *   pro 0:00), as outras de 0,05 a 0,19.
+ * Nunca o `CONFIDENCE_CUT` (0,72, só sintéticos), que mandaria a bateria real de volta pro 0:00.
+ */
+export const SEPARATOR_MIN_CONFIDENCE = 0.14
+
+/** A grade medida no Separador vale pro click (e o pulso é claro); senão o click sai do BPM digitado em 0:00. */
+export function separatorGridUsable<G extends { confidence: number }>(grid: G | null | undefined): grid is G {
+  return !!grid && grid.confidence >= SEPARATOR_MIN_CONFIDENCE
+}
+
 /** O que o operador precisa conferir antes de confiar no click. */
 export type AutoClickCheck = 'um' | 'contratempo' | 'bpm-salvo' | 'andamento'
 
