@@ -1,11 +1,14 @@
 // Custo de IA por trabalho (separação no Replicate), gravado na tabela predictions.
 // O Replicate cobra os modelos públicos só pelo tempo de processamento
 // (metrics.predict_time) vezes o preço por segundo do hardware em que o modelo roda.
-// O custo em R$ usa a PTAX de venda pura do dia (api/_lib/fx.ts), sem IOF nem spread.
+// O custo em R$ usa a PTAX de venda pura do dia de Brasília do trabalho (completed_at,
+// ou created_at), ou a do último dia útil antes dele (api/_lib/fx.ts), sem IOF nem
+// spread; nunca o câmbio de outro dia.
 // Versão sem preço conhecido fica sem custo (tudo nulo) e é contada à parte no painel;
 // nunca entra na soma como zero.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { addDays, brtToday } from './billing.js'
 import type { FxRate } from './fx.js'
 
 // Versão do cjwbw/demucs que o app usa (api/separate-audio.ts passa a importar daqui na T23).
@@ -112,6 +115,8 @@ function modelNameFromInput(input: unknown): string | null {
 
 type StoredRow = { model: string | null; version: string | null; stem_count: number | null; cost_recorded_at: string | null }
 
+// fx é a PTAX do dia de Brasília do trabalho (getUsdBrlOn) ou null; com null, o
+// trabalho fica só com o dólar e a varredura completa o R$ depois.
 export async function recordPredictionResult(
   db: SupabaseClient,
   p: ReplicatePredictionLike,
@@ -175,10 +180,28 @@ async function markUnknown(db: SupabaseClient, id: string, now: Date): Promise<b
   return !error
 }
 
+// Dia de Brasília do trabalho: o primeiro instante que der pra ler (completed_at, depois created_at).
+function jobDay(...instants: unknown[]): string | null {
+  for (const v of instants) {
+    if (typeof v !== 'string') continue
+    const t = Date.parse(v)
+    if (Number.isFinite(t)) return brtToday(new Date(t))
+  }
+  return null
+}
+
+// Cotação que serve pro dia: do próprio dia ou de até 8 dias antes (o último dia útil,
+// mesma janela do getUsdBrlOn). Qualquer outra vira null.
+const FX_MAX_DAYS_BEFORE = 8
+function fxUsableFor(fx: FxRate | null, day: string): fx is FxRate {
+  return !!fx && Number.isFinite(fx.rate) && fx.rate > 0 && typeof fx.date === 'string'
+    && fx.date <= day && fx.date >= addDays(day, -FX_MAX_DAYS_BEFORE)
+}
+
 export async function sweepPendingCosts(
   db: SupabaseClient,
   getPrediction: (id: string) => Promise<ReplicatePredictionLike | null>,
-  getFx: () => Promise<FxRate | null>,
+  getFx: (day: string) => Promise<FxRate | null>,
   opts: { now: Date; limit: number; budgetMs: number; olderThanMs: number; clock?: () => number },
 ): Promise<{ recorded: number; unknown: number; failed: number; brlCompleted: number; more: boolean }> {
   const clock = opts.clock ?? Date.now
@@ -187,39 +210,61 @@ export async function sweepPendingCosts(
   const limit = Math.max(0, Math.floor(opts.limit))
   const out = { recorded: 0, unknown: 0, failed: 0, brlCompleted: 0, more: false }
 
-  let fx: FxRate | null = null
-  try {
-    fx = await getFx()
-  } catch (e) {
-    console.error('[aiCost] câmbio indisponível na varredura:', e instanceof Error ? e.message : 'erro')
+  // Câmbio por dia, pedido uma vez por dia nesta varredura. Um dia que já passou sem
+  // câmbio quer dizer Banco Central fora: os dias novos desta varredura ficam sem R$
+  // sem consultar de novo (cada consulta pode levar segundos).
+  const today = brtToday(opts.now)
+  const fxByDay = new Map<string, Promise<FxRate | null>>()
+  let fxDown = false
+  const fxFor = (day: string | null): Promise<FxRate | null> => {
+    if (!day) return Promise.resolve(null)
+    const known = fxByDay.get(day)
+    if (known) return known
+    if (fxDown) return Promise.resolve(null)
+    const pending = getFx(day).then(
+      (fx) => (fxUsableFor(fx, day) ? fx : null),
+      (e: unknown) => {
+        console.error('[aiCost] câmbio indisponível na varredura:', day, e instanceof Error ? e.message : 'erro')
+        return null
+      },
+    ).then((fx) => {
+      if (!fx && day < today) fxDown = true
+      return fx
+    })
+    fxByDay.set(day, pending)
+    return pending
   }
-  const rate = fx && Number.isFinite(fx.rate) && fx.rate > 0 ? fx.rate : null
 
-  // 1) Com câmbio, completa o R$ de quem já tem o dólar (sem chamar o Replicate).
-  if (fx && rate != null) {
+  // 1) Completa o R$ de quem já tem o dólar, com o câmbio do dia do trabalho (sem
+  // chamar o Replicate). Sem câmbio pra aquele dia, fica pra próxima varredura.
+  {
     const { data, error } = await db
       .from('predictions')
-      .select('replicate_id, cost_usd, created_at')
+      .select('replicate_id, cost_usd, created_at, completed_at')
       .gte('cost_usd', 0)
       .is('cost_brl', null)
       .order('created_at', { ascending: true })
       .limit(limit + 1)
     if (error) throw new Error(`Não deu pra ler os trabalhos sem custo em real: ${error.message}`)
-    const rows = (data ?? []) as { replicate_id: string; cost_usd: number | string | null }[]
+    const rows = (data ?? []) as { replicate_id: string; cost_usd: number | string | null; created_at: unknown; completed_at: unknown }[]
     if (rows.length > limit) out.more = true
     for (const r of rows.slice(0, limit)) {
       if (overBudget()) { out.more = true; break }
       const usd = Number(r.cost_usd)
       if (r.cost_usd == null || !Number.isFinite(usd) || usd < 0) continue
-      const { error: updErr } = await db
+      const fx = await fxFor(jobDay(r.completed_at, r.created_at))
+      if (!fx) continue
+      // .select: só conta o que esta varredura gravou (duas abas varrendo juntas).
+      const { data: hit, error: updErr } = await db
         .from('predictions')
-        .update({ cost_brl: round(usd * rate, 4), fx_usd_brl: rate, fx_date: fx.date })
+        .update({ cost_brl: round(usd * fx.rate, 4), fx_usd_brl: fx.rate, fx_date: fx.date })
         .eq('replicate_id', r.replicate_id)
         .is('cost_brl', null)
+        .select('replicate_id')
       if (updErr) {
         console.error('[aiCost] não deu pra completar o real do trabalho:', r.replicate_id, updErr.message)
         out.failed += 1
-      } else {
+      } else if (Array.isArray(hit) && hit.length > 0) {
         out.brlCompleted += 1
       }
     }
@@ -235,10 +280,10 @@ export async function sweepPendingCosts(
     .order('created_at', { ascending: true })
     .limit(limit + 1)
   if (error) throw new Error(`Não deu pra ler os trabalhos sem custo: ${error.message}`)
-  const pending = (data ?? []) as { replicate_id: string }[]
+  const pending = (data ?? []) as { replicate_id: string; created_at: unknown }[]
   if (pending.length > limit) out.more = true
 
-  for (const { replicate_id: id } of pending.slice(0, limit)) {
+  for (const { replicate_id: id, created_at: createdAt } of pending.slice(0, limit)) {
     if (overBudget()) { out.more = true; break }
 
     let prediction: ReplicatePredictionLike | null
@@ -260,9 +305,12 @@ export async function sweepPendingCosts(
     }
 
     try {
+      const status = normalizeStatus(prediction.status)
+      const running = status === 'starting' || status === 'processing'
+      const fx = running ? null : await fxFor(jobDay(prediction.completed_at, createdAt))
       const result = await recordPredictionResult(db, { ...prediction, id }, fx, opts.now)
       if (result === 'recorded') {
-        if (normalizeStatus(prediction.status) === 'unknown') out.unknown += 1
+        if (status === 'unknown') out.unknown += 1
         else out.recorded += 1
       }
     } catch (e) {

@@ -157,3 +157,84 @@ export async function getStoredUsdBrl(db: SupabaseClient, now: Date): Promise<Fx
   if (!latest) return null
   return { rate: latest.rate, date: latest.date, stale: !fetchedRecently(latest.fetchedAt, now) }
 }
+
+// ── Câmbio do dia de um trabalho (custo de IA, T12) ──
+//
+// O R$ de cada trabalho usa a PTAX de venda do dia de Brasília dele, ou a do
+// último dia útil antes dele (fim de semana e feriado não têm PTAX), nunca a de
+// outro dia. Sem cotação pra aquele dia, o resultado é null e o trabalho fica
+// sem R$ até a próxima varredura.
+
+const DAY_LOOKBACK_DAYS = 8
+
+// Entre `from` (exclusivo) e `to` (inclusivo) só há sábado e domingo, então
+// `from` é o último dia útil até `to`. Feriado não entra aqui: esse caso fica
+// pro Banco Central confirmar.
+function onlyWeekendAfter(from: string, to: string): boolean {
+  let gap = 0
+  for (let d = addDays(from, 1); d <= to; d = addDays(d, 1)) {
+    gap += 1
+    const weekday = new Date(`${d}T12:00:00Z`).getUTCDay()
+    if (gap > 2 || (weekday !== 0 && weekday !== 6)) return false
+  }
+  return true
+}
+
+// Grava as cotações consultadas sem enganar o getUsdBrl, que trata a linha mais
+// nova buscada há menos de 6 horas como "o Banco Central foi consultado agora".
+// Janela que termina hoje é a mesma consulta dele e grava tudo; janela de um dia
+// passado só grava o que é mais velho que a cotação mais nova já guardada.
+async function storeQuotes(db: SupabaseClient, quotes: { date: string; rate: number }[], day: string, today: string, now: Date): Promise<void> {
+  let toStore = quotes
+  if (day < today) {
+    const latest = await readLatest(db, today)
+    toStore = latest ? quotes.filter((q) => q.date < latest.date) : []
+  }
+  if (toStore.length === 0) return
+  try {
+    const fetchedAt = now.toISOString()
+    const { error } = await db
+      .from(FX_TABLE)
+      .upsert(toStore.map((q) => ({ rate_date: q.date, usd_brl: q.rate, source: FX_SOURCE, fetched_at: fetchedAt })), { onConflict: 'rate_date' })
+    if (error) console.warn('[fx] cambio do dia nao gravado:', error.message)
+  } catch (e) {
+    console.warn('[fx] cambio do dia nao gravado:', errMsg(e))
+  }
+}
+
+// PTAX de venda do dia `day` (AAAA-MM-DD, Brasília) ou do último dia útil antes
+// dele. Lê fx_rates; sem o dia guardado, consulta o Banco Central (janela de 8
+// dias até `day`) e grava. Banco Central fora, ou hoje antes de a PTAX sair:
+// null. Nunca lança.
+export async function getUsdBrlOn(
+  db: SupabaseClient,
+  day: string,
+  deps: { now?: Date; fetchFn?: typeof fetch; timeoutMs?: number } = {},
+): Promise<FxRate | null> {
+  const now = deps.now ?? new Date()
+  const today = brtToday(now)
+  if (!DATE_RE.test(day) || !Number.isFinite(Date.parse(`${day}T00:00:00Z`)) || day > today) return null
+
+  const stored = await readLatest(db, day)
+  if (stored && onlyWeekendAfter(stored.date, day)) return { rate: stored.rate, date: stored.date, stale: false }
+
+  let quotes: { date: string; rate: number }[]
+  try {
+    const fetchFn = deps.fetchFn ?? globalThis.fetch
+    quotes = await fetchPtax(ptaxPeriodUrl(addDays(day, -DAY_LOOKBACK_DAYS), day), fetchFn, deps.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+  } catch (e) {
+    console.warn('[fx] consulta ao Banco Central falhou, o trabalho fica sem real por enquanto:', errMsg(e))
+    return null
+  }
+  const inWindow = quotes.filter((q) => q.date <= day)
+  const newest = inWindow[inWindow.length - 1]
+  if (!newest) return null
+  await storeQuotes(db, inWindow, day, today, now)
+
+  // Dia que já passou: a mais nova que o Banco Central tem até ele é a do último
+  // dia útil. Hoje: só a do próprio dia (ou a de sexta no fim de semana).
+  if (newest.date === day || day < today || onlyWeekendAfter(newest.date, day)) {
+    return { rate: newest.rate, date: newest.date, stale: false }
+  }
+  return null
+}

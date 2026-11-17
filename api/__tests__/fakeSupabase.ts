@@ -40,6 +40,19 @@ const DEFAULT_PKS: Record<string, string> = {
   asaas_webhook_events: 'id',
 }
 
+// Instante ISO ("2026-12-01T03:00:00Z", "2026-11-30T23:30:00-03:00"): o banco compara
+// como timestamptz, então precisão e fuso diferentes não podem virar comparação de texto.
+const ISO_INSTANT_RE = /^\d{4}-\d{2}-\d{2}T/
+function gteValue(a: unknown, b: unknown): boolean {
+  if (typeof a === 'number') return a >= Number(b)
+  if (typeof a === 'string' && typeof b === 'string' && ISO_INSTANT_RE.test(a) && ISO_INSTANT_RE.test(b)) {
+    const ta = Date.parse(a)
+    const tb = Date.parse(b)
+    if (Number.isFinite(ta) && Number.isFinite(tb)) return ta >= tb
+  }
+  return String(a) >= String(b)
+}
+
 class QueryBuilder implements PromiseLike<DbResult> {
   private filters: Filter[] = []
   private op: 'select' | 'insert' | 'upsert' | 'update' | 'delete' = 'select'
@@ -90,7 +103,7 @@ class QueryBuilder implements PromiseLike<DbResult> {
       if (f.op === 'neq') return row[f.col] !== f.value
       if (f.op === 'lte') return row[f.col] != null && String(row[f.col]) <= String(f.value)
       if (f.op === 'lt') return row[f.col] != null && (typeof row[f.col] === 'number' ? Number(row[f.col]) < Number(f.value) : String(row[f.col]) < String(f.value))
-      if (f.op === 'gte') return row[f.col] != null && (typeof row[f.col] === 'number' ? Number(row[f.col]) >= Number(f.value) : String(row[f.col]) >= String(f.value))
+      if (f.op === 'gte') return row[f.col] != null && gteValue(row[f.col], f.value)
       if (f.op === 'is') return f.value === null ? row[f.col] == null : row[f.col] === f.value
       return Array.isArray(f.value) && f.value.includes(row[f.col])
     })
