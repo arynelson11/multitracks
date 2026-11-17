@@ -10,7 +10,9 @@ export type CancelSource = 'user' | 'user_refund' | 'unpaid' | 'refund' | 'asaas
 export type Overview = {
   // label vem do servidor ("novembro de 2026")
   month: { start: string; end: string; label: string }
-  revenue: { grossBrl: number; netBrl: number; payments: number; refundedBrl: number; refunds: number }
+  // refundedBrl e refunds: estornos confirmados no mês, já fora do recebido; disputed: cobranças do mês em
+  // estorno pedido, estorno em andamento ou contestação, fora do recebido e do estornado
+  revenue: { grossBrl: number; netBrl: number; payments: number; refundedBrl: number; refunds: number; disputed: number }
   // servidor: assinaturas pagas ativas que renovam vezes o preço da tabela, anual dividido por 12
   mrrBrl: number
   subscribers: {
@@ -85,8 +87,10 @@ export function countEntries(v: unknown): CountEntry[] | null {
  * A resposta tem a forma que a tela usa (Ruling ADM-T7-forma): as seções são objetos, o mês tem o
  * nome e os alertas vêm completos. Os alertas são conferidos campo a campo porque a tela diz "Nada
  * pedindo atenção agora." com eles zerados: alerta que falta nunca vira zero. O total sem custo
- * (aiCost.withoutCost) também: sem ele a margem perderia o "Não inclui". Os outros números são lidos
- * um a um na tela, e o que faltar aparece como `sem dado`.
+ * (aiCost.withoutCost) também: sem ele a margem perderia o "Não inclui". E as cobranças em estorno ou
+ * contestação (revenue.disputed): a linha só aparece com alguma, e sem o número o dinheiro que saiu
+ * do recebido sumiria sem explicação. Os outros números são lidos um a um na tela, e o que faltar
+ * aparece como `sem dado`.
  */
 export function isOverview(v: unknown): v is Overview {
   if (!isObj(v)) return false
@@ -95,5 +99,8 @@ export function isOverview(v: unknown): v is Overview {
   if (![revenue, subscribers, cancellations, aiCost, fx].every(isObj)) return false
   if (!isObj(alerts) || typeof alerts.fxOld !== 'boolean') return false
   const totalWithoutCost = isObj(aiCost) ? aiCost.withoutCost : null
-  return [alerts.manual, alerts.auto, alerts.blockedWithActiveSub, alerts.withoutCostPending, totalWithoutCost].every((n) => countOf(n) !== null)
+  const disputed = isObj(revenue) ? revenue.disputed : null
+  return [alerts.manual, alerts.auto, alerts.blockedWithActiveSub, alerts.withoutCostPending, totalWithoutCost, disputed].every(
+    (n) => countOf(n) !== null,
+  )
 }

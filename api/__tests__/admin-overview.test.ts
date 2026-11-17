@@ -43,7 +43,7 @@ async function get(query: Record<string, unknown> = {}): Promise<FakeRes> {
 function overviewSql(over: Row = {}): Row {
   return {
     month: { start: '2026-11-01', end: '2026-11-30' },
-    revenue: { grossBrl: 480.5, netBrl: 452.3, payments: 6, refundedBrl: 49.9, refunds: 1 },
+    revenue: { grossBrl: 480.5, netBrl: 452.3, payments: 6, refundedBrl: 49.9, refunds: 1, disputed: 2 },
     subscribers: {
       activeByPlan: { essencial_mensal: 2, pro_anual: 1 },
       endingByPlan: { pro_mensal: 1 },
@@ -156,7 +156,7 @@ describe('ação overview', () => {
     expect(res.statusCode).toBe(200)
     expect(res.body).toEqual({
       month: { start: '2026-11-01', end: '2026-11-30', label: 'novembro de 2026' },
-      revenue: { grossBrl: 480.5, netBrl: 452.3, payments: 6, refundedBrl: 49.9, refunds: 1 },
+      revenue: { grossBrl: 480.5, netBrl: 452.3, payments: 6, refundedBrl: 49.9, refunds: 1, disputed: 2 },
       mrrBrl: 189.7,
       subscribers: overviewSql().subscribers,
       cancellations: { total: 2, bySource: { user: 1, unpaid: 1 } },
@@ -218,7 +218,7 @@ describe('ação overview', () => {
 
   it('margem fica negativa quando a IA custa mais que a receita líquida', async () => {
     sql = overviewSql({
-      revenue: { grossBrl: 10, netBrl: 9.5, payments: 1, refundedBrl: 0, refunds: 0 },
+      revenue: { grossBrl: 10, netBrl: 9.5, payments: 1, refundedBrl: 0, refunds: 0, disputed: 0 },
       aiCost: { jobs: 50, succeeded: 50, failed: 0, costBrl: 12.4, costUsd: 2.31, withoutCost: 0, withoutCostPending: 0 },
     })
     const res = await get()

@@ -195,9 +195,15 @@ function Totals({ totals }: { totals: FinanceTotals }) {
         <Tile label="Líquido" value={fmtBRL(totals.netBrl)} sub="Depois das taxas do Asaas" />
         <Tile label="Pagas" value={fmtCount(totals.paidCount)} sub="Cobranças pagas" />
         {/* Estorno pedido ou em andamento fica fora do total (Ruling ADM-T22-totais). */}
-        <Tile label="Estornado" value={fmtBRL(totals.refundedBrl)} sub="Só estorno confirmado" />
+        <Tile label="Estornado" value={fmtBRL(totals.refundedBrl)} sub="Só estorno confirmado, já fora do recebido" />
         <Tile label="Vencido no período" value={fmtBRL(totals.overdueBrl)} sub={overdueSub} alert={hasOverdue} />
       </div>
+      {/* Nem recebido nem estornado: contado à parte pra a diferença pro painel do Asaas não sumir. */}
+      {totals.disputedCount > 0 && (
+        <p className="text-ps-sm text-ps-mut break-words">
+          <span className="ps-num">{fmtCount(totals.disputedCount)}</span> em estorno ou contestação, fora do recebido
+        </p>
+      )}
     </section>
   )
 }

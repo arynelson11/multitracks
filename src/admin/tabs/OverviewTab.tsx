@@ -5,8 +5,9 @@
 //   (Ruling ADM-T7-forma).
 // * Número que parece certo e está errado avisa (Review Focus 4): trabalho sem custo fica fora da
 //   soma e é contado à parte no custo e na margem; assinatura antiga sem registro fica fora do MRR e
-//   a tela diz; câmbio com mais de 4 dias, ou sem câmbio, acende o alerta e a linha do câmbio em
-//   âmbar, sempre com a data.
+//   a tela diz; o estorno diz que já está fora do recebido, e a cobrança em estorno ou contestação
+//   (fora do recebido e do estornado) é contada à parte; câmbio com mais de 4 dias, ou sem câmbio,
+//   acende o alerta e a linha do câmbio em âmbar, sempre com a data.
 // * O total de Pendências e o Led da aba ficam na casca (AdminShell); aqui só os alertas do mês.
 import { useId } from 'react'
 import type React from 'react'
@@ -193,6 +194,8 @@ function NumberPanel({ label, value, children }: { label: string; value: string;
 function Numbers({ data }: { data: Overview }) {
   const { revenue, aiCost, fx, alerts } = data
   const refunds = countOf(revenue.refunds)
+  // A guarda (isOverview) garante o número: com alguma, a linha explica o que saiu do recebido.
+  const disputed = revenue.disputed
   const jobs = countOf(aiCost.jobs)
   const legacy = countOf(data.subscribers.legacyPaid)
   // As notas contam o total sem custo (fora da soma); o âmbar só acende com pendentes, como o alerta.
@@ -216,9 +219,14 @@ function Numbers({ data }: { data: Overview }) {
               <Counted n={refunds} one="estorno" many="estornos" missing="Estornos" />
               {refunds !== null && (
                 <>
-                  , <Num>{fmtBRL(amountOf(revenue.refundedBrl))}</Num>
+                  , <Num>{fmtBRL(amountOf(revenue.refundedBrl))}</Num>, já fora do recebido
                 </>
               )}
+            </p>
+          )}
+          {disputed > 0 && (
+            <p className={NOTE}>
+              <Num>{fmtInt(disputed)}</Num> em estorno ou contestação, fora do recebido
             </p>
           )}
         </NumberPanel>

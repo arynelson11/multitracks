@@ -9,7 +9,7 @@
 -- ╚══════════════════════════════════════════════════════════════════════╝
 --
 -- Regras (plano do admin central, D10, D11, D18, D20 e seção C):
--- * Só o backend (service_role) chama as quatro funções. As que mudam algo
+-- * Só o backend (service_role) chama as cinco funções. As que mudam algo
 --   (bloqueio e cota) recusam com 42501 quem não é admin (public.is_admin_user)
 --   e gravam o registro (admin_audit_log) na mesma transação: sem registro,
 --   nada muda. Resposta que não muda nada (already, is_admin, not_found,
@@ -24,6 +24,9 @@
 -- * Plano efetivo: profiles.plan, ou 'free' se plan_expires_at já passou.
 -- * Trabalho sem custo = cost_recorded_at, cost_usd ou cost_brl nulo; as somas
 --   em R$ só somam quem tem custo.
+-- * Plano de cada cobrança na ficha: o da hora da cobrança, pela mesma função
+--   do Financeiro (public.admin_payment_plan, seção 2; Ruling
+--   ADM-T22-plano-historico). O numeros a chama, por isso roda depois deste.
 -- * O perfil continua protegido pelo gatilho profiles_guard_protected
 --   (db/supabase_admin_papel.sql): só as funções security definer e o backend
 --   mudam papel, bloqueio, plano e cota. Este arquivo não mexe nele.
@@ -224,14 +227,53 @@ begin
 end;
 $$;
 
--- ─── 2. Ficha da conta (formato SubscriberDetailData sem os campos do servidor) ─
+-- ─── 2. Plano da hora de cada cobrança (a ficha e o Financeiro) ────────────
+-- Ruling ADM-T22-plano-historico, numa função só pra a ficha (admin_subscriber_detail,
+-- abaixo) e o Financeiro (admin_finance, db/supabase_admin_numeros.sql) mostrarem o
+-- mesmo plano pra mesma cobrança. "Mudar plano" reescreve o plan_key da mesma
+-- assinatura e grava no registro do admin (change_plan, ok, target_ref = id da
+-- assinatura, before.planKey = plano antigo; o registro só aceita inserir e fechar).
+-- O dia da cobrança é o do pagamento (confirmed_date, depois payment_date) ou, sem
+-- pagamento, o do vencimento. Vale o before.planKey da primeira troca confirmada
+-- feita depois desse dia (de Brasília); sem troca depois, o plano atual da
+-- assinatura (p_current_plan). Troca no mesmo dia conta no plano novo.
+-- Mora aqui porque este arquivo roda antes do numeros (ordem do lançamento). Só lê
+-- o registro e roda com os direitos de quem chama (as duas funções acima são
+-- security definer); como as outras internas, só o backend executa (seção 6).
+create or replace function public.admin_payment_plan(
+  p_subscription_ref text,
+  p_confirmed_date date,
+  p_payment_date date,
+  p_due_date date,
+  p_current_plan text)
+returns text
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select coalesce((
+           select a.before ->> 'planKey'
+             from public.admin_audit_log a
+            where a.action = 'change_plan'
+              and a.result = 'ok'
+              and a.target_ref = p_subscription_ref
+              and coalesce(a.finished_at, a.created_at)
+                  >= (coalesce(p_confirmed_date, p_payment_date, p_due_date) + 1)::timestamp
+                     at time zone 'America/Sao_Paulo'
+            order by coalesce(a.finished_at, a.created_at), a.id
+            limit 1),
+         p_current_plan);
+$$;
+
+-- ─── 3. Ficha da conta (formato SubscriberDetailData sem os campos do servidor) ─
 -- Nulo se a conta não existe. O servidor acrescenta quota.limit, plans,
 -- asaasLive e mismatches.
 -- quota:         used = tokens_used se o contador é do mês atual, senão 0; bonus =
 --                quota_bonus se o extra é do mês atual, senão 0; periodStart e
 --                resetsAt como get_my_separation_usage.
 -- subscriptions: todas as assinaturas e cortesias da conta, mais novas primeiro.
--- payments:      as 50 cobranças mais novas da conta (pelo vencimento).
+-- payments:      as 50 cobranças mais novas da conta (pelo vencimento), cada uma
+--                com o plano da hora dela (admin_payment_plan, seção 2).
 -- legacyPayments: pagamentos do registro antigo (public.payments).
 -- separations:   do mês de Brasília e o total.
 -- aiCost:        R$ do mês e do total, só de quem tem custo; e os sem custo.
@@ -317,7 +359,8 @@ begin
                'subscriptionRef', b.subscription_ref,
                'originalDueDate', b.original_due_date
              ) order by b.due_date desc nulls last, b.created_at desc, b.asaas_payment_id desc), '[]'::jsonb)
-        from (select bp.*, s.plan_key
+        from (select bp.*,
+                     public.admin_payment_plan(bp.subscription_ref, bp.confirmed_date, bp.payment_date, bp.due_date, s.plan_key) as plan_key
                 from public.billing_payments bp
                 left join public.billing_subscriptions s on s.id = bp.subscription_ref
                where bp.user_id = p_user
@@ -374,7 +417,7 @@ begin
 end;
 $$;
 
--- ─── 3. Bloquear e desbloquear (D10) ────────────────────────────────────────
+-- ─── 4. Bloquear e desbloquear (D10) ────────────────────────────────────────
 -- Respostas: not_found (conta sem perfil); is_admin (bloquear conta admin);
 -- already (já está como pedido); blocked (grava blocked_at = now(),
 -- blocked_reason e blocked_by = p_admin) ou unblocked (limpa os três), com o
@@ -432,7 +475,7 @@ begin
 end;
 $$;
 
--- ─── 4. Ajustar a cota do mês (D11) ─────────────────────────────────────────
+-- ─── 5. Ajustar a cota do mês (D11) ─────────────────────────────────────────
 -- p_mode reset: tokens_used = 0 e tokens_period_start = começo do mês atual.
 -- p_mode add (p_amount de 1 a 500): soma em quota_bonus se o extra é do mês atual,
 -- senão começa do zero, e grava quota_bonus_period = começo do mês atual.
@@ -498,7 +541,7 @@ begin
 end;
 $$;
 
--- ─── 5. Só o backend executa ────────────────────────────────────────────────
+-- ─── 6. Só o backend executa ────────────────────────────────────────────────
 revoke execute on function public.admin_list_subscribers(text, text, text, text, text, int, int) from public, anon, authenticated;
 grant  execute on function public.admin_list_subscribers(text, text, text, text, text, int, int) to service_role;
 revoke execute on function public.admin_subscriber_detail(uuid) from public, anon, authenticated;
@@ -507,6 +550,8 @@ revoke execute on function public.admin_set_block(uuid, uuid, boolean, text) fro
 grant  execute on function public.admin_set_block(uuid, uuid, boolean, text) to service_role;
 revoke execute on function public.admin_adjust_quota(uuid, uuid, text, int) from public, anon, authenticated;
 grant  execute on function public.admin_adjust_quota(uuid, uuid, text, int) to service_role;
+revoke execute on function public.admin_payment_plan(text, date, date, date, text) from public, anon, authenticated;
+grant  execute on function public.admin_payment_plan(text, date, date, date, text) to service_role;
 
 commit;
 
@@ -520,6 +565,14 @@ select p.proname,
  where p.pronamespace = 'public'::regnamespace
    and p.proname in ('admin_list_subscribers', 'admin_subscriber_detail', 'admin_set_block', 'admin_adjust_quota')
  order by p.proname;
+-- Espera 1 linha, admin_payment_plan, com backend = true e usuario = false (definer = false:
+-- roda com os direitos da ficha e do Financeiro, que são security definer).
+select p.proname,
+       p.prosecdef as definer,
+       has_function_privilege('service_role', p.oid, 'execute') as backend,
+       has_function_privilege('authenticated', p.oid, 'execute') or has_function_privilege('anon', p.oid, 'execute') as usuario
+  from pg_proc p
+ where p.pronamespace = 'public'::regnamespace and p.proname = 'admin_payment_plan';
 -- Espera 1 linha: o gatilho que protege o perfil continua ligado (tgenabled = O).
 select tgname, tgenabled from pg_trigger
  where tgrelid = 'public.profiles'::regclass and tgname = 'profiles_guard_protected';

@@ -29,7 +29,7 @@ const aiCostWith = (withoutCost: number, withoutCostPending = 0) =>
 function overview(over: Partial<Overview> = {}): Overview {
   return {
     month: { start: '2026-11-01', end: '2026-11-30', label: 'novembro de 2026' },
-    revenue: { grossBrl: 480.5, netBrl: 452.3, payments: 6, refundedBrl: 49.9, refunds: 1 },
+    revenue: { grossBrl: 480.5, netBrl: 452.3, payments: 6, refundedBrl: 49.9, refunds: 1, disputed: 0 },
     mrrBrl: 172.7,
     subscribers: {
       activeByPlan: { essencial_mensal: 2, pro_anual: 1 },
@@ -86,6 +86,28 @@ describe('OverviewTab', () => {
     for (const name of ['Recebido no mês', 'MRR', 'Custo de IA no mês', 'Margem do mês']) {
       expect(group(name).querySelector('.ps-num'), name).not.toBeNull()
     }
+  })
+
+  // FINAL-review, Minor 1: o estornado já saiu do recebido; estorno pedido, em andamento e
+  // contestação não estão em nenhum dos dois e contam à parte.
+  it('o estorno diz que já está fora do recebido, e estorno ou contestação contam à parte', async () => {
+    await show(overview({ revenue: { grossBrl: 480.5, netBrl: 452.3, payments: 6, refundedBrl: 49.9, refunds: 1, disputed: 2 } }))
+    const received = group('Recebido no mês')
+    expect(text(received)).toContain('1 estorno, R$ 49,90, já fora do recebido')
+    expect(text(received)).toContain('2 em estorno ou contestação, fora do recebido')
+    cleanup()
+    // Sem nenhum, a linha não aparece.
+    await show(overview())
+    expect(text(group('Recebido no mês'))).not.toContain('em estorno ou contestação')
+  })
+
+  it('sem a contagem de estorno ou contestação, a visão geral mostra a frase pronta', async () => {
+    const data = overview()
+    const revenue: Record<string, unknown> = { ...data.revenue }
+    delete revenue.disputed
+    h.adminGet.mockResolvedValue({ ...data, revenue })
+    render(<OverviewTab onNavigate={vi.fn()} focusUserId={null} />)
+    expect((await screen.findByRole('alert')).textContent).toBe(MSG_BAD_SHAPE)
   })
 
   it('a margem mostra a legenda do que fica de fora', async () => {
@@ -284,7 +306,7 @@ describe('OverviewTab', () => {
     const data = overview()
     const broken = {
       ...data,
-      revenue: { netBrl: 452.3, payments: 6, refundedBrl: 0, refunds: 0 },
+      revenue: { netBrl: 452.3, payments: 6, refundedBrl: 0, refunds: 0, disputed: 0 },
       subscribers: { activeByPlan: { essencial_mensal: 2 }, courtesyByPlan: { essencial_mensal: 'dois' }, blockedWithActiveSub: 0, legacyPaid: 0 },
       cancellations: { total: 1 },
     }

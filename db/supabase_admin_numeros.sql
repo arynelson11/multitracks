@@ -19,7 +19,13 @@
 --   líquido soma net_value (valores como o Asaas mandou).
 -- * Estorno: só o confirmado (REFUNDED), pela hora do estorno (refunded_at; sem
 --   ela, a hora do último evento). Estorno pedido ou em andamento não entra.
---   Cobrança estornada não é receita, nem no mês em que foi paga.
+--   Cobrança estornada não é receita, nem no mês em que foi paga: o estornado
+--   já está fora do recebido (a tela diz).
+-- * Em estorno ou contestação (REFUND_REQUESTED, REFUND_IN_PROGRESS,
+--   CHARGEBACK_REQUESTED, CHARGEBACK_DISPUTE e AWAITING_CHARGEBACK_REVERSAL): não
+--   é receita nem estornado. Conta à parte, por cobrança, pelo dia dela (o do
+--   pagamento, ou o vencimento sem pagamento, como as linhas do Financeiro), pra
+--   a diferença pro painel do Asaas não sumir sem explicação.
 -- * Vencido: cobrança que segue vencida hoje (OVERDUE), contada por cobrança.
 --   Nos totais do Financeiro, só as de vencimento dentro do período; a lista
 --   "No vermelho" traz todas, de qualquer período.
@@ -33,12 +39,9 @@
 --   db/supabase_admin_custos.sql); é o que acende o alerta da Visão geral
 --   (Ruling ADM-sem-custo-sql). withoutCost segue o total.
 -- * Plano de cada cobrança no Financeiro: o da hora da cobrança (Ruling
---   ADM-T22-plano-historico). "Mudar plano" reescreve o plan_key da mesma
---   assinatura e grava no registro do admin (change_plan, ok, target_ref = id
---   da assinatura, before.planKey = plano antigo; o registro só aceita inserir
---   e fechar). Vale o before.planKey da primeira troca confirmada feita depois
---   do dia da cobrança (pagamento, ou vencimento quando não paga); sem troca
---   depois, o plano atual da assinatura. Troca no mesmo dia conta no plano novo.
+--   ADM-T22-plano-historico), pela função public.admin_payment_plan de
+--   db/supabase_admin_gestao.sql, a mesma da ficha do assinante (a regra está
+--   lá). Por isso este arquivo roda depois do gestao.
 -- * Plano pago = billing_plan_rank > 0 (os 4 planos), igual à lista de
 --   Assinantes (T21): 'gratuito' e nomes fora da tabela não contam.
 -- * Só o backend (service_role) executa.
@@ -50,8 +53,9 @@ set local statement_timeout = '60s';
 
 -- ─── 1. Visão geral (formato Overview sem os campos do servidor) ───────────
 -- month:         { start, end } do mês de Brasília de p_now (dia 1º e último dia).
--- revenue:       receita do mês (grossBrl, netBrl, payments) e estornos
---                confirmados no mês (refundedBrl, refunds).
+-- revenue:       receita do mês (grossBrl, netBrl, payments), estornos
+--                confirmados no mês (refundedBrl, refunds) e as cobranças do mês
+--                em estorno ou contestação (disputed), fora das duas.
 -- subscribers:   por plano, contando linhas de assinatura:
 --                activeByPlan   pagas ativas com acesso válido (as que renovam);
 --                endingByPlan   canceladas com acesso depois de p_now;
@@ -83,6 +87,7 @@ declare
   v_ini     timestamptz := v_start::timestamp at time zone 'America/Sao_Paulo';
   v_fim     timestamptz := (v_end + 1)::timestamp at time zone 'America/Sao_Paulo';
   v_paid    text[] := array['CONFIRMED', 'RECEIVED', 'RECEIVED_IN_CASH'];
+  v_dispute text[] := array['REFUND_REQUESTED', 'REFUND_IN_PROGRESS', 'CHARGEBACK_REQUESTED', 'CHARGEBACK_DISPUTE', 'AWAITING_CHARGEBACK_REVERSAL'];
   v_revenue jsonb;
   v_subs    jsonb;
   v_cancel  jsonb;
@@ -95,7 +100,9 @@ begin
            (b.status = any (v_paid) and coalesce(b.confirmed_date, b.payment_date) between v_start and v_end) as paga,
            (b.status = 'REFUNDED'
             and coalesce(b.refunded_at, b.last_event_at) >= v_ini
-            and coalesce(b.refunded_at, b.last_event_at) < v_fim) as estornada
+            and coalesce(b.refunded_at, b.last_event_at) < v_fim) as estornada,
+           (b.status = any (v_dispute)
+            and coalesce(b.confirmed_date, b.payment_date, b.due_date) between v_start and v_end) as em_disputa
       from public.billing_payments b
   )
   select jsonb_build_object(
@@ -103,7 +110,8 @@ begin
            'netBrl', coalesce(sum(c.net_value) filter (where c.paga), 0),
            'payments', count(*) filter (where c.paga),
            'refundedBrl', coalesce(sum(c.value) filter (where c.estornada), 0),
-           'refunds', count(*) filter (where c.estornada))
+           'refunds', count(*) filter (where c.estornada),
+           'disputed', count(*) filter (where c.em_disputa))
     into v_revenue
     from c;
 
@@ -205,7 +213,9 @@ $$;
 -- range:   { from, to }.
 -- totals:  do período, com qualquer filtro: grossBrl, netBrl e paidCount pela
 --          receita; refundedBrl pelos estornos confirmados no período;
---          overdueBrl e overdueCount pelas vencidas com vencimento no período.
+--          overdueBrl e overdueCount pelas vencidas com vencimento no período;
+--          disputedCount pelas cobranças do período em estorno ou contestação
+--          (pelo dia de cada uma, como rows), fora da receita e do estornado.
 -- byMonth: os 12 meses até o mês de p_to (até o próprio dia p_to), do mais
 --          velho pro mais novo, pela data de pagamento; byPlan é o BRUTO por
 --          plano (o da hora do pagamento) e soma o grossBrl do mês.
@@ -213,7 +223,7 @@ $$;
 -- rows:    as cobranças do período (pela data de pagamento, ou pelo vencimento
 --          quando não paga), mais novas primeiro; página de 1 a 200 linhas.
 -- O plano de cada cobrança (byPlan, rows[].planKey e overdue[].planKey) é o da
--- hora da cobrança, pelo registro das trocas de plano (regra no cabeçalho).
+-- hora da cobrança, pela public.admin_payment_plan (a mesma da ficha).
 create or replace function public.admin_finance(p_from date, p_to date, p_status text, p_limit int, p_offset int)
 returns jsonb
 language plpgsql
@@ -229,6 +239,7 @@ declare
   v_last   date := date_trunc('month', v_to::timestamp)::date;
   v_status text := coalesce(p_status, 'all');
   v_paid   text[] := array['CONFIRMED', 'RECEIVED', 'RECEIVED_IN_CASH'];
+  v_dispute text[] := array['REFUND_REQUESTED', 'REFUND_IN_PROGRESS', 'CHARGEBACK_REQUESTED', 'CHARGEBACK_DISPUTE', 'AWAITING_CHARGEBACK_REVERSAL'];
   v_filter text[];
   v_limit  integer := least(greatest(coalesce(p_limit, 50), 1), 200);
   v_offset integer := greatest(coalesce(p_offset, 0), 0);
@@ -251,18 +262,8 @@ begin
            b.status = any (v_paid) as paga,
            coalesce(b.confirmed_date, b.payment_date) as dia_pago,
            coalesce(b.confirmed_date, b.payment_date, b.due_date) as dia,
-           -- plano da hora da cobrança: o antigo da primeira troca confirmada depois do dia dela
-           coalesce((select a.before ->> 'planKey'
-                       from public.admin_audit_log a
-                      where a.action = 'change_plan'
-                        and a.result = 'ok'
-                        and a.target_ref = b.subscription_ref
-                        and coalesce(a.finished_at, a.created_at)
-                            >= (coalesce(b.confirmed_date, b.payment_date, b.due_date) + 1)::timestamp
-                               at time zone 'America/Sao_Paulo'
-                      order by coalesce(a.finished_at, a.created_at), a.id
-                      limit 1),
-                    s.plan_key) as plan_key
+           -- plano da hora da cobrança (a mesma função da ficha)
+           public.admin_payment_plan(b.subscription_ref, b.confirmed_date, b.payment_date, b.due_date, s.plan_key) as plan_key
       from public.billing_payments b
       left join public.billing_subscriptions s on s.id = b.subscription_ref
       left join auth.users u on u.id = b.user_id
@@ -313,7 +314,8 @@ begin
                                          and (coalesce(c.refunded_at, c.last_event_at) at time zone 'America/Sao_Paulo')::date
                                              between v_from and v_to), 0),
                       'overdueBrl', coalesce(sum(c.value) filter (where c.status = 'OVERDUE' and c.due_date between v_from and v_to), 0),
-                      'overdueCount', count(*) filter (where c.status = 'OVERDUE' and c.due_date between v_from and v_to))
+                      'overdueCount', count(*) filter (where c.status = 'OVERDUE' and c.due_date between v_from and v_to),
+                      'disputedCount', count(*) filter (where c.status = any (v_dispute) and c.dia between v_from and v_to))
                from cob c),
            'byMonth', (
              select jsonb_agg(jsonb_build_object(
@@ -361,7 +363,8 @@ $$;
 
 -- ─── 3. Índice da consulta do plano da hora da cobrança ────────────────────
 -- O admin_finance procura, pra cada cobrança, as trocas de plano confirmadas
--- daquela assinatura no registro do admin. Sem este índice o custo cresce com
+-- daquela assinatura no registro do admin (public.admin_payment_plan, que a
+-- ficha também usa). Sem este índice o custo cresce com
 -- cobranças vezes linhas do registro (medido na revisão: 20.000 cobranças e
 -- 5.000 registros, de 14 a 20 s; com o índice, uns 110 ms). Parcial: só as
 -- linhas que a consulta lê. O registro (supabase_admin_base.sql) já tem

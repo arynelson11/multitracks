@@ -37,9 +37,12 @@ export type FinanceTotals = {
   grossBrl: number
   netBrl: number
   paidCount: number
+  // estornos confirmados no período, já fora do recebido
   refundedBrl: number
   overdueBrl: number
   overdueCount: number
+  // cobranças do período em estorno pedido, estorno em andamento ou contestação, fora do recebido e do estornado
+  disputedCount: number
 }
 
 // page e pageSize vêm do servidor. byMonth: os 12 meses até `to`.
@@ -67,13 +70,14 @@ const hasPaymentId = (v: unknown) => isObject(v) && typeof v.paymentId === 'stri
  * A resposta tem a forma que a tela usa (Ruling ADM-T7-forma): período, totais, listas de objetos
  * (cada cobrança com o id dela) e números de página. Fora disso a aba mostra a frase pronta, em vez
  * de quebrar no render. Um número que falte dentro dos totais ou de uma linha não derruba a página:
- * aparece como `sem dado`.
+ * aparece como `sem dado`. A exceção é totals.disputedCount: a linha das cobranças em estorno ou
+ * contestação só aparece com alguma, e sem o número o que saiu do recebido sumiria sem explicação.
  */
 export function isFinancePage(v: unknown): v is FinancePage {
   if (!isObject(v)) return false
   const { range, totals, byMonth, overdue, rows } = v
   return isObject(range) && typeof range.from === 'string' && typeof range.to === 'string'
-    && isObject(totals)
+    && isObject(totals) && isCount(totals.disputedCount)
     && Array.isArray(byMonth) && byMonth.every((m) => isObject(m) && typeof m.month === 'string')
     && Array.isArray(overdue) && overdue.every(hasPaymentId)
     && Array.isArray(rows) && rows.every(hasPaymentId)

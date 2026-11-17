@@ -38,7 +38,7 @@ const MONTHS: FinanceMonth[] = [
 function financePage(over: Partial<FinancePage> = {}): FinancePage {
   return {
     range: { from: '2026-11-01', to: '2026-11-30' },
-    totals: { grossBrl: 1234.5, netBrl: 1180.25, paidCount: 42, refundedBrl: 59.8, overdueBrl: 299, overdueCount: 1 },
+    totals: { grossBrl: 1234.5, netBrl: 1180.25, paidCount: 42, refundedBrl: 59.8, overdueBrl: 299, overdueCount: 1, disputedCount: 0 },
     byMonth: MONTHS,
     overdue: [OVERDUE],
     rows: [ROW],
@@ -184,8 +184,10 @@ describe('FinanceTab', () => {
     expect(text(tile('Líquido'))).toContain('R$ 1.180,25')
     expect(text(tile('Pagas'))).toContain('42')
     expect(text(tile('Estornado'))).toContain('R$ 59,80')
-    // Só estorno confirmado entra no total (Ruling ADM-T22-totais).
-    expect(text(tile('Estornado'))).toContain('Só estorno confirmado')
+    // Só estorno confirmado entra no total (Ruling ADM-T22-totais), e ele já está fora do recebido.
+    expect(text(tile('Estornado'))).toContain('Só estorno confirmado, já fora do recebido')
+    // Sem cobrança em estorno ou contestação, a linha não aparece.
+    expect(container.textContent).not.toContain('em estorno ou contestação')
     // Vencimento dentro do período e ainda não paga (Ruling ADM-T22-totais).
     expect(text(tile('Vencido no período'))).toContain('R$ 299,00')
     expect(text(tile('Vencido no período'))).toContain('1 cobrança')
@@ -197,8 +199,25 @@ describe('FinanceTab', () => {
     expect(tile('Recebido bruto').querySelector('.ps-num')).not.toBeNull()
   })
 
+  // FINAL-review, Minor 1: estorno pedido, em andamento e contestação não estão no recebido nem no estornado.
+  it('cobranças em estorno ou contestação aparecem contadas à parte, fora do recebido', async () => {
+    serve({ finance: () => json(financePage({ totals: { ...financePage().totals, disputedCount: 3 } })) })
+    setup()
+    await screen.findByText('pay_1')
+    const line = screen.getByText((_, el) => el?.tagName === 'P' && text(el) === '3 em estorno ou contestação, fora do recebido')
+    expect(line.querySelector('.ps-num')?.textContent).toBe('3')
+  })
+
+  it('sem a contagem de estorno ou contestação, a aba mostra a frase pronta em vez de esconder o que saiu', async () => {
+    const totals: Record<string, unknown> = { ...financePage().totals }
+    delete totals.disputedCount
+    serve({ finance: () => json(financePage({ totals: totals as FinancePage['totals'] })) })
+    setup()
+    expect((await screen.findByRole('alert')).textContent).toBe('Não deu pra carregar o financeiro. Tente de novo.')
+  })
+
   it('valor ausente nos totais e na cobrança aparece como sem dado, nunca R$ 0,00', async () => {
-    const totals = { grossBrl: null, paidCount: null, refundedBrl: 0, overdueBrl: 299, overdueCount: null } as unknown as FinancePage['totals']
+    const totals = { grossBrl: null, paidCount: null, refundedBrl: 0, overdueBrl: 299, overdueCount: null, disputedCount: 0 } as unknown as FinancePage['totals']
     serve({ finance: () => json(financePage({ totals, rows: [{ ...ROW, value: null, netValue: null, paymentDate: null }] })) })
     setup()
     await screen.findByText('pay_1')

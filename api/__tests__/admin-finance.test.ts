@@ -54,7 +54,7 @@ function financeRow(over: Row = {}): Row {
 function financePage(args: Record<string, unknown>, over: Row = {}): Row {
   return {
     range: { from: args.p_from, to: args.p_to },
-    totals: { grossBrl: 29.9, netBrl: 28.7, paidCount: 1, refundedBrl: 0, overdueBrl: 9.9, overdueCount: 1 },
+    totals: { grossBrl: 29.9, netBrl: 28.7, paidCount: 1, refundedBrl: 0, overdueBrl: 9.9, overdueCount: 1, disputedCount: 0 },
     byMonth: [{ month: '2026-11', grossBrl: 29.9, netBrl: 28.7, byPlan: { pro_mensal: 29.9 } }],
     overdue: [{ paymentId: 'pay_9', userId: USER_ID, email: 'quem@igreja.com', planKey: 'essencial_mensal', dueDate: '2026-10-20', value: 9.9 }],
     rows: [financeRow()],
@@ -288,7 +288,7 @@ describe('entrada estrita e respostas de erro', () => {
 describe('números do banco passam sem mexer', () => {
   it('totais, meses, vencidas e linhas saem como o banco mandou, com page e pageSize', async () => {
     answer = (a) => financePage(a, {
-      totals: { grossBrl: 1234.56, netBrl: 1180.01, paidCount: 41, refundedBrl: 29.9, overdueBrl: 0, overdueCount: 0 },
+      totals: { grossBrl: 1234.56, netBrl: 1180.01, paidCount: 41, refundedBrl: 29.9, overdueBrl: 0, overdueCount: 0, disputedCount: 3 },
       byMonth: [
         { month: '2025-12', grossBrl: 0, netBrl: 0, byPlan: {} },
         { month: '2026-11', grossBrl: 1234.56, netBrl: 1180.01, byPlan: { pro_mensal: 1000, essencial_anual: 234.56 } },
@@ -301,7 +301,7 @@ describe('números do banco passam sem mexer', () => {
     const expected = { ...financePage(args('2026-11-01', '2026-11-30')), page: 1, pageSize: 50 }
     expect(res.body).toEqual({
       ...expected,
-      totals: { grossBrl: 1234.56, netBrl: 1180.01, paidCount: 41, refundedBrl: 29.9, overdueBrl: 0, overdueCount: 0 },
+      totals: { grossBrl: 1234.56, netBrl: 1180.01, paidCount: 41, refundedBrl: 29.9, overdueBrl: 0, overdueCount: 0, disputedCount: 3 },
       byMonth: [
         { month: '2025-12', grossBrl: 0, netBrl: 0, byPlan: {} },
         { month: '2026-11', grossBrl: 1234.56, netBrl: 1180.01, byPlan: { pro_mensal: 1000, essencial_anual: 234.56 } },
