@@ -592,6 +592,7 @@ export async function generateManualClickTrack(
 // ═══════════════════════════════════════════════════════════════════════
 import type { ClickTrackType, ClickSubdivision } from './clickLibrary';
 import { getClickSampleUrl, CLICK_SUBDIVISIONS } from './clickLibrary';
+import { attackSeconds } from './clickAttack';
 
 /** Onde a grade do click cai na música (vem de detectBeatGrid em lib/beatGrid). */
 export interface ClickGridAlignment {
@@ -639,6 +640,10 @@ export async function generateManualClickTrackFromSample(
   // Cada click é posicionado pelo tempo ABSOLUTO (âncora + n × período), nunca
   // somando intervalos: zero erro acumulado ao longo da música. Ticks antes da
   // âncora (n negativo) também entram, desde que caiam em t >= 0.
+  // A amostra leva um tempo pra soar (o ataque, até 5,3 ms no Percussive; ver
+  // clickAttack.ts): cada click entra adiantado por esse tempo, pra que o início
+  // audível caia em t. Perto de 0:00 o adiantamento fica preso em 0.
+  const attack = attackSeconds(type, subdivision);
   const anchor = grid?.firstBeat ?? 0;
   const downbeat = grid?.downbeat ?? 0;
   const mod = (a: number, m: number) => ((a % m) + m) % m;
@@ -654,9 +659,10 @@ export async function generateManualClickTrackFromSample(
     const isDownbeat = accentBeat1 && mod(beatIndex - downbeat, beatsPerMeasure) === 0 && subIndex === 0;
     const vol = isDownbeat ? 1.0 : subIndex === 0 ? 0.65 : 0.45;
 
-    const copyLen = Math.min(sampleLen, totalSamples - tickStart);
+    const at = Math.max(0, Math.round((t - attack) * sampleRate));
+    const copyLen = Math.min(sampleLen, totalSamples - at);
     for (let i = 0; i < copyLen; i++) {
-      output[tickStart + i] = Math.max(-1, Math.min(1, output[tickStart + i] + sampleData[i] * vol));
+      output[at + i] = Math.max(-1, Math.min(1, output[at + i] + sampleData[i] * vol));
     }
     tick++;
   }
@@ -671,8 +677,12 @@ export async function generateEndlessClickTrackFromSample(
 ): Promise<{ clickBlob: Blob }> {
   const secondsPerBeat = 60 / bpm;
   const measureDuration = secondsPerBeat * 4;
+  // No loop não há música pra alinhar, só a regularidade conta. Com a grade em 0:00
+  // o 1º click ficaria preso em 0 e os outros sairiam adiantados pelo ataque, e o
+  // loop teria um intervalo curto e outro longo. Com a grade atrasada pelo ataque, a
+  // compensação desfaz o atraso: os clicks caem em 0, P, 2P e 3P e o loop fica regular.
   const { clickTrackUrl } = await generateManualClickTrackFromSample(
-    type, subdivision, bpm, measureDuration, true, '4/4'
+    type, subdivision, bpm, measureDuration, true, '4/4', { firstBeat: attackSeconds(type, subdivision), downbeat: 0 }
   );
   const res = await fetch(clickTrackUrl);
   const blob = await res.blob();

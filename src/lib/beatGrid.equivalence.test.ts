@@ -28,6 +28,12 @@
 // M3, rodada 3: o detectSongGrid diz de onde veio o "1" (`downbeatFrom`) e a folga
 // (`downbeatMargin`); onde a comparação é com o detectBeatGrid, os dois campos ficam
 // de fora. Nenhum caso daqui mudou de BPM, fase ou "1".
+//
+// M6: o gerador de click adianta cada click pelo ataque da amostra (src/lib/clickAttack.ts)
+// e os calços do gerador foram pra src/test/clickShims.ts. Nenhum caso de equivalência
+// mudou; na fumaça, o click com a grade certa passou a cair em cima do golpe (era +1,09 ms
+// com o Classic) e com a grade detectada o erro médio caiu de 3,6 pra 2,5 ms (sobra a
+// colocação da grade; o ataque de 1,09 ms do Classic saiu da conta).
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,6 +43,7 @@ import { detectBeatGrid, detectSongGrid, type BeatGrid, type BeatGridOptions } f
 import { legacyDetectBeatGrid } from '../test/legacyBeatGrid';
 import { makeSong, type SongOptions } from '../test/synthMusic';
 import { detectClicks, evaluate, mixToMono, parseWav } from '../test/clickProbe';
+import { makeClickShims } from '../test/clickShims';
 
 const SR = 48000;
 // 1 min basta: a conta é a mesma de 5 min (o relatório usou 300 s) e o teste fica rápido.
@@ -172,47 +179,27 @@ describe('detectSongGrid', () => {
 
 const PUBLIC_DIR = fileURLToPath(new URL('../../public/', import.meta.url));
 
-// Só o que generateManualClickTrackFromSample usa: decodificar a amostra de click
-// (WAV na taxa do contexto, sem reamostrar) e fechar.
-class FakeAudioContext {
-  readonly sampleRate: number;
-  constructor(opts: { sampleRate?: number } = {}) {
-    this.sampleRate = opts.sampleRate ?? 48000;
-  }
-  async decodeAudioData(ab: ArrayBuffer) {
-    const w = parseWav(ab);
-    if (w.sampleRate !== this.sampleRate) throw new Error(`amostra a ${w.sampleRate} Hz, contexto a ${this.sampleRate} Hz`);
-    return {
-      sampleRate: w.sampleRate, numberOfChannels: w.numberOfChannels, length: w.frames,
-      duration: w.frames / w.sampleRate, getChannelData: (c: number) => w.channels[c],
-    };
-  }
-  async close() {}
-}
-
-async function fakeFetch(url: string) {
-  const rel = decodeURIComponent(url.replace(/^\.?\//, ''));
+// Os calços (AudioContext, fetch e createObjectURL) estão em src/test/clickShims.ts; a
+// leitura do disco fica aqui, porque ajudante de src/test não usa API do Node.
+function lerPublic(rel: string): ArrayBuffer | null {
   try {
     const buf = readFileSync(join(PUBLIC_DIR, rel));
-    const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-    return { ok: true, arrayBuffer: async () => ab };
+    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
   } catch {
-    return { ok: false, arrayBuffer: async () => new ArrayBuffer(0) };
+    return null;
   }
 }
 
 /** Gera o click como o Metrônomo gera (Classic 1/4, acento no 1, 4/4) e devolve os clicks achados no WAV. */
 async function clicksGerados(bpm: number, duration: number, grid: { firstBeat: number; downbeat: number }) {
-  vi.stubGlobal('window', { AudioContext: FakeAudioContext });
-  vi.stubGlobal('fetch', fakeFetch);
-  let blob: Blob | null = null;
-  vi.spyOn(URL, 'createObjectURL').mockImplementation((b) => {
-    blob = b as Blob;
-    return 'blob:teste';
-  });
+  const shims = makeClickShims(lerPublic);
+  vi.stubGlobal('window', { AudioContext: shims.AudioContext });
+  vi.stubGlobal('fetch', shims.fetch);
+  vi.spyOn(URL, 'createObjectURL').mockImplementation(shims.createObjectURL);
   await generateManualClickTrackFromSample('Classic', 'quarter', bpm, duration, true, '4/4', grid);
+  const blob = shims.lastBlob();
   if (!blob) throw new Error('o gerador não criou o WAV');
-  const wav = parseWav(await (blob as Blob).arrayBuffer());
+  const wav = parseWav(await blob.arrayBuffer());
   expect(wav.sampleRate).toBe(44100);
   return detectClicks(mixToMono(wav.channels), wav.sampleRate);
 }
@@ -247,14 +234,16 @@ describe('fumaça: synthMusic + clickProbe', () => {
     expect(certo.accentOn1).toBe(100);
   }, LENTO);
 
-  it('caso b com a grade detectada: o mesmo +3,6 ms do relatório, acento no 1', async () => {
+  // O relatório mediu +3,6 ms: +2,5 da colocação da grade e +1,09 do ataque do Classic.
+  // Desde a M6 o gerador compensa o ataque e sobra só a colocação.
+  it('caso b com a grade detectada: os +3,6 ms do relatório caem pra +2,5 ms, acento no 1', async () => {
     const song = makeSong({ sr: SR, duration: DURACAO, bpm: 120, firstBeat: 1.37, withPad: false, withBass: false });
     const grid = detectBeatGrid(song.tracks.drums, SR, { beatsPerBar: 4 });
     expect(grid.bpm).toBe(120);
     const ev = evaluate(await clicksGerados(grid.bpm, song.duration, grid), song);
     expect(ev.far).toBe(0);
     expect(ev.max).toBeLessThan(4);
-    expect(ev.mean).toBeCloseTo(3.6, 0);
+    expect(ev.mean).toBeCloseTo(2.5, 0);
     expect(ev.accentOn1).toBe(100);
     // A detecção ficou ~3 vezes mais pesada na M2 (bandas de bumbo e caixa): folga pra máquina carregada.
   }, LENTO);
