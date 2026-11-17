@@ -1,10 +1,11 @@
 // Aba Assinantes: busca por nome, e-mail ou id (espera 300 ms de pausa na digitação), filtros de
-// status, marcação (uma por vez), plano e ordem, páginas de 50 e a ficha de cada conta. A ficha é
-// só de leitura; as ações (T26) entram pela renderActions. Resposta fora do formato mostra a frase
-// pronta com Tentar de novo (Ruling ADM-T7-forma).
+// status, marcação (uma por vez), plano e ordem, páginas de 50 e a ficha de cada conta. As ações
+// (T26, SubscriberActions) entram no topo da ficha pela renderActions. Resposta fora do formato
+// mostra a frase pronta com Tentar de novo (Ruling ADM-T7-forma).
 import { useEffect, useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button, Chip, Segmented, cx } from '../../components/ui'
+import { SubscriberActions } from '../components/SubscriberActions'
 import { ErrorBox, SubscriberDetail, Tag } from '../components/SubscriberDetail'
 import { useAdminQuery } from '../hooks/useAdminQuery'
 import { EMPTY, planLabel } from '../lib/fmt'
@@ -41,7 +42,16 @@ type Filters = { q: string; status: StatusFilter; flag: FlagFilter | null; plan:
 
 const START: Filters = { q: '', status: 'all', flag: null, plan: 'all', sort: 'created', page: 1 }
 
-export function SubscribersTab({ onNavigate, focusUserId, renderActions }: TabProps & { renderActions?: RenderActions }) {
+// As ações da ficha (T26). Constante do módulo: a mesma a cada render.
+const ACTIONS: RenderActions = (detail, reload) => <SubscriberActions detail={detail} reload={reload} />
+
+type SubscribersTabProps = TabProps & {
+  renderActions?: RenderActions
+  /** Recarrega a fila de Pendências da casca: as ações da ficha mudam a fila (aviso T8/T26). */
+  onQueueChange?: () => void
+}
+
+export function SubscribersTab({ onNavigate, focusUserId, renderActions = ACTIONS, onQueueChange }: SubscribersTabProps) {
   const searchId = useId()
   const planId = useId()
   const [text, setText] = useState('')
@@ -79,16 +89,16 @@ export function SubscribersTab({ onNavigate, focusUserId, renderActions }: TabPr
   const refetchList = list.refetch
   const data = isSubscriberPage(list.data) ? list.data : null
 
-  // Depois de uma ação na ficha, a lista também chega de novo (o status e as marcações mudam).
-  const actions = useMemo<RenderActions | undefined>(
-    () =>
-      renderActions &&
-      ((detail, reload) =>
-        renderActions(detail, () => {
-          reload()
-          void refetchList()
-        })),
-    [renderActions, refetchList],
+  // Depois de uma ação na ficha, a lista e a fila de Pendências também chegam de novo (o status, as
+  // marcações e as pendências mudam).
+  const actions = useMemo<RenderActions>(
+    () => (detail, reload) =>
+      renderActions(detail, () => {
+        reload()
+        void refetchList()
+        onQueueChange?.()
+      }),
+    [renderActions, refetchList, onQueueChange],
   )
 
   let content: ReactNode

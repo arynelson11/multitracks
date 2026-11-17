@@ -71,7 +71,8 @@ export type SubscriberPayment = {
 export type LegacyPayment = { id: string; planKey: string; value: number; cycle: string | null; paidAt: string }
 
 export type AsaasLive =
-  | { subscriptionRef: string; ok: true; status: string; value: number; cycle: string; openDueDate: string | null; deleted: boolean }
+  // value null: assinatura removida no Asaas ou sem número na resposta (a ficha mostra `sem dado`).
+  | { subscriptionRef: string; ok: true; status: string; value: number | null; cycle: string; openDueDate: string | null; deleted: boolean }
   | { subscriptionRef: string; ok: false; error: string }
 
 export type SubscriberDetailData = {
