@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
 import { get, set, del, keys } from 'idb-keyval';
 import JSZip from 'jszip';
 import * as Tone from 'tone';
@@ -15,19 +15,21 @@ import { autoClickChecks, renderAutoClick, type AutoClickCheck, type AutoClickOk
 import GridWorker from '../workers/gridWorker?worker&inline';
 import { tempoChannelsForPlan, type GridWorkerChannel, type GridWorkerResponse, type GridWorkerTask } from '../workers/gridWorker';
 import { sanitizeTimeSignature } from '../lib/cloudBpm';
-import { barSeconds, gridFromBpm, gridFromClick, gridWarning, keepManualMeter, pulseSeconds, sanitizeGrid, withMeter } from '../lib/songGrid';
-import { isCompound, type GridWarning, type SongGrid, type StageGates, type StageMode, type TimeSignature } from '../lib/stageContracts';
+import { barSeconds, gridFromBpm, gridFromClick, gridWarning, keepManualMeter, pulseSeconds, sanitizeGrid, sectionIndexAt, sectionSpans, withMeter } from '../lib/songGrid';
+import { isCompound, type ArmIntent, type GridWarning, type Plays, type SectionSpan, type SongGrid, type StageGates, type StageMode, type TimeSignature, type TransitionView } from '../lib/stageContracts';
 import { sanitizeSemitones } from '../lib/pitchRules';
 import { getCachedStem, getCachedStemNames, isSongCached } from '../lib/offlineCache';
 import { applyChannelMetaToList, autoPanFor, channelGain, findClickChannel, isPitchExempt, pickMainChannel, pitchChangeAction, wantsFormantCompensation, type ChannelMetaPatch } from '../lib/channelRoles';
 import { arrangeChannels, resolveChannelRole, type ChannelIdentity } from '../lib/channelNames';
 import { REPERTOIRE_SCHEMA_VERSION, migrateManifestSong, migrateSavedSong, toManifestSong, toSavedSong, type SavedSong } from '../lib/repertoireSchema';
 import { createOutputGraph, type OutputGraph } from '../audio/outputGraph';
-import { createSchedulerClock, type SchedulerClock } from '../audio/schedulerClock';
-import { startVoice, stopVoices, type Voice, type VoiceSpec } from '../audio/voices';
+import { createSchedulerClock, type ClockMode, type SchedulerClock } from '../audio/schedulerClock';
+import { FADE as SWITCH_FADE, SectionScheduler } from '../audio/sectionScheduler';
+import { startVoice, startVoicesForSwitch, stopVoices, type Voice, type VoiceSpec } from '../audio/voices';
 import { scheduleCount, type ScheduledCount } from '../audio/countTones';
 import { effectivePan, planOutputs, sanitizeOutputs, type PlannedOutputs } from '../lib/outputPlan';
-import { positionAt } from '../lib/playTimeline';
+import { ctxTimeOf, heardTime, positionAt } from '../lib/playTimeline';
+import { armAt, armRepeat as armRepeatIntent, bandRepeat, stepSection as stepSectionIntent, tapSection, toggleLoop, type ArmContext, type ArmResult } from '../lib/sectionArm';
 import type { OutputPlan, OutputSettings, TimelineSegment } from '../lib/stageContracts';
 
 // Engine de tom: signalsmith-stretch (MIT). O worklet e o WASM são gerados
@@ -104,6 +106,15 @@ const COUNT_BEEP_LENGTH = 0.22;
 // Lista vazia única, pro React não renderizar de novo à toa.
 const NO_TIMES: number[] = [];
 
+// === Pulo de seção do palco novo (Parte 2, T28; Arquitetura A) ===
+// Sem `sectionGates` (testes, harness): tudo liberado. O App passa os portões do plano.
+const ALL_SECTION_GATES: StageGates = { sections: true, infinite: true, maxRepeats: Infinity, bandSections: true };
+// FADE (R-32): uma rampa única no principal, do volume até 0 nos últimos 5 s da música.
+const FADE_OUT_S = 5;
+// Volume principal mexido com o FADE marcado: chega no valor novo em 50 ms, só por rampa linear
+// (nunca rampa depois de setTarget em curso, Ruling ÁUDIO).
+const MASTER_RAMP_S = 0.05;
+
 /**
  * Segura o parâmetro em `t` sem mudar o valor: `cancelAndHoldAtTime` onde existe; no Firefox,
  * cancelScheduledValues(t) + setValueAtTime(valor de agora, t).
@@ -138,6 +149,47 @@ function releaseVoices(ctx: BaseAudioContext, voices: readonly Voice[], startOf:
         until = t + VOICE_RELEASE_STOP;
     }
     return until;
+}
+
+/** FADE agendado no principal: rampa de `from` em `start` até 0 em `end` (tempo do contexto). */
+interface FadeRamp { start: number; end: number; from: number }
+
+/** Nível do FADE em `t`, pela própria receita (rampa linear). */
+function fadeLevelAt(f: FadeRamp, t: number): number {
+    if (t <= f.start) return f.from;
+    if (t >= f.end) return 0;
+    return (f.from * (f.end - t)) / (f.end - f.start);
+}
+
+/**
+ * Segura o principal em `now` (= ctx.currentTime) no `value` que a automação dele tem ali, sem
+ * degrau (o mesmo jeito do agendador, sectionScheduler.ts): com cancelAndHoldAtTime, no meio de
+ * uma rampa ele mesmo põe o ponto; fora de rampa ele só apaga o resto, e um set no valor de agora
+ * firma o ponto pra rampa seguinte partir dele. Sem ele (Firefox), no meio da rampa ela volta a
+ * terminar em `now` com o valor da receita (um set ali tocaria o valor de antes da rampa). Nunca
+ * segue um setTarget (Ruling ÁUDIO): o FADE só usa set e rampa linear.
+ */
+function holdMasterAt(param: AudioParam, now: number, value: number, inRamp: boolean): void {
+    if (typeof param.cancelAndHoldAtTime === 'function') {
+        param.cancelAndHoldAtTime(now);
+        if (!inRamp) param.setValueAtTime(value, now);
+        return;
+    }
+    param.cancelScheduledValues(now);
+    if (inRamp) param.linearRampToValueAtTime(value, now);
+    else param.setValueAtTime(value, now);
+}
+
+/**
+ * O pedido armado do palco novo no formato que a banda (HOST_STATE) e o palco antigo conhecem: na
+ * seção atual, `activeLoop` com as passagens que faltam; em outra seção, `pendingJump` e, quando
+ * pediu mais de uma passagem, `activeLoop` com as repetições depois de chegar.
+ */
+function legacySectionView(intent: ArmIntent | null, current: number): { pendingJump: number | null; activeLoop: { index: number; remaining: number | 'infinite' } | null } {
+    if (!intent) return { pendingJump: null, activeLoop: null };
+    if (intent.target === current) return { pendingJump: null, activeLoop: { index: intent.target, remaining: intent.plays } };
+    const remaining = intent.plays === 'infinite' ? 'infinite' : intent.plays - 1;
+    return { pendingJump: intent.target, activeLoop: remaining === 0 ? null : { index: intent.target, remaining } };
 }
 
 /**
@@ -547,7 +599,8 @@ const sameGrid = (a: SongGrid | null | undefined, b: SongGrid | null | undefined
         && a.countEvery === b.countEvery && a.source === b.source && a.meterSource === b.meterSource);
 
 // `opts` (T27): `autoClick` = o plano pode gerar o click que falta (canUseBpmDetection); sem ele,
-// nunca gera. `sectionGates` e `stageMode` são da T28 (sem eles: portões liberados, palco novo).
+// nunca gera. `sectionGates` e `stageMode` são da T28: sem `sectionGates`, tudo liberado; sem
+// `stageMode`, o palco antigo (o mecanismo da v1.4.16). O App passa os dois (R-25).
 export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; sectionGates?: StageGates; stageMode?: StageMode }) {
     const DB_KEY_META = userId ? `mt_meta_playlist_${userId}` : 'mt_meta_playlist';
     const DB_KEY_FILES = userId ? `mt_files_${userId}` : 'mt_files';
@@ -637,10 +690,10 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // === Phase 2: Playback Modes ===
     const [playbackMode, setPlaybackMode] = useState<'continue' | 'stop' | 'fade-out'>('continue');
 
-    // === Seções: loop (N vezes ou infinito) e salto agendado ===
-    // Os refs são a fonte da verdade dentro do loop de rAF (updateTime); os
-    // estados só espelham pra UI re-renderizar. Loop e salto disparam no FIM da
-    // seção atual (transição musical), nunca no clique.
+    // === Seções do palco antigo (stageMode 'antigo'): loop (N vezes ou infinito) e salto ===
+    // O mecanismo da v1.4.16, sem contagem. Os refs são a fonte da verdade dentro do loop de
+    // rAF (updateTime); os estados só espelham pra UI re-renderizar. Loop e salto disparam no
+    // FIM da seção atual (transição musical), nunca no clique. Índices das marcas (song.markers).
     const loopRef = useRef<{ index: number; remaining: number | 'infinite' } | null>(null);
     const jumpRef = useRef<number | null>(null);
     const lastSectionRef = useRef<number>(-1); // última seção do playhead (detecta transições)
@@ -653,6 +706,40 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     const [isLoading, setIsLoading] = useState(false);
     const [isRestoring, setIsRestoring] = useState(false);
     const [shouldAutoPlayNext, setShouldAutoPlayNext] = useState(false);
+
+    // === Pulo de seção do palco novo (T28; Arquitetura A) ===
+    // Com stageMode 'novo' o SectionScheduler (src/audio/sectionScheduler.ts) cuida do pulo, do
+    // REPETIR e do LOOP no relógio do áudio: contagem só pela entrada do click, guia calada no
+    // último compasso, vozes que cruzam no "1". O relógio do Worker (T5) liga no play e desliga
+    // quando a VS para; cada tique olha o plano e o fim da música. Índices das spans
+    // (sectionSpansView), nunca das marcas. Sem stageMode, o palco antigo (o App decide, R-25):
+    // o harness e os testes de antes montam o hook sem opções e seguem no caminho da v1.4.16.
+    // O modo pedido só passa a valer com a VS parada (pedido tocando fica pra próxima parada).
+    const requestedStageMode: StageMode = opts?.stageMode ?? 'antigo';
+    const [stageMode, setStageMode] = useState<StageMode>(requestedStageMode);
+    const stageModeRef = useRef<StageMode>(requestedStageMode);
+    const sectionGates = opts?.sectionGates ?? ALL_SECTION_GATES;
+    const [sectionIntent, setSectionIntent] = useState<ArmIntent | null>(null);
+    const [transitionView, setTransitionView] = useState<TransitionView | null>(null);
+    const [landed, setLanded] = useState<{ index: number; at: number } | null>(null);
+    // Seção que se ouve tocando (atualizada pelo rAF e pelo tique), pra banda (activeLoop/pendingJump).
+    const [playingSpan, setPlayingSpan] = useState(-1);
+    // 'interval' = o Worker faltou e o tique vem do setInterval da janela (pode atrasar em 2º plano).
+    const [sectionClockMode, setSectionClockMode] = useState<ClockMode>('worker');
+    const sectionSchedulerRef = useRef<SectionScheduler | null>(null);
+    const sectionClockRef = useRef<SchedulerClock | null>(null);
+    // Papel que entra ou sai de Click com a VS tocando: até a troca de rota acabar, a contagem do
+    // pulo vai pelo atraso da contagem do grafo (sempre no barramento do Click), nunca pela entrada
+    // de um canal cujo fader ainda vai trocar de barramento.
+    const countViaDelayRef = useRef(false);
+    // Dentro do stopAllNodes: o reset do agendador não mexe no FADE (o play refaz tudo).
+    const sectionStoppingRef = useRef(false);
+    // FADE (R-32) agendado no principal: rampa de `from` em `start` até 0 em `end` (tempo do contexto).
+    const fadeRef = useRef<FadeRamp | null>(null);
+    // Nível em que o principal ficou segurado no meio do FADE (intenção armada); nulo = no volume.
+    const fadeHeldRef = useRef<number | null>(null);
+    // "1" do pulo marcado em que o principal volta pro volume (o FADE já tinha começado).
+    const fadeRestoreRef = useRef<number | null>(null);
 
     const animationRef = useRef<number>(0);
     const pausedAtRef = useRef<number>(0);
@@ -698,6 +785,26 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // O plano pode gerar o click que falta (opção do hook, lida na hora de gerar).
     const autoClickRef = useRef(!!opts?.autoClick);
     useEffect(() => { autoClickRef.current = !!opts?.autoClick; }, [opts?.autoClick]);
+    // Seções da música ativa encaixadas na grade (T2): os índices que o palco, a banda e o motor usam.
+    const songMarkers = activeSong?.markers;
+    const sectionSpansView = useMemo(() => sectionSpans(songMarkers ?? [], duration, activeGrid), [songMarkers, duration, activeGrid]);
+    // Valores da renderização mais nova pra quem roda fora dela (agendador, relógio do Worker).
+    const spansRef = useRef<SectionSpan[]>(sectionSpansView);
+    const gridRef = useRef<SongGrid | null>(activeGrid);
+    const channelsRef = useRef<Channel[]>(channels);
+    const timeStretchRef = useRef(timeStretch);
+    const masterVolumeRef = useRef(masterVolume);
+    const playbackModeRef = useRef(playbackMode);
+    const durationRef = useRef(duration);
+    useLayoutEffect(() => {
+        spansRef.current = sectionSpansView;
+        gridRef.current = activeGrid;
+        channelsRef.current = channels;
+        timeStretchRef.current = timeStretch;
+        masterVolumeRef.current = masterVolume;
+        playbackModeRef.current = playbackMode;
+        durationRef.current = duration;
+    });
 
     // Papel do canal (Click, Guia, Normal), troca de tom, pan automático e ganho
     // com Solo/M saem da regra central em src/lib/channelRoles.ts. Click e Guia
@@ -988,6 +1095,275 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         playGenRef.current++;
         playPendingRef.current = false;
     };
+
+    // === Pulo de seção do palco novo (T28): ligação do agendador da T17 no motor ===
+    // Tempo ouvido (Arquitetura A): o que sai no alto-falante agora, descontada a latência do
+    // aparelho e a da entrada do canal (o L da compensação do tom). A tela lê a posição por ele.
+    const heardNow = useCallback((): number => {
+        const ctx = audioCtxRef.current;
+        if (!ctx) return 0;
+        return heardTime(ctx.currentTime, ctx.outputLatency, playChainRef.current?.compensation ?? 0);
+    }, []);
+    // Posição da música no tempo ouvido. Parada (ou com play pendente), a de onde ela vai retomar.
+    const heardPosition = useCallback((): number => {
+        if (!audioCtxRef.current || playPendingRef.current || timelineRef.current.length === 0) return pausedAtRef.current;
+        return positionAt(timelineRef.current, heardNow(), timeStretchRef.current);
+    }, [heardNow]);
+
+    // Vozes do cruzamento (T7): uma por canal do play de agora, na entrada do canal (entryFor),
+    // começando em T - fade (ou em T, com o alvo em 0:00). O pulo nunca cria worklet nem cadeia.
+    const startSwitchVoices = (ctx: AudioContext, T: number, targetOffset: number, fade: number): Voice[] => {
+        const chain = playChainRef.current;
+        if (!chain) return [];
+        const rate = timeStretchRef.current;
+        const specs: VoiceSpec[] = chain.channels.map((ch) => ({ channelId: ch.id, buffer: ch.buffer, entry: entryFor(ch, chain.pitch, chain.compensation), loop: isEndlessLoop(ch) }));
+        const voices = startVoicesForSwitch(ctx, specs, T, targetOffset, fade, rate);
+        const preroll = targetOffset >= fade * rate;
+        // Com pré-rolagem o envelope nasce em 0 já agora, não só em T - fade: no Chrome, com T - fade
+        // caindo um arredondamento depois da amostra em que a fonte começa, essa primeira amostra
+        // saía no ganho padrão 1 (pico de uma amostra do som inteiro, medido com o hook real).
+        // Agora é sempre antes de T - fade (o plano pede o pulo a pelo menos 50 ms).
+        if (preroll) for (const v of voices) v.env.gain.setValueAtTime(0, ctx.currentTime);
+        for (const v of voices) voiceStartsRef.current.set(v, preroll ? T - fade : T);
+        return voices;
+    };
+    // O pulo pousou: as vozes novas passam a ser as do motor (soltura, medidor e harness usam).
+    // As que saíram já estão mudas desde o "1" e o agendador para elas.
+    const adoptSwitchVoices = (voices: Voice[]) => {
+        voicesRef.current = voices;
+        const chain = playChainRef.current;
+        for (const v of voices) {
+            const ch = chain?.channels.find((c) => c.id === v.channelId);
+            if (ch) ch.sourceNode = v.source;
+        }
+    };
+    // A contagem vai soar? Sem canal de click ela sai pelo atraso do grafo, no barramento do Click.
+    const clickAudible = (): boolean => {
+        const list = channelsRef.current;
+        const click = list.find((ch) => resolveChannelRole(ch) === 'click');
+        return !click || channelGain(click, list) > 0;
+    };
+
+    // Agendador do pulo (T17), criado uma vez com o contexto. Lê tudo por refs: roda no tique do
+    // Worker, fora da renderização.
+    const sectionScheduler = (): SectionScheduler | null => {
+        const ctx = audioCtxRef.current;
+        if (!ctx) return null;
+        if (!sectionSchedulerRef.current) {
+            sectionSchedulerRef.current = new SectionScheduler({
+                ctx,
+                rate: () => timeStretchRef.current,
+                timeline: () => timelineRef.current,
+                setTimeline: (next) => { timelineRef.current = next; },
+                spans: () => spansRef.current,
+                grid: () => gridRef.current,
+                currentVoices: () => voicesRef.current,
+                setCurrentVoices: adoptSwitchVoices,
+                startSwitchVoices: (T, targetOffset, fade) => startSwitchVoices(ctx, T, targetOffset, fade),
+                countDestination: () => {
+                    const graph = graphRef.current;
+                    if (!graph) return null;
+                    if (!countViaDelayRef.current) return countDestination();
+                    graph.countDelay.delayTime.value = playChainRef.current?.compensation ?? 0;
+                    return graph.countDelay;
+                },
+                guideGain: () => graphRef.current?.guideGain ?? null,
+                entryLatency: () => playChainRef.current?.compensation ?? 0,
+                clickAudible,
+                onView: (view, intent) => {
+                    setTransitionView(view);
+                    setSectionIntent(intent);
+                    syncFade();
+                },
+                onLanded: (to, at) => {
+                    setLanded({ index: to, at });
+                    syncFade();
+                },
+                clockMode: () => sectionClockRef.current?.mode ?? 'worker',
+            });
+        }
+        return sectionSchedulerRef.current;
+    };
+    // Um tique do agendador, só no palco novo.
+    const sectionTick = () => {
+        if (stageModeRef.current === 'novo') sectionSchedulerRef.current?.tick();
+    };
+    // Troca de música: o pedido armado é de seções da música que sai.
+    const dropSectionIntent = () => {
+        sectionSchedulerRef.current?.setIntent(null);
+        setLanded(null);
+    };
+
+    // === FADE (R-32): rampa única no principal, agendada no relógio do áudio ===
+    // De `duração - 5 s` até a duração, marcada pelo play. Pausa, busca e troca de música a
+    // desfazem. Intenção armada também: antes da rampa ela nem começa; no meio dela o principal
+    // fica no nível de agora e volta pro volume no "1" do pulo (cruzando junto com as vozes).
+    // Sem pedido, a rampa é refeita do ponto em que a música está. Só set e rampa linear.
+    const clearFadeState = () => {
+        fadeRef.current = null;
+        fadeHeldRef.current = null;
+        fadeRestoreRef.current = null;
+    };
+    // Nível do principal em `t` pelo que o FADE marcou, e se ele está no meio de uma rampa.
+    const masterLevelAt = (t: number): { level: number; inRamp: boolean } => {
+        const f = fadeRef.current;
+        if (f) return { level: fadeLevelAt(f, t), inRamp: t > f.start && t < f.end };
+        const held = fadeHeldRef.current;
+        const T = fadeRestoreRef.current;
+        const volume = masterVolumeRef.current;
+        if (held !== null && T !== null && t > T - SWITCH_FADE) {
+            if (t >= T) return { level: volume, inRamp: false };
+            return { level: held + ((volume - held) * (t - (T - SWITCH_FADE))) / SWITCH_FADE, inRamp: true };
+        }
+        return { level: held ?? volume, inRamp: false };
+    };
+    // Tira o FADE do principal: rampa que não começou só sai; no meio dela (ou com o nível
+    // segurado e a volta no "1" marcada) o principal fica no nível de agora. `toVolume`: e sobe
+    // pro volume em 50 ms (o operador saiu do FADE).
+    const dropFade = (ctx: BaseAudioContext, toVolume: boolean) => {
+        const gain = masterGainRef.current?.gain;
+        const f = fadeRef.current;
+        const now = ctx.currentTime;
+        if (!gain) { clearFadeState(); return; }
+        if (f && now < f.start) {
+            gain.cancelScheduledValues(f.start);
+            fadeRef.current = null;
+            return;
+        }
+        if (!f && fadeHeldRef.current === null) { fadeRestoreRef.current = null; return; }
+        const { level, inRamp } = masterLevelAt(now);
+        holdMasterAt(gain, now, level, inRamp);
+        fadeRef.current = null;
+        fadeRestoreRef.current = null;
+        fadeHeldRef.current = toVolume ? null : level;
+        if (toVolume) gain.linearRampToValueAtTime(masterVolumeRef.current, now + MASTER_RAMP_S);
+    };
+    // Marca a rampa do FADE, se o modo é FADE e a música toca. `musicStart` (play): a música entra
+    // ali, então começar no meio dos 5 s sai no nível proporcional sem degrau audível; tocando, a
+    // rampa nova parte do nível de agora, com a folga do corte. Quem chama confere a intenção.
+    const scheduleFade = (ctx: BaseAudioContext, musicStart?: number) => {
+        const gain = masterGainRef.current?.gain;
+        const tl = timelineRef.current;
+        const dur = durationRef.current;
+        if (!gain || fadeRef.current || tl.length === 0 || playbackModeRef.current !== 'fade-out' || !(dur > FADE_OUT_S)) return;
+        // Play pendente ou a "próxima" no fade de 1,5 s (a troca de música manda no principal).
+        if (playPendingRef.current || nextSongTimerRef.current !== null) return;
+        const now = ctx.currentTime;
+        const rate = timeStretchRef.current;
+        const start = ctxTimeOf(tl, dur - FADE_OUT_S, now, rate);
+        const end = ctxTimeOf(tl, dur, now, rate);
+        const t0 = musicStart ?? now + cutLead(ctx);
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end <= t0) return;
+        const held = fadeHeldRef.current;
+        const volume = masterVolumeRef.current;
+        const at = Math.max(start, t0);
+        const from = held ?? (start < t0 && musicStart !== undefined ? (volume * (end - t0)) / (end - start) : volume);
+        gain.setValueAtTime(from, at);
+        gain.linearRampToValueAtTime(0, end);
+        fadeRef.current = { start: at, end, from };
+        fadeHeldRef.current = null;
+    };
+    // O FADE segue o pedido de seção (chamado a cada mudança da transição ou da intenção, e no
+    // pouso): pedido armado ou pulo marcado tiram a rampa; o pulo marcado devolve o principal no
+    // "1" quando ele estava segurado; sem nada armado, a rampa volta.
+    const syncFade = () => {
+        const ctx = audioCtxRef.current;
+        const gain = masterGainRef.current?.gain;
+        if (!ctx || !gain || sectionStoppingRef.current) return;
+        const now = ctx.currentTime;
+        // O "1" que devolvia o principal já passou: ele está no volume.
+        if (fadeRestoreRef.current !== null && now >= fadeRestoreRef.current) {
+            fadeRestoreRef.current = null;
+            fadeHeldRef.current = null;
+        }
+        const scheduler = stageModeRef.current === 'novo' ? sectionSchedulerRef.current : null;
+        const view = scheduler?.view ?? null;
+        const T = view?.committed ? view.switchAt : null;
+        // O pulo que devolveria o principal foi desfeito (ou mudou) antes do "1": fica segurado.
+        if (fadeRestoreRef.current !== null && fadeRestoreRef.current !== T) dropFade(ctx, false);
+        if (scheduler?.intent || T !== null) {
+            if (fadeRef.current) dropFade(ctx, false);
+            const held = fadeHeldRef.current;
+            if (T !== null && held !== null && fadeRestoreRef.current === null && T - SWITCH_FADE > now) {
+                gain.setValueAtTime(held, T - SWITCH_FADE);
+                gain.linearRampToValueAtTime(masterVolumeRef.current, T);
+                fadeRestoreRef.current = T;
+            }
+            return;
+        }
+        scheduleFade(ctx);
+    };
+    // Volume principal mexido com o FADE marcado ou o principal segurado no meio dele: em 50 ms o
+    // nível segue a mesma curva com o volume novo, só por rampa linear (um setTarget aqui seria
+    // seguido pela rampa do FADE, Ruling ÁUDIO); a volta no "1" do pulo vai pro volume novo.
+    const retimeFadeVolume = (ctx: BaseAudioContext, gain: AudioParam, volume: number) => {
+        const now = ctx.currentTime;
+        const t1 = now + MASTER_RAMP_S;
+        const old = masterVolumeRef.current;
+        const scale = (v: number) => (old > 0 ? (v * volume) / old : volume);
+        const { level, inRamp } = masterLevelAt(now);
+        holdMasterAt(gain, now, level, inRamp);
+        const f = fadeRef.current;
+        if (f) {
+            const curve = { ...f, from: scale(f.from) };
+            if (t1 < f.start) {
+                gain.linearRampToValueAtTime(volume, t1);
+                gain.setValueAtTime(curve.from, f.start);
+                gain.linearRampToValueAtTime(0, f.end);
+                fadeRef.current = curve;
+            } else if (t1 < f.end) {
+                const v1 = fadeLevelAt(curve, t1);
+                gain.linearRampToValueAtTime(v1, t1);
+                gain.linearRampToValueAtTime(0, f.end);
+                fadeRef.current = { start: t1, end: f.end, from: v1 };
+            } else {
+                if (f.end > now) gain.linearRampToValueAtTime(0, f.end);
+                fadeRef.current = { start: now, end: Math.max(now, f.end), from: level };
+            }
+            return;
+        }
+        const held = fadeHeldRef.current;
+        const T = fadeRestoreRef.current;
+        fadeRestoreRef.current = null;
+        if (held === null) return;
+        if (T !== null && T - SWITCH_FADE <= t1) {
+            // A volta no "1" já está cruzando: termina no volume novo.
+            gain.linearRampToValueAtTime(volume, Math.max(T, t1));
+            fadeHeldRef.current = null;
+            return;
+        }
+        const next = scale(held);
+        gain.linearRampToValueAtTime(next, t1);
+        fadeHeldRef.current = next;
+        if (T !== null) {
+            gain.setValueAtTime(next, T - SWITCH_FADE);
+            gain.linearRampToValueAtTime(volume, T);
+            fadeRestoreRef.current = T;
+        }
+    };
+
+    // Relógio do Worker (T5) do palco novo: liga no play e desliga quando a VS para. Cada tique
+    // olha o plano do pulo, o fim da música (idempotente, o rAF também olha) e a seção ouvida.
+    const startSectionClock = () => {
+        if (!sectionClockRef.current) {
+            sectionClockRef.current = createSchedulerClock(() => {
+                sectionTick();
+                if (!songEndRef.current()) setPlayingSpan(sectionIndexAt(spansRef.current, heardPosition()));
+            }, { onFallback: () => setSectionClockMode('interval') });
+        }
+        sectionClockRef.current.start();
+    };
+    useEffect(() => {
+        if (!isPlaying) sectionClockRef.current?.stop();
+    }, [isPlaying]);
+    // O relógio e o agendador saem junto com o motor.
+    useEffect(() => () => {
+        sectionClockRef.current?.dispose();
+        sectionClockRef.current = null;
+        sectionStoppingRef.current = true;
+        sectionSchedulerRef.current?.dispose();
+        sectionSchedulerRef.current = null;
+    }, []);
 
     // Core persistence. Grava o repertório v3: tudo o que já era salvo (mixagem,
     // tom, marcadores, letra, cifra), sourceId, nome e papel do usuário e a ordem (v2), e a
@@ -1499,6 +1875,17 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // linha do tempo e worklets. Nada fica agendado; o play() seguinte monta tudo de novo.
     const stopAllNodes = useCallback(() => {
         const ctx = audioCtxRef.current;
+        // Palco novo: o agendador desfaz o pulo marcado (do "1" em diante, fecha o pouso e as vozes
+        // novas passam a ser as do motor) antes da soltura; a intenção armada fica. O FADE sai
+        // junto: o play seguinte refaz o principal e a rampa.
+        sectionStoppingRef.current = true;
+        try {
+            sectionSchedulerRef.current?.reset();
+        } finally {
+            sectionStoppingRef.current = false;
+        }
+        if (ctx) dropFade(ctx, false);
+        clearFadeState();
         endCountIn();
         const voices = voicesRef.current;
         voicesRef.current = [];
@@ -1553,8 +1940,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         if (gen !== playGenRef.current) return;
 
         // Reset master gain in case a previous fade-out left it near zero. Vale pra
-        // pré-contagem também (ela sai pelo principal).
+        // pré-contagem também (ela sai pelo principal). O FADE marcado sai junto (refeito abaixo).
         if (masterGainRef.current) {
+            clearFadeState();
             masterGainRef.current.gain.cancelScheduledValues(ctx.currentTime);
             masterGainRef.current.gain.setValueAtTime(masterVolume, ctx.currentTime);
         }
@@ -1673,6 +2061,15 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         precountPendingRef.current = false;
         setIsPlaying(true);
         if (count) showCountIn(ctx, count, when, latencyOf((ctx as AudioContext).outputLatency) + (compensation ?? 0));
+        // FADE do fim (R-32), com a música entrando em `when`; com intenção armada não começa.
+        if (!(stageModeRef.current === 'novo' && sectionSchedulerRef.current?.intent)) scheduleFade(ctx, when);
+        // Palco novo: o relógio do Worker liga e o agendador olha o plano a partir daqui.
+        if (stageModeRef.current === 'novo') {
+            setPlayingSpan(sectionIndexAt(spansRef.current, offset));
+            sectionScheduler();
+            startSectionClock();
+            sectionTick();
+        }
     }, [channels, stopAllNodes, masterVolume, timeStretch, precountBeats, songBpm, activeSongId, activeGrid]);
 
     // Pausa (e cancela a pré-contagem). A posição sai da linha do tempo antes de soltar as vozes.
@@ -1690,6 +2087,8 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         pausedAtRef.current = position;
         stopAllNodes();
         setIsPlaying(false);
+        // Parado, o agendador só guarda a intenção (a linha do tempo está vazia).
+        sectionTick();
 
         if (autoNextTimeoutRef.current) {
             clearTimeout(autoNextTimeoutRef.current);
@@ -1726,6 +2125,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
                 autoNextTimeoutRef.current = null;
             }
             stopAllNodes();
+            dropSectionIntent();
             pausedAtRef.current = 0;
             setCurrentTime(0);
             setActiveSongIndex(prev => prev - 1);
@@ -1765,6 +2165,8 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
 
         if (wasPlaying) {
             play(opts);
+        } else {
+            sectionTick();
         }
     }, [duration, isPlaying, play, stopAllNodes]);
 
@@ -1775,6 +2177,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         cancelPendingPlay();
 
         stopAllNodes();
+        dropSectionIntent();
         pausedAtRef.current = 0;
         setCurrentTime(0);
         setCurrentMarker(null);
@@ -1797,14 +2200,20 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         }
 
         if (isPlaying) {
-            // Fade out current song then execute next
+            // Fade out current song then execute next (troca de música por timer, exceção R-32).
             if (masterGainRef.current && audioCtxRef.current) {
-                masterGainRef.current.gain.setTargetAtTime(0.01, audioCtxRef.current.currentTime, 0.3);
+                const ctx = audioCtxRef.current;
                 if (nextSongTimerRef.current !== null) clearTimeout(nextSongTimerRef.current);
                 nextSongTimerRef.current = window.setTimeout(() => {
                     nextSongTimerRef.current = null;
                     executeNextSong();
                 }, 1500);
+                // O FADE e o pulo armado saem antes (com o timer já marcado, o FADE não volta): o
+                // setTarget da troca nunca é seguido por rampa (Ruling ÁUDIO).
+                dropFade(ctx, false);
+                fadeHeldRef.current = null;
+                dropSectionIntent();
+                masterGainRef.current.gain.setTargetAtTime(0.01, ctx.currentTime, 0.3);
             }
         } else {
             executeNextSong();
@@ -1826,6 +2235,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         }
 
         stopAllNodes();
+        dropSectionIntent();
         pausedAtRef.current = 0;
         setCurrentTime(0);
         setActiveSongIndex(prev => prev - 1);
@@ -1847,7 +2257,34 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     }, [shouldAutoPlayNext, channels, play]);
 
 
-    // Update time loop
+    // Fim da música (idempotente: depois dele a linha do tempo fica vazia e nada mais acontece).
+    // Visto pelo rAF e, no palco novo, também pelo tique do Worker (janela em 2º plano segura o
+    // rAF). A troca de música do AUTO segue por timer (exceção R-32). Devolve se a música acabou.
+    const checkSongEnd = (): boolean => {
+        const ctx = audioCtxRef.current;
+        if (!ctx || playPendingRef.current || timelineRef.current.length === 0) return false;
+        if (getPlaybackPosition(ctx) < duration) return false;
+        setCurrentTime(duration);
+        setIsPlaying(false);
+        stopAllNodes();
+
+        // Playback Mode logic: 'stop' e 'fade-out' param aqui, sem passar pra próxima.
+        if (playbackMode !== 'continue') return true;
+
+        // playbackMode === 'continue' (default)
+        if (activeSongIndex < playlist.length - 1) {
+            if (autoNextTimeoutRef.current) clearTimeout(autoNextTimeoutRef.current);
+            autoNextTimeoutRef.current = window.setTimeout(() => {
+                executeNextSong();
+            }, 5000);
+        }
+        return true;
+    };
+    // A versão da renderização mais nova (duração, modo de fim e repertório), pro tique do Worker.
+    const songEndRef = useRef<() => boolean>(() => false);
+    useLayoutEffect(() => { songEndRef.current = checkSongEnd; });
+
+    // Update time loop. O FADE não passa mais por aqui: é a rampa agendada no play (R-32).
     const updateTime = useCallback(() => {
         if (!audioCtxRef.current || !isPlaying) return;
         const elapsed = getPlaybackPosition(audioCtxRef.current);
@@ -1865,9 +2302,12 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             setCurrentMarker(active);
         }
 
-        // === Seções: loop e salto ===
+        // === Seções do palco antigo: loop e salto pelo rAF, como na v1.4.16 (sem contagem) ===
+        // No palco novo o agendador cuida disso no relógio do áudio; aqui só a seção ouvida.
         const songMarkers = playlist[activeSongIndex]?.markers;
-        if (songMarkers && songMarkers.length > 0) {
+        if (stageModeRef.current === 'novo') {
+            setPlayingSpan(sectionIndexAt(spansRef.current, heardPosition()));
+        } else if (songMarkers && songMarkers.length > 0) {
             // seekTo reinicia o playback via play(), mas NÃO reagenda o rAF (o
             // useEffect só reage a mudança de isPlaying, que aqui continua true).
             // Reagendamos manualmente após cada salto, senão o updateTime morre
@@ -1920,44 +2360,11 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             lastSectionRef.current = curIdx;
         }
 
-        if (elapsed >= duration) {
-            setCurrentTime(duration);
-            setIsPlaying(false);
-            stopAllNodes();
-
-            // Playback Mode logic
-            if (playbackMode === 'stop') {
-                // Just stop, don't advance
-                return;
-            }
-
-            if (playbackMode === 'fade-out') {
-                // Already stopped - no auto-advance
-                return;
-            }
-
-            // playbackMode === 'continue' (default)
-            if (activeSongIndex < playlist.length - 1) {
-                if (autoNextTimeoutRef.current) clearTimeout(autoNextTimeoutRef.current);
-                autoNextTimeoutRef.current = window.setTimeout(() => {
-                    executeNextSong();
-                }, 5000);
-            }
-            return;
-        }
-
-        // Fade-out mode: fade in the last 5 seconds
-        if (playbackMode === 'fade-out' && duration > 5 && elapsed >= duration - 5) {
-            const remaining = duration - elapsed;
-            const fadeGain = Math.max(0.001, remaining / 5);
-            if (masterGainRef.current && audioCtxRef.current) {
-                masterGainRef.current.gain.setTargetAtTime(fadeGain * masterVolume, audioCtxRef.current.currentTime, 0.1);
-            }
-        }
+        if (songEndRef.current()) return;
 
         setCurrentTime(elapsed);
         animationRef.current = requestAnimationFrame(updateTime);
-    }, [isPlaying, duration, activeSongIndex, playlist, stopAllNodes, executeNextSong, playbackMode, masterVolume, seekTo]);
+    }, [isPlaying, duration, activeSongIndex, playlist, seekTo, heardPosition]);
 
     useEffect(() => {
         if (isPlaying) {
@@ -2296,6 +2703,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             if (gen !== playGenRef.current || playChainRef.current !== chain) return;
         }
         ch.gainNode.gain.setValueAtTime(channelGain(ch, list), ctx.currentTime);
+        // Palco novo: as vozes do pulo marcado são as de quando ele foi marcado. Canal novo no meio
+        // desfaz (ou fecha o pouso) e o agendador marca de novo com ele (Aviso T17).
+        if (stageModeRef.current === 'novo') sectionSchedulerRef.current?.reset();
         const entry = entryFor(ch, chain.pitch, chain.compensation);
         const first = timelineRef.current[0];
         const at = Math.max(nextRenderQuantum(ctx, START_LEAD_QUANTA), first?.ctxStart ?? 0);
@@ -2304,6 +2714,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         voicesRef.current = [...voicesRef.current, voice];
         ch.sourceNode = voice.source;
         playChainRef.current = { ...chain, channels: [...chain.channels, ch] };
+        sectionTick();
     };
 
     // Troca uma música do repertório fora da renderização (depois de um await), a partir da lista
@@ -2865,6 +3276,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         if (newPlaylist.length === 0) {
             cancelPendingPlay();
             stopAllNodes();
+            dropSectionIntent();
             setActiveSongIndex(0);
             setCurrentTime(0);
             setDuration(0);
@@ -2874,6 +3286,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         if (songId === currentActiveId) {
             cancelPendingPlay();
             stopAllNodes();
+            dropSectionIntent();
             pausedAtRef.current = 0;
             setCurrentTime(0);
             const newIndex = Math.min(removedIndex, newPlaylist.length - 1);
@@ -2900,6 +3313,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         }
 
         stopAllNodes();
+        dropSectionIntent();
         pausedAtRef.current = 0;
         setCurrentTime(0);
         setCurrentMarker(null);
@@ -3002,8 +3416,11 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
 
         const ch = song.channels.find(c => c.id === channelId);
         if (ch) {
-            // Tocando: a voz dele para (a cadeia do canal sai do grafo logo abaixo).
+            // Tocando: a voz dele para (a cadeia do canal sai do grafo logo abaixo). Palco novo: o
+            // pulo marcado com ele é desfeito antes (ou fecha o pouso) e marcado de novo sem ele.
             const ctx = audioCtxRef.current;
+            const sounding = stageModeRef.current === 'novo' && voicesRef.current.some((v) => v.channelId === channelId);
+            if (sounding) sectionSchedulerRef.current?.reset();
             const gone = voicesRef.current.filter((v) => v.channelId === channelId);
             if (gone.length > 0) {
                 voicesRef.current = voicesRef.current.filter((v) => v.channelId !== channelId);
@@ -3016,6 +3433,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             releasePitchNode(ch.id);
             ch.gainNode.disconnect();
             ch.pannerNode.disconnect();
+            if (sounding) sectionTick();
         }
 
         song.channels = song.channels.filter(c => c.id !== channelId);
@@ -3062,6 +3480,20 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             // (nada dele na VS; ver detachEarDelay).
             const leavesEar = resolveChannelRole(before) !== 'normal' && resolveChannelRole(after) === 'normal';
             const earDelay = leavesEar ? detachEarDelay(after.id) : null;
+            // O play de agora passa a ver o papel novo (a contagem do pulo acha o click por ele).
+            const chain = playChainRef.current;
+            if (chain) playChainRef.current = { ...chain, channels: chain.channels.map((c) => (c.id === after.id ? after : c)) };
+            // Palco novo tocando: a contagem do pulo entra pela entrada do canal de click. Papel que
+            // entra ou sai de Click desfaz o pulo já marcado (os bipes param já, antes do corte; o
+            // agendador marca de novo no tique seguinte) e, até a troca de rota acabar, a contagem
+            // vai pelo atraso da contagem do grafo: nenhum bipe entra num fader que ainda vai
+            // trocar de barramento (um Click que vira Normal levaria a contagem pra PA).
+            const clickMoved = resolveChannelRole(before) === 'click' || resolveChannelRole(after) === 'click';
+            const holdJump = clickMoved && stageModeRef.current === 'novo' && timelineRef.current.length > 0;
+            if (holdJump) {
+                countViaDelayRef.current = true;
+                if (sectionSchedulerRef.current?.view?.committed) sectionSchedulerRef.current.reset();
+            }
             if (ctx && graph && cuts) {
                 switchRoute(() => {
                     earDelay?.disconnect();
@@ -3069,6 +3501,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
                     syncChannelPan(ctx, after, graph.plan, autoPanRef.current, false);
                 });
             }
+            if (holdJump) enqueueRoute(async () => { countViaDelayRef.current = false; });
             // E quem continua tocando com Solo ligado: reaplica o ganho em todos, como o toggleSolo.
             next.forEach(ch => {
                 if (ch.gainNode && ctx) {
@@ -3109,7 +3542,10 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
 
     const updateMasterVolume = (volume: number) => {
         if (masterGainRef.current && audioCtxRef.current) {
-            masterGainRef.current.gain.setTargetAtTime(volume, audioCtxRef.current.currentTime, 0.05);
+            // Com o FADE marcado, só rampa linear (retimeFadeVolume); sem ele, como sempre.
+            if (fadeRef.current || fadeHeldRef.current !== null) retimeFadeVolume(audioCtxRef.current, masterGainRef.current.gain, volume);
+            else masterGainRef.current.gain.setTargetAtTime(volume, audioCtxRef.current.currentTime, 0.05);
+            masterVolumeRef.current = volume;
             setMasterVolume(volume);
         }
     };
@@ -3382,10 +3818,10 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         for (const v of voicesRef.current) v.source.playbackRate.value = speed;
     }, []);
 
-    // === Controles de seção: loop (N/∞) e salto agendado ===
+    // === Controles de seção do palco antigo: loop (N/∞) e salto agendado (v1.4.16) ===
     // Armar loop numa seção: ao terminar aquela seção, repete `repeats` vezes
     // (ou infinito) e sai sozinho. Loop e salto são mutuamente exclusivos.
-    const armLoop = useCallback((sectionIndex: number, repeats: number | 'infinite') => {
+    const legacyArmLoop = useCallback((sectionIndex: number, repeats: number | 'infinite') => {
         const song = playlist[activeSongIndex];
         if (!song?.markers || sectionIndex < 0 || sectionIndex >= song.markers.length) return;
         const markers = song.markers;
@@ -3407,13 +3843,13 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         }
     }, [playlist, activeSongIndex, currentTime, seekTo]);
 
-    const cancelLoop = useCallback(() => {
+    const legacyCancelLoop = useCallback(() => {
         loopRef.current = null;
         setActiveLoop(null);
     }, []);
 
     // Agendar salto: no fim da seção atual, volta pra seção alvo uma vez.
-    const armJump = useCallback((sectionIndex: number) => {
+    const legacyArmJump = useCallback((sectionIndex: number) => {
         const song = playlist[activeSongIndex];
         if (!song?.markers || sectionIndex < 0 || sectionIndex >= song.markers.length) return;
         jumpRef.current = sectionIndex;
@@ -3422,10 +3858,102 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         setActiveLoop(null);
     }, [playlist, activeSongIndex]);
 
-    const cancelJump = useCallback(() => {
+    const legacyCancelJump = useCallback(() => {
         jumpRef.current = null;
         setPendingJump(null);
     }, []);
+
+    // Modo do palco que vale (R-25): só muda com a VS parada; pedido tocando vale na próxima
+    // parada. O que estava armado no mecanismo de antes sai.
+    useEffect(() => {
+        if (isPlaying || stageModeRef.current === requestedStageMode) return;
+        if (stageModeRef.current === 'novo') {
+            sectionSchedulerRef.current?.setIntent(null);
+            setLanded(null);
+        } else {
+            loopRef.current = null;
+            jumpRef.current = null;
+            setActiveLoop(null);
+            setPendingJump(null);
+        }
+        stageModeRef.current = requestedStageMode;
+        setStageMode(requestedStageMode);
+    }, [requestedStageMode, isPlaying]);
+
+    // Modo de fim trocado tocando: entrou no FADE, a rampa é marcada (se nada está armado);
+    // saiu dele, a rampa sai e, se o principal já descia, ele volta pro volume em 50 ms.
+    useEffect(() => {
+        const ctx = audioCtxRef.current;
+        if (!ctx) return;
+        if (playbackMode === 'fade-out') syncFade();
+        else dropFade(ctx, true);
+    }, [playbackMode]);
+
+    // === Comandos de seção do palco novo (T28) ===
+    // Quem decide é a regra da T4 (src/lib/sectionArm.ts); aqui só executa. Tocando, arma no
+    // agendador; parado, leva a VS pro início da seção e desarma. Sem o portão do plano pede
+    // upgrade e nada muda. Só valem no palco novo: no antigo não fazem nada (ele usa os
+    // adaptadores abaixo). A seção atual é a que se ouve (tempo ouvido).
+    const armContext = (gates: StageGates): ArmContext => ({
+        current: sectionIndexAt(spansRef.current, heardPosition()),
+        isPlaying,
+        sectionCount: spansRef.current.length,
+        gates,
+    });
+    const runArm = (rule: (intent: ArmIntent | null) => ArmResult): { upgrade: boolean } => {
+        if (stageModeRef.current !== 'novo') return { upgrade: false };
+        const scheduler = sectionScheduler();
+        if (!scheduler) return { upgrade: false };
+        const r = rule(scheduler.intent);
+        if (r.upgrade) return { upgrade: true };
+        if (r.seekToSection !== null) {
+            const span = spansRef.current[r.seekToSection];
+            if (span) seekTo(span.start);
+        }
+        scheduler.setIntent(r.intent);
+        return { upgrade: false };
+    };
+    const armSection = (i: number) => runArm((intent) => tapSection(intent, i, armContext(sectionGates)));
+    const stepSection = (dir: -1 | 1) => runArm((intent) => stepSectionIntent(intent, dir, armContext(sectionGates)));
+    const armRepeat = (plays: Plays) => runArm((intent) => armRepeatIntent(intent, plays, armContext(sectionGates)));
+    const toggleSectionLoop = () => runArm((intent) => toggleLoop(intent, armContext(sectionGates)));
+    // Cancelar nunca pede plano.
+    const cancelArm = () => {
+        if (stageModeRef.current === 'novo') sectionSchedulerRef.current?.setIntent(null);
+    };
+
+    // === Adaptadores (palco antigo e banda), que respeitam o modo que vale agora ===
+    // Palco novo, com índice de span: armJump arma { i, 1 } sem nunca cancelar (parado na seção
+    // atual arma "repete a atual 1x", Ruling T4-c); armLoop é o "repetir N" da banda no sentido
+    // antigo (bandRepeat: em outra seção, N + 1 passagens), com o teto subido uma passagem pra
+    // banda (9x numa outra seção = 10 passagens). Palco antigo: o caminho da v1.4.16, com o índice
+    // da marca. O resultado de upgrade não volta pra ninguém (a banda não abre os Planos).
+    const armJump = (sectionIndex: number) => {
+        if (stageModeRef.current !== 'novo') { legacyArmJump(sectionIndex); return; }
+        runArm((intent) => armAt(intent, sectionIndex, 1, armContext(sectionGates)));
+    };
+    const armLoop = (sectionIndex: number, repeats: number | 'infinite') => {
+        if (stageModeRef.current !== 'novo') { legacyArmLoop(sectionIndex, repeats); return; }
+        // Da rede o -1 (infinito) pode chegar como texto: o App só troca o -1 numérico.
+        const times: Plays = repeats === 'infinite' || Number(repeats) === -1 ? 'infinite' : repeats;
+        const gates = { ...sectionGates, maxRepeats: sectionGates.maxRepeats + 1 };
+        runArm((intent) => {
+            const c = armContext(gates);
+            const asked = bandRepeat(sectionIndex, times, c.current);
+            return armAt(intent, asked.target, asked.plays, c);
+        });
+    };
+    const cancelJump = () => {
+        if (stageModeRef.current === 'novo') cancelArm();
+        else legacyCancelJump();
+    };
+    const cancelLoop = () => {
+        if (stageModeRef.current === 'novo') cancelArm();
+        else legacyCancelLoop();
+    };
+    // O pedido do palco novo no formato antigo, pra banda (HOST_STATE) e quem mais lê pendingJump/activeLoop.
+    const currentSpanIndex = isPlaying ? playingSpan : sectionIndexAt(sectionSpansView, currentTime);
+    const newStageArm = useMemo(() => legacySectionView(sectionIntent, currentSpanIndex), [sectionIntent, currentSpanIndex]);
 
     return {
         isReady,
@@ -3484,13 +4012,28 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         // Phase 2
         playbackMode,
         setPlaybackMode,
-        // Seções: loop (N/∞) e salto agendado
-        activeLoop,
-        pendingJump,
+        // Seções: loop (N/∞) e salto agendado. Adaptadores do palco antigo e da banda: no palco
+        // novo, índices de span e o pedido no agendador; no antigo, o caminho da v1.4.16.
+        activeLoop: stageMode === 'novo' ? newStageArm.activeLoop : activeLoop,
+        pendingJump: stageMode === 'novo' ? newStageArm.pendingJump : pendingJump,
         armLoop,
         cancelLoop,
         armJump,
         cancelJump,
+        // Palco novo (T28): pulo agendado, REPETIR e LOOP no relógio do áudio.
+        stageMode,
+        sectionIntent,
+        transitionView,
+        landed,
+        sectionSpansView,
+        armSection,
+        stepSection,
+        armRepeat,
+        toggleSectionLoop,
+        cancelArm,
+        heardNow,
+        heardPosition,
+        sectionClockMode,
         addChannelToActiveSong,
 
         // Channel management
