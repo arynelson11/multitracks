@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { createFakeDb, createRes, type FakeDb, type FakeRes } from './fakeSupabase.js'
 import { BillingError } from '../_lib/billing.js'
-import { legacyStats } from '../_lib/admin/legacyStats.js'
 import {
   AdminError,
   createAdminRouter,
@@ -46,9 +45,6 @@ vi.mock('../_lib/auth.js', () => ({
   }),
 }))
 vi.mock('@supabase/supabase-js', () => ({ createClient: vi.fn(() => db) }))
-vi.mock('../_lib/admin/legacyStats.js', () => ({
-  legacyStats: vi.fn(async (_req: unknown, res: FakeRes) => { res.status(200).json({ painel: 'antigo' }) }),
-}))
 
 type Req = { method: string; query?: Record<string, unknown>; token?: string | null; body?: unknown }
 
@@ -73,7 +69,6 @@ beforeEach(() => {
   ping = vi.fn(async (ctx: AdminCtx) => ({ pong: true, admin: ctx.admin, query: ctx.query }))
   echo = vi.fn(async (ctx: AdminCtx) => ({ body: ctx.body }))
   router = createAdminRouter({ ping: { method: 'GET', fields: ['page'], run: ping }, echo: { method: 'POST', fields: ['note'], run: echo } })
-  vi.mocked(legacyStats).mockClear()
 })
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -348,39 +343,33 @@ describe('erros viram resposta em português', () => {
   })
 })
 
-describe('painel antigo (?source=) até a T28', () => {
+describe('painel antigo fora (T28)', () => {
   async function adminStats(req: Req) {
     const { default: handler } = await import('../admin-stats.js')
     return call(handler, req)
   }
 
-  it('?source=asaas continua chamando o painel antigo', async () => {
-    const res = await adminStats({ method: 'GET', query: { source: 'asaas' } })
-    expect(res.statusCode).toBe(200)
-    expect(res.body).toEqual({ painel: 'antigo' })
-    expect(res.headers['Cache-Control']).toBe('no-store')
-    expect(legacyStats).toHaveBeenCalledTimes(1)
-    const [req] = vi.mocked(legacyStats).mock.calls[0] as [{ query: Record<string, unknown> }, unknown]
-    expect(req.query.source).toBe('asaas')
+  it('?source=asaas e ?source=replicate agora respondem 400 (ação desconhecida)', async () => {
+    for (const source of ['asaas', 'replicate']) {
+      const res = await adminStats({ method: 'GET', query: { source } })
+      expect(res.statusCode, source).toBe(400)
+      expect(res.body, source).toEqual({ error: 'Ação desconhecida: sem dado' })
+      expect(res.headers['Cache-Control'], source).toBe('no-store')
+    }
+    expect(db.rpcCalls).toEqual([])
   })
 
-  it('usuário comum com ?source=asaas responde 403 sem abrir o painel antigo', async () => {
+  it('usuário comum com ?source=asaas responde 403', async () => {
     const res = await adminStats({ method: 'GET', query: { source: 'asaas' }, token: 'comum' })
     expect(res.statusCode).toBe(403)
     expect(res.body).toEqual({ error: 'Esta conta não é admin.' })
-    expect(legacyStats).not.toHaveBeenCalled()
   })
 
-  it('o painel antigo só vale em GET', async () => {
-    const res = await adminStats({ method: 'POST', query: { source: 'asaas' } })
+  it('?source= junto de uma ação é campo não esperado', async () => {
+    const res = await call(router, { method: 'GET', query: { action: 'ping', source: 'asaas' } })
     expect(res.statusCode).toBe(400)
-    expect(legacyStats).not.toHaveBeenCalled()
-  })
-
-  it('roteador montado sem o painel antigo trata ?source= como ação desconhecida', async () => {
-    const res = await call(router, { method: 'GET', query: { source: 'asaas' } })
-    expect(res.statusCode).toBe(400)
-    expect(legacyStats).not.toHaveBeenCalled()
+    expect(res.body).toEqual({ error: 'Campo não esperado: source.' })
+    expect(ping).not.toHaveBeenCalled()
   })
 })
 

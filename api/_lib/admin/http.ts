@@ -270,13 +270,7 @@ function describeError(e: unknown): string {
   return e instanceof Error ? `${e.name}: ${e.message}`.slice(0, 300) : 'erro sem mensagem'
 }
 
-export type AdminRouterOptions = {
-  // Painel antigo (?source=asaas|replicate), só até a T28. Roda depois da
-  // conferência do admin e só em GET.
-  legacy?: (req: any, res: any) => Promise<unknown> // eslint-disable-line @typescript-eslint/no-explicit-any
-}
-
-export function createAdminRouter(handlers: AdminHandlers, options: AdminRouterOptions = {}): (req: any, res: any) => Promise<void> { // eslint-disable-line @typescript-eslint/no-explicit-any
+export function createAdminRouter(handlers: AdminHandlers): (req: any, res: any) => Promise<void> { // eslint-disable-line @typescript-eslint/no-explicit-any
   return async (req, res) => {
     applyCors(req, res, 'GET,POST,OPTIONS')
     res.setHeader('Cache-Control', 'no-store')
@@ -298,11 +292,6 @@ export function createAdminRouter(handlers: AdminHandlers, options: AdminRouterO
       // Defesa a mais: ok sem o papel (se alguém trocar verifyAdmin por verifyUser) não passa.
       if (auth.isAdmin !== true) {
         res.status(403).json({ error: MSG_FORBIDDEN })
-        return
-      }
-
-      if (options.legacy && req.method === 'GET' && req.query?.source !== undefined) {
-        await options.legacy(req, res)
         return
       }
 
