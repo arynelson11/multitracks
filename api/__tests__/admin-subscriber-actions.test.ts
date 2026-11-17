@@ -33,6 +33,9 @@ const MSG = {
   cancelDown: 'O Asaas não respondeu. Nada foi cancelado.',
   cancelNone: 'Esta conta não tem assinatura ativa.',
   courtesyNotOurs: 'Esta cortesia não é desta conta.',
+  // Ruling ADM-T26-cortesia-legado
+  legacyCourtesy: 'Esta conta tem uma cobrança antiga no Asaas que o app não controla. A cortesia muda o plano no app, mas não para essa cobrança. Pare a cobrança antiga no painel do Asaas e confirme que parou.',
+  legacyStoppedFormat: 'A confirmação da cobrança antiga está em formato inválido.',
   daysRange: 'A duração da cortesia precisa ser um número de 1 a 365.',
   daysMissing: 'Escolha por quantos dias vale a cortesia, ou Sem data.',
   adminNotBlockable: 'Não dá pra bloquear uma conta admin.',
@@ -526,6 +529,88 @@ describe('cortesia', () => {
     const res = await post('grant-courtesy', { userId: USER_B, planKey: 'pro_mensal', days: 7, note: 'x'.repeat(301) })
     expect(res.statusCode).toBe(400)
     expect(res.body).toEqual({ error: 'A nota pode ter no máximo 300 caracteres.' })
+  })
+
+  // Ruling ADM-T26-cortesia-legado: no assinante antigo a cortesia muda o plano no app e não para a
+  // cobrança antiga no Asaas; o admin confirma que já parou (legacyChargeStopped: true).
+  const makeLegacy = (plan = 'essencial_mensal') => {
+    Object.assign(profile(USER_B), { plan, plan_expires_at: null })
+    db.tables.payments.push({ id: 'chk_old', user_id: USER_B, asaas_checkout_id: 'chk_old', plan_key: 'essencial_mensal', paid_at: '2026-10-20T12:00:00.000Z' })
+  }
+
+  it('assinante antigo: dar cortesia sem confirmar que parou a cobrança antiga responde 409 e nada muda', async () => {
+    makeLegacy()
+    const before = snapshot()
+    for (const extra of [{}, { legacyChargeStopped: false }, { legacyChargeStopped: null }]) {
+      const res = await post('grant-courtesy', { userId: USER_B, planKey: 'pro_anual', days: 30, ...extra })
+      expect(res.statusCode, JSON.stringify(extra)).toBe(409)
+      expect(res.body).toEqual({ error: MSG.legacyCourtesy })
+    }
+    expect(grantCourtesy).not.toHaveBeenCalled()
+    expect(rpcNames()).toEqual([])
+    expect(logs).toEqual([])
+    expect(snapshot()).toEqual(before)
+  })
+
+  it('assinante antigo: com a confirmação a cortesia sai e o registro guarda que o admin parou a cobrança', async () => {
+    makeLegacy()
+    const res = await post('grant-courtesy', { userId: USER_B, planKey: 'pro_anual', days: null, legacyChargeStopped: true })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toEqual({ courtesyId: 'cortesia:3', until: null })
+    expect(logs[0].start).toMatchObject({ p_action: 'grant_courtesy', p_target_user: USER_B,
+      p_before: { subscriptions: [], legacyChargeStopped: true } })
+    expect(logs[0].finish).toMatchObject({ p_result: 'ok' })
+    expect(asaasCalls()).toEqual([])
+  })
+
+  it('assinante antigo: encerrar cortesia também exige a confirmação, e ela vai pro registro', async () => {
+    makeLegacy('pro_anual')
+    db.tables.billing_subscriptions.push(subRow({ id: 'cortesia:b', kind: 'courtesy', user_id: USER_B, plan_key: 'pro_anual', cycle: null }))
+    const refused = await post('end-courtesy', { userId: USER_B, courtesyId: 'cortesia:b' })
+    expect(refused.statusCode).toBe(409)
+    expect(refused.body).toEqual({ error: MSG.legacyCourtesy })
+    expect(sub('cortesia:b').status).toBe('active')
+    expect(logs).toEqual([])
+    const res = await post('end-courtesy', { userId: USER_B, courtesyId: 'cortesia:b', legacyChargeStopped: true })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toEqual({ result: 'canceled' })
+    expect(logs[0].start).toMatchObject({ p_action: 'end_courtesy',
+      p_before: { id: 'cortesia:b', kind: 'courtesy', planKey: 'pro_anual', status: 'active', accessUntil: null, legacyChargeStopped: true } })
+  })
+
+  it('conta normal não precisa do campo, e ele não muda nada', async () => {
+    // B no Livre, sem pagamento antigo: com e sem o campo, a mesma cortesia e o mesmo registro.
+    const without = await post('grant-courtesy', { userId: USER_B, planKey: 'pro_mensal', days: 7 })
+    const withField = await post('grant-courtesy', { userId: USER_B, planKey: 'pro_anual', days: 7, legacyChargeStopped: true })
+    expect(without.statusCode).toBe(200)
+    expect(withField.statusCode).toBe(200)
+    expect(logs[0].start.p_before).toEqual({ subscriptions: [] })
+    expect(logs[1].start.p_before).not.toHaveProperty('legacyChargeStopped')
+    // A tem paga ativa: um pagamento antigo não adotado não a torna antiga (a mesma regra do MSG_LEGACY_PAID).
+    db.tables.payments.push({ id: 'chk_older', user_id: USER_A, asaas_checkout_id: 'chk_older', plan_key: 'essencial_mensal', paid_at: '2026-09-20T12:00:00.000Z' })
+    const paid = await post('grant-courtesy', { userId: USER_A, planKey: 'pro_anual', days: null })
+    expect(paid.statusCode).toBe(200)
+    // Assinatura antiga já adotada pela Fase 3 (linha com o id do checkout) não conta como antiga.
+    makeLegacy()
+    db.tables.billing_subscriptions.push(subRow({ id: 'chk_old', user_id: USER_B, status: 'canceled', cancel_source: 'admin', access_until: NOW.toISOString() }))
+    const adopted = await post('grant-courtesy', { userId: USER_B, planKey: 'essencial_anual', days: null })
+    expect(adopted.statusCode).toBe(200)
+    // Encerrar numa conta normal com o campo: igual a sem.
+    const end = await post('end-courtesy', { userId: USER_B, courtesyId: 'cortesia:3', legacyChargeStopped: true })
+    expect(end.statusCode).toBe(200)
+    expect(logs.at(-1)!.start.p_before).not.toHaveProperty('legacyChargeStopped')
+  })
+
+  it('legacyChargeStopped fora de formato responde 400', async () => {
+    for (const legacyChargeStopped of ['sim', 1, 'true', {}]) {
+      const res = await post('grant-courtesy', { userId: USER_B, planKey: 'pro_mensal', days: 7, legacyChargeStopped })
+      expect(res.statusCode, JSON.stringify(legacyChargeStopped)).toBe(400)
+      expect(res.body).toEqual({ error: MSG.legacyStoppedFormat })
+      const end = await post('end-courtesy', { userId: USER_B, courtesyId: 'cortesia:x', legacyChargeStopped })
+      expect(end.statusCode).toBe(400)
+      expect(end.body).toEqual({ error: MSG.legacyStoppedFormat })
+    }
+    expect(rpcNames()).toEqual([])
   })
 
   it('encerrar cortesia de outra conta responde 400', async () => {

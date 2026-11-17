@@ -23,7 +23,8 @@ import { AdminError, asaasFailure, int, oneOf, str, uuid, type AdminCtx, type Ad
 //   e repetir a ação termina o que faltou. Nenhuma exceção sai daqui depois de
 //   agir sem essa marcação (aviso T16/T28).
 // * Cortesia mexe só no banco, mas pela Fase 3, que não grava registro: também
-//   no withAudit.
+//   no withAudit. No assinante antigo ela pede legacyChargeStopped: true (Ruling
+//   ADM-T26-cortesia-legado), porque não para a cobrança antiga no Asaas.
 // * Bloquear, desbloquear e ajustar cota: a função SQL (T21) grava o registro
 //   na mesma transação, então não usam withAudit.
 // * Escrita no Asaas (PUT da troca, DELETE do cancelamento) sem resposta que dê
@@ -50,6 +51,10 @@ const MSG_CANCEL_SUB_NOT_FOUND = 'O Asaas não achou esta assinatura. Nada foi c
 const CANCEL_PARTIAL_PREFIX = 'Parte do cancelamento foi feita'
 const MSG_FLAGGED = 'A ficha ficou marcada em Pendências.'
 const MSG_COURTESY_NOT_OURS = 'Esta cortesia não é desta conta.'
+// Ruling ADM-T26-cortesia-legado: no assinante antigo a cortesia muda o plano no app e não para a
+// cobrança antiga no Asaas; o admin confirma que já parou (legacyChargeStopped: true).
+const MSG_LEGACY_COURTESY = 'Esta conta tem uma cobrança antiga no Asaas que o app não controla. A cortesia muda o plano no app, mas não para essa cobrança. Pare a cobrança antiga no painel do Asaas e confirme que parou.'
+const MSG_LEGACY_STOPPED_FORMAT = 'A confirmação da cobrança antiga está em formato inválido.'
 const MSG_DAYS_MISSING = 'Escolha por quantos dias vale a cortesia, ou Sem data.'
 const MSG_ADMIN_NOT_BLOCKABLE = 'Não dá pra bloquear uma conta admin.'
 const MSG_ALREADY_BLOCKED = 'Esta conta já está bloqueada.'
@@ -109,6 +114,15 @@ function daysOf(body: Record<string, unknown>): number | null {
   if (!Object.hasOwn(body, 'days')) throw new AdminError(400, MSG_DAYS_MISSING)
   if (body.days === null) return null
   return int(body, 'days', { label: 'a duração da cortesia', min: 1, max: 365 })
+}
+
+// legacyChargeStopped: opcional; quando vem, só true ou false (Ruling ADM-T3-estrito). Nulo
+// conta como ausente, como nos outros campos.
+function legacyStoppedOf(body: Record<string, unknown>): boolean {
+  const raw = body.legacyChargeStopped
+  if (raw === undefined || raw === null) return false
+  if (typeof raw !== 'boolean') throw new AdminError(400, MSG_LEGACY_STOPPED_FORMAT)
+  return raw
 }
 
 // ── Banco
@@ -358,6 +372,18 @@ function courtesyRefusal(rows: SubRow[], planKey: PlanKey, until: string | null,
   return null
 }
 
+// Assinante antigo na cortesia (Ruling ADM-T26-cortesia-legado), pela mesma detecção do
+// MSG_LEGACY_PAID: sem paga ativa e com pagamento antigo que não virou linha. Sem a confirmação de
+// que a cobrança antiga já foi parada no painel do Asaas, recusa (409) antes de mudar qualquer coisa.
+// Devolve se a conta é antiga, pra o registro guardar a confirmação; na conta normal o campo não
+// muda nada.
+async function legacyCourtesyGate(ctx: AdminCtx, userId: string, rows: SubRow[], stopped: boolean): Promise<boolean> {
+  if (paidActive(rows).length > 0) return false
+  if (!(await isLegacyPaying(ctx, userId, rows))) return false
+  if (!stopped) throw new AdminError(409, MSG_LEGACY_COURTESY)
+  return true
+}
+
 // ── Bloquear (D10)
 
 async function setBlock(ctx: AdminCtx, userId: string, block: boolean, reason: string | null): Promise<{ result: 'blocked' | 'unblocked' }> {
@@ -436,19 +462,22 @@ export const handlers: AdminHandlers = {
 
   'grant-courtesy': {
     method: 'POST',
-    fields: ['userId', 'planKey', 'days', 'note'],
+    fields: ['userId', 'planKey', 'days', 'note', 'legacyChargeStopped'],
     run: async (ctx) => {
       const userId = accountOf(ctx.body)
       const planKey = planKeyOf(ctx.body)
       const days = daysOf(ctx.body)
       const note = str(ctx.body, 'note', { label: 'a nota', max: 300, optional: true })
+      const stopped = legacyStoppedOf(ctx.body)
       const until = days === null ? null : courtesyUntil(ctx.now, days)
       const rows = await subscriptionsOf(ctx, userId)
       const refusal = courtesyRefusal(rows, planKey, until, ctx.now)
       if (refusal) throw new AdminError(409, refusal)
+      const legacy = await legacyCourtesyGate(ctx, userId, rows, stopped)
+      const before = { subscriptions: liveSummary(rows, ctx.now), ...(legacy ? { legacyChargeStopped: true } : {}) }
       return withAudit(
         ctx,
-        { action: 'grant_courtesy', targetUserId: userId, before: { subscriptions: liveSummary(rows, ctx.now) }, note },
+        { action: 'grant_courtesy', targetUserId: userId, before, note },
         async () => {
           const { courtesyId } = await grantCourtesy(deps(ctx), { userId, planKey, until: until ? new Date(until) : null, note })
           return { courtesyId, until }
@@ -460,17 +489,19 @@ export const handlers: AdminHandlers = {
 
   'end-courtesy': {
     method: 'POST',
-    fields: ['userId', 'courtesyId'],
+    fields: ['userId', 'courtesyId', 'legacyChargeStopped'],
     run: async (ctx) => {
       const userId = accountOf(ctx.body)
       const courtesyId = str(ctx.body, 'courtesyId', { label: 'a cortesia', max: 200 })
-      const row = courtesyId.startsWith(COURTESY_PREFIX)
-        ? (await subscriptionsOf(ctx, userId)).find((r) => r.id === courtesyId && r.kind === 'courtesy')
-        : undefined
+      const stopped = legacyStoppedOf(ctx.body)
+      const rows = courtesyId.startsWith(COURTESY_PREFIX) ? await subscriptionsOf(ctx, userId) : []
+      const row = rows.find((r) => r.id === courtesyId && r.kind === 'courtesy')
       if (!row) throw new AdminError(400, MSG_COURTESY_NOT_OURS)
+      const legacy = await legacyCourtesyGate(ctx, userId, rows, stopped)
+      const before = legacy ? { ...summary(row), legacyChargeStopped: true } : summary(row)
       return withAudit(
         ctx,
-        { action: 'end_courtesy', targetUserId: userId, targetRef: courtesyId, before: summary(row) },
+        { action: 'end_courtesy', targetUserId: userId, targetRef: courtesyId, before },
         async () => ({ result: (await endCourtesy(deps(ctx), { courtesyId })).result }),
         (r) => r,
       )
