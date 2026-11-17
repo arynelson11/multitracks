@@ -40,7 +40,7 @@ novo liga a partir de 740 px de altura, Ruling T18-altura).
 | `tom` | grade de tons aberta (toque no botão do tom) |
 | `compasso` | diálogo do compasso aberto no EDITAR |
 | `config` | as duas seções da T19 numa página própria: placa de 2 canais (caindo de 4 ou mais, com avisos) e de 8 canais |
-| `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso de cada regra |
+| `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso pra cada ramo das regras (14 falhas, uma por ramo) |
 
 O fixture é o pior caso de texto: 14 canais com os nomes organizados mais
 longos da Parte 1 ("Percussão Dedilhado Ambiente"), 9 seções (uma "Refrão
@@ -60,8 +60,8 @@ Para todo elemento com texto próprio que está na tela:
   (`overflow` hidden ou clip; numa rolagem, o que fica antes do começo não chega
   rolando). Numa fileira que rola de lado (botoeira, mixer), nada pela metade na
   borda com ela parada (Ruling T10-rolagem); o que está todo fora chega rolando.
-  Na vertical a rolagem é como a página (o EDITAR em 1024x768 rola, de
-  propósito). A caixa que emoldura o texto (selo, botão, aviso PRÓXIMA) também
+  Dentro de um contêiner que rola na vertical, o que fica embaixo chega rolando;
+  quem barra a área do palco rolando é a regra de estrutura. A caixa que emoldura o texto (selo, botão, aviso PRÓXIMA) também
   não pode ser cortada. Na vertical conta a tinta das letras (medida no canvas
   com a fonte do elemento), não a caixa da linha.
 - **(b) encostando**: em `button`, `[role=button]`, `[role=radio]` e selos
@@ -76,8 +76,11 @@ Para todo elemento com texto próprio que está na tela:
 - **(d) rolagem**: a página não rola de lado.
 - **estrutura** (só no palco, arquitetura D do plano): as faixas (barra do app,
   transporte, onda, botoeira, faixa do meio, mixer) na mesma ordem e sem uma
-  por cima da outra em qualquer largura, e o nome do repertório ao lado de
-  "MÚSICA 3 DE 6" só a partir de 1700 px.
+  por cima da outra em qualquer largura, o nome do repertório ao lado de
+  "MÚSICA 3 DE 6" só a partir de 1700 px e a área do palco (`[data-stage-scroll]`)
+  sem rolar na vertical. Folga só no `editar` e no `compasso`, até 38 px (a T18
+  aceitou o EDITAR rolar em tela baixa; 30 px em 1024x768); ao vivo, nada. Vale
+  pra cada `[data-stage-shell]` da página (a prova tem um palco de mentira).
 
 Não usa `elementFromPoint`: o que está por cima de quê não é medido, então as
 etiquetas PRÓXIMA, REPETE e LOOP da onda (`pointer-events-none`) não mudam nada.

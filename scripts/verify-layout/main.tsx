@@ -37,14 +37,17 @@ export function ConfigPage() {
 
 /**
  * Estado de prova: o botão de largura fixa com texto longo (texto cortado e encostando) e, ao lado,
- * um caso de cada regra, pra provar que o verificador pega todas: texto passando de um contêiner que
- * corta, selo com o texto colado na borda, alvo de toque de 32 px, item pela metade numa fileira que
- * rola de lado e uma faixa larga que faz a página rolar de lado.
+ * um caso pra cada ramo das regras, pra provar que o verificador pega todos (uma falha por ramo):
+ * texto passando de um contêiner que corta, selo com o texto colado na borda, alvo de toque de 32 px,
+ * item pela metade numa fileira que rola de lado, faixa larga que faz a página rolar de lado, caixa do
+ * texto cortada (com o texto inteiro), texto acima do começo de uma rolagem, texto saindo de caixa
+ * grande, M/S abaixo de 32x30, bloco estreito baixo e, num palco de mentira, faixas fora de ordem e
+ * a área do palco rolando na vertical.
  */
 export function BrokenCases() {
   return (
     <>
-      <div className="fixed bottom-24 left-4 z-[60] flex flex-col items-start gap-2 rounded-ps-lg bg-ps-ink p-3">
+      <div className="fixed bottom-4 left-4 z-[60] flex flex-col items-start gap-2 rounded-ps-lg bg-ps-ink p-3">
         <button type="button" data-prova="" className="h-11 w-[96px] truncate rounded-ps-lg bg-ps-s2 px-1 text-ps-sm font-bold text-ps-bone">
           Texto comprido demais pra este botão
         </button>
@@ -56,6 +59,31 @@ export function BrokenCases() {
         <div data-prova-fileira="" className="flex w-40 gap-2 overflow-x-auto text-ps-base text-ps-bone">
           <span className="w-28 shrink-0">Primeiro item</span>
           <span className="w-28 shrink-0">Segundo item</span>
+        </div>
+        {/* Caixa do texto cortada: a pílula de 40 px passa da caixa de 36, o texto no meio cabe. */}
+        <div data-prova-moldura="" className="h-9 overflow-hidden">
+          <span className="inline-flex h-10 items-center rounded-ps-md bg-ps-s2 px-3 text-ps-sm font-bold text-ps-bone">Pílula</span>
+        </div>
+        {/* Texto acima do começo de uma rolagem vertical: com a rolagem no início não se chega nele. */}
+        <div data-prova-acima="" className="h-10 w-40 overflow-y-auto">
+          <p className="-mt-3 text-ps-base text-ps-bone">Linha acima</p>
+        </div>
+        {/* Texto saindo de caixa grande (mais de 40 px de altura, sem overflow). */}
+        <div data-prova-caixa-grande="" className="h-12 w-20 rounded-ps-md bg-ps-s2">
+          <span className="whitespace-nowrap text-ps-base text-ps-bone">Texto que sai da caixa</span>
+        </div>
+        <button type="button" data-prova-ms="" data-touch-exception="ms" className="size-6 rounded-ps-sm bg-ps-s2 text-ps-sm font-extrabold text-ps-bone">M</button>
+        <button type="button" data-prova-estreito="" data-narrow="" aria-label="Bloco estreito" className="h-8 w-6 rounded-ps-sm bg-ps-s2" />
+      </div>
+      {/* Palco de mentira, sem texto: faixas fora de ordem (mixer antes da faixa do meio) e a área que rola maior que a janela dela. */}
+      <div data-stage-shell="" data-prova-palco="" aria-hidden="true" className="fixed top-24 right-4 z-[60] flex w-16 flex-col bg-ps-ink">
+        <header className="h-2 bg-ps-s2" />
+        <div data-stage-scroll="" className="flex h-10 flex-col overflow-y-auto">
+          <section aria-label="Transporte" className="h-4 shrink-0" />
+          <div data-stage-wave="" className="h-4 shrink-0" />
+          <div data-stage-sections="" className="h-4 shrink-0" />
+          <div data-stage-mixer="" className="h-4 shrink-0" />
+          <div data-stage-mid="" className="h-4 shrink-0" />
         </div>
       </div>
       <div data-prova-largo="" className="h-px w-[130vw]" />
@@ -110,36 +138,53 @@ function expectState(estado: Estado): void {
   if (text !== undefined && el.textContent?.trim() !== text) throw new Error(`estado ${estado}: ${sel} mostra "${el.textContent ?? ''}", esperado "${text}"`)
 }
 
-/** Faixas do palco de cima pra baixo, na ordem do mockup v5. */
-const BANDS = [
-  '[data-stage-shell] header', 'section[aria-label="Transporte"]', '[data-stage-wave]', '[data-stage-sections]', '[data-stage-mid]', '[data-stage-mixer]',
-]
+/** Faixas do palco de cima pra baixo, na ordem do mockup v5 (dentro de cada `[data-stage-shell]`). */
+const BANDS = ['header', 'section[aria-label="Transporte"]', '[data-stage-wave]', '[data-stage-sections]', '[data-stage-mid]', '[data-stage-mixer]']
 /** O nome do repertório ao lado de "MÚSICA 3 DE 6" só aparece a partir desta largura (v6 linha 244). */
 const REPERTOIRE_NAME_MIN_W = 1700
+/**
+ * Quanto a área do palco pode rolar na vertical, por estado. Ao vivo, nada: em 760 e 768 px de altura
+ * tudo tem de caber parado. No EDITAR (e no compasso, que abre nele) a T18 aceitou rolar até 38 px em
+ * tela baixa, com duas linhas de seções (medido: 30 px em 1024x768).
+ */
+const SCROLL_ALLOWANCE: Partial<Record<Estado, number>> = { editar: 38, compasso: 38 }
 
 /**
- * Estrutura do palco que a arquitetura D do plano manda conferir aqui: as faixas na mesma ordem em
- * qualquer largura, sem uma por cima da outra, e o nome do repertório só a partir de 1700 px. Os
- * canais inteiros no mixer que rola de lado já saem da regra (a): nada pela metade na borda.
+ * Estrutura de um palco que a arquitetura D do plano manda conferir aqui: as faixas na mesma ordem
+ * em qualquer largura, sem uma por cima da outra, o nome do repertório só a partir de 1700 px e a
+ * área do palco sem rolar na vertical além da folga do estado (a regra (a) trata a rolagem vertical
+ * como página; aqui ela vira falha). Os canais inteiros no mixer que rola de lado já saem da regra
+ * (a): nada pela metade na borda.
  */
-function stageStructure(): Failure[] {
+function shellStructure(shell: Element, allowance: number): Failure[] {
   const out: Failure[] = []
   let prev: { sel: string; bottom: number } | null = null
   for (const sel of BANDS) {
-    const el = document.querySelector(sel)
+    const el = shell.querySelector(sel)
     if (!el) {
-      out.push({ kind: 'estrutura', selector: sel, text: '', detail: 'faixa do palco não está na tela' })
+      out.push({ kind: 'estrutura', selector: `${describe(shell)} ${sel}`, text: '', detail: 'faixa do palco não está na tela' })
       continue
     }
     const r = el.getBoundingClientRect()
     if (prev && r.top < prev.bottom - 0.5) out.push({ kind: 'estrutura', selector: describe(el), text: '', detail: `começa em ${r.top.toFixed(1)}px, antes do fim da faixa de cima (${prev.sel}, ${prev.bottom.toFixed(1)}px)` })
     prev = { sel, bottom: r.bottom }
   }
-  const repName = document.querySelector('[data-repertoire-name]')
+  const scroll = shell.querySelector('[data-stage-scroll]')
+  const extra = scroll ? scroll.scrollHeight - scroll.clientHeight : 0
+  if (scroll && extra > allowance + 1) {
+    out.push({ kind: 'estrutura', selector: describe(scroll), text: '', detail: `o palco rola ${extra}px na vertical (${scroll.scrollHeight}px numa área de ${scroll.clientHeight}px; folga neste estado: ${allowance}px)` })
+  }
+  const repName = shell.querySelector('[data-repertoire-name]')
   const shown = repName !== null && repName.getClientRects().length > 0
   const want = window.innerWidth >= REPERTOIRE_NAME_MIN_W
   if (shown !== want) out.push({ kind: 'estrutura', selector: '[data-repertoire-name]', text: repName?.textContent?.trim() ?? '', detail: `nome do repertório ${shown ? 'aparece' : 'some'} em ${window.innerWidth}px (aparece só a partir de ${REPERTOIRE_NAME_MIN_W}px)` })
   return out
+}
+
+/** Estrutura de cada palco na página (no estado de prova, também o palco de mentira). */
+function stageStructure(estado: Estado): Failure[] {
+  const allowance = SCROLL_ALLOWANCE[estado] ?? 0
+  return [...document.querySelectorAll('[data-stage-shell]')].flatMap((shell) => shellStructure(shell, allowance))
 }
 
 const params = new URLSearchParams(location.search)
@@ -154,5 +199,5 @@ if (!estado) {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>{estado === 'config' ? <ConfigPage /> : <Stage estado={estado} />}</StrictMode>,
   )
-  void verifyPage(name, estado, { prepare: PREPARE[estado], expect: () => expectState(estado), checks: estado === 'config' ? undefined : stageStructure })
+  void verifyPage(name, estado, { prepare: PREPARE[estado], expect: () => expectState(estado), checks: estado === 'config' ? undefined : () => stageStructure(estado) })
 }
