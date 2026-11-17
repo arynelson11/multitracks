@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { verifyUser } from './_lib/auth.js';
+import { verifyActiveUser } from './_lib/auth.js';
 import { applyCors } from './_lib/cors.js';
 import { getUserPlan, isPaidPlan } from './_lib/plan.js';
 
@@ -34,7 +34,8 @@ export default async function handler(req: any, res: any) {
         return res.status(500).json({ error: 'Server misconfigured' });
     }
 
-    const auth = await verifyUser(req);
+    // Conta bloqueada pelo admin não salva na nuvem.
+    const auth = await verifyActiveUser(req);
     if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
 
     const body = req.body ?? {};

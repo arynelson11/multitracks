@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import Replicate from 'replicate';
 import { createClient } from '@supabase/supabase-js';
-import { verifyUser } from './_lib/auth.js';
+import { verifyActiveUser } from './_lib/auth.js';
 import { applyCors } from './_lib/cors.js';
 
 const PREDICTION_ID_RE = /^[a-z0-9]{20,}$/i;
@@ -19,7 +19,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return;
     }
 
-    const auth = await verifyUser(req);
+    // Conta bloqueada pelo admin não consulta separação.
+    const auth = await verifyActiveUser(req);
     if (!auth.ok) { res.status(auth.status).json({ error: auth.error }); return; }
 
     const predictionId = req.query?.predictionId;

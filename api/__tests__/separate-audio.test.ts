@@ -14,9 +14,12 @@ let db: FakeDb
 const createPrediction = vi.fn()
 
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => db }))
-vi.mock('../_lib/auth.js', () => ({
-  verifyUser: vi.fn(async () => ({ ok: true, userId: USER, email: 'musico@igreja.com', isAdmin: false })),
-}))
+// O endpoint usa verifyActiveUser (conta bloqueada não separa); a trava em si
+// é testada com a auth de verdade em blocked-access.test.ts.
+vi.mock('../_lib/auth.js', () => {
+  const ok = async () => ({ ok: true, userId: USER, email: 'musico@igreja.com', isAdmin: false, blocked: false })
+  return { verifyUser: vi.fn(ok), verifyActiveUser: vi.fn(ok) }
+})
 vi.mock('replicate', () => ({
   default: class { predictions = { create: createPrediction } },
 }))
@@ -149,5 +152,71 @@ describe('separate-audio: cota mensal', () => {
     expect(res.statusCode).toBe(502)
     expect(db.tables.profiles[0].tokens_used).toBe(1)
     expect(db.rpcCalls.map((c) => c.name)).toEqual(['consume_separation_token', 'refund_separation_token'])
+  })
+})
+
+// Cota extra do mês (admin "Somar N"): fica no perfil (quota_bonus e
+// quota_bonus_period) e só vale no mês de Brasília em que foi dada.
+describe('separate-audio: cota extra do mês', () => {
+  const NOV = '2026-11-01T03:00:00Z'
+
+  it('cota extra do mês soma no limite: Livre com 10 extras separa até 15', async () => {
+    vi.setSystemTime(new Date('2026-11-16T15:00:00Z'))
+    setup({ id: USER, plan: 'free', tokens_used: 14, tokens_period_start: '2026-11-01T03:00:00.000Z', quota_bonus: 10, quota_bonus_period: NOV })
+
+    const ok = await separate()
+    const over = await separate()
+
+    expect(ok.statusCode).toBe(200)
+    expect(db.rpcCalls[0]).toMatchObject({ name: 'consume_separation_token', args: { p_limit: 15 } })
+    expect(over.statusCode).toBe(402)
+    expect(over.body).toMatchObject({ plan: 'free', limit: 15 })
+    const msg = (over.body as { error: string }).error
+    expect(msg).toContain('15 separações')
+    expect(msg).not.toContain(String.fromCharCode(0x2014))
+    expect(db.tables.profiles[0].tokens_used).toBe(15)
+  })
+
+  it('cota extra dada em outubro não vale em novembro: limite 5', async () => {
+    vi.setSystemTime(new Date('2026-11-16T15:00:00Z'))
+    setup({ id: USER, plan: 'free', tokens_used: 5, tokens_period_start: '2026-11-01T03:00:00.000Z', quota_bonus: 10, quota_bonus_period: '2026-10-01T03:00:00Z' })
+
+    const res = await separate()
+
+    expect(res.statusCode).toBe(402)
+    expect(db.rpcCalls[0]).toMatchObject({ name: 'consume_separation_token', args: { p_limit: 5 } })
+    expect((res.body as { error: string }).error).toContain('5 separações')
+  })
+
+  it('cota extra soma também no plano pago (50 + 20)', async () => {
+    vi.setSystemTime(new Date('2026-11-16T15:00:00Z'))
+    setup({ id: USER, plan: 'essencial_mensal', plan_expires_at: null, tokens_used: 3, tokens_period_start: '2026-11-01T03:00:00.000Z', quota_bonus: 20, quota_bonus_period: NOV })
+
+    expect((await separate()).statusCode).toBe(200)
+    expect(db.rpcCalls[0]).toMatchObject({ name: 'consume_separation_token', args: { p_limit: 70 } })
+  })
+
+  it('leitura da cota extra falhou: separa normalmente com o limite do plano e avisa no log', async () => {
+    vi.setSystemTime(new Date('2026-11-16T15:00:00Z'))
+    setup({ id: USER, plan: 'free', tokens_used: 1, tokens_period_start: '2026-11-01T03:00:00.000Z', quota_bonus: 10, quota_bonus_period: NOV })
+    // só a leitura da cota extra falha; o plano continua lendo
+    const from = db.from.bind(db)
+    db.from = (table: string) => {
+      const q = from(table)
+      const select = q.select.bind(q)
+      q.select = ((cols?: string) => (cols?.includes('quota_bonus')
+        ? { eq: () => ({ maybeSingle: async () => ({ data: null, error: { message: 'canceling statement due to statement timeout', code: '57014' } }) }) }
+        : select(cols))) as typeof q.select
+      return q
+    }
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const res = await separate()
+
+    expect(res.statusCode).toBe(200)
+    expect(db.rpcCalls[0]).toMatchObject({ name: 'consume_separation_token', args: { p_limit: 5 } })
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls.flat().map(String).join(' ')).not.toContain(USER)
+    warn.mockRestore()
   })
 })

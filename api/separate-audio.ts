@@ -1,20 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import Replicate from 'replicate';
 import { createClient } from '@supabase/supabase-js';
-import { verifyUser } from './_lib/auth.js';
+import { verifyActiveUser } from './_lib/auth.js';
 import { applyCors } from './_lib/cors.js';
-import { PAID_PLANS, getUserPlan } from './_lib/plan.js';
+import { PAID_PLANS, PLAN_LIMITS, getQuotaBonus, getUserPlan } from './_lib/plan.js';
 
 const DEMUCS_VERSION = '25a173108cff36ef9f80f854c162d01df9e6528be175794b81158fa03836d953';
-
-// Ajuste aqui se mudar a estratégia comercial.
-const PLAN_LIMITS: Record<string, number> = {
-    free:              5,
-    essencial_mensal:  50,
-    essencial_anual:   50,
-    pro_mensal:        150,
-    pro_anual:         150,
-};
 
 // Planos pagos podem separar em 2/4/6 faixas. O Livre (free) só 2 (vocal+instrumental).
 // PAID_PLANS vem de _lib/plan (fonte única, compartilhada com insert-song/insert-stems).
@@ -40,7 +31,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return;
     }
 
-    const auth = await verifyUser(req);
+    // Conta bloqueada pelo admin não separa (403 com a frase de BLOCKED_MESSAGE).
+    const auth = await verifyActiveUser(req);
     if (!auth.ok) { res.status(auth.status).json({ error: auth.error }); return; }
 
     const audioUrl: unknown = req.body?.audioUrl;
@@ -79,7 +71,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return;
         }
 
-        const limit = PLAN_LIMITS[plan] ?? PLAN_LIMITS.free;
+        // Cota extra do mês dada pelo admin soma no limite. Se a leitura falhar,
+        // separa com o limite do plano: a leitura nova nunca derruba a separação.
+        let bonus = 0;
+        try {
+            bonus = await getQuotaBonus(supabase, auth.userId);
+        } catch (e) {
+            console.warn('[separate-audio] cota extra nao lida, segue com o limite do plano:', e instanceof Error ? e.message.slice(0, 200) : 'erro');
+        }
+        const limit = (PLAN_LIMITS[plan] ?? PLAN_LIMITS.free) + bonus;
 
         const { data: consumed, error: rpcErr } = await supabase
             .rpc('consume_separation_token', { p_user_id: auth.userId, p_limit: limit });

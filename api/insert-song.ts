@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { verifyUser } from './_lib/auth.js';
+import { verifyActiveUser } from './_lib/auth.js';
 import { applyCors } from './_lib/cors.js';
 import { getUserPlan, isPaidPlan } from './_lib/plan.js';
 
@@ -10,6 +10,12 @@ const MAX_NAME_LEN    = 200;
 const MAX_ARTIST_LEN  = 200;
 const MAX_KEY_LEN     = 16;
 const MAX_URL_LEN     = 2048;
+
+// Só o admin publica no catálogo da plataforma (o app só manda is_global
+// verdadeiro pra quem tem o papel). Se o servidor não confirmou o papel, por
+// exemplo numa falha passageira da leitura do perfil (auth.ts fecha em "não
+// admin"), recusa em vez de salvar calado como música privada.
+const GLOBAL_NOT_CONFIRMED = 'Não deu para confirmar seu acesso de admin para publicar no catálogo. Nada foi salvo. Tente de novo.';
 
 function clampStr(v: unknown, max: number): string | null {
     if (typeof v !== 'string') return null;
@@ -34,8 +40,14 @@ export default async function handler(req: any, res: any) {
         return res.status(500).json({ error: 'Server misconfigured' });
     }
 
-    const auth = await verifyUser(req);
+    // Conta bloqueada pelo admin não salva na nuvem.
+    const auth = await verifyActiveUser(req);
     if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+
+    const body = req.body ?? {};
+    if (!auth.isAdmin && body.is_global === true) {
+        return res.status(403).json({ error: GLOBAL_NOT_CONFIRMED });
+    }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
@@ -52,7 +64,6 @@ export default async function handler(req: any, res: any) {
         }
     }
 
-    const body = req.body ?? {};
     const name = clampStr(body.name, MAX_NAME_LEN);
     if (!name) return res.status(400).json({ error: 'name is required' });
 

@@ -2,7 +2,7 @@
 import axios from 'axios';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
-import { verifyUser } from './_lib/auth.js';
+import { BLOCKED_MESSAGE, verifyUser } from './_lib/auth.js';
 import { PLAN_PRICING, isPlanKey } from './_lib/pricing.js';
 import { asaasBaseUrl, asaasFromEnv } from './_lib/asaas.js';
 import { BillingError, brtToday, cancelSubscriptionForUser, previewCancellation, runPendingActions } from './_lib/billing.js';
@@ -44,6 +44,9 @@ export default async function handler(req: any, res: any) {
     if (action === 'cancel-preview') return previewForUser(userId, res);
     if (action === 'sync') return syncForUser(userId, res);
     if (action) return res.status(400).json({ error: 'Invalid action' });
+
+    // Conta bloqueada pelo admin não assina; cancelar, prévia e sync seguem acima (D10).
+    if (auth.blocked) return res.status(403).json({ error: BLOCKED_MESSAGE });
 
     const body = parseBody(req);
     const planKey = typeof body.planKey === 'string' ? body.planKey : '';
