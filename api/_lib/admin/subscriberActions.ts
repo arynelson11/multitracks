@@ -8,6 +8,7 @@ import {
   grantCourtesy,
   type BillingDeps,
 } from '../billing.js'
+import { AsaasError, type AsaasApi } from '../asaas.js'
 import { PLAN_PRICING, isPlanKey, type PlanKey } from '../pricing.js'
 import { withAudit } from './audit.js'
 import { AdminError, asaasFailure, int, oneOf, str, uuid, type AdminCtx, type AdminHandlers } from './http.js'
@@ -25,6 +26,9 @@ import { AdminError, asaasFailure, int, oneOf, str, uuid, type AdminCtx, type Ad
 //   no withAudit.
 // * Bloquear, desbloquear e ajustar cota: a função SQL (T21) grava o registro
 //   na mesma transação, então não usam withAudit.
+// * Escrita no Asaas (PUT da troca, DELETE do cancelamento) sem resposta que dê
+//   certeza é INCERTA, nunca "Nada mudou" (Ruling ADM-T16-incerto): marca a
+//   ficha, fecha o registro partial e lança UncertainAdminError (uncertain: true).
 // * Resposta e registro só levam frase pronta (com o status do Asaas quando se
 //   sabe); o erro cru vai pro log.
 // * Nenhum caminho estorna: o estorno é feito no painel do Asaas (FATOS).
@@ -49,6 +53,8 @@ const MSG_ACCOUNT_NOT_FOUND = 'Conta não encontrada.'
 const MSG_QUOTA_MAX = 'A cota extra deste mês já está no máximo (1000).'
 const MSG_RESET_NO_AMOUNT = 'Zerar não leva quantidade.'
 const MSG_QUOTA_UNCONFIRMED = 'Não deu pra confirmar o ajuste da cota. Confira no Registro antes de tentar de novo.'
+const MSG_UNCERTAIN = 'O Asaas não respondeu a tempo. A mudança pode ter sido feita. A ficha foi marcada pra conferir; confira em Pendências antes de repetir.'
+const MSG_UNCERTAIN_UNMARKED = 'O Asaas não respondeu a tempo. A mudança pode ter sido feita, e não deu pra marcar a ficha. Confira no painel do Asaas antes de repetir.'
 
 // Notas da marcação (texto do banco, sem acento como as da Fase 3).
 const noteChangePlan = (planKey: PlanKey): string =>
@@ -162,7 +168,87 @@ async function flagReview(ctx: AdminCtx, ids: string[], note: string): Promise<b
   return ok
 }
 
-const deps = (ctx: AdminCtx): BillingDeps => ({ db: ctx.db, asaas: ctx.asaas, now: () => ctx.now })
+const deps = (ctx: AdminCtx, asaas: AsaasApi | null = ctx.asaas): BillingDeps => ({ db: ctx.db, asaas, now: () => ctx.now })
+
+// ── Escrita incerta no Asaas (Ruling ADM-T16-incerto)
+
+// Erro de resultado incerto: a escrita no Asaas pode ter sido aplicada. Leva
+// uncertain: true pra tela segurar o Confirmar até o admin conferir.
+export class UncertainAdminError extends AdminError {
+  readonly uncertain = true
+}
+
+// Falhas de conexão que acontecem antes de o pedido sair (o axios devolve o
+// código no "Asaas sem resposta (<código>)" de asaas.ts): certeza de nada feito.
+const NOT_SENT_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH'])
+const NO_RESPONSE_RE = /^Asaas sem resposta \(([^)]*)\)$/
+
+// A escrita que falhou com este erro pode ter chegado e sido aplicada?
+// * Recusa (4xx), 404 e 429 (limite de pedidos): o Asaas respondeu que não fez.
+// * 5xx: o pedido chegou e não se sabe se foi aplicado.
+// * Sem resposta: só os códigos de conexão que não abriu são certeza; timeout,
+//   ECONNRESET, resposta cortada e qualquer outro (ou erro que não é do
+//   cliente do Asaas) contam como incertos.
+export function writeMayHaveLanded(e: unknown): boolean {
+  if (!(e instanceof AsaasError)) return true
+  if (e.kind !== 'unavailable') return false
+  if (e.status === 429) return false
+  if (e.status !== undefined) return true
+  const code = NO_RESPONSE_RE.exec(e.message)?.[1]
+  return code === undefined || !NOT_SENT_CODES.has(code)
+}
+
+type AsaasCall = { write: boolean; failed: boolean; error: unknown }
+
+// O Asaas da ação, anotando cada chamada (sem mudar nada nela), pra saber se a
+// última antes do erro foi uma escrita e como ela falhou. A Fase 3 transforma
+// toda falha do Asaas em asaas_unavailable, e só isto separa a leitura que
+// falhou (nada feito) da escrita sem resposta (incerta).
+function tracedAsaas(api: AsaasApi | null): { asaas: AsaasApi | null; calls: AsaasCall[] } {
+  const calls: AsaasCall[] = []
+  if (!api) return { asaas: null, calls }
+  const track = async <T>(write: boolean, go: () => Promise<T>): Promise<T> => {
+    const call: AsaasCall = { write, failed: false, error: null }
+    calls.push(call)
+    try {
+      return await go()
+    } catch (e) {
+      call.failed = true
+      call.error = e
+      throw e
+    }
+  }
+  const asaas: AsaasApi = {
+    get<T = unknown>(path: string, params?: Record<string, string | number | boolean>) { return track(false, () => api.get<T>(path, params)) },
+    post<T = unknown>(path: string, body?: unknown) { return track(true, () => api.post<T>(path, body)) },
+    put<T = unknown>(path: string, body?: unknown) { return track(true, () => api.put<T>(path, body)) },
+    del<T = unknown>(path: string) { return track(true, () => api.del<T>(path)) },
+  }
+  return { asaas, calls }
+}
+
+// O erro da Fase 3 veio de uma escrita no Asaas sem resposta que dê certeza.
+function uncertainWrite(e: unknown, calls: AsaasCall[]): boolean {
+  if (!(e instanceof BillingError) || e.code !== 'asaas_unavailable') return false
+  const last = calls[calls.length - 1]
+  return !!last && last.write && last.failed && writeMayHaveLanded(last.error)
+}
+
+const BRT_TIME = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+
+function brtMoment(now: Date): string {
+  const d = brtToday(now)
+  return `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)} às ${BRT_TIME.format(now)}`
+}
+
+// Marca a ficha e devolve o erro pro withAudit fechar o registro partial, com
+// a frase que diz se a marcação ficou. Quem chama traduz pra UncertainAdminError.
+async function uncertainFailure(ctx: AdminCtx, ids: string[], request: string, e: unknown): Promise<BillingError> {
+  console.error(`[admin] escrita no Asaas sem resposta (${request}):`, describeError(e))
+  const note = `O Asaas não respondeu a tempo ao pedido de ${request} em ${brtMoment(ctx.now)}; conferir se foi feito`
+  const flagged = await flagReview(ctx, ids, note)
+  return new BillingError('partial', flagged ? MSG_UNCERTAIN : MSG_UNCERTAIN_UNMARKED, 502)
+}
 
 // Frase pronta com o status do Asaas, quando se sabe (Rulings ADM-T3-registro e
 // ADM-T3-permitidas). O texto do Asaas nunca entra.
@@ -276,14 +362,21 @@ export const handlers: AdminHandlers = {
       const [row] = paidActive(await subscriptionsOf(ctx, userId))
       if (!row) throw new AdminError(404, MSG_NO_PAID)
       const before = { planKey: row.plan_key, value: priceOf(row.plan_key), cycle: row.cycle }
+      const traced = tracedAsaas(ctx.asaas)
+      let uncertain = false
       try {
         return await withAudit(
           ctx,
           { action: 'change_plan', targetUserId: userId, targetRef: row.id, before },
           async () => {
             try {
-              return await changePlan(deps(ctx), { userId, newPlanKey: planKey })
+              return await changePlan(deps(ctx, traced.asaas), { userId, newPlanKey: planKey })
             } catch (e) {
+              // O PUT saiu e a resposta não deu certeza: o Asaas pode ter trocado.
+              if (uncertainWrite(e, traced.calls)) {
+                uncertain = true
+                throw await uncertainFailure(ctx, [row.id], `troca de plano para ${planLabel(planKey)}`, e)
+              }
               if (e instanceof BillingError && PLAN_UNTOUCHED.has(e.code)) throw e
               // O Asaas pode ter trocado e o banco não (partial, db_error ou
               // qualquer outro): marca a ficha antes de responder e fecha o
@@ -296,7 +389,7 @@ export const handlers: AdminHandlers = {
           (r) => ({ result: r.result, planKey: r.planKey, value: PLAN_PRICING[r.planKey].value, cycle: PLAN_PRICING[r.planKey].cycle }),
         )
       } catch (e) {
-        throw changePlanError(e)
+        throw uncertain && e instanceof BillingError ? new UncertainAdminError(502, e.message) : changePlanError(e)
       }
     },
   },
@@ -352,29 +445,38 @@ export const handlers: AdminHandlers = {
       const when = oneOf(ctx.body, 'when', ['now', 'period_end'] as const, { label: 'quando cancelar' })
       const rows = await subscriptionsOf(ctx, userId)
       const active = paidActive(rows)
+      const markIds = async () => (active.length > 0 ? active.map((r) => r.id) : paidActiveIdsNow(ctx, userId))
+      const traced = tracedAsaas(ctx.asaas)
+      let uncertain = false
       try {
         return await withAudit(
           ctx,
           { action: 'cancel_subscription', targetUserId: userId, targetRef: active[0]?.id ?? null, before: { when, subscriptions: liveSummary(rows, ctx.now) } },
           async () => {
             try {
-              const out = await cancelSubscriptionForUser(deps(ctx), { userId, source: 'admin', immediate: when === 'now' })
+              const out = await cancelSubscriptionForUser(deps(ctx, traced.asaas), { userId, source: 'admin', immediate: when === 'now' })
               return { result: out.result, accessUntil: out.accessUntil, pendingStop: out.pendingStop }
             } catch (e) {
+              // O DELETE saiu e a resposta não deu certeza: o Asaas pode ter
+              // parado a cobrança. Cancelar de novo termina (404 conta como já removida).
+              if (uncertainWrite(e, traced.calls)) {
+                uncertain = true
+                const request = `cancelamento da assinatura (${when === 'now' ? 'agora' : 'no fim do período'})`
+                throw await uncertainFailure(ctx, await markIds(), request, e)
+              }
               if (!(e instanceof BillingError) || e.code !== 'partial') throw e
               // Parte foi feita (o Asaas pode ter parado a cobrança e o banco
               // não): marca a ficha pra aparecer em Pendências. Cancelar de
               // novo termina (a Fase 3 retoma pela assinatura ainda ativa).
               console.error(`[admin] cancel-subscription pela metade (${userId}):`, describeError(e))
-              const ids = active.length > 0 ? active.map((r) => r.id) : await paidActiveIdsNow(ctx, userId)
-              const flagged = await flagReview(ctx, ids, NOTE_CANCEL_HALF)
+              const flagged = await flagReview(ctx, await markIds(), NOTE_CANCEL_HALF)
               throw new BillingError('partial', cancelPartialMessage(e.message, flagged), e.httpStatus)
             }
           },
           (r) => r,
         )
       } catch (e) {
-        throw cancelError(e)
+        throw uncertain && e instanceof BillingError ? new UncertainAdminError(502, e.message) : cancelError(e)
       }
     },
   },

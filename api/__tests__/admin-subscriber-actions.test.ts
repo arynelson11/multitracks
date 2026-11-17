@@ -3,8 +3,8 @@ import { createRes, type FakeDb, type FakeRes, type Row } from './fakeSupabase.j
 import { USER_A, USER_B, USER_C, asaasDown, asaasRejected, createBillingDb, createFakeAsaas, payment, subRow, type FakeAsaas } from './billingHarness.js'
 import { AsaasError } from '../_lib/asaas.js'
 import { cancelSubscriptionForUser, changePlan, grantCourtesy } from '../_lib/billing.js'
-import { createAdminRouter } from '../_lib/admin/http.js'
-import { courtesyUntil, handlers } from '../_lib/admin/subscriberActions.js'
+import { createAdminRouter, type AdminCtx } from '../_lib/admin/http.js'
+import { UncertainAdminError, courtesyUntil, handlers, writeMayHaveLanded } from '../_lib/admin/subscriberActions.js'
 
 // Servidor das ações do admin sobre um assinante (Task 16): mudar plano,
 // cortesia, cancelar, bloquear e ajustar cota. O Asaas vem primeiro e o banco
@@ -44,6 +44,14 @@ const MSG = {
   badAccount: 'A conta está em formato inválido.',
   unexpected: 'Erro inesperado no servidor.',
 }
+// Ruling ADM-T16-incerto: escrita no Asaas sem resposta que dê certeza.
+const MSG_UNCERTAIN = 'O Asaas não respondeu a tempo. A mudança pode ter sido feita. A ficha foi marcada pra conferir; confira em Pendências antes de repetir.'
+const NOTE_UNCERTAIN_PLAN = 'O Asaas não respondeu a tempo ao pedido de troca de plano para Studio Mensal em 16/11/2026 às 12:00; conferir se foi feito'
+const NOTE_UNCERTAIN_CANCEL = 'O Asaas não respondeu a tempo ao pedido de cancelamento da assinatura (agora) em 16/11/2026 às 12:00; conferir se foi feito'
+// O pedido saiu e a resposta não voltou (o axios chama o timeout de ECONNABORTED).
+const asaasTimeout = () => new AsaasError('unavailable', 'Asaas sem resposta (ECONNABORTED)')
+// A conexão nem abriu: o pedido não saiu.
+const asaasRefused = () => new AsaasError('unavailable', 'Asaas sem resposta (ECONNREFUSED)')
 const NOTE_PLAN = 'troca de plano pelo admin: o Asaas pode ter trocado para pro_mensal e o banco nao; usar Mudar plano de novo'
 const NOTE_CANCEL = 'cancelamento pelo admin pela metade: o Asaas pode ter parado a cobranca e o app nao; usar Cancelar assinatura de novo'
 const PUT_STUDIO = { value: 119.9, cycle: 'MONTHLY', description: 'Playback Studio Studio (mensal)', updatePendingPayments: true }
@@ -259,7 +267,8 @@ describe('mudar plano', () => {
   })
 
   it('Asaas fora: 502 e o banco não muda', async () => {
-    setAsaas({ put: () => { throw asaasDown() } })
+    // Asaas fora com certeza de nada feito: a conexão foi recusada (o timeout é incerto, abaixo)
+    setAsaas({ put: () => { throw asaasRefused() } })
     const before = snapshot()
     const res = await post('change-plan', { userId: USER_A, planKey: 'pro_mensal' })
     expect(res.statusCode).toBe(502)
@@ -762,6 +771,169 @@ describe('entrada das ações', () => {
     expect(res.statusCode).toBe(400)
     expect(res.body).toEqual({ error: 'Campo não esperado: value.' })
     expect(asaasCalls()).toEqual([])
+  })
+})
+
+// Ruling ADM-T16-incerto: timeout ou falta de resposta numa ESCRITA no Asaas
+// não é "Nada mudou". Marca a ficha, responde incerto e fecha o registro partial.
+describe('escrita no Asaas sem resposta (incerto)', () => {
+  // Chama a ação direto (sem o roteador) pra ver o erro que ela lança.
+  async function thrownBy(action: string, body: Record<string, unknown>): Promise<unknown> {
+    const ctx: AdminCtx = { db: db as unknown as AdminCtx['db'], asaas, admin: { userId: ADMIN_ID, email: 'admin@igreja.com' }, now: new Date(), query: {}, body }
+    try {
+      await handlers[action].run(ctx)
+    } catch (e) {
+      return e
+    }
+    throw new Error(`${action} não lançou`)
+  }
+
+  it('timeout no PUT da troca: incerto, ficha marcada e registro partial', async () => {
+    const fake = setAsaas({ put: () => { throw asaasTimeout() } })
+    const before = structuredClone(sub('chk_a'))
+    const res = await post('change-plan', { userId: USER_A, planKey: 'pro_mensal' })
+    expect(fake.put).toHaveBeenCalledTimes(1)
+    expect(res.statusCode).toBe(502)
+    expect(res.body).toMatchObject({ error: MSG_UNCERTAIN })
+    expect(rpcArgs('billing_flag_review')).toEqual([{ p_id: 'chk_a', p_note: NOTE_UNCERTAIN_PLAN }])
+    expect(sub('chk_a')).toEqual({ ...before, needs_admin_review: true, admin_note: NOTE_UNCERTAIN_PLAN })
+    expect(profile(USER_A).plan).toBe('essencial_mensal')
+    expect(rpcNames()).not.toContain('billing_change_plan')
+    expect(logs[0].finish).toEqual({ p_id: 41, p_result: 'partial', p_after: null, p_message: MSG_UNCERTAIN })
+  })
+
+  it('a ação incerta lança o erro com uncertain verdadeiro, pro corpo da resposta', async () => {
+    setAsaas({ put: () => { throw asaasTimeout() } })
+    const plan = await thrownBy('change-plan', { userId: USER_A, planKey: 'pro_mensal' })
+    expect(plan).toBeInstanceOf(UncertainAdminError)
+    expect(plan).toMatchObject({ status: 502, message: MSG_UNCERTAIN, uncertain: true })
+    setAsaas({ get: PAYMENTS_A, del: () => { throw asaasTimeout() } })
+    const cancel = await thrownBy('cancel-subscription', { userId: USER_A, when: 'now' })
+    expect(cancel).toMatchObject({ status: 502, message: MSG_UNCERTAIN, uncertain: true })
+    // o que é certeza continua sem a marca de incerto
+    setAsaas({ put: () => { throw asaasRefused() } })
+    const sure = await thrownBy('change-plan', { userId: USER_A, planKey: 'pro_anual' })
+    expect(sure).not.toBeInstanceOf(UncertainAdminError)
+    expect((sure as { uncertain?: unknown }).uncertain).toBeUndefined()
+  })
+
+  it('timeout no DELETE do cancelamento: incerto, ficha marcada e registro partial', async () => {
+    const fake = setAsaas({ get: PAYMENTS_A, del: () => { throw asaasTimeout() } })
+    const res = await post('cancel-subscription', { userId: USER_A, when: 'now' })
+    expect(fake.del).toHaveBeenCalledWith('/subscriptions/sub_a')
+    expect(res.statusCode).toBe(502)
+    expect(res.body).toMatchObject({ error: MSG_UNCERTAIN })
+    expect(rpcArgs('billing_flag_review')).toEqual([{ p_id: 'chk_a', p_note: NOTE_UNCERTAIN_CANCEL }])
+    expect(sub('chk_a')).toMatchObject({ status: 'active', needs_admin_review: true, admin_note: NOTE_UNCERTAIN_CANCEL })
+    expect(rpcNames()).not.toContain('billing_end_subscription')
+    expect(logs[0].finish).toEqual({ p_id: 41, p_result: 'partial', p_after: null, p_message: MSG_UNCERTAIN })
+  })
+
+  it('conexão recusada na escrita continua Nada mudou, sem marcar', async () => {
+    setAsaas({ put: () => { throw asaasRefused() } })
+    const plan = await post('change-plan', { userId: USER_A, planKey: 'pro_mensal' })
+    expect(plan.statusCode).toBe(502)
+    expect(plan.body).toEqual({ error: MSG.planNotChanged })
+    setAsaas({ get: PAYMENTS_A, del: () => { throw asaasRefused() } })
+    const before = snapshot()
+    const cancel = await post('cancel-subscription', { userId: USER_A, when: 'now' })
+    expect(cancel.statusCode).toBe(502)
+    expect(cancel.body).toEqual({ error: MSG.cancelDown })
+    expect(snapshot()).toEqual(before)
+    expect(rpcNames()).not.toContain('billing_flag_review')
+    expect(logs.map((l) => l.finish?.p_result)).toEqual(['failed', 'failed'])
+  })
+
+  it('leitura do Asaas que falha antes da escrita continua Nada mudou', async () => {
+    // sem o id da assinatura: a troca procura no Asaas (GET) antes do PUT
+    sub('chk_a').asaas_subscription_id = null
+    const fake = setAsaas({ get: () => { throw asaasTimeout() } })
+    const res = await post('change-plan', { userId: USER_A, planKey: 'pro_mensal' })
+    expect(fake.put).not.toHaveBeenCalled()
+    expect(res.statusCode).toBe(502)
+    expect(res.body).toEqual({ error: MSG.planNotChanged })
+    expect(rpcNames()).not.toContain('billing_flag_review')
+  })
+
+  it('sem resposta, resposta cortada e 5xx numa escrita são incertos; recusa, 404, 429 e conexão que não abriu não', () => {
+    const uncertain = [
+      asaasTimeout(),
+      new AsaasError('unavailable', 'Asaas sem resposta (ETIMEDOUT)'),
+      new AsaasError('unavailable', 'Asaas sem resposta (ECONNRESET)'),
+      new AsaasError('unavailable', 'Asaas sem resposta (EPIPE)'),
+      new AsaasError('unavailable', 'Asaas sem resposta (ERR_NETWORK)'),
+      new AsaasError('unavailable', 'Asaas sem resposta (rede)'),
+      new AsaasError('unavailable', 'falha inesperada ao falar com o Asaas'),
+      ...[500, 502, 503, 504].map((s) => new AsaasError('unavailable', `Asaas respondeu ${s}`, s)),
+      new TypeError('fetch failed'),
+    ]
+    const sure = [
+      asaasRefused(),
+      new AsaasError('unavailable', 'Asaas sem resposta (ENOTFOUND)'),
+      new AsaasError('unavailable', 'Asaas sem resposta (EAI_AGAIN)'),
+      new AsaasError('unavailable', 'Asaas respondeu 429', 429),
+      asaasRejected('valor inválido'),
+      new AsaasError('not_found', 'não encontrado no Asaas', 404),
+    ]
+    for (const e of uncertain) expect(writeMayHaveLanded(e), e.message).toBe(true)
+    for (const e of sure) expect(writeMayHaveLanded(e), e.message).toBe(false)
+  })
+
+  it('repetir a troca depois do timeout, com o Asaas já trocado, termina sem duplicar', async () => {
+    // O Asaas aplicou o PUT, mas a resposta não voltou a tempo.
+    const remote = { value: 49.9, cycle: 'MONTHLY', puts: 0 }
+    const fake = setAsaas({
+      put: (_path, body) => {
+        Object.assign(remote, { value: (body as { value: number }).value, cycle: (body as { cycle: string }).cycle })
+        remote.puts += 1
+        if (remote.puts === 1) throw asaasTimeout()
+        return {}
+      },
+    })
+    const first = await post('change-plan', { userId: USER_A, planKey: 'pro_mensal' })
+    expect(first.statusCode).toBe(502)
+    expect(first.body).toMatchObject({ error: MSG_UNCERTAIN })
+    const second = await post('change-plan', { userId: USER_A, planKey: 'pro_mensal' })
+    expect(second.statusCode).toBe(200)
+    expect(second.body).toEqual({ result: 'changed', planKey: 'pro_mensal' })
+    // o PUT é absoluto (o valor do plano, não um acréscimo): repetir não soma nada
+    expect(fake.put).toHaveBeenCalledTimes(2)
+    expect(fake.put.mock.calls[1]).toEqual(fake.put.mock.calls[0])
+    expect(remote).toEqual({ value: 119.9, cycle: 'MONTHLY', puts: 2 })
+    expect(rpcArgs('billing_change_plan')).toHaveLength(1)
+    expect(rpcArgs('billing_flag_review')).toEqual([{ p_id: 'chk_a', p_note: NOTE_UNCERTAIN_PLAN }])
+    expect(db.tables.billing_subscriptions).toHaveLength(2)
+    expect(profile(USER_A).plan).toBe('pro_mensal')
+    expect(logs.map((l) => l.finish?.p_result)).toEqual(['partial', 'ok'])
+  })
+
+  it('repetir o cancelamento depois do timeout, com o Asaas já removido, termina sem duplicar', async () => {
+    // O Asaas removeu a assinatura, mas a resposta não voltou a tempo.
+    const remote = { deleted: false }
+    const fake = setAsaas({
+      get: PAYMENTS_A,
+      del: () => {
+        if (remote.deleted) throw new AsaasError('not_found', 'não encontrado no Asaas', 404)
+        remote.deleted = true
+        throw asaasTimeout()
+      },
+    })
+    const first = await post('cancel-subscription', { userId: USER_A, when: 'now' })
+    expect(first.statusCode).toBe(502)
+    expect(first.body).toMatchObject({ error: MSG_UNCERTAIN })
+    expect(sub('chk_a').status).toBe('active')
+    const second = await post('cancel-subscription', { userId: USER_A, when: 'now' })
+    expect(second.statusCode).toBe(200)
+    expect(second.body).toEqual({ result: 'canceled', accessUntil: NOW.toISOString(), pendingStop: false })
+    // a Fase 3 conta o 404 como já removida: um encerramento só, nada pendente
+    expect(fake.del).toHaveBeenCalledTimes(2)
+    expect(rpcArgs('billing_end_subscription')).toEqual([
+      expect.objectContaining({ p_id: 'chk_a', p_source: 'admin', p_immediate: true, p_already_stopped: true }),
+    ])
+    expect(db.tables.billing_pending_actions).toEqual([])
+    expect(sub('chk_a')).toMatchObject({ status: 'canceled', cancel_source: 'admin' })
+    expect(rpcArgs('billing_flag_review')).toEqual([{ p_id: 'chk_a', p_note: NOTE_UNCERTAIN_CANCEL }])
+    expect(logs.map((l) => l.finish?.p_result)).toEqual(['partial', 'ok'])
   })
 })
 
