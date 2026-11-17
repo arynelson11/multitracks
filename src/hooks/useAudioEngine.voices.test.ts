@@ -155,7 +155,16 @@ const beepFilters = () => nodesOf(ctxOf(), 'BiquadFilterNode')
 const beepStarts = () => nodesOf(ctxOf(), 'OscillatorNode').filter((o) => o.type === 'triangle').map((o) => o.starts[0].when)
 // Corte do Click (Ruling T25-corte): o sexto GainNode do initEngine (barramentos, principal, mudo e os cortes).
 const cutClick = () => nodesOf(ctxOf(), 'GainNode')[5]
+const cutVs = () => nodesOf(ctxOf(), 'GainNode')[7]
 const busClick = () => nodesOf(ctxOf(), 'GainNode')[0]
+// Relógio do áudio andando (o fake não anda sozinho) enquanto uma troca com corte espera o fundo.
+async function letAudioRun(ms = 60) {
+  const ctx = ctxOf()
+  const timer = setInterval(() => { ctx.currentTime += 0.001 }, 1)
+  try { await act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)) }) } finally { clearInterval(timer) }
+}
+// Eventos de rampa de um corte (Ruling T25-corte).
+const cutRamps = (g: FakeGainNode) => g.gain.events.filter((e) => e.kind === 'linear').map((e) => e.value)
 // Todo caminho de `from` até o destino passa por `through`?
 function onlyThrough(from: FakeAudioNode, through: unknown): boolean {
   const ctx = ctxOf()
@@ -448,6 +457,78 @@ describe('pré-contagem no relógio do áudio', () => {
     expect(next).toHaveLength(1)
     expect(next[0].starts[0]).toEqual({ when: t0 + 1, offset: 6 })
     expect(hook.result.current.isCountingIn).toBe(true)
+  })
+})
+
+// Rodada 1 (revisão da T26, I1 e Minor c): o fim de um bipe cancelado e a cauda da soltura das
+// vozes também contam como "algo soando" pro corte das trocas de rota (Ruling T25-corte).
+describe('cauda do bipe e da soltura dentro do corte das trocas', () => {
+  it('papel do Click trocado com um bipe soando na pré-contagem: a troca vai no corte e o bipe nunca chega na VS', async () => {
+    precountOn(4)
+    seed(song({ bpm: 120 })) // "Click e Guia separados": o Click na saída 1, a VS na 2
+    const hook = await openApp()
+    await act(async () => { await hook.result.current.playWithPrecount() })
+    const ctx = ctxOf()
+    const t0 = startAt(0)
+    // No meio da sustentação do 2º bipe (pico 0,68).
+    const now = t0 + 0.5 + 0.03
+    ctx.currentTime = now
+    const beep = beepFilters()[1]
+    const env = nodesOf(ctx, 'GainNode').find((g) => connectedTo(g, beep))!
+    const osc = nodesOf(ctx, 'OscillatorNode').filter((o) => o.type === 'triangle')[1]
+    // Quanto do bipe sai na VS (saída 2) no instante t: caminho do passa-baixa até lá vezes o envelope.
+    const vsAt = (t: number) => {
+      const keep = ctx.currentTime
+      ctx.currentTime = t
+      const zeros = nodesOf(ctx, 'AudioBufferSourceNode').map((v): [unknown, Sig] => [v, [[0]]])
+      const others = beepFilters().filter((b) => b !== beep).map((b): [unknown, Sig] => [b, [[0]]])
+      const sig = measure(ctx, new Map<unknown, Sig>([[beep, [[1]]], ...others, ...zeros]), 1)
+      ctx.currentTime = keep
+      return sig[1][0] * valueAt(env.gain, t)
+    }
+    expect(vsAt(now)).toBe(0)
+    expect(valueAt(env.gain, now)).toBeCloseTo(0.68, 9)
+    // Instante em que o fader do Click sai do corte do Click.
+    const fader = asFake(chan(hook, 'click').gainNode)
+    let movedAt = -1
+    const connect = fader.connect.bind(fader)
+    fader.connect = ((...args: Parameters<typeof connect>) => { movedAt = ctx.currentTime; return connect(...args) }) as typeof fader.connect
+
+    await act(async () => { hook.result.current.setChannelMeta('click', { role: 'normal' }) })
+    // O corte desce nos três barramentos (com a folga de 10 ms) e a troca ainda não aconteceu.
+    expect(cutRamps(cutVs())).toEqual([0])
+    expect(movedAt).toBe(-1)
+    await letAudioRun()
+    expect(cutRamps(cutVs())).toEqual([0, 1])
+    // O fader trocou de barramento no fundo do corte...
+    expect(movedAt).toBeGreaterThan(now)
+    expect(valueAt(cutVs().gain, movedAt)).toBe(0)
+    // ...e daí até os osciladores do bipe pararem, nada dele sai na VS.
+    // (o último stop vale: o do cancel, 20 ms depois dele)
+    const end = osc.stops.at(-1)!
+    expect(end).toBeCloseTo(now + 0.02, 9)
+    for (let t = movedAt; t <= end; t += 0.00025) expect(Math.abs(vsAt(t)), `t = ${t}`).toBeLessThan(1e-9)
+  })
+
+  it('pausar e trocar a rota logo depois: a cauda da soltura passa pelo corte', async () => {
+    seed(song())
+    const hook = await openApp()
+    await act(async () => { await hook.result.current.play() })
+    ctxOf().currentTime = 1
+    act(() => { hook.result.current.pause() })
+    // Na mesma hora (a cauda ainda em ganho 1 até a folga de 10 ms), "Tudo junto".
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    await act(async () => { hook.rerender() })
+    expect(cutRamps(cutVs())).toEqual([0])
+    await letAudioRun()
+    expect(cutRamps(cutVs())).toEqual([0, 1])
+    expect(hook.result.current.outputPlan.mode).toBe('stereo')
+    // Passada a cauda (40 ms), parado troca na hora, sem corte.
+    ctxOf().currentTime += 0.05
+    mem.settings = { ...mem.settings, outputs: SPLIT }
+    await act(async () => { hook.rerender() })
+    expect(hook.result.current.outputPlan.mode).toBe('split2')
+    expect(cutRamps(cutVs())).toEqual([0, 1])
   })
 })
 

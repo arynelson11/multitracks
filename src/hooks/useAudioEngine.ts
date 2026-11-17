@@ -85,6 +85,11 @@ const COUNT_CHANNEL = { id: '', name: 'Click', role: 'click' as const, pan: 0 };
 const VOICE_RELEASE_TC = 0.003;
 // Parada depois do começo da soltura: 10 constantes de tempo, o envelope abaixo de 0,0001.
 const VOICE_RELEASE_STOP = 0.03;
+// Bipe cancelado soando: os osciladores param 20 ms depois do cancel (CANCEL_STOP da T7,
+// countTones.ts), com folga.
+const COUNT_CANCEL_TAIL = 0.03;
+// Bipe da receita do v6: os osciladores param 0,22 s depois do início dele.
+const COUNT_BEEP_LENGTH = 0.22;
 // Lista vazia única, pro React não renderizar de novo à toa.
 const NO_TIMES: number[] = [];
 
@@ -102,10 +107,14 @@ function holdParam(param: AudioParam, t: number): void {
     param.setValueAtTime(current, t);
 }
 
-/** Solta as vozes (ver acima). `startOf` diz quando cada uma começa (tempo do contexto). */
-function releaseVoices(ctx: BaseAudioContext, voices: readonly Voice[], startOf: (v: Voice) => number): void {
+/**
+ * Solta as vozes (ver acima). `startOf` diz quando cada uma começa (tempo do contexto).
+ * Devolve até quando ainda sai som delas (a cauda conta pro corte das trocas de rota).
+ */
+function releaseVoices(ctx: BaseAudioContext, voices: readonly Voice[], startOf: (v: Voice) => number): number {
     const now = ctx.currentTime;
     const t = now + cutLead(ctx);
+    let until = now;
     for (const v of voices) {
         if (startOf(v) > t) {
             // Ainda não começou (pré-contagem ou play recém-agendado): para antes de soar.
@@ -115,7 +124,9 @@ function releaseVoices(ctx: BaseAudioContext, voices: readonly Voice[], startOf:
         holdParam(v.env.gain, t);
         v.env.gain.setTargetAtTime(0, t, VOICE_RELEASE_TC);
         stopVoices([v], t + VOICE_RELEASE_STOP);
+        until = t + VOICE_RELEASE_STOP;
     }
+    return until;
 }
 
 /**
@@ -559,6 +570,10 @@ export function useAudioEngine(userId?: string) {
     const playChainRef = useRef<{ songId: string | null; channels: Channel[]; pitch: number; compensation: number | null } | null>(null);
     // Instante (tempo do contexto) em que cada voz começa: a soltura para já a que ainda não começou.
     const voiceStartsRef = useRef(new WeakMap<Voice, number>());
+    // Até quando ainda sai som do que já foi solto: a cauda da soltura das vozes (em ganho 1 até
+    // a folga do corte, depois descendo) e o fim de um bipe cancelado. Conta como "algo soando"
+    // pro corte das trocas de rota (rodada 1 da T26: I1 e Minor c da revisão).
+    const soundingUntilRef = useRef(0);
     // Panner da contagem sem canal de click (Opção A da T26), criado uma vez no initEngine.
     const countPannerRef = useRef<StereoPannerNode | null>(null);
     // Cada play() pega um número. Se outro play() (troca de tom, seek...) começar
@@ -843,11 +858,16 @@ export function useAudioEngine(userId?: string) {
     };
 
     // === Corte curto das trocas de rota (Ruling T25-corte e T25-sincrono) ===
-    // Algo soando pelo motor agora (vozes agendadas ou tocando; a contagem sempre vem com elas)?
-    // Sem som não há estalo nem vazamento possível: a troca vai na hora. A cauda de uma soltura
-    // (até ~40 ms depois da pausa) não conta: trocar a rota nesse meio tempo dá no máximo um
-    // estalo baixo nela, e "parado" continua trocando na hora.
-    const isSounding = () => voicesRef.current.length > 0;
+    // Algo soando pelo motor agora? Vozes agendadas ou tocando (a contagem sempre vem com elas),
+    // a cauda de uma soltura (até ~40 ms depois da pausa ou da busca, em ganho 1 nos primeiros
+    // 10 ms) ou o fim de um bipe cancelado (até 20 ms). Sem som não há estalo nem vazamento
+    // possível: a troca vai na hora. Com a cauda contando, a troca de papel do Click na
+    // pré-contagem (que solta a contagem antes da troca da fila rodar) passa pelo corte: a cauda
+    // do bipe nunca sai pelo fader que acabou de ir pro barramento da VS.
+    const isSounding = () => {
+        const ctx = audioCtxRef.current;
+        return voicesRef.current.length > 0 || (!!ctx && ctx.currentTime < soundingUntilRef.current);
+    };
     const needsCut = () => {
         const ctx = audioCtxRef.current;
         return !!ctx && !!routeCutsRef.current && ctx.state === 'running' && isSounding();
@@ -1233,7 +1253,14 @@ export function useAudioEngine(userId?: string) {
         const ctx = audioCtxRef.current;
         const count = countRef.current;
         countRef.current = null;
-        if (count && ctx) count.cancel(ctx.currentTime);
+        if (count && ctx) {
+            const now = ctx.currentTime;
+            // Bipe soando agora desce e para em 20 ms: até lá ele ainda conta como som.
+            if (count.beats.some((b) => b.at <= now && now < b.at + COUNT_BEEP_LENGTH)) {
+                soundingUntilRef.current = Math.max(soundingUntilRef.current, now + COUNT_CANCEL_TAIL);
+            }
+            count.cancel(now);
+        }
         if (countInTimeoutRef.current) {
             clearTimeout(countInTimeoutRef.current);
             countInTimeoutRef.current = null;
@@ -1251,7 +1278,7 @@ export function useAudioEngine(userId?: string) {
         voicesRef.current = [];
         if (ctx && voices.length > 0) {
             const starts = voiceStartsRef.current;
-            releaseVoices(ctx, voices, (v) => starts.get(v) ?? 0);
+            soundingUntilRef.current = Math.max(soundingUntilRef.current, releaseVoices(ctx, voices, (v) => starts.get(v) ?? 0));
         }
         timelineRef.current = [];
         for (const ch of [...channels, ...(playChainRef.current?.channels ?? [])]) ch.sourceNode = null;
