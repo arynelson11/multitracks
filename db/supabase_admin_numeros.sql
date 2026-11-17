@@ -28,6 +28,10 @@
 -- * Custo de IA: trabalho sem custo = cost_recorded_at, cost_usd ou cost_brl
 --   nulo; conta à parte (withoutCost) e fica fora das duas somas. US$ e R$
 --   somam os MESMOS trabalhos (igual à aba Custos de IA, T10).
+--   withoutCostPending conta só os sem custo que a varredura de Custos de IA
+--   ainda completa, pela mesma função do admin_ai_costs (public.ai_cost_pending,
+--   db/supabase_admin_custos.sql); é o que acende o alerta da Visão geral
+--   (Ruling ADM-sem-custo-sql). withoutCost segue o total.
 -- * Plano de cada cobrança no Financeiro: o da hora da cobrança (Ruling
 --   ADM-T22-plano-historico). "Mudar plano" reescreve o plan_key da mesma
 --   assinatura e grava no registro do admin (change_plan, ok, target_ref = id
@@ -60,7 +64,8 @@ set local statement_timeout = '60s';
 --                               cortesia ativa (essa já conta em courtesyByPlan).
 -- cancellations: pagas canceladas no mês por motivo, sem troca de plano
 --                (superseded) e sem compra repetida (duplicate).
--- aiCost:        trabalhos criados no mês.
+-- aiCost:        trabalhos criados no mês (withoutCost, o total sem custo;
+--                withoutCostPending, os que a varredura ainda completa).
 -- fx:            a cotação mais recente até o dia de p_now ({ date, rate }, nulos
 --                sem nenhuma guardada).
 create or replace function public.admin_overview(p_now timestamptz default now())
@@ -164,10 +169,12 @@ begin
            'failed', count(*) filter (where j.status = 'failed'),
            'costBrl', coalesce(sum(j.cost_brl) filter (where j.com_custo), 0),
            'costUsd', coalesce(sum(j.cost_usd) filter (where j.com_custo), 0),
-           'withoutCost', count(*) filter (where not j.com_custo))
+           'withoutCost', count(*) filter (where not j.com_custo),
+           'withoutCostPending', count(*) filter (where j.a_completar))
     into v_ai
     from (select pr.status, pr.cost_usd, pr.cost_brl,
-                 (pr.cost_recorded_at is not null and pr.cost_usd is not null and pr.cost_brl is not null) as com_custo
+                 (pr.cost_recorded_at is not null and pr.cost_usd is not null and pr.cost_brl is not null) as com_custo,
+                 public.ai_cost_pending(pr.cost_recorded_at, pr.cost_usd, pr.cost_brl) as a_completar
             from public.predictions pr
            where pr.created_at >= v_ini
              and pr.created_at < v_fim) j;

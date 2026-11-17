@@ -23,6 +23,8 @@
 --   nulo, ou gravado com o dólar e sem o real); withoutCostUnpriced, o que ela já
 --   gravou sem dólar e nunca mais tenta (versão sem preço conhecido, concluído sem
 --   tempo, sem dado do Replicate). withoutCost continua sendo a soma dos dois.
+--   A regra mora numa função só, public.ai_cost_pending (seção 4), que a Visão
+--   geral também usa (admin_overview, db/supabase_admin_numeros.sql).
 -- * Câmbio: PTAX de venda do Banco Central, um valor por dia em fx_rates. O R$
 --   usa a PTAX pura, sem IOF nem spread do cartão.
 -- * Excluir a conta não apaga os trabalhos (D24): user_id vira null, e o custo
@@ -102,7 +104,25 @@ create table if not exists public.fx_rates (
 alter table public.fx_rates enable row level security;
 revoke all on table public.fx_rates from anon, authenticated;
 
--- ─── 4. Custos de IA do período (aba Custos de IA) ─────────────────────────
+-- ─── 4. Custo que a varredura ainda completa ────────────────────────────────
+-- Os dois filtros de sweepPendingCosts (api/_lib/aiCost.ts): nunca gravado
+-- (cost_recorded_at nulo), ou gravado com o dólar e sem o real. Gravado sem
+-- dólar (versão sem preço conhecido, concluído sem tempo, sem dado do
+-- Replicate) a varredura nunca mais tenta. Nunca devolve nulo, e nunca é
+-- verdadeiro num trabalho com custo (cost_recorded_at, cost_usd e cost_brl).
+-- Usada pela aba Custos de IA (admin_ai_costs) e pela Visão geral
+-- (admin_overview): a regra fica num lugar só.
+create or replace function public.ai_cost_pending(p_cost_recorded_at timestamptz, p_cost_usd numeric, p_cost_brl numeric)
+returns boolean
+language sql
+immutable
+set search_path = pg_catalog, pg_temp
+as $$
+  select p_cost_recorded_at is null
+      or (p_cost_usd is not null and p_cost_usd >= 0 and p_cost_brl is null);
+$$;
+
+-- ─── 5. Custos de IA do período (aba Custos de IA) ─────────────────────────
 -- Formato AiCosts sem os campos do servidor (prices, sweep, page e pageSize):
 -- range:   { from, to } (dias de Brasília; sem datas, o mês de Brasília de hoje).
 -- totals:  jobs; succeeded, failed, canceled e unknown pelo status; withoutCost
@@ -137,10 +157,8 @@ begin
   with j as (
     select pr.*,
            (pr.cost_recorded_at is not null and pr.cost_usd is not null and pr.cost_brl is not null) as com_custo,
-           -- a varredura ainda volta nele: nunca gravado, ou gravado com o dólar e sem o real
-           -- (os dois filtros de sweepPendingCosts); nunca nulo, nunca junto com com_custo
-           (pr.cost_recorded_at is null
-            or (pr.cost_usd is not null and pr.cost_usd >= 0 and pr.cost_brl is null)) as a_completar
+           -- a varredura ainda volta nele (regra em ai_cost_pending, seção 4)
+           public.ai_cost_pending(pr.cost_recorded_at, pr.cost_usd, pr.cost_brl) as a_completar
       from public.predictions pr
      where pr.created_at >= v_start
        and pr.created_at < v_end
@@ -230,7 +248,7 @@ begin
 end;
 $$;
 
--- ─── 5. Só o backend executa ────────────────────────────────────────────────
+-- ─── 6. Só o backend executa ────────────────────────────────────────────────
 revoke execute on function public.admin_ai_costs(date, date, int, int) from public, anon, authenticated;
 grant  execute on function public.admin_ai_costs(date, date, int, int) to service_role;
 
