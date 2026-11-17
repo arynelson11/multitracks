@@ -256,3 +256,32 @@ export function outputSummary(plan: OutputPlan): string {
   if (plan.click[0] === plan.guide[0]) return `${vs} · Click e Guia ${at(plan.click[0])}`
   return `${vs} · Click ${at(plan.click[0])} · Guia ${at(plan.guide[0])}`
 }
+
+/**
+ * Click ou Guia saem pelas saídas da VS (vão pro PA)? Em "Tudo junto" só o pan automático os
+ * separa (Click e Guia na esquerda, a VS na direita, Ruling T25-autopan-2); com 1 canal tudo sai
+ * junto. Em "Click e Guia separados" e em "4 ou mais" o plano nunca põe o click no par da VS.
+ */
+export function cueReachesVs(plan: OutputPlan, autoPan: boolean): boolean {
+  if (plan.mode === 'stereo') return !(autoPan && plan.channels >= 2)
+  return [...plan.click, ...plan.guide].some((o) => plan.vs.includes(o))
+}
+
+/** Pergunta antes de mandar o click pro PA com a música tocando (Ruling T29-confirma). */
+export const CUE_TO_PA_CONFIRM_TEXT = 'Com Tudo junto o click e a guia vão pro PA. Mudar agora?'
+
+/**
+ * Com a música TOCANDO, a troca de saída (modo, lado, mapa ou pan automático) que passa a mandar
+ * Click ou Guia pras saídas da VS pede confirmação (Ruling T29-confirma); parado, troca direto. O
+ * plano é o do aparelho de agora (`maxChannelCount`): se já saía junto, não pergunta.
+ */
+export function needsCueToPaConfirm(
+  before: { outputs: ReadonlyOutputSettings; autoPan: boolean },
+  after: { outputs: ReadonlyOutputSettings; autoPan: boolean },
+  maxChannelCount: number,
+  playing: boolean,
+): boolean {
+  if (!playing) return false
+  return !cueReachesVs(planOutputs(before.outputs, maxChannelCount), before.autoPan)
+    && cueReachesVs(planOutputs(after.outputs, maxChannelCount), after.autoPan)
+}

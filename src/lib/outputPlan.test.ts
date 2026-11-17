@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChannelRole } from '../types'
 import type { OutputPlan, OutputSettings } from './stageContracts'
-import { DEFAULT_OUTPUTS, OUTPUTS_MIGRATED_KEY, OUTPUTS_MIGRATED_VALUE, OUTPUT_WARNING_TEXT, effectivePan, migrateOutputs, multiChoices, outputSummary, planOutputs, sanitizeOutputs } from './outputPlan'
+import { CUE_TO_PA_CONFIRM_TEXT, DEFAULT_OUTPUTS, OUTPUTS_MIGRATED_KEY, OUTPUTS_MIGRATED_VALUE, OUTPUT_WARNING_TEXT, cueReachesVs, effectivePan, migrateOutputs, multiChoices, needsCueToPaConfirm, outputSummary, planOutputs, sanitizeOutputs } from './outputPlan'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
 const PROIBIDAS = ['next', 'play', 'cancel', 'start', 'repeat', 'section', 'edit', 'settings', 'upgrade']
@@ -463,5 +463,45 @@ describe('outputSummary', () => {
       expect(text).not.toContain(TRAVESSAO)
       for (const w of PROIBIDAS) expect(text.toLowerCase()).not.toContain(w)
     }
+  })
+})
+
+describe('confirmação de mandar o click pro PA tocando (Ruling T29-confirma)', () => {
+  const SPLIT: OutputSettings = { ...DEFAULT_OUTPUTS, mode: 'split2' }
+  const at = (outputs: OutputSettings, autoPan = false) => ({ outputs, autoPan })
+
+  it('Click e Guia nas saídas da VS: Tudo junto sem pan automático e 1 canal; separados e 4 ou mais, não', () => {
+    expect(cueReachesVs(planOutputs(STEREO, 2), false)).toBe(true)
+    expect(cueReachesVs(planOutputs(STEREO, 2), true)).toBe(false)
+    expect(cueReachesVs(planOutputs(STEREO, 1), true)).toBe(true)
+    expect(cueReachesVs(planOutputs(SPLIT, 2), false)).toBe(false)
+    expect(cueReachesVs(planOutputs({ ...SPLIT, earOnSecond: true }, 2), false)).toBe(false)
+    expect(cueReachesVs(planOutputs(multi(0, 2, 3), 8), false)).toBe(false)
+    // 4 ou mais numa placa de 2 canais cai em separados: o click continua fora da VS.
+    expect(cueReachesVs(planOutputs(multi(0, 2, 3), 2), false)).toBe(false)
+  })
+
+  it('tocando, pede confirmação só quando a troca leva o click ou a guia pro PA', () => {
+    expect(needsCueToPaConfirm(at(SPLIT), at(STEREO), 2, true)).toBe(true)
+    expect(needsCueToPaConfirm(at(multi(0, 2, 3)), at(STEREO), 8, true)).toBe(true)
+    // Desligar o pan automático em Tudo junto junta o click com a VS.
+    expect(needsCueToPaConfirm(at(STEREO, true), at(STEREO, false), 2, true)).toBe(true)
+    // Separar nunca pergunta; trocar o lado em separados também não.
+    expect(needsCueToPaConfirm(at(STEREO), at(SPLIT), 2, true)).toBe(false)
+    expect(needsCueToPaConfirm(at(SPLIT), at({ ...SPLIT, earOnSecond: true }), 2, true)).toBe(false)
+    expect(needsCueToPaConfirm(at(SPLIT), at(multi(0, 2, 3)), 8, true)).toBe(false)
+    // Já estava junto (1 canal: tudo sai junto de qualquer jeito): não pergunta.
+    expect(needsCueToPaConfirm(at(SPLIT), at(STEREO), 1, true)).toBe(false)
+    expect(needsCueToPaConfirm(at(STEREO, false), at(STEREO, true), 2, true)).toBe(false)
+  })
+
+  it('parado troca direto', () => {
+    expect(needsCueToPaConfirm(at(SPLIT), at(STEREO), 2, false)).toBe(false)
+    expect(needsCueToPaConfirm(at(STEREO, true), at(STEREO, false), 2, false)).toBe(false)
+  })
+
+  it('o texto da confirmação diz pra onde o click vai, sem travessão', () => {
+    expect(CUE_TO_PA_CONFIRM_TEXT).toBe('Com Tudo junto o click e a guia vão pro PA. Mudar agora?')
+    expect(CUE_TO_PA_CONFIRM_TEXT).not.toContain(TRAVESSAO)
   })
 })
