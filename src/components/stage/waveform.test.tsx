@@ -8,7 +8,7 @@ import { FAMILY_COLOR } from '../../lib/channelNames'
 import type { StageSection } from '../../lib/stageContracts'
 import { SECTION_SHORTCUTS } from '../SectionBar'
 import { WaveformSections } from './WaveformSections'
-import { arcPath, arcRise, computePeaks, liftForRise, lighter, placeLabels } from './wavePeaks'
+import { arcPath, arcRise, computePeaks, INLINE_TAG_GAP, liftForRise, lighter, placeLabels } from './wavePeaks'
 import type { LabelBox, LabelSpot } from './wavePeaks'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
@@ -184,6 +184,91 @@ describe('wavePeaks', () => {
     expect(placeLabels([box(950, 100, { tagWidth: 60, priority: 0 })], 2, 8, 6, 994)).toEqual([{ row: 0, x: 894, inline: false }])
     expect(placeLabels([box(950, 100, { tagWidth: 60, priority: 0 })], 1, 8, 6, 994)).toEqual([{ row: 0, x: 830, inline: true }])
     expect(placeLabels([box(-20, 50)], 1, 8, 6, 994)).toEqual([{ row: 0, x: 6, inline: false }])
+  })
+})
+
+// Ruling T18-selos: a etiqueta (PRÓXIMA, REPETE, LOOP) é obstáculo como o selo; o selo comum que
+// colide com ela some (nunca o da atual nem o da armada) e nada se encosta nem fica por cima.
+describe('selos x etiqueta', () => {
+  type Foot = { owner: number; row: number; l: number; r: number }
+  /** O que cada selo ocupa na onda: o selo, e a etiqueta embaixo (linha de baixo) ou ao lado (mesma linha). */
+  const footprints = (boxes: readonly LabelBox[], spots: readonly (LabelSpot | null)[]): Foot[] => spots.flatMap((s, i) => {
+    if (!s) return []
+    const b = boxes[i]
+    if (b.tagWidth === undefined) return [{ owner: i, row: s.row, l: s.x, r: s.x + b.width }]
+    if (s.inline) return [{ owner: i, row: s.row, l: s.x, r: s.x + b.width + INLINE_TAG_GAP + b.tagWidth }]
+    return [{ owner: i, row: s.row, l: s.x, r: s.x + b.width }, { owner: i, row: s.row + 1, l: s.x, r: s.x + b.tagWidth }]
+  })
+  const clashes = (feet: Foot[], gap: number) => feet.flatMap((a, i) => feet.slice(i + 1)
+    .filter((b) => a.owner !== b.owner && a.row === b.row && !(a.r + gap <= b.l || b.r + gap <= a.l))
+    .map((b) => `${a.owner}x${b.owner} na linha ${a.row}`))
+
+  it('1024x740 com pulo armado e nomes de 14: uma linha só, a PRÓXIMA ao lado, o selo vizinho que colide some', () => {
+    // Medidas do Chrome em 1024x740: onda de 992 px, 9 seções iguais (110,2 px), selos de 92 a 107 px, PRÓXIMA de 66,8 px.
+    const bw = 992 / 9
+    const widths = [98, 102.2, 98.2, 92.5, 104.3, 108.4, 106.9, 101.6, 104.5]
+    const boxes: LabelBox[] = widths.map((width, i) => ({ x: i * bw + 7, width, priority: i === 6 ? 0 : i === 3 ? 1 : 2 }))
+    boxes[6].tagWidth = 66.8
+    const spots = placeLabels(boxes, 1, 8, 6, 986)
+    // A armada fica com a PRÓXIMA ao lado; a atual aparece; a vizinha da direita, que a PRÓXIMA cobriria, some.
+    expect(spots[6]).toEqual({ row: 0, x: 6 * bw + 7, inline: true })
+    expect(spots[3]).not.toBeNull()
+    expect(spots[7]).toBeNull()
+    expect(clashes(footprints(boxes, spots), 8)).toEqual([])
+  })
+
+  it('varredura: nenhum selo encosta em selo ou etiqueta, e a atual e a armada só somem se nem sozinhas couberem', () => {
+    let seed = 7
+    const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648 }
+    let cases = 0
+    let hiddenCommon = 0
+    for (let k = 0; k < 3000; k++) {
+      const n = 3 + Math.floor(rnd() * 12)
+      const width = 600 + rnd() * 1300
+      const rows = 1 + Math.floor(rnd() * 3)
+      const bw = width / n
+      const armed = Math.floor(rnd() * n)
+      const current = Math.floor(rnd() * n)
+      const boxes: LabelBox[] = Array.from({ length: n }, (_, i) => ({
+        x: i * bw + 7, width: 40 + rnd() * 90, priority: i === armed ? 0 : i === current ? 1 : 2,
+      }))
+      boxes[armed].tagWidth = [50, 66.8, 70, 84][Math.floor(rnd() * 4)]
+      const spots = placeLabels(boxes, rows, 8, 6, width - 6)
+      expect(clashes(footprints(boxes, spots), 8)).toEqual([])
+      for (const s of spots) if (s) expect(s.x).toBeGreaterThanOrEqual(6)
+      // Atual e armada: se as duas cabem sozinhas, continuam aparecendo com todas as outras.
+      const important = boxes.map((_, i) => i).filter((i) => boxes[i].priority < 2)
+      const alone = placeLabels(important.map((i) => boxes[i]), rows, 8, 6, width - 6)
+      if (alone.every((s) => s !== null)) for (const i of important) expect(spots[i]).not.toBeNull()
+      hiddenCommon += spots.filter((s, i) => s === null && boxes[i].priority === 2).length
+      cases++
+    }
+    expect(cases).toBe(3000)
+    expect(hiddenCommon).toBeGreaterThan(0) // a varredura passa por casos apertados de verdade
+  })
+
+  it('na onda de uma linha só, o selo vizinho escondido continua no nome e na dica do bloco', () => {
+    // 1024x740: onda de 992 x 95 px (uma linha de selos), 9 seções iguais, selos de 100 px, PRÓXIMA de 66,8 px.
+    fakeLayout(992, 95, { selo: 100, tag: 66.8, ruler: 30 })
+    const nine: StageSection[] = Array.from({ length: 9 }, (_, i) => ({
+      index: i, label: `Seção Número ${i + 1}`, color: '#10b981', start: i * 10, end: (i + 1) * 10, bars: 4,
+    }))
+    const { container } = renderWave({ sections: nine, duration: 90, currentSection: 3, intent: { target: 6, plays: 1 } })
+    const b = blocks(container)
+    const selo = (i: number) => b[i].querySelector<HTMLElement>('[data-selo]')!
+    const tag = b[6].querySelector<HTMLElement>('[data-tag]')!
+    // A armada e a atual aparecem; a PRÓXIMA fica ao lado do selo da armada, na mesma linha.
+    expect(selo(6).dataset.fit).toBeUndefined()
+    expect(selo(3).dataset.fit).toBeUndefined()
+    expect(tag.dataset.fit).toBeUndefined()
+    expect(tag.style.top).toBe('12px')
+    expect(tag.style.left).toBe(`${7 + 100 + INLINE_TAG_GAP}px`)
+    // A vizinha da direita, que a PRÓXIMA cobriria, some; o nome dela continua no bloco.
+    expect(selo(7).dataset.fit).toBe('none')
+    expect(b[7].getAttribute('aria-label')).toBe('Armar Seção Número 8')
+    expect(b[7].getAttribute('title')).toBe('Armar Seção Número 8')
+    // Os outros cabem na linha: só a que colide sai.
+    expect(b.filter((x) => x.querySelector<HTMLElement>('[data-selo]')!.dataset.fit === 'none')).toHaveLength(1)
   })
 })
 
