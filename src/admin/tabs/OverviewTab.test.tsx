@@ -18,7 +18,10 @@ const TRAVESSAO = String.fromCharCode(0x2014)
 const MSG_BAD_SHAPE = 'Não deu pra carregar a visão geral. Tente de novo.'
 const FX_SOURCE = '(PTAX de venda do Banco Central, sem IOF nem spread).'
 
-const QUIET = { manual: 0, auto: 0, blockedWithActiveSub: 0, withoutCost: 0, fxOld: false }
+// Sem custo (Ruling ADM-sem-custo-visao): o alerta conta só o que a varredura ainda completa
+// (alerts.withoutCostPending); as notas do custo e da margem contam o total (aiCost.withoutCost).
+const QUIET = { manual: 0, auto: 0, blockedWithActiveSub: 0, withoutCostPending: 0, fxOld: false }
+const aiCostWith = (withoutCost: number) => ({ jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31, withoutCost })
 
 // A resposta de `?action=overview` no formato do contrato (seção Arquitetura B do plano).
 function overview(over: Partial<Overview> = {}): Overview {
@@ -116,12 +119,12 @@ describe('OverviewTab', () => {
     const data = overview({
       aiCost: { jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31, withoutCost: 3 },
       fx: { date: '2026-11-10', rate: 5.41, ageDays: 6 },
-      alerts: { manual: 0, auto: 0, blockedWithActiveSub: 2, withoutCost: 3, fxOld: true },
+      alerts: { manual: 0, auto: 0, blockedWithActiveSub: 2, withoutCostPending: 3, fxOld: true },
     })
     const { onNavigate } = await show(data)
     const list = alertsList()
     const cases: [string, string][] = [
-      ['3 trabalhos sem custo no mês', 'aicost'],
+      ['3 trabalhos ainda sem custo no mês', 'aicost'],
       ['2 bloqueados com assinatura ativa', 'subscribers'],
       ['Câmbio velho: de 10/11/2026, há 6 dias', 'aicost'],
     ]
@@ -182,10 +185,47 @@ describe('OverviewTab', () => {
   it('trabalhos sem custo ficam fora da soma e a tela diz isso no custo e na margem', async () => {
     await show(overview({
       aiCost: { jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31, withoutCost: 3 },
-      alerts: { ...QUIET, withoutCost: 3 },
+      alerts: { ...QUIET, withoutCostPending: 3 },
     }))
     expect(text(group('Custo de IA no mês'))).toContain('3 trabalhos sem custo, fora da soma')
     expect(text(group('Margem do mês'))).toContain('Não inclui 3 trabalhos sem custo.')
+  })
+
+  const noteOf = (name: string, start: string) =>
+    within(group(name)).getByText((_, el) => el?.tagName === 'P' && text(el).startsWith(start))
+
+  it('só trabalhos sem preço conhecido: nenhum âmbar, e as notas do custo e da margem com o total', async () => {
+    const { container } = await show(overview({ aiCost: aiCostWith(5), alerts: { ...QUIET, withoutCostPending: 0 } }))
+    expect(screen.getByText('Nada pedindo atenção agora.')).toBeTruthy()
+    expect(text(noteOf('Margem do mês', 'Não inclui'))).toBe('Não inclui 5 trabalhos sem custo.')
+    expect(text(noteOf('Custo de IA no mês', '5 trabalhos'))).toBe('5 trabalhos sem custo, fora da soma')
+    expect(container.querySelector('[class*="ps-alert"]')).toBeNull()
+  })
+
+  it('com pendentes, âmbar: o alerta conta os pendentes e as notas o total', async () => {
+    const { onNavigate } = await show(overview({ aiCost: aiCostWith(7), alerts: { ...QUIET, withoutCostPending: 2 } }))
+    const button = within(alertsList()).getAllByRole('button').find((b) => text(b) === '2 trabalhos ainda sem custo no mês') as HTMLElement
+    expect(button).toBeTruthy()
+    expect(button.querySelector('.bg-ps-alert')).not.toBeNull()
+    fireEvent.click(button)
+    expect(onNavigate).toHaveBeenCalledWith('aicost')
+    const margin = noteOf('Margem do mês', 'Não inclui')
+    expect(text(margin)).toBe('Não inclui 7 trabalhos sem custo.')
+    expect(margin.className).toContain('text-ps-alert')
+    const cost = noteOf('Custo de IA no mês', '7 trabalhos')
+    expect(text(cost)).toBe('7 trabalhos sem custo, fora da soma')
+    expect(cost.className).toContain('text-ps-alert')
+  })
+
+  it('resposta sem a divisão do sem custo (servidor de antes) ou sem o total vira a frase pronta', async () => {
+    const old = { manual: 0, auto: 0, blockedWithActiveSub: 0, withoutCost: 3, fxOld: false }
+    h.adminGet.mockResolvedValueOnce({ ...overview(), alerts: old })
+    const first = render(<OverviewTab onNavigate={vi.fn()} focusUserId={null} />)
+    expect((await screen.findByRole('alert')).textContent).toBe(MSG_BAD_SHAPE)
+    first.unmount()
+    h.adminGet.mockResolvedValueOnce({ ...overview(), aiCost: { jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31 } })
+    render(<OverviewTab onNavigate={vi.fn()} focusUserId={null} />)
+    expect((await screen.findByRole('alert')).textContent).toBe(MSG_BAD_SHAPE)
   })
 
   it('assinantes por plano: Pagando, Até o fim do período e Cortesia, e as contas no vermelho', async () => {
@@ -266,7 +306,7 @@ describe('OverviewTab', () => {
   })
 
   it('alertas fora do formato não viram Nada pedindo atenção', async () => {
-    h.adminGet.mockResolvedValue({ ...overview(), alerts: { manual: '3', auto: 0, blockedWithActiveSub: 0, withoutCost: 0, fxOld: false } })
+    h.adminGet.mockResolvedValue({ ...overview(), alerts: { manual: '3', auto: 0, blockedWithActiveSub: 0, withoutCostPending: 0, fxOld: false } })
     render(<OverviewTab onNavigate={vi.fn()} focusUserId={null} />)
     expect((await screen.findByRole('alert')).textContent).toBe(MSG_BAD_SHAPE)
     expect(screen.queryByText('Nada pedindo atenção agora.')).toBeNull()
@@ -286,7 +326,7 @@ describe('OverviewTab', () => {
   })
 
   it('botões com alvo de 44 px, só tokens ps-* e texto sem travessão', async () => {
-    const data = overview({ alerts: { manual: 1, auto: 2, blockedWithActiveSub: 1, withoutCost: 1, fxOld: true } })
+    const data = overview({ aiCost: aiCostWith(1), alerts: { manual: 1, auto: 2, blockedWithActiveSub: 1, withoutCostPending: 1, fxOld: true } })
     const { container } = await show({ ...data, subscribers: { ...data.subscribers, legacyPaid: 1 } })
     const buttons = screen.getAllByRole('button')
     expect(buttons.length).toBe(7)

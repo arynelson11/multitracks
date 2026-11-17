@@ -89,7 +89,8 @@ function alertsOf(o: Overview): AlertItem[] {
   counted('manual', a.manual, 'review', 'pendência precisa de você', 'pendências precisam de você')
   counted('auto', a.auto, 'review', 'aviso do Asaas ou pendência tentando sozinho', 'avisos do Asaas e pendências tentando sozinhos')
   counted('blocked', a.blockedWithActiveSub, 'subscribers', 'bloqueado com assinatura ativa', 'bloqueados com assinatura ativa')
-  counted('withoutCost', a.withoutCost, 'aicost', 'trabalho sem custo no mês', 'trabalhos sem custo no mês')
+  // Só o que a varredura ainda completa (Ruling ADM-sem-custo-visao); o sem preço conhecido não pede ação.
+  counted('withoutCost', a.withoutCostPending, 'aicost', 'trabalho ainda sem custo no mês', 'trabalhos ainda sem custo no mês')
   if (a.fxOld) items.push({ key: 'fx', to: 'aicost', content: fxAlert(o.fx) })
   return items
 }
@@ -194,7 +195,9 @@ function Numbers({ data }: { data: Overview }) {
   const refunds = countOf(revenue.refunds)
   const jobs = countOf(aiCost.jobs)
   const legacy = countOf(data.subscribers.legacyPaid)
-  const withoutCost = alerts.withoutCost
+  // As notas contam o total sem custo (fora da soma); o âmbar só acende com pendentes, como o alerta.
+  const withoutCost = countOf(aiCost.withoutCost) ?? 0
+  const withoutCostNote = alerts.withoutCostPending > 0 ? NOTE_ALERT : NOTE
   const rate = amountOf(fx.rate)
   const day = fxDay(fx)
 
@@ -241,7 +244,7 @@ function Numbers({ data }: { data: Overview }) {
             )}
           </p>
           {withoutCost > 0 && (
-            <p className={NOTE_ALERT}>
+            <p className={withoutCostNote}>
               <Counted n={withoutCost} one="trabalho sem custo" many="trabalhos sem custo" />, fora da soma
             </p>
           )}
@@ -250,7 +253,7 @@ function Numbers({ data }: { data: Overview }) {
         <NumberPanel label="Margem do mês" value={fmtBRL(amountOf(data.marginBrl))}>
           <p className={NOTE}>{MARGIN_NOTE}</p>
           {withoutCost > 0 && (
-            <p className={NOTE_ALERT}>
+            <p className={withoutCostNote}>
               Não inclui <Counted n={withoutCost} one="trabalho sem custo" many="trabalhos sem custo" />.
             </p>
           )}

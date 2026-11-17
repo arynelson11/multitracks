@@ -23,13 +23,15 @@ export type Overview = {
     legacyPaid: number
   }
   cancellations: { total: number; bySource: Partial<Record<CancelSource, number>> }
+  // withoutCost: todos os trabalhos sem custo do mês, fora da soma (as notas do custo e da margem)
   aiCost: { jobs: number; succeeded: number; failed: number; costBrl: number; costUsd: number; withoutCost: number }
   // servidor: receita líquida menos o custo de IA
   marginBrl: number
   // ageDays: servidor, em dias de Brasília
   fx: { date: string | null; rate: number | null; ageDays: number | null }
-  // servidor
-  alerts: { manual: number; auto: number; blockedWithActiveSub: number; withoutCost: number; fxOld: boolean }
+  // servidor; withoutCostPending: só os sem custo que a varredura de Custos de IA ainda completa
+  // (Ruling ADM-sem-custo-visao): o já tentado sem preço conhecido não pede ação
+  alerts: { manual: number; auto: number; blockedWithActiveSub: number; withoutCostPending: number; fxOld: boolean }
 }
 
 /** Plano (ou motivo) e quantos. */
@@ -73,8 +75,9 @@ export function countEntries(v: unknown): CountEntry[] | null {
 /**
  * A resposta tem a forma que a tela usa (Ruling ADM-T7-forma): as seções são objetos, o mês tem o
  * nome e os alertas vêm completos. Os alertas são conferidos campo a campo porque a tela diz "Nada
- * pedindo atenção agora." com eles zerados: alerta que falta nunca vira zero. Os outros números são
- * lidos um a um na tela, e o que faltar aparece como `sem dado`.
+ * pedindo atenção agora." com eles zerados: alerta que falta nunca vira zero. O total sem custo
+ * (aiCost.withoutCost) também: sem ele a margem perderia o "Não inclui". Os outros números são lidos
+ * um a um na tela, e o que faltar aparece como `sem dado`.
  */
 export function isOverview(v: unknown): v is Overview {
   if (!isObj(v)) return false
@@ -82,5 +85,6 @@ export function isOverview(v: unknown): v is Overview {
   if (!isObj(month) || typeof month.label !== 'string') return false
   if (![revenue, subscribers, cancellations, aiCost, fx].every(isObj)) return false
   if (!isObj(alerts) || typeof alerts.fxOld !== 'boolean') return false
-  return [alerts.manual, alerts.auto, alerts.blockedWithActiveSub, alerts.withoutCost].every((n) => countOf(n) !== null)
+  const totalWithoutCost = isObj(aiCost) ? aiCost.withoutCost : null
+  return [alerts.manual, alerts.auto, alerts.blockedWithActiveSub, alerts.withoutCostPending, totalWithoutCost].every((n) => countOf(n) !== null)
 }
