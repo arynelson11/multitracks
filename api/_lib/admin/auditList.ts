@@ -7,30 +7,19 @@ import { int, str, uuid, type AdminCtx, type AdminHandlers } from './http.js'
 // O texto cru do último erro fica só no banco (Ruling ADM-T6-lastError): todo
 // lastError do antes e do depois sai daqui em frase pronta. O SQL do
 // admin_close_action grava no antes o last_error cru da pendência; o
-// retry_action e o retry_event (T6) já gravam a frase.
+// retry_action e o retry_event (T6) já gravam a frase, que a função deixa
+// passar sem mudar (Ruling ADM-T6-idempotente).
 
 const PAGE_SIZE = 50
 const MAX_PAGE = 1000
 
 type AuditPage = { total: number; page: number; pageSize: number; rows: unknown[] }
 
-// lastErrorLabel não devolve a própria frase (a frase pronta passada de novo
-// vira a genérica). A frase que já é dela passa como está; as frases saem da
-// própria função, pra não ter uma cópia delas aqui.
-function isLabel(text: string): boolean {
-  const status = /(\d{3})\.$/.exec(text)?.[1]
-  const labels = [lastErrorLabel('Asaas sem resposta'), lastErrorLabel('qualquer outro texto')]
-  if (status) labels.push(lastErrorLabel(`Asaas recusou (${status})`))
-  return labels.includes(text)
-}
-
-const safeLastError = (v: unknown): string | null => (typeof v === 'string' && isLabel(v) ? v : lastErrorLabel(v))
-
 // Todo lastError do valor, em qualquer nível (objeto ou lista); o resto passa como veio.
 function withErrorLabels(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(withErrorLabels)
   if (typeof v !== 'object' || v === null) return v
-  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === 'lastError' ? safeLastError(x) : withErrorLabels(x)]))
+  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === 'lastError' ? lastErrorLabel(x) : withErrorLabels(x)]))
 }
 
 function labeledRow(row: unknown): unknown {

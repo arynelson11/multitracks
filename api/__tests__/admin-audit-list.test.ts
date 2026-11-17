@@ -160,6 +160,7 @@ describe('último erro em frase pronta no antes e no depois (Ruling ADM-T6-lastE
           after: { status: 'done', doneAt: '2026-11-16T15:00:00+00:00', doneNote: 'admin: estornado no painel' } }),
         entry({ id: 2, action: 'close_action', targetRef: '11', before: { action: 'refund_payment', lastError: 'Asaas sem resposta (ECONNRESET)' } }),
         entry({ id: 1, action: 'close_action', targetRef: '10', before: { action: 'admin_review', lastError: 'duplicate key value violates unique constraint "billing_payments_pkey"' } }),
+        entry({ id: 0, action: 'close_action', targetRef: '9', before: { action: 'delete_future_payments', lastError: 'Asaas recusou remover pay_1, pay_2' } }),
       ],
     }
     const res = await get()
@@ -169,18 +170,24 @@ describe('último erro em frase pronta no antes e no depois (Ruling ADM-T6-lastE
     expect(rows[0].after).toEqual({ status: 'done', doneAt: '2026-11-16T15:00:00+00:00', doneNote: 'admin: estornado no painel' })
     expect(rows[1].before).toEqual({ action: 'refund_payment', lastError: MSG.asaasSilent })
     expect(rows[2].before).toEqual({ action: 'admin_review', lastError: MSG.unexpected })
+    expect(rows[3].before).toEqual({ action: 'delete_future_payments', lastError: 'O Asaas recusou remover as cobranças futuras: pay_1, pay_2.' })
     const text = JSON.stringify(res.body)
     for (const raw of ['invalid_action', 'ECONNRESET', 'duplicate key', 'billing_payments_pkey']) expect(text).not.toContain(raw)
   })
 
   it('a frase pronta que a T6 já gravou passa como está, e nulo continua nulo', async () => {
     const refused = 'O Asaas recusou o pedido. Status do Asaas: 422.'
+    const down = 'O Asaas não respondeu. Status do Asaas: 503.'
+    const removal = 'O Asaas recusou remover as cobranças futuras: pay_7.'
     listed = {
-      total: 2,
+      total: 3,
       rows: [
-        entry({ id: 2, action: 'retry_action', targetRef: '7',
+        entry({ id: 3, action: 'retry_action', targetRef: '7',
           before: { action: 'inactivate_subscription', status: 'pending', attempts: 1, lastError: MSG.asaasSilent },
           after: { status: 'pending', attempts: 2, lastError: refused } }),
+        entry({ id: 2, action: 'retry_action', targetRef: '8',
+          before: { action: 'delete_future_payments', status: 'pending', attempts: 4, lastError: down },
+          after: { status: 'pending', attempts: 5, lastError: removal } }),
         entry({ id: 1, action: 'retry_event', targetRef: 'evt_1',
           before: { event: 'PAYMENT_CONFIRMED', status: 'failed', attempts: 0, lastError: MSG.unexpected },
           after: { processed: true, result: 'paid' } }),
@@ -190,7 +197,9 @@ describe('último erro em frase pronta no antes e no depois (Ruling ADM-T6-lastE
     const rows = (res.body as { rows: Row[] }).rows
     expect(rows[0].before).toEqual({ action: 'inactivate_subscription', status: 'pending', attempts: 1, lastError: MSG.asaasSilent })
     expect(rows[0].after).toEqual({ status: 'pending', attempts: 2, lastError: refused })
-    expect(rows[1].before).toEqual({ event: 'PAYMENT_CONFIRMED', status: 'failed', attempts: 0, lastError: MSG.unexpected })
+    expect(rows[1].before).toEqual({ action: 'delete_future_payments', status: 'pending', attempts: 4, lastError: down })
+    expect(rows[1].after).toEqual({ status: 'pending', attempts: 5, lastError: removal })
+    expect(rows[2].before).toEqual({ event: 'PAYMENT_CONFIRMED', status: 'failed', attempts: 0, lastError: MSG.unexpected })
 
     listed = { total: 1, rows: [entry({ before: { status: 'pending', lastError: null }, after: null })] }
     const again = await get()
