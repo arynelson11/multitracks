@@ -240,7 +240,10 @@ async function main() {
     const referenced = new Set(chs.map((ch) => ch.sourceNode).filter(Boolean));
     const bufName = new Map(chs.map((ch) => [ch.buffer, ch.name]));
     const alive = sources.filter((r) => r.started && !r.stopped && !r.ended);
-    const route = (s) => [...(edges.get(s) || [])].map((x) => (x instanceof OrigAWN ? 'worklet' : x instanceof DelayNode ? 'delay' : x instanceof StereoPannerNode ? 'panner' : x.constructor.name));
+    // Desde a T26 a fonte liga no envelope da voz (um GainNode) e o envelope na entrada do canal
+    // (worklet, atraso ou panner): a rota é a entrada, atravessando o envelope.
+    const entryOf = (s) => [...(edges.get(s) || [])].flatMap((x) => (x instanceof GainNode ? [...(edges.get(x) || [])] : [x]));
+    const route = (s) => entryOf(s).map((x) => (x instanceof OrigAWN ? 'worklet' : x instanceof DelayNode ? 'delay' : x instanceof StereoPannerNode ? 'panner' : x.constructor.name));
     const aliveInfo = alive.map((r) => ({ ch: bufName.get(r.s.buffer) || '?', route: route(r.s).join('+'), referenced: referenced.has(r.s) }));
     const snap = {
       label, t, ctxTime: +c.toFixed(3), pitch: E().playlist[E().activeSongIndex]?.pitch ?? null,
