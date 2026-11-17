@@ -26,8 +26,8 @@
 // Sem voto do baixo nem da harmonia, bumbo empatado (no 1 e no 3, ou em todo
 // tempo) desempata por onde a bateria começa, em qualquer compasso; com voto, não:
 // uma virada antes da entrada não puxa mais o 1 pro 3 ou pro 4. Com baixo ou
-// harmonia presentes que não votam (não marcam o compasso), o bumbo claramente mais
-// alto dentro do empate (`KICK_LEAD_DB`) vale antes desse desempate.
+// harmonia presentes que não votam (não marcam o compasso), o bumbo que lidera dentro
+// do empate (`KICK_LEAD_DB`) vale antes desse desempate, marcado como `bumbo-lidera`.
 // `decideDownbeat` devolve também de onde veio o "1" e a folga da decisão, pra quem
 // mostra o "1" poder marcar quando ele é incerto (`SongGridDetection.downbeatFrom`).
 import { ONSET_LAG_FRAMES, sampleAt, type OnsetBands } from './onsets';
@@ -45,7 +45,8 @@ export interface DownbeatVotes {
  * - `bumbo`: sem voto, o bumbo de um tempo ficou mais de 25% acima dos outros (ou,
  *   empatado, o mais forte quando o começo da bateria não está no empate, com folga 0);
  * - `bumbo-lidera`: sem voto, com baixo ou harmonia presentes que não votam, o bumbo
- *   ficou pelo menos 1,1 dB acima do segundo dentro do empate;
+ *   ficou pelo menos 0,41 dB acima do segundo dentro do empate (então sempre menos de
+ *   1,25 dB acima: perto da diferença de mixagem, o "1" é incerto);
  * - `inicio-da-bateria`: sem voto, bumbo empatado desfeito por onde a bateria começa;
  * - `reserva`: nada pra medir (compasso de 1 tempo, grade inválida, sem bumbo nem
  *   voto); o "1" é o 0.
@@ -114,14 +115,16 @@ const MIN_VOTE_SPREAD = 0.2;
 
 /**
  * Com baixo ou harmonia presentes que não votam, o bumbo mais forte vale sozinho,
- * dentro do empate de 25%, quando fica pelo menos 1,1 dB acima do segundo (o perfil
- * do bumbo é de energia: 10^(1,1/10) = 1,288 vezes). Ruling M3-r3: um bumbo só 0,5 a
- * 1 dB mais alto num tempo (diferença de mixagem) não decide o "1"; medido no rock
- * sintético com o bumbo do 3 a +1 dB, o perfil fica de 0,57 a 0,99 dB acima. Acima
- * de 1,25 dB (fora do empate) o bumbo já decide sozinho como `bumbo`. Só com a
- * bateria (sem outras faixas) fica o desempate de antes.
+ * dentro do empate de 25%, quando fica pelo menos 10% acima do segundo: 0,41 dB, o
+ * limiar do 58c9306 (o perfil do bumbo com `hasKick` é de energia). Ruling M3-r4 (o
+ * real vence): a música sem projeto das multitracks reais só acerta o "1" assim (o
+ * bumbo dela lidera por 0,58 dB; a bateria entra no 2). O custo: um bumbo do 3 só
+ * 0,5 a 1 dB mais alto (diferença de mixagem) decide o 3, errado; o "1" sai como
+ * `bumbo-lidera` com a folga medida, que a M7 e a T27 tratam como incerto. Acima de
+ * 1,25 dB (fora do empate) o bumbo já decide sozinho como `bumbo`. Só com a bateria
+ * (sem outras faixas) fica o desempate de antes.
  */
-const KICK_LEAD_DB = 1.1;
+const KICK_LEAD_DB = 10 * Math.log10(1.1);
 
 /**
  * Cara de ataque lento lido cedo (Ruling M3-r3): na faixa de harmonia, o tempo em
@@ -247,7 +250,7 @@ function drumsChoice(
   const top = strongest(kick);
   const tied = all.filter(m => kick[m] >= kick[top] * (1 - KICK_TIE));
   if (tied.length === 1) return { downbeat: top, from: 'bumbo', margin: marginOf(kick, top) };
-  // Com baixo ou harmonia presentes, antes vale o bumbo claramente mais alto.
+  // Com baixo ou harmonia presentes, antes vale o bumbo que lidera (KICK_LEAD_DB).
   if (hasOtherTracks && kick[top] >= (kick[top] - marginOf(kick, top)) * 10 ** (KICK_LEAD_DB / 10)) {
     return { downbeat: top, from: 'bumbo-lidera', margin: marginOf(kick, top) };
   }

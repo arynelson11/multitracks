@@ -244,6 +244,55 @@ describe('limite conhecido: pad lento a cada 2 compassos sem baixo', () => {
   }, 60_000);
 });
 
+/** A bateria do `song` (gerada com `splitKit`) com o bumbo do 3 de cada compasso `db` mais alto. */
+function comBumboDo3(song: SynthSong, db: number): Float32Array[] {
+  const kit = song.tracks.kit;
+  if (!kit) throw new Error('música sem o kit separado');
+  const extra = 10 ** (db / 20) - 1;
+  const bateria = Float32Array.from(song.tracks.drums[0]);
+  const tempo = 60 / song.bpm;
+  // O golpe do bumbo dura 0,35 s: cabe no tempo do 3 sem pegar o do 1.
+  for (const inicio of song.bars) {
+    const de = Math.round((inicio + 2 * tempo) * SR);
+    const ate = Math.min(bateria.length, Math.round((inicio + 3 * tempo) * SR));
+    for (let i = de; i < ate; i++) bateria[i] += extra * kit.kick[0][i];
+  }
+  return [bateria, Float32Array.from(bateria)];
+}
+
+// Rodada 4 (Ruling M3-r4): rock sem baixo com o bumbo do 3 de 0,5 a 1 dB mais alto (uma
+// diferença de mixagem) e uma harmonia que não vota (drone) ou o pad do catálogo. Com o
+// limiar de 0,41 dB do 58c9306, o bumbo do 3 decide e o "1" erra, mas nunca sem marca:
+// sai como `bumbo-lidera` com a folga medida, da harmonia, ou de um empate (folga 0).
+describe('bumbo do 3 de 0,5 a 1 dB mais alto, sem baixo', () => {
+  it('quando o 1 erra, sai marcado: bumbo-lidera com a folga medida, harmonia ou empate', () => {
+    const erros: { com: string; de?: string; folga?: number }[] = [];
+    const drone = padDrone(30);
+    for (const db of [0.5, 1]) {
+      for (const firstBeat of [0, 0.5, 1.37]) {
+        for (const virada of [false, true]) {
+          const song = makeSong({
+            sr: SR, duration: 30, bpm: 120, firstBeat, pattern: 'rock44', withExtras: false, splitKit: true,
+            introBars: virada ? 4 : 0, fillBeforeEntry: virada ? 4 : null,
+          });
+          const pulso: TempoTrack = { id: 'bateria', label: 'Bateria', use: 'pulse', channels: comBumboDo3(song, db) };
+          for (const [com, harmonia] of [['drone', drone], ['pad do catálogo', song.tracks.pad]] as const) {
+            const grid = detectSongGrid([pulso, { id: 'pad', label: 'Pad', use: 'harmony', channels: harmonia }], SR, { beatsPerBar: 4 });
+            if (posicaoDoUm(song, grid, 4) !== 0) erros.push({ com, de: grid.downbeatFrom, folga: grid.downbeatMargin });
+          }
+        }
+      }
+    }
+    // Sem marca seria vir do baixo, ou do bumbo com folga de 0,3 ou mais (ver o JSDoc de downbeatFrom).
+    expect(erros.filter(e => e.de === 'baixo' || (e.de === 'bumbo' && (e.folga ?? 0) >= 0.3))).toEqual([]);
+    const doBumboQueLidera = erros.filter(e => e.de === 'bumbo-lidera');
+    expect(doBumboQueLidera.length).toBeGreaterThan(0);
+    expect(doBumboQueLidera.filter(e => !((e.folga ?? 0) > 0))).toEqual([]);
+    // Com o drone (não vota) todo erro é do bumbo: o que lidera, com folga, ou o empate da virada.
+    expect(erros.filter(e => e.com === 'drone' && e.de !== 'bumbo-lidera' && !(e.de === 'bumbo' && e.folga === 0))).toEqual([]);
+  }, 120_000);
+});
+
 // ── chooseDownbeat com ataques montados à mão (sem áudio) ──
 
 const FPS = 200;
@@ -354,27 +403,32 @@ describe('chooseDownbeat: a ordem dos votos', () => {
     expect(chooseDownbeat(entraNo3, PERIODO, 0, 4, { harmony: [bandas({ full: teclado })] })).toBe(0);
   });
 
-  // Rodada 3 (Ruling M3-r3): com baixo e harmonia presentes que não votam, o bumbo
-  // mais forte só decide sozinho quando lidera por 1,1 dB ou mais dentro do empate de
-  // 25%. Bumbo 0,5 a 1 dB mais alto num tempo (o 3 do rock, uma diferença de
-  // mixagem) não decide: vale onde a bateria começa, com folga 0 (empate).
+  // Rodada 4 (Ruling M3-r4): com baixo e harmonia presentes que não votam, o bumbo
+  // mais forte decide sozinho, dentro do empate de 25%, quando lidera por 0,41 dB (10%)
+  // ou mais, o limiar do 58c9306 (o real vence: a música sem projeto lidera por 0,58
+  // dB). Aqui a bateria começa no 1 e o bumbo do 3 sai 0,5 a 1,2 dB mais alto (uma
+  // diferença de mixagem): o "1" cai no 3, errado, mas sai como `bumbo-lidera` com a
+  // folga medida (nunca o 0 do empate), pra M7 e a T27 pedirem confirmação.
   const faixasPlanas = { bass: bandas({ full: onset(porTempo([0.98, 1.02, 1, 1])) }), harmony: [bandas({ full: onset(porTempo([1.03, 0.97, 1, 1])) })] };
-  const bumboNo1MaisAlto = (razao: number) =>
-    bandas({ full: onset(porTempo([1, 1, 1, 1], 6)), kick: onset(porTempo([razao, 0, 1, 0], 4)) });
+  const bumboDo3MaisAlto = (razao: number) =>
+    bandas({ full: onset(porTempo([1, 1, 1, 1], 4)), kick: onset(porTempo([1, 0, razao, 0], 4)) });
+  // Perfil do bumbo: 4 / (1 + razao) no 1 e 4 * razao / (1 + razao) no 3.
+  const folgaDoBumbo = (razao: number) => (4 * (razao - 1)) / (1 + razao);
 
   it.each([
     ['0,5 dB', 10 ** 0.05],
     ['1 dB', 10 ** 0.1],
-  ])('bumbo %s mais alto num tempo, com faixas que não votam, não decide (vale onde a bateria começa)', (_nome, razao) => {
-    expect(decideDownbeat(bumboNo1MaisAlto(razao), PERIODO, 0, 4, faixasPlanas)).toEqual({ downbeat: 2, from: 'inicio-da-bateria', margin: 0 });
+    ['1,2 dB', 10 ** 0.12],
+  ])('bumbo do 3 %s mais alto, com faixas que não votam, decide o 3 como bumbo-lidera com a folga medida', (_nome, razao) => {
+    const r = decideDownbeat(bumboDo3MaisAlto(razao), PERIODO, 0, 4, faixasPlanas);
+    expect({ downbeat: r.downbeat, from: r.from }).toEqual({ downbeat: 2, from: 'bumbo-lidera' });
+    expect(r.margin).toBeCloseTo(folgaDoBumbo(razao), 3);
+    // Só com a bateria (sem outras faixas) fica o desempate de antes.
+    expect(decideDownbeat(bumboDo3MaisAlto(razao), PERIODO, 0, 4)).toEqual({ downbeat: 0, from: 'inicio-da-bateria', margin: 0 });
   });
 
-  it('bumbo 1,2 dB acima do segundo, com faixas que não votam, decide como bumbo-lidera', () => {
-    const r = decideDownbeat(bumboNo1MaisAlto(10 ** 0.12), PERIODO, 0, 4, faixasPlanas);
-    expect({ downbeat: r.downbeat, from: r.from }).toEqual({ downbeat: 0, from: 'bumbo-lidera' });
-    expect(r.margin).toBeGreaterThan(0);
-    // Só com a bateria (sem outras faixas) fica o desempate de antes.
-    expect(decideDownbeat(bumboNo1MaisAlto(10 ** 0.12), PERIODO, 0, 4).from).toBe('inicio-da-bateria');
+  it('bumbo do 3 só 0,3 dB mais alto (abaixo de 0,41 dB) não decide: vale onde a bateria começa, folga 0', () => {
+    expect(decideDownbeat(bumboDo3MaisAlto(10 ** 0.03), PERIODO, 0, 4, faixasPlanas)).toEqual({ downbeat: 0, from: 'inicio-da-bateria', margin: 0 });
   });
 
   it('diz de onde veio o 1 e a folga', () => {
