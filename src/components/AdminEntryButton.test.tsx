@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { AdminEntryButton } from './AdminEntryButton'
+import { AdminEntryButton, InAppAdmin } from './AdminEntryButton'
 
 // O App de verdade, com o login e o motor de áudio falsos e as telas vizinhas vazias:
 // só o que decide abrir o admin e os atalhos do player roda como no app.
@@ -70,10 +70,11 @@ vi.mock('../lib/supabase', () => ({
   updateSong: async () => {},
   getAuthHeaders: async () => ({}),
 }))
-vi.mock('../admin/AdminApp', async () => {
+const fakeAdminApp = async () => {
   const { createElement } = await import('react')
   return { default: ({ onClose }: { onClose?: () => void }) => createElement('button', { type: 'button', onClick: onClose }, 'Voltar ao app') }
-})
+}
+vi.mock('../admin/AdminApp', () => fakeAdminApp())
 vi.mock('./SectionBar', async (orig) => ({ ...(await orig<typeof import('./SectionBar')>()), SectionBar: () => null }))
 vi.mock('./SettingsModal', () => ({ SettingsModal: () => null }))
 vi.mock('./MetronomeModal', () => ({ MetronomeModal: () => null }))
@@ -214,5 +215,81 @@ describe('App com o admin aberto', () => {
     await act(async () => {})
     expect(panelShown()).toBe(false)
     expect(screen.getByRole('button', { name: 'Admin' })).toBeTruthy()
+  })
+
+  it('uma importação que rejeita mostra a frase, e ao voltar o Espaço volta a tocar', async () => {
+    // O React escreve no console o erro que a proteção pegou.
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    // Registro de módulos limpo e o pedaço do admin falhando (publicação nova na web,
+    // file:// no computador): o App novo importa de novo e a importação é recusada.
+    vi.resetModules()
+    vi.doMock('../admin/AdminApp', () => { throw new Error('Failed to fetch dynamically imported module') })
+    try {
+      const { default: FreshApp } = await import('../App')
+      render(<FreshApp />)
+      fireEvent.click(screen.getByRole('button', { name: 'Admin' }))
+      expect(await screen.findByText(LOAD_FAILED)).toBeTruthy()
+      // A tela do admin (com a frase) está aberta: os atalhos do player seguem parados.
+      pressSpace()
+      expect(h.play).not.toHaveBeenCalled()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Voltar ao app' }))
+      expect(screen.queryByText(LOAD_FAILED)).toBeNull()
+      pressSpace()
+      expect(h.play).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.doMock('../admin/AdminApp', () => fakeAdminApp())
+    }
+  })
+})
+
+const LOAD_FAILED = 'Não deu pra abrir o admin. Tente de novo.'
+
+describe('InAppAdmin', () => {
+  type AdminModule = { default: (props: { onClose?: () => void }) => ReturnType<typeof AdminEntryButton> }
+  const FakeAdmin = ({ onClose }: { onClose?: () => void }) => <button type="button" onClick={onClose}>Painel de pé</button>
+
+  // O React escreve no console o erro que a proteção pegou.
+  beforeEach(() => { vi.spyOn(console, 'error').mockImplementation(() => {}) })
+
+  it('enquanto o pedaço do admin carrega mostra Carregando', () => {
+    render(<InAppAdmin load={() => new Promise<AdminModule>(() => {})} onClose={() => {}} />)
+    expect(screen.getByRole('status').textContent).toBe('Carregando...')
+  })
+
+  it('importação que rejeita mostra a frase, e Voltar ao app chama onClose', async () => {
+    const onClose = vi.fn()
+    render(<InAppAdmin load={() => Promise.reject(new Error('404'))} onClose={onClose} />)
+    expect((await screen.findByRole('alert')).textContent).toContain(LOAD_FAILED)
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar ao app' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('Tentar de novo importa outra vez, não reaproveita a promessa recusada', async () => {
+    const load = vi.fn<() => Promise<AdminModule>>()
+      .mockRejectedValueOnce(new Error('404'))
+      .mockResolvedValueOnce({ default: FakeAdmin })
+    const onClose = vi.fn()
+    render(<InAppAdmin load={load} onClose={onClose} />)
+    await screen.findByText(LOAD_FAILED)
+    expect(load).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Painel de pé' }))
+    expect(load).toHaveBeenCalledTimes(2)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('erro de render fora das abas mostra a frase, e Tentar de novo monta outra vez', async () => {
+    let broken = true
+    const Broken = () => {
+      if (broken) throw new Error('quebrou fora das abas')
+      return <p>Painel de pé</p>
+    }
+    render(<InAppAdmin load={async () => ({ default: Broken })} onClose={() => {}} />)
+    await screen.findByText(LOAD_FAILED)
+    broken = false
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    expect(await screen.findByText('Painel de pé')).toBeTruthy()
   })
 })

@@ -39,7 +39,9 @@ describe('entrada do admin pelo app', () => {
     expect(app).not.toMatch(/isSeparatorOpen \|\| isAdminPanelOpen\b/)
     // Sem o papel, o painel fecha de vez (não reabre sozinho na próxima leitura boa).
     expect(app).toMatch(/if \(isAdminPanelOpen && !isAdmin\) setIsAdminPanelOpen\(false\)/)
-    expect(app).toMatch(/<AdminApp onClose=\{\(\) => setIsAdminPanelOpen\(false\)\} \/>/)
+    // Com a proteção do pedaço do admin, que importa de novo com a mesma função do módulo.
+    expect(app).toMatch(/<InAppAdmin load=\{loadAdminApp\} onClose=\{\(\) => setIsAdminPanelOpen\(false\)\} \/>/)
+    expect(app).toMatch(/^const loadAdminApp = \(\) => import\('\.\/admin\/AdminApp'\)$/m)
     expect(app.match(/<AdminEntryButton\b/g)?.length).toBe(2)
   })
 

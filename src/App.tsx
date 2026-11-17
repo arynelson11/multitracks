@@ -1,6 +1,8 @@
 import { useRef, useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
 import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Pencil, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut, Home, Disc, Repeat, Square, Menu, Server } from 'lucide-react'
 const AdminApp = lazy(() => import('./admin/AdminApp'))
+// Mesma função a cada render: o InAppAdmin importa de novo com ela no "Tentar de novo".
+const loadAdminApp = () => import('./admin/AdminApp')
 import { BrandLogo } from './components/BrandLogo'
 import { PlayMark } from './components/brand/PlayMark'
 import { useAudioEngine } from './hooks/useAudioEngine'
@@ -22,7 +24,7 @@ import { GuidedTour, type TourStep } from './components/GuidedTour'
 import { WhatsNewModal } from './components/WhatsNewModal'
 import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/SectionBar'
 import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections } from './lib/plans'
-import { AdminEntryButton } from './components/AdminEntryButton'
+import { AdminEntryButton, InAppAdmin } from './components/AdminEntryButton'
 import { keyToSemitone, semitonesBetweenKeys } from './lib/pitchRules'
 import { InstallAppBanner } from './components/InstallAppBanner'
 import { RenewalNoticeBanner } from './components/RenewalNoticeBanner'
@@ -669,17 +671,9 @@ export default function App() {
   }
 
   // ───────────────── ADMIN (dentro do app, só pra quem tem o papel) ─────────────────
+  // Se o pedaço do admin não carregar ou quebrar, o InAppAdmin mostra a frase com a volta pro app.
   if (adminPanelShown) {
-    return (
-      <Suspense fallback={
-        <div className="min-h-screen bg-ps-ink text-ps-bone font-ps-sans flex flex-col items-center justify-center gap-3 px-ps-gutter text-center" role="status">
-          <Loader2 size={32} aria-hidden="true" className="text-ps-mut animate-spin motion-reduce:animate-none" />
-          <p className="text-ps-base text-ps-mut">Carregando...</p>
-        </div>
-      }>
-        <AdminApp onClose={() => setIsAdminPanelOpen(false)} />
-      </Suspense>
-    )
+    return <InAppAdmin load={loadAdminApp} onClose={() => setIsAdminPanelOpen(false)} />
   }
 
   // ───────────────── SPLASH ─────────────────
