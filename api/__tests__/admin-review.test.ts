@@ -1014,6 +1014,51 @@ describe('último erro em frase pronta (lastErrorLabel)', () => {
     }
   })
 
+  // Ruling ADM-T6-idempotente: a T7 aplica a função em todo registro ao ler,
+  // inclusive no antes e depois que já saíram daqui em frase pronta.
+  it('é idempotente: a frase que ela mesma faz passa sem mudar', () => {
+    const raws = [
+      'Asaas sem resposta (ECONNRESET)',
+      'Asaas respondeu 503',
+      'Asaas recusou (400): O CPF do cliente Maria é inválido.',
+      'Asaas recusou remover pay_9, pay_19',
+      'Asaas recusou remover pay_9, <script>',
+      'deadlock detected',
+      null,
+    ]
+    for (const raw of raws) {
+      const once = lastErrorLabel(raw)
+      expect(lastErrorLabel(once), String(raw)).toBe(once)
+    }
+    const own = [
+      'O Asaas não respondeu.',
+      'O Asaas não respondeu. Status do Asaas: 503.',
+      'O Asaas recusou o pedido. Status do Asaas: 400.',
+      'O Asaas recusou remover as cobranças futuras: pay_9.',
+      'O Asaas recusou remover as cobranças futuras: pay_9, pay_19.',
+      'O Asaas recusou remover as cobranças futuras.',
+      'Erro inesperado no servidor.',
+    ]
+    for (const phrase of own) expect(lastErrorLabel(phrase), phrase).toBe(phrase)
+    // o texto cru continua mapeado
+    expect(lastErrorLabel('Asaas recusou (422): erro sem descrição')).toBe('O Asaas recusou o pedido. Status do Asaas: 422.')
+    expect(lastErrorLabel('Asaas sem resposta (ETIMEDOUT)')).toBe('O Asaas não respondeu.')
+  })
+
+  it('texto parecido com a frase pronta, mas com algo a mais, não passa', () => {
+    const nearMiss = [
+      'O Asaas recusou o pedido. Status do Asaas: 400. O CPF do cliente Maria é inválido.',
+      'O Asaas recusou o pedido. Status do Asaas: abc.',
+      'O Asaas não respondeu. Status do Asaas: 5030.',
+      'O Asaas não respondeu. (ECONNRESET)',
+      ' O Asaas não respondeu.',
+      'O Asaas recusou remover as cobranças futuras: pay_9, <script>.',
+      'O Asaas recusou remover as cobranças futuras: pay_9 do cliente João.',
+      'O Asaas recusou remover as cobranças futuras: .',
+    ]
+    for (const text of nearMiss) expect(lastErrorLabel(text), text).toBe('Erro inesperado no servidor.')
+  })
+
   it('frase que não está no mapa vira "Erro inesperado no servidor."', () => {
     // o mapa da Ruling ADM-T6-lastError (com a Ruling ADM-T6-lastError-mapa) é fechado
     const unknown: unknown[] = [

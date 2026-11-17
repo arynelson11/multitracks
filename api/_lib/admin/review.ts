@@ -98,6 +98,17 @@ const ASAAS_REFUSED_RE = /^Asaas recusou \((\d{3})\)/
 const ASAAS_DOWN_STATUS_RE = /^Asaas respondeu (\d{3})$/
 const REMOVAL_REFUSED_PREFIX = 'Asaas recusou remover '
 
+// As frases que a própria função faz, inteiras, passam sem mudar (Ruling
+// ADM-T6-idempotente): a T7 aplica a função em todo registro ao ler, inclusive
+// no antes e depois que já foram gravados em frase pronta. Texto com qualquer
+// coisa a mais não casa.
+const OWN_LABELS: readonly RegExp[] = [
+  /^O Asaas não respondeu\.$/,
+  /^O Asaas não respondeu\. Status do Asaas: \d{3}\.$/,
+  /^O Asaas recusou o pedido\. Status do Asaas: \d{3}\.$/,
+  /^O Asaas recusou remover as cobranças futuras(?:: pay_[A-Za-z0-9]+(?:, pay_[A-Za-z0-9]+)*)?\.$/,
+]
+
 // "Asaas recusou remover <ids>" (runPendingActions): os ids ajudam o dono a
 // achar as cobranças no painel, e só passam se todos têm cara de id de cobrança.
 function removalRefusedLabel(ids: string): string {
@@ -110,6 +121,7 @@ function removalRefusedLabel(ids: string): string {
 export function lastErrorLabel(raw: unknown): string | null {
   if (raw === null || raw === undefined) return null
   if (typeof raw !== 'string') return MSG_UNEXPECTED
+  if (OWN_LABELS.some((re) => re.test(raw))) return raw
   if (raw.startsWith('Asaas sem resposta')) return 'O Asaas não respondeu.'
   const down = ASAAS_DOWN_STATUS_RE.exec(raw)
   if (down) return `O Asaas não respondeu. Status do Asaas: ${down[1]}.`
