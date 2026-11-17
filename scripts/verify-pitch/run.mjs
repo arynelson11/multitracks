@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// Verificação da troca de tom no Chrome headless, com o hook REAL do app.
+// Verificação da troca de tom e do palco novo no Chrome headless, com o hook REAL do app.
 // Uso: node scripts/verify-pitch/run.mjs [cenario ...] [--tag nome] [--rev commit]
 //   cenários: ver SCENARIOS abaixo (padrão: todos)
 //   --rev: roda contra o src/ de um commit (ex.: --rev HEAD~1 pro "antes")
 // Sai com código 1 se algum critério falhar. Resultados em scripts/verify-pitch/results/.
+// O SPLIT compara com a v1.4.15: rodar antes `node scripts/verify-pitch/run.mjs SPLIT --rev b53a95c --tag v1415`.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,8 +30,10 @@ export const SCENARIOS = {
   SEEKS: { query: 'seq=SEEKS&n=22&order=A', timeout: 120 },
   // Buraco no reinício: seek tocando, no tom 0 e no +2.
   RESTART: { query: 'seq=RESTART&n=8&order=A', timeout: 90 },
-  // Loop de seção tocando: buraco na emenda (sem o atraso do rAF) no tom 0 e no +2.
-  LOOP: { query: 'seq=LOOP&n=8&order=A', timeout: 120 },
+  // Loop de seção do palco novo (toggleSectionLoop) na música de teste: emenda do click no tom 0 e no +2.
+  LOOP: { query: 'seq=LOOP&song=palco&n=8&order=A', timeout: 120 },
+  // O loop do palco antigo (o mecanismo da v1.4.16, armLoop): buraco na emenda (sem o atraso do rAF).
+  LOOP_ANTIGO: { query: 'seq=LOOP&stage=antigo&n=8&order=A', timeout: 120 },
   // Laço de start() travado no meio de 12 seeks: o play descarta e reagenda tudo junto.
   STALL: { query: 'seq=STALL&n=8&order=A', timeout: 90 },
   // Repertório: A (24 canais) +2, B (10) +3, C (30) +2, remove B, A de volta e no tom 0.
@@ -45,6 +48,15 @@ export const SCENARIOS = {
   METRONOMO: { query: 'seq=S1&n=6&order=B&click=' + encodeURIComponent('Metrônomo'), timeout: 120 },
   // Click com o nome em inglês ("Metronome"), mesma ordem do Separador.
   METRONOME: { query: 'seq=S1&n=6&order=B&click=Metronome', timeout: 120 },
+  // Palco novo (T30), música de teste com click acentuado a 120 BPM e marcas nas barras.
+  // Pulo armado na seção 1 pra 0:00: contagem só no click, guia calada, vozes no 1; tom 0 e +2.
+  JUMP: { parts: [{ id: 'tom0', query: 'seq=JUMP&song=palco&n=8&order=A' }, { id: 'tom2', query: 'seq=JUMP&song=palco&n=8&order=A&pitch=2' }], timeout: 90 },
+  // Arma e cancela entre o 2º e o 3º bipe.
+  CANCEL: { query: 'seq=CANCEL&song=palco&n=8&order=A', timeout: 90 },
+  // Saídas: "Click e Guia separados" (normal e com o lado trocado) e "Tudo junto"; nível igual ao da v1.4.15.
+  SPLIT: { parts: [{ id: 'separados', query: 'seq=SPLIT&song=limpo&n=8&order=A&saida=split2' }, { id: 'trocado', query: 'seq=SPLIT&song=limpo&n=8&order=A&saida=split2t' }, { id: 'junto', query: 'seq=SPLIT&song=limpo&n=8&order=A&saida=stereo' }], timeout: 90 },
+  // Pré-contagem de 4 a 120 BPM no play do 0:00.
+  PRECOUNT: { query: 'seq=PRECOUNT&song=limpo&n=8&order=A', timeout: 90 },
 };
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json' };
@@ -73,15 +85,17 @@ function serve() {
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
 }
 
-async function runScenario(server, key, tag) {
+// Cenário com partes (JUMP, SPLIT): uma página do Chrome por parte, resultados `CENARIO-parte`.
+async function runScenario(server, key, tag, part) {
   const sc = SCENARIOS[key];
-  const name = `${key}${tag ? '_' + tag : ''}`;
+  const query = part ? part.query : sc.query;
+  const name = `${key}${part ? '-' + part.id : ''}${tag ? '_' + tag : ''}`;
   const out = path.join(RES, name + '.json');
   fs.rmSync(out, { force: true });
   const profile = path.join(HERE, `chrome-profile-${name}`);
   fs.rmSync(profile, { recursive: true, force: true });
   const port = server.address().port;
-  const url = `http://127.0.0.1:${port}/engine.html?${sc.query}&name=${name}`;
+  const url = `http://127.0.0.1:${port}/engine.html?${query}&name=${name}`;
   const chrome = spawn(CHROME, ['--headless=new', '--no-first-run', '--no-default-browser-check',
     '--autoplay-policy=no-user-gesture-required', '--mute-audio', `--user-data-dir=${profile}`, url], { stdio: 'ignore' });
   const t0 = Date.now();
@@ -91,10 +105,11 @@ async function runScenario(server, key, tag) {
   await new Promise((r) => setTimeout(r, 800));
   try { chrome.kill('SIGKILL'); } catch { /* já saiu */ }
   fs.rmSync(profile, { recursive: true, force: true });
-  if (!fs.existsSync(out)) return { key, name, fatal: `TIMEOUT ${sc.timeout}s` };
+  const label = part ? `${key}-${part.id}` : key;
+  if (!fs.existsSync(out)) return { key: label, name, fatal: `TIMEOUT ${sc.timeout}s` };
   const data = JSON.parse(fs.readFileSync(out, 'utf8'));
-  if (data.fatal) return { key, name, fatal: data.fatal };
-  return { key, name, checks: analyze(key, data), secs: ((Date.now() - t0) / 1000).toFixed(0) };
+  if (data.fatal) return { key: label, name, fatal: data.fatal };
+  return { key: label, name, checks: analyze(key, data, { part: part?.id, tag }), secs: ((Date.now() - t0) / 1000).toFixed(0) };
 }
 
 const args = process.argv.slice(2);
@@ -111,10 +126,12 @@ if (rev) console.log('src/ do commit', rev);
 const server = await serve();
 const results = [];
 for (const k of list) {
-  process.stdout.write(`rodando ${k}... `);
-  const r = await runScenario(server, k, tag);
-  console.log(r.fatal ? 'ERRO' : `ok (${r.secs}s)`);
-  results.push(r);
+  for (const part of SCENARIOS[k].parts || [null]) {
+    process.stdout.write(`rodando ${k}${part ? '-' + part.id : ''}... `);
+    const r = await runScenario(server, k, tag, part);
+    console.log(r.fatal ? 'ERRO' : `ok (${r.secs}s)`);
+    results.push(r);
+  }
 }
 server.close();
 const ok = printReport(results);

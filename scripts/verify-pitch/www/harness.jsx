@@ -2,6 +2,9 @@
 // Cenários (query string): seq=S1 | S2 | SPREAD | NAN | ... (ver run.mjs), n = nº de instrumentos,
 // order = A (click/guia primeiro) ou B (por último, como o Separador grava),
 // click = nome do canal de click.
+// Palco novo (T30): stage = novo (padrão) | antigo; song = palco | limpo (música de teste com o
+// click acentuado no 1 a 120 BPM, a guia em 330 Hz e marcas nas barras); pitch = tom antes do
+// play; saida = split2 | split2t | stereo (saídas gravadas antes de montar o hook).
 import { now, events, ev, edges, inbound, worklets, sources, OrigAWN } from './instrument.js';
 import { useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -14,14 +17,52 @@ const N = +(q.get('n') || 8);
 const ORDER = q.get('order') || 'A';
 const CLICK = q.get('click') || 'Click';
 const OUT = q.get('name') || 'out';
-const DUR = +(q.get('dur') || 45);
+const SONG = q.get('song') || '';
+const STAGE = q.get('stage') || 'novo';
+const PITCH = +(q.get('pitch') || 0);
+const SAIDA = q.get('saida') || '';
+const DUR = +(q.get('dur') || (SONG ? 24 : 45));
 const SR = 48000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const E = () => window.__engine;
 
+// ---- palco novo (T30) ----
+// Frequências medidas pelo tap (Goertzel, janela de Hann de 10 ms, passo de 1 ms): guia, bipes da
+// contagem (tempo comum e acento), click de teste e o instrumento de nível constante (a VS).
+const FG = 330, FC = 4500, FI = 2200;
+const FREQS = [FG, 988, 1319, FC, FI];
+// Marcas nas barras (compasso de 2 s a 120 BPM).
+const SONG_MARKERS = [{ id: 's0', time: 0, label: 'Intro' }, { id: 's1', time: 4, label: 'Verso' }, { id: 's2', time: 8, label: 'Pré' }, { id: 's3', time: 12, label: 'Refrão' }, { id: 's4', time: 16, label: 'Final' }];
+// Tudo liberado (como o Studio): o harness testa o motor, não o plano.
+const ALL_GATES = { sections: true, infinite: true, maxRepeats: Infinity, bandSections: true };
+// Instante do stop() pedido (o que vale, com o relógio de quando foi pedido) e do 'ended' de cada
+// fonte: pra contar as fontes vivas por canal em volta do pulo. Antes de qualquer fonte nascer.
+const stopWhen = new WeakMap(), endedAt = new WeakMap();
+const protoStop = AudioScheduledSourceNode.prototype.stop;
+AudioScheduledSourceNode.prototype.stop = function (when, ...r) {
+  try { stopWhen.set(this, Math.max(typeof when === 'number' ? when : 0, this.context.currentTime)); } catch { /* só observa */ }
+  return protoStop.call(this, when, ...r);
+};
+const protoCreateBS = BaseAudioContext.prototype.createBufferSource;
+BaseAudioContext.prototype.createBufferSource = function () {
+  const s = protoCreateBS.call(this);
+  s.addEventListener('ended', () => { endedAt.set(s, this.currentTime); });
+  return s;
+};
+// Saídas gravadas antes de o SettingsProvider ler (perfil do Chrome novo a cada cenário). O mesmo
+// objeto serve pra v1.4.15 (só lê o autoPan) e pro motor de agora (lê as saídas; o autoPan só
+// vale em "Tudo junto").
+if (SAIDA) {
+  const mode = SAIDA === 'stereo' ? 'stereo' : 'split2';
+  localStorage.setItem('mt_app_settings', JSON.stringify({ autoPan: SAIDA !== 'stereo', audioDeviceId: 'default', outputs: { mode, earOnSecond: SAIDA === 'split2t', multi: { vsPair: 0, click: 2, guide: 3 } } }));
+  localStorage.setItem('mt_outputs_migrated', '1');
+}
+
 function Harness() {
-  const engine = useAudioEngine('verify');
+  // Montado como o App monta o palco novo (T29): stageMode e os portões do plano; o click gerado
+  // não entra (toda música de teste tem canal de click). stage=antigo: o mecanismo da v1.4.16.
+  const engine = useAudioEngine('verify', { stageMode: STAGE === 'antigo' ? 'antigo' : 'novo', sectionGates: ALL_GATES, autoClick: true });
   window.__engine = engine;
   useEffect(() => { window.__engine = engine; });
   return null;
@@ -48,6 +89,23 @@ function harmonic(dur, f0, nh, amp) {
     const a = amp / h;
     const w = 2 * Math.PI * f0 * h / SR;
     for (let i = 0; i < n; i++) x[i] += a * Math.sin(w * i);
+  }
+  return x;
+}
+// Click do palco: um pulso de FC Hz por tempo a 120 BPM desde 0:00, acento no 1 do 4/4 (0,8; os
+// outros 0,4), ataque e soltura em cosseno (2 e 4 ms, sem respingo nas outras frequências) e
+// platô até 16 ms (a janela de 10 ms cabe inteira nele: o início sai do cruzamento de 50%).
+const CLICK_ATTACK = 0.002;
+function accentClick(dur) {
+  const n = Math.round(SR * dur);
+  const x = new Float32Array(n);
+  const nA = Math.round(CLICK_ATTACK * SR), nH = Math.round(0.016 * SR), nR = Math.round(0.004 * SR);
+  for (let k = 0; k * 0.5 < dur - 0.6; k++) {
+    const s0 = Math.round(k * 0.5 * SR), amp = k % 4 === 0 ? 0.8 : 0.4;
+    for (let j = 0; j < nH + nR && s0 + j < n; j++) {
+      const e = j < nA ? 0.5 * (1 - Math.cos((Math.PI * j) / nA)) : j < nH ? 1 : 0.5 * (1 + Math.cos((Math.PI * (j - nH)) / nR));
+      x[s0 + j] += amp * e * Math.sin((2 * Math.PI * FC * j) / SR);
+    }
   }
   return x;
 }
@@ -93,6 +151,8 @@ async function main() {
   await waitFor(() => E(), 10000, 'engine');
   await E().initEngine();
   await waitFor(() => E().isReady, 10000, 'engine pronta');
+  // Motor da v1.4.15 (SPLIT com --rev): sem o grafo das saídas, só loadFiles, play e pause.
+  const LEGACY = E().outputPlan === undefined;
   // ---- faixas ----
   // LEVELS: faixas de tom contínuo, mono e estéreo, em pan total e no centro.
   // 'Controle C': estéreo com L = R = a mesma senoide das faixas mono, no centro.
@@ -102,9 +162,19 @@ async function main() {
   const instr = SEQ === 'LEVELS' ? Object.keys(LEVEL_TRACKS) : INSTRUMENTS.slice(0, SONG_SIZES[0]);
   const measure = (SEQ === 'SPREAD' || SEQ === 'SEEKS' || SEQ === 'STALL') ? 'both' : (ORDER === 'A' ? 'last' : 'first');
   const clk = clickTrain(DUR, 0.5, 0.25);
+  // Palco novo: o 1º instrumento é um seno constante em FI (a VS, pra medir buraco e vazamento);
+  // o último, no 'palco', é o trem de clicks de hoje alinhado nas barras (o início das faixas
+  // transpostas depois do pulo) e, no 'limpo', outro seno (sem respingo na VS); os do meio são
+  // senos baixinhos longe das frequências medidas.
+  const songInstrument = (i, n) => {
+    if (i === 0) return harmonic(DUR, FI, 1, 0.03);
+    if (i === n - 1) return SONG === 'palco' ? clickTrain(DUR, 0.5, 0) : harmonic(DUR, 3400, 1, 0.002);
+    return harmonic(DUR, 520 + 29 * i, 1, 0.002);
+  };
   const songFiles = (names) => {
     const n = names.length;
     const instrFiles = names.map((name, i) => {
+      if (SONG) return wavFile(name, songInstrument(i, n));
       if (SEQ === 'LEVELS') {
         // Senoide pura de 440 Hz: o phase vocoder perde 0 a 0,3 dB conforme a
         // frequência e isso mascararia o efeito do panner (o controle mede).
@@ -115,15 +185,15 @@ async function main() {
       const isMeasured = (measure === 'last' && i === n - 1) || (measure === 'first' && i === 0) || (measure === 'both' && (i === 0 || i === n - 1));
       return wavFile(name, isMeasured ? clk : harmonic(DUR, 97 + 11 * i, 4, 0.002));
     });
-    const clickFile = wavFile(CLICK, clk);
+    const clickFile = wavFile(CLICK, SONG ? accentClick(DUR) : clk);
     // Com várias músicas o critério é som em todas as faixas: a guia também toca.
-    const guideFile = wavFile('Voz Guia', MULTI ? harmonic(DUR, 150, 3, 0.002) : new Float32Array(Math.round(SR * DUR)));
+    const guideFile = wavFile('Voz Guia', SONG ? harmonic(DUR, FG, 1, 0.5) : MULTI ? harmonic(DUR, 150, 3, 0.002) : new Float32Array(Math.round(SR * DUR)));
     return ORDER === 'A' ? [clickFile, guideFile, ...instrFiles] : [...instrFiles, clickFile, guideFile];
   };
   // LOOP: seção B = [2, 3,0137) s, clicks em 2,25 e 2,75; na emenda o intervalo
   // ideal é 0,5137 s. O tamanho não é múltiplo do quadro de tela (16,7 ms), então
   // o atraso do rAF varia de volta em volta em vez de ficar travado num valor.
-  const markers = SEQ === 'LOOP' ? [{ id: 'a', time: 0, label: 'A' }, { id: 'b', time: 2, label: 'B' }, { id: 'c', time: 3.0137, label: 'C' }, { id: 'd', time: 30, label: 'D' }] : undefined;
+  const markers = SONG ? SONG_MARKERS : SEQ === 'LOOP' ? [{ id: 'a', time: 0, label: 'A' }, { id: 'b', time: 2, label: 'B' }, { id: 'c', time: 3.0137, label: 'C' }, { id: 'd', time: 30, label: 'D' }] : undefined;
   const songSizes = [];
   for (let k = 0; k < SONG_SIZES.length; k++) {
     const files = songFiles(k === 0 ? instr : INSTRUMENTS.slice(0, SONG_SIZES[k]));
@@ -134,6 +204,8 @@ async function main() {
     songSizes.push(files.length);
   }
   await waitFor(() => E().channels.length === songSizes[0], 60000, 'load');
+  // Palco novo: a grade sai da leitura do click (T27), que roda depois da carga.
+  if (SONG && !LEGACY) await waitFor(() => !E().isReadingGrid && E().songGrid && E().songGrid.source === 'click', 30000, 'grade do click');
   // Buffer -> música (ordem de carga) e nome do canal, pra todas as músicas.
   const bufSong = new Map();
   const songIds = E().playlist.map((sg) => sg.id);
@@ -161,16 +233,19 @@ async function main() {
   window.__ctx = ctx;
   ev('ctx', { sampleRate: ctx.sampleRate, state: ctx.state });
 
-  // Medidor na saída do master (L = click, R = instrumento medido).
+  // Medidor na saída do master (L = click, R = instrumento medido). No palco novo, também a
+  // energia por saída nas frequências de FREQS (Goertzel a cada 1 ms).
   await ctx.audioWorklet.addModule('tap-worklet.js');
-  const tap = new OrigAWN(ctx, 'tap', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+  const tapOpts = SONG ? { processorOptions: { freqs: FREQS, win: Math.round(ctx.sampleRate * 0.01), hop: Math.round(ctx.sampleRate * 0.001) } } : {};
+  const tap = new OrigAWN(ctx, 'tap', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], ...tapOpts });
   const sink = ctx.createGain(); sink.gain.value = 0;
   master.connect(tap); tap.connect(sink); sink.connect(ctx.destination);
-  const rms = [], onsets = [];
+  const rms = [], onsets = [], gT = [], gV = [];
   tap.port.onmessage = (e) => {
     const d = e.data;
     if (d[0] === 'rms') rms.push([+d[1].toFixed(3), d[2], d[3], d[4]]);
     else if (d[0] === 'on') onsets.push([d[1], d[2]]);
+    else if (d[0] === 'g') { for (const t of d[1]) gT.push(t); for (const v of d[2]) gV.push(v); }
   };
 
   // Pan na carga (autoPan): o click deve ir pro L como qualquer click.
@@ -178,8 +253,9 @@ async function main() {
   const pannerCfg = Object.fromEntries(E().channels.map((c) => [c.name, { canais: c.buffer.numberOfChannels, count: c.pannerNode.channelCount, mode: c.pannerNode.channelCountMode }]));
   // Lados fixos pra medir, independente da regra de nomes: click/guia no L,
   // instrumentos no R. SPREAD: 1º instrumento no L e click mudo, então
-  // R − L = diferença de início entre a 1ª e a última faixa.
-  for (const c of E().playlist.flatMap((sg) => sg.channels)) c.pannerNode.pan.value = (c.name === CLICK || c.name === 'Voz Guia') ? -1 : 1;
+  // R − L = diferença de início entre a 1ª e a última faixa. No palco novo os lados são os
+  // das saídas do motor (é o que se mede).
+  if (!SONG) for (const c of E().playlist.flatMap((sg) => sg.channels)) c.pannerNode.pan.value = (c.name === CLICK || c.name === 'Voz Guia') ? -1 : 1;
   if (SEQ === 'LEVELS') for (const c of E().channels) if (LEVEL_TRACKS[c.name]) c.pannerNode.pan.value = LEVEL_TRACKS[c.name][1];
   if (SEQ === 'SPREAD' || SEQ === 'SEEKS' || SEQ === 'STALL') {
     const chs = E().channels;
@@ -257,6 +333,31 @@ async function main() {
     return snap;
   };
 
+  // ---- estado do palco novo, olhado a cada 5 ms ----
+  // Atraso da entrada do click (a compensação do tom): o DelayNode antes do panner dele, 0 no tom 0.
+  const entryDelay = () => {
+    const e = E();
+    if (!(e.playlist[e.activeSongIndex]?.pitch)) return 0;
+    const ch = e.channels.find((c) => c.name === CLICK);
+    const d = ch && [...(inbound.get(ch.pannerNode) || [])].find((n) => n instanceof DelayNode);
+    return d ? +d.delayTime.value.toFixed(6) : 0;
+  };
+  const views = [];
+  let lastView = '';
+  const watch = () => {
+    const e = E();
+    if (!e) return;
+    const v = e.transitionView || null;
+    const rec = {
+      switchAt: v ? v.switchAt : null, committed: v ? v.committed : null, from: v ? v.from : null, to: v ? v.to : null, kind: v ? v.kind : null,
+      countTimes: v ? v.countTimes : null, countLabels: v ? v.countLabels : null, intent: e.sectionIntent ?? null, landed: e.landed ?? null,
+      counting: !!e.isCountingIn, precountTimes: e.precountTimes ?? null, L: entryDelay(), pitch: e.playlist[e.activeSongIndex]?.pitch ?? 0,
+    };
+    const key = JSON.stringify(rec);
+    if (key !== lastView) { lastView = key; views.push({ ctx: +ctx.currentTime.toFixed(5), t: now(), ...rec }); }
+  };
+  const watchId = SONG && !LEGACY ? setInterval(watch, 5) : null;
+
   const tBase = performance.now();
   const at = (s, fn) => new Promise((res) => setTimeout(async () => { try { await fn(); } catch (e) { ev('step_error', { msg: String(e && e.stack || e) }); } res(); }, Math.max(0, s * 1000 - (performance.now() - tBase))));
   // syncStarts: quantas fontes já estavam agendadas quando a chamada voltou
@@ -304,7 +405,7 @@ async function main() {
     SEEKS: [[0, play], ...seeks(1, 25, 3), [14, pitch(2)], ...seeks(16, 25, 12), [29, snap('apos seeks no +2')], [30, pause], [31, snap('fim (pausado)')]],
     // Buraco no reinício (seek tocando) no tom 0 e no +2.
     RESTART: [[0, play], ...gapSeeks(2, 10, 5.25), [10, pitch(2)], ...gapSeeks(12, 10, 15.25), [19.5, snap('apos seeks no +2')], [20, pause], [21, snap('fim (pausado)')]],
-    // Loop de seção tocando: emenda do click no tom 0 e no +2.
+    // Loop de seção tocando no palco antigo (stage=antigo): emenda do click no tom 0 e no +2.
     LOOP: [[0, play], [0.6, loopOn], [22, pitch(2)], [44, loopOff], [45, snap('apos loops no +2')], [46, pause], [47, snap('fim (pausado)')]],
     // Laço de start() travado 15 ms no meio (o motor passa do instante comum):
     // o play tem de descartar e reagendar tudo junto, no tom 0 e no +2.
@@ -325,7 +426,126 @@ async function main() {
     LEVELS: [[0, play], [3, snap('tom 0')], [4, pitch(2)], [8, snap('apos +2')], [9, pitch(0)], [12, snap('apos volta 0')], [13, pause], [14, snap('fim (pausado)')]],
     NAN: [[0, play], [3, pitch(NaN)], [7, snap('apos tom NaN')], [8, pitch(2)], [12, snap('apos +2')], [13, pause], [14, snap('fim (pausado)')]],
   }[SEQ];
-  for (const [s, fn] of steps) await at(s, fn);
+
+  // ---- roteiros do palco novo (T30): seguem a posição ouvida, não o relógio de parede ----
+  // Posição de agora: a ouvida no palco novo; num motor sem ela (commit antigo), a da tela.
+  const pos = () => (typeof E().heardPosition === 'function' ? E().heardPosition() : E().currentTime);
+  const until = async (fn, ms, label) => {
+    const t0 = performance.now();
+    while (!fn()) {
+      if (performance.now() - t0 > ms) { ev('timeout', { label }); return false; }
+      await sleep(5);
+    }
+    return true;
+  };
+  const untilPos = (p, ms = 15000) => until(() => pos() >= p, ms, `posição ${p}`);
+  const untilCtx = (t, ms = 15000) => until(() => ctx.currentTime >= t, ms, `relógio ${t}`);
+  // Seção armada no palco novo (o resultado de upgrade fica no evento).
+  const arm = (i) => { const e = ev('armSection', { to: i, pos: +pos().toFixed(4) }); e.result = E().armSection(i); };
+  const nWorklets = (label) => ev('worklets', { label, n: worklets.length });
+  // Pousou no alvo e já tocou um pouco dele (pulo pra 0:00: posição entre `from` e `to`).
+  const untilLanded = (to, from, until2) => until(() => !!E().landed && E().landed.index === to && pos() >= from && pos() < until2, 12000, `pouso na seção ${to}`);
+  const playFrom = async (p) => {
+    if (PITCH) { ev('changePitch', { to: PITCH }); E().changePitch(PITCH); await sleep(150); }
+    ev('seekTo', { to: p }); E().seekTo(p);
+    await sleep(300);
+    await play();
+  };
+  const precountOn = async () => { E().setPrecountBeats(4); E().togglePrecountEnabled(true); await sleep(300); };
+  const scripts = {
+    // Toca da seção 1 (4 s), arma a seção 0 em 5,5 s: contagem no último compasso (6 a 8 s) e pulo
+    // no 1 de 8 s pra 0:00. Com pitch=2 o mesmo transposto.
+    JUMP: async () => {
+      await playFrom(4);
+      await untilPos(4.3);
+      const s1 = snapshot('antes do pulo');
+      await untilPos(5.5);
+      nWorklets('no armar');
+      arm(0);
+      await s1;
+      await untilLanded(0, 1.3, 3.5);
+      await snapshot('depois do pulo');
+      nWorklets('depois do pulo');
+      pause();
+      await sleep(300);
+      await snapshot('fim (pausado)');
+    },
+    // Arma como no JUMP e cancela entre o 2º e o 3º bipe: a música segue na linha do tempo original.
+    CANCEL: async () => {
+      await playFrom(4);
+      await untilPos(4.3);
+      const s1 = snapshot('antes do pulo');
+      await untilPos(5.5);
+      arm(0);
+      await s1;
+      await until(() => E().transitionView && E().transitionView.countTimes.length >= 3, 3000, 'contagem planejada');
+      const times = E().transitionView ? E().transitionView.countTimes : [];
+      if (times.length >= 3) await untilCtx(times[1] + 0.25);
+      ev('cancelArm'); E().cancelArm();
+      await untilPos(9.4);
+      await snapshot('depois do cancelamento');
+      pause();
+      await sleep(300);
+      await snapshot('fim (pausado)');
+    },
+    // Play do 0:00 com pré-contagem de 4 a 120 BPM.
+    PRECOUNT: async () => {
+      await precountOn();
+      ev('play', { precount: true });
+      await E().play({ precount: true });
+      await sleep(50);
+      ev('precountTimes', { times: E().precountTimes });
+      await until(() => !E().isCountingIn && pos() >= 1.2, 8000, 'música depois da contagem');
+      await snapshot('depois da contagem');
+      pause();
+      await sleep(300);
+      await snapshot('fim (pausado)');
+    },
+    // Saídas: nível de 2,75 a 10,75 s num play simples, como a v1.4.15 (só loadFiles, play e
+    // pause). Depois, no motor de agora, pausa, toca de novo com pré-contagem e arma um pulo na
+    // seção 3, pra conferir que nenhum bipe chega na VS.
+    SPLIT: async () => {
+      await play();
+      await untilPos(11, 25000);
+      await snapshot('tocando');
+      if (!LEGACY) {
+        pause();
+        await sleep(300);
+        await precountOn();
+        ev('play', { precount: true });
+        await E().play({ precount: true });
+        await untilPos(12.5, 8000);
+        arm(0);
+        await untilLanded(0, 0.6, 3.5);
+      }
+      pause();
+      await sleep(300);
+      await snapshot('fim (pausado)');
+    },
+    // LOOP da seção 1 por toggleSectionLoop: voltas no tom 0, troca pro +2 tocando (o pedido fica),
+    // voltas no +2, sai do loop.
+    LOOP: async () => {
+      await playFrom(4);
+      await untilPos(5);
+      ev('toggleSectionLoop', { pos: +pos().toFixed(4) }); E().toggleSectionLoop();
+      await sleep(21000);
+      pitch(2)();
+      await sleep(21000);
+      ev('cancelArm'); E().cancelArm();
+      await untilPos(9.2);
+      await snapshot('depois dos loops');
+      pause();
+      await sleep(300);
+      await snapshot('fim (pausado)');
+    },
+  };
+  if (SONG) {
+    try { await scripts[SEQ](); } catch (e) { ev('step_error', { msg: String(e && e.stack || e) }); }
+  } else {
+    for (const [s, fn] of steps) await at(s, fn);
+  }
+  if (watchId !== null) clearInterval(watchId);
+  await sleep(200);
 
   // ---- saída ----
   const L_on = onsets.filter((o) => o[0] === 0).map((o) => o[1]);
@@ -339,13 +559,24 @@ async function main() {
     id: r.id, ch: bufSong.get(r.s.buffer)?.ch || '?', song: bufSong.get(r.s.buffer)?.song ?? -1, when: r.when, offset: +r.offset.toFixed(4), ctxAtStart: +r.ctxAtStart.toFixed(5),
     eff: +r.eff.toFixed(5), tStart: r.tStart, ctxAtStop: r.ctxAtStop !== undefined ? +r.ctxAtStop.toFixed(5) : null,
     tStop: r.tStop ?? null, startMark: r.startMark ?? 0, stopMark: r.stopMark ?? 0,
+    stopWhen: stopWhen.has(r.s) ? +stopWhen.get(r.s).toFixed(5) : null, endedAt: endedAt.has(r.s) ? +endedAt.get(r.s).toFixed(5) : null,
   }));
+  const plan = LEGACY ? null : E().outputPlan;
   const res = {
     cfg: { SEQ, N, ORDER, CLICK, measure, DUR, sampleRate: ctx.sampleRate, pansAtLoad, pannerCfg, songSizes,
-      maxTransposable: MULTI ? Math.max(...SONG_SIZES) : undefined, voice: [...VOICE].filter((v) => instr.includes(v)), instruments: instr, channels: chNames },
+      maxTransposable: MULTI ? Math.max(...SONG_SIZES) : undefined, voice: [...VOICE].filter((v) => instr.includes(v)), instruments: instr, channels: chNames,
+      SONG, STAGE, PITCH, SAIDA, LEGACY, clickAttack: CLICK_ATTACK,
+      outputs: plan ? { mode: plan.mode, click: plan.click, guide: plan.guide, vs: plan.vs } : null,
+      // Aviso T25/T30: canais do aparelho lidos num contexto de tempo real depois do motor ligar as saídas.
+      device: { maxChannelCount: ctx.destination.maxChannelCount, channelCount: ctx.destination.channelCount, interpretation: ctx.destination.channelInterpretation, engineMax: LEGACY ? null : E().maxOutputChannels ?? null },
+      grid: LEGACY ? null : E().songGrid ?? null, spans: LEGACY ? null : E().sectionSpansView ?? null },
     events, snaps, rRelLms: pairs, onsetsL: L_on.map((x) => +x.toFixed(5)), onsetsR: R_on.map((x) => +x.toFixed(5)),
     rms: rms.map((r) => [r[0], +(20 * Math.log10(r[1] + 1e-9)).toFixed(1), +(20 * Math.log10(r[2] + 1e-9)).toFixed(1), r[3]]),
     sources: srcRecs, workletsCreated: worklets.map((w) => w.createdAt),
+    views,
+    // Goertzel do tap: por passo, o instante do fim da janela e, em dB (seno de amplitude 1 = 0 dB),
+    // [saída 0: FREQS..., saída 1: FREQS..., RMS do passo na saída 0, na saída 1].
+    goertzel: SONG ? { freqs: FREQS, win: tapOpts.processorOptions.win, hop: tapOpts.processorOptions.hop, t: gT.map((t) => +t.toFixed(6)), v: gV.map((a) => +(20 * Math.log10(a + 1e-10)).toFixed(2)) } : null,
   };
   await fetch('/result?name=' + encodeURIComponent(OUT), { method: 'POST', body: JSON.stringify(res) });
   document.body.dataset.done = '1';
