@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import AdminApp from './AdminApp'
 import { AdminApiError } from './lib/adminApi'
 import type { GuardStatus } from './hooks/useAdminGuard'
@@ -10,6 +10,7 @@ type Guard = { status: GuardStatus; email: string | null; signOut: () => Promise
 const h = vi.hoisted(() => ({
   guard: null as unknown as Guard,
   adminGet: vi.fn(),
+  adminPost: vi.fn(),
   signOut: vi.fn(async () => {}),
   responses: {} as Record<string, unknown>,
 }))
@@ -18,6 +19,7 @@ vi.mock('./hooks/useAdminGuard', () => ({ useAdminGuard: () => h.guard }))
 vi.mock('./lib/adminApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./lib/adminApi')>()),
   adminGet: h.adminGet,
+  adminPost: h.adminPost,
 }))
 vi.mock('../lib/supabase', () => ({ supabase: null, getAuthHeaders: async () => ({}) }))
 
@@ -29,6 +31,23 @@ const REVIEW = {
   generatedAt: '2026-11-16T15:00:00Z',
 }
 const AUDIT_EMPTY = { total: 0, page: 1, pageSize: 50, rows: [] }
+const ANA = '44444444-4444-4444-8444-444444444444'
+const SUBSCRIBERS = {
+  total: 1, page: 1, pageSize: 50,
+  rows: [{
+    userId: ANA, email: 'ana@igreja.com', name: 'Ana Souza', plan: 'free', courtesyPlan: null, status: 'free', nextDueDate: null,
+    accessUntil: null, separationsMonth: 1, createdAt: '2026-11-01T12:00:00Z', lastSeenAt: null, lastSignInAt: null, flags: [],
+  }],
+}
+const SUBSCRIBER = {
+  profile: {
+    userId: ANA, email: 'ana@igreja.com', name: 'Ana Souza', provider: 'email', plan: 'free', planExpiresAt: null, isAdmin: false,
+    blockedAt: null, blockedReason: null, createdAt: '2026-11-01T12:00:00Z', lastSignInAt: null, lastSeenAt: null,
+  },
+  quota: { used: 1, bonus: 0, periodStart: '2026-11-01T03:00:00Z', resetsAt: '2026-12-01T03:00:00Z', limit: 5 },
+  subscriptions: [], payments: [], legacyPayments: [], separations: { month: 1, total: 2 },
+  aiCost: { monthBrl: 0, totalBrl: 0, jobsWithoutCost: 0 }, openActions: [], plans: [], asaasLive: [], mismatches: [],
+}
 
 beforeEach(() => {
   h.adminGet.mockReset()
@@ -39,6 +58,8 @@ beforeEach(() => {
     if (Object.hasOwn(h.responses, action)) return h.responses[action]
     throw new AdminApiError(`Ação desconhecida: ${action}`, 400)
   })
+  h.adminPost.mockReset()
+  h.adminPost.mockResolvedValue({ result: 'blocked' })
   h.signOut.mockClear()
   h.guard = { status: 'ok', email: 'admin@exemplo.com', signOut: h.signOut }
 })
@@ -110,6 +131,27 @@ describe('AdminApp', () => {
     // o Registro pede a ação dele e recebe o formato dele
     expect(await screen.findByText('Nenhuma ação registrada ainda.')).toBeTruthy()
     expect(h.adminGet).toHaveBeenCalledWith('audit', { page: 1 })
+  })
+
+  it('depois de uma ação na ficha do assinante, a fila de Pendências é pedida de novo e o número muda', async () => {
+    h.responses = { ...h.responses, subscribers: SUBSCRIBERS, subscriber: SUBSCRIBER }
+    render(<AdminApp />)
+    const pend = screen.getByRole('tab', { name: /Pendências/ })
+    await waitFor(() => expect(pend.textContent).toContain('3'))
+    fireEvent.click(screen.getByRole('tab', { name: 'Assinantes' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Ana Souza/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Bloquear' }))
+    const dialog = screen.getByRole('dialog', { name: 'Bloquear a conta' })
+    fireEvent.change(within(dialog).getByLabelText('Motivo'), { target: { value: 'fraude no cartão' } })
+
+    const reviewCalls = () => h.adminGet.mock.calls.filter((c) => c[0] === 'review').length
+    const before = reviewCalls()
+    // A ação mudou a fila: o servidor passa a responder outra contagem.
+    h.responses.review = { ...REVIEW, counts: { manual: 4, auto: 1, total: 5 } }
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Bloquear' }))
+    await waitFor(() => expect(h.adminPost).toHaveBeenCalledWith('block', { userId: ANA, reason: 'fraude no cartão' }))
+    await waitFor(() => expect(reviewCalls()).toBe(before + 1))
+    await waitFor(() => expect(pend.textContent).toContain('5'))
   })
 
   it('setas do teclado andam entre as abas', async () => {

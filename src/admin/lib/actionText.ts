@@ -103,6 +103,28 @@ export function lastDayOf(end: string | null): string | null {
 /** O bloqueio só avisa: a cobrança continua (D10). */
 export const BILLING_CONTINUES = 'A cobrança no Asaas continua. Para parar de cobrar, cancele a assinatura também.'
 
+/**
+ * Assinante antigo (D18, Ruling ADM-T26-legado): pode haver uma cobrança de antes da Fase 3 no
+ * Asaas, sem linha no app, que o bloqueio também não para.
+ */
+export const LEGACY_BILLING_WARNING =
+  'Esta conta pode ter uma cobrança antiga no Asaas que o app não controla. Bloquear não para essa cobrança; confira no painel do Asaas.'
+
+/**
+ * A mesma regra do "antigo" da lista (T21): plano pago valendo no perfil, nenhuma linha de
+ * assinatura no Asaas (de qualquer status) e nenhuma cortesia ativa.
+ */
+export function isLegacyPaid(
+  profile: { plan: string; planExpiresAt: string | null },
+  subscriptions: { kind: string; status: string; accessUntil: string | null }[],
+  now: Date = new Date(),
+): boolean {
+  const plan = profile.planExpiresAt !== null && !isFuture(profile.planExpiresAt, now) ? 'free' : profile.plan
+  if (planRank(plan) === 0) return false
+  if (subscriptions.some((s) => s.kind === 'asaas')) return false
+  return !subscriptions.some((s) => s.kind === 'courtesy' && s.status === 'active' && (s.accessUntil === null || isFuture(s.accessUntil, now)))
+}
+
 const BLOCK_EFFECT = 'A pessoa perde o acesso ao app agora: separar, biblioteca em nuvem, enviar arquivos e assinar.'
 
 export function blockText(hasActivePaid: boolean): string {

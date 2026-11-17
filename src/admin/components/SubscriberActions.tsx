@@ -11,6 +11,7 @@ import { ConfirmDialog } from './ConfirmDialog'
 import { AdminApiError, adminPost } from '../lib/adminApi'
 import {
   BILLING_CONTINUES,
+  LEGACY_BILLING_WARNING,
   blockText,
   cancelText,
   changePlanText,
@@ -19,6 +20,7 @@ import {
   doneText,
   endCourtesyText,
   isFuture,
+  isLegacyPaid,
   lastDayOf,
   planRank,
   quotaText,
@@ -109,6 +111,8 @@ type Account = {
   courtesies: SubscriptionRow[]
   /** Pagas canceladas ainda dentro do período pago. */
   graced: SubscriptionRow[]
+  /** Assinante antigo, sem linha de assinatura: pode ter cobrança no Asaas que o app não vê. */
+  legacy: boolean
 }
 
 function accountOf(detail: SubscriberDetailData, now: Date = new Date()): Account {
@@ -121,6 +125,7 @@ function accountOf(detail: SubscriberDetailData, now: Date = new Date()): Accoun
     paid,
     courtesies: subs.filter((s) => s.kind === 'courtesy' && s.status === 'active' && (s.accessUntil === null || future(s.accessUntil))),
     graced: subs.filter((s) => s.kind === 'asaas' && s.status === 'canceled' && future(s.accessUntil)),
+    legacy: isLegacyPaid(detail.profile, subs, now),
   }
 }
 
@@ -479,11 +484,13 @@ function DialogBody({ open, form, set, busy, detail, account }: BodyProps) {
       )
     }
     case 'block':
-      // O bloqueio não mexe na cobrança (D10): o aviso fica em âmbar antes do Confirmar.
+      // O bloqueio não mexe na cobrança (D10): o aviso fica em âmbar antes do Confirmar, também
+      // pra cobrança antiga que o app não controla (Ruling ADM-T26-legado).
       return (
         <div className="flex flex-col gap-3">
           <Effect text={blockText(false)} />
           {paid && <p className={ALERT_BOX}>{BILLING_CONTINUES}</p>}
+          {!paid && account.legacy && <p className={ALERT_BOX}>{LEGACY_BILLING_WARNING}</p>}
         </div>
       )
     case 'unblock':

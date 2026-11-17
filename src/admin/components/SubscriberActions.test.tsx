@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { SubscriberActions } from './SubscriberActions'
 import { SubscribersTab } from '../tabs/SubscribersTab'
 import { AdminApiError } from '../lib/adminApi'
-import { BILLING_CONTINUES, cancelText, changePlanText, courtesyLastDay, courtesyText, quotaText } from '../lib/actionText'
+import { BILLING_CONTINUES, LEGACY_BILLING_WARNING, cancelText, changePlanText, courtesyLastDay, courtesyText, quotaText } from '../lib/actionText'
 import { brtTodayLocal, monthRange } from '../lib/period'
 import type { SubscriberDetailData, SubscriptionRow } from '../lib/subscribersTypes'
 
@@ -285,11 +285,30 @@ describe('SubscriberActions: cada ação manda o pedido certo', () => {
     expect(h.adminPost).toHaveBeenCalledWith('block', { userId: USER, reason: 'Estorno no cartão e segue usando' })
   })
 
-  it('Bloquear sem paga ativa não fala de cobrança', () => {
-    setup(detail({ subscriptions: [] }))
+  it('Bloquear numa conta Livre não fala de cobrança', () => {
+    setup(detail({ subscriptions: [] }, { plan: 'free' }))
     const dialog = open('Bloquear')
     expect(dialog.textContent).not.toContain(BILLING_CONTINUES)
+    expect(dialog.textContent).not.toContain(LEGACY_BILLING_WARNING)
     expect(dialog.textContent).toContain('A pessoa perde o acesso ao app agora')
+  })
+
+  it('assinante antigo: o Bloquear avisa da cobrança antiga em âmbar, e Mudar plano e Cancelar seguem escondidos', () => {
+    setup(detail({ subscriptions: [] }, { plan: 'essencial_mensal' }))
+    expect(panelButton('Mudar plano')).toBeNull()
+    expect(panelButton('Cancelar assinatura')).toBeNull()
+    const dialog = open('Bloquear')
+    const warning = within(dialog).getByText(LEGACY_BILLING_WARNING)
+    expect(warning.className).toContain('bg-ps-alert-soft')
+    expect(dialog.textContent).not.toContain(BILLING_CONTINUES)
+  })
+
+  it('cortesia ativa ou plano vencido não é assinante antigo', () => {
+    setup(detail({ subscriptions: [courtesy()] }, { plan: 'pro_anual' }))
+    expect(open('Bloquear').textContent).not.toContain(LEGACY_BILLING_WARNING)
+    cleanup()
+    setup(detail({ subscriptions: [] }, { plan: 'essencial_mensal', planExpiresAt: '2020-01-02T03:00:00Z' }))
+    expect(open('Bloquear').textContent).not.toContain(LEGACY_BILLING_WARNING)
   })
 
   it('Desbloquear manda unblock', async () => {

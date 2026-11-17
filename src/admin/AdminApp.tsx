@@ -20,10 +20,9 @@ import { AuditTab } from './tabs/AuditTab'
 import { UsageTab } from './tabs/UsageTab'
 
 // Abas que recebem só TabProps. As antigas (sem props) entram como estão; quem reescreve
-// cada uma passa a declarar TabProps sem mexer aqui.
+// cada uma passa a declarar TabProps sem mexer aqui. Pendências e Assinantes recebem mais (abaixo).
 const OTHER_TABS: { id: AdminTabId; Component: ComponentType<TabProps> }[] = [
   { id: 'overview', Component: OverviewTab },
-  { id: 'subscribers', Component: SubscribersTab },
   { id: 'finance', Component: FinanceTab },
   { id: 'aicost', Component: AiCostTab },
   { id: 'audit', Component: AuditTab },
@@ -90,7 +89,15 @@ function AdminPanel({ email, onClose, onSignOut }: { email: string | null; onClo
     >
       {/* Erro de render numa aba fica só nela (Ruling ADM-T7-forma); trocar de aba recomeça limpo. */}
       <AdminErrorBoundary key={active} onClose={onClose} onSignOut={onSignOut}>
-        {active === 'review' ? <ReviewTab {...tabProps} review={review} /> : Current && <Current {...tabProps} />}
+        {/* As ações da ficha do assinante mudam a fila: ela e o número de Pendências chegam de novo
+            depois de cada uma (Ruling ADM-T26-fila). */}
+        {active === 'review' ? (
+          <ReviewTab {...tabProps} review={review} />
+        ) : active === 'subscribers' ? (
+          <SubscribersTab {...tabProps} onQueueChange={review.refetch} />
+        ) : (
+          Current && <Current {...tabProps} />
+        )}
       </AdminErrorBoundary>
     </AdminShell>
   )

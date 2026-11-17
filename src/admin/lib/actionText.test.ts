@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   BILLING_CONTINUES,
+  LEGACY_BILLING_WARNING,
   blockText,
   cancelText,
   changePlanText,
@@ -9,6 +10,7 @@ import {
   doneText,
   endCourtesyText,
   isFuture,
+  isLegacyPaid,
   lastDayOf,
   quotaText,
   unblockText,
@@ -147,6 +149,28 @@ describe('isFuture', () => {
   })
 })
 
+describe('isLegacyPaid', () => {
+  const NOW = new Date('2026-11-17T12:00:00Z')
+  const asaas = { kind: 'asaas', status: 'canceled', accessUntil: '2026-10-01T03:00:00Z' }
+  const courtesy = (accessUntil: string | null, status = 'active') => ({ kind: 'courtesy', status, accessUntil })
+
+  it('plano pago valendo, sem linha no Asaas e sem cortesia ativa: assinante antigo (a regra da lista)', () => {
+    expect(isLegacyPaid({ plan: 'essencial_mensal', planExpiresAt: null }, [], NOW)).toBe(true)
+    expect(isLegacyPaid({ plan: 'pro_anual', planExpiresAt: '2026-12-01T03:00:00Z' }, [], NOW)).toBe(true)
+    // Cortesia que já acabou ou foi encerrada não conta.
+    expect(isLegacyPaid({ plan: 'pro_mensal', planExpiresAt: null }, [courtesy('2026-11-01T03:00:00Z'), courtesy(null, 'canceled')], NOW)).toBe(true)
+  })
+
+  it('não é antigo: Livre, plano vencido, qualquer linha no Asaas ou cortesia ativa', () => {
+    expect(isLegacyPaid({ plan: 'free', planExpiresAt: null }, [], NOW)).toBe(false)
+    expect(isLegacyPaid({ plan: 'gratuito', planExpiresAt: null }, [], NOW)).toBe(false)
+    expect(isLegacyPaid({ plan: 'essencial_mensal', planExpiresAt: '2026-11-17T12:00:00Z' }, [], NOW)).toBe(false)
+    expect(isLegacyPaid({ plan: 'essencial_mensal', planExpiresAt: null }, [asaas], NOW)).toBe(false)
+    expect(isLegacyPaid({ plan: 'pro_anual', planExpiresAt: null }, [courtesy(null)], NOW)).toBe(false)
+    expect(isLegacyPaid({ plan: 'pro_anual', planExpiresAt: null }, [courtesy('2026-12-01T03:00:00Z')], NOW)).toBe(false)
+  })
+})
+
 describe('blockText e unblockText', () => {
   it('bloquear diz o que a pessoa perde', () => {
     expect(blockText(false)).toBe('A pessoa perde o acesso ao app agora: separar, biblioteca em nuvem, enviar arquivos e assinar.')
@@ -157,6 +181,13 @@ describe('blockText e unblockText', () => {
     expect(blockText(true)).toBe(
       'A pessoa perde o acesso ao app agora: separar, biblioteca em nuvem, enviar arquivos e assinar. A cobrança no Asaas continua. Para parar de cobrar, cancele a assinatura também.',
     )
+  })
+
+  it('assinante antigo: o aviso da cobrança antiga', () => {
+    expect(LEGACY_BILLING_WARNING).toBe(
+      'Esta conta pode ter uma cobrança antiga no Asaas que o app não controla. Bloquear não para essa cobrança; confira no painel do Asaas.',
+    )
+    expect(LEGACY_BILLING_WARNING).not.toContain(TRAVESSAO)
   })
 
   it('desbloquear', () => {
