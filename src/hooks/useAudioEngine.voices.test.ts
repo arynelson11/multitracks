@@ -424,6 +424,17 @@ describe('pré-contagem no relógio do áudio', () => {
     act(() => { hook.result.current.cancelCountIn() })
   })
 
+  it('número de tempos estragado no aparelho: toca sem contagem, nunca com o relógio em NaN', async () => {
+    localStorage.setItem('precount_enabled', 'true')
+    localStorage.setItem('precount_beats', 'x')
+    seed(song({ bpm: 120 }))
+    const hook = await openApp()
+    await act(async () => { await hook.result.current.playWithPrecount() })
+    expect(beepFilters()).toHaveLength(0)
+    expect(live(sourcesOf(hook, 'bass'))[0].starts[0]).toEqual({ when: startAt(0), offset: 0 })
+    expect(hook.result.current.isCountingIn).toBe(false)
+  })
+
   it('busca na pré-contagem recomeça a contagem no ponto novo', async () => {
     precountOn(2)
     seed(song({ bpm: 120 }))

@@ -118,6 +118,29 @@ function releaseVoices(ctx: BaseAudioContext, voices: readonly Voice[], startOf:
     }
 }
 
+/**
+ * A voz do startVoice da T7 (src/audio/voices.ts) em duas etapas: aqui só monta fonte e
+ * envelope ligados na entrada, sem start. O play monta todas, lê o instante comum e dá start em
+ * todas num laço curto, como a v1.4.16 fazia com as fontes: montar dentro do laço (startVoice
+ * por voz) deixava o relógio passar de bloco entre ler o instante e o 1º start (medido no
+ * verify-pitch: folga de 1 bloco em vez de 2 em 5 a 8% dos reinícios, e mais plays refeitos).
+ * Quando a fonte termina, fonte e envelope se desligam (como no startVoice).
+ */
+function buildVoice(ctx: BaseAudioContext, spec: VoiceSpec, rate: number): Voice {
+    const source = ctx.createBufferSource();
+    const env = ctx.createGain();
+    source.buffer = spec.buffer;
+    if (spec.loop) source.loop = true;
+    source.playbackRate.value = rate;
+    source.connect(env);
+    env.connect(spec.entry);
+    source.addEventListener('ended', () => {
+        source.disconnect();
+        env.disconnect();
+    }, { once: true });
+    return { channelId: spec.channelId, source, env };
+}
+
 // O metrônomo infinito (createEndlessMetronomeSong) toca em loop.
 const isEndlessLoop = (ch: { name: string }): boolean => ch.name.toLowerCase().includes('metronomo loop');
 
@@ -1325,10 +1348,11 @@ export function useAudioEngine(userId?: string) {
         const offset = pausedAtRef.current;
         // Pré-contagem no BPM salvo da música (a T27 troca pela grade); sem BPM, 100.
         const pulse = 60 / (songBpm !== undefined && Number.isFinite(songBpm) && songBpm > 0 ? songBpm : 100);
-        const beats = opts?.precount ? precountBeats : 0;
+        // Tempos de 1 a 8 (o que o aparelho guardou pode vir estragado: sem contagem, nunca NaN no relógio).
+        const beats = opts?.precount && Number.isInteger(precountBeats) ? Math.max(1, Math.min(8, precountBeats)) : 0;
 
-        // Monta as vozes de todas as faixas no mesmo instante, lido depois de preparar as
-        // entradas (worklet, atraso, panner): o laço só cria fonte e envelope e agenda
+        // Monta as vozes de todas as faixas (entradas, fontes e envelopes) e só então agenda
+        // todas no mesmo instante, lido depois de montar tudo: o laço de start() só agenda
         // (microssegundos). Com start(0) ("assim que der") e o laço longo, se ele cruzava um
         // bloco de áudio (2,67 ms) parte das faixas começava um ou dois blocos depois (medido:
         // 7 a 10 de 52 reinícios).
@@ -1348,9 +1372,10 @@ export function useAudioEngine(userId?: string) {
                 // click/guia (entryFor).
                 specs.push({ channelId: ch.id, buffer: ch.buffer, entry: entryFor(ch, playPitch, compensation), loop: isEndlessLoop(ch) });
             }
+            const voices = specs.map((spec) => buildVoice(ctx, spec, rate));
             const t0 = nextRenderQuantum(ctx, leadQuanta);
             const when = t0 + beats * pulse;
-            const voices = specs.map((spec) => startVoice(ctx, spec, when, offset, rate));
+            for (const v of voices) v.source.start(when, Math.max(0, offset));
             const count = beats > 0
                 ? scheduleCount(ctx, countDestination(), Array.from({ length: beats }, (_, k) => ({ at: t0 + k * pulse, label: k + 1 })))
                 : null;
