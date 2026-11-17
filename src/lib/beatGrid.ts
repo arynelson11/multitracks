@@ -21,7 +21,7 @@
 // o que não mudou.
 import { displayBpmFromPulseBpm, isCompound, isEighthPulse, pulseBpmFromDisplayBpm, pulsesPerBar, type TimeSignature } from './stageContracts';
 import { measureConfidence } from './tempo/confidence';
-import { chooseDownbeat, type DownbeatVotes } from './tempo/downbeat';
+import { decideDownbeat, type DownbeatSource, type DownbeatVotes } from './tempo/downbeat';
 import { candidateEvidence, eighthPulseBpm, halfAndDouble, pickTempo, roughTempo, tempoCandidates, type TempoCandidate } from './tempo/octave';
 import { combScore, ONSET_LAG_FRAMES, onsetBands, sumOnsetBands, type OnsetBands } from './tempo/onsets';
 import { choosePhase } from './tempo/phase';
@@ -89,6 +89,26 @@ export interface SongGridDetection extends BeatGrid {
    * pedem pra conferir o andamento. Ausente nos outros casos.
    */
   preferChoseFamily?: true;
+  /**
+   * De onde veio o "1" (`downbeat`), pra quem mostra o "1" (M7, T27) marcar quando ele
+   * é incerto: `baixo` (o baixo votou), `harmonia` (só a harmonia votou), `bumbo`,
+   * `bumbo-lidera` (com faixas que não votam, o bumbo 1,1 dB ou mais acima),
+   * `inicio-da-bateria` (empate do bumbo desfeito por onde a bateria começa) ou
+   * `reserva`. Medido na rodada 3 da M3, marcando como incerto todo "1" que não vem
+   * de `baixo` ou `bumbo` com `downbeatMargin` de 0,3 ou mais: nos sintéticos sem baixo
+   * da revisão, todo "1" errado fica marcado; nas multitracks reais (140 leituras),
+   * ficam marcados 14 dos 20 errados e 56 dos 120 certos (os 6 errados sem marca vêm
+   * do baixo ou do bumbo sozinho). Ausente só na grade de reserva sem faixa de pulso
+   * que dê pra medir (aí o "1" é o 0, como `reserva`).
+   */
+  downbeatFrom?: DownbeatSource;
+  /**
+   * Folga do "1" sobre o segundo tempo, na conta que decidiu (perfis com média 1: com
+   * voto, a soma dos desvios; sem voto, o perfil do bumbo). 0 quando saiu de um empate
+   * do bumbo (desfeito por onde a bateria começa ou pelo mais forte dele) ou da
+   * reserva. Ausente junto com `downbeatFrom`.
+   */
+  downbeatMargin?: number;
   /** Metade e dobro do `bpm` (em semínima), pra oferecer (vazio na grade de reserva). */
   alternatives: number[];
   /** Ids das faixas que entraram na conta: as de pulso primeiro, depois as que votam no "1". */
@@ -256,12 +276,12 @@ export function detectSongGrid(
   const period = fit.period / fps;
   let firstBeat = (phase + ONSET_LAG_FRAMES) / fps;
   firstBeat = ((firstBeat % period) + period) % period;
-  const downbeat = chooseDownbeat(b, period, firstBeat, beatsPerBar, votes);
+  const { downbeat, from: downbeatFrom, margin: downbeatMargin } = decideDownbeat(b, period, firstBeat, beatsPerBar, votes);
 
   return {
     bpm, pulseBpm, firstBeat, downbeat, confidence, offbeatRisk, preferConflict,
     ...(tempo.preferChoseFamily ? { preferChoseFamily: true as const } : {}),
-    alternatives: halfAndDouble(bpm), tracksUsed,
+    alternatives: halfAndDouble(bpm), tracksUsed, downbeatFrom, downbeatMargin,
   };
 }
 

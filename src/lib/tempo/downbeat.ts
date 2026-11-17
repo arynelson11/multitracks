@@ -11,26 +11,58 @@
 //   (`HARMONY_WINDOW_S`): quando a janela sobe muito acima do ponto em algum tempo
 //   (`SLOW_ATTACK_LIFT`), o ataque é lento (pad) e o ponto cai no vale antes da
 //   subida; aí vale a janela, se ela aponta um tempo com folga, senão a faixa não
-//   vota. Só vota o perfil que se destaca (`MIN_VOTE_SPREAD`);
+//   vota. Só vota o perfil que se destaca (`MIN_VOTE_SPREAD`). Sem baixo, harmonia
+//   com cara de ataque lento lido no vale só vence o que a bateria sozinha decide
+//   com margem clara (`SLOW_HARMONY_MARGIN`);
 // - depois o bumbo da faixa de pulso (peso 1), na banda abaixo de ~100 Hz com 2
 //   polos, onde a caixa vaza bem menos que na banda grave de 150 Hz de antes.
 // Os pesos multiplicam o desvio, e o desvio é do tamanho do destaque: bumbo só num
-// tempo chega a +3 no 4/4 (tempos por compasso - 1), um baixo que só se destaca um
-// pouco no 1 dá +0,2 ou +0,3. Então o voto principal pesa mais quando os três se
-// destacam parecido, mas um bumbo muito claro vence um voto fraco. Nas multitracks
-// reais é isso que acerta onde a ordem rígida (o bumbo só no empate) errava; o
-// outro lado é que um bumbo só no 3 vence baixo e harmonia moderados no 1.
+// tempo chega a +3 no 4/4 (tempos por compasso - 1); um baixo que só se destaca um
+// pouco no 1 (perfil 1,3, logo acima do piso de voto) soma +0,3. Então o voto
+// principal pesa mais quando os três se destacam parecido, mas um bumbo muito claro
+// vence um voto fraco. Nas multitracks reais é isso que acerta onde a ordem rígida
+// (o bumbo só no empate) errava; o outro lado é que um bumbo só no 3 vence baixo e
+// harmonia moderados no 1.
 // Sem voto do baixo nem da harmonia, bumbo empatado (no 1 e no 3, ou em todo
 // tempo) desempata por onde a bateria começa, em qualquer compasso; com voto, não:
 // uma virada antes da entrada não puxa mais o 1 pro 3 ou pro 4. Com baixo ou
-// harmonia presentes que não votam (não marcam o compasso), o bumbo que lidera com
-// folga (`KICK_LEAD`) vale antes desse desempate.
+// harmonia presentes que não votam (não marcam o compasso), o bumbo claramente mais
+// alto dentro do empate (`KICK_LEAD_DB`) vale antes desse desempate.
+// `decideDownbeat` devolve também de onde veio o "1" e a folga da decisão, pra quem
+// mostra o "1" poder marcar quando ele é incerto (`SongGridDetection.downbeatFrom`).
 import { ONSET_LAG_FRAMES, sampleAt, type OnsetBands } from './onsets';
 
 /** Faixas que votam no "1" além da faixa de pulso. */
 export interface DownbeatVotes {
   bass?: OnsetBands;
   harmony?: OnsetBands[];
+}
+
+/**
+ * De onde veio o "1":
+ * - `baixo`: o baixo votou (com ou sem harmonia), somado ao bumbo;
+ * - `harmonia`: só a harmonia votou (sem baixo), somada ao bumbo;
+ * - `bumbo`: sem voto, o bumbo de um tempo ficou mais de 25% acima dos outros (ou,
+ *   empatado, o mais forte quando o começo da bateria não está no empate, com folga 0);
+ * - `bumbo-lidera`: sem voto, com baixo ou harmonia presentes que não votam, o bumbo
+ *   ficou pelo menos 1,1 dB acima do segundo dentro do empate;
+ * - `inicio-da-bateria`: sem voto, bumbo empatado desfeito por onde a bateria começa;
+ * - `reserva`: nada pra medir (compasso de 1 tempo, grade inválida, sem bumbo nem
+ *   voto); o "1" é o 0.
+ */
+export type DownbeatSource = 'baixo' | 'harmonia' | 'bumbo' | 'bumbo-lidera' | 'inicio-da-bateria' | 'reserva';
+
+/** O "1" escolhido, de onde ele veio e a folga sobre o segundo tempo. */
+export interface DownbeatChoice {
+  downbeat: number;
+  from: DownbeatSource;
+  /**
+   * Folga do tempo escolhido sobre o segundo, na conta que decidiu (perfis com média
+   * 1: com voto, a soma dos desvios; sem voto, o perfil do bumbo). 0 quando o "1"
+   * saiu de um empate do bumbo (desfeito por onde a bateria começa ou pelo mais forte
+   * dele) ou da reserva.
+   */
+  margin: number;
 }
 
 /**
@@ -58,9 +90,10 @@ const HARMONY_WINDOW_S = 0.05;
 /**
  * Ataque lento: em algum tempo o perfil da janela fica mais de 0,5 acima do perfil
  * do ponto (os dois têm média 1). Medido na rodada 2 da M3: o pad do catálogo sobe
- * de 0,88 a 1,05; nas multitracks reais nenhuma faixa de baixo ou harmonia passa de
- * 0,53, então todas continuam lidas no ponto, como no e80c789 (ataque rápido
- * inteiro); um drone sobe menos de 0,1.
+ * de 0,88 a 1,05; nas multitracks reais, na música inteira, as faixas de harmonia
+ * ficam até 0,48 e continuam lidas no ponto, como no e80c789 (ataque rápido
+ * inteiro); nos cortes e no nearBpm 10 leituras passam de 0,5 (até 0,83) e vão pra
+ * janela sem mudar nenhum resultado. Drones sobem até 0,2.
  */
 const SLOW_ATTACK_LIFT = 0.5;
 
@@ -80,14 +113,34 @@ const HARMONY_WINDOW_LEAD = 0.15;
 const MIN_VOTE_SPREAD = 0.2;
 
 /**
- * Com baixo ou harmonia presentes que não votam, o bumbo mais forte vale sozinho
- * quando fica pelo menos 10% acima do segundo, mesmo dentro do empate de 25%: o
- * começo da bateria nesses arranjos costuma ser virada ou anacruse (a música sem
- * projeto das multitracks reais: bumbo 1,21 no 1 contra 1,06 e 1,00, bateria
- * entrando no 2). Só com a bateria (sem outras faixas) fica o desempate de antes,
- * que nas reais acerta mais (com a regra, 2 músicas com acento erram).
+ * Com baixo ou harmonia presentes que não votam, o bumbo mais forte vale sozinho,
+ * dentro do empate de 25%, quando fica pelo menos 1,1 dB acima do segundo (o perfil
+ * do bumbo é de energia: 10^(1,1/10) = 1,288 vezes). Ruling M3-r3: um bumbo só 0,5 a
+ * 1 dB mais alto num tempo (diferença de mixagem) não decide o "1"; medido no rock
+ * sintético com o bumbo do 3 a +1 dB, o perfil fica de 0,57 a 0,99 dB acima. Acima
+ * de 1,25 dB (fora do empate) o bumbo já decide sozinho como `bumbo`. Só com a
+ * bateria (sem outras faixas) fica o desempate de antes.
  */
-const KICK_LEAD = 0.1;
+const KICK_LEAD_DB = 1.1;
+
+/**
+ * Cara de ataque lento lido cedo (Ruling M3-r3): na faixa de harmonia, o tempo em
+ * que a janela mais sobe acima do ponto (mais de 0,15) é o mais baixo no ponto, e
+ * ali o ponto fica abaixo de 0,6 da média. É o vale antes da subida do acorde: o
+ * ponto aponta outro tempo. Nas multitracks reais nenhuma leitura com o vale abaixo
+ * de 0,6 muda de resultado com a guarda; com 0,8, um teclado real de ataque rápido
+ * (vale de 0,65 a 0,76) perderia o 1.
+ */
+const SLOW_LIFT_MIN = 0.15;
+const SLOW_VALLEY_MAX = 0.6;
+
+/**
+ * Sem voto do baixo, harmonia com cara de ataque lento lido cedo só vence o que a
+ * bateria sozinha decide com folga de 1,0 na soma (perfis com média 1); senão vale
+ * a bateria. Medido nos sintéticos: com 0,5 o pad de 800 ms no disco ainda vence com
+ * o tempo errado; de 1,0 pra cima o resultado é o mesmo.
+ */
+const SLOW_HARMONY_MARGIN = 1.0;
 
 // Quadro da onset do tempo `k` da grade. O 1º tempo pode cair antes do atraso da
 // onset (golpe em 0,000): aí vale o quadro 0, onde está o ataque.
@@ -166,29 +219,69 @@ function startBeat(o: Float32Array, fps: number, period: number, firstBeat: numb
   return onsets.findIndex(v => v > strong);
 }
 
+interface HarmonyRead {
+  atPoint: number[] | null;
+  after: number[] | null;
+}
+
+// Ataque lento lido cedo: o tempo onde a janela mais sobe (mais de SLOW_LIFT_MIN) é o
+// mais baixo no ponto, abaixo de SLOW_VALLEY_MAX.
+function looksSlowReadEarly({ atPoint, after }: HarmonyRead): boolean {
+  if (!atPoint || !after) return false;
+  const lift = after.map((v, m) => v - atPoint[m]);
+  const valley = strongest(lift);
+  const low = Math.min(...atPoint);
+  return lift[valley] > SLOW_LIFT_MIN && atPoint[valley] === low && low < SLOW_VALLEY_MAX;
+}
+
+// Folga do tempo `m` sobre o melhor dos outros, em `score`.
+const marginOf = (score: readonly number[], m: number) => score[m] - Math.max(...score.filter((_, i) => i !== m));
+
+// Sem voto: o bumbo, e o empate desfeito por onde a bateria começa.
+function drumsChoice(
+  b: OnsetBands, period: number, firstBeat: number, beatsPerBar: number,
+  kick: number[] | null, hasOtherTracks: boolean,
+): DownbeatChoice {
+  if (!kick) return { downbeat: 0, from: 'reserva', margin: 0 };
+  const all = Array.from({ length: beatsPerBar }, (_, m) => m);
+  const top = strongest(kick);
+  const tied = all.filter(m => kick[m] >= kick[top] * (1 - KICK_TIE));
+  if (tied.length === 1) return { downbeat: top, from: 'bumbo', margin: marginOf(kick, top) };
+  // Com baixo ou harmonia presentes, antes vale o bumbo claramente mais alto.
+  if (hasOtherTracks && kick[top] >= (kick[top] - marginOf(kick, top)) * 10 ** (KICK_LEAD_DB / 10)) {
+    return { downbeat: top, from: 'bumbo-lidera', margin: marginOf(kick, top) };
+  }
+  const start = startBeat(b.full, b.fps, period, firstBeat);
+  if (start >= 0 && tied.includes(start % beatsPerBar)) return { downbeat: start % beatsPerBar, from: 'inicio-da-bateria', margin: 0 };
+  // O começo da bateria não está no empate: vale o bumbo mais forte dele, ainda empate.
+  return { downbeat: best(kick, tied), from: 'bumbo', margin: 0 };
+}
+
 /**
+ * O "1" do compasso, de onde ele veio e a folga da decisão (ver `DownbeatSource` e
+ * `DownbeatChoice`).
  * @param b ataques por banda da faixa de pulso
  * @param period período da grade, em SEGUNDOS
  * @param firstBeat primeiro tempo da grade, em segundos, em [0, period)
  * @param beatsPerBar tempos por compasso (>= 1)
  * @param votes baixo e harmonia: o voto principal do "1" (só os perfis que se destacam)
- * @returns qual tempo, contado a partir de `firstBeat` (0..beatsPerBar-1), é o "1"
  */
-export function chooseDownbeat(b: OnsetBands, period: number, firstBeat: number, beatsPerBar: number, votes?: DownbeatVotes): number {
+export function decideDownbeat(b: OnsetBands, period: number, firstBeat: number, beatsPerBar: number, votes?: DownbeatVotes): DownbeatChoice {
   // Grade inválida: o laço dos tempos não andaria (período 0) ou não terminaria (NaN).
-  if (beatsPerBar <= 1 || !(period > 0) || !Number.isFinite(firstBeat)) return 0;
+  if (beatsPerBar <= 1 || !(period > 0) || !Number.isFinite(firstBeat)) return { downbeat: 0, from: 'reserva', margin: 0 };
   const profileOf = (t: OnsetBands, o: Float32Array, w: ReadWindow = AT_POINT) => barProfile(o, t.fps, period, firstBeat, beatsPerBar, w);
   const all = Array.from({ length: beatsPerBar }, (_, m) => m);
   const score: number[] = new Array(beatsPerBar).fill(0);
 
-  // Harmonia: no ponto e na janela depois do tempo. Ataque rápido vota pelo ponto;
-  // ataque lento (a janela sobe muito acima do ponto, ou não há nada no ponto) vota
-  // pela janela quando ela aponta um tempo com folga.
-  const harmonyReads = (votes?.harmony ?? []).map(h => ({
+  // Harmonia: no ponto e na janela depois do tempo. Ataque rápido vota pelo ponto.
+  // Ataque lento (a janela sobe mais de SLOW_ATTACK_LIFT acima do ponto) vota pela
+  // janela só quando ela aponta um tempo com folga; sem nada no ponto, vale a janela
+  // como está.
+  const harmonyReads: HarmonyRead[] = (votes?.harmony ?? []).map(h => ({
     atPoint: profileOf(h, h.full),
     after: profileOf(h, h.full, { before: 0, after: Math.round(HARMONY_WINDOW_S * h.fps) }),
   }));
-  const harmonyVote = ({ atPoint, after }: { atPoint: number[] | null; after: number[] | null }) => {
+  const harmonyVote = ({ atPoint, after }: HarmonyRead) => {
     if (!atPoint) return after;
     if (!after || Math.max(...after.map((v, m) => v - atPoint[m])) <= SLOW_ATTACK_LIFT) return atPoint;
     return leadOf(after) >= HARMONY_WINDOW_LEAD ? after : null;
@@ -198,27 +291,36 @@ export function chooseDownbeat(b: OnsetBands, period: number, firstBeat: number,
   const bassAtPoint = votes?.bass ? profileOf(votes.bass, votes.bass.full) : null;
   const bass = isVote(bassAtPoint) ? bassAtPoint : null;
   if (bass) addDeviation(score, bass, 1);
-  const harmony = harmonyReads.map(harmonyVote).filter(isVote);
-  for (const p of harmony) addDeviation(score, p, 1 / harmony.length);
-  const voted = bass !== null || harmony.length > 0;
+  const voting = harmonyReads.map(read => ({ read, profile: harmonyVote(read) })).filter(v => isVote(v.profile));
+  for (const { profile } of voting) if (profile) addDeviation(score, profile, 1 / voting.length);
   // Baixo ou harmonia com som, votando ou não (faixa em silêncio é como faixa ausente).
   const hasOtherTracks = bassAtPoint !== null || harmonyReads.some(r => r.atPoint !== null || r.after !== null);
 
   // Bumbo: a banda de 100 Hz; faixa de pulso sem bumbo usa a grave de 150 Hz.
   const kickWin = Math.round(KICK_WINDOW_S * b.fps);
   const kick = profileOf(b, b.hasKick ? b.kick : b.low, { before: kickWin, after: kickWin });
+  if (!bass && !voting.length) return drumsChoice(b, period, firstBeat, beatsPerBar, kick, hasOtherTracks);
   if (kick) addDeviation(score, kick, 1);
-  if (voted || !kick) return best(score, all);
+  const downbeat = best(score, all);
+  if (bass) return { downbeat, from: 'baixo', margin: marginOf(score, downbeat) };
 
-  // Só o bumbo: os empatados com o mais forte desempatam por onde a bateria começa;
-  // com baixo ou harmonia presentes, antes vale o bumbo que lidera com folga.
-  const top = Math.max(...kick);
-  const tied = all.filter(m => kick[m] >= top * (1 - KICK_TIE));
-  if (tied.length > 1 && hasOtherTracks) {
-    const lead = strongest(kick);
-    const second = Math.max(...all.filter(m => m !== lead).map(m => kick[m]));
-    if (top >= second * (1 + KICK_LEAD)) return lead;
+  // Só a harmonia: com cara de ataque lento lido cedo, ela só vence o que a bateria
+  // sozinha decide com margem clara.
+  if (voting.some(v => looksSlowReadEarly(v.read))) {
+    const drums = drumsChoice(b, period, firstBeat, beatsPerBar, kick, hasOtherTracks);
+    if (drums.downbeat !== downbeat && score[downbeat] - score[drums.downbeat] < SLOW_HARMONY_MARGIN) return drums;
   }
-  const start = tied.length > 1 ? startBeat(b.full, b.fps, period, firstBeat) : -1;
-  return start >= 0 && tied.includes(start % beatsPerBar) ? start % beatsPerBar : best(score, tied);
+  return { downbeat, from: 'harmonia', margin: marginOf(score, downbeat) };
+}
+
+/**
+ * @param b ataques por banda da faixa de pulso
+ * @param period período da grade, em SEGUNDOS
+ * @param firstBeat primeiro tempo da grade, em segundos, em [0, period)
+ * @param beatsPerBar tempos por compasso (>= 1)
+ * @param votes baixo e harmonia: o voto principal do "1" (só os perfis que se destacam)
+ * @returns qual tempo, contado a partir de `firstBeat` (0..beatsPerBar-1), é o "1"
+ */
+export function chooseDownbeat(b: OnsetBands, period: number, firstBeat: number, beatsPerBar: number, votes?: DownbeatVotes): number {
+  return decideDownbeat(b, period, firstBeat, beatsPerBar, votes).downbeat;
 }

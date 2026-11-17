@@ -24,6 +24,10 @@
 // máximo da banda grave sem desempate, que só valia no compasso par. Com o bumbo
 // empatado nos 7, agora vale onde a bateria começa; o teste dele está em
 // src/lib/tempo/downbeat.test.ts.
+//
+// M3, rodada 3: o detectSongGrid diz de onde veio o "1" (`downbeatFrom`) e a folga
+// (`downbeatMargin`); onde a comparação é com o detectBeatGrid, os dois campos ficam
+// de fora. Nenhum caso daqui mudou de BPM, fase ou "1".
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -127,8 +131,10 @@ describe('detectSongGrid', () => {
   it('com uma faixa de pulso só, é o detectBeatGrid de hoje mais os campos novos', () => {
     const ch = bateria(CASOS[0].song);
     const r = detectSongGrid([{ id: 'bat', label: 'Bateria', use: 'pulse', channels: ch }], SR, { beatsPerBar: 4 });
-    const { offbeatRisk, alternatives, tracksUsed, pulseBpm, preferConflict, ...grade } = r;
+    const { offbeatRisk, alternatives, tracksUsed, pulseBpm, preferConflict, downbeatFrom, downbeatMargin, ...grade } = r;
     expect(grade).toEqual(detectBeatGrid(ch, SR, { beatsPerBar: 4 }));
+    // M3, rodada 3: rock com bumbo no 1 e no 3, empate desfeito por onde a bateria começa.
+    expect({ downbeatFrom, downbeatMargin }).toEqual({ downbeatFrom: 'inicio-da-bateria', downbeatMargin: 0 });
     expect(offbeatRisk).toBe(false);
     expect(alternatives).toEqual([60, 240]);
     expect(pulseBpm).toBe(grade.bpm);
@@ -146,14 +152,19 @@ describe('detectSongGrid', () => {
       { id: 'bx', label: 'Baixo', use: 'bass', channels: s.tracks.bass },
       { id: 'bat', label: 'Bateria', use: 'pulse', channels: s.tracks.drums },
     ], SR);
-    expect({ ...comVotos, tracksUsed: [] }).toEqual({ ...so, tracksUsed: [] });
+    const semFonte = (g: typeof so) => ({ ...g, tracksUsed: [], downbeatFrom: undefined, downbeatMargin: undefined });
+    expect(semFonte(comVotos)).toEqual(semFonte(so));
     expect(comVotos.tracksUsed).toEqual(['bat', 'bx', 'pad']);
+    // A grade é a mesma, mas o 1 agora vem do baixo (M3, rodada 3).
+    expect(comVotos.downbeatFrom).toBe('baixo');
   }, LENTO);
 
   it('sem faixa de pulso, devolve a grade de reserva sem confiança (no BPM de referência)', () => {
     // A reserva sai antes de olhar o áudio: 5 s bastam. O 97 (não o padrão 120) prova que o nearBpm é usado.
     const r = detectSongGrid([{ id: 'pad', label: 'Pad', use: 'harmony', channels: [new Float32Array(SR * 5)] }], SR, { nearBpm: 97 });
     expect(r).toEqual({ bpm: 97, pulseBpm: 97, firstBeat: 0, downbeat: 0, confidence: 0, offbeatRisk: false, preferConflict: false, alternatives: [], tracksUsed: [] });
+    // Sem nada pra medir, a origem do 1 fica de fora (a M3 documenta: trate como reserva).
+    expect('downbeatFrom' in r).toBe(false);
   });
 });
 
