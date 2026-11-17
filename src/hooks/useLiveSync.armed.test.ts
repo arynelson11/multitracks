@@ -93,9 +93,9 @@ describe('protocolo do pulo armado e da contagem', () => {
     expect(payload.countTotal).toBe(4)
   })
 
-  it('buildPayload manda null (não some do JSON) quando o líder ainda não informa o pulo', () => {
-    // Como o App chama hoje: o estado do líder ainda não tem os três campos.
-    const wire = JSON.parse(JSON.stringify(buildPayload(oldHostPayload())))
+  it('buildPayload manda null (não some do JSON) quando o líder não tem pulo armado', () => {
+    // O líder sempre informa os três campos (Ruling T24-1): sem pulo, null.
+    const wire = JSON.parse(JSON.stringify(buildPayload({ ...oldHostPayload(), armed: null, countBeat: null, countTotal: null })))
     expect(wire.armed).toBeNull()
     expect(wire.countBeat).toBeNull()
     expect(wire.countTotal).toBeNull()

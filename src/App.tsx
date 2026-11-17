@@ -1,11 +1,11 @@
-import { useRef, useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
+import { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo, lazy, Suspense, memo } from 'react'
 import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Pencil, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut, Shield, Home, Disc, Repeat, Square, Menu, Server } from 'lucide-react'
 const AdminApp = lazy(() => import('./admin/AdminApp'))
 import { BrandLogo } from './components/BrandLogo'
 import { PlayMark } from './components/brand/PlayMark'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { usePadSynth } from './hooks/usePadSynth'
-import { useSamplesLibrary } from './hooks/useSamplesLibrary'
+import { useSamplesLibrary, type SampleItem } from './hooks/useSamplesLibrary'
 import { SettingsModal } from './components/SettingsModal'
 import { MetronomeModal } from './components/MetronomeModal'
 import { LibraryModal } from './components/LibraryModal'
@@ -21,7 +21,7 @@ import { DownloadPage } from './components/DownloadPage'
 import { GuidedTour, type TourStep } from './components/GuidedTour'
 import { WhatsNewModal } from './components/WhatsNewModal'
 import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/SectionBar'
-import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections } from './lib/plans'
+import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections, canUseBpmDetection } from './lib/plans'
 import { isAdminEmail } from './lib/admin'
 import { usePasswordRecovery } from './hooks/usePasswordRecovery'
 import { cancelPasswordRecovery, finishPasswordRecovery } from './lib/passwordRecovery'
@@ -31,6 +31,22 @@ import { InstallAppBanner } from './components/InstallAppBanner'
 import { AUDIO_FILE_ACCEPT } from './lib/uploadContentType'
 import { useDesktopUpdate } from './hooks/useDesktopUpdate'
 import { CURRENT_VERSION } from './lib/changelog'
+import { KEY_NAMES } from './lib/keyNames'
+import { StageShell as StageShellView } from './components/stage/StageShell'
+import type { StageShellActions } from './components/stage/StageShell'
+import type { PadPanelProps } from './components/stage/PadPanel'
+import { RepertoirePanel } from './components/stage/RepertoirePanel'
+import { useStageViewport } from './components/stage/useStageViewport'
+import { computePeaks } from './components/stage/wavePeaks'
+import { buildStageView, liveArmedOf, splitSongName, stageGatesFor } from './components/stage/buildStageView'
+import { addSectionAt, nudgeSection as nudgeSectionMarker, removeSection as removeSectionMarker } from './lib/sectionEdit'
+import { markerIdForSpan, sectionIndexAt } from './lib/songGrid'
+import { countState } from './lib/transitionView'
+import { FADER_MAX_GAIN } from './lib/faderScale'
+import { useSettings } from './contexts/SettingsContext'
+import { getCachedSongsList, updateCachedSongMeta } from './lib/offlineCache'
+import type { Plays, SongGrid, StageClock, TimeSignature } from './lib/stageContracts'
+import type { Song } from './types'
 
 const TOUR_STEPS: TourStep[] = [
   { title: 'Bem-vindo ao Playback Studio', body: 'Vou te mostrar tudo rapidinho. Pode pular quando quiser e rever depois pelo Config.' },
@@ -63,17 +79,278 @@ import { LyricsEditor } from './components/LyricsEditor'
 import { useNetworkStatus } from './hooks/useNetworkStatus'
 import { useLiveSync } from './hooks/useLiveSync'
 import { buildChannelLabels, FAMILY_COLOR, type ChannelLabel } from './lib/channelNames'
-import { channelFaderFill, channelGain, isSilencedBySolo, pickWaveformChannel } from './lib/channelRoles'
+import { channelFaderFill, channelGain, findClickChannel, isSilencedBySolo, pickWaveformChannel } from './lib/channelRoles'
 import { ChannelEditPanel } from './components/ChannelEditPanel'
 import { ChannelTrashButton } from './components/ChannelTrashButton'
 import { useTwoTapConfirm } from './hooks/useTwoTapConfirm'
 import { Button } from './components/ui'
+
+// ───────────────── PALCO NOVO (T29) ─────────────────
+
+/**
+ * Tour no palco novo: troca só o que mudou. A lista do repertório e as Anotações ficam no painel
+ * REPERTÓRIOS (um passo só, no botão dele, que fica sempre à vista); os 4 passos das seções, o do
+ * EDITAR e o do CONFIG falam do palco novo. Os alvos (`data-tour`) vêm das peças do palco.
+ */
+const NEW_STAGE_SECTION_STEPS: TourStep[] = [
+  { target: 'secoes', title: 'Seções da música', body: 'Toque numa seção pra armar: ela termina, conta 1-2-3-4 no click e entra no 1.' },
+  { target: 'secoes', title: 'Repetir uma parte', body: 'REPETIR com o número de vezes, ou ∞ e LOOP pra repetir sem parar.' },
+  { target: 'secoes', title: 'Cancelar o pulo', body: 'Tocar de novo na seção armada, no X do aviso ou Esc cancela.' },
+  { target: 'secoes', title: 'Atalhos de teclado', body: 'Teclas 1 a 9 armam, setas trocam de seção, Shift + setas andam 5 s; marcar seções fica no EDITAR.' },
+]
+const FIRST_SECTION_STEP = TOUR_STEPS.find((step) => step.target === 'secoes')
+const TOUR_STEPS_NEW_STAGE: TourStep[] = TOUR_STEPS.flatMap((step): TourStep[] => {
+  if (step.target === 'setlist-area') return [{ target: 'repertorios', title: 'Suas músicas e Anotações', body: 'A lista do repertório e as Anotações ficam no painel REPERTÓRIOS.' }]
+  if (step.target === 'anotacoes') return []
+  if (step.target === 'secoes') return step === FIRST_SECTION_STEP ? NEW_STAGE_SECTION_STEPS : []
+  if (step.target === 'editar') return [{ ...step, body: 'No EDITAR você marca e ajusta as seções e escolhe o compasso da música.' }]
+  if (step.target === 'config') return [{ ...step, body: 'Ajustes do app, saídas de áudio (Click e Guia separados da VS) e a chave do palco. É aqui também que você reabre este tutorial.' }]
+  return [step]
+})
+
+/** Resolução da onda grande do palco novo (picos por música; a onda junta por pixel). */
+const STAGE_WAVE_BUCKETS = 2048
+
+/**
+ * A casca do palco novo só renderiza quando a vista, as ações, os pads ou os painéis mudam: o App
+ * renderiza a cada quadro tocando (o `currentTime` do motor), e a botoeira mede os nomes a cada
+ * renderização. O que muda a cada quadro (tempo, VU, anel) a casca lê pelo `StageClock`.
+ */
+const StageShell = memo(StageShellView)
+
+/**
+ * Objeto com as mesmas funções de `sample`, estável, que chama sempre a versão de `latest` da
+ * renderização mais nova (o App troca as funções a cada renderização; a casca guarda o mesmo objeto).
+ */
+function delegateTo<T extends object>(sample: T, latest: { readonly current: T }): T {
+  const out: Record<string, unknown> = {}
+  for (const key of Object.keys(sample)) {
+    out[key] = (...args: unknown[]) => (latest.current as unknown as Record<string, (...a: unknown[]) => unknown>)[key](...args)
+  }
+  return out as T
+}
+
+/** Amostras lidas do analisador de cada canal: uma janela só, reaproveitada a cada quadro. */
+const meterWindow = new Float32Array(2048)
+/** Pico pós-fader do canal (0 a 1) no quadro de agora, pelo AnalyserNode que o App liga no fader. */
+function analyserPeak(analyser: AnalyserNode | undefined): number {
+  if (!analyser) return 0
+  const n = Math.min(analyser.fftSize, meterWindow.length)
+  const view = meterWindow.subarray(0, n)
+  analyser.getFloatTimeDomainData(view)
+  let peak = 0
+  for (let i = 0; i < n; i++) {
+    const v = Math.abs(view[i])
+    if (v > peak) peak = v
+  }
+  return Math.min(1, peak)
+}
+
+interface SampleListProps {
+  kind: 'samples' | 'loops'; items: readonly SampleItem[]; loading: boolean; activeFolder: string | null; playingUrl: string | null
+  onFolder(folder: string | null): void; onPlay(url: string): void
+}
+
+/** Lista de SAMPLES ou LOOPS (pastas e arquivos), a mesma nos dois palcos. */
+function SampleList({ kind, items, loading, activeFolder, playingUrl, onFolder, onPlay }: SampleListProps) {
+  if (loading) {
+    return (
+      <div className="flex-1 flex flex-col min-h-0">
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 size={20} className="animate-spin text-text-muted" />
+        </div>
+      </div>
+    )
+  }
+  let content: React.ReactNode
+  if (items.length === 0) {
+    content = (
+      <div className="flex-1 flex flex-col items-center justify-center py-12 text-center h-full">
+        {kind === 'samples' ? <Disc size={28} className="text-purple-500/30 mb-3" /> : <Repeat size={28} className="text-cyan-500/30 mb-3" />}
+        <p className="text-[10px] text-text-muted font-mono uppercase tracking-wider mb-1">Nenhum {kind === 'samples' ? 'sample' : 'loop'} encontrado</p>
+        <p className="text-[9px] text-text-muted/50 font-mono">Use o Admin para enviar ficheiros</p>
+      </div>
+    )
+  } else if (!activeFolder) {
+    const folders = Array.from(new Set(items.map(i => i.folder || 'Sem Categoria')))
+    content = folders.map(folder => (
+      <button
+        key={folder}
+        onClick={() => onFolder(folder)}
+        className="w-full flex items-center gap-2 px-2.5 py-3 rounded-md border transition-all active:scale-[0.98] cursor-pointer text-left group bg-white/3 border-border hover:bg-white/5 hover:border-white/10 text-text-main"
+      >
+        <div className="w-8 h-8 rounded-md flex items-center justify-center shrink-0 bg-white/5 group-hover:bg-white/10 transition-all">
+          <FolderOpen size={14} className={kind === 'samples' ? 'text-purple-400' : 'text-cyan-400'} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[11px] font-bold truncate font-mono">{folder}</p>
+          <p className="text-[9px] text-text-muted font-mono">
+            {items.filter(i => (i.folder || 'Sem Categoria') === folder).length} ficheiro(s)
+          </p>
+        </div>
+        <ChevronRight size={14} className="text-text-muted" />
+      </button>
+    ))
+  } else {
+    const folderItems = items.filter(i => (i.folder || 'Sem Categoria') === activeFolder)
+    content = folderItems.map((item, i) => (
+      <button
+        key={i}
+        onClick={() => onPlay(item.url)}
+        className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-md border transition-all active:scale-[0.98] cursor-pointer text-left group
+          ${playingUrl === item.url
+            ? kind === 'samples'
+              ? 'bg-purple-500/10 border-purple-500/30 text-purple-300'
+              : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
+            : 'bg-white/3 border-border hover:bg-white/5 hover:border-white/10 text-text-main'
+          }`}
+      >
+        {/* Play/Stop icon */}
+        <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 transition-all
+          ${playingUrl === item.url
+            ? kind === 'samples' ? 'bg-purple-500/20' : 'bg-cyan-500/20'
+            : 'bg-white/5 group-hover:bg-white/10'
+          }`}>
+          {playingUrl === item.url
+            ? <Square size={10} className="fill-current" />
+            : <Play size={10} className="fill-current ml-0.5" />
+          }
+        </div>
+        {/* Info */}
+        <div className="flex-1 min-w-0">
+          <p className="text-[10px] font-bold truncate font-mono">{item.name}</p>
+          <p className="text-[8px] text-text-muted/60 font-mono truncate uppercase tracking-wider">{(item.size / (1024 * 1024)).toFixed(1)} MB</p>
+        </div>
+        {/* Playing indicator */}
+        {playingUrl === item.url && (
+          <div className="flex gap-0.5 items-end h-3">
+            <div className="w-0.5 bg-current rounded-full bar-anim" style={{ animationDelay: '0s', height: '40%' }} />
+            <div className="w-0.5 bg-current rounded-full bar-anim" style={{ animationDelay: '0.15s', height: '70%' }} />
+            <div className="w-0.5 bg-current rounded-full bar-anim" style={{ animationDelay: '0.3s', height: '50%' }} />
+          </div>
+        )}
+      </button>
+    ))
+  }
+  return (
+    <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        {/* Folder Navigation Header */}
+        {activeFolder && (
+          <div className="mb-2 flex items-center gap-2">
+            <button onClick={() => onFolder(null)} className="p-1 rounded bg-white/5 hover:bg-white/10 text-white transition-all active:scale-95 cursor-pointer">
+              <ChevronRight size={14} className="rotate-180" />
+            </button>
+            <span className="text-[10px] font-bold text-white uppercase tracking-wider font-mono truncate">{activeFolder}</span>
+          </div>
+        )}
+        <div className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar min-h-0">{content}</div>
+      </div>
+    </div>
+  )
+}
+
+// Itens dos menus e diálogos do App no palco novo: alvo de 44 px, texto que acompanha a largura.
+const STAGE_MENU_ITEM =
+  'flex min-h-ps-touch w-full items-center gap-2.5 rounded-ps-md px-3 text-left text-ps-sm font-semibold text-ps-bone cursor-pointer select-none hover:bg-ps-s2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ps-or'
+
+interface StageTracksMenuProps {
+  hasSong: boolean; onClose(): void; onImport(files: FileList): void; onMetronome(): void; onRename(): void; onCover(file: File): void
+}
+
+/** Menu FAIXAS do palco novo: o de hoje (importar e metrônomo infinito) mais renomear e trocar a capa da música. */
+function StageTracksMenu({ hasSong, onClose, onImport, onMetronome, onRename, onCover }: StageTracksMenuProps) {
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div role="menu" aria-label="Faixas" className="relative z-50 mt-1 flex w-max max-w-[calc(100vw-32px)] flex-col gap-0.5 rounded-ps-xl bg-ps-pop p-1.5 font-ps-sans shadow-ps-pop inset-ring inset-ring-ps-line-2">
+        <label className={STAGE_MENU_ITEM}>
+          <Upload size={16} className="shrink-0 text-ps-mut" /> Importar do dispositivo
+          <input type="file" multiple accept={AUDIO_FILE_ACCEPT} className="hidden"
+            onChange={(e) => { onClose(); if (e.target.files) onImport(e.target.files) }} />
+        </label>
+        <button type="button" role="menuitem" className={STAGE_MENU_ITEM} onClick={() => { onClose(); onMetronome() }}>
+          <Timer size={16} className="shrink-0 text-ps-mut" /> Criar metrônomo (infinito)
+        </button>
+        {hasSong && (
+          <>
+            <button type="button" role="menuitem" className={STAGE_MENU_ITEM} onClick={() => { onClose(); onRename() }}>
+              <Pencil size={16} className="shrink-0 text-ps-mut" /> Renomear esta música
+            </button>
+            <label className={STAGE_MENU_ITEM}>
+              <Edit2 size={16} className="shrink-0 text-ps-mut" /> Trocar a capa
+              <input type="file" accept="image/*" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; onClose(); if (f) onCover(f) }} />
+            </label>
+          </>
+        )}
+      </div>
+    </>
+  )
+}
+
+interface PadSoundsDialogProps {
+  custom: { has(note: string): boolean }; names: ReadonlyMap<string, string>; onLoad(note: string, file: File): void; onClear(note: string): void; onClose(): void
+}
+
+/** EDITAR dos pads no palco novo: carregar ou tirar o som de cada tom (o que o modo editar do palco antigo fazia). */
+function PadSoundsDialog({ custom, names, onLoad, onClear, onClose }: PadSoundsDialogProps) {
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div
+        role="dialog" aria-label="Sons dos pads" onClick={(e) => e.stopPropagation()}
+        className="flex max-h-full w-full max-w-lg flex-col gap-3 overflow-y-auto rounded-ps-xl bg-ps-pop p-4 font-ps-sans text-ps-bone shadow-ps-pop inset-ring inset-ring-ps-line-2"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <span className="ps-label">Sons dos pads</span>
+          <button type="button" aria-label="Fechar" title="Fechar" onClick={onClose}
+            className="inline-flex min-h-ps-touch min-w-ps-touch shrink-0 items-center justify-center rounded-ps-md bg-ps-s2 text-ps-mut hover:text-ps-bone">
+            <X size={18} />
+          </button>
+        </div>
+        <p className="text-ps-sm text-ps-mut">Carregue um arquivo de áudio pra um tom, ou tire o som carregado pra voltar ao pad do conjunto.</p>
+        <ul className="flex flex-col gap-1.5">
+          {KEY_NAMES.map((note) => (
+            <li key={note} className="flex flex-wrap items-center gap-2 rounded-ps-md bg-ps-s1 px-3 py-1.5 inset-ring inset-ring-ps-line">
+              <span className="ps-num w-9 shrink-0 text-ps-md font-extrabold">{note}</span>
+              <span className="min-w-0 flex-1 break-words text-ps-sm text-ps-mut">{custom.has(note) ? (names.get(note) || 'Som carregado') : 'Som do conjunto'}</span>
+              <label className="inline-flex min-h-ps-touch min-w-ps-touch shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-ps-md bg-ps-s2 px-3 text-ps-sm font-bold inset-ring inset-ring-ps-line hover:inset-ring-ps-line-2">
+                <Upload size={14} /> Carregar
+                <input type="file" accept={AUDIO_FILE_ACCEPT} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onLoad(note, f) }} />
+              </label>
+              {custom.has(note) && (
+                <button type="button" onClick={() => onClear(note)}
+                  className="inline-flex min-h-ps-touch min-w-ps-touch shrink-0 items-center justify-center gap-1.5 rounded-ps-md bg-ps-s2 px-3 text-ps-sm font-bold text-ps-alert inset-ring inset-ring-ps-line hover:inset-ring-ps-line-2">
+                  <X size={14} /> Tirar
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+/** Abre a tela interna do admin (/admin), a mesma do botão ADMIN do palco antigo. */
+const openAdminPage = () => { window.location.href = '/admin' }
 
 export default function App() {
   const { user, loading, signOut, userPlan } = useAuth()
   // Volta do link de recuperar senha: mostra a tela Criar nova senha antes de tudo.
   const isRecoveringPassword = usePasswordRecovery()
   const isOnline = useNetworkStatus()
+  const { settings } = useSettings()
+
+  // ── Palco novo ou antigo (R-25): uma decisão só, a chave "Novo" E a tela larga (1024 x 740 ou
+  // mais). Ela escolhe a tela, o mecanismo do pulo (stageMode do motor) e os comandos da banda
+  // (os adaptadores do motor seguem o modo). Só muda com a VS parada: trocar a chave ou
+  // redimensionar tocando vale na próxima parada (o ajuste fica logo depois do motor).
+  const { wide } = useStageViewport()
+  const wantNewStage = settings.stageVersion === 'novo' && wide
+  const [useNewStage, setUseNewStage] = useState(wantNewStage)
+  // Portões do plano, os mesmos pro motor e pra tela (seções e ∞ dos pagos; banda no Studio).
+  const sectionGates = useMemo(() => stageGatesFor(userPlan), [userPlan])
 
   const {
     isReady, initEngine, loadFiles, isLoading, isRestoring,
@@ -90,7 +367,13 @@ export default function App() {
     precountEnabled, precountBeats, isCountingIn,
     setPrecountBeats, togglePrecountEnabled, playWithPrecount, cancelCountIn,
     createEndlessMetronomeSong,
-  } = useAudioEngine(user?.id)
+    outputPlan, maxOutputChannels, masterMuted, toggleMasterMute, getOutputLevels,
+    sectionIntent, transitionView, landed, sectionSpansView, armSection, stepSection, armRepeat, toggleSectionLoop, cancelArm,
+    heardNow, heardPosition, precountTimes,
+    songGrid, gridWarning, setSongMeter, redetectSongGrid, isReadingGrid,
+  } = useAudioEngine(user?.id, { autoClick: canUseBpmDetection(userPlan), sectionGates, stageMode: useNewStage ? 'novo' : 'antigo' })
+  // A trava da R-25: a escolha nova só entra com a VS parada (nem tocando nem na pré-contagem).
+  if (wantNewStage !== useNewStage && !isPlaying && !isCountingIn) setUseNewStage(wantNewStage)
 
   const { playPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume, selectedPadSet, selectPadSet, padMode } = usePadSynth()
   const [isPricingOpen, setIsPricingOpen] = useState(false)
@@ -213,6 +496,257 @@ export default function App() {
     return buildChannelLabels(withoutCustomName).find((l) => l.id === editingChannel.id)?.autoLabel ?? editingChannel.name
   }, [channels, editingChannel])
 
+  // ── Palco novo (T29): vista, ações, relógio e painéis da casca ──
+  const [isRepertoireOpen, setIsRepertoireOpen] = useState(false)
+  const [isPadPanelOpen, setIsPadPanelOpen] = useState(false)
+  const [isPadSoundsOpen, setIsPadSoundsOpen] = useState(false)
+  // As Configurações abrem na seção de saídas pelo aviso SAÍDAS (Ruling T18-saidas).
+  const [settingsFocus, setSettingsFocus] = useState<'outputs' | null>(null)
+  // Analisador de cada canal, ligado no fader (o VU do palco antigo e o medidor do palco novo).
+  const analysersRef = useRef<Record<string, AnalyserNode>>({})
+  const isAdmin = isAdminEmail(user?.email)
+  const activeSong: Song | undefined = playlist[activeSongIndex]
+
+  // A grade com identidade estável (Aviso T18 M4): o motor monta um objeto novo a cada mudança no
+  // repertório (um volume mexido), e a onda refaz as linhas de compasso quando a grade muda.
+  const gridBpm = songGrid?.bpm
+  const gridFirst = songGrid?.firstDownbeat
+  const gridSignature = songGrid?.signature
+  const gridCountEvery = songGrid?.countEvery
+  const gridSource = songGrid?.source
+  const gridMeterSource = songGrid?.meterSource
+  const stageGrid = useMemo<SongGrid | null>(() => (
+    gridBpm === undefined || gridFirst === undefined || gridSignature === undefined || gridCountEvery === undefined || gridSource === undefined || gridMeterSource === undefined
+      ? null
+      : { bpm: gridBpm, firstDownbeat: gridFirst, signature: gridSignature, countEvery: gridCountEvery, source: gridSource, meterSource: gridMeterSource }
+  ), [gridBpm, gridFirst, gridSignature, gridCountEvery, gridSource, gridMeterSource])
+
+  // Seção que se ouve agora (a mesma conta do motor pra armar). Muda só na fronteira: a vista fica igual entre elas.
+  const stageSection = useNewStage ? sectionIndexAt(sectionSpansView, isPlaying ? heardPosition() : currentTime) : -1
+  const userName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || null
+  const hostActive = liveServerUrl !== null || remoteSessionCode !== null
+  const isDesktopApp = !!window.playbackDesktop?.isElectron
+  const stageView = useMemo(() => (useNewStage ? buildStageView({
+    song: activeSong, playlist, activeIndex: activeSongIndex, duration, spans: sectionSpansView, currentSection: stageSection,
+    isPlaying, isCountingIn, precountEnabled, precountBeats, precountTimes, playbackMode, sectionIntent, transitionView,
+    landed, songGrid: stageGrid, gridWarning, isReadingGrid, outputPlan, masterVolume, masterMuted,
+  }, {
+    plan: userPlan, isAdmin, online: isOnline, isDesktop: isDesktopApp, userName, hostActive, editMode: isEditMode,
+    channelEditMode: isChannelEditMode, padPanelOpen: isPadPanelOpen, activePad: activeNote, repertoireName: null,
+  }) : null), [
+    useNewStage, activeSong, playlist, activeSongIndex, duration, sectionSpansView, stageSection, isPlaying, isCountingIn, precountEnabled,
+    precountBeats, precountTimes, playbackMode, sectionIntent, transitionView, landed, stageGrid, gridWarning, isReadingGrid, outputPlan,
+    masterVolume, masterMuted, userPlan, isAdmin, isOnline, isDesktopApp, userName, hostActive, isEditMode, isChannelEditMode,
+    isPadPanelOpen, activeNote,
+  ])
+
+  // Grava o compasso na nuvem quem pode editar BPM e tom daquela música (R-30): o admin nas músicas
+  // da biblioteca e o dono da música privada (user_id de songs; a RLS continua sendo a trava). O
+  // índice do cache offline só muda pelo updateCachedSongMeta.
+  const saveMeterToCloud = async (sourceId: string, signature: TimeSignature) => {
+    if (!isOnline || !user) return
+    try {
+      let allowed = isAdmin
+      if (!allowed) {
+        const cloud = (await getCachedSongsList()).find((cs) => cs.id === sourceId)
+        allowed = !!cloud && cloud.is_global !== true && cloud.user_id === user.id
+      }
+      if (!allowed) return
+      if (await updateSong(sourceId, { time_signature: signature })) await updateCachedSongMeta(sourceId, { time_signature: signature })
+    } catch (e) {
+      console.error('Falha ao salvar o compasso na nuvem:', e)
+    }
+  }
+  const upgradeIf = (r: { upgrade: boolean }) => { if (r.upgrade) setIsPricingOpen(true) }
+  const clampToSong = (t: number) => Math.max(0, Math.min(duration || 0, Number.isFinite(t) ? t : 0))
+  const promptEndlessMetronome = () => {
+    const bpmInput = window.prompt("Digite o BPM desejado para a nova faixa de Click (ex: 120):", "120")
+    if (!bpmInput) return
+    const bpm = parseInt(bpmInput, 10)
+    if (!isNaN(bpm) && bpm >= 40 && bpm <= 300) createEndlessMetronomeSong(bpm)
+    else alert("BPM inválido. Digite um número entre 40 e 300.")
+  }
+
+  // Ações do palco (StageActions + a da casca) e o que os painéis do App chamam. A casca recebe
+  // um objeto estável (delegateTo) que chama a versão da renderização mais nova.
+  const stageImpl = {
+    togglePlay: () => { if (isCountingIn) cancelCountIn(); else if (isPlaying) pause(); else playWithPrecount() },
+    goToStart: () => seekTo(0),
+    setEndMode: (m: 'continue' | 'stop' | 'fade-out') => setPlaybackMode(m),
+    togglePrecount: () => togglePrecountEnabled(!precountEnabled),
+    cyclePrecountBeats: () => setPrecountBeats(precountBeats >= 8 ? 1 : precountBeats + 1),
+    toggleClick: () => { const click = findClickChannel(channels); if (click) toggleMute(click.id) },
+    openMetronome: () => setIsMetronomeModalOpen(true),
+    tapSection: (i: number) => upgradeIf(armSection(i)),
+    stepSection: (dir: -1 | 1) => upgradeIf(stepSection(dir)),
+    cancelArm: () => cancelArm(),
+    armRepeat: (plays: Plays) => upgradeIf(armRepeat(plays)),
+    toggleLoop: () => upgradeIf(toggleSectionLoop()),
+    seek: (t: number) => seekTo(clampToSong(t)),
+    seekBy: (dt: number) => seekTo(clampToSong(heardPosition() + dt)),
+    // Trocar o tom é dos planos pagos, como o TOM do palco antigo.
+    changePitch: (semitones: number) => handlePremiumFeature(() => changePitch(semitones)),
+    prevSong: () => prevSong(),
+    nextSong: () => nextSong(),
+    setVolume: (id: string, gain: number) => updateVolume(id, gain),
+    toggleMute: (id: string) => toggleMute(id),
+    toggleSolo: (id: string) => toggleSolo(id),
+    setPan: (id: string, pan: number) => updatePan(id, pan),
+    setMasterVolume: (gain: number) => updateMasterVolume(gain),
+    toggleMasterMute: () => toggleMasterMute(),
+    togglePadPanel: () => setIsPadPanelOpen((open) => !open),
+    openLyrics: () => setIsTeleprompterMode(true),
+    openRepertoires: () => setIsRepertoireOpen((open) => !open),
+    openTracks: () => setIsTracksMenuOpen((open) => !open),
+    openLibrary: () => handlePremiumFeature(() => setIsLibraryOpen(true)),
+    toggleEditMode: () => setIsEditMode((on) => !on),
+    toggleChannelEditMode: () => { setIsChannelEditMode((on) => !on); channelTrash.disarm() },
+    openHost: () => { void handleStartLiveMode() },
+    openSettings: () => { setSettingsFocus(null); setIsSettingsOpen(true) },
+    goHome: () => setForceShowSplash(true),
+    signOut: () => { void signOut() },
+    openUpgrade: () => setIsPricingOpen(true),
+    openChannelEdit: (id: string) => setEditing({ channelId: id, songIndex: activeSongIndex }),
+    reorderChannel: (from: number, to: number) => {
+      const arr = [...channels]
+      const [moved] = arr.splice(from, 1)
+      if (!moved) return
+      arr.splice(to, 0, moved)
+      reorderChannels(arr)
+    },
+    removeChannel: (id: string) => removeChannel(id),
+    // Modo EDITAR (T16): marcar, ajustar e tirar seção mexem na marca de origem do trecho.
+    markSection: (label: string) => {
+      if (!canUseSections(userPlan)) { setIsPricingOpen(true); return }
+      if (!activeSong) return
+      setSongMarkers(activeSong.id, addSectionAt(activeSong.markers ?? [], heardPosition(), label, stageGrid, () => crypto.randomUUID()))
+    },
+    nudgeSection: (index: number, bars: number) => {
+      if (!activeSong) return
+      const markers = activeSong.markers ?? []
+      const id = markerIdForSpan(markers, duration, stageGrid, index)
+      if (id) setSongMarkers(activeSong.id, nudgeSectionMarker(markers, id, bars, stageGrid, duration))
+    },
+    removeSection: (index: number) => {
+      if (!activeSong) return
+      const markers = activeSong.markers ?? []
+      const id = markerIdForSpan(markers, duration, stageGrid, index)
+      if (id) setSongMarkers(activeSong.id, removeSectionMarker(markers, id))
+    },
+    // Compasso escolhido no EDITAR: no repertório e no aparelho (motor) e, com a música da
+    // biblioteca, na nuvem pra quem pode editar (R-30). Sem grade não há o que escolher.
+    setMeter: (signature: TimeSignature, countEvery: 1 | 3) => {
+      if (!activeSong || !stageGrid) return
+      setSongMeter(activeSong.id, signature, countEvery)
+      if (activeSong.sourceId) void saveMeterToCloud(activeSong.sourceId, signature)
+    },
+    // Sem canal de Click a releitura não tem efeito no motor (Ruling T27-reler): o botão já vem desligado.
+    redetectMeter: () => {
+      if (!activeSong || !findClickChannel(activeSong.channels)) return
+      void redetectSongGrid(activeSong.id)
+    },
+    openOutputSettings: () => { setSettingsFocus('outputs'); setIsSettingsOpen(true) },
+    // Painel de pads, SAMPLES e LOOPS.
+    padView: (v: PadPanelProps['view']) => { if (v === 'pads') stopPlayback(); setPadActiveView(v); setActiveFolder(null) },
+    padNote: (note: string) => playPad(note),
+    padVolume: (v: number) => updatePadVolume(v),
+    padSets: () => handlePremiumFeature(() => setIsPadSetsModalOpen(true)),
+    padEdit: () => setIsPadSoundsOpen(true),
+    padLoad: (note: string, file: File) => loadCustomPad(note, file),
+    padClear: (note: string) => clearCustomPad(note),
+    padSoundsClose: () => setIsPadSoundsOpen(false),
+    sampleFolder: (folder: string | null) => setActiveFolder(folder),
+    samplePlay: (url: string) => playSample(url),
+    // Painel REPERTÓRIOS.
+    repSelect: (i: number) => jumpToSong(i),
+    repReorder: (from: number, to: number) => {
+      const list = [...playlist]
+      const [moved] = list.splice(from, 1)
+      if (!moved) return
+      list.splice(to, 0, moved)
+      setPlaylistOrder(list)
+    },
+    repRemove: (id: string) => removeSongFromPlaylist(id),
+    repNew: () => clearSession(),
+    repExport: () => { void handleExport() },
+    repImport: (file: File) => importPlaylist(file),
+    repClose: () => setIsRepertoireOpen(false),
+    notesChange: (v: string) => setRepertoireNotes(v),
+    // Menu FAIXAS.
+    tracksClose: () => setIsTracksMenuOpen(false),
+    tracksImport: (files: FileList) => { void loadFiles(files) },
+    tracksMetronome: () => promptEndlessMetronome(),
+    tracksRename: () => {
+      if (!activeSong) return
+      const name = window.prompt('Nome da música:', activeSong.name)
+      if (name !== null && name.trim()) renameSong(activeSong.id, name.trim())
+    },
+    tracksCover: (file: File) => {
+      if (!activeSong) return
+      const songId = activeSong.id
+      const reader = new FileReader()
+      reader.onload = (ev) => setCoverImage(songId, ev.target?.result as string)
+      reader.readAsDataURL(file)
+    },
+  } satisfies StageShellActions & Record<string, (...args: never[]) => void>
+  const stageImplRef = useRef(stageImpl)
+  useLayoutEffect(() => { stageImplRef.current = stageImpl })
+  const [stageCalls] = useState(() => delegateTo(stageImpl, stageImplRef))
+
+  // Leituras de cada quadro (useFrame dentro das peças): tempo ouvido, nível de cada canal e do PRINCIPAL.
+  const stageClock = useMemo<StageClock>(() => ({
+    heardNow: () => heardNow(),
+    position: () => heardPosition(),
+    level: (id: string) => analyserPeak(analysersRef.current[id]),
+    masterLevels: () => getOutputLevels(),
+  }), [heardNow, heardPosition, getOutputLevels])
+
+  // Onda grande: picos do canal da onda (pickWaveformChannel), uma vez por música.
+  const stagePeaks = useMemo(
+    () => (useNewStage && sectionWaveBuffer ? computePeaks(sectionWaveBuffer.getChannelData(0), STAGE_WAVE_BUCKETS) : null),
+    [useNewStage, sectionWaveBuffer],
+  )
+
+  // Tom da música agora (índice de 0 a 11) pro "TOM" da grade de pads; nulo sem tom original.
+  const stageOriginalKey = keyToSemitone(activeSong?.originalKey ?? null)
+  const stageKeyIndex = stageOriginalKey === null ? null : ((stageOriginalKey + (activeSong?.pitch ?? 0)) % 12 + 12) % 12
+  const padSetName = padMode === 'system' && selectedPadSet ? selectedPadSet.name : null
+  const stagePads = useMemo<Omit<PadPanelProps, 'open' | 'onClose'>>(() => ({
+    view: padActiveView, onViewChange: stageCalls.padView, notes: KEY_NAMES, activeNote, songKeyIndex: stageKeyIndex, volume: padVolume,
+    setName: padSetName, onPlayNote: stageCalls.padNote, onVolume: stageCalls.padVolume, onOpenSets: stageCalls.padSets, onEditPads: stageCalls.padEdit,
+    samples: <SampleList kind="samples" items={samples} loading={samplesLoading} activeFolder={activeFolder} playingUrl={playingUrl} onFolder={stageCalls.sampleFolder} onPlay={stageCalls.samplePlay} />,
+    loops: <SampleList kind="loops" items={loops} loading={samplesLoading} activeFolder={activeFolder} playingUrl={playingUrl} onFolder={stageCalls.sampleFolder} onPlay={stageCalls.samplePlay} />,
+  }), [stageCalls, padActiveView, activeNote, stageKeyIndex, padVolume, padSetName, samples, loops, samplesLoading, activeFolder, playingUrl])
+
+  // Painéis do App dentro da casca: REPERTÓRIOS sempre montado (abre e fecha pelo `open`, pro foco
+  // voltar a quem abriu) e o menu FAIXAS só aberto. As ferramentas do admin entram no EDITAR (no render).
+  const repertoireSongs = useMemo(() => playlist.map((s) => {
+    const { title, artist } = splitSongName(s)
+    return { id: s.id, name: title, artist, coverImage: s.coverImage, originalKey: s.originalKey ?? null, bpm: s.bpm ?? null }
+  }), [playlist])
+  const hasActiveSong = !!activeSong
+  const stageSlots = useMemo(() => ({
+    repertoire: (
+      <RepertoirePanel
+        open={isRepertoireOpen} songs={repertoireSongs} activeIndex={activeSongIndex} isPlaying={isPlaying} notes={repertoireNotes}
+        onNotesChange={stageCalls.notesChange} onSelect={stageCalls.repSelect} onReorder={stageCalls.repReorder} onRemove={stageCalls.repRemove}
+        onNew={stageCalls.repNew} onExport={stageCalls.repExport} onImport={stageCalls.repImport} onClose={stageCalls.repClose}
+      />
+    ),
+    tracksMenu: isTracksMenuOpen ? (
+      <StageTracksMenu
+        hasSong={hasActiveSong} onClose={stageCalls.tracksClose} onImport={stageCalls.tracksImport} onMetronome={stageCalls.tracksMetronome}
+        onRename={stageCalls.tracksRename} onCover={stageCalls.tracksCover}
+      />
+    ) : null,
+  }), [stageCalls, isRepertoireOpen, repertoireSongs, activeSongIndex, isPlaying, repertoireNotes, isTracksMenuOpen, hasActiveSong])
+
+  // Ao Vivo do host com o palco novo: seções pelas spans (os índices batem com os comandos da
+  // banda), o pulo armado e a contagem do pulo agendado (o número muda quando o bipe ouvido muda).
+  const liveArmed = stageView ? liveArmedOf(stageView) : null
+  const liveCountTotal = useNewStage && transitionView?.committed && transitionView.countTotal > 0 ? transitionView.countTotal : null
+  const liveCountBeat = liveCountTotal !== null && transitionView ? countState(transitionView, heardNow()).currentLabel : null
+
   const { isFollowerMode, isConnected, followerState, sendCommand } = useLiveSync({
     isPlaying,
     currentTime,
@@ -233,8 +767,13 @@ export default function App() {
     padVolume,
     pitch: playlist[activeSongIndex]?.pitch || 0,
     originalKey: playlist[activeSongIndex]?.originalKey || null,
-    sections: (playlist[activeSongIndex]?.markers || []).map((m) => ({ label: m.label, color: m.color || '#FF6B35' })),
+    sections: stageView
+      ? stageView.sections.map((sec) => ({ label: sec.label, color: sec.color }))
+      : (playlist[activeSongIndex]?.markers || []).map((m) => ({ label: m.label, color: m.color || '#FF6B35' })),
     activeLoop,
+    armed: liveArmed,
+    countBeat: liveCountBeat,
+    countTotal: liveCountTotal,
     bandSectionsEnabled: canBandControlSections(userPlan),
   }, remoteSessionCode)
 
@@ -259,7 +798,8 @@ export default function App() {
         case 'next': nextSong(); break
         case 'prev': prevSong(); break
         case 'select-song': if (typeof cmd.index === 'number') jumpToSong(cmd.index); break
-        case 'set-volume': if (cmd.id && typeof cmd.value === 'number') updateVolume(cmd.id, cmd.value); break
+        // Volume pela banda no mesmo teto do fader do palco (+6 dB, FADER_MAX_GAIN), nunca negativo.
+        case 'set-volume': if (cmd.id && typeof cmd.value === 'number' && Number.isFinite(cmd.value)) updateVolume(cmd.id, Math.min(FADER_MAX_GAIN, Math.max(0, cmd.value))); break
         case 'toggle-mute': if (cmd.id) toggleMute(cmd.id); break
         case 'toggle-solo': if (cmd.id) toggleSolo(cmd.id); break
         case 'set-pitch': if (typeof cmd.value === 'number') changePitch(cmd.value); break
@@ -289,6 +829,8 @@ export default function App() {
   // com Shift); letras (V, R, ...) marcam a seção no ponto atual. Ignora quando
   // o foco está num campo de texto pra não atrapalhar anotações, etc.
   useEffect(() => {
+    // Palco novo: o teclado é o da casca (useStageShortcuts), com as regras de foco da Ruling T18-atalho.
+    if (useNewStage) return
     const onKey = (e: KeyboardEvent) => {
       // A página de separação tem seus próprios atalhos (Espaço toca os multitracks
       // separados, não a playlist). Enquanto ela estiver aberta, o App não responde
@@ -321,7 +863,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker, isSeparatorOpen])
+  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker, isSeparatorOpen, useNewStage])
 
   const handleStartLiveMode = async () => {
     // Modo Ao Vivo é exclusivo dos planos pagos.
@@ -413,7 +955,6 @@ export default function App() {
     action()
   }
 
-  const analysersRef = useRef<Record<string, AnalyserNode>>({})
   const vuAnimRef = useRef<number>(0)
 
   // ── VU Meter animation loop ──
@@ -423,7 +964,7 @@ export default function App() {
       return
     }
 
-    // Create AnalyserNodes for channels that don't have one yet
+    // Create AnalyserNodes for channels that don't have one yet (os dois palcos medem por eles)
     channels.forEach(ch => {
       if (!analysersRef.current[ch.id]) {
         try {
@@ -436,6 +977,10 @@ export default function App() {
         } catch (_) { /* ok */ }
       }
     })
+
+    // Palco novo: o medidor de cada canal lê o analisador a cada quadro dentro da peça
+    // (StageClock.level), sem estado do React aqui.
+    if (useNewStage) return
 
     // Ganho de cada canal pela mesma regra do motor (M, Solo, Click e Guia fora do Solo).
     // Calculado uma vez por mudança nos canais, não a cada quadro.
@@ -469,7 +1014,7 @@ export default function App() {
     return () => {
       if (vuAnimRef.current) cancelAnimationFrame(vuAnimRef.current)
     }
-  }, [isPlaying, channels])
+  }, [isPlaying, channels, useNewStage])
 
   // Channel drag handlers
   const onChDragStart = (idx: number) => setChDragIdx(idx)
@@ -524,8 +1069,6 @@ export default function App() {
     }
   }
 
-  const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-
   const activePitch = playlist[activeSongIndex]?.pitch || 0
   const activeOriginalKey = playlist[activeSongIndex]?.originalKey || null
   // Tom original em qualquer grafia (Bb, Am, f#...). Não reconhecido conta como
@@ -533,7 +1076,7 @@ export default function App() {
   const originalKeyIndex = keyToSemitone(activeOriginalKey)
   const hasOriginalKey = originalKeyIndex !== null
   const currentKeyName = originalKeyIndex !== null
-    ? KEYS[((originalKeyIndex + activePitch) % 12 + 12) % 12]
+    ? KEY_NAMES[((originalKeyIndex + activePitch) % 12 + 12) % 12]
     : null
 
   // Drag-and-drop state
@@ -590,8 +1133,11 @@ export default function App() {
   const handleExport = async () => {
     setIsSaving(true)
     setIsSetlistMenuOpen(false)
-    await exportPlaylist()
-    setIsSaving(false)
+    try {
+      await exportPlaylist()
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -704,10 +1250,139 @@ export default function App() {
     )
   }
 
+  // Editor de marcadores do admin (cor, letra e salvar na nuvem), nos dois palcos: no antigo
+  // embaixo da barra de seções, no novo dentro das ferramentas do admin do EDITAR.
+  const markerEditorPanel = () => (
+            <div className="mt-1.5 bg-black/40 rounded-lg border border-white/10 p-2 sm:p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Editor de Marcadores</span>
+                <button onClick={() => setIsMarkerEditorOpen(false)} className="text-text-muted hover:text-white text-xs cursor-pointer">✕</button>
+              </div>
+              {/* Add Marker Form */}
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <input
+                  type="text"
+                  value={markerLabel}
+                  onChange={(e) => setMarkerLabel(e.target.value)}
+                  placeholder="Seção (ex: Verso 1)"
+                  className="bg-white/5 border border-white/10 rounded-md px-2 py-1 text-xs text-white placeholder-text-muted/50 w-28 sm:w-36 focus:outline-none focus:ring-1 focus:ring-primary/50"
+                />
+                <input
+                  type="text"
+                  value={markerLyrics}
+                  onChange={(e) => setMarkerLyrics(e.target.value)}
+                  placeholder="Letra (opcional)"
+                  className="bg-white/5 border border-white/10 rounded-md px-2 py-1 text-xs text-white placeholder-text-muted/50 flex-1 min-w-[100px] focus:outline-none focus:ring-1 focus:ring-primary/50"
+                />
+                <div className="flex items-center gap-1">
+                  {['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'].map(c => (
+                    <button
+                      key={c}
+                      onClick={() => setMarkerColor(c)}
+                      className={`w-4 h-4 rounded-full cursor-pointer transition-all ${markerColor === c ? 'ring-2 ring-white scale-110' : 'opacity-50 hover:opacity-100'}`}
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+                <button
+                  onClick={() => {
+                    if (!markerLabel.trim()) return;
+                    const activeSong = playlist[activeSongIndex];
+                    if (!activeSong) return;
+                    const newMarker = {
+                      id: crypto.randomUUID(),
+                      time: currentTime,
+                      label: markerLabel.trim(),
+                      lyrics: markerLyrics.trim() || undefined,
+                      color: markerColor
+                    };
+                    const newMarkers = [...(activeSong.markers || []), newMarker].sort((a, b) => a.time - b.time);
+                    setSongMarkers(activeSong.id, newMarkers);
+                    setMarkerLabel('');
+                    setMarkerLyrics('');
+                  }}
+                  className="bg-primary/20 text-primary px-3 py-1 rounded-md text-xs font-bold hover:bg-primary/30 cursor-pointer active:scale-95 transition-all border border-primary/30"
+                >
+                  + {formatTime(currentTime)}
+                </button>
+              </div>
+              {/* Existing Markers List */}
+              {playlist[activeSongIndex]?.markers && playlist[activeSongIndex].markers!.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {playlist[activeSongIndex].markers!.map((m) => (
+                    <div key={m.id} className="flex items-center gap-1 bg-white/5 rounded-md px-1.5 py-0.5 text-[10px] border border-white/5">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.color || '#fff' }}></span>
+                      <span className="text-white/80 font-medium">{formatTime(m.time)}</span>
+                      <span className="text-white/60">{m.label}</span>
+                      <button
+                        onClick={() => {
+                          const activeSong = playlist[activeSongIndex];
+                          if (!activeSong) return;
+                          const newMarkers = (activeSong.markers || []).filter(x => x.id !== m.id);
+                          setSongMarkers(activeSong.id, newMarkers);
+                        }}
+                        className="text-red-400/60 hover:text-red-400 cursor-pointer ml-0.5"
+                      >×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Save to Cloud button */}
+              <button
+                onClick={async () => {
+                  const activeSong = playlist[activeSongIndex];
+                  if (!activeSong?.markers) return;
+                  const cloudSongs = await fetchCloudSongs();
+                  const match = cloudSongs.find((cs: any) => activeSong.name.includes(cs.name) || cs.name.includes(activeSong.name));
+                  if (match) {
+                    const ok = await saveMkToCloud(match.id, activeSong.markers);
+                    if (ok) alert('Marcadores salvos na nuvem! ☁️');
+                    else alert('Erro ao salvar marcadores.');
+                  } else {
+                    alert('Música não encontrada na biblioteca cloud. Salve apenas localmente.');
+                  }
+                }}
+                className="mt-2 bg-secondary/10 text-secondary px-3 py-1 rounded-md text-[10px] font-bold hover:bg-secondary/20 cursor-pointer active:scale-95 transition-all border border-secondary/20 w-full text-center"
+              >
+                ☁️ Salvar Marcadores na Nuvem
+              </button>
+            </div>
+  )
+
+  // Ferramentas do admin no EDITAR do palco novo (a casca só mostra pra admin): a tela interna do
+  // admin, o editor de marcadores e o de letra e cifra, como no palco antigo.
+  const stageAdminTools = useNewStage && isEditMode && isAdmin ? (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={openAdminPage} icon={<Shield size={14} />}>ADMIN</Button>
+        <Button tone={isMarkerEditorOpen ? 'on' : 'default'} onClick={() => setIsMarkerEditorOpen(!isMarkerEditorOpen)} icon={<Pencil size={14} />}>Editor avançado</Button>
+        <Button onClick={() => setIsLyricsEditorOpen(true)} icon={<Edit2 size={14} />}>Letra e cifra</Button>
+      </div>
+      {isMarkerEditorOpen && markerEditorPanel()}
+    </div>
+  ) : null
+  // Modais do App abertos: o teclado do palco fica desligado (Espaço não toca por baixo deles).
+  const stageKeyboard = !isSettingsOpen && !isLibraryOpen && !isAdminOpen && !isMetronomeModalOpen && !isLyricsEditorOpen
+    && !isPadSetsModalOpen && !isPricingOpen && !isLiveModeOpen && !showTour && !showWhatsNew && !isPadSoundsOpen
+
   // ───────────────── MAIN APP ─────────────────
   return (
     <div className="h-[100dvh] w-screen fixed inset-0 overflow-hidden compact:overflow-y-auto compact:overflow-x-hidden bg-[#0e0e10] text-text-main flex flex-col select-none">
 
+      {useNewStage && stageView ? (
+        <>
+          {/* Palco novo (T29): a casca toma o lugar do cabeçalho, da faixa do repertório e do conteúdo; modais, teleprompter, tour e Ao Vivo ficam iguais. */}
+          {(isLoading || isRestoring) && (
+            <div className="absolute inset-x-0 top-0 z-[60] h-1 overflow-hidden bg-ps-or/20"><div className="h-full w-full animate-pulse bg-ps-or" /></div>
+          )}
+          <StageShell
+            view={stageView} actions={stageCalls} clock={stageClock} peaks={stagePeaks} pads={stagePads}
+            slots={stageAdminTools ? { ...stageSlots, adminTools: stageAdminTools } : stageSlots}
+            keyboardEnabled={stageKeyboard} outputWarning={outputPlan.warning}
+          />
+        </>
+      ) : (
+      <>
       {/* ═══ HEADER / TRANSPORT ═══ */}
       <header className="bg-[#18181a] border-b border-border shrink-0">
         {/* Top row: Brand + Tools + Timer */}
@@ -816,15 +1491,7 @@ export default function App() {
                     </label>
                     <button onClick={() => {
                       setIsTracksMenuOpen(false);
-                      const bpmInput = window.prompt("Digite o BPM desejado para a nova faixa de Click (ex: 120):", "120");
-                      if (bpmInput) {
-                        const bpm = parseInt(bpmInput, 10);
-                        if (!isNaN(bpm) && bpm >= 40 && bpm <= 300) {
-                          createEndlessMetronomeSong(bpm);
-                        } else {
-                          alert("BPM inválido. Digite um número entre 40 e 300.");
-                        }
-                      }
+                      promptEndlessMetronome();
                     }}
                       className="w-full text-left px-4 py-2 text-xs font-medium text-text hover:bg-white/10 transition-colors flex items-center gap-2">
                       <Timer size={14} /> Criar Metrônomo (Infinito)
@@ -881,9 +1548,9 @@ export default function App() {
                       {hasOriginalKey ? 'Selecionar tom:' : 'Tom original desconhecido. Defina manualmente:'}
                     </p>
                     <div className="grid grid-cols-4 gap-1">
-                      {KEYS.map(key => {
+                      {KEY_NAMES.map(key => {
                         const isCurrent = key === currentKeyName
-                        const isOriginal = KEYS.indexOf(key) === originalKeyIndex && !isCurrent
+                        const isOriginal = KEY_NAMES.indexOf(key) === originalKeyIndex && !isCurrent
                         return (
                           <button key={key} onClick={() => {
                             if (hasOriginalKey) {
@@ -968,7 +1635,7 @@ export default function App() {
 
             {/* Admin Dashboard - only for admin */}
             {(isAdminEmail(user?.email)) && (
-              <button onClick={() => { window.location.href = '/admin' }}
+              <button onClick={openAdminPage}
                 className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-primary/70 hover:text-primary border border-primary/20 hover:border-primary/40 transition-all">
                 <Shield size={14} /><span className="hidden min-[1680px]:inline">ADMIN</span>
               </button>
@@ -1433,102 +2100,7 @@ export default function App() {
           )}
 
           {/* ─── Marker Editor Panel (Admin) ─── */}
-          {isMarkerEditorOpen && isAdminEmail(user?.email) && (
-            <div className="mt-1.5 bg-black/40 rounded-lg border border-white/10 p-2 sm:p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Editor de Marcadores</span>
-                <button onClick={() => setIsMarkerEditorOpen(false)} className="text-text-muted hover:text-white text-xs cursor-pointer">✕</button>
-              </div>
-              {/* Add Marker Form */}
-              <div className="flex flex-wrap items-center gap-2 mb-2">
-                <input
-                  type="text"
-                  value={markerLabel}
-                  onChange={(e) => setMarkerLabel(e.target.value)}
-                  placeholder="Seção (ex: Verso 1)"
-                  className="bg-white/5 border border-white/10 rounded-md px-2 py-1 text-xs text-white placeholder-text-muted/50 w-28 sm:w-36 focus:outline-none focus:ring-1 focus:ring-primary/50"
-                />
-                <input
-                  type="text"
-                  value={markerLyrics}
-                  onChange={(e) => setMarkerLyrics(e.target.value)}
-                  placeholder="Letra (opcional)"
-                  className="bg-white/5 border border-white/10 rounded-md px-2 py-1 text-xs text-white placeholder-text-muted/50 flex-1 min-w-[100px] focus:outline-none focus:ring-1 focus:ring-primary/50"
-                />
-                <div className="flex items-center gap-1">
-                  {['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'].map(c => (
-                    <button
-                      key={c}
-                      onClick={() => setMarkerColor(c)}
-                      className={`w-4 h-4 rounded-full cursor-pointer transition-all ${markerColor === c ? 'ring-2 ring-white scale-110' : 'opacity-50 hover:opacity-100'}`}
-                      style={{ backgroundColor: c }}
-                    />
-                  ))}
-                </div>
-                <button
-                  onClick={() => {
-                    if (!markerLabel.trim()) return;
-                    const activeSong = playlist[activeSongIndex];
-                    if (!activeSong) return;
-                    const newMarker = {
-                      id: crypto.randomUUID(),
-                      time: currentTime,
-                      label: markerLabel.trim(),
-                      lyrics: markerLyrics.trim() || undefined,
-                      color: markerColor
-                    };
-                    const newMarkers = [...(activeSong.markers || []), newMarker].sort((a, b) => a.time - b.time);
-                    setSongMarkers(activeSong.id, newMarkers);
-                    setMarkerLabel('');
-                    setMarkerLyrics('');
-                  }}
-                  className="bg-primary/20 text-primary px-3 py-1 rounded-md text-xs font-bold hover:bg-primary/30 cursor-pointer active:scale-95 transition-all border border-primary/30"
-                >
-                  + {formatTime(currentTime)}
-                </button>
-              </div>
-              {/* Existing Markers List */}
-              {playlist[activeSongIndex]?.markers && playlist[activeSongIndex].markers!.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-1">
-                  {playlist[activeSongIndex].markers!.map((m) => (
-                    <div key={m.id} className="flex items-center gap-1 bg-white/5 rounded-md px-1.5 py-0.5 text-[10px] border border-white/5">
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.color || '#fff' }}></span>
-                      <span className="text-white/80 font-medium">{formatTime(m.time)}</span>
-                      <span className="text-white/60">{m.label}</span>
-                      <button
-                        onClick={() => {
-                          const activeSong = playlist[activeSongIndex];
-                          if (!activeSong) return;
-                          const newMarkers = (activeSong.markers || []).filter(x => x.id !== m.id);
-                          setSongMarkers(activeSong.id, newMarkers);
-                        }}
-                        className="text-red-400/60 hover:text-red-400 cursor-pointer ml-0.5"
-                      >×</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {/* Save to Cloud button */}
-              <button
-                onClick={async () => {
-                  const activeSong = playlist[activeSongIndex];
-                  if (!activeSong?.markers) return;
-                  const cloudSongs = await fetchCloudSongs();
-                  const match = cloudSongs.find((cs: any) => activeSong.name.includes(cs.name) || cs.name.includes(activeSong.name));
-                  if (match) {
-                    const ok = await saveMkToCloud(match.id, activeSong.markers);
-                    if (ok) alert('Marcadores salvos na nuvem! ☁️');
-                    else alert('Erro ao salvar marcadores.');
-                  } else {
-                    alert('Música não encontrada na biblioteca cloud. Salve apenas localmente.');
-                  }
-                }}
-                className="mt-2 bg-secondary/10 text-secondary px-3 py-1 rounded-md text-[10px] font-bold hover:bg-secondary/20 cursor-pointer active:scale-95 transition-all border border-secondary/20 w-full text-center"
-              >
-                ☁️ Salvar Marcadores na Nuvem
-              </button>
-            </div>
-          )}
+          {isMarkerEditorOpen && isAdminEmail(user?.email) && markerEditorPanel()}
         </section>
 
         {/* ─── Mobile View Toggle ─── */}
@@ -1815,7 +2387,7 @@ export default function App() {
                 </div>
                 {/* Grid */}
                 <div className="flex-1 min-h-0 grid grid-cols-4 grid-rows-3 md:grid-cols-3 md:grid-rows-4 short:md:grid-cols-4 short:md:grid-rows-3 gap-1.5 sm:gap-2 short:gap-1">
-                  {['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map(note => (
+                  {KEY_NAMES.map(note => (
                     <div key={note} className="relative">
                       <button onClick={() => !isPadEditMode && playPad(note)}
                         className={`
@@ -1849,108 +2421,16 @@ export default function App() {
               </>
             ) : (
               /* ═══ SAMPLES / LOOPS LIST VIEW ═══ */
-              <div className="flex-1 flex flex-col min-h-0">
-                {samplesLoading ? (
-                  <div className="flex-1 flex items-center justify-center">
-                    <Loader2 size={20} className="animate-spin text-text-muted" />
-                  </div>
-                ) : (
-                  <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                    {/* Folder Navigation Header */}
-                    {activeFolder && (
-                      <div className="mb-2 flex items-center gap-2">
-                        <button onClick={() => setActiveFolder(null)} className="p-1 rounded bg-white/5 hover:bg-white/10 text-white transition-all active:scale-95 cursor-pointer">
-                          <ChevronRight size={14} className="rotate-180" />
-                        </button>
-                        <span className="text-[10px] font-bold text-white uppercase tracking-wider font-mono truncate">{activeFolder}</span>
-                      </div>
-                    )}
-
-                    <div className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar min-h-0">
-                      {(() => {
-                        const currentItems = padActiveView === 'samples' ? samples : loops;
-                        if (currentItems.length === 0) {
-                          return (
-                            <div className="flex-1 flex flex-col items-center justify-center py-12 text-center h-full">
-                              {padActiveView === 'samples' ? <Disc size={28} className="text-purple-500/30 mb-3" /> : <Repeat size={28} className="text-cyan-500/30 mb-3" />}
-                              <p className="text-[10px] text-text-muted font-mono uppercase tracking-wider mb-1">Nenhum {padActiveView === 'samples' ? 'sample' : 'loop'} encontrado</p>
-                              <p className="text-[9px] text-text-muted/50 font-mono">Use o Admin para enviar ficheiros</p>
-                            </div>
-                          );
-                        }
-
-                        if (!activeFolder) {
-                          // Render Folders
-                          const folders = Array.from(new Set(currentItems.map(i => i.folder || 'Sem Categoria')));
-                          return folders.map(folder => (
-                            <button
-                              key={folder}
-                              onClick={() => setActiveFolder(folder)}
-                              className="w-full flex items-center gap-2 px-2.5 py-3 rounded-md border transition-all active:scale-[0.98] cursor-pointer text-left group bg-white/3 border-border hover:bg-white/5 hover:border-white/10 text-text-main"
-                            >
-                              <div className="w-8 h-8 rounded-md flex items-center justify-center shrink-0 bg-white/5 group-hover:bg-white/10 transition-all">
-                                <FolderOpen size={14} className={padActiveView === 'samples' ? 'text-purple-400' : 'text-cyan-400'} />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-[11px] font-bold truncate font-mono">{folder}</p>
-                                <p className="text-[9px] text-text-muted font-mono">
-                                  {currentItems.filter(i => (i.folder || 'Sem Categoria') === folder).length} ficheiro(s)
-                                </p>
-                              </div>
-                              <ChevronRight size={14} className="text-text-muted" />
-                            </button>
-                          ));
-                        }
-
-                        // Render Files inside Active Folder
-                        const folderItems = currentItems.filter(i => (i.folder || 'Sem Categoria') === activeFolder);
-                        return folderItems.map((item, i) => (
-                          <button
-                            key={i}
-                            onClick={() => playSample(item.url)}
-                            className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-md border transition-all active:scale-[0.98] cursor-pointer text-left group
-                              ${playingUrl === item.url
-                                ? padActiveView === 'samples'
-                                  ? 'bg-purple-500/10 border-purple-500/30 text-purple-300'
-                                  : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
-                                : 'bg-white/3 border-border hover:bg-white/5 hover:border-white/10 text-text-main'
-                              }`}
-                          >
-                            {/* Play/Stop icon */}
-                            <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 transition-all
-                              ${playingUrl === item.url
-                                ? padActiveView === 'samples' ? 'bg-purple-500/20' : 'bg-cyan-500/20'
-                                : 'bg-white/5 group-hover:bg-white/10'
-                              }`}>
-                              {playingUrl === item.url
-                                ? <Square size={10} className="fill-current" />
-                                : <Play size={10} className="fill-current ml-0.5" />
-                              }
-                            </div>
-                            {/* Info */}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[10px] font-bold truncate font-mono">{item.name}</p>
-                              <p className="text-[8px] text-text-muted/60 font-mono truncate uppercase tracking-wider">{(item.size / (1024 * 1024)).toFixed(1)} MB</p>
-                            </div>
-                            {/* Playing indicator */}
-                            {playingUrl === item.url && (
-                              <div className="flex gap-0.5 items-end h-3">
-                                <div className="w-0.5 bg-current rounded-full bar-anim" style={{ animationDelay: '0s', height: '40%' }} />
-                                <div className="w-0.5 bg-current rounded-full bar-anim" style={{ animationDelay: '0.15s', height: '70%' }} />
-                                <div className="w-0.5 bg-current rounded-full bar-anim" style={{ animationDelay: '0.3s', height: '50%' }} />
-                              </div>
-                            )}
-                          </button>
-                        ));
-                      })()}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <SampleList
+                kind={padActiveView === 'samples' ? 'samples' : 'loops'} items={padActiveView === 'samples' ? samples : loops}
+                loading={samplesLoading} activeFolder={activeFolder} playingUrl={playingUrl} onFolder={setActiveFolder} onPlay={playSample}
+              />
             )}
           </div>
         </section>
       </main>
+      </>
+      )}
 
       {/* Editar canal (EDITAR CANAIS > lápis). Fica aqui, fora do mixer: a sobreposição do
           canal tem backdrop-filter, que prenderia o `fixed` do painel dentro da faixa. */}
@@ -1967,7 +2447,11 @@ export default function App() {
       {/* Settings Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        onClose={() => { setIsSettingsOpen(false); setSettingsFocus(null) }}
+        focusSection={settingsFocus}
+        isPlaying={isPlaying || isCountingIn}
+        maxOutputChannels={maxOutputChannels}
+        outputWarning={outputPlan.warning}
         channels={channels}
         onSetChannelBus={setChannelBus}
         onOpenAdmin={() => setIsAdminOpen(true)}
@@ -1990,6 +2474,8 @@ export default function App() {
             lyricsSynced: extra?.lyricsSynced ?? null,
             chords: extra?.chords ?? null,
             sourceId: songId,
+            // Compasso salvo na nuvem (songs.time_signature): sem ele o click que falta nunca é gerado.
+            timeSignature: extra?.timeSignature,
           });
         }}
         onSongEdited={({ songId, prevName, prevBpm, prevOriginalKey, name, artist, originalKey, bpm, coverImage }) => {
@@ -2006,7 +2492,7 @@ export default function App() {
       />
       )}
 
-      {showTour && <GuidedTour steps={TOUR_STEPS} onClose={closeTour} />}
+      {showTour && <GuidedTour steps={useNewStage ? TOUR_STEPS_NEW_STAGE : TOUR_STEPS} onClose={closeTour} />}
       {showWhatsNew && <WhatsNewModal onClose={closeWhatsNew} />}
       <InstallAppBanner />
 
@@ -2068,6 +2554,13 @@ export default function App() {
         isAdmin={isAdminEmail(user?.email)}
       />
 
+      {/* EDITAR dos pads no palco novo: carregar ou tirar o som de cada tom. */}
+      {isPadSoundsOpen && (
+        <PadSoundsDialog
+          custom={customPads} names={customPadNames} onLoad={stageCalls.padLoad} onClear={stageCalls.padClear} onClose={stageCalls.padSoundsClose}
+        />
+      )}
+
       {/* ═══ TELEPROMPTER OVERLAY ═══ */}
       {isTeleprompterMode && (
         <div className="fixed inset-0 z-50 bg-[#050505] flex flex-col">
@@ -2122,6 +2615,7 @@ export default function App() {
       {isMetronomeModalOpen && playlist[activeSongIndex] && (
         <MetronomeModal 
           isOpen={isMetronomeModalOpen} 
+          initialSignature={stageGrid?.signature ?? playlist[activeSongIndex].timeSignature}
           onClose={() => setIsMetronomeModalOpen(false)} 
           playlistCurrentSong={playlist[activeSongIndex]}
           onAddClick={addChannelToActiveSong} 
@@ -2200,7 +2694,7 @@ export default function App() {
 
                   {/* ADMIN */}
                   {(isAdminEmail(user?.email)) && (
-                    <button onClick={() => { window.location.href = '/admin' }}
+                    <button onClick={openAdminPage}
                       className="w-full text-left px-3 py-3 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors border border-transparent hover:border-border">
                       <span className="text-white text-sm font-bold flex items-center gap-3">
                         <Shield size={16} className="text-primary" />
@@ -2237,9 +2731,9 @@ export default function App() {
                     {hasOriginalKey ? 'Selecionar tom:' : 'Tom original desconhecido. Defina manualmente:'}
                   </p>
                   <div className="grid grid-cols-4 gap-1.5">
-                    {KEYS.map(key => {
+                    {KEY_NAMES.map(key => {
                       const isCurrent = key === currentKeyName
-                      const isOriginal = KEYS.indexOf(key) === originalKeyIndex && !isCurrent
+                      const isOriginal = KEY_NAMES.indexOf(key) === originalKeyIndex && !isCurrent
                       return (
                         <button key={key} onClick={() => {
                           if (hasOriginalKey) {

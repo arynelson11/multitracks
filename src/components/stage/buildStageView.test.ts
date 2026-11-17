@@ -29,7 +29,7 @@ function engine(patch: Partial<EngineStageState> = {}): EngineStageState {
   const active = patch.song ?? song('a', { markers: MARKERS })
   const grid = patch.songGrid === undefined ? GRID : patch.songGrid
   return {
-    song: active, playlist: [active], activeIndex: 0, spans: sectionSpans(active.markers ?? [], active.duration, grid), currentSection: 0,
+    song: active, playlist: [active], activeIndex: 0, duration: active.duration, spans: sectionSpans(active.markers ?? [], active.duration, grid), currentSection: 0,
     isPlaying: false, isCountingIn: false, precountEnabled: true, precountBeats: 4, precountTimes: [],
     playbackMode: 'continue', sectionIntent: null, transitionView: null, landed: null, songGrid: grid, gridWarning: null,
     isReadingGrid: false, outputPlan: PLAN, masterVolume: 0.9, masterMuted: false, ...patch,

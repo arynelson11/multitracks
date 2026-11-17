@@ -28,18 +28,13 @@ export interface FollowerState {
   // Banda pode controlar loop/seções pelo celular? (exclusivo do Studio)
   bandSectionsEnabled: boolean;
   // Pulo armado no host e a contagem aproximada dele (ver HOST_STATE em types.ts).
-  // Sempre null quando o host não manda (versão anterior).
+  // No celular, null quando o host não manda (versão anterior). O líder sempre informa (null sem pulo).
   armed: LiveArmed | null;
   countBeat: number | null;
   countTotal: number | null;
 }
 
 type HostStatePayload = Extract<WsMessage, { type: 'HOST_STATE' }>['payload'];
-
-// Estado que o líder entrega ao hook: os campos do pulo armado são opcionais
-// enquanto o App não os informa; ausente vai como null.
-type LiveJumpField = 'armed' | 'countBeat' | 'countTotal';
-export type LeaderLiveState = Omit<FollowerState, LiveJumpField> & Partial<Pick<FollowerState, LiveJumpField>>;
 
 // Hosts privados (rede local) — usados pra distinguir o follower da LAN do site público.
 const PRIVATE_HOST = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
@@ -71,7 +66,7 @@ export const INITIAL_STATE: FollowerState = {
   countTotal: null,
 };
 
-export function buildPayload(state: LeaderLiveState): HostStatePayload {
+export function buildPayload(state: FollowerState): HostStatePayload {
   return {
     isPlaying: state.isPlaying,
     currentTime: state.currentTime,
@@ -94,9 +89,9 @@ export function buildPayload(state: LeaderLiveState): HostStatePayload {
     sections: state.sections,
     activeLoop: state.activeLoop,
     bandSectionsEnabled: state.bandSectionsEnabled,
-    armed: state.armed ?? null,
-    countBeat: state.countBeat ?? null,
-    countTotal: state.countTotal ?? null,
+    armed: state.armed,
+    countBeat: state.countBeat,
+    countTotal: state.countTotal,
   };
 }
 
@@ -127,7 +122,7 @@ export function readHostState(payload: HostStatePayload, controlEnabled: boolean
 }
 
 // sessionCode: ativo no líder quando "convidar remoto" está ligado (publica na nuvem).
-export function useLiveSync(leaderState: LeaderLiveState, sessionCode?: string | null) {
+export function useLiveSync(leaderState: FollowerState, sessionCode?: string | null) {
   const isLeader = !!window.playbackDesktop?.isElectron;
   const remoteSession = !isLeader ? new URLSearchParams(window.location.search).get('s') : null;
   const isFollowerRemote = !isLeader && !!remoteSession;
@@ -249,8 +244,8 @@ export function useLiveSync(leaderState: LeaderLiveState, sessionCode?: string |
   return {
     isFollowerMode,
     isConnected,
-    // No líder: o mesmo estado que o celular leria (pulo ausente vira null).
-    followerState: isLeader ? readHostState(buildPayload(leaderState), leaderState.controlEnabled) : followerState,
+    // No líder: o próprio estado dele (é o que o celular leria), sem montar payload a cada renderização.
+    followerState: isLeader ? leaderState : followerState,
     sendCommand,
   };
 }

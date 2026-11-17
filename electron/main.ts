@@ -74,6 +74,10 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // Palco novo (T29): com a janela atrás de outra ou minimizada, o Chromium segura timers e
+      // quadros. O pulo de seção e o fim da música são decididos no tique do relógio; desligado,
+      // o app de computador continua no tempo mesmo sem estar na frente.
+      backgroundThrottling: false,
     },
   })
 

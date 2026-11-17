@@ -17,9 +17,10 @@ import type { LiveArmed, Marker, Song } from '../../types'
  * O que o palco precisa do motor. `currentSection` é a seção que se ouve agora (`sectionIndexAt`
  * das `spans` no tempo OUVIDO, a mesma conta do motor pra armar): o App calcula, porque a posição
  * muda a cada quadro e a seção só muda na fronteira (a vista fica igual entre as fronteiras).
+ * `duration` é a duração com que o motor encaixou as `spans` (a mesma vai pra onda e pros nomes).
  */
 export interface EngineStageState {
-  song: Song | undefined; playlist: readonly Song[]; activeIndex: number; spans: readonly SectionSpan[]; currentSection: number
+  song: Song | undefined; playlist: readonly Song[]; activeIndex: number; duration: number; spans: readonly SectionSpan[]; currentSection: number
   isPlaying: boolean; isCountingIn: boolean; precountEnabled: boolean; precountBeats: number; precountTimes: readonly number[]
   playbackMode: 'continue' | 'stop' | 'fade-out'; sectionIntent: ArmIntent | null; transitionView: TransitionView | null
   landed: StageView['landed']; songGrid: SongGrid | null; gridWarning: GridWarning | null; isReadingGrid: boolean; outputPlan: OutputPlan
@@ -68,9 +69,8 @@ function barsOf(span: SectionSpan, grid: SongGrid | null): number | null {
 }
 
 /** Seções do palco: os trechos encaixados do motor, com o nome e a cor da marca que deu origem a cada um. */
-function stageSections(song: Song | undefined, spans: readonly SectionSpan[], grid: SongGrid | null): StageSection[] {
+function stageSections(song: Song | undefined, duration: number, spans: readonly SectionSpan[], grid: SongGrid | null): StageSection[] {
   const markers = song?.markers ?? []
-  const duration = song?.duration ?? 0
   return spans.map((span) => {
     const id = markerIdForSpan(markers, duration, grid, span.index)
     const marker = id === null ? undefined : markers.find((m) => m.id === id)
@@ -100,7 +100,7 @@ function stageSong(e: EngineStageState, repertoireName: string | null): StageSon
     // BPM SALVO, na semínima (Aviso T29 final): a faixa do meio converte a grade sozinha.
     bpm: typeof s.bpm === 'number' && Number.isFinite(s.bpm) && s.bpm > 0 ? s.bpm : null,
     signature: e.songGrid?.signature ?? s.timeSignature ?? null,
-    duration: s.duration, position: e.activeIndex + 1, total: e.playlist.length,
+    duration: e.duration, position: e.activeIndex + 1, total: e.playlist.length,
     prevName: prev ? splitSongName(prev).title : null, nextName: next ? splitSongName(next).title : null, repertoireName,
   }
 }
@@ -123,7 +123,7 @@ export function buildStageView(e: EngineStageState, ui: StageUiState): StageView
   const clickChannel = findClickChannel(e.song?.channels ?? [])
   return {
     song: stageSong(e, ui.repertoireName),
-    sections: stageSections(e.song, e.spans, e.songGrid),
+    sections: stageSections(e.song, e.duration, e.spans, e.songGrid),
     currentSection: e.currentSection,
     intent: e.sectionIntent,
     transition: e.transitionView,

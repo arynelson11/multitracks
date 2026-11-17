@@ -1,7 +1,7 @@
 import { X, Download } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../hooks/useAuth';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import type { Channel } from '../types';
 import { buildChannelLabels } from '../lib/channelNames';
 import { PricingModal } from './PricingModal';
@@ -13,6 +13,10 @@ import { ProfileTab } from './ProfileTab';
 import { CHANGELOG } from '../lib/changelog';
 import { Sparkles } from 'lucide-react';
 import { isAdminEmail } from '../lib/admin';
+import { StageVersionSetting } from './settings/StageVersionSetting';
+import { AudioOutputsSection } from './settings/AudioOutputsSection';
+import { CUE_TO_PA_CONFIRM_TEXT, needsCueToPaConfirm, type OutputWarning } from '../lib/outputPlan';
+import type { OutputSettings } from '../lib/stageContracts';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -23,12 +27,19 @@ interface SettingsModalProps {
     onReplayTour: () => void;
     desktopUpdate?: { latestVersion: string; url: string } | null;
     onInstallUpdate?: () => void;
+    // Aberto pelo aviso SAÍDAS do palco (Ruling T18-saidas): já na aba Geral, na seção de saídas.
+    focusSection?: 'outputs' | null;
+    // Música tocando (ou na pré-contagem): troca que manda o click pro PA pede confirmação (Ruling T29-confirma).
+    isPlaying?: boolean;
+    // Canais do aparelho de saída de agora e o aviso do plano do motor (inclusive o sink-timeout).
+    maxOutputChannels?: number;
+    outputWarning?: OutputWarning | null;
 }
 
 type Tab = 'Perfil' | 'Geral' | 'Buses' | 'Novidades' | 'Assinatura' | 'Sobre';
 
-export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin, onReplayTour, desktopUpdate, onInstallUpdate }: SettingsModalProps) {
-    const { settings, updateSetting } = useSettings();
+export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin, onReplayTour, desktopUpdate, onInstallUpdate, focusSection = null, isPlaying = false, maxOutputChannels = 2, outputWarning = null }: SettingsModalProps) {
+    const { settings, updateSetting, canPickOutput, outputLoadWarnings } = useSettings();
     const { user, updateProfile, updatePassword, signOutEverywhere, deleteAccount } = useAuth();
     const [activeTab, setActiveTab] = useState<Tab>('Perfil');
     const [isPricingOpen, setIsPricingOpen] = useState(false);
@@ -46,6 +57,40 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
 
     const isAdmin = isAdminEmail(user?.email);
 
+    // Aberto pelo aviso SAÍDAS: vai pra aba Geral (ajuste no render, quando abre) e rola até as saídas.
+    const outputsRef = useRef<HTMLDivElement>(null);
+    const openedFor = isOpen ? focusSection : null;
+    const [seenOpenedFor, setSeenOpenedFor] = useState<'outputs' | null>(null);
+    if (openedFor !== seenOpenedFor) {
+        setSeenOpenedFor(openedFor);
+        if (openedFor === 'outputs') setActiveTab('Geral');
+    }
+    useEffect(() => {
+        if (isOpen && focusSection === 'outputs' && activeTab === 'Geral') outputsRef.current?.scrollIntoView({ block: 'start' });
+    }, [isOpen, focusSection, activeTab]);
+
+    // Fora de "Tudo junto" a aba Buses e o pan automático não decidem a saída (o papel do canal
+    // decide): somem (Ruling T25-autopan, R-23). Quem estava na aba Buses volta pra Geral.
+    const stereoMode = settings.outputs.mode === 'stereo';
+    if (!stereoMode && activeTab === 'Buses') setActiveTab('Geral');
+
+    // Avisos das saídas: os da leitura do que estava gravado e o do plano do motor (o sink-timeout
+    // só existe nele); a seção junta sem repetir.
+    const outputAlerts = useMemo<readonly OutputWarning[]>(
+        () => (outputWarning && !outputLoadWarnings.includes(outputWarning) ? [...outputLoadWarnings, outputWarning] : outputLoadWarnings),
+        [outputWarning, outputLoadWarnings],
+    );
+    // Com a música tocando, trocar pra uma saída que manda Click ou Guia pro PA pede confirmação.
+    const confirmCueToPa = (next: { outputs: OutputSettings; autoPan: boolean }) =>
+        !needsCueToPaConfirm({ outputs: settings.outputs, autoPan: settings.autoPan }, next, maxOutputChannels, isPlaying)
+        || window.confirm(CUE_TO_PA_CONFIRM_TEXT);
+    const changeOutputs = (outputs: OutputSettings) => {
+        if (confirmCueToPa({ outputs, autoPan: settings.autoPan })) updateSetting('outputs', outputs);
+    };
+    const changeAutoPan = (autoPan: boolean) => {
+        if (confirmCueToPa({ outputs: settings.outputs, autoPan })) updateSetting('autoPan', autoPan);
+    };
+
     // Nome organizado de cada canal, só pra exibição (o original segue em ch.name).
     // Fechado, não calcula: os canais mudam a cada mexida no mixer.
     const labelById = useMemo(() => {
@@ -56,7 +101,7 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
 
     if (!isOpen) return null;
 
-    const tabs: Tab[] = ['Perfil', 'Geral', 'Buses', 'Novidades', 'Assinatura', 'Sobre'];
+    const tabs: Tab[] = stereoMode ? ['Perfil', 'Geral', 'Buses', 'Novidades', 'Assinatura', 'Sobre'] : ['Perfil', 'Geral', 'Novidades', 'Assinatura', 'Sobre'];
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
@@ -101,6 +146,11 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
 
                     {activeTab === 'Geral' && (
                         <div className="flex flex-col gap-6">
+                            {/* Chave do palco (R-25), a primeira opção: vale na próxima vez que a música parar. */}
+                            <StageVersionSetting value={settings.stageVersion} onChange={(v) => updateSetting('stageVersion', v)} />
+
+                            <hr className="border-border" />
+
                             {/* Rever tutorial */}
                             <div className="flex items-center justify-between">
                                 <div>
@@ -117,22 +167,35 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
 
                             <hr className="border-border" />
 
-                            {/* Auto Pan */}
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h3 className="text-white text-sm font-bold">Pan Estéreo Automático</h3>
-                                    <p className="text-text-muted text-[10px] font-mono">Click e Guia no canal L, faixas no canal R</p>
-                                </div>
-                                <label className="relative inline-flex items-center cursor-pointer ml-4 shrink-0">
-                                    <input type="checkbox" className="sr-only peer" checked={settings.autoPan} onChange={(e) => updateSetting('autoPan', e.target.checked)} />
-                                    <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                                </label>
+                            {/* Audio Device (lista e pedido de microfone só aqui, com a aba Geral aberta) e,
+                                junto dele, as saídas por papel: Tudo junto, Click e Guia separados ou 4 ou mais. */}
+                            <div ref={outputsRef} data-settings-outputs="" className="flex flex-col gap-6 scroll-mt-2">
+                                <AudioOutputSelect />
+                                <AudioOutputsSection
+                                    outputs={settings.outputs}
+                                    maxChannels={maxOutputChannels}
+                                    supportsDevicePick={canPickOutput}
+                                    onChange={changeOutputs}
+                                    loadWarnings={outputAlerts}
+                                />
                             </div>
 
-                            <hr className="border-border" />
-
-                            {/* Audio Device (lista e pedido de microfone só aqui, com a aba Geral aberta) */}
-                            <AudioOutputSelect />
+                            {/* Auto Pan: só em "Tudo junto" (R-23; fora dele o papel decide a saída), desligado por padrão. */}
+                            {stereoMode && (
+                                <>
+                                    <hr className="border-border" />
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h3 className="text-white text-sm font-bold">Pan Estéreo Automático</h3>
+                                            <p className="text-text-muted text-[10px] font-mono">Click e Guia no canal L, faixas no canal R</p>
+                                        </div>
+                                        <label className="relative inline-flex items-center cursor-pointer ml-4 shrink-0">
+                                            <input type="checkbox" className="sr-only peer" checked={settings.autoPan} onChange={(e) => changeAutoPan(e.target.checked)} />
+                                            <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                                        </label>
+                                    </div>
+                                </>
+                            )}
 
                             <hr className="border-border" />
 
@@ -167,7 +230,7 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                         </div>
                     )}
 
-                    {activeTab === 'Buses' && (
+                    {activeTab === 'Buses' && stereoMode && (
                         <div className="flex flex-col gap-1">
                             {channels.length === 0 ? (
                                 <div className="flex items-center justify-center h-40 text-text-muted/50">
