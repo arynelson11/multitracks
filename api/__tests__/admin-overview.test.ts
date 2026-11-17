@@ -9,9 +9,10 @@ import { fxAgeDays, handlers, monthLabel, mrrBrl } from '../_lib/admin/overview.
 // tabela de preços, a margem, a idade do câmbio guardado (api/_lib/fx.ts, T11)
 // e os alertas. Câmbio com mais de 4 dias de Brasília, ou sem câmbio, liga o
 // alerta (Review Focus 4: número que parece certo e está errado sem aviso).
-// Sem custo (Ruling ADM-sem-custo-visao): o alerta conta só os trabalhos que a
-// varredura de Custos de IA ainda completa (admin_ai_costs do mês, T10); o
-// aiCost.withoutCost (a nota da margem) segue com o total.
+// Sem custo (Rulings ADM-sem-custo-visao e ADM-sem-custo-sql): o alerta conta só
+// os trabalhos que a varredura de Custos de IA ainda completa
+// (aiCost.withoutCostPending, do próprio admin_overview); o aiCost.withoutCost
+// (a nota da margem) segue com o total.
 
 const ADMIN_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const TRAVESSAO = String.fromCharCode(0x2014)
@@ -22,7 +23,6 @@ let db: FakeDb
 let responses: FakeRes[]
 let sql: Row
 let queue: Row
-let aiCosts: Row
 let fetchSpy: ReturnType<typeof vi.fn>
 
 vi.mock('../_lib/auth.js', () => ({
@@ -53,20 +53,15 @@ function overviewSql(over: Row = {}): Row {
       legacyPaid: 2,
     },
     cancellations: { total: 2, bySource: { user: 1, unpaid: 1 } },
-    aiCost: { jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31, withoutCost: 3 },
+    aiCost: aiCostSql(3, 3),
     fx: { date: '2026-11-15', rate: 5.37 },
     ...over,
   }
 }
 
-// admin_ai_costs do mês (T10): a Visão geral só lê o período e a divisão do sem custo.
-function aiCostsSql(pending: number, unpriced: number, range: Row = { from: '2026-11-01', to: '2026-11-30' }): Row {
-  return {
-    range,
-    totals: { jobs: 40, withoutCost: pending + unpriced, withoutCostPending: pending, withoutCostUnpriced: unpriced },
-    byUser: [], byModel: [], fx: { minDate: null, maxDate: null }, rows: [], total: 40,
-  }
-}
+// aiCost do admin_overview com o total sem custo e os pendentes.
+const aiCostSql = (withoutCost: number, withoutCostPending: number): Row =>
+  ({ jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31, withoutCost, withoutCostPending })
 
 function queueSql(counts: Row = { manual: 3, auto: 2, total: 5 }): Row {
   return { actions: [], flags: [], events: [], counts, generatedAt: NOW }
@@ -92,10 +87,9 @@ beforeEach(() => {
   responses = []
   sql = overviewSql()
   queue = queueSql()
-  aiCosts = aiCostsSql(3, 0)
   db = createFakeDb({
     tables: { fx_rates: [fxRow('2026-11-15', 5.37)] },
-    rpc: { admin_overview: () => sql, admin_review_queue: () => queue, admin_ai_costs: () => aiCosts },
+    rpc: { admin_overview: () => sql, admin_review_queue: () => queue },
   })
 })
 
@@ -166,26 +160,25 @@ describe('ação overview', () => {
       mrrBrl: 189.7,
       subscribers: overviewSql().subscribers,
       cancellations: { total: 2, bySource: { user: 1, unpaid: 1 } },
-      aiCost: { jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31, withoutCost: 3 },
+      aiCost: { jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31, withoutCost: 3, withoutCostPending: 3 },
       marginBrl: 439.9,
       fx: { date: '2026-11-15', rate: 5.37, ageDays: 1 },
       alerts: { manual: 3, auto: 2, blockedWithActiveSub: 1, withoutCostPending: 3, fxOld: false },
     })
   })
 
-  it('chama admin_overview com a hora do servidor, a fila sem argumentos e a divisão do sem custo do mês', async () => {
+  it('chama admin_overview com a hora do servidor e a fila sem argumentos, e nada mais', async () => {
     await get()
     expect(db.rpcCalls).toEqual(expect.arrayContaining([
       { name: 'admin_overview', args: { p_now: NOW } },
       { name: 'admin_review_queue', args: {} },
-      { name: 'admin_ai_costs', args: { p_from: '2026-11-01', p_to: '2026-11-30', p_limit: 1, p_offset: 0 } },
     ]))
-    expect(db.rpcCalls).toHaveLength(3)
+    // os pendentes vêm do próprio admin_overview (Ruling ADM-sem-custo-sql)
+    expect(db.rpcCalls).toHaveLength(2)
   })
 
   it('só trabalhos sem preço conhecido: nenhum alerta de sem custo, e o aiCost segue com o total', async () => {
-    sql = overviewSql({ aiCost: { jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31, withoutCost: 5 } })
-    aiCosts = aiCostsSql(0, 5)
+    sql = overviewSql({ aiCost: aiCostSql(5, 0) })
     const res = await get()
     expect(res.statusCode).toBe(200)
     const body = res.body as { aiCost: Row; alerts: Row }
@@ -194,18 +187,27 @@ describe('ação overview', () => {
   })
 
   it('com pendentes, o alerta conta só os pendentes e o aiCost segue com o total', async () => {
-    sql = overviewSql({ aiCost: { jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31, withoutCost: 7 } })
-    aiCosts = aiCostsSql(2, 5)
+    sql = overviewSql({ aiCost: aiCostSql(7, 2) })
     const res = await get()
     const body = res.body as { aiCost: Row; alerts: Row }
     expect(body.alerts.withoutCostPending).toBe(2)
     expect(body.aiCost.withoutCost).toBe(7)
   })
 
-  it('pendente criado entre as duas consultas nunca passa do total', async () => {
-    aiCosts = aiCostsSql(4, 0)
-    const res = await get()
-    expect((res.body as { alerts: Row }).alerts.withoutCostPending).toBe(3)
+  it('pendentes fora do formato ou acima do total respondem a frase genérica', async () => {
+    const bad = [
+      { jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31, withoutCost: 3 },
+      aiCostSql(3, -1),
+      aiCostSql(3, 1.5),
+      { ...aiCostSql(3, 0), withoutCostPending: '1' },
+      aiCostSql(3, 4),
+    ]
+    for (const aiCost of bad) {
+      sql = overviewSql({ aiCost })
+      const res = await get()
+      expect(res.statusCode, JSON.stringify(aiCost)).toBe(500)
+      expect(res.body).toEqual({ error: MSG_UNEXPECTED })
+    }
   })
 
   it('margem é a receita líquida menos a IA', async () => {
@@ -217,7 +219,7 @@ describe('ação overview', () => {
   it('margem fica negativa quando a IA custa mais que a receita líquida', async () => {
     sql = overviewSql({
       revenue: { grossBrl: 10, netBrl: 9.5, payments: 1, refundedBrl: 0, refunds: 0 },
-      aiCost: { jobs: 50, succeeded: 50, failed: 0, costBrl: 12.4, costUsd: 2.31, withoutCost: 0 },
+      aiCost: { jobs: 50, succeeded: 50, failed: 0, costBrl: 12.4, costUsd: 2.31, withoutCost: 0, withoutCostPending: 0 },
     })
     const res = await get()
     expect((res.body as Row).marginBrl).toBe(-2.9)
@@ -262,7 +264,6 @@ describe('ação overview', () => {
     expect(body.fx).toEqual({ date: '2026-11-12', rate: 5.33, ageDays: 4 })
     expect(body.alerts.fxOld).toBe(false)
     expect(db.rpcCalls).toContainEqual({ name: 'admin_overview', args: { p_now: '2026-11-17T02:30:00.000Z' } })
-    expect(db.rpcCalls).toContainEqual({ name: 'admin_ai_costs', args: { p_from: '2026-11-01', p_to: '2026-11-30', p_limit: 1, p_offset: 0 } })
   })
 
   it('sem câmbio liga', async () => {
@@ -307,9 +308,8 @@ describe('ação overview', () => {
     queue = queueSql({ manual: 4, auto: 7, total: 11 })
     sql = overviewSql({
       subscribers: { ...(overviewSql().subscribers as Row), blockedWithActiveSub: 2 },
-      aiCost: { jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31, withoutCost: 6 },
+      aiCost: aiCostSql(6, 6),
     })
-    aiCosts = aiCostsSql(6, 0)
     const res = await get()
     expect((res.body as { alerts: Row }).alerts).toEqual({ manual: 4, auto: 7, blockedWithActiveSub: 2, withoutCostPending: 6, fxOld: false })
   })
@@ -318,9 +318,8 @@ describe('ação overview', () => {
     queue = queueSql({ manual: 0, auto: 0, total: 0 })
     sql = overviewSql({
       subscribers: { ...(overviewSql().subscribers as Row), blockedWithActiveSub: 0 },
-      aiCost: { jobs: 0, succeeded: 0, failed: 0, costBrl: 0, costUsd: 0, withoutCost: 0 },
+      aiCost: { jobs: 0, succeeded: 0, failed: 0, costBrl: 0, costUsd: 0, withoutCost: 0, withoutCostPending: 0 },
     })
-    aiCosts = aiCostsSql(0, 0)
     const res = await get()
     expect((res.body as { alerts: Row }).alerts).toEqual({ manual: 0, auto: 0, blockedWithActiveSub: 0, withoutCostPending: 0, fxOld: false })
   })
@@ -333,7 +332,7 @@ describe('ação overview', () => {
   })
 
   it('erro do banco responde a frase genérica, sem o texto do banco', async () => {
-    for (const name of ['admin_overview', 'admin_review_queue', 'admin_ai_costs']) {
+    for (const name of ['admin_overview', 'admin_review_queue']) {
       const previous = db.setRpc(name, () => { throw new Error('relation "billing_payments" does not exist') })
       const res = await get()
       expect(res.statusCode, name).toBe(500)
@@ -364,24 +363,6 @@ describe('ação overview', () => {
     ]
     for (const value of bad) {
       sql = value as Row
-      const res = await get()
-      expect(res.statusCode, JSON.stringify(value)).toBe(500)
-      expect(res.body).toEqual({ error: MSG_UNEXPECTED })
-    }
-  })
-
-  it('divisão do sem custo fora do formato, ou de outro mês, responde a frase genérica', async () => {
-    const bad: unknown[] = [
-      null,
-      { ...aiCostsSql(1, 0), totals: null },
-      { ...aiCostsSql(1, 0), totals: { withoutCost: 1 } },
-      { ...aiCostsSql(1, 0), totals: { withoutCost: 1, withoutCostPending: -1 } },
-      { ...aiCostsSql(1, 0), totals: { withoutCost: 1, withoutCostPending: '1' } },
-      aiCostsSql(1, 0, { from: '2026-10-01', to: '2026-10-31' }),
-      { ...aiCostsSql(1, 0), range: null },
-    ]
-    for (const value of bad) {
-      aiCosts = value as Row
       const res = await get()
       expect(res.statusCode, JSON.stringify(value)).toBe(500)
       expect(res.body).toEqual({ error: MSG_UNEXPECTED })

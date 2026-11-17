@@ -2,7 +2,6 @@ import { brtToday } from '../billing.js'
 import { getStoredUsdBrl } from '../fx.js'
 import { isPlanKey, PLAN_PRICING, type PlanKey } from '../pricing.js'
 import type { AdminCtx, AdminHandlers } from './http.js'
-import { currentMonth } from './period.js'
 
 // Visão geral (Task 15): os números do mês vêm de admin_overview (T22) e a
 // contagem das Pendências de admin_review_queue (T5). O servidor acrescenta:
@@ -15,11 +14,12 @@ import { currentMonth } from './period.js'
 //   guardado, vale o que o admin_overview trouxe. ageDays em dias de Brasília.
 // * alerts: manual e auto da fila; bloqueados com assinatura ativa;
 //   withoutCostPending, os trabalhos sem custo do mês que a varredura de Custos
-//   de IA ainda completa (admin_ai_costs, T10; Ruling ADM-sem-custo-visao): o
-//   já tentado sem preço conhecido não acende alerta, porque não há o que
-//   fazer. O aiCost.withoutCost (a nota da margem) segue com o total. fxOld com
-//   câmbio de mais de 4 dias ou sem câmbio, porque o custo em R$ dos trabalhos
-//   novos é feito com ele.
+//   de IA ainda completa (aiCost.withoutCostPending do próprio admin_overview,
+//   pela mesma função do admin_ai_costs; Rulings ADM-sem-custo-visao e
+//   ADM-sem-custo-sql): o já tentado sem preço conhecido não acende alerta,
+//   porque não há o que fazer. O aiCost.withoutCost (a nota da margem) segue
+//   com o total. fxOld com câmbio de mais de 4 dias ou sem câmbio, porque o
+//   custo em R$ dos trabalhos novos é feito com ele.
 // Resposta do banco fora do formato vira erro inesperado (o detalhe vai pro
 // log): nunca um número inventado no lugar do que faltou.
 
@@ -117,18 +117,6 @@ function fxOf(v: unknown): Fx | null {
   return { date: date as string, rate }
 }
 
-// Sem custo do mês que a varredura ainda completa, do admin_ai_costs do mesmo
-// mês do admin_overview (outro mês é erro). As duas consultas não leem o mesmo
-// instante: um trabalho criado entre elas nunca deixa o alerta passar do total.
-function pendingOf(v: unknown, start: string, end: string, withoutCost: number): number {
-  const where = 'admin_ai_costs'
-  if (!isObj(v)) throw outOfFormat(where)
-  const range = section(v, 'range', where)
-  if (range.from !== start || range.to !== end) throw outOfFormat(`${where}.range`)
-  const totals = section(v, 'totals', where)
-  return Math.min(count(totals, 'withoutCostPending', `${where}.totals`), withoutCost)
-}
-
 async function rpc(ctx: AdminCtx, name: string, args: Record<string, unknown>): Promise<unknown> {
   const { data, error } = await ctx.db.rpc(name, args)
   if (error) throw new Error(`Falha no banco (${name}): ${error.message}`)
@@ -136,14 +124,10 @@ async function rpc(ctx: AdminCtx, name: string, args: Record<string, unknown>): 
 }
 
 async function overview(ctx: AdminCtx): Promise<unknown> {
-  // Mês de Brasília de ctx.now, o mesmo que o admin_overview calcula com p_now.
-  const thisMonth = currentMonth(ctx.now)
-  const [raw, queue, stored, aiCosts] = await Promise.all([
+  const [raw, queue, stored] = await Promise.all([
     rpc(ctx, 'admin_overview', { p_now: ctx.now.toISOString() }),
     rpc(ctx, 'admin_review_queue', {}),
     getStoredUsdBrl(ctx.db, ctx.now),
-    // só a divisão do sem custo (uma linha é o mínimo da página)
-    rpc(ctx, 'admin_ai_costs', { p_from: thisMonth.from, p_to: thisMonth.to, p_limit: 1, p_offset: 0 }),
   ])
 
   const where = 'admin_overview'
@@ -160,7 +144,9 @@ async function overview(ctx: AdminCtx): Promise<unknown> {
   const netBrl = amount(revenue, 'netBrl', `${where}.revenue`)
   const costBrl = amount(aiCost, 'costBrl', `${where}.aiCost`)
   const withoutCost = count(aiCost, 'withoutCost', `${where}.aiCost`)
-  const withoutCostPending = pendingOf(aiCosts, start, end, withoutCost)
+  // Os pendentes são parte do total (mesma consulta); mais que o total é fora do formato.
+  const withoutCostPending = count(aiCost, 'withoutCostPending', `${where}.aiCost`)
+  if (withoutCostPending > withoutCost) throw outOfFormat(`${where}.aiCost.withoutCostPending`)
 
   if (!isObj(queue)) throw outOfFormat('admin_review_queue')
   const queueCounts = section(queue, 'counts', 'admin_review_queue')
