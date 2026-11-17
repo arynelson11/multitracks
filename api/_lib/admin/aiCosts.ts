@@ -139,17 +139,17 @@ function predictionGetter(client: ReplicateClient, timeoutMs: number, remainingM
   }
 }
 
-const noTimeLeft: typeof fetch = async () => {
-  throw new Error('sem tempo pra consultar o Banco Central nesta varredura')
-}
-
-// PTAX do dia de Brasília do trabalho (Ruling ADM-T12-fx-dia). Sem tempo,
-// usa só o que já está guardado. Câmbio nulo vai pro log (o getUsdBrlOn não
-// avisa quando o Banco Central responde fora do formato item por item).
+// PTAX do dia de Brasília do trabalho (Ruling ADM-T12-fx-dia). Sem tempo no
+// prazo, só o que já está guardado (storedOnly): sem consultar o Banco Central
+// e sem log, porque não houve falha; o trabalho fica sem real e a próxima
+// varredura completa. Câmbio nulo depois de consultar vai pro log (o
+// getUsdBrlOn não avisa quando o Banco Central responde fora do formato item
+// por item).
 function fxOnDay(ctx: AdminCtx, timeoutMs: number, remainingMs: () => number) {
   return async (jobDay: string): Promise<FxRate | null> => {
     const ms = Math.min(timeoutMs, remainingMs())
-    const fx = await getUsdBrlOn(ctx.db, jobDay, ms > 0 ? { now: ctx.now, timeoutMs: ms } : { now: ctx.now, fetchFn: noTimeLeft })
+    if (ms <= 0) return getUsdBrlOn(ctx.db, jobDay, { now: ctx.now, storedOnly: true })
+    const fx = await getUsdBrlOn(ctx.db, jobDay, { now: ctx.now, timeoutMs: ms })
     if (!fx) {
       console.warn(`[admin] custos de IA: sem PTAX de venda pro dia ${jobDay} (Banco Central fora, resposta fora do formato ou cotação do dia ainda não saiu); o trabalho fica sem real até a próxima varredura`)
     }

@@ -387,6 +387,36 @@ describe('ai-costs: teto de tempo do GET (o adminApi corta em 15 s)', () => {
     expect(recorded.recorded).toBeLessThan(20)
     expect(recorded.more).toBe(true)
   })
+
+  it('sem tempo no prazo, o câmbio usa só o guardado: nenhum fetch e nenhum log de falha', async () => {
+    // Linha do tempo (relógio falso): o câmbio de hoje leva 1,9 s; r0 leva 2,95 s no
+    // Replicate e o câmbio do dia dele 0,2 s; r1 começa às 5,05 s, dentro do orçamento,
+    // e o Replicate responde bem no fim do prazo de 8 s. Aí não sobra tempo pro câmbio
+    // do dia de r1, que não está guardado.
+    seedDb([
+      job('r0', { created_at: '2026-11-05T12:00:00Z' }),
+      job('r1', { created_at: '2026-11-06T12:00:00Z' }),
+    ])
+    bcbAnswer = async (from, to) => {
+      await sleep(to === '2026-11-17' ? 1900 : 200)
+      return ptaxResponse(from, to)
+    }
+    replicateGet = (id, o) => {
+      if (id === 'r0') return sleep(2950).then(() => done(id, { completed_at: '2026-11-05T12:01:00Z' }))
+      return new Promise((resolve) => o?.signal?.addEventListener('abort', () => resolve(done(id, { completed_at: '2026-11-06T12:01:00Z' }))))
+    }
+    const { res, ms } = await timed(get)
+    expect(res.statusCode).toBe(200)
+    expect(ms).toBeLessThanOrEqual(9000)
+    expect(res.body).toMatchObject({ sweep: { recorded: 2, unknown: 0, failed: 0, brlCompleted: 0, more: false } })
+    expect(rowOf('r0')).toMatchObject({ fx_date: '2026-11-05', fx_usd_brl: 5.42 })
+    // r1 fica só com o dólar; a próxima varredura completa o real
+    expect(rowOf('r1')).toMatchObject({ cost_usd: 0.009, cost_brl: null })
+    expect(calls.filter((c) => c.startsWith('bcb:'))).toEqual(['bcb:2026-11-17', 'bcb:2026-11-05'])
+    expect(fakeFetch).toHaveBeenCalledTimes(2)
+    expect(warn).not.toHaveBeenCalled()
+    expect(error).not.toHaveBeenCalled()
+  })
 })
 
 describe('ai-costs: respostas do Replicate', () => {
