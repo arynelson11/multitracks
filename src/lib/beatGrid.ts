@@ -98,8 +98,8 @@ export interface SongGridDetection extends BeatGrid {
    * marcando como incerto todo "1" que não vem de `baixo` ou `bumbo` com
    * `downbeatMargin` de 0,3 ou mais: nos sintéticos sem baixo da revisão (pads, drones
    * e o bumbo do 3 de 0,5 a 1 dB mais alto), todo "1" errado fica marcado; nas
-   * multitracks reais (140 leituras, rodada 3), ficam marcados 14 dos 20 errados e 56
-   * dos 120 certos (os 6 errados sem marca vêm do baixo ou do bumbo sozinho). Limite
+   * multitracks reais (140 leituras), ficam marcados 12 dos 18 errados e 58 dos 122
+   * certos (os 6 errados sem marca vêm do baixo ou do bumbo sozinho). Limite
    * conhecido: com o bumbo do 3 a +1,3 dB (fora do empate), 12 de 14 errados saem
    * `bumbo` com folga 0,55, acima do corte de 0,3; a M7 mede o corte da dúvida com
    * esse caso. Ausente só na grade de reserva sem faixa de pulso que dê pra medir (aí
