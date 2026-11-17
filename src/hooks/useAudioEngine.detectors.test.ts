@@ -41,15 +41,28 @@ describe('motor usa a regra central de canais', () => {
     }
   })
 
+  // Desde a T26 a regra de entrada do canal (worklet, atraso ou panner) mora no entryFor, que o
+  // play, o canal novo tocando e o pulo usam; o play ainda escolhe quem precisa de worklet.
   it('troca de tom ignora Click e Guia pela regra central', () => {
-    for (const fn of ['applyPitchToChannel', 'play']) {
+    for (const fn of ['applyPitchToChannel', 'entryFor', 'play']) {
       expect(bodyOf(fn), `${fn} sem isPitchExempt`).toMatch(/\bisPitchExempt\s*\(/)
     }
+    // Todas as vozes do play ligam na entrada pelo entryFor.
+    expect(bodyOf('scheduleAll')).toMatch(/\bentryFor\(\s*ch\s*,/)
+  })
+
+  // A contagem entra pelo canal de click escolhido pelo papel (regra central, o papel manual
+  // vale), nunca pelo nome do arquivo.
+  it('a contagem acha o canal de click pelo papel', () => {
+    const body = bodyOf('countDestination')
+    expect(body, 'corpo de countDestination não encontrado').not.toBe('')
+    expect(body).toMatch(/resolveChannelRole\(\s*ch\s*\)\s*===\s*'click'/)
+    expect(body).toMatch(/\bentryFor\(/)
   })
 
   // Junção com os ajustes do tom: o filtro de quem ainda precisa de worklet, o
-  // viaPitch (que decide também o atraso de latência), o ganho do scheduleAll e o
-  // pan do arquivo novo saem da regra central, não do nome.
+  // viaPitch (que decide também o atraso de latência), a preparação do ganho no
+  // scheduleAll e o pan do arquivo novo saem da regra central, não do nome.
   it('worklet que falta, viaPitch, ganho do scheduleAll e pan do panner pela regra central', () => {
     expect(src).toMatch(/const\s+missing\s*=\s*channels\.filter\(\s*ch\s*=>\s*!isPitchExempt\(ch\)/)
     expect(src).toMatch(/const\s+viaPitch\s*=\s*\(ch: Channel\)\s*=>\s*playPitch\s*!==\s*0\s*&&\s*!isPitchExempt\(ch\)/)

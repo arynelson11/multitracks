@@ -14,8 +14,11 @@ import { arrangeChannels, resolveChannelRole, type ChannelIdentity } from '../li
 import { REPERTOIRE_SCHEMA_VERSION, migrateManifestSong, migrateSavedSong, toManifestSong, toSavedSong, type SavedSong } from '../lib/repertoireSchema';
 import { createOutputGraph, type OutputGraph } from '../audio/outputGraph';
 import { createSchedulerClock, type SchedulerClock } from '../audio/schedulerClock';
+import { startVoice, stopVoices, type Voice, type VoiceSpec } from '../audio/voices';
+import { scheduleCount, type ScheduledCount } from '../audio/countTones';
 import { effectivePan, planOutputs, sanitizeOutputs, type PlannedOutputs } from '../lib/outputPlan';
-import type { OutputPlan, OutputSettings } from '../lib/stageContracts';
+import { positionAt } from '../lib/playTimeline';
+import type { OutputPlan, OutputSettings, TimelineSegment } from '../lib/stageContracts';
 
 // Engine de tom: signalsmith-stretch (MIT). O worklet e o WASM são gerados
 // inline em runtime (Blob + base64), então funciona offline no desktop sob
@@ -67,8 +70,59 @@ const setupPannerForBuffer = (panner: StereoPannerNode, buffer: AudioBuffer) => 
  */
 const channelPanFor = (ch: ChannelIdentity & { pan: number }, plan: OutputPlan, autoPan: boolean): number =>
     effectivePan(plan.mode === 'stereo' && autoPan ? autoPanFor(ch, true).pan : ch.pan, resolveChannelRole(ch), plan);
-// O que a pré-contagem antiga usa como canal: um Click sem knob.
+// A contagem sem canal de click (R-35) conta como um Click sem knob: o panner dela recebe o
+// pan efetivo do papel Click (com o pan automático de "Tudo junto", o lado do ouvido).
 const COUNT_CHANNEL = { id: '', name: 'Click', role: 'click' as const, pan: 0 };
+
+// === Vozes do motor (Parte 2, T26; Arquitetura A) ===
+// Soltar uma voz tocando (pausa, busca, troca de música): o envelope dela desce em curva
+// exponencial a partir do valor que tem no instante da soltura e a fonte para depois, já em
+// silêncio. Parar seco no meio da onda estalava na PA e no fone. A soltura começa com a folga
+// do corte à frente do relógio (cutLead: a thread do áudio calcula blocos adiantados; marcada
+// no passado, a curva começaria do meio e daria degrau). É setTarget depois do segurar, nunca
+// rampa depois de setTarget em curso (Ruling ÁUDIO). Voz que só começa depois da soltura (a da
+// pré-contagem) para já, sem som.
+const VOICE_RELEASE_TC = 0.003;
+// Parada depois do começo da soltura: 10 constantes de tempo, o envelope abaixo de 0,0001.
+const VOICE_RELEASE_STOP = 0.03;
+// Lista vazia única, pro React não renderizar de novo à toa.
+const NO_TIMES: number[] = [];
+
+/**
+ * Segura o parâmetro em `t` sem mudar o valor: `cancelAndHoldAtTime` onde existe; no Firefox,
+ * cancelScheduledValues(t) + setValueAtTime(valor de agora, t).
+ */
+function holdParam(param: AudioParam, t: number): void {
+    if (typeof param.cancelAndHoldAtTime === 'function') {
+        param.cancelAndHoldAtTime(t);
+        return;
+    }
+    const current = param.value;
+    param.cancelScheduledValues(t);
+    param.setValueAtTime(current, t);
+}
+
+/** Solta as vozes (ver acima). `startOf` diz quando cada uma começa (tempo do contexto). */
+function releaseVoices(ctx: BaseAudioContext, voices: readonly Voice[], startOf: (v: Voice) => number): void {
+    const now = ctx.currentTime;
+    const t = now + cutLead(ctx);
+    for (const v of voices) {
+        if (startOf(v) > t) {
+            // Ainda não começou (pré-contagem ou play recém-agendado): para antes de soar.
+            stopVoices([v], now);
+            continue;
+        }
+        holdParam(v.env.gain, t);
+        v.env.gain.setTargetAtTime(0, t, VOICE_RELEASE_TC);
+        stopVoices([v], t + VOICE_RELEASE_STOP);
+    }
+}
+
+// O metrônomo infinito (createEndlessMetronomeSong) toca em loop.
+const isEndlessLoop = (ch: { name: string }): boolean => ch.name.toLowerCase().includes('metronomo loop');
+
+// Latência que o navegador informa; valor estranho conta 0.
+const latencyOf = (v: number | undefined): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0);
 
 // AudioContext com a troca de aparelho (Chrome, Edge e o app desktop; o tipo do DOM ainda não tem).
 type SinkAudioContext = AudioContext & {
@@ -219,6 +273,8 @@ function routeOutputs(ctx: BaseAudioContext, graph: OutputGraph, outputs: Output
  * roteador. Serve "Tudo junto" e "Click e Guia separados"; em separados o lado sai do pan
  * efetivo de cada canal (±1 pelo papel, o pan automático da v1.4.15), então o Click continua
  * fora da VS. "4 ou mais" lança RangeError (o routeOutputs cai em 2 canais). Sem medidor.
+ * Como no grafo da T12, o initEngine religa o `countDelay` no panner da contagem do motor e no
+ * corte do Click (Opção A da T26); o `countPan` daqui fica sem entrada.
  */
 function createDirectGraph(ctx: BaseAudioContext, initial: OutputPlan): OutputGraph {
     const buses: Record<ChannelRole, GainNode> = { click: ctx.createGain(), guide: ctx.createGain(), normal: ctx.createGain() };
@@ -394,7 +450,6 @@ export function useAudioEngine(userId?: string) {
     const [shouldAutoPlayNext, setShouldAutoPlayNext] = useState(false);
 
     const animationRef = useRef<number>(0);
-    const startTimeRef = useRef<number>(0);
     const pausedAtRef = useRef<number>(0);
     const autoNextTimeoutRef = useRef<number | null>(null);
     const currentPitchRef = useRef<number>(0);
@@ -410,11 +465,26 @@ export function useAudioEngine(userId?: string) {
     const [precountBeats, setPrecountBeatsState] = useState<number>(() =>
         parseInt(localStorage.getItem('precount_beats') || '4'));
     const [isCountingIn, setIsCountingIn] = useState(false);
+    // Instantes (tempo do contexto) dos bipes da pré-contagem agendada, pra tela (PlayButton).
+    const [precountTimes, setPrecountTimes] = useState<number[]>(NO_TIMES);
+    // Timer só da tela: desliga o isCountingIn quando as vozes começam a ser ouvidas.
     const countInTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const countInOscsRef = useRef<OscillatorNode[]>([]);
+    // Contagem agendada no relógio do áudio (bipes da T7).
+    const countRef = useRef<ScheduledCount | null>(null);
+    // O play pendente (esperando worklet) é com pré-contagem? Um reinício nessa janela conta de novo.
+    const precountPendingRef = useRef(false);
+    // Papel trocado na pré-contagem: a contagem recomeça depois da troca de rota. Pedido (até a
+    // renderização com a lista nova) e o trabalho já na fila de trocas.
+    const recountQueuedRef = useRef(false);
+    const recountJobRef = useRef<object | null>(null);
+    // Opções do play que a troca de música dispara (shouldAutoPlayNext): a pré-contagem que estava valendo.
+    const autoPlayOptsRef = useRef<{ precount?: boolean } | undefined>(undefined);
 
     const activeSong = playlist[activeSongIndex];
     const channels = activeSong?.channels || [];
+    // BPM salvo e id da música ativa, pro play (pré-contagem e cadeia do play de agora).
+    const songBpm = activeSong?.bpm;
+    const activeSongId = activeSong?.id;
 
     // Papel do canal (Click, Guia, Normal), troca de tom, pan automático e ganho
     // com Solo/M saem da regra central em src/lib/channelRoles.ts. Click e Guia
@@ -443,15 +513,36 @@ export function useAudioEngine(userId?: string) {
     const pitchSlotsRef = useRef(new Map<string, PitchSlot>());
     const pitchPendingRef = useRef(new Map<string, { token: object; promise: Promise<PitchSlot | null> }>());
     const pitchPoolRef = useRef<SignalsmithStretchNode[]>([]);
-    // Fontes tocando agora, fora do estado do React: stopAllNodes para todas.
-    // Se o repertório for copiado (ex.: volume mexido) enquanto um play() espera
-    // o worklet nascer, a cópia não teria a referência e a fonte ficaria órfã.
-    const liveSourcesRef = useRef(new Set<AudioBufferSourceNode>());
+    // === Vozes, linha do tempo e contagem no relógio do áudio (Parte 2, T26; Arquitetura A) ===
+    // Internos que a T27 e a T28 usam:
+    //   voicesRef: as vozes tocando agora (src/audio/voices.ts: fonte + envelope ligados na
+    //     entrada do canal), uma por canal (duas só durante um cruzamento da T28), fora do
+    //     estado do React: se o repertório for copiado enquanto toca, a cópia não teria a
+    //     referência e a voz ficaria órfã. stopAllNodes solta todas com rampa curta.
+    //   timelineRef: segmentos { ctxStart, songStart } da música no relógio do áudio
+    //     (src/lib/playTimeline.ts). O play cria o primeiro; o pulo agendado acrescenta o dele.
+    //     Vazio = nada agendado (a posição é pausedAtRef).
+    //   entryFor(ch, pitch, compensation): entrada do canal, onde a voz liga: o worklet de tom
+    //     (tom diferente de 0, canal que transpõe, já ligado e no tom), o atraso de
+    //     compensação (quem não transpõe com a música transposta) ou o panner (tom 0).
+    //   countDestination(): onde a contagem entra. A entrada do canal de click (pelo papel; a
+    //     contagem passa pelo pan, fader e M dele) ou, sem canal de click, o atraso da
+    //     contagem do grafo (graph.countDelay, R-35) com o mesmo atraso da compensação.
+    //   play(opts): agenda tudo de uma vez, num instante comum; { precount: true } põe a
+    //     pré-contagem antes, no mesmo relógio (bipes e vozes agendados juntos).
+    //   playChainRef: canais, tom e compensação com que o play de agora entrou.
+    const voicesRef = useRef<Voice[]>([]);
+    const timelineRef = useRef<TimelineSegment[]>([]);
+    const playChainRef = useRef<{ songId: string | null; channels: Channel[]; pitch: number; compensation: number | null } | null>(null);
+    // Instante (tempo do contexto) em que cada voz começa: a soltura para já a que ainda não começou.
+    const voiceStartsRef = useRef(new WeakMap<Voice, number>());
+    // Panner da contagem sem canal de click (Opção A da T26), criado uma vez no initEngine.
+    const countPannerRef = useRef<StereoPannerNode | null>(null);
     // Cada play() pega um número. Se outro play() (troca de tom, seek...) começar
     // enquanto este espera o worklet nascer, o antigo desiste sem agendar nada.
     const playGenRef = useRef(0);
     // true entre o play() parar as fontes e agendar as novas: nada está tocando,
-    // a posição é pausedAtRef (startTimeRef ainda é a do play anterior).
+    // a posição é pausedAtRef.
     const playPendingRef = useRef(false);
     // Latência do worklet no modo ao vivo, informada pelo pacote (~0,120 s). Em
     // modo ao vivo ele NÃO compensa: a faixa transposta sai esse tanto depois.
@@ -596,14 +687,56 @@ export function useAudioEngine(userId?: string) {
         });
     };
 
-    // Posição atual da música. Com um play() pendente nada está tocando: a
-    // posição é a de onde ele vai retomar. Sem isso, a troca rápida de tom somava
-    // o tempo do play anterior e a música pulava segundos pra frente.
-    const getPlaybackPosition = (ctx: BaseAudioContext): number => {
-        if (playPendingRef.current) return pausedAtRef.current;
-        // Antes do `when` agendado a música ainda não andou (não volta pra trás).
-        return Math.max(0, ctx.currentTime - startTimeRef.current) * timeStretch + pausedAtRef.current;
+    // Entrada do canal, onde a voz liga (Arquitetura A): a regra que antes ficava no laço do
+    // play. Click e Guia (regra central, o papel manual vale) nunca usam worklet.
+    const entryFor = (ch: Channel, pitch: number, compensation: number | null): AudioNode => {
+        const slot = pitch !== 0 && !isPitchExempt(ch) ? pitchSlotsRef.current.get(ch.id) : undefined;
+        if (slot) {
+            startPitchNode(slot);
+            applyPitchToChannel(ch, pitch);
+            return slot.node;
+        }
+        // Click/guia (ou worklet que falhou) com a música transposta: o mesmo atraso.
+        const ctx = audioCtxRef.current;
+        if (compensation && ctx) return getLatencyDelay(ctx, ch, compensation);
+        // Tom 0: direto no panner, sem worklet e sem atraso.
+        return ch.pannerNode;
     };
+
+    // Onde a contagem entra (spec linha 169: respeita o fader, o pan e o M do click). Com canal
+    // de click (pelo papel), a entrada dele; sem canal de click, o atraso da contagem do grafo
+    // com o atraso da compensação (0 no tom 0), pra sair no tempo da música transposta (R-35).
+    // Nunca na PA: as duas saem no barramento do Click. Só depois do initEngine (o grafo existe).
+    const countDestination = (): AudioNode => {
+        const chain = playChainRef.current;
+        const click = chain?.channels.find((ch) => resolveChannelRole(ch) === 'click');
+        if (chain && click) return entryFor(click, chain.pitch, chain.compensation);
+        const graph = graphRef.current;
+        if (!graph) throw new Error('countDestination antes do initEngine: sem grafo das saídas');
+        graph.countDelay.delayTime.value = chain?.compensation ?? 0;
+        return graph.countDelay;
+    };
+
+    // Posição atual da música pela linha do tempo. Com um play() pendente (ou nada agendado)
+    // nada está tocando: a posição é a de onde ele vai retomar. Antes do instante agendado a
+    // música ainda não andou (não volta pra trás).
+    const getPlaybackPosition = (ctx: BaseAudioContext): number => {
+        if (playPendingRef.current || timelineRef.current.length === 0) return pausedAtRef.current;
+        return positionAt(timelineRef.current, ctx.currentTime, timeStretch);
+    };
+
+    // Na pré-contagem: a contagem está agendada e as vozes ainda não começaram (ou o play
+    // pendente é com pré-contagem, ou a contagem espera a troca de papel pra recomeçar).
+    const countingIn = (): boolean => {
+        if (recountQueuedRef.current) return true;
+        if (playPendingRef.current) return precountPendingRef.current;
+        const ctx = audioCtxRef.current;
+        const first = timelineRef.current[0];
+        return !!ctx && !!countRef.current && !!first && ctx.currentTime < first.ctxStart;
+    };
+    // Reinício no meio da pré-contagem (busca, tom, papel, troca de música): a música nunca entra
+    // sem contar; a contagem recomeça do 1 no ponto novo. Chamar antes do stopAllNodes.
+    const restartOpts = (): { precount?: boolean } | undefined => (countingIn() ? { precount: true } : undefined);
 
     // Cancela um play() que ainda espera o worklet nascer (1ª vez transposto,
     // 50 a 300 ms). Quem troca de música sem passar pelo play() chama isto antes
@@ -656,9 +789,21 @@ export function useAudioEngine(userId?: string) {
     };
     // Todos os canais de todas as músicas (o repertório mais novo).
     const allChannels = () => playlistRef.current.flatMap((song) => song.channels);
+    // O panner da contagem sem canal de click segue o pan efetivo do papel Click, junto com os
+    // canais (no fundo do mesmo corte): em "Tudo junto" com o pan automático, o lado do ouvido.
+    const countPanPending = (plan: OutputPlan, autoPan: boolean) => {
+        const panner = countPannerRef.current;
+        return !!panner && pannerPanRef.current.get(panner) !== channelPanFor(COUNT_CHANNEL, plan, autoPan);
+    };
     const panPending = (plan: OutputPlan, autoPan: boolean) =>
-        allChannels().some((ch) => pannerPanRef.current.get(ch.pannerNode) !== channelPanFor(ch, plan, autoPan));
+        countPanPending(plan, autoPan) || allChannels().some((ch) => pannerPanRef.current.get(ch.pannerNode) !== channelPanFor(ch, plan, autoPan));
     const syncAllPans = (ctx: BaseAudioContext, plan: OutputPlan, autoPan: boolean) => {
+        const countPanner = countPannerRef.current;
+        if (countPanner && countPanPending(plan, autoPan)) {
+            const pan = channelPanFor(COUNT_CHANNEL, plan, autoPan);
+            countPanner.pan.setValueAtTime(pan, ctx.currentTime);
+            pannerPanRef.current.set(countPanner, pan);
+        }
         for (const ch of allChannels()) syncChannelPan(ctx, ch, plan, autoPan, false);
     };
 
@@ -675,9 +820,11 @@ export function useAudioEngine(userId?: string) {
     };
 
     // === Corte curto das trocas de rota (Ruling T25-corte e T25-sincrono) ===
-    // Algo soando pelo motor agora (faixas tocando ou pré-contagem)? Sem som não há estalo
-    // nem vazamento possível: a troca vai na hora.
-    const isSounding = () => liveSourcesRef.current.size > 0 || countInOscsRef.current.length > 0;
+    // Algo soando pelo motor agora (vozes agendadas ou tocando; a contagem sempre vem com elas)?
+    // Sem som não há estalo nem vazamento possível: a troca vai na hora. A cauda de uma soltura
+    // (até ~40 ms depois da pausa) não conta: trocar a rota nesse meio tempo dá no máximo um
+    // estalo baixo nela, e "parado" continua trocando na hora.
+    const isSounding = () => voicesRef.current.length > 0;
     const needsCut = () => {
         const ctx = audioCtxRef.current;
         return !!ctx && !!routeCutsRef.current && ctx.state === 'running' && isSounding();
@@ -904,6 +1051,19 @@ export function useAudioEngine(userId?: string) {
             const cuts: RouteCuts = { click: ctx.createGain(), guide: ctx.createGain(), normal: ctx.createGain() };
             for (const role of ['click', 'guide', 'normal'] as const) cuts[role].connect(graph.input(role));
             routeCutsRef.current = cuts;
+            // Contagem sem canal de click (R-35; Opção A da T26, vale também pra rota de reserva):
+            // atraso da contagem -> panner do motor -> corte do Click -> barramento do Click.
+            // Passa pelo corte das trocas como os canais, e o panner recebe o pan efetivo do papel
+            // Click (syncAllPans), com o pan automático de "Tudo junto". O corte fica depois do
+            // atraso: não desloca o L. O panner da contagem de dentro do grafo fica sem entrada.
+            const countPanner = ctx.createStereoPanner();
+            const countPan = channelPanFor(COUNT_CHANNEL, plan, autoPanRef.current);
+            countPanner.pan.value = countPan;
+            pannerPanRef.current.set(countPanner, countPan);
+            graph.countDelay.disconnect();
+            graph.countDelay.connect(countPanner);
+            countPanner.connect(cuts.click);
+            countPannerRef.current = countPanner;
             // Aparelho trocado (pelo setSinkId ou pelo sistema): plano novo com os canais dele.
             ctx.onsinkchange = () => refreshOutputs();
 
@@ -1044,29 +1204,64 @@ export function useAudioEngine(userId?: string) {
         }
     }, [DB_KEY_META, DB_KEY_FILES, LEGACY_PANS_DONE_KEY, refreshOutputs]);
 
+    // Desliga a pré-contagem: cancela os bipes que faltam (o que soa desce sem estalo, T7), o
+    // timer da tela e o estado. Chamado pela soltura de tudo (stopAllNodes).
+    const endCountIn = () => {
+        const ctx = audioCtxRef.current;
+        const count = countRef.current;
+        countRef.current = null;
+        if (count && ctx) count.cancel(ctx.currentTime);
+        if (countInTimeoutRef.current) {
+            clearTimeout(countInTimeoutRef.current);
+            countInTimeoutRef.current = null;
+        }
+        setIsCountingIn(false);
+        setPrecountTimes(NO_TIMES);
+    };
+
+    // Solta tudo o que toca: vozes com rampa curta (a que ainda não começou para já), contagem,
+    // linha do tempo e worklets. Nada fica agendado; o play() seguinte monta tudo de novo.
     const stopAllNodes = useCallback(() => {
-        channels.forEach(ch => {
-            if (ch.sourceNode) {
-                try { ch.sourceNode.stop(); } catch (e) { }
-                ch.sourceNode.disconnect();
-                ch.sourceNode = null;
-            }
-        });
-        liveSourcesRef.current.forEach(src => {
-            try { src.stop(); } catch { /* já parada */ }
-            src.disconnect();
-        });
-        liveSourcesRef.current.clear();
+        const ctx = audioCtxRef.current;
+        endCountIn();
+        const voices = voicesRef.current;
+        voicesRef.current = [];
+        if (ctx && voices.length > 0) {
+            const starts = voiceStartsRef.current;
+            releaseVoices(ctx, voices, (v) => starts.get(v) ?? 0);
+        }
+        timelineRef.current = [];
+        for (const ch of [...channels, ...(playChainRef.current?.channels ?? [])]) ch.sourceNode = null;
+        playChainRef.current = null;
         // Sem fonte, o worklet ativo seguiria rodando o DSP à toa (mais caro que
         // tocando): para todos. O play() religa os que vai usar.
         stopPitchNodes();
     }, [channels]);
 
-    const play = useCallback(async () => {
+    // Pré-contagem na tela: o número do bipe ouvido sai dos instantes (PlayButton) e o
+    // isCountingIn fica ligado até as vozes começarem a ser ouvidas. Timer só da tela: o som já
+    // está todo agendado no relógio do áudio.
+    const showCountIn = (ctx: BaseAudioContext, count: ScheduledCount, voicesAt: number, heardLag: number) => {
+        setPrecountTimes(count.beats.map((b) => b.at));
+        setIsCountingIn(true);
+        if (countInTimeoutRef.current) clearTimeout(countInTimeoutRef.current);
+        countInTimeoutRef.current = setTimeout(() => {
+            countInTimeoutRef.current = null;
+            setIsCountingIn(false);
+            setPrecountTimes(NO_TIMES);
+        }, Math.max(0, (voicesAt - ctx.currentTime + heardLag) * 1000));
+    };
+
+    // Toca do pausedAtRef. Uma voz por canal, todas no mesmo instante e no mesmo offset, na
+    // entrada do canal (entryFor). Com { precount: true }: n bipes no pulso da música em
+    // countDestination(), começando no instante comum, e as vozes no fim deles; tudo agendado
+    // de uma vez no relógio do áudio.
+    const play = useCallback(async (opts?: { precount?: boolean }) => {
         const ctx = audioCtxRef.current;
-        if (!ctx || channels.length === 0) return;
+        if (!ctx || !graphRef.current || channels.length === 0) return;
         const gen = ++playGenRef.current;
         playPendingRef.current = true;
+        precountPendingRef.current = !!opts?.precount;
 
         // iOS / Safari: must await resume before scheduling sources.
         // Otherwise sources are scheduled while ctx.currentTime is frozen,
@@ -1076,7 +1271,8 @@ export function useAudioEngine(userId?: string) {
         }
         if (gen !== playGenRef.current) return;
 
-        // Reset master gain in case a previous fade-out left it near zero.
+        // Reset master gain in case a previous fade-out left it near zero. Vale pra
+        // pré-contagem também (ela sai pelo principal).
         if (masterGainRef.current) {
             masterGainRef.current.gain.cancelScheduledValues(ctx.currentTime);
             masterGainRef.current.gain.setValueAtTime(masterVolume, ctx.currentTime);
@@ -1124,58 +1320,41 @@ export function useAudioEngine(userId?: string) {
         // atrasa o mesmo tanto. Tom 0: sem atraso.
         const viaPitch = (ch: Channel) => playPitch !== 0 && !isPitchExempt(ch) && pitchSlotsRef.current.has(ch.id);
         const compensation = channels.some(viaPitch) ? pitchLatencyRef.current : null;
+        playChainRef.current = { songId: activeSongId ?? null, channels, pitch: playPitch, compensation };
+        const rate = timeStretch;
+        const offset = pausedAtRef.current;
+        // Pré-contagem no BPM salvo da música (a T27 troca pela grade); sem BPM, 100.
+        const pulse = 60 / (songBpm !== undefined && Number.isFinite(songBpm) && songBpm > 0 ? songBpm : 100);
+        const beats = opts?.precount ? precountBeats : 0;
 
-        // Monta as fontes de todas as faixas e só então agenda todas no mesmo
-        // instante, lido depois de montar tudo: o laço de start() só agenda
-        // (microssegundos). Com start(0) ("assim que der") e o laço longo, se ele
-        // cruzava um bloco de áudio (2,67 ms) parte das faixas começava um ou dois
-        // blocos depois (medido: 7 a 10 de 52 reinícios).
+        // Monta as vozes de todas as faixas no mesmo instante, lido depois de preparar as
+        // entradas (worklet, atraso, panner): o laço só cria fonte e envelope e agenda
+        // (microssegundos). Com start(0) ("assim que der") e o laço longo, se ele cruzava um
+        // bloco de áudio (2,67 ms) parte das faixas começava um ou dois blocos depois (medido:
+        // 7 a 10 de 52 reinícios).
         const scheduleAll = (leadQuanta: number) => {
-            const prepared: AudioBufferSourceNode[] = [];
+            const specs: VoiceSpec[] = [];
             for (const ch of channels) {
-                const source = ctx.createBufferSource();
-                source.buffer = ch.buffer;
-
-                const nameL = ch.name.toLowerCase();
-
-                if (nameL.includes('metronomo loop')) {
-                    source.loop = true;
-                }
-                // Cancel any pending gain automation and apply correct volume immediately
+                // Ganho pela regra central (Solo e M), já no instante do play: cancela a
+                // automação pendente e aplica o volume certo.
                 if (ch.gainNode) {
                     ch.gainNode.gain.cancelScheduledValues(ctx.currentTime);
                     ch.gainNode.gain.setValueAtTime(channelGain(ch, channels), ctx.currentTime);
                 }
-
-                // BYPASS NO TOM 0: a engine de tom (worklet+WASM) é um phase-vocoder
-                // caro que roda DSP por quadro mesmo parada. No tom 0 (caso comum) a
-                // fonte vai DIRETO pro panner, sem worklet, então N faixas não
-                // saturam a thread de áudio (era isso que zerava o som em músicas de
-                // muitos canais). O worklet só nasce, sob demanda, quando a música
-                // está transposta e a faixa não é click/guia.
-                source.playbackRate.value = 1.0;
-                const slot = viaPitch(ch) ? pitchSlotsRef.current.get(ch.id) : undefined;
-                if (slot) {
-                    startPitchNode(slot);
-                    applyPitchToChannel(ch, playPitch);
-                    source.connect(slot.node);
-                } else if (compensation) {
-                    // Click/guia (ou worklet que falhou) com a música transposta: mesmo atraso.
-                    source.connect(getLatencyDelay(ctx, ch, compensation));
-                } else {
-                    // Tom 0: direto, sem worklet e sem atraso.
-                    source.connect(ch.pannerNode);
-                }
-
-                ch.sourceNode = source;
-                liveSourcesRef.current.add(source);
-                source.onended = () => { liveSourcesRef.current.delete(source); };
-                prepared.push(source);
+                // BYPASS NO TOM 0: a engine de tom (worklet+WASM) é um phase-vocoder caro que
+                // roda DSP por quadro mesmo parada. No tom 0 (caso comum) a voz vai DIRETO pro
+                // panner, sem worklet, então N faixas não saturam a thread de áudio. O worklet
+                // só nasce, sob demanda, quando a música está transposta e a faixa não é
+                // click/guia (entryFor).
+                specs.push({ channelId: ch.id, buffer: ch.buffer, entry: entryFor(ch, playPitch, compensation), loop: isEndlessLoop(ch) });
             }
-            const when = nextRenderQuantum(ctx, leadQuanta);
-            const offset = pausedAtRef.current;
-            for (const source of prepared) source.start(when, offset);
-            return { when, prepared };
+            const t0 = nextRenderQuantum(ctx, leadQuanta);
+            const when = t0 + beats * pulse;
+            const voices = specs.map((spec) => startVoice(ctx, spec, when, offset, rate));
+            const count = beats > 0
+                ? scheduleCount(ctx, countDestination(), Array.from({ length: beats }, (_, k) => ({ at: t0 + k * pulse, label: k + 1 })))
+                : null;
+            return { t0, when, voices, count };
         };
 
         let scheduled = scheduleAll(START_LEAD_QUANTA);
@@ -1184,33 +1363,46 @@ export function useAudioEngine(userId?: string) {
         // e essas começariam um bloco depois até o próximo reinício. Descarta e
         // agenda de novo com a folga de reserva. Raro: precisa de 2 blocos de
         // áudio calculados durante um laço de microssegundos.
-        if (ctx.currentTime >= scheduled.when) {
-            for (const source of scheduled.prepared) {
-                source.onended = null;
-                try { source.stop(); } catch { /* já parada */ }
-                source.disconnect();
-                liveSourcesRef.current.delete(source);
+        if (ctx.currentTime >= scheduled.t0) {
+            for (const v of scheduled.voices) {
+                try { v.source.stop(); } catch { /* já parada */ }
+                v.source.disconnect();
+                v.env.disconnect();
             }
+            scheduled.count?.cancel(ctx.currentTime);
             scheduled = scheduleAll(Math.ceil(RETRY_LEAD_S * ctx.sampleRate / 128));
             // Rastro pro teste em aparelho fraco: quantos reinícios ganharam os 40 ms.
             console.warn(`[tom] reinício reagendado com a folga de reserva (${++leadRetriesRef.current})`);
         }
 
-        startTimeRef.current = scheduled.when;
+        const { when, voices, count } = scheduled;
+        voicesRef.current = voices;
+        voices.forEach((v, i) => {
+            voiceStartsRef.current.set(v, when);
+            channels[i].sourceNode = v.source;
+        });
+        timelineRef.current = [{ ctxStart: when, songStart: offset }];
+        countRef.current = count;
         playPendingRef.current = false;
+        precountPendingRef.current = false;
         setIsPlaying(true);
-    }, [channels, stopAllNodes, masterVolume]);
+        if (count) showCountIn(ctx, count, when, latencyOf((ctx as AudioContext).outputLatency) + (compensation ?? 0));
+    }, [channels, stopAllNodes, masterVolume, timeStretch, precountBeats, songBpm, activeSongId]);
 
+    // Pausa (e cancela a pré-contagem). A posição sai da linha do tempo antes de soltar as vozes.
     const pause = useCallback(() => {
         const ctx = audioCtxRef.current;
         if (!ctx || !isPlaying) return;
 
         // Cancela um play() que ainda espera o worklet nascer.
-        const wasPending = playPendingRef.current;
+        const position = getPlaybackPosition(ctx);
         playGenRef.current++;
         playPendingRef.current = false;
+        precountPendingRef.current = false;
+        recountQueuedRef.current = false;
+        recountJobRef.current = null;
+        pausedAtRef.current = position;
         stopAllNodes();
-        if (!wasPending) pausedAtRef.current += Math.max(0, ctx.currentTime - startTimeRef.current);
         setIsPlaying(false);
 
         if (autoNextTimeoutRef.current) {
@@ -1222,11 +1414,14 @@ export function useAudioEngine(userId?: string) {
             clearTimeout(nextSongTimerRef.current);
             nextSongTimerRef.current = null;
         }
-    }, [isPlaying, stopAllNodes]);
+    }, [isPlaying, stopAllNodes, timeStretch]);
 
     const skipBack = useCallback(() => {
         const ctx = audioCtxRef.current;
         if (!ctx) return;
+
+        // Na pré-contagem, o reinício conta de novo (a música nunca entra sem contar).
+        const opts = restartOpts();
 
         // V3: 2-second rule for restart
         if (currentTime > 2) {
@@ -1234,7 +1429,7 @@ export function useAudioEngine(userId?: string) {
             stopAllNodes();
             pausedAtRef.current = 0;
             setCurrentTime(0);
-            if (wasPlaying) play();
+            if (wasPlaying) play(opts);
             return;
         }
 
@@ -1249,13 +1444,16 @@ export function useAudioEngine(userId?: string) {
             setCurrentTime(0);
             setActiveSongIndex(prev => prev - 1);
             setDuration(playlist[activeSongIndex - 1].duration);
-            if (isPlaying) setShouldAutoPlayNext(true);
+            if (isPlaying) {
+                autoPlayOptsRef.current = opts;
+                setShouldAutoPlayNext(true);
+            }
         } else {
             const wasPlaying = isPlaying;
             stopAllNodes();
             pausedAtRef.current = 0;
             setCurrentTime(0);
-            if (wasPlaying) play();
+            if (wasPlaying) play(opts);
         }
     }, [currentTime, isPlaying, play, activeSongIndex, playlist, stopAllNodes]);
 
@@ -1266,6 +1464,8 @@ export function useAudioEngine(userId?: string) {
         const targetTime = Math.max(0, Math.min(time, duration));
 
         const wasPlaying = isPlaying;
+        // Busca na pré-contagem: conta de novo no ponto novo.
+        const opts = restartOpts();
 
         stopAllNodes();
         pausedAtRef.current = targetTime;
@@ -1278,12 +1478,14 @@ export function useAudioEngine(userId?: string) {
         }
 
         if (wasPlaying) {
-            play();
+            play(opts);
         }
     }, [duration, isPlaying, play, stopAllNodes]);
 
     const executeNextSong = useCallback(() => {
         if (activeSongIndex >= playlist.length - 1) return;
+        // Trocou de música na pré-contagem: a próxima também conta.
+        autoPlayOptsRef.current = restartOpts();
         cancelPendingPlay();
 
         stopAllNodes();
@@ -1329,6 +1531,7 @@ export function useAudioEngine(userId?: string) {
             skipBack();
             return;
         }
+        const opts = restartOpts();
         cancelPendingPlay();
 
         if (autoNextTimeoutRef.current) {
@@ -1343,6 +1546,7 @@ export function useAudioEngine(userId?: string) {
         setDuration(playlist[activeSongIndex - 1].duration);
 
         if (isPlaying) {
+            autoPlayOptsRef.current = opts;
             setShouldAutoPlayNext(true);
         }
     }, [activeSongIndex, playlist, isPlaying, skipBack, stopAllNodes]);
@@ -1350,7 +1554,9 @@ export function useAudioEngine(userId?: string) {
     useEffect(() => {
         if (shouldAutoPlayNext && channels.length > 0) {
             setShouldAutoPlayNext(false);
-            play();
+            const opts = autoPlayOptsRef.current;
+            autoPlayOptsRef.current = undefined;
+            play(opts);
         }
     }, [shouldAutoPlayNext, channels, play]);
 
@@ -1762,6 +1968,44 @@ export function useAudioEngine(userId?: string) {
         }
     };
 
+    // Canal novo na música que está tocando (causa 9 do relatório; o click gerado da T27 entra
+    // do mesmo jeito): ganha uma voz já, na posição daquele instante, sem reiniciar os outros;
+    // na pré-contagem entra junto com as outras vozes. Precisando de worklet (tom diferente de 0
+    // e canal que transpõe), espera ele nascer e entra na posição de quando nasceu. Reinicia no
+    // ponto, com a lista nova, em dois casos: play pendente (ele tem a lista antiga) e primeiro
+    // canal transposto de uma música que tocava sem compensação (só Click e Guia), pra todos
+    // saírem com o mesmo atraso. Parado: nada a fazer (o próximo play já inclui o canal).
+    const addLiveVoice = async (ch: Channel, list: Channel[], songId: string): Promise<void> => {
+        const ctx = audioCtxRef.current;
+        if (!ctx) return;
+        if (playPendingRef.current) {
+            restartAfterMetaRef.current = true;
+            return;
+        }
+        const chain = playChainRef.current;
+        if (!chain || chain.songId !== songId || voicesRef.current.length === 0) return;
+        const transposes = chain.pitch !== 0 && !isPitchExempt(ch);
+        if (transposes && chain.compensation === null) {
+            restartAfterMetaRef.current = true;
+            return;
+        }
+        const gen = playGenRef.current;
+        if (transposes && !pitchSlotsRef.current.has(ch.id)) {
+            await ensurePitchSlot(ctx, ch);
+            // Pausa, busca ou outro play no meio da espera: o play novo já tem o canal.
+            if (gen !== playGenRef.current || playChainRef.current !== chain) return;
+        }
+        ch.gainNode.gain.setValueAtTime(channelGain(ch, list), ctx.currentTime);
+        const entry = entryFor(ch, chain.pitch, chain.compensation);
+        const first = timelineRef.current[0];
+        const at = Math.max(nextRenderQuantum(ctx, START_LEAD_QUANTA), first?.ctxStart ?? 0);
+        const voice = startVoice(ctx, { channelId: ch.id, buffer: ch.buffer, entry, loop: isEndlessLoop(ch) }, at, positionAt(timelineRef.current, at, timeStretch), timeStretch);
+        voiceStartsRef.current.set(voice, at);
+        voicesRef.current = [...voicesRef.current, voice];
+        ch.sourceNode = voice.source;
+        playChainRef.current = { ...chain, channels: [...chain.channels, ch] };
+    };
+
     const addChannelToActiveSong = async (file: File) => {
         if (!audioCtxRef.current || !masterGainRef.current || !graphRef.current || !routeCutsRef.current || playlist.length === 0 || activeSongIndex < 0) return;
         const graph = graphRef.current;
@@ -1816,6 +2060,8 @@ export function useAudioEngine(userId?: string) {
 
             newPlaylist[activeSongIndex] = song;
             updatePlaylistAndSave(newPlaylist);
+            // Tocando: entra já, na posição de agora.
+            await addLiveVoice(newChannel, song.channels, song.id);
         } catch (e) {
             console.error('Failed to add channel to active song:', e);
         } finally {
@@ -1899,84 +2145,49 @@ export function useAudioEngine(userId?: string) {
         localStorage.setItem('precount_enabled', String(val));
     };
 
-    const cancelCountIn = useCallback(() => {
-        if (countInTimeoutRef.current) {
-            clearTimeout(countInTimeoutRef.current);
-            countInTimeoutRef.current = null;
-        }
-        countInOscsRef.current.forEach(osc => { try { osc.stop(); } catch {} });
-        countInOscsRef.current = [];
-        setIsCountingIn(false);
-    }, []);
+    // Cancelar a pré-contagem é pausar: os bipes que faltam param, o que soa desce sem estalo e
+    // nenhuma voz começa (a posição fica no ponto de onde ia tocar).
+    const cancelCountIn = pause;
 
-    // O timer da pré-contagem chama o play() mais novo, com a lista de canais de
-    // quando a contagem acaba: trocar o papel de um canal durante a contagem (tom
-    // diferente de 0) já vale no play. Com o play() da hora do clique, um Click que
-    // virou Normal saía sem transpor na PA até o próximo play.
+    // O play() mais novo (com a lista de canais da renderização mais nova), pra quem toca de
+    // fora da renderização: a contagem que recomeça depois de uma troca de papel na pré-contagem.
     const playRef = useRef(play);
     useEffect(() => { playRef.current = play; }, [play]);
 
+    // Contagem que recomeça depois de uma troca de papel na pré-contagem (pedida no
+    // setChannelMeta, enfileirada pelo efeito do reinício depois da renderização com a lista
+    // nova): espera a fila de trocas de rota esvaziar (os faders já nos barramentos novos) e toca
+    // com o play mais novo. Pausa, busca ou outro play no meio desistem dela.
+    const queueRecount = () => {
+        if (recountJobRef.current) return;
+        const token = {};
+        recountJobRef.current = token;
+        const gen = playGenRef.current;
+        const job = async () => {
+            // A pausa desfez este pedido (e talvez já exista outro).
+            if (recountJobRef.current !== token) return;
+            if (!recountQueuedRef.current || gen !== playGenRef.current) {
+                recountJobRef.current = null;
+                recountQueuedRef.current = false;
+                return;
+            }
+            // Outra troca entrou na fila depois desta: vai pro fim, atrás dela.
+            if (routeJobsRef.current > 1) {
+                enqueueRoute(job);
+                return;
+            }
+            recountJobRef.current = null;
+            recountQueuedRef.current = false;
+            void playRef.current({ precount: true });
+        };
+        enqueueRoute(job);
+    };
+
+    // Play com a pré-contagem ligada: bipes e vozes agendados juntos pelo play (some o timer
+    // que chamava o play no fim da contagem).
     const playWithPrecount = useCallback(async () => {
-        const ctx = audioCtxRef.current;
-        const graph = graphRef.current;
-        if (!ctx || !graph) return;
-
-        if (!precountEnabled) {
-            await play();
-            return;
-        }
-
-        if (ctx.state === 'suspended') {
-            try { await ctx.resume(); } catch (e) { console.error('Failed to resume AudioContext', e); }
-        }
-
-        setIsCountingIn(true);
-        countInOscsRef.current = [];
-
-        const bpm = 100;
-        const beatDuration = 60 / bpm;
-
-        // A contagem agora passa pelo principal: um fade-out que deixou o ganho perto de 0
-        // calaria os bipes. Volta pro volume já aqui (o play() faz o mesmo ao começar).
-        graph.master.gain.cancelScheduledValues(ctx.currentTime);
-        graph.master.gain.setValueAtTime(masterVolume, ctx.currentTime);
-        // Pan efetivo do Click (Ruling T25-precount): -1 no ouvido da saída 1 e em "Tudo
-        // junto" com o pan automático (como a v1.4.16), +1 com o lado trocado, 0 em "Tudo
-        // junto" sem pan automático. Calculado uma vez pra contagem inteira.
-        const countPan = channelPanFor(COUNT_CHANNEL, graph.plan, settings.autoPan);
-
-        for (let i = 0; i < precountBeats; i++) {
-            const startTime = ctx.currentTime + i * beatDuration;
-            const osc = ctx.createOscillator();
-            const gainNode = ctx.createGain();
-            const panner = ctx.createStereoPanner();
-            // Bipe mono entra ESTÉREO no barramento do Click por um panner próprio (o
-            // barramento espera estéreo: mono direto lá sairia +6 dB), passando pelo corte
-            // do Click como os canais. Dali segue o StereoPanner do barramento e sai onde o
-            // Click sai: nunca na VS, nem em "4 ou mais". Mesmo nível da v1.4.16 com o
-            // principal em 1. A T26 refaz a contagem.
-            panner.pan.value = countPan;
-            osc.connect(gainNode);
-            gainNode.connect(panner);
-            panner.connect(routeCutsRef.current?.click ?? graph.input('click'));
-            osc.type = 'square';
-            osc.frequency.value = i === 0 ? 1200 : 880;
-            gainNode.gain.setValueAtTime(0, startTime);
-            gainNode.gain.linearRampToValueAtTime(0.25, startTime + 0.003);
-            gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + 0.08);
-            osc.start(startTime);
-            osc.stop(startTime + 0.1);
-            countInOscsRef.current.push(osc);
-        }
-
-        const totalMs = precountBeats * beatDuration * 1000;
-        countInTimeoutRef.current = setTimeout(() => {
-            countInTimeoutRef.current = null;
-            countInOscsRef.current = [];
-            setIsCountingIn(false);
-            void playRef.current();
-        }, totalMs);
-    }, [precountEnabled, precountBeats, play, masterVolume, settings.autoPan]);
+        await play(precountEnabled ? { precount: true } : undefined);
+    }, [precountEnabled, play]);
 
     const removeSongFromPlaylist = (songId: string) => {
         const currentActiveId = playlist[activeSongIndex]?.id;
@@ -2018,6 +2229,8 @@ export function useAudioEngine(userId?: string) {
     const jumpToSong = (index: number) => {
         if (index < 0 || index >= playlist.length) return;
         if (index === activeSongIndex) return;
+        // Trocou de música na pré-contagem: a outra também conta.
+        const opts = restartOpts();
         cancelPendingPlay();
 
         if (autoNextTimeoutRef.current) {
@@ -2032,7 +2245,10 @@ export function useAudioEngine(userId?: string) {
         setActiveSongIndex(index);
         setDuration(playlist[index].duration);
 
-        if (isPlaying) setShouldAutoPlayNext(true);
+        if (isPlaying) {
+            autoPlayOptsRef.current = opts;
+            setShouldAutoPlayNext(true);
+        }
     };
 
     // Metadata actions (V3)
@@ -2125,11 +2341,17 @@ export function useAudioEngine(userId?: string) {
 
         const ch = song.channels.find(c => c.id === channelId);
         if (ch) {
-            if (ch.sourceNode) {
-                try { ch.sourceNode.stop(); } catch (_) {}
-                ch.sourceNode.disconnect();
-                liveSourcesRef.current.delete(ch.sourceNode);
+            // Tocando: a voz dele para (a cadeia do canal sai do grafo logo abaixo).
+            const ctx = audioCtxRef.current;
+            const gone = voicesRef.current.filter((v) => v.channelId === channelId);
+            if (gone.length > 0) {
+                voicesRef.current = voicesRef.current.filter((v) => v.channelId !== channelId);
+                if (ctx) stopVoices(gone, ctx.currentTime);
+                for (const v of gone) { v.source.disconnect(); v.env.disconnect(); }
             }
+            const chain = playChainRef.current;
+            if (chain) playChainRef.current = { ...chain, channels: chain.channels.filter((c) => c.id !== channelId) };
+            ch.sourceNode = null;
             releasePitchNode(ch.id);
             ch.gainNode.disconnect();
             ch.pannerNode.disconnect();
@@ -2187,6 +2409,19 @@ export function useAudioEngine(userId?: string) {
                     ch.gainNode.gain.setValueAtTime(channelGain(ch, next), ctx.currentTime);
                 }
             });
+            // Papel que entra ou sai de Click na pré-contagem: a contagem entra pela entrada do
+            // canal de click, então ela para já e recomeça do 1 depois da troca de rota, com a
+            // lista nova. Sem isso os bipes que faltam seguiriam pela entrada antiga, cujo fader
+            // vai pra outro barramento (um Click que virou Normal levaria a contagem pra PA), ou
+            // entrariam num canal que ainda não chegou no barramento do Click.
+            if (ctx && countingIn() && (resolveChannelRole(before) === 'click' || resolveChannelRole(after) === 'click')) {
+                pausedAtRef.current = getPlaybackPosition(ctx);
+                // O play pendente (esperando worklet) tem a lista antiga: desiste.
+                if (playPendingRef.current) cancelPendingPlay();
+                stopAllNodes();
+                // O efeito do reinício enfileira a contagem nova depois de renderizar a lista nova.
+                recountQueuedRef.current = true;
+            }
         }
 
         // Click e Guia ficam fora da troca de tom. Com tom diferente de 0, entrar ou
@@ -2245,13 +2480,15 @@ export function useAudioEngine(userId?: string) {
 
         if (isPlaying && ctx) {
             if (crossesBypass) {
+                // Na pré-contagem, conta de novo.
+                const opts = restartOpts();
                 const elapsed = getPlaybackPosition(ctx);
                 pausedAtRef.current = Math.min(Math.max(elapsed, 0), duration || elapsed);
                 // Para fontes e worklets. Voltando ao tom 0 os worklets ficam
                 // parados (stop(), sem DSP) e ligados ao canal: a próxima troca
                 // reaproveita em vez de criar outro.
                 stopAllNodes();
-                void play();
+                void play(opts);
             } else if (clampedPitch !== 0) {
                 song.channels.forEach(ch => applyPitchToChannel(ch, clampedPitch));
             }
@@ -2272,17 +2509,28 @@ export function useAudioEngine(userId?: string) {
     // esperava o worklet nascer desiste sem agendar fontes. Vale também com a música
     // parada e o 1º play transposto pendente (isPlaying ainda falso).
     useEffect(() => {
+        // Papel trocado na pré-contagem: a contagem recomeça depois da troca de rota, pelo play
+        // mais novo (já com esta lista). Aqui só o worklet de quem virou Click ou Guia volta pra
+        // reserva (o play dela reaproveita) e o trabalho entra na fila, atrás das trocas.
+        if (recountQueuedRef.current) {
+            restartAfterMetaRef.current = false;
+            channels.forEach(ch => { if (isPitchExempt(ch)) releasePitchNode(ch.id); });
+            queueRecount();
+            return;
+        }
         if (!restartAfterMetaRef.current) return;
         restartAfterMetaRef.current = false;
         const ctx = audioCtxRef.current;
         if ((!isPlaying && !playPendingRef.current) || !ctx) return;
+        // Na pré-contagem, conta de novo.
+        const opts = restartOpts();
         const elapsed = getPlaybackPosition(ctx);
         pausedAtRef.current = Math.min(Math.max(elapsed, 0), duration || elapsed);
         stopAllNodes();
         // Canal que virou Click ou Guia toca sem a engine de tom: o worklet dele para
         // e volta pra reserva (por id), pro próximo canal que precisar.
         channels.forEach(ch => { if (isPitchExempt(ch)) releasePitchNode(ch.id); });
-        void play();
+        void play(opts);
     }, [channels, isPlaying, play, stopAllNodes, duration, timeStretch]);
 
     // Clear Session
@@ -2460,15 +2708,12 @@ export function useAudioEngine(userId?: string) {
     // Pico das saídas 1 e 2 pro medidor do PRINCIPAL (0 a 1).
     const getOutputLevels = useCallback((): { l: number; r: number } => graphRef.current?.levels() ?? { l: 0, r: 0 }, []);
 
+    // Velocidade nas vozes tocando (e o próximo play já entra nela). Ninguém troca a velocidade
+    // tocando hoje: a linha do tempo não é reancorada (Ruling T5-rate, latente).
     const updateTimeStretch = useCallback((speed: number) => {
         setTimeStretch(speed);
-        // Apply to all playing sources
-        channels.forEach(ch => {
-            if (ch.sourceNode) {
-                ch.sourceNode.playbackRate.value = speed;
-            }
-        });
-    }, [channels]);
+        for (const v of voicesRef.current) v.source.playbackRate.value = speed;
+    }, []);
 
     // === Controles de seção: loop (N/∞) e salto agendado ===
     // Armar loop numa seção: ao terminar aquela seção, repete `repeats` vezes
@@ -2592,6 +2837,7 @@ export function useAudioEngine(userId?: string) {
         precountEnabled,
         precountBeats,
         isCountingIn,
+        precountTimes,
         setPrecountBeats,
         togglePrecountEnabled,
         playWithPrecount,
