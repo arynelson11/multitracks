@@ -25,6 +25,8 @@ import { WhatsNewModal } from './components/WhatsNewModal'
 import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/SectionBar'
 import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections } from './lib/plans'
 import { AdminEntryButton, InAppAdmin } from './components/AdminEntryButton'
+import { BlockedScreen } from './components/BlockedScreen'
+import { shouldShowBlocked } from './lib/profileFlags'
 import { keyToSemitone, semitonesBetweenKeys } from './lib/pitchRules'
 import { InstallAppBanner } from './components/InstallAppBanner'
 import { RenewalNoticeBanner } from './components/RenewalNoticeBanner'
@@ -70,7 +72,10 @@ import { useTwoTapConfirm } from './hooks/useTwoTapConfirm'
 import { Button } from './components/ui'
 
 export default function App() {
-  const { user, loading, signOut, userPlan, isAdmin } = useAuth()
+  const { user, loading, signOut, userPlan, isAdmin, blockedAt, deleteAccount } = useAuth()
+  // Conta comum bloqueada pelo admin: a tela de bloqueio entra no lugar do app (o servidor
+  // recusa as funções dela). Sem a data do bloqueio, ou com a leitura do perfil falhando, nada muda.
+  const blocked = shouldShowBlocked({ user, blockedAt, isAdmin })
   const isOnline = useNetworkStatus()
 
   const {
@@ -90,7 +95,7 @@ export default function App() {
     createEndlessMetronomeSong,
   } = useAudioEngine(user?.id)
 
-  const { playPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume, selectedPadSet, selectPadSet, padMode } = usePadSynth()
+  const { playPad, stopPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume, selectedPadSet, selectPadSet, padMode } = usePadSynth()
   const [isPricingOpen, setIsPricingOpen] = useState(false)
   const [padActiveView, setPadActiveView] = useState<'pads' | 'samples' | 'loops'>('pads')
   const [activeFolder, setActiveFolder] = useState<string | null>(null)
@@ -260,6 +265,8 @@ export default function App() {
     const cleanup = window.playbackDesktop.onRemoteCommand((cmd) => {
       const allowed = !!cmd.ip && approvedIps.includes(cmd.ip)
       if (!allowed) return
+      // Conta bloqueada: o player não está na tela, então a banda não toca nada por trás.
+      if (blocked) return
       switch (cmd.action) {
         case 'toggle-play': isPlaying ? pause() : playWithPrecount(); break
         case 'next': nextSong(); break
@@ -278,7 +285,7 @@ export default function App() {
       }
     })
     return cleanup
-  }, [approvedIps, userPlan, isPlaying, pause, playWithPrecount, nextSong, prevSong, jumpToSong, updateVolume, toggleMute, toggleSolo, changePitch, playPad, updatePadVolume, armLoop, cancelLoop, armJump])
+  }, [approvedIps, userPlan, isPlaying, pause, playWithPrecount, nextSong, prevSong, jumpToSong, updateVolume, toggleMute, toggleSolo, changePitch, playPad, updatePadVolume, armLoop, cancelLoop, armJump, blocked])
 
   // Cria uma seção no ponto atual com o nome dado. Usado pelo menu "Marcar" e
   // pelos atalhos de teclado (V, R, ...).
@@ -301,6 +308,8 @@ export default function App() {
       // ao teclado pra não controlar a playback errada. O admin também: lá Espaço e
       // setas são dos botões e das abas, e uma letra não pode marcar seção na música.
       if (isSeparatorOpen || adminPanelShown) return
+      // Conta bloqueada: a tela de bloqueio está no lugar do player.
+      if (blocked) return
       const el = e.target as HTMLElement | null
       const tag = el?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return
@@ -328,7 +337,18 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker, isSeparatorOpen, adminPanelShown])
+  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker, isSeparatorOpen, adminPanelShown, blocked])
+
+  // Bloqueio que chega com o app aberto (o perfil é relido ao voltar pra janela): a tela de
+  // bloqueio tira o player da tela, então nada fica tocando sem controle. Para a música, a
+  // contagem, o pad e a prévia de sample. O Separador para o próprio som ao sair da tela.
+  useEffect(() => {
+    if (!blocked) return
+    if (isCountingIn) cancelCountIn()
+    if (isPlaying) pause()
+    if (activeNote) stopPad()
+    if (playingUrl) stopPlayback()
+  }, [blocked, isCountingIn, cancelCountIn, isPlaying, pause, activeNote, stopPad, playingUrl, stopPlayback])
 
   const handleStartLiveMode = async () => {
     // Modo Ao Vivo é exclusivo dos planos pagos.
@@ -664,6 +684,10 @@ export default function App() {
     if (showAuth || isDesktopApp) return <AuthPage />
     return <LandingPage onEnter={() => setShowAuth(true)} />
   }
+
+  // ───────────────── CONTA BLOQUEADA (pelo admin) ─────────────────
+  // No lugar do Separador e do player. Conta admin nunca cai aqui (shouldShowBlocked).
+  if (blocked) return <BlockedScreen plan={userPlan} onSignOut={signOut} onDeleteAccount={deleteAccount} />
 
   // ───────────────── SEPARATOR (acessível da tela inicial) ─────────────────
   if (isSeparatorOpen) {

@@ -1,25 +1,29 @@
 import { useEffect, useState } from 'react'
 import { maxSeparationsPerMonth } from '../lib/plans'
-import { fetchSeparationUsage, formatDateBR, type SeparationUsage } from '../lib/separationUsage'
+import { fetchQuotaBonus, fetchSeparationUsage, formatDateBR, monthlyLimit, type SeparationUsage } from '../lib/separationUsage'
 
 // Medidor "Separações de Faixas com IA" da aba Assinatura. Lê o contador do
-// banco (mesmo número que o servidor usa pra liberar ou barrar a separação).
+// banco (mesmo número que o servidor usa pra liberar ou barrar a separação)
+// e o extra do mês dado pelo admin, que o servidor soma no limite.
 
-type State = { status: 'loading' } | { status: 'error' } | { status: 'ok'; usage: SeparationUsage }
+type State = { status: 'loading' } | { status: 'error' } | { status: 'ok'; usage: SeparationUsage; bonus: number }
 
 export function SeparationUsageMeter({ plan, isAdmin = false }: { plan: string; isAdmin?: boolean }) {
   const [state, setState] = useState<State>({ status: 'loading' })
 
   useEffect(() => {
     let alive = true
-    fetchSeparationUsage().then((usage) => {
+    // As duas leituras juntas: o extra não atrasa o contador. Sem o extra, vale o limite do plano.
+    Promise.all([fetchSeparationUsage(), fetchQuotaBonus().catch(() => 0)]).then(([usage, bonus]) => {
       if (!alive) return
-      setState(usage ? { status: 'ok', usage } : { status: 'error' })
+      setState(usage ? { status: 'ok', usage, bonus } : { status: 'error' })
     })
     return () => { alive = false }
   }, [plan])
 
-  const maxLimit = maxSeparationsPerMonth(plan)
+  const bonus = state.status === 'ok' ? state.bonus : 0
+  const planLimit = maxSeparationsPerMonth(plan)
+  const maxLimit = monthlyLimit(plan, bonus)
 
   return (
     <div className="w-full bg-white/5 rounded-lg p-4 mb-6 border border-white/10 text-left">
@@ -44,7 +48,9 @@ export function SeparationUsageMeter({ plan, isAdmin = false }: { plan: string; 
             />
           </div>
           <p className="text-white/30 text-[9px] font-mono mt-2">
-            {maxLimit} separações por mês. O contador volta a zero em {formatDateBR(state.usage.resetsAt)}.
+            {maxLimit > planLimit
+              ? `${planLimit} separações por mês + ${maxLimit - planLimit} ${maxLimit - planLimit === 1 ? 'extra' : 'extras'} neste mês. O contador volta a zero em ${formatDateBR(state.usage.resetsAt)}.`
+              : `${planLimit} separações por mês. O contador volta a zero em ${formatDateBR(state.usage.resetsAt)}.`}
           </p>
         </>
       )}

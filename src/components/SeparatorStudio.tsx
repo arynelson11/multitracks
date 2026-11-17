@@ -5,9 +5,9 @@ import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume
 import { uploadToR2 } from '../lib/r2';
 import { AUDIO_FILE_ACCEPT } from '../lib/uploadContentType';
 import { getAuthHeaders } from '../lib/supabase';
-import { fetchSeparationUsage, formatDateBR } from '../lib/separationUsage';
+import { fetchQuotaBonus, fetchSeparationUsage, formatDateBR, monthlyLimit } from '../lib/separationUsage';
 import { useAuth } from '../hooks/useAuth';
-import { canDownloadStems, canUseVoiceGuide, canUseBpmDetection, planTier, maxSeparationsPerMonth } from '../lib/plans';
+import { canDownloadStems, canUseVoiceGuide, canUseBpmDetection, planTier } from '../lib/plans';
 import { PricingModal } from './PricingModal';
 import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { detectBeatGrid, formatBpm, type BeatGrid } from '../lib/beatGrid';
@@ -869,9 +869,11 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     // ── Cota do mês (lida do banco, a mesma que o servidor usa) ──
     // Só evita subir o arquivo à toa: quem decide de verdade é o servidor (402).
     // Se não der pra ler o contador, segue e deixa o servidor responder.
+    // O limite soma o extra do mês dado pelo admin (o servidor soma igual); lido junto
+    // com o contador, não atrasa. Sem o extra (erro ou SQL que não rodou), vale o do plano.
     if (!isAdmin) {
-      const maxLimit = maxSeparationsPerMonth(userPlan);
-      const usage = await fetchSeparationUsage();
+      const [usage, bonus] = await Promise.all([fetchSeparationUsage(), fetchQuotaBonus()]);
+      const maxLimit = monthlyLimit(userPlan, bonus);
       if (usage && usage.used >= maxLimit) {
         alert(`Você já usou as ${maxLimit} separações deste mês. O contador volta a zero em ${formatDateBR(usage.resetsAt)}.`);
         setIsPricingOpen(true);

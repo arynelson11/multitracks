@@ -26,6 +26,13 @@ export async function fetchProfileFlags(userId: string): Promise<ProfileFlags> {
   }
 }
 
+// Tela de conta bloqueada: com login, com a data do bloqueio e sem ser admin (conta admin
+// nunca fica presa fora do app). Sem a data (não bloqueada, ou leitura do perfil que falhou),
+// o app segue normal; a trava de verdade é o servidor, que recusa as funções da conta.
+export function shouldShowBlocked(s: { user: unknown; blockedAt: string | null; isAdmin: boolean }): boolean {
+  return !!s.user && typeof s.blockedAt === 'string' && s.blockedAt !== '' && s.isAdmin !== true
+}
+
 // Última abertura do app, que o admin vê na ficha. O banco só regrava depois de 1 hora;
 // esta trava, por conta, evita um pedido por tela (cada componente tem sua instância do
 // useAuth) e ainda grava a conta que entrar depois no mesmo app aberto. O banco grava

@@ -26,7 +26,7 @@ vi.mock('./supabase', () => ({
   },
 }))
 
-import { fetchProfileFlags } from './profileFlags'
+import { fetchProfileFlags, shouldShowBlocked } from './profileFlags'
 
 const NOT_ADMIN = { isAdmin: false, blockedAt: null }
 
@@ -110,5 +110,30 @@ describe('touchLastSeen', () => {
     h.rpc.mockImplementation(() => { throw new Error('cliente quebrado') })
     const touchAgain = await freshTouch()
     expect(() => touchAgain('u1')).not.toThrow()
+  })
+})
+
+describe('shouldShowBlocked', () => {
+  const user = { id: 'u1' }
+  const BLOCKED_AT = '2026-11-17T15:00:00Z'
+
+  it('conta comum com login e bloqueio vê a tela de bloqueio', () => {
+    expect(shouldShowBlocked({ user, blockedAt: BLOCKED_AT, isAdmin: false })).toBe(true)
+  })
+
+  it('admin com blockedAt preenchido não fica preso fora do app', () => {
+    expect(shouldShowBlocked({ user, blockedAt: BLOCKED_AT, isAdmin: true })).toBe(false)
+  })
+
+  it('sem login não mostra a tela de bloqueio', () => {
+    expect(shouldShowBlocked({ user: null, blockedAt: BLOCKED_AT, isAdmin: false })).toBe(false)
+    expect(shouldShowBlocked({ user: undefined, blockedAt: BLOCKED_AT, isAdmin: false })).toBe(false)
+  })
+
+  it('sem bloqueio (ou leitura que falhou e voltou vazia) segue no app', () => {
+    expect(shouldShowBlocked({ user, blockedAt: null, isAdmin: false })).toBe(false)
+    expect(shouldShowBlocked({ user, blockedAt: '', isAdmin: false })).toBe(false)
+    // Quem monta o App com um login falso sem o campo (testes antigos) também segue no app.
+    expect(shouldShowBlocked({ user, blockedAt: undefined as unknown as null, isAdmin: false })).toBe(false)
   })
 })
