@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useLayoutEffect } from 'react';
 import { Play, Loader2, X, Minus, Plus, Wand2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { formatBpm } from '../lib/beatGrid';
@@ -41,10 +41,13 @@ function initialMeter(songId: string | undefined, initial: TimeSignature | undef
 }
 
 // ─── Click IA: o que mostrar depois da análise ───
+// O resultado é da música em que a análise foi feita (`songId`): se a música muda com o modal
+// aberto (AUTO depois do fim, comando da banda), ele some e nunca entra na música nova.
 type AutoState =
   | { step: 'parado' }
-  | { step: 'pronto'; plan: AutoClickOkPlan; moveOne: number; halfBeat: boolean }
-  | { step: 'falhou'; reason: Extract<AutoClickPlan, { ok: false }>['reason'] | 'erro' };
+  | { step: 'pronto'; songId: string | undefined; plan: AutoClickOkPlan; moveOne: number; halfBeat: boolean }
+  | { step: 'falhou'; songId: string | undefined; reason: Extract<AutoClickPlan, { ok: false }>['reason'] | 'erro' };
+const PARADO: AutoState = { step: 'parado' };
 
 const FAIL_TEXT: Record<Extract<AutoState, { step: 'falhou' }>['reason'], string> = {
   'confianca-baixa': 'Não deu pra ter certeza do tempo desta música. Confira o BPM ou use o modo manual.',
@@ -97,6 +100,8 @@ interface AutoClickResultProps {
   halfBeat: boolean;
   songBpm: number | undefined;
   busy: boolean;
+  /** Falso com a música tocando: os chips refazem a análise, que trava a tela. */
+  canAnalyze: boolean;
   onAnalyze: (nearBpm: number) => void;
   onAdjust: (patch: Partial<{ moveOne: number; halfBeat: boolean }>) => void;
   onInsert: () => void;
@@ -104,7 +109,7 @@ interface AutoClickResultProps {
 
 // Resultado do click IA antes de inserir: BPM e faixas analisadas, metade/dobro/3:2, Mover o 1,
 // Deslocar meio tempo (só com risco de contratempo) e o que conferir, em âmbar.
-function AutoClickResult({ sectionRef, plan, moveOne, halfBeat, songBpm, busy, onAnalyze, onAdjust, onInsert }: AutoClickResultProps) {
+function AutoClickResult({ sectionRef, plan, moveOne, halfBeat, songBpm, busy, canAnalyze, onAnalyze, onAdjust, onInsert }: AutoClickResultProps) {
   const d = plan.detection;
   const beats = pulsesPerBar(plan.signature);
   const step = ((moveOne % beats) + beats) % beats;
@@ -120,7 +125,7 @@ function AutoClickResult({ sectionRef, plan, moveOne, halfBeat, songBpm, busy, o
           const target = Math.round(d.bpm * f.factor * 100) / 100;
           const inRange = target >= BPM_RANGE.min && target <= BPM_RANGE.max;
           return (
-            <Chip key={f.label} title={`${f.name}: ${formatBpm(target)} BPM`} disabled={busy || !inRange} onClick={() => onAnalyze(target)}>
+            <Chip key={f.label} title={`${f.name}: ${formatBpm(target)} BPM`} disabled={busy || !canAnalyze || !inRange} onClick={() => onAnalyze(target)}>
               {f.label}
             </Chip>
           );
@@ -159,12 +164,20 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
   const [clickSel, setClickSel] = useState(() => loadClickSelection());
   const [accentBeat1, setAccentBeat1] = useState(true);
   const songId = playlistCurrentSong?.id;
-  const [timeSignature, setTimeSignature] = useState<TimeSignature>(() => initialMeter(songId, initialSignature));
+  // O compasso escolhido vale pra música em que foi escolhido; música nova lê o dela.
+  const [meter, setMeter] = useState(() => ({ songId, ts: initialMeter(songId, initialSignature) }));
+  const timeSignature: TimeSignature = meter.songId === songId ? meter.ts : initialMeter(songId, initialSignature);
+  // Só o resultado desta música aparece (e só ele pode ser inserido).
+  const shownAuto: AutoState = auto.step !== 'parado' && auto.songId === songId ? auto : PARADO;
+
+  // Música e "tocando" de agora, pra quem volta de um await (a análise e o click gerado).
+  const liveRef = useRef({ songId, isPlaying });
+  useLayoutEffect(() => { liveRef.current = { songId, isPlaying }; });
 
   // Toda troca de compasso fica guardada pra esta música; a análise feita em outro compasso deixa de valer.
   const changeMeter = (ts: TimeSignature) => {
-    setTimeSignature(ts);
-    setAuto({ step: 'parado' });
+    setMeter({ songId, ts });
+    setAuto(PARADO);
     const key = meterKey(songId);
     if (!key) return;
     try { localStorage.setItem(key, ts); } catch { /* armazenamento indisponível */ }
@@ -279,13 +292,16 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
     setActiveTab('ai');
     setIsSynthesizing(true);
     setStatusMsg(nearBpm ? `Refazendo a grade em ${formatBpm(nearBpm)} BPM...` : 'Analisando o tempo da música...');
+    const forSong = songId;
     try {
       await new Promise(r => setTimeout(r, 30));
+      // A música pode ter começado (ou mudado) nesses 30 ms: aí a conta não roda.
+      if (liveRef.current.isPlaying || liveRef.current.songId !== forSong) return;
       const plan = planAutoClick(channels, { songBpm, signature: timeSignature, allowExistingClick: existingClick !== null, nearBpm });
-      setAuto(plan.ok ? { step: 'pronto', plan, moveOne: 0, halfBeat: false } : { step: 'falhou', reason: plan.reason });
+      setAuto(plan.ok ? { step: 'pronto', songId: forSong, plan, moveOne: 0, halfBeat: false } : { step: 'falhou', songId: forSong, reason: plan.reason });
     } catch (e) {
       console.error(e);
-      setAuto({ step: 'falhou', reason: 'erro' });
+      setAuto({ step: 'falhou', songId: forSong, reason: 'erro' });
     } finally {
       setIsSynthesizing(false);
       setStatusMsg('');
@@ -293,12 +309,15 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
   };
 
   const handleInsertAuto = async () => {
-    if (auto.step !== 'pronto') return;
+    if (shownAuto.step !== 'pronto') return;
+    const forSong = shownAuto.songId;
     setIsSynthesizing(true);
     setStatusMsg('Gerando o click...');
     try {
-      const plan = adjustAutoClick(auto.plan, { moveOne: auto.moveOne, halfBeat: auto.halfBeat });
+      const plan = adjustAutoClick(shownAuto.plan, { moveOne: shownAuto.moveOne, halfBeat: shownAuto.halfBeat });
       const blob = await renderAutoClick(plan, songDuration, clickSel);
+      // O "Inserir" põe o click na música ativa: se ela mudou enquanto o click era gerado, não entra.
+      if (liveRef.current.songId !== forSong) return;
       onAddClick(new File([blob], `Click_IA_${formatBpm(plan.detection.bpm)}bpm.wav`, { type: 'audio/wav' }));
       onClose();
     } catch (e) {
@@ -311,7 +330,7 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
   };
 
   const adjustAuto = (patch: Partial<{ moveOne: number; halfBeat: boolean }>) => {
-    if (auto.step === 'pronto') setAuto({ ...auto, ...patch });
+    if (shownAuto.step === 'pronto') setAuto({ ...shownAuto, ...patch });
   };
 
   const getTempoName = (currentBpm: number) => {
@@ -513,14 +532,14 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
           </button>
         </div>
 
-        {auto.step === 'falhou' && (
-          <p ref={revealResult} className="mt-3 text-ps-alert text-ps-base font-bold text-center px-2">{FAIL_TEXT[auto.reason]}</p>
+        {shownAuto.step === 'falhou' && (
+          <p ref={revealResult} className="mt-3 text-ps-alert text-ps-base font-bold text-center px-2">{FAIL_TEXT[shownAuto.reason]}</p>
         )}
 
-        {auto.step === 'pronto' && (
+        {shownAuto.step === 'pronto' && (
           <AutoClickResult
-            sectionRef={revealResult} plan={auto.plan} moveOne={auto.moveOne} halfBeat={auto.halfBeat} songBpm={songBpm}
-            busy={isSynthesizing} onAnalyze={analyze} onAdjust={adjustAuto} onInsert={handleInsertAuto}
+            sectionRef={revealResult} plan={shownAuto.plan} moveOne={shownAuto.moveOne} halfBeat={shownAuto.halfBeat} songBpm={songBpm}
+            busy={isSynthesizing} canAnalyze={!isPlaying} onAnalyze={analyze} onAdjust={adjustAuto} onInsert={handleInsertAuto}
           />
         )}
       </div>
