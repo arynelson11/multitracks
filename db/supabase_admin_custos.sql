@@ -249,8 +249,13 @@ end;
 $$;
 
 -- ─── 6. Só o backend executa ────────────────────────────────────────────────
+-- ai_cost_pending é função pura dos argumentos (não lê tabela), mas segue o
+-- padrão do arquivo: só o backend chama direto. admin_ai_costs e admin_overview
+-- são security definer e rodam como o dono, então continuam chamando.
 revoke execute on function public.admin_ai_costs(date, date, int, int) from public, anon, authenticated;
 grant  execute on function public.admin_ai_costs(date, date, int, int) to service_role;
+revoke execute on function public.ai_cost_pending(timestamptz, numeric, numeric) from public, anon, authenticated;
+grant  execute on function public.ai_cost_pending(timestamptz, numeric, numeric) to service_role;
 
 commit;
 
