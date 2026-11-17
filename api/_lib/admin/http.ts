@@ -109,8 +109,14 @@ export function asaasFailure(e: unknown): AsaasFailure | null {
   return null
 }
 
-export function toHttpError(e: unknown): { status: number; error: string } {
-  if (e instanceof AdminError) return { status: e.status, error: e.message }
+// AdminError marcado com uncertain: true (resultado incerto, Ruling
+// ADM-T16-incerto) leva a marca pro corpo, pra a tela segurar o Confirmar.
+export function toHttpError(e: unknown): { status: number; error: string; uncertain?: true } {
+  if (e instanceof AdminError) {
+    return (e as { uncertain?: unknown }).uncertain === true
+      ? { status: e.status, error: e.message, uncertain: true }
+      : { status: e.status, error: e.message }
+  }
   if (e instanceof BillingError) {
     if (SAFE_BILLING_CODES.has(e.code)) return { status: e.httpStatus, error: e.message }
     if (e.code === 'misconfigured') return { status: e.httpStatus, error: MSG_MISCONFIGURED }
@@ -342,7 +348,7 @@ export function createAdminRouter(handlers: AdminHandlers, options: AdminRouterO
     } catch (e) {
       const out = toHttpError(e)
       if (out.status >= 500) console.error(`[admin] ${action || 'roteador'} falhou:`, describeError(e))
-      res.status(out.status).json({ error: out.error })
+      res.status(out.status).json(out.uncertain ? { error: out.error, uncertain: true } : { error: out.error })
     }
   }
 }

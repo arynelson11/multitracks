@@ -19,6 +19,7 @@ import {
   type AdminCtx,
   type AdminHandlers,
 } from '../_lib/admin/http.js'
+import { UncertainAdminError } from '../_lib/admin/subscriberActions.js'
 
 // Roteador do admin (/api/admin-stats?action=<nome>): o papel é conferido no
 // servidor antes de qualquer ação, nenhuma resposta fica em cache e todo erro
@@ -306,6 +307,36 @@ describe('erros viram resposta em português', () => {
       expect(res.statusCode, err.message).toBe(502)
       expect(res.body, err.message).toEqual({ error: phrase })
     }
+  })
+
+  it('erro marcado como incerto leva uncertain: true no corpo, e os outros não (Ruling ADM-T16-http)', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const phrase = 'O Asaas não respondeu a tempo. A mudança pode ter sido feita. A ficha foi marcada pra conferir; confira em Pendências antes de repetir.'
+    const marked = Object.assign(new AdminError(502, phrase), { uncertain: true })
+    const real = new UncertainAdminError(502, phrase)
+    for (const err of [marked, real]) {
+      const res = await call(failing(err), { method: 'GET', query: { action: 'quebra' } })
+      expect(res.statusCode).toBe(502)
+      expect(res.body).toStrictEqual({ error: phrase, uncertain: true })
+    }
+    // Sem a marca, com marca que não é true, ou fora de AdminError: só { error }.
+    const others: unknown[] = [
+      new AdminError(502, 'O Asaas não trocou o plano. Nada mudou.'),
+      Object.assign(new AdminError(502, 'O Asaas não trocou o plano. Nada mudou.'), { uncertain: 'sim' }),
+      Object.assign(new BillingError('partial', 'Parte foi feita.', 500), { uncertain: true }),
+      Object.assign(new Error('Asaas sem resposta (ECONNABORTED)'), { uncertain: true }),
+      { uncertain: true, message: 'objeto solto' },
+    ]
+    for (const err of others) {
+      const res = await call(failing(err), { method: 'GET', query: { action: 'quebra' } })
+      expect(res.body, JSON.stringify(err)).not.toHaveProperty('uncertain')
+      expect(Object.keys(res.body as object)).toEqual(['error'])
+    }
+    // Resposta de sucesso não muda.
+    const ok = await call(router, { method: 'GET', query: { action: 'ping' } })
+    expect(ok.body).not.toHaveProperty('uncertain')
+    expect(toHttpError(real)).toStrictEqual({ status: 502, error: phrase, uncertain: true })
+    expect(toHttpError(new AdminError(409, 'Esta conta já está bloqueada.'))).toStrictEqual({ status: 409, error: 'Esta conta já está bloqueada.' })
   })
 
   it('toHttpError: AdminError usa status, BillingError usa httpStatus, o resto vira 500', () => {
