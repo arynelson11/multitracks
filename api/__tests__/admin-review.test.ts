@@ -18,6 +18,10 @@ const ADMIN_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const NOW = new Date('2026-11-16T15:00:00Z') // 12:00 em Brasília, dia 16/11/2026
 const TRAVESSAO = String.fromCharCode(0x2014)
 const PARTIAL_REF = 'conferencia:parcial:2026-11-16'
+// Versão da marcação que o admin viu na fila (adminNote e updatedAt do ReviewFlag),
+// no formato em que o Postgres devolve o timestamptz (microssegundos e +00:00).
+const SEEN_NOTE = 'cobranca vencida paga depois (vencimento 2026-11-10)'
+const SEEN_AT = '2026-11-16T09:00:00.123456+00:00'
 
 const MSG = {
   notOpen: 'Esta pendência já foi fechada.',
@@ -108,6 +112,8 @@ function installAdminSql(target: FakeDb): void {
     const r = target.tables.billing_subscriptions.find((x) => x.id === a.p_subscription_ref)
     if (!r) return 'not_found'
     if (!r.needs_admin_review) return 'not_flagged'
+    // Ruling ADM-T5-visto: marcação diferente da que o admin viu não muda nada
+    if ((r.admin_note ?? null) !== a.p_seen_note || (a.p_seen_at != null && r.updated_at !== a.p_seen_at)) return 'changed'
     r.needs_admin_review = false
     r.admin_note = [r.admin_note, `conferido pelo admin em 16/11/2026: ${String(a.p_note)}`].filter(Boolean).join(' | ')
     return 'resolved'
@@ -146,7 +152,7 @@ beforeEach(() => {
   db = createBillingDb({
     billing_subscriptions: [
       subRow({ id: 'chk_1', user_id: USER_A, asaas_subscription_id: 'sub_1', status: 'canceled', cancel_source: 'unpaid', access_until: '2026-11-11T03:00:00.000Z',
-        needs_admin_review: true, admin_note: 'cobranca vencida paga depois (vencimento 2026-11-10)' }),
+        needs_admin_review: true, admin_note: SEEN_NOTE, updated_at: SEEN_AT }),
       subRow({ id: 'chk_2', user_id: USER_B, asaas_subscription_id: 'sub_2', admin_note: 'conferido pelo admin em 10/11/2026: ok' }),
     ],
     billing_pending_actions: seedActions(),
@@ -209,36 +215,98 @@ describe('fila de pendências', () => {
 })
 
 describe('conferir marcação (resolve-flag)', () => {
-  it('conferir tira a marcação com a nota do admin', async () => {
-    const res = await post('resolve-flag', { subscriptionRef: 'chk_1', note: '  falei com o cliente  ' })
+  const seen = { seenNote: SEEN_NOTE, seenAt: SEEN_AT }
+
+  it('conferir tira a marcação com a nota do admin e a versão que ele viu', async () => {
+    const res = await post('resolve-flag', { subscriptionRef: 'chk_1', note: '  falei com o cliente  ', ...seen })
     expect(res.statusCode).toBe(200)
     expect(res.body).toEqual({ result: 'resolved' })
-    expect(db.rpcCalls).toEqual([{ name: 'admin_resolve_flag', args: { p_admin: ADMIN_ID, p_subscription_ref: 'chk_1', p_note: 'falei com o cliente' } }])
+    expect(db.rpcCalls).toEqual([{
+      name: 'admin_resolve_flag',
+      args: { p_admin: ADMIN_ID, p_subscription_ref: 'chk_1', p_note: 'falei com o cliente', p_seen_note: SEEN_NOTE, p_seen_at: SEEN_AT },
+    }])
+    expect(db.tables.billing_subscriptions[0].needs_admin_review).toBe(false)
     // só no banco: a própria função grava o registro na mesma transação (D7)
     expect(rpcNames()).not.toContain('admin_log_start')
   })
 
+  it('marcação nova chegou com Pendências aberta: responde changed e não mexe em nada', async () => {
+    // ex.: chargeback marcado na mesma assinatura depois que o admin abriu a lista
+    const row = db.tables.billing_subscriptions[0]
+    Object.assign(row, { admin_note: `${SEEN_NOTE} | chargeback na cobranca pay_7`, updated_at: '2026-11-16T14:59:00.000001+00:00' })
+    const res = await post('resolve-flag', { subscriptionRef: 'chk_1', note: 'falei com o cliente', ...seen })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toEqual({ result: 'changed' })
+    expect(row).toMatchObject({ needs_admin_review: true, admin_note: `${SEEN_NOTE} | chargeback na cobranca pay_7` })
+    // não é erro: nenhum registro pendente fica aberto
+    expect(rpcNames()).toEqual(['admin_resolve_flag'])
+  })
+
+  it('changed do banco vira o resultado changed (setRpc)', async () => {
+    db.setRpc('admin_resolve_flag', () => 'changed')
+    const res = await post('resolve-flag', { subscriptionRef: 'chk_1', note: 'conferido', ...seen })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toEqual({ result: 'changed' })
+    expect(vi.mocked(console.error)).not.toHaveBeenCalled()
+  })
+
+  it('a versão vista vai como veio: sem tirar espaços, nota nula e instante opcional', async () => {
+    const row = db.tables.billing_subscriptions[0]
+    row.admin_note = ' nota com espaço no fim '
+    const spaced = await post('resolve-flag', { subscriptionRef: 'chk_1', note: 'conferido', seenNote: ' nota com espaço no fim ', seenAt: SEEN_AT })
+    expect(spaced.body).toEqual({ result: 'resolved' })
+    expect(db.rpcCalls[0].args.p_seen_note).toBe(' nota com espaço no fim ')
+    // marcação sem nota (adminNote nulo na fila) e pedido sem o instante
+    Object.assign(row, { needs_admin_review: true, admin_note: null })
+    const noNote = await post('resolve-flag', { subscriptionRef: 'chk_1', note: 'conferido', seenNote: null })
+    expect(noNote.body).toEqual({ result: 'resolved' })
+    expect(db.rpcCalls[1].args).toMatchObject({ p_seen_note: null, p_seen_at: null })
+  })
+
+  it('sem a versão vista, ou com ela quebrada, responde 400 sem chamar o banco', async () => {
+    const cases: [Record<string, unknown>, string][] = [
+      [{ subscriptionRef: 'chk_1', note: 'conferido' }, 'Falta a versão da marcação que você viu. Atualize a lista e tente de novo.'],
+      [{ subscriptionRef: 'chk_1', note: 'conferido', seenNote: 12 }, 'A versão da marcação está em formato inválido.'],
+      [{ subscriptionRef: 'chk_1', note: 'conferido', seenNote: 'x'.repeat(50001) }, 'A versão da marcação está em formato inválido.'],
+      [{ subscriptionRef: 'chk_1', note: 'conferido', seenNote: SEEN_NOTE, seenAt: 'ontem' }, 'O instante da marcação está em formato inválido.'],
+      [{ subscriptionRef: 'chk_1', note: 'conferido', seenNote: SEEN_NOTE, seenAt: '2026-02-30T09:00:00Z' }, 'O instante da marcação está em formato inválido.'],
+      [{ subscriptionRef: 'chk_1', note: 'conferido', seenNote: SEEN_NOTE, seenAt: '2026-11-16T25:00:00Z' }, 'O instante da marcação está em formato inválido.'],
+      [{ subscriptionRef: 'chk_1', note: 'conferido', seenNote: SEEN_NOTE, seenAt: 1763283600000 }, 'O instante da marcação está em formato inválido.'],
+    ]
+    for (const [body, error] of cases) {
+      const res = await post('resolve-flag', body)
+      expect(res.statusCode, JSON.stringify(body).slice(0, 80)).toBe(400)
+      expect(res.body, JSON.stringify(body).slice(0, 80)).toEqual({ error })
+    }
+    for (const seenAt of ['2026-11-16T09:00:00Z', '2026-11-16T09:00:00.5-03:00', SEEN_AT]) {
+      db.tables.billing_subscriptions[0].updated_at = seenAt
+      db.tables.billing_subscriptions[0].needs_admin_review = true
+      const res = await post('resolve-flag', { subscriptionRef: 'chk_1', note: 'conferido', seenNote: db.tables.billing_subscriptions[0].admin_note, seenAt })
+      expect(res.statusCode, seenAt).toBe(200)
+    }
+  })
+
   it('conferir com nota curta responde 400', async () => {
-    const res = await post('resolve-flag', { subscriptionRef: 'chk_1', note: 'ok' })
+    const res = await post('resolve-flag', { subscriptionRef: 'chk_1', note: 'ok', ...seen })
     expect(res.statusCode).toBe(400)
     expect(res.body).toEqual({ error: 'A nota precisa ter pelo menos 3 caracteres.' })
-    const long = await post('resolve-flag', { subscriptionRef: 'chk_1', note: 'a'.repeat(501) })
+    const long = await post('resolve-flag', { subscriptionRef: 'chk_1', note: 'a'.repeat(501), ...seen })
     expect(long.body).toEqual({ error: 'A nota pode ter no máximo 500 caracteres.' })
-    const ref = await post('resolve-flag', { subscriptionRef: 'x'.repeat(201), note: 'conferido' })
+    const ref = await post('resolve-flag', { subscriptionRef: 'x'.repeat(201), note: 'conferido', ...seen })
     expect(ref.statusCode).toBe(400)
-    const missing = await post('resolve-flag', { subscriptionRef: 'chk_1' })
+    const missing = await post('resolve-flag', { subscriptionRef: 'chk_1', ...seen })
     expect(missing.body).toEqual({ error: 'Preencha a nota.' })
     expect(rpcNames()).toEqual([])
   })
 
   it('conferir já conferida responde 409', async () => {
-    const res = await post('resolve-flag', { subscriptionRef: 'chk_2', note: 'conferido de novo' })
+    const res = await post('resolve-flag', { subscriptionRef: 'chk_2', note: 'conferido de novo', seenNote: 'conferido pelo admin em 10/11/2026: ok' })
     expect(res.statusCode).toBe(409)
     expect(res.body).toEqual({ error: 'Esta marcação já foi conferida.' })
   })
 
   it('conferir marcação que não existe responde 404', async () => {
-    const res = await post('resolve-flag', { subscriptionRef: 'chk_404', note: 'conferido' })
+    const res = await post('resolve-flag', { subscriptionRef: 'chk_404', note: 'conferido', seenNote: null })
     expect(res.statusCode).toBe(404)
     expect(res.body).toEqual({ error: 'Marcação não encontrada.' })
   })

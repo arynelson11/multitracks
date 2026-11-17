@@ -6,7 +6,9 @@ import { AdminError, int, oneOf, str, type AdminCtx, type AdminHandlers } from '
 // Pendências (Task 6): a fila da aba Pendências e a baixa em cada item.
 // * review: a fila inteira (admin_review_queue, T5), repassada como vem.
 // * resolve-flag: confere uma marcação (needs_admin_review). Só no banco: a
-//   função SQL grava o registro na mesma transação (D7).
+//   função SQL grava o registro na mesma transação (D7). Recebe a versão da
+//   marcação que o admin viu (Ruling ADM-T5-visto): se chegou marcação nova
+//   enquanto a lista estava aberta, responde { result: 'changed' } e nada muda.
 // * close-action: "marcar como feito" à mão só pra estorno, caso pra olhar e
 //   remoção de cobrança futura, e o servidor confere no Asaas antes (D8).
 //   Inativar ou remover assinatura só fecha quando o Asaas confirma (Tentar
@@ -30,6 +32,8 @@ const MSG_NOT_AUTO = 'Esta pendência não é tentada sozinha.'
 const MSG_EVENT_NOT_FOUND = 'Aviso não encontrado.'
 const MSG_EVENT_DONE = 'Este aviso já foi processado.'
 const MSG_ASAAS_SILENT = 'O Asaas não respondeu agora.'
+const MSG_SEEN_MISSING = 'Falta a versão da marcação que você viu. Atualize a lista e tente de novo.'
+const MSG_SEEN_NOTE_BAD = 'A versão da marcação está em formato inválido.'
 
 const paymentNotFound = (id: string): string => `O Asaas não achou a cobrança ${id}.`
 
@@ -45,6 +49,11 @@ const PAY_ID_RE = /^pay_[A-Za-z0-9]+$/
 // Id do aviso como o webhook grava: o do Asaas (evt_<hash>&<número>) ou sha:<hex>.
 const EVENT_ID_RE = /^[\x21-\x7E]+$/
 const MAX_ID = Number.MAX_SAFE_INTEGER
+// A nota da marcação cresce a cada marcação nova (" | "); teto folgado só pra
+// não aceitar corpo absurdo.
+const MAX_SEEN_NOTE = 50000
+// Instante como o Postgres devolve o timestamptz no JSON (com até 6 casas e o fuso).
+const INSTANT_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/
 
 // ── Nome do status da cobrança: cópia no servidor da tabela de
 // paymentStatusLabel (src/admin/lib/fmt.ts, T4), pras frases do 409.
@@ -199,6 +208,29 @@ async function checkBeforeClosing(ctx: AdminCtx, a: ActionRow, outcome: 'done' |
   if (refusal) throw new AdminError(409, refusal)
 }
 
+// ── Versão da marcação que o admin viu (Ruling ADM-T5-visto). Vai pro banco
+// exatamente como chegou (sem tirar espaços): é comparada com a do banco.
+
+// adminNote da fila: texto ou null (marcação sem nota). O campo é obrigatório.
+function seenNote(src: Record<string, unknown>): string | null {
+  if (!Object.hasOwn(src, 'seenNote')) throw new AdminError(400, MSG_SEEN_MISSING)
+  const v = src.seenNote
+  if (v === null) return null
+  if (typeof v !== 'string' || Array.from(v).length > MAX_SEEN_NOTE) throw new AdminError(400, MSG_SEEN_NOTE_BAD)
+  return v
+}
+
+// updatedAt da fila: instante ISO que existe no calendário, ou ausente/null.
+function seenAt(src: Record<string, unknown>): string | null {
+  const raw = str(src, 'seenAt', { label: 'o instante da marcação', optional: true, max: 40, pattern: INSTANT_RE })
+  if (raw === null) return null
+  const [y, mo, d, h, mi, se] = INSTANT_RE.exec(raw)!.slice(1, 7).map(Number)
+  const t = new Date(Date.UTC(y, mo - 1, d))
+  const realDay = t.getUTCFullYear() === y && t.getUTCMonth() === mo - 1 && t.getUTCDate() === d
+  if (!realDay || h > 23 || mi > 59 || se > 59) throw new AdminError(400, 'O instante da marcação está em formato inválido.')
+  return raw
+}
+
 const actionState = (a: ActionRow) => ({ status: a.status, attempts: a.attempts, lastError: a.last_error })
 
 const payloadOf = (v: unknown): Record<string, unknown> => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {})
@@ -235,12 +267,18 @@ export const handlers: AdminHandlers = {
 
   'resolve-flag': {
     method: 'POST',
-    fields: ['subscriptionRef', 'note'],
+    fields: ['subscriptionRef', 'note', 'seenNote', 'seenAt'],
     run: async (ctx) => {
       const ref = str(ctx.body, 'subscriptionRef', { label: 'a marcação', max: 200 })
       const note = str(ctx.body, 'note', { label: 'a nota', min: 3, max: 500 })
-      const result = await rpc<string>(ctx, 'admin_resolve_flag', { p_admin: ctx.admin.userId, p_subscription_ref: ref, p_note: note })
+      const shownNote = seenNote(ctx.body)
+      const shownAt = seenAt(ctx.body)
+      const result = await rpc<string>(ctx, 'admin_resolve_flag', {
+        p_admin: ctx.admin.userId, p_subscription_ref: ref, p_note: note, p_seen_note: shownNote, p_seen_at: shownAt,
+      })
       if (result === 'resolved') return { result: 'resolved' }
+      // Não é erro: a tela avisa que a marcação mudou e recarrega a lista (T8).
+      if (result === 'changed') return { result: 'changed' }
       if (result === 'not_found') throw new AdminError(404, MSG_FLAG_NOT_FOUND)
       if (result === 'not_flagged') throw new AdminError(409, MSG_FLAG_DONE)
       throw new Error(`admin_resolve_flag devolveu ${String(result).slice(0, 40)}`)
