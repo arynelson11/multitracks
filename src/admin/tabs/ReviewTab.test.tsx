@@ -21,6 +21,11 @@ vi.mock('../lib/adminApi', async (importOriginal) => ({
 // O desktop.ts é o de verdade (sem bridge no jsdom: caminho da web); o window.open é falso em cada teste.
 vi.mock('../../lib/supabase', () => ({ supabase: null, getAuthHeaders: async () => ({}) }))
 
+// O adminApi de verdade, pego uma vez antes de qualquer teste: é o mesmo módulo que a aba usa (o
+// mock espalha os exports dele), então o AdminApiError é a mesma classe. O teste do bridge chama
+// vi.resetModules, e um importActual depois dele traria outra classe.
+const realApi = await vi.importActual<typeof import('../lib/adminApi')>('../lib/adminApi')
+
 const REFUND: ReviewAction = {
   id: 7,
   action: 'refund_payment',
@@ -573,6 +578,44 @@ describe('ReviewTab', () => {
     expect(refetch).toHaveBeenCalledTimes(2)
   })
 
+  it('fechar o admin com o pedido no ar e abrir de novo não manda a mesma ação de novo', async () => {
+    const pending = deferred<{ status: string; attempts: number; lastError: string | null }>()
+    h.adminPost.mockReturnValue(pending.promise)
+    const first = setup(queue({ actions: [INACTIVATE] }))
+    fireEvent.click(button(item('Inativar assinatura no Asaas'), 'Tentar agora'))
+    first.leave()
+    // Abrir o admin de novo monta outra casca: outra fila, com outro refetch.
+    const second = setup(queue({ actions: [INACTIVATE] }))
+    const again = button(item('Inativar assinatura no Asaas'), 'Tentar agora')
+    expect(again.disabled).toBe(true)
+    act(() => again.click())
+    expect(h.adminPost).toHaveBeenCalledTimes(1)
+    // A resposta recarrega a fila da casca aberta agora, não a da que fechou.
+    pending.resolve({ status: 'pending', attempts: 4, lastError: null })
+    await waitFor(() => expect(second.refetch).toHaveBeenCalledTimes(1))
+    expect(first.refetch).not.toHaveBeenCalled()
+    expect(button(item('Inativar assinatura no Asaas'), 'Tentar agora').disabled).toBe(true)
+    second.rerender(queue({ actions: [{ ...INACTIVATE, attempts: 4 }] }))
+    expect(button(item('Inativar assinatura no Asaas'), 'Tentar agora').disabled).toBe(false)
+  })
+
+  it('resposta com o admin fechado: ao abrir de novo, a primeira lista boa solta e o resultado aparece', async () => {
+    const pending = deferred<{ status: string; attempts: number; lastError: string | null }>()
+    h.adminPost.mockReturnValue(pending.promise)
+    const first = setup(queue({ actions: [INACTIVATE] }))
+    fireEvent.click(button(item('Inativar assinatura no Asaas'), 'Tentar agora'))
+    first.leave()
+    await act(async () => pending.resolve({ status: 'pending', attempts: 4, lastError: 'O Asaas não respondeu.' }))
+    // Com o admin fechado não há fila pra recarregar.
+    expect(first.refetch).not.toHaveBeenCalled()
+    // Abre de novo: a casca ainda está carregando, e a primeira lista boa chega depois da resposta.
+    const second = setup(null, { loading: true })
+    second.rerender({ broken: true } as unknown as ReviewQueue, { loading: false })
+    second.rerender(queue({ actions: [{ ...INACTIVATE, attempts: 4 }] }), { loading: false })
+    expect(button(item('Inativar assinatura no Asaas'), 'Tentar agora').disabled).toBe(false)
+    expect(item('Inativar assinatura no Asaas').textContent).toContain('O Asaas ainda não confirmou. O Asaas não respondeu.')
+  })
+
   it('resposta incerta com a aba fechada segura o botão e a frase ao voltar', async () => {
     const pending = deferred<never>()
     h.adminPost.mockReturnValue(pending.promise)
@@ -595,8 +638,7 @@ describe('ReviewTab', () => {
 
   it('Tentar agora com resposta incerta mostra a frase do Registro e segura o botão até a lista recarregar', async () => {
     // O adminPost de verdade, com o fetch falso caindo no meio: a ação pode ter saído.
-    const real = await vi.importActual<typeof import('../lib/adminApi')>('../lib/adminApi')
-    h.adminPost.mockImplementation(real.adminPost)
+    h.adminPost.mockImplementation(realApi.adminPost)
     const fetch = vi.fn(async () => {
       throw new TypeError('Failed to fetch')
     })
@@ -695,7 +737,7 @@ describe('ReviewTab', () => {
     expect(document.body.textContent).not.toContain(TRAVESSAO)
   })
 
-  // Por último: o vi.resetModules daqui recarrega o desktop.ts com o bridge e não pode mexer nos outros testes.
+  // O vi.resetModules daqui recarrega o desktop.ts com o bridge; os outros testes não dependem de ordem (realApi no topo).
   it('no app de computador a fatura abre pelo bridge, sem aba em branco', async () => {
     const openBridge = vi.fn()
     const open = vi.spyOn(window, 'open')

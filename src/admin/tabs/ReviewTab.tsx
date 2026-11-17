@@ -8,7 +8,7 @@
 //   resposta incerta ficam fora do componente e sobrevivem à troca de aba (Ruling ADM-T8-trava).
 // * Toda ação que deu certo, e todo erro certo, recarrega a fila. O último erro já chega do
 //   servidor em frase pronta. Resposta fora do formato mostra a frase pronta (Ruling ADM-T7-forma).
-import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import type React from 'react'
 import { Loader2, RefreshCw } from 'lucide-react'
 import { Button, Led, Panel, cx } from '../../components/ui'
@@ -94,40 +94,41 @@ function targetOf(p: Pending): CloseTarget {
 
 const toFeedback = (r: ResultText): Pick<Feedback, 'tone' | 'text'> => ({ tone: r.ok ? 'ok' : 'alert', text: r.text })
 
-// ── Memória que sobrevive à troca de aba (Ruling ADM-T8-trava). A casca desmonta a aba quando o
-// admin troca de aba: a trava dos botões sem diálogo, o segurar da resposta incerta e o resultado
-// de cada ação ficam aqui fora, uma memória por fila. A chave é o refetch do useAdminQuery da
-// casca, o mesmo enquanto o admin está aberto (useCallback sem dependência): fechar o admin
-// descarta a memória, e cada fila nova (nos testes, cada teste) começa do zero.
+// ── Memória que sobrevive à troca de aba e a fechar e abrir o admin (Ruling ADM-T8-trava e a
+// rodada 2 da T8). A casca desmonta a aba na troca de aba, e fechar o admin desmonta a casca
+// inteira (a fila nova vem com outro refetch). Por isso a trava dos botões sem diálogo, o segurar
+// e o resultado de cada ação ficam numa memória só, aqui no módulo, com chave fixa por botão e
+// por id da pendência ou do aviso (nunca pelo refetch). Nada trava pra sempre: o pedido no ar solta
+// quando responde (o adminPost tem teto de 35 s), e o segurado solta na primeira fila boa que chega
+// depois da resposta (o Atualizar, a volta pra aba ou a abertura do admin trazem uma).
 
-/** running: pedido no ar. Respondido, segura até chegar outra fila (outro objeto em review.data). */
-type Lock = { running: true } | { running: false; seen: unknown }
+/** running: pedido no ar. Respondido: segura até chegar outra fila boa; `uncertain` = a resposta não chegou. */
+type Lock = { running: true } | { running: false; seen: unknown; uncertain: boolean }
 type Shared = { locks: Readonly<Record<string, Lock>>; feedback: Readonly<Record<string, Feedback>> }
-type Memory = { state: Shared; lastData: unknown; listeners: Set<() => void> }
 
-const memories = new WeakMap<object, Memory>()
+const memory: {
+  state: Shared
+  /** A última fila boa que uma aba montada viu: o segurado espera outra. */
+  lastQueue: unknown
+  /** O refetch da casca aberta agora, pra recarregar quando a resposta chegar (null com o admin fechado). */
+  reload: (() => Promise<void>) | null
+  listeners: Set<() => void>
+} = { state: { locks: {}, feedback: {} }, lastQueue: null, reload: null, listeners: new Set() }
 
-function memoryOf(owner: object): Memory {
-  let m = memories.get(owner)
-  if (!m) {
-    m = { state: { locks: {}, feedback: {} }, lastData: null, listeners: new Set() }
-    memories.set(owner, m)
-  }
-  return m
-}
-
-function listen(m: Memory, listener: () => void): () => void {
-  m.listeners.add(listener)
+function listen(listener: () => void): () => void {
+  memory.listeners.add(listener)
   return () => {
-    m.listeners.delete(listener)
+    memory.listeners.delete(listener)
   }
 }
 
-function change(m: Memory, next: (s: Shared) => Shared): void {
-  const s = next(m.state)
-  if (s === m.state) return
-  m.state = s
-  m.listeners.forEach((l) => l())
+const snapshot = () => memory.state
+
+function change(next: (s: Shared) => Shared): void {
+  const s = next(memory.state)
+  if (s === memory.state) return
+  memory.state = s
+  memory.listeners.forEach((l) => l())
 }
 
 function without<T>(rec: Readonly<Record<string, T>>, key: string): Readonly<Record<string, T>> {
@@ -137,14 +138,33 @@ function without<T>(rec: Readonly<Record<string, T>>, key: string): Readonly<Rec
   return next
 }
 
-const isLocked = (lock: Lock | undefined, data: unknown) => lock !== undefined && (lock.running || lock.seen === data)
+const isLocked = (lock: Lock | undefined, queue: unknown) => lock !== undefined && (lock.running || lock.seen === queue)
 
-/** A fila que a aba viu por último (o pedido que responde com a aba fechada segura contra ela) e a soltura do que esperava outra fila. */
-function seeQueue(m: Memory, data: unknown): void {
-  m.lastData = data
-  change(m, (s) => {
-    const kept = Object.entries(s.locks).filter(([, l]) => l.running || l.seen === data)
+// Chave da trava: "<botão>:<item>", e o item é "acao:<id>" ou "aviso:<id>".
+const itemOfLock = (lockKey: string) => lockKey.slice(lockKey.indexOf(':') + 1)
+
+/** Chegou uma fila boa: guarda como a última vista e solta o que esperava outra fila. */
+function seeQueue(queue: ReviewQueue): void {
+  memory.lastQueue = queue
+  change((s) => {
+    const kept = Object.entries(s.locks).filter(([, l]) => l.running || l.seen === queue)
     return kept.length === Object.keys(s.locks).length ? s : { ...s, locks: Object.fromEntries(kept) }
+  })
+}
+
+/**
+ * A aba saiu da tela: as frases vão embora, menos as dos botões com pedido no ar ou segurados por
+ * resposta incerta (a resposta que chegar, ou a frase do Registro, aparecem na volta).
+ */
+function leaveTab(): void {
+  change((s) => {
+    const keep = new Set(
+      Object.entries(s.locks)
+        .filter(([, l]) => l.running || l.uncertain)
+        .map(([key]) => itemOfLock(key)),
+    )
+    const feedback = Object.fromEntries(Object.entries(s.feedback).filter(([key]) => keep.has(key)))
+    return Object.keys(feedback).length === Object.keys(s.feedback).length ? s : { ...s, feedback }
   })
 }
 
@@ -156,25 +176,29 @@ type After = 'reload' | 'hold' | 'free'
 
 /**
  * Roda a ação com a trava por botão. A conferência é síncrona, na memória do módulo: dois cliques
- * no mesmo instante, ou um clique depois de voltar pra aba com o pedido no ar, não saem duas vezes.
- * A tarefa começa ainda dentro do clique (antes do primeiro await).
+ * no mesmo instante, um clique depois de voltar pra aba ou de abrir o admin de novo com o pedido no
+ * ar, não saem duas vezes. A tarefa começa ainda dentro do clique (antes do primeiro await).
  */
-async function runLocked(m: Memory, key: string, refetch: () => Promise<void>, task: () => Promise<After>): Promise<void> {
-  if (isLocked(m.state.locks[key], m.lastData)) return
-  change(m, (s) => ({ ...s, locks: { ...s.locks, [key]: { running: true } } }))
+async function runLocked(key: string, task: () => Promise<After>): Promise<void> {
+  if (isLocked(memory.state.locks[key], memory.lastQueue)) return
+  change((s) => ({ ...s, locks: { ...s.locks, [key]: { running: true } } }))
   let after: After = 'hold'
   try {
     after = await task()
   } finally {
-    change(m, (s) => ({
+    change((s) => ({
       ...s,
-      locks: after === 'free' ? without(s.locks, key) : { ...s.locks, [key]: { running: false, seen: m.lastData } },
+      locks:
+        after === 'free'
+          ? without(s.locks, key)
+          : { ...s.locks, [key]: { running: false, seen: memory.lastQueue, uncertain: after === 'hold' } },
     }))
-    if (after === 'reload') void refetch()
+    if (after === 'reload') void memory.reload?.()
   }
 }
 
-const tryKey = (item: Item) => `tentar:${item.key}`
+const tryKeyOf = (itemKey: string) => `tentar:${itemKey}`
+const tryKey = (item: Item) => tryKeyOf(item.key)
 const invoiceKey = (item: Item) => `fatura:${item.key}`
 
 export function ReviewTab({ onNavigate, review }: TabProps & { review: AdminQueryState<ReviewQueue> }) {
@@ -183,10 +207,20 @@ export function ReviewTab({ onNavigate, review }: TabProps & { review: AdminQuer
   const [dialogError, setDialogError] = useState<AdminApiError | null>(null)
 
   const { refetch } = review
-  const memory = memoryOf(refetch)
-  const subscribe = useCallback((listener: () => void) => listen(memory, listener), [memory])
-  const shared = useSyncExternalStore(subscribe, () => memory.state)
-  useEffect(() => seeQueue(memory, review.data), [memory, review.data])
+  const shared = useSyncExternalStore(listen, snapshot)
+  // Resposta fora do formato vale como erro: frase pronta e Tentar de novo, nunca o render quebrado.
+  const data = isReviewQueue(review.data) ? review.data : null
+  useEffect(() => {
+    if (data) seeQueue(data)
+  }, [data])
+  // A casca aberta agora é quem recarrega quando uma resposta chegar.
+  useEffect(() => {
+    memory.reload = refetch
+    return () => {
+      if (memory.reload === refetch) memory.reload = null
+      leaveTab()
+    }
+  }, [refetch])
 
   // Ações de outras abas (a ficha do assinante) também mudam a fila: voltar pra cá com a lista
   // já na mão recarrega. Na primeira abertura a casca já está pedindo.
@@ -195,18 +229,18 @@ export function ReviewTab({ onNavigate, review }: TabProps & { review: AdminQuer
     if (enteredWithList.current) void refetch()
   }, [refetch])
 
-  const locked = (key: string) => isLocked(shared.locks[key], review.data)
+  const locked = (key: string) => isLocked(shared.locks[key], data)
   const running = (key: string) => shared.locks[key]?.running === true
 
   const say = (item: Item, f: Pick<Feedback, 'tone' | 'text'>) =>
-    change(memory, (s) => ({ ...s, feedback: { ...s.feedback, [item.key]: { ...f, label: labelOf(item) } } }))
-  const forget = (key: string) => change(memory, (s) => ({ ...s, feedback: without(s.feedback, key) }))
+    change((s) => ({ ...s, feedback: { ...s.feedback, [item.key]: { ...f, label: labelOf(item) } } }))
+  const forget = (key: string) => change((s) => ({ ...s, feedback: without(s.feedback, key) }))
 
   const refresh = () => {
     // A frase de uma resposta incerta fica enquanto o botão estiver segurado.
-    change(memory, (s) => ({
+    change((s) => ({
       ...s,
-      feedback: Object.fromEntries(Object.entries(s.feedback).filter(([key]) => isLocked(s.locks[`tentar:${key}`], review.data))),
+      feedback: Object.fromEntries(Object.entries(s.feedback).filter(([key]) => isLocked(s.locks[tryKeyOf(key)], data))),
     }))
     void refetch()
   }
@@ -256,7 +290,7 @@ export function ReviewTab({ onNavigate, review }: TabProps & { review: AdminQuer
   }
 
   const retry = (item: ActionItem | EventItem) =>
-    runLocked(memory, tryKey(item), refetch, async () => {
+    runLocked(tryKey(item), async () => {
       forget(item.key)
       try {
         if (item.kind === 'action') {
@@ -278,7 +312,7 @@ export function ReviewTab({ onNavigate, review }: TabProps & { review: AdminQuer
   const openInvoice = (item: ActionItem) => {
     const id = item.data.paymentId
     if (!id) return
-    return runLocked(memory, invoiceKey(item), refetch, async () => {
+    return runLocked(invoiceKey(item), async () => {
       // A aba abre aqui, ainda dentro do clique (Ruling ADM-T8-aba); o endereço chega depois do pedido.
       const tab = openExternalUrlLater()
       forget(item.key)
@@ -311,8 +345,6 @@ export function ReviewTab({ onNavigate, review }: TabProps & { review: AdminQuer
     }
   }
 
-  // Resposta fora do formato vale como erro: frase pronta e Tentar de novo, nunca o render quebrado.
-  const data = isReviewQueue(review.data) ? review.data : null
   const groups = data ? splitQueue(data) : null
   const shownKeys = new Set(groups ? [...groups.mine, ...groups.auto].map((i) => i.key) : [])
   // Resultado de um item que já saiu da lista (fechou): aparece no topo.
