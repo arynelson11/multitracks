@@ -1,5 +1,5 @@
 // Supabase falso, em memória, só pros testes do backend (nenhuma chamada de rede).
-// Cobre o pedaço do query builder que o api/ usa: select/eq/in/neq/order/limit,
+// Cobre o pedaço do query builder que o api/ usa: select/eq/in/neq/lte/lt/gte/is/order/limit,
 // maybeSingle/single, insert, upsert, update, delete e rpc. A pasta começa com
 // sublinhado, então a Vercel não transforma estes arquivos em função.
 
@@ -8,7 +8,7 @@ export type DbError = { message: string; code?: string }
 export type DbResult = { data: unknown; error: DbError | null }
 export type RpcHandler = (args: Record<string, unknown>) => unknown | Promise<unknown>
 
-type Filter = { col: string; op: 'eq' | 'in' | 'neq' | 'lte' | 'lt'; value: unknown }
+type Filter = { col: string; op: 'eq' | 'in' | 'neq' | 'lte' | 'lt' | 'gte' | 'is'; value: unknown }
 
 export type FakeDbOptions = {
   tables?: Record<string, Row[]>
@@ -72,6 +72,9 @@ class QueryBuilder implements PromiseLike<DbResult> {
   in(col: string, value: unknown[]): this { this.filters.push({ col, op: 'in', value }); return this }
   lte(col: string, value: unknown): this { this.filters.push({ col, op: 'lte', value }); return this }
   lt(col: string, value: unknown): this { this.filters.push({ col, op: 'lt', value }); return this }
+  gte(col: string, value: unknown): this { this.filters.push({ col, op: 'gte', value }); return this }
+  // .is(col, null) casa coluna nula ou ausente na linha falsa; com booleano, igualdade estrita.
+  is(col: string, value: null | boolean): this { this.filters.push({ col, op: 'is', value }); return this }
   order(col: string, opts?: { ascending?: boolean }): this { this.orderBy = { col, ascending: opts?.ascending ?? true }; return this }
   limit(n: number): this { this.limitN = n; return this }
   maybeSingle(): this { this.singleMode = 'maybe'; return this }
@@ -87,6 +90,8 @@ class QueryBuilder implements PromiseLike<DbResult> {
       if (f.op === 'neq') return row[f.col] !== f.value
       if (f.op === 'lte') return row[f.col] != null && String(row[f.col]) <= String(f.value)
       if (f.op === 'lt') return row[f.col] != null && (typeof row[f.col] === 'number' ? Number(row[f.col]) < Number(f.value) : String(row[f.col]) < String(f.value))
+      if (f.op === 'gte') return row[f.col] != null && (typeof row[f.col] === 'number' ? Number(row[f.col]) >= Number(f.value) : String(row[f.col]) >= String(f.value))
+      if (f.op === 'is') return f.value === null ? row[f.col] == null : row[f.col] === f.value
       return Array.isArray(f.value) && f.value.includes(row[f.col])
     })
   }
