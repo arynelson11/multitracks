@@ -91,7 +91,9 @@ etiquetas PRÓXIMA, REPETE e LOOP da onda (`pointer-events-none`) não mudam nad
 ```
 
 Tipo da regra, caminho do elemento (até 5 níveis, pelos `data-*`, `role`,
-`aria-label` e `title`), o texto e as medidas.
+`aria-label` e `title`), o texto e as medidas. Esse exemplo é da primeira rodada
+(aviso COMPASSO ASSUMIDO quebrando linha no PRÓXIMA em 1280 px), corrigido na
+própria T20.
 
 ## Como funciona
 
