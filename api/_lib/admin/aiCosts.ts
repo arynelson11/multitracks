@@ -20,6 +20,13 @@ import { countOf, isObject, PAGE_SIZE, readPage, readPeriod } from './period.js'
 //   Brasília dele (Ruling ADM-T12-fx-dia). O servidor acrescenta page,
 //   pageSize, a tabela de preços e o resultado da varredura; não recalcula
 //   nada do que o banco somou.
+// * Sem custo em dois números (Ajuste ADM-sem-custo): withoutCostPending, o
+//   que a varredura ainda completa (nunca gravado, ou com o dólar e sem o
+//   real), e withoutCostUnpriced, o que ela já gravou sem dólar e nunca mais
+//   tenta (versão sem preço conhecido, sem dado do Replicate). O alerta e o
+//   botão da T19 contam só os pendentes; withoutCost segue a soma dos dois.
+//   A varredura só pega pendentes (filtros de sweepPendingCosts), então o
+//   "more" dela também só fala deles.
 // * ai-costs-sweep (POST): o botão "Completar custos que faltam" da T19, uma
 //   varredura maior, sem somar.
 // Teto de tempo: o adminApi corta o GET em 15 s e a função tem maxDuration de
@@ -231,6 +238,14 @@ async function listAiCosts(ctx: AdminCtx): Promise<unknown> {
     !d || !Number.isSafeInteger(total) || !isObject(range) || typeof range.from !== 'string' || typeof range.to !== 'string'
     || !isObject(d.totals) || !Array.isArray(d.byUser) || !Array.isArray(d.byModel) || !isObject(d.fx) || !Array.isArray(d.rows)
   ) throw new Error('admin_ai_costs devolveu fora do formato')
+  // Sem a divisão, ou com a divisão que não fecha, o alerta mentiria: erro, como o resto da forma.
+  const t = d.totals
+  const withoutCost = countOf(t.withoutCost)
+  const pending = countOf(t.withoutCostPending)
+  const unpriced = countOf(t.withoutCostUnpriced)
+  if (![withoutCost, pending, unpriced].every(Number.isSafeInteger) || pending + unpriced !== withoutCost) {
+    throw new Error('admin_ai_costs devolveu o sem custo fora do formato (pendentes e sem preço); confira se o db/supabase_admin_custos.sql novo rodou')
+  }
 
   return {
     range: { from: range.from, to: range.to },

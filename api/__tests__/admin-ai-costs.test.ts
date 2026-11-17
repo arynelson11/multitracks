@@ -123,6 +123,9 @@ const fakeFetch = vi.fn<typeof fetch>(async (url) => {
 })
 
 const withCost = (r: Row) => r.cost_recorded_at != null && r.cost_usd != null && r.cost_brl != null
+// O que a varredura ainda completa (regra do SQL da T10, Ajuste ADM-sem-custo): nunca gravado, ou
+// gravado com o dólar e sem o real.
+const pendingCost = (r: Row) => r.cost_recorded_at == null || (r.cost_usd != null && Number(r.cost_usd) >= 0 && r.cost_brl == null)
 
 // admin_ai_costs falso: soma o que está na tabela NA HORA da chamada (pra provar
 // que a varredura terminou antes). Formato da T10, sem page e pageSize.
@@ -135,13 +138,15 @@ function aiCostsAnswer(args: Record<string, unknown>): Row {
     totals: {
       jobs: rows.length, succeeded: rows.filter((r) => r.status === 'succeeded').length, failed: 0, canceled: 0,
       unknown: rows.filter((r) => r.status === 'unknown').length, withoutCost: rows.length - costed.length,
+      withoutCostPending: rows.filter(pendingCost).length,
+      withoutCostUnpriced: rows.filter((r) => !withCost(r) && !pendingCost(r)).length,
       costUsd: costed.reduce((s, r) => s + Number(r.cost_usd), 0), costBrl: costed.reduce((s, r) => s + Number(r.cost_brl), 0),
       avgBrlPerSucceeded: null, predictSeconds: 0,
     },
     byUser: [{ userId: USER_ID, email: USER_EMAIL, jobs: rows.length, costBrl: 0 }],
     byModel: [],
     fx: { minDate: null, maxDate: null },
-    rows: rows.map((r) => ({ replicateId: r.replicate_id, costBrl: r.cost_brl })),
+    rows: rows.map((r) => ({ replicateId: r.replicate_id, costBrl: r.cost_brl, costPending: pendingCost(r) })),
     total: rows.length,
   }
 }
@@ -570,6 +575,78 @@ describe('ai-costs: forma da resposta', () => {
       expect(res.statusCode).toBe(500)
       expect(res.body).toEqual({ error: MSG.unexpected })
     }
+  })
+})
+
+describe('ai-costs: sem custo pendente e sem preço conhecido (Ajuste ADM-sem-custo)', () => {
+  // gravado sem dólar: versão sem preço conhecido; a varredura nunca mais volta nele
+  const unpriced = (id: string, extra: Row = {}) =>
+    job(id, { version: 'v9', status: 'succeeded', predict_seconds: 55, cost_recorded_at: '2026-11-16T12:05:00Z', ...extra })
+
+  it('repassa os pendentes e os sem preço como o banco somou, e o 404 passa de pendente pra sem preço', async () => {
+    seedDb([
+      job('r404', { created_at: '2026-11-16T12:00:00Z' }),
+      unpriced('sempreco', { created_at: '2026-11-16T12:01:00Z' }),
+      // menos de 10 minutos: o app ainda consulta; continua pendente
+      job('novo', { created_at: '2026-11-17T14:55:00Z' }),
+    ])
+    replicateGet = async () => { throw apiError(404) }
+    const res = await get()
+    expect(res.statusCode).toBe(200)
+    expect(calls.filter((c) => c.startsWith('replicate:'))).toEqual(['replicate:r404'])
+    expect(res.body).toMatchObject({
+      totals: { withoutCost: 3, withoutCostPending: 1, withoutCostUnpriced: 2 },
+      sweep: { recorded: 0, unknown: 1, failed: 0, more: false },
+    })
+    const rows = (res.body as { rows: Row[] }).rows
+    expect(Object.fromEntries(rows.map((r) => [r.replicateId, r.costPending]))).toEqual({ r404: false, sempreco: false, novo: true })
+  })
+
+  it('a varredura não consulta o já tentado sem preço nem promete continuar por causa dele', async () => {
+    // mais do que o limite de 20 da abertura e do que o limite 1 do botão
+    seedDb(Array.from({ length: 25 }, (_, i) => unpriced(`s${String(i).padStart(2, '0')}`)))
+    const opened = await get()
+    expect(opened.statusCode).toBe(200)
+    expect(opened.body).toMatchObject({
+      totals: { withoutCost: 25, withoutCostPending: 0, withoutCostUnpriced: 25 },
+      sweep: { recorded: 0, unknown: 0, failed: 0, brlCompleted: 0, more: false, skipped: false },
+    })
+    const clicked = await post({ limit: 1 })
+    expect(clicked.statusCode).toBe(200)
+    expect(clicked.body).toEqual({ recorded: 0, unknown: 0, failed: 0, brlCompleted: 0, more: false })
+    expect(calls.filter((c) => c.startsWith('replicate:'))).toEqual([])
+    expect(db.writes.filter((w) => w.table === 'predictions')).toEqual([])
+  })
+
+  it('sem a divisão do sem custo, ou com a divisão que não fecha, vira erro inesperado', async () => {
+    const totalsOf = (a: Record<string, unknown>) => aiCostsAnswer(a).totals as Row
+    const answers: ((a: Record<string, unknown>) => unknown)[] = [
+      // SQL de antes do ajuste
+      (a) => {
+        const t = totalsOf(a)
+        delete t.withoutCostPending
+        delete t.withoutCostUnpriced
+        return { ...aiCostsAnswer(a), totals: t }
+      },
+      (a) => ({ ...aiCostsAnswer(a), totals: { ...totalsOf(a), withoutCostUnpriced: null } }),
+      (a) => ({ ...aiCostsAnswer(a), totals: { ...totalsOf(a), withoutCostPending: -1, withoutCostUnpriced: 2 } }),
+      (a) => ({ ...aiCostsAnswer(a), totals: { ...totalsOf(a), withoutCostPending: 1.5, withoutCostUnpriced: 0.5 } }),
+      // a soma dos dois não é o withoutCost (2: um pendente e um sem preço)
+      (a) => ({ ...aiCostsAnswer(a), totals: { ...totalsOf(a), withoutCostPending: 2, withoutCostUnpriced: 1 } }),
+      (a) => ({ ...aiCostsAnswer(a), totals: { ...totalsOf(a), withoutCostPending: 0, withoutCostUnpriced: 1 } }),
+      (a) => ({ ...aiCostsAnswer(a), totals: { ...totalsOf(a), withoutCost: 'x' } }),
+    ]
+    seedDb([job('r1', { created_at: '2026-11-17T14:55:00Z' }), unpriced('s1')])
+    expect(aiCostsAnswer({}).totals).toMatchObject({ withoutCost: 2, withoutCostPending: 1, withoutCostUnpriced: 1 })
+    calls = []
+    for (const [i, answer] of answers.entries()) {
+      seedDb([job('r1', { created_at: '2026-11-17T14:55:00Z' }), unpriced('s1')])
+      db.setRpc('admin_ai_costs', answer)
+      const res = await get()
+      expect(res.statusCode, String(i)).toBe(500)
+      expect(res.body, String(i)).toEqual({ error: MSG.unexpected })
+    }
+    expect(logText()).toContain('sem custo fora do formato')
   })
 })
 
