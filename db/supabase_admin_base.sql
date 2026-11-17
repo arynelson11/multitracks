@@ -299,7 +299,10 @@ $$;
 --   hora (updated_at = now());
 -- * a hora sozinha não basta pra dizer o que o admin leu; as duas juntas sim.
 -- A hora vale até o milissegundo: o navegador guarda o instante em ms.
--- Respostas: not_found; not_flagged (já conferida); changed (sem a versão vista,
+-- Chamada antiga é a que vem sem a hora vista (updated_at nunca é nulo). A nota
+-- vista nula vale como versão (Ruling ADM-T5T6-nulo): é comparada com a atual por
+-- is distinct from, então uma marcação de nota nula também pode ser conferida.
+-- Respostas: not_found; not_flagged (já conferida); changed (sem a hora vista,
 -- como numa chamada antiga, ou com a marcação diferente da vista: não mexe em
 -- nada, nem grava registro); resolved (tira a marcação, acrescenta a nota ao
 -- admin_note e grava o registro, tudo na mesma transação). O "Conferido" não
@@ -326,7 +329,7 @@ begin
   if not public.is_admin_user(p_admin) then
     raise exception 'só admin faz ação de admin' using errcode = '42501';
   end if;
-  if p_seen_note is null or p_seen_at is null then
+  if p_seen_at is null then
     return 'changed';
   end if;
   select * into r from public.billing_subscriptions where id = p_subscription_ref for update;
