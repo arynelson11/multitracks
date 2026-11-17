@@ -8,6 +8,7 @@ import { useAdminGuard } from './hooks/useAdminGuard'
 import { useAdminQuery } from './hooks/useAdminQuery'
 import { AdminLogin } from './AdminLogin'
 import { AdminShell } from './AdminShell'
+import { AdminErrorBoundary } from './components/AdminErrorBoundary'
 import { TAB_LABELS, type AdminTabId, type Navigate, type TabProps } from './lib/tabs'
 import type { ReviewQueue } from './lib/reviewTypes'
 import { ReviewTab } from './tabs/ReviewTab'
@@ -87,7 +88,10 @@ function AdminPanel({ email, onClose, onSignOut }: { email: string | null; onClo
       onSignOut={onSignOut}
       reviewCount={review.data?.counts ?? null}
     >
-      {active === 'review' ? <ReviewTab {...tabProps} review={review} /> : Current && <Current {...tabProps} />}
+      {/* Erro de render numa aba fica só nela (Ruling ADM-T7-forma); trocar de aba recomeça limpo. */}
+      <AdminErrorBoundary key={active} onClose={onClose} onSignOut={onSignOut}>
+        {active === 'review' ? <ReviewTab {...tabProps} review={review} /> : Current && <Current {...tabProps} />}
+      </AdminErrorBoundary>
     </AdminShell>
   )
 }
