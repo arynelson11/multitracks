@@ -352,7 +352,18 @@ begin
 end;
 $$;
 
--- ─── 3. Só o backend executa ────────────────────────────────────────────────
+-- ─── 3. Índice da consulta do plano da hora da cobrança ────────────────────
+-- O admin_finance procura, pra cada cobrança, as trocas de plano confirmadas
+-- daquela assinatura no registro do admin. Sem este índice o custo cresce com
+-- cobranças vezes linhas do registro (medido na revisão: 20.000 cobranças e
+-- 5.000 registros, de 14 a 20 s; com o índice, uns 110 ms). Parcial: só as
+-- linhas que a consulta lê. O registro (supabase_admin_base.sql) já tem
+-- admin_audit_log_created_idx e admin_audit_log_target_idx; o nome não colide.
+create index if not exists admin_audit_log_change_plan_idx
+  on public.admin_audit_log (target_ref)
+  where action = 'change_plan' and result = 'ok';
+
+-- ─── 4. Só o backend executa ────────────────────────────────────────────────
 revoke execute on function public.admin_overview(timestamptz) from public, anon, authenticated;
 grant  execute on function public.admin_overview(timestamptz) to service_role;
 revoke execute on function public.admin_finance(date, date, text, int, int) from public, anon, authenticated;
