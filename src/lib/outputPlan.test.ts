@@ -392,7 +392,7 @@ describe('avisos da leitura', () => {
   })
 
   it('todo aviso tem texto em português, sem travessão', () => {
-    expect(Object.keys(OUTPUT_WARNING_TEXT).sort()).toEqual(['lado-assumido', 'mapa-ajustado', 'modo-assumido', 'mono', 'poucos-canais', 'sem-saida-ouvido'])
+    expect(Object.keys(OUTPUT_WARNING_TEXT).sort()).toEqual(['lado-assumido', 'mapa-ajustado', 'modo-assumido', 'mono', 'poucos-canais', 'sem-saida-ouvido', 'sink-timeout'])
   })
 })
 

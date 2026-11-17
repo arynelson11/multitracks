@@ -9,6 +9,7 @@ import { measure, type Sig } from '../test/signalMeasure'
 import type { SavedSong } from '../lib/repertoireSchema'
 import type { OutputSettings } from '../lib/stageContracts'
 import JSZip from 'jszip'
+import { OUTPUT_WARNING_TEXT } from '../lib/outputPlan'
 import { useAudioEngine } from './useAudioEngine'
 
 // T25: o motor liga o fader de cada canal no barramento do papel (grafo da T12), põe o pan
@@ -968,6 +969,7 @@ describe('rodada 3: canal novo no meio do corte, relógio, âncora e setSinkId',
     mem.settings = { ...mem.settings, outputs: STEREO }
     await act(async () => { hook.rerender() })
     await stepAudio(17) // passa do fundo: roteador e pans dos canais listados trocam; o relógio para na subida
+    await pause(12) // o tique da espera (reserva por timer, 5 ms) vê o fundo
     expect(hook.result.current.outputPlan.mode).toBe('stereo')
     await act(async () => { releaseFile(); await adding }) // listado com a troca ainda na fila
     expect(hook.result.current.channels.some((c) => c.name === 'CLICK 2')).toBe(true)
@@ -1021,5 +1023,78 @@ describe('rodada 3: canal novo no meio do corte, relógio, âncora e setSinkId',
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 3300)) })
     expect(hook.result.current.outputPlan.mode).toBe('stereo')
     expect(warn.mock.calls.some((c) => String(c[0]).includes('setSinkId'))).toBe(true)
+  }, 30000)
+})
+
+describe('ajuste final (Ruling T25-final)', () => {
+  async function stepAudio(ms: number) {
+    await act(async () => {
+      for (let i = 0; i < ms; i++) { ctxOf().currentTime += 0.001; await new Promise((resolve) => setTimeout(resolve, 2)) }
+    })
+  }
+
+  it('a fila de trocas se libera mesmo se o acerto do fim da troca lançar', async () => {
+    mem.settings = { ...mem.settings, autoPan: true, outputs: SPLIT }
+    seed(song('s1'))
+    const hook = await openApp()
+    await act(async () => { await hook.result.current.play() })
+    // O panner do Click lança em toda escrita durante a 1ª troca (no fundo e no acerto do fim).
+    const pan = asFake(chan(hook, 's1-click').pannerNode).pan
+    const original = pan.setValueAtTime.bind(pan)
+    pan.setValueAtTime = () => { throw new Error('panner quebrado') }
+    mem.settings = { ...mem.settings, outputs: { ...SPLIT, earOnSecond: true } }
+    await act(async () => { hook.rerender() })
+    await letAudioRun(80)
+    pan.setValueAtTime = original
+    // O erro da troca só sobe depois da subida do corte: espera a fila esvaziar.
+    await letAudioRun(200)
+    expect(error.mock.calls.some((c) => String(c[0]).includes('[saídas]'))).toBe(true)
+    error.mockClear()
+    // A troca seguinte ainda roda.
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    await act(async () => { hook.rerender() })
+    await letAudioRun(80)
+    expect(hook.result.current.outputPlan.mode).toBe('stereo')
+    expect(valueAt(asFake(chan(hook, 's1-click').pannerNode).pan, ctxOf().currentTime)).toBe(-1)
+    act(() => { hook.result.current.pause() })
+  })
+
+  it('setSinkId que passa de 3 s vira aviso na tela (sink-timeout) e some quando o aparelho responde', async () => {
+    expect(OUTPUT_WARNING_TEXT['sink-timeout']).toBe('A troca da saída de áudio demorou. Confira o som.')
+    mem.ctxOpts = { maxChannelCount: 2, sinks: { placa: 8 } }
+    seed(song('s1'))
+    const hook = await openApp()
+    const ctx = ctxOf()
+    let answer!: () => void
+    ctx.setSinkId = () => new Promise<void>((resolve) => { answer = resolve })
+    mem.settings = { ...mem.settings, audioDeviceId: 'placa' }
+    await act(async () => { hook.rerender() })
+    expect(hook.result.current.outputPlan.warning).toBeNull()
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 3300)) })
+    expect(hook.result.current.outputPlan.warning).toBe('sink-timeout')
+    // O aparelho responde depois: o aviso sai.
+    await act(async () => { answer(); await new Promise((resolve) => setTimeout(resolve, 50)) })
+    expect(hook.result.current.outputPlan.warning).toBeNull()
+  }, 30000)
+
+  it('pan automático mudado na subida de outra troca: o pan novo vai pro fundo do próximo corte', async () => {
+    mem.settings = { ...mem.settings, autoPan: true, outputs: SPLIT }
+    seed(song('s1'))
+    const hook = await openApp()
+    const bus = graphOf(ctxOf())
+    await act(async () => { await hook.result.current.play() })
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    await act(async () => { hook.rerender() })
+    await stepAudio(17) // passou do fundo; a troca está subindo
+    mem.settings = { ...mem.settings, autoPan: false }
+    await act(async () => { hook.rerender() })
+    await letAudioRun(150)
+    const click = asFake(chan(hook, 's1-click').pannerNode)
+    const last = click.pan.events.filter((e) => e.kind === 'set').at(-1)!
+    expect(last.value).toBe(0)
+    // Escrito com o corte do Click no fundo, nunca com o som inteiro.
+    expect(valueAt(bus.cut.click.gain, last.time)).toBe(0)
+    expect(valueAt(bus.cut.click.gain, ctxOf().currentTime + 0.05)).toBe(1)
+    act(() => { hook.result.current.pause() })
   }, 30000)
 })

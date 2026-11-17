@@ -15,8 +15,9 @@ type OutputMap = OutputSettings['multi']
  * Aviso âmbar das saídas (as Configurações da T19 mostram o texto de `OUTPUT_WARNING_TEXT`).
  * `mono` e os três seguintes vêm do plano (`planOutputs`, placa de agora); `modo-assumido`,
  * `lado-assumido` e também `mapa-ajustado` vêm da leitura do que estava gravado (`migrateOutputs`).
+ * `sink-timeout` vem do motor (T25): o aparelho escolhido não respondeu à troca em 3 s.
  */
-export type OutputWarning = 'mono' | 'poucos-canais' | 'sem-saida-ouvido' | 'mapa-ajustado' | 'modo-assumido' | 'lado-assumido'
+export type OutputWarning = 'mono' | 'poucos-canais' | 'sem-saida-ouvido' | 'mapa-ajustado' | 'modo-assumido' | 'lado-assumido' | 'sink-timeout'
 
 export const OUTPUT_WARNING_TEXT: Record<OutputWarning, string> = {
   mono: 'Esta saída tem 1 canal: Click, Guia e VS saem juntos.',
@@ -25,6 +26,7 @@ export const OUTPUT_WARNING_TEXT: Record<OutputWarning, string> = {
   'mapa-ajustado': 'Parte do mapa salvo não vale nesta placa: as saídas foram ajustadas, com Click e Guia fora da VS. Confira o resumo.',
   'modo-assumido': 'Não deu pra ler o modo de saída gravado. Usando Click e Guia separados: confira o resumo e o lado do ouvido.',
   'lado-assumido': 'Não deu pra ler o lado gravado de Click e Guia. Quando eles ficam separados da VS (inclusive numa placa de 2 canais), vão pra saída 1: confira antes de tocar.',
+  'sink-timeout': 'A troca da saída de áudio demorou. Confira o som.',
 }
 
 /** Plano com o aviso pra tela. O motor e o roteador usam só os campos de `OutputPlan`. */

@@ -139,14 +139,23 @@ function waitForAudioTime(ctx: BaseAudioContext, t: number, tickers: { add(fn: (
     });
 }
 
-/** O setSinkId com teto: aparelho que não responde em 3 s não segura a fila (a troca segue com o aparelho de agora). */
-async function setSinkWithTimeout(ctx: SinkAudioContext, deviceId: string): Promise<void> {
-    if (typeof ctx.setSinkId !== 'function') return;
+/**
+ * O setSinkId com teto: aparelho que não responde em 3 s não segura a fila (a troca segue com
+ * o aparelho de agora) e devolve `true`; `onLateAnswer` é chamado quando ele enfim responder
+ * (ou falhar). Aparelho que responde depois do teto troca fora do corte: limite conhecido
+ * (R3-2), até o corte do sinkchange.
+ */
+async function setSinkWithTimeout(ctx: SinkAudioContext, deviceId: string, onLateAnswer: () => void): Promise<boolean> {
+    if (typeof ctx.setSinkId !== 'function') return false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<'timeout'>((resolve) => { timer = setTimeout(() => resolve('timeout'), SINK_TIMEOUT_MS); });
+    const answer = ctx.setSinkId(deviceId);
     try {
-        const result = await Promise.race([ctx.setSinkId(deviceId).then(() => 'ok' as const), timeout]);
-        if (result === 'timeout') console.warn(`[saídas] o setSinkId não respondeu em ${SINK_TIMEOUT_MS / 1000} s; seguindo com o aparelho de agora.`);
+        const result = await Promise.race([answer.then(() => 'ok' as const), timeout]);
+        if (result !== 'timeout') return false;
+        console.warn(`[saídas] o setSinkId não respondeu em ${SINK_TIMEOUT_MS / 1000} s; seguindo com o aparelho de agora.`);
+        answer.then(onLateAnswer, onLateAnswer);
+        return true;
     } finally {
         clearTimeout(timer);
     }
@@ -337,6 +346,9 @@ export function useAudioEngine(userId?: string) {
     const cutClockRef = useRef<SchedulerClock | null>(null);
     // Fim da subida do último corte, em tempo do áudio: o próximo só começa depois dele (NB3).
     const lastCutEndRef = useRef(0);
+    // O aparelho escolhido não respondeu à troca em 3 s (aviso 'sink-timeout' na tela até ele responder).
+    const sinkTimeoutRef = useRef(false);
+    const sinkAttemptRef = useRef(0);
     const playlistRef = useRef<Song[]>([]);
     const faderBusRef = useRef(new WeakMap<GainNode, ChannelRole>());
     // Valores da renderização mais nova pra quem roda fora dela (initEngine, sinkchange,
@@ -730,23 +742,49 @@ export function useAudioEngine(userId?: string) {
     // As trocas vão numa fila, na ordem: uma nunca começa no meio do corte de outra.
     const routeQueueRef = useRef<Promise<void>>(Promise.resolve());
     const routeJobsRef = useRef(0);
-    const enqueueRoute = (job: () => Promise<void>) => {
+    // Rede de segurança no fim de cada troca, sobre TODOS os canais (Ruling T25-canal-novo):
+    // canal que entrou no repertório no meio do corte fica no pan do plano novo, na hora (ele
+    // ainda não toca). Canal TOCANDO que ficou diferente (o pan automático ou o papel mudou na
+    // subida desta troca, R3-1) não é escrito com o som inteiro: vai pro fundo de um corte na
+    // fila. O acerto que já é de um corte assim escreve direto (não pede outro).
+    const settleAfterRoute = (isPanFix: boolean) => {
+        const ctx = audioCtxRef.current;
+        const graph = graphRef.current;
+        if (!ctx || !graph) return;
+        let deferred = false;
+        for (const ch of allChannels()) {
+            if (pannerPanRef.current.get(ch.pannerNode) === channelPanFor(ch, graph.plan, autoPanRef.current)) continue;
+            if (!isPanFix && ch.sourceNode && needsCut()) { deferred = true; continue; }
+            syncChannelPan(ctx, ch, graph.plan, autoPanRef.current, false);
+        }
+        if (deferred) {
+            enqueueRoute(async () => {
+                const c = audioCtxRef.current;
+                const g = graphRef.current;
+                if (c && g && panPending(g.plan, autoPanRef.current)) await withRouteCut(() => syncAllPans(c, g.plan, autoPanRef.current));
+            }, true);
+        }
+    };
+    const enqueueRoute = (job: () => Promise<void>, isPanFix = false) => {
         routeJobsRef.current++;
-        routeQueueRef.current = routeQueueRef.current.then(async () => {
-            try {
-                await job();
-            } catch (e) {
-                console.error('[saídas] a troca de rota falhou', e);
-            } finally {
-                // Rede de segurança no fim de cada troca, sobre TODOS os canais (Ruling
-                // T25-canal-novo): canal que entrou no repertório no meio do corte fica no pan
-                // do plano novo. Só canal novo pode estar diferente aqui, e ele ainda não toca.
-                const ctx = audioCtxRef.current;
-                const graph = graphRef.current;
-                if (ctx && graph) syncAllPans(ctx, graph.plan, autoPanRef.current);
-                routeJobsRef.current--;
-            }
-        });
+        routeQueueRef.current = routeQueueRef.current
+            .then(async () => {
+                try {
+                    await job();
+                } catch (e) {
+                    console.error('[saídas] a troca de rota falhou', e);
+                } finally {
+                    // A fila sempre se libera, mesmo se o acerto lançar (R3-3).
+                    try {
+                        settleAfterRoute(isPanFix);
+                    } catch (e) {
+                        console.error('[saídas] o acerto de pan do fim da troca falhou', e);
+                    } finally {
+                        routeJobsRef.current--;
+                    }
+                }
+            })
+            .catch((e) => { console.error('[saídas] a fila de trocas falhou', e); });
     };
     // Troca síncrona (plano, papel, pan automático): fila vazia e nada soando, na hora.
     const switchRoute = (change: () => void) => {
@@ -767,7 +805,8 @@ export function useAudioEngine(userId?: string) {
         const plan = routeOutputs(ctx, graph, outputsRef.current, max);
         syncAllPans(ctx, graph.plan, autoPanRef.current);
         setMaxOutputChannels(max);
-        setOutputPlan(plan);
+        // Aparelho que não respondeu à troca: o aviso vai junto dos outros avisos de saída (T29 mostra).
+        setOutputPlan(sinkTimeoutRef.current ? { ...plan, warning: 'sink-timeout' } : plan);
     };
 
     // A rota de agora já é a que as saídas e o aparelho pedem (plano, destino e pans)?
@@ -818,8 +857,15 @@ export function useAudioEngine(userId?: string) {
         const deviceId = settings.audioDeviceId === 'default' ? '' : settings.audioDeviceId;
         enqueueRoute(() => withRouteCut(async () => {
             if (typeof ctx.setSinkId === 'function' && ctx.sinkId !== deviceId) {
+                const attempt = ++sinkAttemptRef.current;
+                sinkTimeoutRef.current = false;
                 try {
-                    await setSinkWithTimeout(ctx, deviceId);
+                    // Respondeu depois do teto: o aviso sai e o plano é refeito com o aparelho de agora.
+                    sinkTimeoutRef.current = await setSinkWithTimeout(ctx, deviceId, () => {
+                        if (attempt !== sinkAttemptRef.current) return;
+                        sinkTimeoutRef.current = false;
+                        refreshOutputs();
+                    });
                 } catch (e) {
                     console.error("Failed to set audio sink. Permissions or unsupported browser.", e);
                 }
