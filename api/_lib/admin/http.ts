@@ -23,7 +23,16 @@ export type AdminCtx = {
   now: Date
   query: Record<string, string>
   body: Record<string, unknown>
+  // Instante (ms) em que o pedido chegou ao roteador, antes de conferir o papel: o prazo total
+  // das ações com o Asaas conta daqui (ASAAS_DEADLINE_MS). Sem ele (ctx montado à mão), conta do now.
+  startedAt?: number
 }
+
+// Prazo total das chamadas ao Asaas numa ação do admin (cancelar e trocar de plano): depois disto,
+// contado do começo do pedido, nenhuma chamada nova começa. Com 5 s de teto por chamada
+// (asaasFromEnv(5000) abaixo), a última termina por volta dos 25 s e sobra tempo pra gravar no banco,
+// marcar a ficha e fechar o registro antes do maxDuration de 30 s da função (vercel.json).
+export const ASAAS_DEADLINE_MS = 20_000
 
 export type AdminHandler = {
   method: 'GET' | 'POST'
@@ -272,6 +281,7 @@ function describeError(e: unknown): string {
 
 export function createAdminRouter(handlers: AdminHandlers): (req: any, res: any) => Promise<void> { // eslint-disable-line @typescript-eslint/no-explicit-any
   return async (req, res) => {
+    const startedAt = Date.now()
     applyCors(req, res, 'GET,POST,OPTIONS')
     res.setHeader('Cache-Control', 'no-store')
     if (req.method === 'OPTIONS') {
@@ -331,6 +341,7 @@ export function createAdminRouter(handlers: AdminHandlers): (req: any, res: any)
         now: new Date(),
         query: stringQuery(queryInput),
         body,
+        startedAt,
       }
       const result = await handler.run(ctx)
       res.status(200).json(result)

@@ -11,7 +11,7 @@ import {
 import { AsaasError, type AsaasApi } from '../asaas.js'
 import { PLAN_PRICING, isPlanKey, type PlanKey } from '../pricing.js'
 import { withAudit } from './audit.js'
-import { AdminError, asaasFailure, int, oneOf, str, uuid, type AdminCtx, type AdminHandlers } from './http.js'
+import { ASAAS_DEADLINE_MS, AdminError, asaasFailure, int, oneOf, str, uuid, type AdminCtx, type AdminHandlers } from './http.js'
 
 // Ações do admin sobre um assinante (Task 16): change-plan, grant-courtesy,
 // end-courtesy, cancel-subscription, block, unblock e adjust-quota.
@@ -30,6 +30,10 @@ import { AdminError, asaasFailure, int, oneOf, str, uuid, type AdminCtx, type Ad
 // * Escrita no Asaas (PUT da troca, DELETE do cancelamento) sem resposta que dê
 //   certeza é INCERTA, nunca "Nada mudou" (Ruling ADM-T16-incerto): marca a
 //   ficha, fecha o registro partial e lança UncertainAdminError (uncertain: true).
+// * Prazo total (Ruling ADM-FINAL-onda): troca e cancelamento não começam chamada
+//   nova ao Asaas depois de ASAAS_DEADLINE_MS do começo do pedido, pra função não
+//   ser cortada pelo maxDuration no meio. Parou antes de escrever: "Nada mudou".
+//   Parou depois de uma escrita: incerto, com a ficha marcada.
 // * Resposta e registro só levam frase pronta (com o status do Asaas quando se
 //   sabe); o erro cru vai pro log.
 // * Nenhum caminho estorna: o estorno é feito no painel do Asaas (FATOS).
@@ -65,6 +69,9 @@ const MSG_RESET_NO_AMOUNT = 'Zerar não leva quantidade.'
 const MSG_QUOTA_UNCONFIRMED = 'Não deu pra confirmar o ajuste da cota. Ele pode ter sido feito; confira no Registro antes de repetir.'
 const MSG_UNCERTAIN = 'O Asaas não respondeu a tempo. A mudança pode ter sido feita. A ficha foi marcada pra conferir; confira em Pendências antes de repetir.'
 const MSG_UNCERTAIN_UNMARKED = `O Asaas não respondeu a tempo. A mudança pode ter sido feita. ${NOT_FLAGGED} antes de repetir.`
+// Prazo total do pedido (Ruling ADM-FINAL-onda): o pedido parou antes de qualquer escrita no Asaas.
+const MSG_PLAN_SLOW = 'O Asaas demorou demais pra responder e o pedido parou antes de trocar o plano. Nada mudou.'
+const MSG_CANCEL_SLOW = 'O Asaas demorou demais pra responder e o pedido parou antes de cancelar. Nada foi cancelado.'
 
 // Notas da marcação (texto do banco, sem acento como as da Fase 3).
 const noteChangePlan = (planKey: PlanKey): string =>
@@ -237,13 +244,23 @@ export class UncertainAdminError extends AdminError {
 const NOT_SENT_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH'])
 const NO_RESPONSE_RE = /^Asaas sem resposta \(([^)]*)\)$/
 
+// Chamada que o prazo total do pedido recusou antes de sair (Ruling ADM-FINAL-onda,
+// ASAAS_DEADLINE_MS): é "Asaas sem resposta" pra Fase 3, que a trata como o Asaas
+// fora, e certeza de que nada saiu.
+class AsaasDeadlineError extends AsaasError {
+  constructor() {
+    super('unavailable', 'Asaas sem resposta (prazo do pedido)')
+  }
+}
+
 // A escrita que falhou com este erro pode ter chegado e sido aplicada?
 // * Recusa (4xx), 404 e 429 (limite de pedidos): o Asaas respondeu que não fez.
 // * 5xx: o pedido chegou e não se sabe se foi aplicado.
-// * Sem resposta: só os códigos de conexão que não abriu são certeza; timeout,
-//   ECONNRESET, resposta cortada e qualquer outro (ou erro que não é do
-//   cliente do Asaas) contam como incertos.
+// * Sem resposta: só os códigos de conexão que não abriu e a chamada que o prazo
+//   do pedido nem deixou sair são certeza; timeout, ECONNRESET, resposta cortada
+//   e qualquer outro (ou erro que não é do cliente do Asaas) contam como incertos.
 export function writeMayHaveLanded(e: unknown): boolean {
+  if (e instanceof AsaasDeadlineError) return false
   if (!(e instanceof AsaasError)) return true
   if (e.kind !== 'unavailable') return false
   if (e.status === 429) return false
@@ -254,16 +271,26 @@ export function writeMayHaveLanded(e: unknown): boolean {
 
 type AsaasCall = { write: boolean; failed: boolean; error: unknown }
 
+// calls: as chamadas que saíram; cutoff: o prazo do pedido recusou uma chamada.
+type TracedAsaas = { asaas: AsaasApi | null; calls: AsaasCall[]; cutoff: boolean }
+
 // O Asaas da ação, anotando cada chamada (sem mudar nada nela), pra saber se a
 // última antes do erro foi uma escrita e como ela falhou. A Fase 3 transforma
 // toda falha do Asaas em asaas_unavailable, e só isto separa a leitura que
 // falhou (nada feito) da escrita sem resposta (incerta).
-function tracedAsaas(api: AsaasApi | null): { asaas: AsaasApi | null; calls: AsaasCall[] } {
-  const calls: AsaasCall[] = []
-  if (!api) return { asaas: null, calls }
+// Prazo total (Ruling ADM-FINAL-onda): a partir de `deadline` (ms, relógio do
+// servidor) nenhuma chamada nova começa. A recusada não sai, não entra em calls e
+// marca cutoff; a ação decide pelo que já saiu (wroteSomething).
+function tracedAsaas(api: AsaasApi | null, deadline: number): TracedAsaas {
+  const traced: TracedAsaas = { asaas: null, calls: [], cutoff: false }
+  if (!api) return traced
   const track = async <T>(write: boolean, go: () => Promise<T>): Promise<T> => {
+    if (Date.now() >= deadline) {
+      traced.cutoff = true
+      throw new AsaasDeadlineError()
+    }
     const call: AsaasCall = { write, failed: false, error: null }
-    calls.push(call)
+    traced.calls.push(call)
     try {
       return await go()
     } catch (e) {
@@ -272,14 +299,22 @@ function tracedAsaas(api: AsaasApi | null): { asaas: AsaasApi | null; calls: Asa
       throw e
     }
   }
-  const asaas: AsaasApi = {
+  traced.asaas = {
     get<T = unknown>(path: string, params?: Record<string, string | number | boolean>) { return track(false, () => api.get<T>(path, params)) },
     post<T = unknown>(path: string, body?: unknown) { return track(true, () => api.post<T>(path, body)) },
     put<T = unknown>(path: string, body?: unknown) { return track(true, () => api.put<T>(path, body)) },
     del<T = unknown>(path: string) { return track(true, () => api.del<T>(path)) },
   }
-  return { asaas, calls }
+  return traced
 }
+
+// O fim do prazo das chamadas ao Asaas deste pedido (ASAAS_DEADLINE_MS a partir
+// do começo do pedido; ctx montado sem startedAt conta do now).
+const asaasDeadline = (ctx: AdminCtx): number => (ctx.startedAt ?? ctx.now.getTime()) + ASAAS_DEADLINE_MS
+
+// Alguma escrita deste pedido saiu e pode ter sido aplicada (aceita, ou sem
+// resposta que dê certeza)?
+const wroteSomething = (calls: AsaasCall[]): boolean => calls.some((c) => c.write && (!c.failed || writeMayHaveLanded(c.error)))
 
 // O erro da Fase 3 veio de uma escrita no Asaas sem resposta que dê certeza:
 // a última chamada foi uma escrita que falhou assim, e o erro é ela (como a
@@ -369,13 +404,24 @@ function cancelPartialMessage(phase3: string, flagged: boolean): string {
 
 // ── Cortesia (D9)
 
-// Recusas antes de gravar: cortesia igual já ativa (M7); e, com paga cancelada
-// ainda no período, só cortesia de plano maior que vá além do fim dela (pré-voo
-// I3): senão a cortesia vence a paga e a conta cai pro Livre antes da hora.
+// Recusas antes de gravar: cortesia igual já ativa (M7); com paga ativa, só
+// cortesia de plano maior que o pago (Ruling ADM-FINAL-onda): a de plano igual
+// ou menor não muda nada agora e, se a paga for cancelada depois, passa por cima
+// dela ainda no período pago (o billing_sync_profile só compara a cortesia com a
+// paga ATIVA); e, com paga cancelada ainda no período, só cortesia de plano maior
+// que vá além do fim dela (pré-voo I3): senão a cortesia vence a paga e a conta
+// cai pro Livre antes da hora. A tela usa a mesma fórmula da paga ativa
+// (courtesyPlanKeys, em src/admin/lib/actionText.ts) pra nem oferecer o plano.
 function courtesyRefusal(rows: SubRow[], planKey: PlanKey, until: string | null, now: Date): string | null {
   const same = rows.find((r) => r.kind === 'courtesy' && r.status === 'active' && r.plan_key === planKey
     && (r.access_until === null || inFuture(r.access_until, now)))
   if (same) return `Esta conta já tem uma cortesia de ${planLabel(planKey)} ativa.`
+  const [topPaid] = paidActive(rows).sort((a, b) => planRank(b.plan_key) - planRank(a.plan_key))
+  if (topPaid && planRank(planKey) <= planRank(topPaid.plan_key)) {
+    const higher = Object.keys(PLAN_PRICING).some((key) => planRank(key) > planRank(topPaid.plan_key))
+    return `Esta conta já paga o ${planLabel(topPaid.plan_key)}. Cortesia de plano igual ou menor não muda nada agora e, se a assinatura for cancelada, pode tirar o plano pago antes da hora.`
+      + (higher ? ' Dê uma cortesia de plano maior.' : '')
+  }
   const graced = rows
     .filter((r): r is SubRow & { access_until: string } => r.kind === 'asaas' && r.status === 'canceled' && inFuture(r.access_until, now))
     .sort((a, b) => Date.parse(b.access_until) - Date.parse(a.access_until))
@@ -440,7 +486,7 @@ export const handlers: AdminHandlers = {
         throw new AdminError(404, MSG_NO_PAID)
       }
       const before = { planKey: row.plan_key, value: priceOf(row.plan_key), cycle: row.cycle }
-      const traced = tracedAsaas(ctx.asaas)
+      const traced = tracedAsaas(ctx.asaas, asaasDeadline(ctx))
       let uncertain = false
       try {
         return await withAudit(
@@ -450,10 +496,21 @@ export const handlers: AdminHandlers = {
             try {
               return await changePlan(deps(ctx, traced.asaas), { userId, newPlanKey: planKey })
             } catch (e) {
+              const request = `troca de plano para ${planLabel(planKey)}`
+              // O prazo do pedido parou uma chamada ao Asaas: sem escrita que possa ter
+              // sido aplicada, nada mudou; com ela, é incerto e marca a ficha.
+              if (traced.cutoff) {
+                if (wroteSomething(traced.calls)) {
+                  uncertain = true
+                  throw await uncertainFailure(ctx, [row.id], request, e)
+                }
+                console.error(`[admin] change-plan parou no prazo antes de escrever no Asaas (${row.id}):`, describeError(e))
+                throw new AdminError(502, MSG_PLAN_SLOW)
+              }
               // O PUT saiu e a resposta não deu certeza: o Asaas pode ter trocado.
               if (uncertainWrite(e, traced.calls)) {
                 uncertain = true
-                throw await uncertainFailure(ctx, [row.id], `troca de plano para ${planLabel(planKey)}`, e)
+                throw await uncertainFailure(ctx, [row.id], request, e)
               }
               if (e instanceof BillingError && PLAN_UNTOUCHED.has(e.code)) throw e
               // Nenhum pedido saiu pro Asaas (erro do banco antes do PUT): a
@@ -537,7 +594,7 @@ export const handlers: AdminHandlers = {
       const rows = await subscriptionsOf(ctx, userId)
       const active = paidActive(rows)
       const markIds = async () => (active.length > 0 ? active.map((r) => r.id) : paidActiveIdsNow(ctx, userId))
-      const traced = tracedAsaas(ctx.asaas)
+      const traced = tracedAsaas(ctx.asaas, asaasDeadline(ctx))
       let uncertain = false
       try {
         return await withAudit(
@@ -548,11 +605,21 @@ export const handlers: AdminHandlers = {
               const out = await cancelSubscriptionForUser(deps(ctx, traced.asaas), { userId, source: 'admin', immediate: when === 'now' })
               return { result: out.result, accessUntil: out.accessUntil, pendingStop: out.pendingStop }
             } catch (e) {
+              const request = `cancelamento da assinatura (${when === 'now' ? 'agora' : 'no fim do período'})`
+              // O prazo do pedido parou uma chamada ao Asaas: sem escrita que possa ter
+              // sido aplicada, nada foi cancelado; com ela, é incerto e marca a ficha.
+              if (traced.cutoff) {
+                if (wroteSomething(traced.calls)) {
+                  uncertain = true
+                  throw await uncertainFailure(ctx, await markIds(), request, e)
+                }
+                console.error(`[admin] cancel-subscription parou no prazo antes de escrever no Asaas (${userId}):`, describeError(e))
+                throw new AdminError(502, MSG_CANCEL_SLOW)
+              }
               // O DELETE saiu e a resposta não deu certeza: o Asaas pode ter
               // parado a cobrança. Cancelar de novo termina (404 conta como já removida).
               if (uncertainWrite(e, traced.calls)) {
                 uncertain = true
-                const request = `cancelamento da assinatura (${when === 'now' ? 'agora' : 'no fim do período'})`
                 throw await uncertainFailure(ctx, await markIds(), request, e)
               }
               if (!(e instanceof BillingError) || e.code !== 'partial') throw e

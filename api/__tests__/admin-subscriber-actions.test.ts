@@ -486,6 +486,54 @@ describe('cortesia', () => {
     expect(later.body).toEqual({ courtesyId: 'cortesia:4', until: '2026-12-17T03:00:00.000Z' })
   })
 
+  // Ruling ADM-FINAL-onda: com paga ativa, só cortesia de plano maior que o pago. A igual ou menor não
+  // muda nada agora e, cancelada a paga, passaria por cima dela ainda no período pago.
+  it('paga ativa: cortesia de plano igual ou menor responde 409 e nada muda', async () => {
+    const proPaid = 'Esta conta já paga o Pro Mensal. Cortesia de plano igual ou menor não muda nada agora e, se a assinatura for cancelada, pode tirar o plano pago antes da hora. Dê uma cortesia de plano maior.'
+    const before = snapshot()
+    for (const body of [
+      { userId: USER_A, planKey: 'essencial_mensal', days: 30 }, // o mesmo plano
+      { userId: USER_A, planKey: 'essencial_anual', days: null }, // o mesmo nível (Pro)
+    ]) {
+      const res = await post('grant-courtesy', body)
+      expect(res.statusCode, JSON.stringify(body)).toBe(409)
+      expect(res.body).toEqual({ error: proPaid })
+    }
+    // Quem paga Studio: não há plano maior, e a frase não manda dar um.
+    sub('chk_a').plan_key = 'pro_mensal'
+    const studioBefore = snapshot()
+    for (const planKey of ['pro_anual', 'pro_mensal', 'essencial_mensal']) {
+      const res = await post('grant-courtesy', { userId: USER_A, planKey, days: 7 })
+      expect(res.statusCode, planKey).toBe(409)
+      expect(res.body).toEqual({ error: 'Esta conta já paga o Studio Mensal. Cortesia de plano igual ou menor não muda nada agora e, se a assinatura for cancelada, pode tirar o plano pago antes da hora.' })
+    }
+    expect(snapshot()).toEqual(studioBefore)
+    expect(before.subs.find((r) => r.id === 'chk_a')?.plan_key).toBe('essencial_mensal')
+    expect(grantCourtesy).not.toHaveBeenCalled()
+    expect(rpcNames()).toEqual([])
+    expect(logs).toEqual([])
+    expect(asaasCalls()).toEqual([])
+  })
+
+  it('paga ativa: cortesia de plano maior passa, e com duas pagas ativas vale a de plano mais alto', async () => {
+    const res = await post('grant-courtesy', { userId: USER_A, planKey: 'pro_mensal', days: 7 })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toEqual({ courtesyId: 'cortesia:3', until: '2026-11-24T03:00:00.000Z' })
+    expect(logs[0].finish).toMatchObject({ p_result: 'ok', p_after: { courtesyId: 'cortesia:3', planKey: 'pro_mensal' } })
+    // Uma segunda paga ativa de Studio (a Fase 3 encerra a sobra, mas a regra não depende disso).
+    db.tables.billing_subscriptions.push(subRow({ id: 'chk_a2', user_id: USER_A, asaas_subscription_id: 'sub_a2', plan_key: 'pro_anual', cycle: 'YEARLY', started_at: '2026-09-01T12:00:00.000Z' }))
+    const refused = await post('grant-courtesy', { userId: USER_A, planKey: 'pro_anual', days: 7 })
+    expect(refused.statusCode).toBe(409)
+    expect(refused.body).toEqual({ error: 'Esta conta já paga o Studio Anual. Cortesia de plano igual ou menor não muda nada agora e, se a assinatura for cancelada, pode tirar o plano pago antes da hora.' })
+  })
+
+  it('sem paga ativa a regra da paga não vale: conta no Livre recebe cortesia de qualquer plano', async () => {
+    for (const planKey of ['essencial_mensal', 'pro_anual']) {
+      const res = await post('grant-courtesy', { userId: USER_B, planKey, days: 7 })
+      expect(res.statusCode, planKey).toBe(200)
+    }
+  })
+
   it('cortesia de 30 dias pedida às 22:00 de Brasília vale até o fim do dia 16/12', async () => {
     const at = new Date('2026-11-17T01:00:00Z') // 22:00 de 16/11 em Brasília (já é 17/11 em UTC)
     expect(courtesyUntil(at, 30)).toBe('2026-12-17T03:00:00.000Z')
@@ -1141,6 +1189,92 @@ describe('escrita no Asaas sem resposta (incerto)', () => {
     expect(sub('chk_a')).toMatchObject({ status: 'canceled', cancel_source: 'admin' })
     expect(rpcArgs('billing_flag_review')).toEqual([{ p_id: 'chk_a', p_note: NOTE_UNCERTAIN_CANCEL }])
     expect(logs.map((l) => l.finish?.p_result)).toEqual(['partial', 'ok'])
+  })
+})
+
+// Ruling ADM-FINAL-onda: troca e cancelamento não começam chamada nova ao Asaas depois de 20 s do
+// começo do pedido (o maxDuration da função é 30 s). Relógio falso: o Asaas lento passa o tempo.
+describe('prazo total do pedido', () => {
+  const MSG_PLAN_SLOW = 'O Asaas demorou demais pra responder e o pedido parou antes de trocar o plano. Nada mudou.'
+  const MSG_CANCEL_SLOW = 'O Asaas demorou demais pra responder e o pedido parou antes de cancelar. Nada foi cancelado.'
+  const slow = (ms: number) => vi.setSystemTime(Date.now() + ms)
+  // Sem o id da assinatura, a troca procura no Asaas (GET) antes do PUT.
+  const lookup = (ms: number) => () => {
+    slow(ms)
+    return { data: [payment({ id: 'pay_a2', subscription: 'sub_a' })], hasMore: false }
+  }
+
+  it('troca: a leitura lenta passa dos 20 s, o PUT nem sai e a resposta é Nada mudou', async () => {
+    sub('chk_a').asaas_subscription_id = null
+    const fake = setAsaas({ get: lookup(20_000) })
+    const before = snapshot()
+    const res = await post('change-plan', { userId: USER_A, planKey: 'pro_mensal' })
+    expect(fake.get).toHaveBeenCalledTimes(1)
+    expect(fake.put).not.toHaveBeenCalled()
+    expect(res.statusCode).toBe(502)
+    expect(res.body).toEqual({ error: MSG_PLAN_SLOW })
+    expect(snapshot()).toEqual(before)
+    expect(rpcNames()).not.toContain('billing_flag_review')
+    expect(rpcNames()).not.toContain('billing_change_plan')
+    expect(logs[0].finish).toEqual({ p_id: 41, p_result: 'failed', p_after: null, p_message: MSG_PLAN_SLOW })
+  })
+
+  it('troca: com a leitura terminando antes dos 20 s, o PUT sai e a troca termina', async () => {
+    sub('chk_a').asaas_subscription_id = null
+    const fake = setAsaas({ get: lookup(19_999) })
+    const res = await post('change-plan', { userId: USER_A, planKey: 'pro_mensal' })
+    expect(fake.put).toHaveBeenCalledWith('/subscriptions/sub_a', PUT_STUDIO)
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toEqual({ result: 'changed', planKey: 'pro_mensal' })
+  })
+
+  it('cancelar: a leitura lenta passa dos 20 s antes de qualquer escrita, nada é cancelado', async () => {
+    const fake = setAsaas({ get: (path, params) => { slow(21_000); return PAYMENTS_A(path, params) } })
+    const before = snapshot()
+    const res = await post('cancel-subscription', { userId: USER_A, when: 'now' })
+    expect(fake.get).toHaveBeenCalledTimes(1)
+    expect(fake.del).not.toHaveBeenCalled()
+    expect(res.statusCode).toBe(502)
+    expect(res.body).toEqual({ error: MSG_CANCEL_SLOW })
+    expect(snapshot()).toEqual(before)
+    expect(rpcNames()).not.toContain('billing_flag_review')
+    expect(logs[0].finish).toMatchObject({ p_result: 'failed', p_message: MSG_CANCEL_SLOW })
+  })
+
+  it('cancelar: com uma escrita já feita no pedido, o prazo vira incerto e marca a ficha', async () => {
+    // Uma pendência antiga da conta (remover a assinatura velha) roda primeiro e o DELETE dela demora.
+    db.tables.billing_pending_actions.push({
+      id: 90, subscription_ref: 'chk_velha', user_id: USER_A, action: 'delete_subscription', reason: 'troca', asaas_subscription_id: 'sub_velha',
+      asaas_payment_id: null, due_date: null, amount: null, auto_retry: true, status: 'pending', attempts: 0, last_error: null,
+      next_attempt_at: '2026-11-16T14:00:00.000Z',
+    })
+    const fake = setAsaas({ get: PAYMENTS_A, del: () => { slow(21_000); return { deleted: true } } })
+    const res = await post('cancel-subscription', { userId: USER_A, when: 'now' })
+    expect(fake.del).toHaveBeenCalledTimes(1)
+    expect(fake.del).toHaveBeenCalledWith('/subscriptions/sub_velha')
+    // A leitura do cancelamento não chegou a sair.
+    expect(fake.get).not.toHaveBeenCalled()
+    expect(res.statusCode).toBe(502)
+    expect(res.body).toEqual({ error: MSG_UNCERTAIN, uncertain: true })
+    expect(rpcArgs('billing_flag_review')).toEqual([{ p_id: 'chk_a', p_note: NOTE_UNCERTAIN_CANCEL }])
+    expect(sub('chk_a')).toMatchObject({ status: 'active', needs_admin_review: true })
+    expect(rpcNames()).not.toContain('billing_end_subscription')
+    expect(logs[0].finish).toEqual({ p_id: 41, p_result: 'partial', p_after: null, p_message: MSG_UNCERTAIN })
+  })
+
+  it('cancelar: depois do DELETE da primeira assinatura, a segunda fica pendente e nada sai depois do prazo', async () => {
+    db.tables.billing_subscriptions.push(subRow({ id: 'chk_a2', user_id: USER_A, asaas_subscription_id: 'sub_a2', plan_key: 'pro_mensal', started_at: '2026-10-01T12:00:00Z' }))
+    const fake = setAsaas({ get: PAYMENTS_A, del: () => { slow(21_000); return { deleted: true } } })
+    const res = await post('cancel-subscription', { userId: USER_A, when: 'now' })
+    // A primeira (início mais recente) saiu; a segunda nem começou e ficou pendente pela Fase 3.
+    expect(fake.del).toHaveBeenCalledTimes(1)
+    expect(fake.del).toHaveBeenCalledWith('/subscriptions/sub_a')
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toMatchObject({ result: 'canceled', pendingStop: true })
+    expect(db.tables.billing_pending_actions.filter((a) => a.status === 'pending').map((a) => [a.subscription_ref, a.action]))
+      .toEqual([['chk_a2', 'delete_subscription']])
+    expect(sub('chk_a2').status).toBe('canceled')
+    expect(logs[0].finish).toMatchObject({ p_result: 'ok' })
   })
 })
 
