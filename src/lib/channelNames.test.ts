@@ -26,7 +26,8 @@ describe('reconhecimento (spec 5c)', () => {
     ['PAD L', 'Pad L', 'pad'], ['SYNTH PAD', 'Pad', 'pad'], ['AMB REVERSE', 'Ambiência Reverso', 'ambiencia'],
     ['LEAD VOX', 'Vocal', 'vocal'], ['Vocais', 'Vocal', 'vocal'], ['VOZ', 'Vocal', 'vocal'],
     ['BV', 'Backing', 'backing'], ['BACKING VOCAL', 'Backing', 'backing'], ['CORO', 'Backing', 'backing'],
-    ['CHOIR', 'Backing', 'backing'], ['drums copy.wav', 'Bateria', 'bateria'],
+    ['CHOIR', 'Backing', 'backing'], ['Coral', 'Backing', 'backing'], ['CORAIS', 'Backing', 'backing'],
+    ['drums copy.wav', 'Bateria', 'bateria'],
     ['MASTER_1', 'Master', 'desconhecido'], ['stage', 'Stage', 'desconhecido'], ['legato', 'Legato', 'desconhecido'],
     ['Outros/Fx', 'Outros/Fx', 'desconhecido'], ['Track 5', 'Track 5', 'desconhecido'],
     ['🎸 GTR', 'Guitarra', 'guitarra'], ['01', '01', 'desconhecido'], ['', 'Canal', 'desconhecido'],
@@ -213,6 +214,27 @@ describe('BEAT e TEMPO são palavras fracas de Click', () => {
   })
   it('sem papel de Click, o nome com palavra fraca entra na família pelo resto quando o papel é Normal manual', () => {
     expect(channelFamily({ id: '1', name: 'Tempo Pad', role: 'normal' })).toBe('pad')
+  })
+})
+
+// Re-revisão da v1.4.16: grafias de voz que a regra antiga de formantes pegava por
+// pedaço do nome (v1.4.15) e a regra central não reconhecia. Viram Vocal ou Backing
+// (e ganham formantes), mas o papel continua Normal: não vão pro ouvido nem saem do tom.
+describe('grafias de voz grudadas e plurais', () => {
+  it.each([
+    ['Backvocal', 'Backing', 'backing'], ['BACKVOCAL', 'Backing', 'backing'], ['backvocals', 'Backing', 'backing'],
+    ['BACKVOX', 'Backing', 'backing'], ['BVox', 'Backing', 'backing'], ['BVOX', 'Backing', 'backing'], ['bvox 2', 'Backing', 'backing'],
+    ['LEADVOCAL', 'Vocal', 'vocal'], ['Leadvocal', 'Vocal', 'vocal'], ['LEADVOX', 'Vocal', 'vocal'],
+    ['Coros', 'Backing', 'backing'], ['COROS', 'Backing', 'backing'], ['Choirs', 'Backing', 'backing'],
+    ['Vocalista', 'Vocal', 'vocal'], ['VOCALISTA', 'Vocal', 'vocal'],
+  ])('%s vira %s (%s), papel Normal', (raw, label, family) => {
+    const ch = { id: '1', name: raw }
+    expect(recognizeChannel(raw)).toMatchObject({ family })
+    expect(channelFamily(ch)).toBe(family)
+    expect(buildChannelLabels([ch])[0]).toMatchObject({ family, role: 'normal' })
+    expect(buildChannelLabels([ch])[0].label).toMatch(new RegExp(`^${label}`))
+    expect(roleFromName(raw)).toBe('normal')
+    expect(resolveChannelRole(ch)).toBe('normal')
   })
 })
 

@@ -500,3 +500,20 @@ input[type="range"].daw-slider::-moz-range-thumb {
   .logic-fader-knob { width: 34px; height: 30px; }
   .logic-fader-knob.master { width: 42px; height: 34px; }
 }
+
+/* Páginas públicas (landing e /download): anel de foco da marca no teclado e,
+   pra quem pede menos movimento no sistema, sem animação nem transição. */
+.site-public :focus-visible {
+  outline: 2px solid var(--color-laranja);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .site-public *,
+  .site-public *::before,
+  .site-public *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

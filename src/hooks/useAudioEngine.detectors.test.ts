@@ -47,8 +47,26 @@ describe('motor usa a regra central de canais', () => {
     }
   })
 
-  it('formantes seguem o papel da regra central (papel manual vale)', () => {
-    expect(bodyOf('applyPitchToChannel')).toMatch(/\bwantsFormantCompensation\(\s*ch\.name\s*,\s*exempt\s*\)/)
+  // Junção com os ajustes do tom: o filtro de quem ainda precisa de worklet, o
+  // viaPitch (que decide também o atraso de latência), o ganho do scheduleAll e o
+  // pan do arquivo novo saem da regra central, não do nome.
+  it('worklet que falta, viaPitch, ganho do scheduleAll e pan do arquivo novo pela regra central', () => {
+    expect(src).toMatch(/const\s+missing\s*=\s*channels\.filter\(\s*ch\s*=>\s*!isPitchExempt\(ch\)/)
+    expect(src).toMatch(/const\s+viaPitch\s*=\s*\(ch: Channel\)\s*=>\s*playPitch\s*!==\s*0\s*&&\s*!isPitchExempt\(ch\)/)
+    const schedule = bodyOf('scheduleAll')
+    expect(schedule, 'corpo de scheduleAll não encontrado').not.toBe('')
+    expect(schedule).toMatch(/\bchannelGain\(\s*ch\s*,\s*channels\s*\)/)
+    expect(schedule).not.toMatch(/anySoloed|\.soloed/)
+    expect(src).toMatch(/const\s+routingFor\s*=[\s\S]{0,160}?=>\s*autoPanFor\(/)
+  })
+
+  // Formantes pela família da regra central (Vocal ou Backing, com o nome do usuário e
+  // o papel manual), recebendo o canal inteiro: nunca o pedaço do nome do arquivo.
+  it('formantes seguem a família da regra central (papel e nome do usuário valem)', () => {
+    expect(bodyOf('applyPitchToChannel')).toMatch(/\bwantsFormantCompensation\(\s*ch\s*\)/)
+    expect(src).toMatch(/import\s*\{[^}]*\bwantsFormantCompensation\b[^}]*\}\s*from\s*['"]\.\.\/lib\/channelRoles['"]/)
+    expect(src).not.toMatch(/import\s*\{[^}]*\bwantsFormantCompensation\b[^}]*\}\s*from\s*['"]\.\.\/lib\/pitchRules['"]/)
+    expect(src).not.toMatch(/wantsFormantCompensation\(\s*ch\.name/)
   })
 
   it('importa os helpers da regra central', () => {

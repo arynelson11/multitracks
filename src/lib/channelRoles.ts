@@ -65,6 +65,17 @@ export function autoPanFor(ch: ChannelIdentity, autoPanEnabled: boolean): AutoPa
   return resolveChannelRole(ch) === 'normal' ? { ...PA } : { ...EAR }
 }
 
+// Compensação de formantes do worklet de tom: só em voz, pela família da regra
+// central (Vocal ou Backing). A família já olha o nome dado no EDITAR CANAIS e põe
+// instrumento antes de voz ("Lead EG" é Guitarra, "Synth Lead" é Teclado). Em
+// instrumento transposto ela tira definição (medido: +4 a 7 dB de ruído e até 3 dB de
+// inclinação nos harmônicos). Click e Guia nunca: a família deles é click ou guia,
+// e o papel manual vale.
+const VOICE_FAMILIES: ReadonlySet<ChannelFamily> = new Set(['vocal', 'backing'])
+export function wantsFormantCompensation(ch: ChannelIdentity): boolean {
+  return VOICE_FAMILIES.has(channelFamily(ch))
+}
+
 // "A música já tem click" (Parte 2): vale o papel manual.
 export function findClickChannel<T extends ChannelIdentity>(channels: readonly T[]): T | undefined {
   return channels.find((ch) => resolveChannelRole(ch) === 'click')

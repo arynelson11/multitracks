@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   CUSTOM_NAME_MAX, applyChannelMetaPatch, applyChannelMetaToList, autoPanFor, channelFaderFill, channelGain, findClickChannel,
   isPitchExempt, isSilencedBySolo, isSoloSafe, pickMainChannel, pickTempoSourceChannel, pickWaveformChannel, pitchChangeAction,
+  wantsFormantCompensation,
 } from './channelRoles'
 import { FAMILY_COLOR, buildChannelLabels, recognizeChannel, sortChannelsByDefault, type ChannelIdentity } from './channelNames'
 
@@ -185,5 +186,51 @@ describe('canal da onda do SectionBar', () => {
   })
   it('pickMainChannel não muda pros outros chamadores (tom e tempo)', () => {
     expect(pickMainChannel([{ id: 'c', name: 'CLICK' }, { id: 'd', name: 'DRUMS' }, { id: 'b', name: 'BASS' }])?.id).toBe('d')
+  })
+})
+
+// Ajuste do tom, item 4: click "Metronome" (inglês) ou "Metronom" fica fora da troca de
+// tom e vai pro ouvido. Quem decide é a regra central (METRONOME por palavra inteira e
+// METRONOM no teste antigo do nome do arquivo); o motor não tem regra própria de nome.
+describe('Metronome é Click pela regra central (ajuste do tom, item 4)', () => {
+  it.each(['Metronome', 'METRONOME', 'metronome 120bpm', 'Metronome_Click', 'Metronom', 'metronom'])(
+    '%s: Click, fora do tom, no ouvido e tocando no Solo de outro canal',
+    (name) => {
+      const ch = mix('m', name)
+      const all = [ch, mix('b', 'BASS', { soloed: true })]
+      expect(isPitchExempt(ch)).toBe(true)
+      expect(isSoloSafe(ch)).toBe(true)
+      expect(autoPanFor(ch, true)).toEqual({ pan: -1, bus: '1' })
+      expect(channelGain(ch, all)).toBe(0.8)
+      expect(findClickChannel(all)?.id).toBe('m')
+    },
+  )
+  it('o papel manual vence: Metronome marcado Normal transpõe e vai pra PA', () => {
+    const ch = { id: 'm', name: 'Metronome', role: 'normal' as const }
+    expect(isPitchExempt(ch)).toBe(false)
+    expect(autoPanFor(ch, true)).toEqual({ pan: 1, bus: '2' })
+  })
+})
+
+// Formantes do worklet de tom só em voz, pela família da regra central (Vocal ou
+// Backing), que já olha o nome dado no EDITAR CANAIS e põe instrumento antes de voz.
+// Em instrumento transposto a compensação tira definição (medido: +4 a 7 dB de ruído).
+describe('formantes só em voz, pela família da regra central', () => {
+  it.each(['Lead EG', 'Lead AG', 'Lead Violão', 'Teclado Lead', 'Lead Pno', 'Lead Guitar', 'Synth Lead', 'Lead Pad', 'Lead Bass',
+    'DRUMS', 'BASS', 'Strings', 'Click', 'Metrônomo', 'Voz Guia'])('%s: sem formantes', (name) => {
+    expect(wantsFormantCompensation({ id: '1', name })).toBe(false)
+  })
+  it.each(['Vocal', 'VOC', 'BGV', 'Backing', 'Lead Vox', 'Lead', 'Voz 2', 'Coro', 'Coral', 'Choir', 'BV alto',
+    'Backvocal', 'BACKVOX', 'BVox', 'LEADVOCAL', 'LEADVOX', 'Coros', 'Choirs', 'Vocalista'])('%s: com formantes', (name) => {
+    expect(wantsFormantCompensation({ id: '1', name })).toBe(true)
+  })
+  it('vale o nome dado pelo usuário: "FX" renomeado "Voz" ganha, "Lead" renomeado "Guitarra Solo" perde', () => {
+    expect(wantsFormantCompensation({ id: '1', name: 'FX', customName: 'Voz' })).toBe(true)
+    expect(wantsFormantCompensation({ id: '2', name: 'Lead', customName: 'Guitarra Solo' })).toBe(false)
+  })
+  it('vale o papel manual: voz marcada Guia perde, "Voz Guia" marcada Normal ganha', () => {
+    expect(wantsFormantCompensation({ id: '1', name: 'Vocal', role: 'guide' })).toBe(false)
+    expect(wantsFormantCompensation({ id: '2', name: 'Voz Guia', role: 'normal' })).toBe(true)
+    expect(wantsFormantCompensation({ id: '3', name: 'DRUMS', role: 'normal' })).toBe(false)
   })
 })

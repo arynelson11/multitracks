@@ -22,7 +22,7 @@ const SEP_TOUR_STEPS: TourStep[] = [
   { title: 'Separação de Faixas', body: 'Aqui você transforma qualquer música em faixas separadas (vocal, bateria, baixo, instrumentos) usando IA. Veja como funciona.' },
   { target: 'sep-upload', title: '1. Carregue a música', body: 'Envie um arquivo de áudio (MP3, WAV ou AAC) do seu computador. É o ponto de partida.' },
   { title: '2. Escolha as faixas', body: 'Depois de enviar, você escolhe em quantas faixas separar: 2, 4 ou 6. Quanto mais faixas, mais controle sobre cada instrumento.' },
-  { title: '3. Processa na nuvem', body: 'A IA separa a música em segundos. Você pode ouvir cada faixa isolada, ajustar e gerar um click track na levada.' },
+  { title: '3. Processa na nuvem', body: 'A IA separa a música em alguns minutos. Você pode ouvir cada faixa isolada, ajustar e gerar um click no tempo da música.' },
   { target: 'sep-biblioteca', title: '4. Suas separações', body: 'Tudo que você separa fica salvo aqui. Reabra quando quiser ou mande direto pro seu repertório do Multitracks.' },
   { title: 'Pronto!', body: 'Carregue uma música e experimente. A separação é o atalho pra ter qualquer faixa pronta pro domingo.' },
 ]

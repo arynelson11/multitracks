@@ -27,6 +27,9 @@ import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections 
 import { AdminEntryButton, InAppAdmin } from './components/AdminEntryButton'
 import { BlockedScreen } from './components/BlockedScreen'
 import { shouldShowBlocked } from './lib/profileFlags'
+import { usePasswordRecovery } from './hooks/usePasswordRecovery'
+import { cancelPasswordRecovery, finishPasswordRecovery } from './lib/passwordRecovery'
+import { NewPasswordPage } from './components/NewPasswordPage'
 import { keyToSemitone, semitonesBetweenKeys } from './lib/pitchRules'
 import { InstallAppBanner } from './components/InstallAppBanner'
 import { RenewalNoticeBanner } from './components/RenewalNoticeBanner'
@@ -39,7 +42,7 @@ const TOUR_STEPS: TourStep[] = [
   { target: 'repertorios', title: 'Repertórios', body: 'Monte e gerencie seus repertórios (setlists). Crie um novo, salve em .zip pra fazer backup ou carregue um já pronto.' },
   { target: 'faixas', title: 'Faixas', body: 'Importe faixas do seu computador ou crie uma faixa de metrônomo infinito num BPM à sua escolha.' },
   { target: 'biblioteca', title: 'Biblioteca', body: 'Baixe músicas prontas da nuvem. Depois de baixadas, elas tocam offline no palco, sem internet.' },
-  { target: 'metronomo', title: 'Metrônomo', body: 'Click track com levada brasileira pra a banda tocar no tempo certo.' },
+  { target: 'metronomo', title: 'Metrônomo', body: 'Click no tempo da música pra banda tocar junto.' },
   { target: 'setlist-area', title: 'Suas músicas', body: 'Aqui ficam as músicas do repertório atual, depois de baixar da nuvem ou importar do computador. Toque numa pra carregar.' },
   { target: 'anotacoes', title: 'Anotações', body: 'Deixe lembretes do culto: ordem das músicas, tons, transições. Fica salvo no seu dispositivo.' },
   { target: 'modos', title: 'Auto, Parar e Fade', body: 'Escolha o que acontece no fim da música: AUTO segue pra próxima, PARAR encerra, FADE baixa o volume nos últimos segundos.' },
@@ -76,6 +79,8 @@ export default function App() {
   // Conta comum bloqueada pelo admin: a tela de bloqueio entra no lugar do app (o servidor
   // recusa as funções dela). Sem a data do bloqueio, ou com a leitura do perfil falhando, nada muda.
   const blocked = shouldShowBlocked({ user, blockedAt, isAdmin })
+  // Volta do link de recuperar senha: mostra a tela Criar nova senha antes de tudo.
+  const isRecoveringPassword = usePasswordRecovery()
   const isOnline = useNetworkStatus()
 
   const {
@@ -674,6 +679,17 @@ export default function App() {
           </p>
         </div>
       </div>
+    )
+  }
+
+  // ───────────────── NOVA SENHA (volta do link de recuperar senha) ─────────────────
+  if (isRecoveringPassword) {
+    return (
+      <NewPasswordPage
+        client={supabase}
+        onDone={finishPasswordRecovery}
+        onCancel={() => { void cancelPasswordRecovery(supabase!).then(() => setShowAuth(true)) }}
+      />
     )
   }
 

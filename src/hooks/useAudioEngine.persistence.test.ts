@@ -22,8 +22,11 @@ type FakePitchNode = { active: boolean; starts: number; stops: number; connected
 type FakeDelay = { delayTime: FakeParam; connectedTo: unknown }
 // Latência do worklet no modo ao vivo, como o pacote informa (~0,12 s).
 const PITCH_LATENCY = 0.12
-// O motor agenda todas as faixas um pouco à frente do relógio (START_LEAD_S).
-const START_LEAD = 0.04
+// Taxa do AudioContext falso. O motor agenda todas as faixas no mesmo instante, 2
+// blocos de áudio (128 amostras cada) à frente do relógio, na grade de blocos
+// (START_LEAD_QUANTA); com o relógio parado em 0 no play, isso dá 2 blocos.
+const SAMPLE_RATE = 48000
+const START_LEAD = (2 * 128) / SAMPLE_RATE
 
 const mem = vi.hoisted(() => ({
   db: new Map<string, unknown>(),
@@ -38,6 +41,8 @@ const mem = vi.hoisted(() => ({
   pitchGate: null as Promise<void> | null,
   sources: [] as FakeSource[],
   pitchNodes: [] as FakePitchNode[],
+  // Chamado em cada start() de fonte (simula o relógio andando no meio do laço).
+  onStart: null as (() => void) | null,
 }))
 
 const isMetaKey = (key: string) => key.startsWith('mt_meta_playlist')
@@ -97,6 +102,7 @@ const audioNode = () => ({ connect() {}, disconnect() {} })
 
 class FakeAudioContext {
   currentTime = 0
+  sampleRate = SAMPLE_RATE
   state = 'running'
   destination = audioNode()
   constructor() { mem.ctx = this }
@@ -115,7 +121,7 @@ class FakeAudioContext {
       offset: -1, dest: null as unknown, buffer: null as unknown, loop: false, playbackRate: param(1),
       connect(dest: unknown) { source.dest = dest },
       disconnect() {}, stop() {},
-      start(_when: number, offset: number) { source.offset = offset },
+      start(_when: number, offset: number) { source.offset = offset; mem.onStart?.() },
     }
     mem.sources.push(source)
     return source
@@ -147,6 +153,7 @@ beforeEach(() => {
   mem.pitchNodes.length = 0
   mem.metaGate = null
   mem.pitchGate = null
+  mem.onStart = null
   mem.settings.autoPan = true
   vi.stubGlobal('AudioContext', FakeAudioContext)
   vi.stubGlobal('requestAnimationFrame', () => 0)
@@ -418,6 +425,51 @@ describe('setChannelMeta', () => {
     expect(mem.pitchNodes.some((n) => sourceOf(result, 'b').dest === n)).toBe(true)
   })
 
+  // Revisão da junção, M2: com a música parada e tom diferente de 0, o 1º play espera
+  // o worklet nascer sem estar tocando (isPlaying falso). Papel trocado nessa janela
+  // também refaz a lista e o ganho do Solo: o play antigo usava a lista da hora do
+  // clique e o Click que virou Normal tocava (sem transpor) mesmo com o Solo de outro.
+  it('papel trocado enquanto o 1º play transposto espera o worklet refaz a lista e o ganho do Solo', async () => {
+    seed({
+      ...v1,
+      channels: [
+        { id: 'a', name: 'CLICK 13', volume: 0.7, muted: false, soloed: false, pan: -1, bus: '1', srcId: 'cloud-1', srcIdx: 0 },
+        { id: 'b', name: 'BASS_1', volume: 1.1, muted: false, soloed: false, pan: 1, bus: '2', srcId: 'cloud-1', srcIdx: 1 },
+        { id: 'c', name: 'GTR SOLO_1', volume: 0.5, muted: false, soloed: true, pan: 1, bus: '2', srcId: 'cloud-1', srcIdx: 2 },
+        { id: 'd', name: 'DRUMS', volume: 0.9, muted: false, soloed: false, pan: 1, bus: '2', srcId: 'cloud-1', srcIdx: 3 },
+      ],
+    })
+    const { result } = await openApp()
+    let releaseWorklets!: () => void
+    mem.pitchGate = new Promise<void>((resolve) => { releaseWorklets = resolve })
+    // Parado, tom -2: o play fica pendente esperando os worklets.
+    act(() => { void result.current.play() })
+    expect(result.current.isPlaying).toBe(false)
+    expect(mem.sources).toHaveLength(0)
+
+    // Nessa janela o Click vira Normal e a bateria vira Click, com o Solo na guitarra.
+    await act(async () => { result.current.setChannelMeta('a', { role: 'normal' }) })
+    await act(async () => { result.current.setChannelMeta('d', { role: 'click' }) })
+    await act(async () => {
+      releaseWorklets()
+      for (let i = 0; i < 10; i++) await Promise.resolve()
+    })
+
+    expect(result.current.isPlaying).toBe(true)
+    // Uma leva só de fontes (os plays antigos desistiram), do começo da música.
+    expect(mem.sources).toHaveLength(4)
+    for (const s of mem.sources) expect(s.offset).toBe(0)
+    // O Normal novo transpõe com a banda e cala no Solo da guitarra; o Click novo
+    // fica fora do worklet e continua tocando no Solo.
+    expect(mem.pitchNodes.some((n) => sourceOf(result, 'a').dest === n)).toBe(true)
+    expect(channel(result, 'a').gainNode.gain.value).toBe(0)
+    expect(mem.pitchNodes.some((n) => sourceOf(result, 'd').dest === n)).toBe(false)
+    expect(sourceOf(result, 'd').dest).toMatchObject({ delayTime: { value: PITCH_LATENCY } })
+    expect(channel(result, 'd').gainNode.gain.value).toBe(0.9)
+    expect(channel(result, 'c').gainNode.gain.value).toBe(0.5)
+    expect(channel(result, 'b').gainNode.gain.value).toBe(0)
+  })
+
   it('papel trocado durante a pré-contagem já vale no play que ela dispara', async () => {
     localStorage.setItem('precount_enabled', 'true')
     localStorage.setItem('precount_beats', '1')
@@ -455,6 +507,68 @@ describe('setChannelMeta', () => {
     expect(result.current.isPlaying).toBe(true)
     expect(mem.sources).toHaveLength(0)
     expect(mem.pitchNodes).toHaveLength(0)
+  })
+})
+
+// Revisão da v1.4.16, Menor 2: remover a música ativa enquanto o 1º play transposto
+// dela espera o worklet nascer. Sem cancelar, o play antigo terminava depois e tocava
+// a música removida (sem tom, porque os worklets dela já tinham sido soltos).
+describe('remover a música ativa', () => {
+  it.each([
+    ['última música do repertório', [v1]],
+    ['com outra música no repertório', [v1, v1Local]],
+  ])('%s: cancela o play pendente e nada da música removida toca', async (_label, songs) => {
+    seed(...songs)
+    const { result } = await openApp()
+    let releaseWorklets!: () => void
+    mem.pitchGate = new Promise<void>((resolve) => { releaseWorklets = resolve })
+    // Parado, tom -2: o play da s1 fica pendente esperando os worklets.
+    act(() => { void result.current.play() })
+    expect(mem.sources).toHaveLength(0)
+
+    await act(async () => { result.current.removeSongFromPlaylist('s1') })
+    await act(async () => {
+      releaseWorklets()
+      for (let i = 0; i < 10; i++) await Promise.resolve()
+    })
+
+    expect(result.current.playlist.some((s) => s.id === 's1')).toBe(false)
+    expect(mem.sources).toHaveLength(0)
+    expect(result.current.isPlaying).toBe(false)
+    // Os worklets que nasceram depois foram pra reserva, parados.
+    expect(mem.pitchNodes.every((n) => !n.active && n.connectedTo === null)).toBe(true)
+  })
+})
+
+// Revisão da v1.4.16, Menor 3: a rede de segurança do reinício (relógio passou do
+// instante comum antes de o laço de start() terminar) deixa um aviso curto no console,
+// pra contar os tropeços no teste em aparelho fraco. O comportamento não muda.
+describe('rede de segurança do reinício', () => {
+  it('reagenda todas as faixas com a folga de reserva e avisa no console', async () => {
+    seed({ ...v1, pitch: 0 })
+    const { result } = await openApp()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      // No 1º start() o relógio pula 10 ms, além do instante comum (2 blocos).
+      mem.onStart = () => { mem.onStart = null; mem.ctx!.currentTime = 0.01 }
+      await act(async () => { await result.current.play() })
+
+      // A 1ª leva (3 fontes) foi descartada e a 2ª saiu inteira, do mesmo ponto.
+      expect(mem.sources).toHaveLength(6)
+      for (const s of mem.sources) expect(s.offset).toBe(0)
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0][0])).toMatch(/^\[tom\] reinício reagendado com a folga de reserva \(1\)$/)
+
+      // Sem trava, nenhum aviso.
+      warn.mockClear()
+      mem.sources.length = 0
+      act(() => { result.current.pause() })
+      await act(async () => { await result.current.play() })
+      expect(mem.sources).toHaveLength(3)
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
   })
 })
 

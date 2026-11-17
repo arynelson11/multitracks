@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Verificação da troca de tom no Chrome headless, com o hook REAL do app.
 // Uso: node scripts/verify-pitch/run.mjs [cenario ...] [--tag nome] [--rev commit]
-//   cenários: S1 S2 SPREAD NAN METRONOMO (padrão: todos)
+//   cenários: ver SCENARIOS abaixo (padrão: todos)
 //   --rev: roda contra o src/ de um commit (ex.: --rev HEAD~1 pro "antes")
 // Sai com código 1 se algum critério falhar. Resultados em scripts/verify-pitch/results/.
 import http from 'node:http';
@@ -27,10 +27,24 @@ export const SCENARIOS = {
   SPREAD22: { query: 'seq=SPREAD&n=22&order=A', timeout: 120 },
   // 50 reinícios (seek) com 24 canais: conta quantos separam as faixas.
   SEEKS: { query: 'seq=SEEKS&n=22&order=A', timeout: 120 },
+  // Buraco no reinício: seek tocando, no tom 0 e no +2.
+  RESTART: { query: 'seq=RESTART&n=8&order=A', timeout: 90 },
+  // Loop de seção tocando: buraco na emenda (sem o atraso do rAF) no tom 0 e no +2.
+  LOOP: { query: 'seq=LOOP&n=8&order=A', timeout: 120 },
+  // Laço de start() travado no meio de 12 seeks: o play descarta e reagenda tudo junto.
+  STALL: { query: 'seq=STALL&n=8&order=A', timeout: 90 },
+  // Repertório: A (24 canais) +2, B (10) +3, C (30) +2, remove B, A de volta e no tom 0.
+  SONGS: { query: 'seq=SONGS&order=A&dur=30', timeout: 180 },
+  // Play transposto pendente + troca de música (jumpToSong, prevSong, nextSong) antes do worklet nascer.
+  PENDENTE: { query: 'seq=PENDENTE&order=A&dur=20', timeout: 120 },
+  // Nível de faixa mono e estéreo (pan total e centro), tom 0 x transposto.
+  LEVELS: { query: 'seq=LEVELS&order=A', timeout: 90 },
   // Tom inválido (NaN) chegando no motor.
   NAN: { query: 'seq=NAN&n=4&order=A', timeout: 90 },
   // Click do Separador: "Metrônomo" com acento, gravado depois dos stems.
   METRONOMO: { query: 'seq=S1&n=6&order=B&click=' + encodeURIComponent('Metrônomo'), timeout: 120 },
+  // Click com o nome em inglês ("Metronome"), mesma ordem do Separador.
+  METRONOME: { query: 'seq=S1&n=6&order=B&click=Metronome', timeout: 120 },
 };
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json' };

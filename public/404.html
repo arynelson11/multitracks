@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="theme-color" content="#FF6B35" />
+    <title>Página não encontrada · Playback Studio</title>
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: #121214;
+        color: #E8E8EC;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        line-height: 1.5;
+      }
+      main { max-width: 480px; text-align: center; }
+      svg { width: 64px; height: 64px; margin-bottom: 24px; }
+      h1 { font-size: 28px; line-height: 1.2; margin: 0 0 12px; letter-spacing: -0.01em; }
+      p { margin: 0 0 28px; color: #A1A1AA; font-size: 16px; }
+      nav { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+      a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 48px;
+        padding: 0 22px;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: 15px;
+        text-decoration: none;
+      }
+      .primary { background: #FF6B35; color: #1a0b04; }
+      .primary:hover { background: #FF9268; }
+      .secondary { border: 1px solid #2A2A2E; color: #E8E8EC; background: #1A1A1E; }
+      .secondary:hover { border-color: #3a3a40; }
+      a:focus-visible { outline: 2px solid #FF6B35; outline-offset: 3px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <defs>
+          <mask id="cortes">
+            <rect width="64" height="64" fill="white" />
+            <line x1="0" y1="22" x2="64" y2="22" stroke="black" stroke-width="4" />
+            <line x1="0" y1="32" x2="64" y2="32" stroke="black" stroke-width="4" />
+            <line x1="0" y1="42" x2="64" y2="42" stroke="black" stroke-width="4" />
+          </mask>
+        </defs>
+        <path d="M 14 12 L 52 32 L 14 52 Z" fill="#FF6B35" mask="url(#cortes)" />
+      </svg>
+      <h1>Página não encontrada</h1>
+      <p>O endereço que você abriu não existe ou mudou de lugar.</p>
+      <nav aria-label="Para onde ir">
+        <a class="primary" href="/">Ir para a página inicial</a>
+        <a class="secondary" href="/download">Baixar o app</a>
+      </nav>
+    </main>
+  </body>
+</html>

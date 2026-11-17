@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   Mic2, Drumstick, Guitar, Music, Disc3,
-  Star, ChevronDown, Check,
+  ChevronDown, Check,
   ArrowRight, Church, Download,
   Gauge, Archive, ScrollText, Sparkles, FileAudio, WifiOff, QrCode,
 } from 'lucide-react'
@@ -9,14 +9,10 @@ import { DemoMixer } from './DemoMixer'
 import { BrandLogo } from './BrandLogo'
 import { DomingoMark } from './brand/DomingoMark'
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark'
-
-// Suporte / contato via WhatsApp
-const WHATSAPP_URL =
-  'https://wa.me/5522997249896?text=' +
-  encodeURIComponent('Olá! Vim pelo site do Playback Studio e preciso de ajuda.')
-
-// Suporte / contato por email
-const SUPPORT_EMAIL = 'contatoplaybackstudio@gmail.com'
+import { FAQS, PRICES, WHATSAPP_URL } from '../content/site'
+import { annualPerMonth, annualSavings, formatReais } from '../lib/prices'
+import { SiteLegalInfo } from './SiteLegalInfo'
+import { useFreeZoom } from '../hooks/useFreeZoom'
 
 function WhatsappIcon({ className }: { className?: string }) {
   return (
@@ -34,149 +30,105 @@ interface LandingPageProps {
 
 /**
  * Audience multi-perfil: worship em destaque + outros contextos.
- * 'Feito por quem toca' é a âncora — qualquer banda/músico que toca todo
+ * 'Feito por quem toca' é a âncora: qualquer banda/músico que toca todo
  * fim de semana se reconhece aqui.
  */
 const AUDIENCE = [
-  { icon: Church,    title: 'Equipes de adoração',  desc: 'Do ensaio ao culto, qualquer música pronta com a levada na mão.' },
+  { icon: Church,    title: 'Equipes de adoração',  desc: 'Do ensaio ao culto da igreja, qualquer música vira VS, com as faixas separadas na mão.' },
   { icon: Music,     title: 'Bandas em geral',      desc: 'Gospel, sertanejo, MPB, rock, indie. Qualquer ritmo, faixas separadas pro próximo show.' },
-  { icon: Mic2,      title: 'Vocalistas e ministros', desc: 'Voice guide discreto, tonalidade no seu alcance, referência sem inundar o in-ear.' },
+  { icon: Mic2,      title: 'Vocalistas e ministros', desc: 'Voz guia discreta, o tom no seu alcance e referência sem encher o in-ear.' },
   { icon: Guitar,    title: 'Instrumentistas',      desc: 'Faixas separadas de qualquer música. Guitarra, baixo, teclado, piano pra ensaiar como sua banda toca.' },
-  { icon: Drumstick, title: 'Bateristas',           desc: 'Click track no seu jeito, separação que respeita a levada original.' },
-  { icon: Disc3,     title: 'Solo e produtores',    desc: 'Construa em cima de qualquer faixa. Separe, remixe, refaça arranjos.' },
+  { icon: Drumstick, title: 'Bateristas',           desc: 'Click no tempo da música e a bateria separada pra estudar a levada original.' },
+  { icon: Disc3,     title: 'Músicos e estudantes', desc: 'Separe qualquer faixa pra estudar arranjos, tirar as partes e ensaiar no seu tempo.' },
 ]
 
 /**
  * Recursos que já existem no produto mas costumam passar batido na primeira
  * visita. Tudo aqui é entregue de verdade hoje, sem promessa de roadmap.
+ * `pro`: só nos planos pagos (Pro e Studio), conforme src/lib/plans.ts e o FATOS.
  */
 const FEATURES = [
-  { icon: Gauge,      title: 'BPM detectado pela IA',      desc: 'Ao separar, a IA já estima o andamento da música. O click entra na velocidade certa, sem você contar nada.' },
-  { icon: ScrollText, title: 'Teleprompter de letras',     desc: 'Suba a letra da música e a equipe acompanha na tela, sincronizada com as seções, no palco ou pelo celular.' },
-  { icon: Sparkles,   title: 'Voz guia automática',        desc: 'O Playback Studio marca sozinho os pontos de entrada e monta a voz guia pra orientar quem canta.' },
-  { icon: Archive,    title: 'Repertório com backup .zip', desc: 'Monte seus repertórios e salve tudo num arquivo .zip. Carregue de volta em qualquer aparelho, quando quiser.' },
-  { icon: FileAudio,  title: 'Download em WAV ou MP3',     desc: 'Baixe cada faixa separada no formato que precisar. WAV pra produzir, MP3 pra mandar rápido pra equipe.' },
-  { icon: QrCode,     title: 'Banda conecta por QR Code',  desc: 'No Modo Ao Vivo, cada músico aponta o celular pro QR Code e entra na sessão. Música, tom e letra em tempo real.' },
-  { icon: WifiOff,    title: 'App desktop que toca offline', desc: 'Baixe o app pro Mac ou Windows. Depois de carregar as músicas, tudo funciona no palco mesmo sem internet.' },
+  { icon: Gauge,      pro: true,  title: 'BPM detectado pela IA',      desc: 'Ao separar, a IA já estima o andamento da música. O click entra na velocidade certa, sem você contar nada.' },
+  { icon: ScrollText, pro: true,  title: 'Teleprompter de letras',     desc: 'Suba a letra da música e a equipe acompanha na tela, sincronizada com as seções, no palco ou pelo celular.' },
+  { icon: Sparkles,   pro: true,  title: 'Voz guia automática',        desc: 'O Playback Studio marca sozinho os pontos de entrada e monta a voz guia, falada em português, pra orientar quem canta.' },
+  { icon: Archive,    pro: true,  title: 'Repertório com backup .zip', desc: 'Monte seus repertórios e salve tudo num arquivo .zip. Carregue de volta em qualquer aparelho, quando quiser.' },
+  { icon: FileAudio,  pro: true,  title: 'Download em WAV ou MP3',     desc: 'Baixe cada faixa separada no formato que precisar. WAV pra produzir, MP3 pra mandar rápido pra equipe.' },
+  { icon: QrCode,     pro: true,  title: 'Banda conecta por QR Code',  desc: 'No Modo Ao Vivo, aberto pelo app de computador, cada músico aponta o celular pro QR Code e entra na sessão. Música, tom e letra em tempo real.' },
+  { icon: WifiOff,    pro: false, title: 'App desktop que toca offline', desc: 'Baixe o app pro Mac ou Windows, grátis. Depois de carregar as músicas, ele toca no palco mesmo sem internet. Os recursos seguem o seu plano.' },
 ]
 
+// Preços de src/content/site.ts (os mesmos do api/checkout.ts e do FATOS).
+// annualTotal é o valor cobrado no anual; o "por mês" do anual sai dele.
 const PLANS = [
   {
     id: 'gratuito',
     name: 'Livre',
-    monthly: 0, annual: 0,
+    monthly: 0, annualTotal: 0,
     desc: 'Pra experimentar e ver se funciona',
     badge: null as string | null,
     highlight: false,
     features: [
       '5 separações de faixas por mês',
-      'Separação em 2 faixas (vocal e instrumental)',
+      'Separação em 2 faixas (voz e instrumental)',
       'Ouça cada faixa isolada no mixer',
       'Biblioteca de separações local, salva no navegador',
     ],
+    note: 'Download, BPM, voz guia, seções, troca de tom e Modo Ao Vivo ficam nos planos Pro e Studio.' as string | null,
     cta: 'Começar grátis',
   },
   {
     id: 'essencial',
-    name: 'Pro',
-    monthly: 49.90, annual: 37.90,
+    name: PRICES.pro.name,
+    monthly: PRICES.pro.monthly, annualTotal: PRICES.pro.annualTotal,
     desc: 'Pra equipe que toca toda semana',
-    badge: 'Mais escolhido',
+    badge: 'Recomendado' as string | null,
     highlight: true,
     features: [
       '50 separações de faixas por mês',
       'Separação em 2, 4 e 6 faixas',
       'Download das faixas em WAV e MP3',
-      'BPM pela IA e click com levada brasileira',
-      'Voz guia pra orientar a equipe',
+      'BPM pela IA e click no tempo da música',
+      'Voz guia em português pra orientar a equipe',
       'Pads de ambiente',
       'Marque seções e repita em loop infinito ao vivo',
-      'Transposição de tom',
-      'Modo Ao Vivo: banda conecta por QR Code, até 4 aparelhos',
+      'Troca de tom',
+      'Modo Ao Vivo no app de computador: a banda conecta por QR Code, até 4 aparelhos',
       'Teleprompter de letras',
-      'Biblioteca cloud e repertório com backup .zip',
-      'Suporte por email',
+      'Biblioteca na nuvem e repertório com backup .zip',
     ],
+    note: null,
     cta: 'Assinar Pro',
   },
   {
     id: 'pro',
-    name: 'Studio',
-    monthly: 119.90, annual: 89.90,
+    name: PRICES.studio.name,
+    monthly: PRICES.studio.monthly, annualTotal: PRICES.studio.annualTotal,
     desc: 'Pra quem leva o ao vivo a sério',
     badge: null as string | null,
     highlight: false,
     features: [
       '150 separações de faixas por mês',
-      'Qualidade máxima de separação',
       'Tudo do Pro',
       'Modo Ao Vivo sem limite de aparelhos',
       'A banda controla loop e seções pelo celular',
-      'Prioridade no processamento',
-      'Suporte prioritário',
     ],
+    note: null,
     cta: 'Assinar Studio',
   },
 ]
 
-const FAQS = [
-  {
-    q: 'O que é separação de faixas?',
-    a: 'São as faixas individuais de uma música (também chamadas de stems): voz separada, bateria separada, baixo separado, e por aí vai. Com o Playback Studio você sobe qualquer música e recebe tudo separado pra sua banda ensaiar e tocar como precisa.'
-  },
-  {
-    q: 'Dá pra repetir uma parte da música ao vivo?',
-    a: 'Dá. Você marca as seções (intro, verso, refrão, ponte) e, no momento do louvor, repete um trecho quantas vezes quiser ou deixa em loop até decidir seguir. A volta acontece no fim da parte, sem cortar a música no meio.'
-  },
-  {
-    q: 'A banda consegue acompanhar pelo celular?',
-    a: 'Sim, no Modo Ao Vivo. Cada músico conecta o celular e acompanha a música, o tom e a letra em tempo real. Nos planos pagos a banda também ajuda a controlar a execução, e no Studio controla as repetições e seções direto do celular.'
-  },
-  {
-    q: 'Como funciona a separação?',
-    a: 'Você sobe a música (MP3, WAV ou AAC). A IA do Playback Studio separa em voz, bateria, baixo, guitarra, piano e os outros instrumentos em alguns minutos. Os stems ficam disponíveis pra download, no mixer e pra compartilhar com a equipe.'
-  },
-  {
-    q: 'Qual a diferença pra um catálogo de multitracks?',
-    a: 'Catálogo te dá só as músicas que já foram licenciadas, e você espera o release sair. O Playback Studio é uma ferramenta: você sobe qualquer música e ela vira multitracks na hora. Worship, gospel, sertanejo, MPB, rock, indie, até a original da sua banda. Você cria o que precisa, não espera o que existe.'
-  },
-  {
-    q: 'Funciona no celular?',
-    a: 'Sim. É um Progressive Web App otimizado pra mobile. Funciona no navegador do iPhone e Android, sem instalar nada. A interface se adapta à tela do celular.'
-  },
-  {
-    q: 'Posso usar ao vivo no palco?',
-    a: 'Pode. Foi construído pra isso. Após carregar as músicas, o player e mixer funcionam offline com baixa latência e controle total dos canais em tempo real.'
-  },
-  {
-    q: 'Posso cancelar quando quiser?',
-    a: 'Sim, sem fidelidade. Cancele direto pelo painel a qualquer momento. O acesso continua até o fim do período pago.'
-  },
-]
-
-const TESTIMONIALS = [
-  {
-    name: 'Lucas Ferreira',
-    role: 'Ministro de louvor',
-    text: 'Domingo flui agora. A equipe chega afinada porque ensaiou com stems de verdade, não com áudio original cheio de voz.',
-  },
-  {
-    name: 'Ana Paula Costa',
-    role: 'Vocalista, banda gospel',
-    text: 'A levada do click brasileiro fez diferença real no ensaio. Antes a banda tava sempre se ajustando ao metrônomo gringo. Agora é natural.',
-  },
-  {
-    name: 'Rodrigo Melo',
-    role: 'Tecladista e produtor',
-    text: 'Sábado o ministro de louvor muda uma música? Em alguns minutos tá separada. Domingo a gente não precisa improvisar.',
-  },
-]
+// Selo do anual: o maior desconto entre os planos (24% no Pro, 25% no Studio).
+const MAX_ANNUAL_DISCOUNT = Math.max(
+  annualSavings(PRICES.pro.monthly, PRICES.pro.annualTotal).percent,
+  annualSavings(PRICES.studio.monthly, PRICES.studio.annualTotal).percent,
+)
 
 /* ─── Componente ────────────────────────── */
 
 export function LandingPage({ onEnter }: LandingPageProps) {
   const [billing, setBilling] = useState<'monthly' | 'annual'>('annual')
   const [openFaq, setOpenFaq] = useState<number | null>(null)
+  useFreeZoom()
 
   const goToCheckout = (planId: string, price: number) => {
     if (price > 0) {
@@ -193,7 +145,10 @@ export function LandingPage({ onEnter }: LandingPageProps) {
   }
 
   return (
-    <div className="brand-context-dark min-h-screen overflow-x-hidden">
+    <div className="brand-context-dark site-public min-h-screen overflow-x-hidden">
+      <a href="#conteudo" className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] focus:rounded-lg focus:bg-bone focus:px-4 focus:py-2 focus:text-tinta focus:font-semibold">
+        Pular para o conteúdo
+      </a>
       {/* ── NAV ── */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-tinta/85 backdrop-blur-xl border-b border-tinta-border">
         <div className="max-w-6xl mx-auto px-5 sm:px-8 h-14 flex items-center justify-between">
@@ -201,19 +156,19 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <div className="flex items-center gap-2">
             <a
               href="/download"
-              className="hidden sm:flex items-center gap-1.5 text-[13px] text-warm-400 hover:text-bone px-3 py-1.5 transition-colors cursor-pointer font-medium"
+              className="hidden sm:flex items-center gap-1.5 text-[13px] text-ps-mut hover:text-bone px-3 py-1.5 transition-colors cursor-pointer font-medium"
             >
               <Download size={14} /> Baixar app
             </a>
             <button
               onClick={goToApp}
-              className="hidden sm:block text-[13px] text-warm-400 hover:text-bone px-3 py-1.5 transition-colors cursor-pointer font-medium"
+              className="hidden sm:block text-[13px] text-ps-mut hover:text-bone px-3 py-1.5 transition-colors cursor-pointer font-medium"
             >
               Entrar
             </button>
             <button
               onClick={goToApp}
-              className="text-[13px] bg-laranja hover:bg-laranja-dark text-bone px-5 py-2 rounded-lg font-semibold transition-colors cursor-pointer"
+              className="text-[13px] bg-laranja hover:bg-laranja-light text-ps-on-or px-5 py-2 rounded-lg font-semibold transition-colors cursor-pointer"
             >
               Começa de graça
             </button>
@@ -221,6 +176,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         </div>
       </nav>
 
+      <main id="conteudo" tabIndex={-1} className="outline-none">
       {/* ════════ HERO ════════ */}
       <section className="relative min-h-screen flex flex-col items-center justify-center px-5 sm:px-8 pt-28 pb-20 overflow-hidden">
         {/* Atmosphere (warm dark) */}
@@ -233,7 +189,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         <div className="relative text-center max-w-4xl mx-auto">
           {/* Visual Hammer */}
           <div className="mb-6 inline-flex items-baseline gap-3 select-none">
-            <span className="text-warm-400 text-[14px] font-medium tracking-wide">pronto pro</span>
+            <span className="text-ps-mut text-[14px] font-medium tracking-wide">pronto pro</span>
             <DomingoMark size="md" tone="laranja" />
           </div>
 
@@ -248,13 +204,14 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <p className="text-[clamp(.95rem,2vw,1.2rem)] text-warm-200 max-w-2xl mx-auto mb-10 leading-relaxed">
             Sábado 23h alguém manda mudando o setlist, e a música não está em catálogo nenhum.
             O Playback Studio separa qualquer música, do worship ao sertanejo,
-            em faixas prontas. No domingo, repita o refrão e estenda a ministração sem cortar nada.
+            em faixas prontas pra banda da igreja. No Pro, você marca as seções e repete o refrão
+            ao vivo sem cortar a música.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button
               onClick={goToApp}
-              className="inline-flex items-center justify-center gap-2.5 bg-laranja hover:bg-laranja-dark text-bone px-8 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-laranja/25"
+              className="inline-flex items-center justify-center gap-2.5 bg-laranja hover:bg-laranja-light text-ps-on-or px-8 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-laranja/25"
             >
               Começa de graça
             </button>
@@ -272,28 +229,28 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             </a>
           </div>
 
-          <p className="text-[12px] text-warm-400 mt-5">Sem cartão de crédito · Cancele quando quiser</p>
+          <p className="text-[12px] text-ps-mut mt-5">Sem cartão de crédito · Cancele quando quiser</p>
         </div>
 
-        {/* Product preview — DAW preserved (dual aesthetic) */}
+        {/* Product preview: DAW preserved (dual aesthetic) */}
         <div className="relative mt-16 w-full max-w-3xl mx-auto">
           <div className="rounded-2xl overflow-hidden border border-tinta-border shadow-2xl shadow-black/40">
             <DemoMixer />
           </div>
-          <p className="text-center text-[11px] text-warm-400 mt-3 font-mono">o estúdio dentro do Playback Studio</p>
+          <p className="text-center text-[11px] text-ps-mut mt-3 font-mono">o estúdio dentro do Playback Studio</p>
         </div>
       </section>
 
-      {/* ════════ STAKES — problema + empatia ════════ */}
+      {/* ════════ STAKES: problema + empatia ════════ */}
       <section className="py-24 px-5 sm:px-8 bg-tinta-soft">
         <div className="max-w-3xl mx-auto">
-          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o sábado que a gente conhece</p>
+          <p className="text-ps-mut text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o sábado que a gente conhece</p>
           <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-8 text-center">
             Domingo não tem que ser correria.
           </h2>
           <div className="bg-tinta-raised border border-tinta-border rounded-2xl p-7 sm:p-9 mb-8 leading-relaxed text-[15px] text-warm-200">
             <p className="mb-4">
-              Sábado 23h o ministro de louvor manda mudando o setlist. Você passa a madrugada procurando multitracks
+              Sábado 23h o ministro de louvor manda mudando o setlist. Você passa a madrugada procurando VS e multitracks
               em fórum. Domingo de manhã o som tá descosturado porque a equipe não teve tempo de ensaiar como precisa.
               Segunda você acorda exausto. Tudo de novo na próxima semana.
             </p>
@@ -304,10 +261,10 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         </div>
       </section>
 
-      {/* ════════ GUIDE — 3 benefícios ════════ */}
+      {/* ════════ GUIDE: 3 benefícios ════════ */}
       <section id="como-funciona" className="py-24 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto">
-          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o que o Playback Studio entrega</p>
+          <p className="text-ps-mut text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o que o Playback Studio entrega</p>
           <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-16 text-center">
             Construída por quem toca.
             <br />
@@ -315,8 +272,8 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           </h2>
           <div className="grid sm:grid-cols-3 gap-6">
             {[
-              { title: 'Qualquer música, não só o catálogo', desc: 'A música que o ministro escolheu não está em catálogo nenhum? Sobe ela aqui. Qualquer música vira multitracks, na hora.' },
-              { title: 'Biblioteca de Separações Local', desc: 'Suas separações ficam salvas no seu navegador. Feche e abra depois sem gastar tokens novamente.' },
+              { title: 'Qualquer música, não só o catálogo', desc: 'A música que o ministro escolheu não está em catálogo nenhum? Sobe ela aqui. Qualquer música vira multitracks em alguns minutos.' },
+              { title: 'O tom no alcance de quem canta', desc: 'Nos planos Pro e Studio, mude o tom da música sem perder o tempo: o click e a voz guia ficam fora da troca de tom e a banda segue junto.' },
               { title: 'Você cria, não espera release', desc: 'No catálogo você recebe o que já existe. Aqui você prepara o que a sua equipe precisa, sem esperar lançamento nem licença gringa.' },
             ].map((item, i) => (
               <div key={i} className="bg-tinta-raised border border-tinta-border rounded-2xl p-7 hover:border-laranja/40 transition-colors">
@@ -331,22 +288,22 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         </div>
       </section>
 
-      {/* ════════ PLAN — 3 passos ════════ */}
+      {/* ════════ PLAN: 3 passos ════════ */}
       <section className="py-24 px-5 sm:px-8 bg-tinta-soft">
         <div className="max-w-4xl mx-auto">
-          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o domingo em 3 passos</p>
+          <p className="text-ps-mut text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">o domingo em 3 passos</p>
           <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-16 text-center">
             Como você chega pronto.
           </h2>
 
           <div className="space-y-5">
             {[
-              { n: '1', title: 'Sobe a música', desc: 'Qualquer formato de áudio: MP3, WAV ou AAC.' },
-              { n: '2', title: 'O Playback Studio separa tudo', desc: 'Voz, bateria, baixo, guitarra, piano e os outros instrumentos. Em alguns minutos.' },
-              { n: '3', title: 'Sua banda chega pronta no domingo', desc: 'Faixas separadas, click e voice guide. Você marca as seções (intro, verso, refrão) pra repetir trechos ao vivo, e a banda acompanha pelo celular.' },
+              { n: '1', title: 'Sobe a música', desc: 'Em MP3, WAV ou AAC.' },
+              { n: '2', title: 'O Playback Studio separa tudo', desc: 'Voz, bateria, baixo, guitarra, piano e os outros instrumentos, em até 6 faixas (2 no Livre). Em alguns minutos.' },
+              { n: '3', title: 'Sua banda chega pronta no domingo', desc: 'Faixas separadas no mixer, com click e voz guia. No Pro, você marca as seções (intro, verso, refrão) pra repetir trechos ao vivo, e a banda acompanha pelo celular no Modo Ao Vivo.' },
             ].map(step => (
               <div key={step.n} className="bg-tinta-raised border border-tinta-border rounded-2xl p-6 sm:p-8 flex items-start gap-6">
-                <div className="w-14 h-14 rounded-full bg-laranja text-bone flex items-center justify-center font-display font-semibold text-[24px] shrink-0">
+                <div className="w-14 h-14 rounded-full bg-laranja text-ps-on-or flex items-center justify-center font-display font-semibold text-[24px] shrink-0">
                   {step.n}
                 </div>
                 <div className="flex-1 pt-1">
@@ -360,7 +317,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <div className="text-center mt-12">
             <button
               onClick={goToApp}
-              className="inline-flex items-center justify-center gap-2.5 bg-laranja hover:bg-laranja-dark text-bone px-8 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-laranja/25"
+              className="inline-flex items-center justify-center gap-2.5 bg-laranja hover:bg-laranja-light text-ps-on-or px-8 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-laranja/25"
             >
               Sobe sua primeira música <ArrowRight size={17} />
             </button>
@@ -368,10 +325,10 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         </div>
       </section>
 
-      {/* ════════ AUDIENCE — pra quem é ════════ */}
+      {/* ════════ AUDIENCE: pra quem é ════════ */}
       <section className="py-24 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto">
-          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">feito pra</p>
+          <p className="text-ps-mut text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">feito pra</p>
           <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-16 text-center">
             Quem toca todo fim de semana.
           </h2>
@@ -381,7 +338,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                 <div className="w-10 h-10 rounded-xl bg-musgo/15 group-hover:bg-musgo/25 flex items-center justify-center mb-4 transition-colors">
                   <a.icon size={20} className="text-musgo-light" />
                 </div>
-                <h4 className="font-display font-semibold text-[16px] text-bone mb-2">{a.title}</h4>
+                <h3 className="font-display font-semibold text-[16px] text-bone mb-2">{a.title}</h3>
                 <p className="text-[13px] text-warm-200 leading-relaxed">{a.desc}</p>
               </div>
             ))}
@@ -389,15 +346,19 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         </div>
       </section>
 
-      {/* ════════ FEATURES — tudo que vem junto ════════ */}
+      {/* ════════ FEATURES: tudo que vem junto ════════ */}
       <section className="py-24 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto">
-          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">tudo que vem junto</p>
+          <p className="text-ps-mut text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">tudo que vem junto</p>
           <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-4 text-center">
             Mais do que separar faixas.
           </h2>
-          <p className="text-warm-200 text-[15px] max-w-2xl mx-auto mb-16 text-center leading-relaxed">
+          <p className="text-warm-200 text-[15px] max-w-2xl mx-auto mb-4 text-center leading-relaxed">
             A separação é só o começo. O Playback Studio leva a música do upload até o palco, com tudo que a banda precisa no caminho.
+          </p>
+          <p className="text-warm-200 text-[14px] max-w-2xl mx-auto mb-16 text-center leading-relaxed">
+            No Livre você separa 5 músicas por mês em 2 faixas (voz e instrumental) e ouve cada uma no mixer.
+            Os recursos com o selo <span className="font-semibold text-bone">Pro</span> vêm nos planos Pro e Studio.
           </p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {FEATURES.map((f, i) => (
@@ -405,7 +366,12 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                 <div className="w-10 h-10 rounded-xl bg-laranja/15 group-hover:bg-laranja/25 flex items-center justify-center mb-4 transition-colors">
                   <f.icon size={20} className="text-laranja" />
                 </div>
-                <h4 className="font-display font-semibold text-[16px] text-bone mb-2">{f.title}</h4>
+                <h3 className="font-display font-semibold text-[16px] text-bone mb-2">
+                  {f.title}
+                  {f.pro && (
+                    <span className="ml-2 align-middle text-[10px] font-sans font-bold uppercase tracking-wider text-laranja-light bg-laranja/15 border border-laranja/30 px-1.5 py-0.5 rounded">Pro</span>
+                  )}
+                </h3>
                 <p className="text-[13px] text-warm-200 leading-relaxed">{f.desc}</p>
               </div>
             ))}
@@ -413,10 +379,10 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         </div>
       </section>
 
-      {/* ════════ SUCCESS — transformação ════════ */}
+      {/* ════════ SUCCESS: transformação ════════ */}
       <section className="py-24 px-5 sm:px-8 bg-tinta-soft">
         <div className="max-w-3xl mx-auto">
-          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">seu próximo domingo, diferente</p>
+          <p className="text-ps-mut text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">seu próximo domingo, diferente</p>
           <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-12 text-center">
             Sexta separa. Sábado ensaia.
             <br />
@@ -438,39 +404,15 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         </div>
       </section>
 
-      {/* ════════ TESTIMONIALS ════════ */}
-      <section className="py-24 px-5 sm:px-8">
-        <div className="max-w-5xl mx-auto">
-          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">bandas que já chegam prontas</p>
-          <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-16 text-center">
-            Histórias de domingo.
-          </h2>
-          <div className="grid sm:grid-cols-3 gap-5">
-            {TESTIMONIALS.map((r, i) => (
-              <div key={i} className="bg-tinta-raised border border-tinta-border rounded-2xl p-7">
-                <div className="flex gap-0.5 mb-4">
-                  {[1, 2, 3, 4, 5].map(j => <Star key={j} size={12} className="text-laranja fill-laranja" />)}
-                </div>
-                <p className="text-[14px] text-warm-200 leading-relaxed mb-5">"{r.text}"</p>
-                <div>
-                  <div className="font-display font-semibold text-[15px] text-bone">{r.name}</div>
-                  <div className="text-[12px] text-warm-400">{r.role}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ════════ PRICING ════════ */}
       <section className="py-24 px-5 sm:px-8 bg-tinta-soft" id="precos">
         <div className="max-w-5xl mx-auto">
-          <p className="text-warm-400 text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">planos</p>
+          <p className="text-ps-mut text-[12px] font-bold uppercase tracking-[0.25em] mb-4 text-center">planos</p>
           <h2 className="font-display font-semibold text-[clamp(1.8rem,4.5vw,2.8rem)] leading-tight text-bone mb-3 text-center">
             Planos pra sua banda chegar pronta no domingo.
           </h2>
           <p className="text-warm-200 text-[15px] mb-10 text-center">
-            Sem fidelidade, sem pegadinha. Começa de graça e cresce quando precisar.
+            Sem multa, sem pegadinha. Começa de graça e cresce quando precisar.
           </p>
 
           <div className="flex justify-center mb-12">
@@ -486,14 +428,15 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                 className={`px-5 py-2 rounded-lg text-[13px] font-semibold transition-all cursor-pointer flex items-center gap-2 ${billing === 'annual' ? 'bg-bone text-tinta' : 'text-warm-200 hover:text-bone'}`}
               >
                 Anual
-                <span className="text-[10px] font-bold text-musgo-light bg-musgo/20 px-1.5 py-0.5 rounded">−25%</span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${billing === 'annual' ? 'text-musgo-dark bg-musgo/25' : 'text-musgo-light bg-musgo/20'}`}>até −{MAX_ANNUAL_DISCOUNT}%</span>
               </button>
             </div>
           </div>
 
           <div className="grid sm:grid-cols-3 gap-5">
             {PLANS.map((plan) => {
-              const price = billing === 'annual' ? plan.annual : plan.monthly
+              const price = billing === 'annual' ? annualPerMonth(plan.annualTotal) : plan.monthly
+              const savings = annualSavings(plan.monthly, plan.annualTotal)
               return (
                 <div
                   key={plan.id}
@@ -503,13 +446,13 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                     }`}
                 >
                   {plan.badge && (
-                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-laranja text-bone text-[10px] font-bold px-4 py-1 rounded-full uppercase tracking-widest whitespace-nowrap">
+                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-laranja text-ps-on-or text-[10px] font-bold px-4 py-1 rounded-full uppercase tracking-widest whitespace-nowrap">
                       {plan.badge}
                     </div>
                   )}
                   <div className="mb-5">
                     <h3 className="font-display font-semibold text-[22px] text-bone mb-1">{plan.name}</h3>
-                    <p className="text-warm-400 text-[13px]">{plan.desc}</p>
+                    <p className="text-ps-mut text-[13px]">{plan.desc}</p>
                   </div>
                   <div className="mb-7">
                     {price === 0 ? (
@@ -517,20 +460,22 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                     ) : (
                       <>
                         <div className="flex items-baseline gap-1">
-                          <span className="text-[14px] text-warm-400">R$</span>
-                          <span className="font-display font-semibold text-[40px] text-bone leading-none">{price.toFixed(2).replace('.', ',')}</span>
-                          <span className="text-warm-400 text-[14px]">/mês</span>
+                          <span className="text-[14px] text-ps-mut">R$</span>
+                          <span className="font-display font-semibold text-[40px] text-bone leading-none">{formatReais(price)}</span>
+                          <span className="text-ps-mut text-[14px]">/mês</span>
                         </div>
                         {billing === 'annual' && (
-                          <p className="text-[11px] text-musgo-light mt-2">R$ {(price * 12).toFixed(2).replace('.', ',')} cobrado anualmente</p>
+                          <p className="text-[11px] text-musgo-light mt-2">
+                            R$ {formatReais(plan.annualTotal)} cobrado por ano. Economia de R$ {formatReais(savings.reais)} ({savings.percent}%)
+                          </p>
                         )}
                         {billing === 'monthly' && (
-                          <p className="text-[11px] text-warm-400 mt-2">ou R$ {plan.annual.toFixed(2).replace('.', ',')}/mês no anual</p>
+                          <p className="text-[11px] text-ps-mut mt-2">ou R$ {formatReais(annualPerMonth(plan.annualTotal))}/mês no anual ({savings.percent}% a menos)</p>
                         )}
                       </>
                     )}
                   </div>
-                  <ul className="space-y-2.5 mb-8 flex-1">
+                  <ul className={`space-y-2.5 flex-1 ${plan.note ? 'mb-4' : 'mb-8'}`}>
                     {plan.features.map((feat, j) => (
                       <li key={j} className="flex items-start gap-2.5 text-[13px] text-warm-200">
                         <Check size={13} className={`mt-0.5 shrink-0 ${plan.highlight ? 'text-laranja' : 'text-musgo-light'}`} />
@@ -538,10 +483,11 @@ export function LandingPage({ onEnter }: LandingPageProps) {
                       </li>
                     ))}
                   </ul>
+                  {plan.note && <p className="text-[12px] text-warm-200 leading-relaxed mb-8">{plan.note}</p>}
                   <button
                     onClick={() => goToCheckout(plan.id, price)}
                     className={`w-full py-3 rounded-xl text-[13px] font-semibold transition-all cursor-pointer ${plan.highlight
-                        ? 'bg-laranja hover:bg-laranja-dark text-bone shadow-lg shadow-laranja/25'
+                        ? 'bg-laranja hover:bg-laranja-light text-ps-on-or shadow-lg shadow-laranja/25'
                         : 'bg-tinta hover:bg-tinta-border border border-tinta-border text-bone'
                       }`}
                   >
@@ -551,7 +497,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
               )
             })}
           </div>
-          <p className="text-center text-[12px] text-warm-400 mt-8">Preços em Reais · Cancele quando quiser · Sem fidelidade</p>
+          <p className="text-center text-[12px] text-ps-mut mt-8">Preços em reais · Pagamento no cartão de crédito, com renovação automática · Cancele quando quiser: a assinatura deixa de renovar, sem multa</p>
         </div>
       </section>
 
@@ -562,22 +508,35 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             Perguntas frequentes
           </h2>
           <div className="space-y-2.5">
-            {FAQS.map((faq, i) => (
-              <div key={i} className="border border-tinta-border rounded-xl overflow-hidden bg-tinta-raised">
-                <button
-                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                  className="w-full flex items-center justify-between px-5 py-4 text-left cursor-pointer hover:bg-tinta-border/40 transition-colors"
-                >
-                  <span className="font-semibold text-[14px] text-bone pr-4">{faq.q}</span>
-                  <ChevronDown size={15} className={`text-warm-400 shrink-0 transition-transform ${openFaq === i ? 'rotate-180' : ''}`} />
-                </button>
-                {openFaq === i && (
-                  <div className="px-5 pb-5 pt-4 text-[13px] text-warm-200 leading-relaxed border-t border-tinta-border">
+            {FAQS.map((faq, i) => {
+              const open = openFaq === i
+              return (
+                <div key={i} className="border border-tinta-border rounded-xl overflow-hidden bg-tinta-raised">
+                  <h3 className="font-sans tracking-normal text-[14px]">
+                    <button
+                      id={`faq-pergunta-${i}`}
+                      onClick={() => setOpenFaq(open ? null : i)}
+                      aria-expanded={open}
+                      aria-controls={`faq-resposta-${i}`}
+                      className="w-full flex items-center justify-between px-5 py-4 text-left cursor-pointer hover:bg-tinta-border/40 transition-colors"
+                    >
+                      <span className="font-semibold text-[14px] text-bone pr-4">{faq.q}</span>
+                      <ChevronDown size={15} aria-hidden="true" className={`text-ps-mut shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+                    </button>
+                  </h3>
+                  {/* A resposta fica sempre no HTML (o Google lê); fechada, só some da tela. */}
+                  <div
+                    id={`faq-resposta-${i}`}
+                    role="region"
+                    aria-labelledby={`faq-pergunta-${i}`}
+                    hidden={!open}
+                    className="px-5 pb-5 pt-4 text-[13px] text-warm-200 leading-relaxed border-t border-tinta-border"
+                  >
                     {faq.a}
                   </div>
-                )}
-              </div>
-            ))}
+                </div>
+              )
+            })}
           </div>
         </div>
       </section>
@@ -589,9 +548,9 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-72 h-36 bg-laranja/15 blur-3xl rounded-full pointer-events-none" />
             <div className="relative">
               <div className="inline-flex items-baseline gap-3 mb-6">
-                <span className="text-warm-400 text-[14px] font-medium tracking-wide">pronto pro</span>
+                <span className="text-ps-mut text-[14px] font-medium tracking-wide">pronto pro</span>
                 <DomingoMark size="lg" tone="laranja" />
-                <span className="text-warm-400 text-[14px] font-medium tracking-wide">?</span>
+                <span className="text-ps-mut text-[14px] font-medium tracking-wide">?</span>
               </div>
               <h2 className="font-display font-semibold text-[clamp(1.8rem,5vw,2.8rem)] text-bone mb-4 leading-tight">
                 Sua próxima semana,
@@ -603,42 +562,34 @@ export function LandingPage({ onEnter }: LandingPageProps) {
               </p>
               <button
                 onClick={goToApp}
-                className="inline-flex items-center gap-2.5 bg-laranja hover:bg-laranja-dark text-bone px-9 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-laranja/25"
+                className="inline-flex items-center gap-2.5 bg-laranja hover:bg-laranja-light text-ps-on-or px-9 py-4 rounded-xl font-semibold text-[15px] transition-all hover:scale-[1.02] cursor-pointer shadow-lg shadow-laranja/25"
               >
                 Começa de graça <ArrowRight size={18} />
               </button>
-              <p className="text-[11px] text-warm-400 mt-5">Sem cartão de crédito · Cancele quando quiser</p>
+              <p className="text-[11px] text-ps-mut mt-5">Sem cartão de crédito · Cancele quando quiser</p>
             </div>
           </div>
         </div>
       </section>
+
+      </main>
 
       {/* ════════ FOOTER ════════ */}
       <footer className="border-t border-tinta-border py-10 px-5 sm:px-8">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-5">
           <div className="flex items-center gap-3">
             <PlaybackStudioWordmark size="sm" tone="light" />
-            <span className="text-warm-400 text-[11px]">a plataforma do domingo</span>
+            <span className="text-ps-mut text-[11px]">a plataforma do domingo</span>
           </div>
           <div className="flex items-center gap-6 text-[12px] text-warm-200">
             <button onClick={goToApp} className="hover:text-bone transition-colors cursor-pointer">Entrar</button>
             <button onClick={goToApp} className="hover:text-bone transition-colors cursor-pointer">Criar conta</button>
             <a href="#precos" className="hover:text-bone transition-colors">Planos</a>
-            <a
-              href={WHATSAPP_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 hover:text-bone transition-colors"
-            >
-              <WhatsappIcon className="w-3.5 h-3.5" />
-              Suporte
-            </a>
-            <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-bone transition-colors">
-              Email
-            </a>
+            <a href="/download" className="hover:text-bone transition-colors">Baixar app</a>
           </div>
-          <p className="text-[11px] text-warm-400">© {new Date().getFullYear()} Playback Studio · Feito por quem toca.</p>
+          <p className="text-[11px] text-ps-mut">© {new Date().getFullYear()} Playback Studio · Feito por quem toca.</p>
         </div>
+        <SiteLegalInfo className="max-w-5xl mx-auto mt-8 pt-6 border-t border-tinta-border" />
       </footer>
 
       {/* ════════ BOTÃO FLUTUANTE WHATSAPP ════════ */}
@@ -646,8 +597,8 @@ export function LandingPage({ onEnter }: LandingPageProps) {
         href={WHATSAPP_URL}
         target="_blank"
         rel="noopener noreferrer"
-        aria-label="Falar no WhatsApp"
-        className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full bg-[#25D366] px-4 py-3 text-white shadow-lg shadow-black/30 transition-transform hover:scale-105 active:scale-95"
+        aria-label="Fale com a gente pelo WhatsApp"
+        className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full bg-[#25D366] px-4 py-3 text-tinta shadow-lg shadow-black/30 transition-transform hover:scale-105 active:scale-95"
       >
         <WhatsappIcon className="w-6 h-6" />
         <span className="hidden sm:block short:hidden text-sm font-semibold pr-1">Fale com a gente</span>

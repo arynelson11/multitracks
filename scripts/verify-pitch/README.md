@@ -25,13 +25,25 @@ transposto no R. Sai com código 1 se algum critério falhar. JSON em
 | `S2` | trocas rápidas (80 ms): +2/0, +3/0/+3, 0 |
 | `SPREAD` / `SPREAD22` | 1ª e última faixa com o mesmo click em L e R (8 ou 22 instrumentos): diferença de início entre faixas |
 | `SEEKS` | 52 reinícios (seek) com 24 canais, no tom 0 e no +2: quantos separam as faixas |
+| `LEVELS` | nível de faixa mono e estéreo (pan total e centro) no tom 0 e transposto, com controle do erro do vocoder |
+| `RESTART` | buraco no reinício (seek tocando) no tom 0 e no +2 |
+| `LOOP` | loop de seção tocando, no tom 0 e no +2: buraco na emenda (descontado o atraso do rAF que detecta o fim da seção) e volta sem await |
+| `STALL` | laço de `start()` travado 15 ms no meio (o motor de áudio passa do instante comum): o play descarta e reagenda todas as faixas juntas |
+| `SONGS` | repertório com 3 músicas: A (24 canais) +2, B (10) +3, C (30) +2, remove B com C tocando, A de volta (+2) e no tom 0. Fontes sem órfãs, worklets rodando = faixas transpostas da música atual, total de worklets <= maior música, sem salto de posição, som em todas as faixas |
+| `PENDENTE` | play transposto pela 1ª vez e troca de música antes do worklet nascer (por jumpToSong, prevSong e nextSong): a música anterior não pode tocar |
 | `NAN` | tom inválido (NaN) chegando no motor |
 | `METRONOMO` | click "Metrônomo" (com acento) gravado depois dos stems, como o Separador faz |
+| `METRONOME` | o mesmo com o click em inglês ("Metronome") |
 
 Critérios por item: worklets ativos (0 no tom 0, 1 por canal transposto), nenhum
 duplicado, fontes sem órfãs, relógio de áudio em tempo real, posição contínua,
 todas as faixas no mesmo instante, click x instrumento em ±2 ms, click/guia fora
-do worklet, formantes só em voz, saída sem NaN e com som.
+do worklet, formantes só em voz, saída sem NaN e com som. No RESTART, LOOP, SEEKS
+e STALL, a folga agendada é conferida exata (`when` na grade de blocos, 2 blocos
+depois do relógio no `start()`; reagendado pela rede de segurança, 15 blocos a
+48 kHz). O tempo de reação (da chamada até o som) no RESTART e no LOOP aceita, na
+mediana, 1 bloco a mais: ele é medido do relógio na chamada, e o motor pode virar
+um bloco antes do fim da preparação das fontes.
 
 ## Regras puras (Node)
 
@@ -39,6 +51,8 @@ do worklet, formantes só em voz, saída sem NaN e com som.
 node scripts/verify-pitch/unit.mjs
 ```
 
-Testa `src/lib/pitchRules.ts` (transpilado com o esbuild): reconhecimento de
-click/guia por nome sem acento e sem caixa, decisão de formantes (só voz) e
-tom em qualquer grafia para semitons (bemol, minúscula, menor; nunca NaN).
+Transpila com o esbuild e testa as regras que o motor usa: Click e Guia fora do
+tom (`isPitchExempt`) e formantes só em voz (`wantsFormantCompensation`, família
+Vocal ou Backing) pela regra central de `src/lib/channelRoles.ts`, com o papel
+manual e o nome dado pelo usuário; e, em `src/lib/pitchRules.ts`, tom em qualquer
+grafia para semitons (bemol, minúscula, menor, solfejo; nunca NaN).

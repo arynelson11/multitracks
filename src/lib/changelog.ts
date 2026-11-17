@@ -11,6 +11,29 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.17',
+    date: '2026-11-16',
+    title: 'Site mais fácil de achar e nova senha',
+    items: [
+      'O app não pede mais o microfone ao abrir. O pedido só pode aparecer na hora de escolher a saída de áudio nas Configurações.',
+      'Esqueceu a senha? O link do e-mail agora abre uma tela pra você criar a senha nova.',
+      'O site ficou mais fácil de achar no Google e os textos foram atualizados.',
+      'Quem recebe o link do site no WhatsApp vê uma prévia com a logo e a descrição do Playback Studio.',
+    ],
+  },
+  {
+    version: '1.4.16',
+    date: '2026-11-16',
+    title: 'Troca de tom ainda melhor',
+    items: [
+      'Loop de seção e salto tocando sem tropeço: a música volta na hora, junto com o click.',
+      'Transpor não deixa mais a VS mais alta que o click.',
+      'Click chamado Metronome também fica fora da troca de tom e no lado certo do pan.',
+      'A correção de voz só age nos canais de voz e backing; guitarras, violões e teclados transpostos mantêm a definição.',
+      'Tom escrito em solfejo (Dó, Ré, Lá m, Sib...) é reconhecido.',
+    ],
+  },
+  {
     version: '1.4.15',
     date: '2026-11-16',
     title: 'Canais organizados e linguagem visual nova',
