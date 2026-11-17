@@ -23,7 +23,10 @@ describe('atalhos do palco', () => {
     [{ code: 'Escape', defaultPrevented: true }, null], [{ code: 'Escape' }, { kind: 'escape' }],
   ] as [KeyPatch, unknown][])('tecla %o', (e, out) => expect(stageKeyAction(key(e), { editMode: !!e.edit, sectionCount: 5 })).toEqual(out))
 
-  it.each([[1024, 600, true], [1023, 800, false], [1280, 599, false]])('palco largo %s x %s', (w, h, ok) => expect(isWideStage(w, h)).toBe(ok))
+  // Ruling T18-altura (substitui o mínimo de 600 da R-25): o palco novo liga a partir de 740 px de altura.
+  it.each([[1024, 740, true], [1024, 739, false], [1023, 800, false], [1280, 600, false], [1920, 1080, true]])(
+    'palco largo %s x %s', (w, h, ok) => expect(isWideStage(w, h)).toBe(ok),
+  )
 
   const ctx = { editMode: false, sectionCount: 9 }
 

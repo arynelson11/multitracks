@@ -18,11 +18,15 @@ export interface StageKeyEvent {
   targetRole?: string
 }
 
-/** Largura e altura mínimas do palco novo; abaixo disso vale o palco antigo inteiro (R-25). */
+/**
+ * Largura e altura mínimas do palco novo; abaixo disso vale o palco antigo inteiro (R-25). A altura
+ * é a da Ruling T18-altura (substitui os 600 da R-25): com menos de 740 px os mínimos do mockup v5
+ * não cabem e o palco teria de rolar. No app do computador em tela cheia, 768 passa.
+ */
 export const STAGE_MIN_WIDTH = 1024
-export const STAGE_MIN_HEIGHT = 600
+export const STAGE_MIN_HEIGHT = 740
 
-/** Cabe o palco novo: pelo menos 1024 x 600. */
+/** Cabe o palco novo: pelo menos 1024 x 740. */
 export function isWideStage(width: number, height: number): boolean {
   return width >= STAGE_MIN_WIDTH && height >= STAGE_MIN_HEIGHT
 }

@@ -71,6 +71,8 @@ export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChan
   const triggerRef = useRef<HTMLButtonElement>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
   const focusInside = useRef(false)
+  // Aberta pelo toque ou clique (click com detail > 0) ou pelo teclado (detail 0).
+  const openedByPointer = useRef(false)
   const changeRef = useRef(onGridOpenChange)
   const dialogId = useId()
 
@@ -82,11 +84,13 @@ export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChan
 
   useLayoutEffect(() => { changeRef.current = onGridOpenChange })
 
-  // Abriu: o foco vai pro tom atual; sem atual na grade (semitom fora de −6..+6), pra própria grade,
-  // pra um Enter por engano não mandar nada. Fechou com o foco dentro da grade: volta pro botão do tom.
+  // Abriu pelo teclado: o foco vai pro tom atual; sem atual na grade (semitom fora de −6..+6), pra
+  // própria grade, pra um Enter por engano não mandar nada. Abriu pelo toque: o foco fica onde estava
+  // (Ruling T18-foco: o Espaço seguinte toca ou pausa). Fechou com o foco dentro da grade: volta pro botão do tom.
   useLayoutEffect(() => {
     const dialog = dialogRef.current
     if (gridOpen && dialog) {
+      if (openedByPointer.current) return
       const target = dialog.querySelector<HTMLElement>('button[aria-pressed="true"]') ?? dialog
       target.focus()
     } else if (!gridOpen && focusInside.current) {
@@ -119,7 +123,7 @@ export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChan
       <button
         ref={triggerRef} type="button" data-fit-width="" aria-haspopup="dialog" aria-expanded={gridOpen} aria-controls={dialogId}
         aria-label={current ? `Tom atual ${current}. Escolher o tom` : `${UNKNOWN}. Escolher o tom`}
-        title={originalIndex !== null ? 'Escolher o tom (grade com os 12 tons)' : 'Escolher a mudança em semitons'} onClick={() => onGridOpenChange(!gridOpen)} className={KEY_BTN}
+        title={originalIndex !== null ? 'Escolher o tom (grade com os 12 tons)' : 'Escolher a mudança em semitons'} onClick={(e) => { openedByPointer.current = e.detail > 0; onGridOpenChange(!gridOpen) }} className={KEY_BTN}
       >
         <span data-key-current="" className="shrink-0 text-[36px] leading-none font-extrabold tracking-[-0.02em] whitespace-nowrap group-data-[fit]/key:text-[30px]">
           {current ? <KeyName name={current} /> : '?'}

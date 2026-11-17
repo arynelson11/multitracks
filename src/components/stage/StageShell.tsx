@@ -20,8 +20,14 @@ import type { StagePulse } from './TransportBar'
 import { useStageShortcuts } from './useStageShortcuts'
 import { WaveformSections } from './WaveformSections'
 
+/**
+ * Ações do palco mais a da casca: o aviso âmbar de saídas abre as Configurações direto na seção
+ * de saídas (Ruling T18-saidas), não na aba Perfil como o CONFIG. Quem implementa é o App (T29).
+ */
+export interface StageShellActions extends StageActions { openOutputSettings(): void }
+
 export interface StageShellProps {
-  view: StageView; actions: StageActions; clock: StageClock; peaks: Float32Array | null
+  view: StageView; actions: StageShellActions; clock: StageClock; peaks: Float32Array | null
   pads: Omit<PadPanelProps, 'open' | 'onClose'>
   slots: { repertoire: React.ReactNode; tracksMenu?: React.ReactNode; adminTools?: React.ReactNode; channelEditPanel?: React.ReactNode }
   keyboardEnabled: boolean
@@ -69,6 +75,31 @@ function outputAlertText(plan: OutputPlan): string | null {
   if (plan.fellBackFrom === null) return null
   if (plan.channels <= 1) return OUTPUT_WARNING_TEXT.mono
   return `Esta placa tem só ${channelsText(plan.channels)}: ${outputSummary(plan)}.`
+}
+
+/**
+ * Controles do palco que não pegam foco com toque ou clique (Ruling T18-foco): o foco só chega
+ * pelo Tab. Campo de texto continua pegando (é onde se digita).
+ */
+const POINTER_NO_FOCUS =
+  'button, summary, [role="button"], [role="tab"], [role="radio"], [role="slider"], [role="switch"], [role="checkbox"], [role="option"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]'
+const TEXT_FIELD = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])'
+
+/**
+ * Toque ou clique num botão ou controle do palco: segura o mousedown (o navegador não põe o foco
+ * nele) e tira o foco de quem estava com ele. Assim o Espaço seguinte sempre toca ou pausa e nunca
+ * reaperta o botão tocado (reapertar a seção armada cancelaria o pulo), e a seta do pedal troca de
+ * seção em vez de mexer no fader que acabou de ser arrastado. O click, o arrasto (eventos de
+ * ponteiro) e o duplo clique seguem normais; pelo Tab, Espaço e Enter continuam no botão.
+ */
+function keepPointerFocusOff(e: React.MouseEvent): void {
+  const el = e.target instanceof Element ? e.target : null
+  if (!el || el.closest(TEXT_FIELD)) return
+  const control = el.closest(POINTER_NO_FOCUS)
+  if (!control) return
+  e.preventDefault()
+  const active = document.activeElement
+  if (active instanceof HTMLElement && active !== document.body && !control.contains(active)) active.blur()
 }
 
 /** Vão entre o selo ONLINE e o aviso de saídas, e do aviso até o menu (o gap-3 da barra). */
@@ -138,10 +169,16 @@ function EditArea({ view, actions, adminTools }: EditAreaProps) {
  * parada. Marcar uma seção que abre uma linha nova na barra empurra só o que está embaixo dela
  * (tira do mixer acima de 220 px): MARCAR e o que está acima nunca andam enquanto se marca. Janela
  * redimensionada ou outra música encaixam de novo. Se não couber, o palco rola na vertical em vez
- * de cortar (EDITAR com duas linhas de seções em 1024x768, telas abaixo de 760 px de altura).
+ * de cortar (EDITAR com duas linhas de seções em 1024x768).
  *
- * O aviso de saídas (Ruling T6-2) fica na barra do app, ao lado do ONLINE, e abre as Configurações:
- * aparecer com a música tocando não muda a altura de nada.
+ * Ao vivo, a onda tem piso de 104 px (blocos com 48 px de toque) pra tudo caber a partir de 740 px de
+ * altura, o mínimo do palco novo (Ruling T18-altura).
+ *
+ * O aviso de saídas (Ruling T6-2) fica na barra do app, ao lado do ONLINE, e abre as Configurações
+ * na seção de saídas (Ruling T18-saidas): aparecer com a música tocando não muda a altura de nada.
+ *
+ * Foco (Ruling T18-foco): botões e controles do palco não pegam foco no toque ou clique, só pelo Tab
+ * (`keepPointerFocusOff`, na captura do mousedown de toda a casca, slots incluídos).
  */
 export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardEnabled }: StageShellProps) {
   const headerRef = useRef<HTMLDivElement>(null)
@@ -239,13 +276,16 @@ export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardE
   const closePads = () => { if (view.padPanelOpen) actions.togglePadPanel() }
 
   return (
-    <div data-stage-shell="" className="relative flex h-dvh w-full min-w-0 flex-col overflow-hidden bg-ps-ink font-ps-sans text-ps-bone">
+    <div
+      data-stage-shell="" onMouseDownCapture={keepPointerFocusOff}
+      className="relative flex h-dvh w-full min-w-0 flex-col overflow-hidden bg-ps-ink font-ps-sans text-ps-bone"
+    >
       <div ref={headerRef} className="relative z-30 shrink-0">
         <StageAppBar app={view.app} editMode={view.editMode} actions={actions} />
         {alert && (
           <button
-            ref={alertRef} type="button" data-output-alert="" title={alert} aria-label={`Saídas: ${alert} Abre as Configurações.`}
-            onClick={() => actions.openSettings()}
+            ref={alertRef} type="button" data-output-alert="" title={alert} aria-label={`Saídas: ${alert} Abre as saídas nas Configurações.`}
+            onClick={() => actions.openOutputSettings()}
             className="group absolute top-0 left-0 inline-flex h-11 min-w-ps-touch items-center justify-center rounded-ps-sm select-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ps-or"
           >
             <span className="inline-flex h-[22px] items-center gap-1.5 rounded-ps-pill bg-ps-alert-soft px-[9px] text-ps-micro leading-none font-extrabold tracking-[0.14em] whitespace-nowrap text-ps-alert inset-ring inset-ring-ps-alert-line">
@@ -263,7 +303,7 @@ export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardE
 
           <div
             ref={waveRef} data-stage-wave="" style={waveStyle}
-            className={cx('flex flex-[1.15_1_0px] flex-col px-ps-gutter', view.editMode ? 'min-h-[96px] pt-2' : 'min-h-[112px] pt-3')}
+            className={cx('flex flex-[1.15_1_0px] flex-col px-ps-gutter', view.editMode ? 'min-h-[96px] pt-2' : 'min-h-[104px] pt-3')}
           >
             <div className="min-h-0 flex-1">
               <WaveformSections

@@ -9,7 +9,7 @@ function subscribe(onChange: () => void): () => void {
 const wideNow = () => isWideStage(window.innerWidth, window.innerHeight)
 
 /**
- * A janela cabe o palco novo (1024 x 600 ou mais) agora, e muda quando ela é redimensionada.
+ * A janela cabe o palco novo (1024 x 740 ou mais, Ruling T18-altura) agora, e muda quando ela é redimensionada.
  * É só a regra de tela: a trava "só troca com a música parada" (R-25) e a chave do palco ficam
  * no App (T29), que junta as duas no `useNewStage`.
  */

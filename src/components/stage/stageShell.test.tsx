@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, createEvent, fireEvent, render, renderHook, screen, within } from '@testing-library/react'
 import { OUTPUT_WARNING_TEXT } from '../../lib/outputPlan'
 import type {
-  OutputPlan, SongGrid, StageActions, StageChannel, StageClock, StageSection, StageSong, StageView,
+  OutputPlan, SongGrid, StageChannel, StageClock, StageSection, StageSong, StageView,
 } from '../../lib/stageContracts'
 import type { PadPanelProps } from './PadPanel'
 import { StageShell } from './StageShell'
-import type { StageShellProps } from './StageShell'
+import type { StageShellActions, StageShellProps } from './StageShell'
+import { useStageViewport } from './useStageViewport'
 
 // Props que a casca entrega às peças, guardadas a cada renderização (a peça de verdade continua desenhando).
 const seen = vi.hoisted(() => ({ wave: [] as Record<string, unknown>[], pads: [] as Record<string, unknown>[], play: [] as Record<string, unknown>[] }))
@@ -82,7 +83,7 @@ const VIEW: StageView = {
 }
 const clock: StageClock = { heardNow: () => 10, position: () => 10, level: () => 0, masterLevels: () => ({ l: 0, r: 0 }) }
 
-const makeActions = (): StageActions => ({
+const makeActions = (): StageShellActions => ({
   togglePlay: vi.fn(), goToStart: vi.fn(), setEndMode: vi.fn(), togglePrecount: vi.fn(), cyclePrecountBeats: vi.fn(),
   toggleClick: vi.fn(), openMetronome: vi.fn(), tapSection: vi.fn(), stepSection: vi.fn(), cancelArm: vi.fn(),
   armRepeat: vi.fn(), toggleLoop: vi.fn(), seek: vi.fn(), seekBy: vi.fn(), changePitch: vi.fn(),
@@ -92,7 +93,7 @@ const makeActions = (): StageActions => ({
   openSettings: vi.fn(), goHome: vi.fn(), signOut: vi.fn(), openUpgrade: vi.fn(), openChannelEdit: vi.fn(),
   reorderChannel: vi.fn(), removeChannel: vi.fn(),
   markSection: vi.fn(), nudgeSection: vi.fn(), removeSection: vi.fn(),
-  setMeter: vi.fn(), redetectMeter: vi.fn(),
+  setMeter: vi.fn(), redetectMeter: vi.fn(), openOutputSettings: vi.fn(),
 })
 const PADS: Omit<PadPanelProps, 'open' | 'onClose'> = {
   view: 'pads', onViewChange: vi.fn(), notes: NOTES, activeNote: null, songKeyIndex: 7, volume: 0.5, setName: 'Holy',
@@ -119,6 +120,17 @@ const press = (target: Element, init: KeyboardEventInit) => {
   return ev
 }
 const last = <T,>(xs: T[]): T => xs[xs.length - 1]
+/**
+ * Toque ou clique como no Chrome: o mousedown põe o foco no botão, a não ser que alguém marque
+ * `preventDefault` (o jsdom não faz isso sozinho); depois o click, com detail 1 (veio do ponteiro).
+ */
+const tap = (el: HTMLElement) => {
+  const down = createEvent.mouseDown(el)
+  fireEvent(el, down)
+  if (!down.defaultPrevented) el.focus()
+  fireEvent.click(el, { detail: 1 })
+  return down
+}
 
 describe('casca do palco', () => {
   it('monta as faixas na ordem do mockup', () => {
@@ -296,7 +308,7 @@ describe('casca do palco', () => {
     expect(screen.queryByRole('dialog', { name: 'Compasso da música' })).toBeNull()
   })
 
-  it('aviso âmbar das saídas na barra do app, sem faixa nova, e o toque abre as Configurações', () => {
+  it('aviso âmbar das saídas na barra do app, sem faixa nova, e o toque abre as Configurações na seção de saídas', () => {
     const { rerender, actions } = renderShell()
     expect(q('[data-output-alert]')).toBeNull()
     const below = q('[data-stage-scroll]')!.innerHTML
@@ -308,14 +320,17 @@ describe('casca do palco', () => {
     expect(alert.textContent).toBe('SAÍDAS')
     expect(alert.getAttribute('title')).toBe(text)
     expect(alert.getAttribute('aria-label')).toContain(text)
+    expect(alert.getAttribute('aria-label')).toContain('saídas')
     expect(alert.querySelector('.text-ps-alert')).not.toBeNull()
     // Fica na barra do app, fora do palco: aparecer com a música tocando não muda nada embaixo.
     expect(q('[data-stage-scroll]')!.contains(alert)).toBe(false)
     expect(q('[data-stage-scroll]')!.innerHTML).toBe(below)
     expect(alert.className).toContain('h-11')
     expect(alert.className).toContain('min-w-ps-touch')
+    // Ruling T18-saidas: direto na seção de saídas, não na aba Perfil.
     fireEvent.click(alert)
-    expect(actions.openSettings).toHaveBeenCalledTimes(1)
+    expect(actions.openOutputSettings).toHaveBeenCalledTimes(1)
+    expect(actions.openSettings).not.toHaveBeenCalled()
 
     rerender({ outputs: { mode: 'stereo', channels: 1, vs: [0], click: [0], guide: [0], panByRole: false, fellBackFrom: 'split2' } })
     expect(q('[data-output-alert]')!.getAttribute('title')).toBe(OUTPUT_WARNING_TEXT.mono)
@@ -533,5 +548,105 @@ describe('atalhos de teclado na casca', () => {
     press(fader, { key: 'ArrowUp', code: 'ArrowUp' })
     press(fader, { key: 'ArrowRight', code: 'ArrowRight' })
     expect(actions.stepSection).not.toHaveBeenCalled()
+  })
+})
+
+// Ruling T18-foco (segurança ao vivo): toque e clique não deixam o foco em botão nem em controle do
+// palco; o foco só chega pelo Tab. Assim o Espaço depois de tocar numa seção toca ou pausa.
+describe('foco: só pelo Tab', () => {
+  it('tocar numa seção e dar Espaço aciona tocar/pausar e não cancela o pulo', () => {
+    const { actions } = renderShell({ intent: { target: 2, plays: 1 } })
+    const pad = q('[data-section-pad="2"]')!
+    expect(tap(pad).defaultPrevented).toBe(true)
+    expect(actions.tapSection).toHaveBeenCalledTimes(1)
+    expect(document.activeElement).toBe(document.body)
+    const space = press(document.activeElement!, { key: ' ', code: 'Space' })
+    expect(space.defaultPrevented).toBe(true) // o navegador não aperta botão nenhum
+    expect(actions.togglePlay).toHaveBeenCalledTimes(1)
+    expect(actions.tapSection).toHaveBeenCalledTimes(1)
+    expect(actions.cancelArm).not.toHaveBeenCalled()
+  })
+
+  it('com foco vindo do Tab, Espaço e Enter ficam com o botão', () => {
+    const { actions } = renderShell({ intent: { target: 2, plays: 1 } })
+    const pad = q('[data-section-pad="2"]')!
+    pad.focus() // como o Tab
+    expect(document.activeElement).toBe(pad)
+    expect(press(pad, { key: ' ', code: 'Space' }).defaultPrevented).toBe(false)
+    expect(press(pad, { key: 'Enter', code: 'Enter' }).defaultPrevented).toBe(false)
+    expect(actions.togglePlay).not.toHaveBeenCalled()
+    // Os outros atalhos continuam com o foco no botão.
+    press(pad, { key: '1', code: 'Digit1' })
+    expect(actions.tapSection).toHaveBeenCalledWith(0)
+  })
+
+  it('o toque tira o foco que o Tab tinha deixado em outro botão', () => {
+    const { actions } = renderShell()
+    const play = screen.getByRole('button', { name: 'Pausar' })
+    play.focus()
+    tap(q('[data-section-pad="0"]')!)
+    expect(document.activeElement).toBe(document.body)
+    press(document.activeElement!, { key: ' ', code: 'Space' })
+    expect(actions.togglePlay).toHaveBeenCalledTimes(1)
+  })
+
+  it('controles do palco também não pegam foco no toque (fader, LOOP, seletor do fim da música)', () => {
+    const { actions } = renderShell()
+    for (const el of [
+      screen.getByRole('slider', { name: 'Volume Bateria' }), screen.getByRole('button', { name: /LOOP/ }),
+      screen.getByRole('radio', { name: 'PARAR' }), screen.getByRole('button', { name: 'Armar seção seguinte' }),
+    ]) {
+      expect(tap(el).defaultPrevented).toBe(true)
+      expect(document.activeElement).toBe(document.body)
+    }
+    // Depois de mexer no fader com o mouse, a seta do pedal troca de seção (não mexe no volume).
+    press(document.activeElement!, { key: 'ArrowRight', code: 'ArrowRight' })
+    expect(actions.stepSection).toHaveBeenCalledWith(1)
+  })
+
+  it('campo de texto continua pegando foco no toque', () => {
+    const tools: ReactNode = <input aria-label="Nome de teste" data-fake-input="" />
+    renderShell({ editMode: true, app: { ...VIEW.app, isAdmin: true } }, { slots: { repertoire: null, adminTools: tools } })
+    const input = q('[data-fake-input]')!
+    expect(tap(input).defaultPrevented).toBe(false)
+    expect(document.activeElement).toBe(input)
+  })
+
+  it('TOM aberto pelo toque não põe o foco na grade; aberto pelo teclado, põe no tom atual', () => {
+    const { actions } = renderShell()
+    const trigger = screen.getByRole('button', { name: /Escolher o tom/ })
+    const grid = q('[role="dialog"][aria-label="Escolher tom"]')!
+    tap(trigger)
+    expect(grid.hidden).toBe(false)
+    expect(document.activeElement).toBe(document.body)
+    press(document.activeElement!, { key: ' ', code: 'Space' })
+    expect(actions.togglePlay).toHaveBeenCalledTimes(1)
+    // Escolher um tom pelo toque fecha a grade e o foco não vai pro botão do tom.
+    tap(within(grid).getByRole('button', { name: 'A' }))
+    expect(grid.hidden).toBe(true)
+    expect(document.activeElement).toBe(document.body)
+    // Pelo teclado (Enter ou Espaço no botão do tom com foco do Tab: click com detail 0).
+    trigger.focus()
+    fireEvent.click(trigger, { detail: 0 })
+    expect(grid.hidden).toBe(false)
+    expect(grid.contains(document.activeElement)).toBe(true)
+  })
+})
+
+// Ruling T18-altura: o palco novo vale a partir de 1024 x 740.
+describe('regra de tela', () => {
+  const setSize = (w: number, h: number) => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: w })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: h })
+  }
+  afterEach(() => setSize(1024, 768))
+  it('739 de altura fica no palco antigo; 740 liga o novo; muda ao redimensionar', () => {
+    setSize(1280, 739)
+    const { result } = renderHook(() => useStageViewport())
+    expect(result.current.wide).toBe(false)
+    act(() => { setSize(1280, 740); window.dispatchEvent(new Event('resize')) })
+    expect(result.current.wide).toBe(true)
+    act(() => { setSize(1023, 900); window.dispatchEvent(new Event('resize')) })
+    expect(result.current.wide).toBe(false)
   })
 })
