@@ -26,8 +26,9 @@ export class AdminApiError extends Error {
   readonly status: number
   /**
    * Só numa ação (POST): a resposta não chegou ou não veio do nosso servidor (rede, teto estourado,
-   * 5xx sem a frase pronta), então a ação pode ter sido feita. Quem mostra o erro não deixa
-   * repetir na hora (o ConfirmDialog segura Confirmar até fechar e abrir de novo).
+   * 5xx sem a frase pronta), ou o servidor marcou `uncertain: true`, então a ação pode ter sido
+   * feita. Quem mostra o erro não deixa repetir na hora (o ConfirmDialog segura Confirmar até
+   * fechar e abrir de novo).
    */
   readonly uncertain: boolean
 
@@ -74,6 +75,13 @@ function serverError(body: unknown): string | null {
   return null
 }
 
+// O servidor marca `uncertain: true` no corpo quando não sabe se a ação foi feita (o Asaas não
+// respondeu a tempo a uma escrita, ou o Somar da cota não se confirmou): Rulings ADM-T16-incerto
+// e ADM-T16-http. Só o true marca.
+function markedUncertain(body: unknown): boolean {
+  return !!body && typeof body === 'object' && (body as { uncertain?: unknown }).uncertain === true
+}
+
 /** Cabeçalhos com o token renovado. Até aqui nada saiu pro nosso servidor: o erro é certo. */
 async function authHeaders(): Promise<Record<string, string>> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -103,13 +111,16 @@ async function exchange<T>(url: string, init: RequestInit, isAction: boolean): P
   if (res.status === 401) throw new AdminApiError(MSG_SESSION, 401)
   if (res.status === 403) throw new AdminApiError(MSG_FORBIDDEN, 403)
   if (res.ok && body !== null) return body as T
-  // Frase pronta do nosso servidor (400, 409, 500, 502 "Nada foi marcado"): ele respondeu, e a
-  // ação com certeza não foi feita. Pode tentar de novo.
+  // Numa ação, o servidor pode dizer que não sabe se ela foi feita (`uncertain: true`): a frase
+  // dele aparece e o Confirmar fica segurado.
+  const uncertain = isAction && markedUncertain(body)
+  // Frase pronta do nosso servidor (400, 409, 500, 502 "Nada foi marcado"): ele respondeu e, sem
+  // a marca de incerto, a ação com certeza não foi feita. Pode tentar de novo.
   const message = serverError(body)
-  if (message) throw new AdminApiError(message, res.status)
-  // Numa ação, 5xx sem a frase (504 da Vercel, função que caiu no meio) ou 2xx sem corpo legível:
-  // o servidor pode ter agido.
-  if (isAction && (res.status >= 500 || res.ok)) throw actionLost(res.status)
+  if (message) throw new AdminApiError(message, res.status, uncertain)
+  // Numa ação, 5xx sem a frase (504 da Vercel, função que caiu no meio), 2xx sem corpo legível ou
+  // a marca de incerto sem frase: o servidor pode ter agido.
+  if (isAction && (uncertain || res.status >= 500 || res.ok)) throw actionLost(res.status)
   throw new AdminApiError(`Erro inesperado (código ${res.status}).`, res.status)
 }
 

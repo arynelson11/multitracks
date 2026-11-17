@@ -256,6 +256,39 @@ describe('adminApi', () => {
     }
   })
 
+  it('uncertain: true no corpo de um erro de ação é incerto e mantém a frase do servidor (Ruling ADM-T16-incerto)', async () => {
+    const cases: Array<[number, string]> = [
+      [502, 'O Asaas não respondeu a tempo. A mudança pode ter sido feita. A ficha foi marcada pra conferir; confira em Pendências antes de repetir.'],
+      [500, 'Não deu pra confirmar o ajuste da cota. Ele pode ter sido feito; confira no Registro antes de repetir.'],
+    ]
+    for (const [status, error] of cases) {
+      mockFetch().mockResolvedValue(json({ error, uncertain: true }, status))
+      const e = await errorOf(adminPost('adjust-quota', { userId: 'u1', mode: 'add', amount: 5 }))
+      expect(e.status).toBe(status)
+      expect(e.message).toBe(error)
+      expect(e.uncertain).toBe(true)
+    }
+  })
+
+  it('uncertain: true sem a frase numa ação dá a frase do Registro, mesmo fora do 5xx', async () => {
+    mockFetch().mockResolvedValue(json({ uncertain: true }, 409))
+    const e = await errorOf(adminPost('change-plan', { userId: 'u1', planKey: 'pro_mensal' }))
+    expect(e.status).toBe(409)
+    expect(e.message).toBe(MSG_ACTION_LOST)
+    expect(e.uncertain).toBe(true)
+  })
+
+  it('só o true marca: uncertain falso ou em texto continua certo, e numa consulta nunca marca', async () => {
+    for (const uncertain of [false, 'true', 1]) {
+      mockFetch().mockResolvedValue(json({ error: 'O Asaas não respondeu. Nada foi cancelado.', uncertain }, 502))
+      expect((await errorOf(adminPost('cancel-subscription', { userId: 'u1', when: 'now' }))).uncertain).toBe(false)
+    }
+    mockFetch().mockResolvedValue(json({ error: 'Falha no banco.', uncertain: true }, 500))
+    const e = await errorOf(adminGet('subscriber', { userId: 'u1' }))
+    expect(e.message).toBe('Falha no banco.')
+    expect(e.uncertain).toBe(false)
+  })
+
   it('erro de consulta nunca é incerto, nem de rede nem 504 sem JSON', async () => {
     mockFetch().mockRejectedValue(new TypeError('Failed to fetch'))
     expect((await errorOf(adminGet('review'))).uncertain).toBe(false)
