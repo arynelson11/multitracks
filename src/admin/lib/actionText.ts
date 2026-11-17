@@ -134,10 +134,11 @@ export const LEGACY_COURTESY_WARNING =
 export const LEGACY_STOPPED_LABEL = 'Já parei a cobrança antiga no painel do Asaas'
 
 /**
- * A detecção do servidor (a do MSG_LEGACY_PAID, em subscriberActions.ts): sem assinatura paga
+ * A regra do pagamento antigo (a do MSG_LEGACY_PAID, em subscriberActions.ts): sem assinatura paga
  * ativa, plano pago valendo no perfil e um pagamento antigo de plano pago que não virou linha de
  * assinatura (a linha adotada tem o id do checkout, que é o id do pagamento). Vale também com
- * cortesia ativa, que é o caso do Encerrar cortesia.
+ * cortesia ativa, que é o caso do Encerrar cortesia. A tela usa esta ou isLegacyPaid, e o servidor
+ * (legacyCourtesyGate) usa a mesma união.
  */
 export function hasLegacyCharge(
   profile: { plan: string; planExpiresAt: string | null },

@@ -126,7 +126,8 @@ type Account = {
   graced: SubscriptionRow[]
   /**
    * Assinante antigo: pode ter cobrança no Asaas que o app não vê. A regra da lista (sem linha de
-   * assinatura) ou a do servidor (pagamento antigo que não virou linha, também com cortesia ativa).
+   * assinatura) ou a do pagamento antigo que não virou linha (também com cortesia ativa); o servidor
+   * (legacyCourtesyGate) usa a mesma união.
    */
   legacy: boolean
 }

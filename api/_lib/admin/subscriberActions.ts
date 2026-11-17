@@ -153,23 +153,40 @@ async function subscriptionsOf(ctx: AdminCtx, userId: string): Promise<SubRow[]>
   return (data as SubRow[] | null) ?? []
 }
 
-// Assinante de antes da Fase 3 que ainda está num plano pago: o perfil tem
-// plano pago valendo e há pagamento antigo (payments) cujo checkout ainda não
-// virou linha de assinatura (a mesma regra de legacyCandidates da Fase 3, que
-// só o cancelamento adota; a troca de plano não). Só lido quando a conta não
-// tem paga ativa.
-async function isLegacyPaying(ctx: AdminCtx, userId: string, rows: SubRow[]): Promise<boolean> {
+// O perfil tem plano pago valendo (plan_expires_at nulo ou no futuro).
+async function hasPaidPlan(ctx: AdminCtx, userId: string): Promise<boolean> {
   const prof = await ctx.db.from('profiles').select('plan, plan_expires_at').eq('id', userId).maybeSingle()
   if (prof.error) throw dbError('profiles', prof.error.message)
   const p = prof.data as { plan?: unknown; plan_expires_at?: unknown } | null
   const expires = typeof p?.plan_expires_at === 'string' ? p.plan_expires_at : null
-  if (!p || !isPlanKey(p.plan) || (expires !== null && !inFuture(expires, ctx.now))) return false
+  return !!p && isPlanKey(p.plan) && (expires === null || inFuture(expires, ctx.now))
+}
+
+// Há pagamento antigo (payments) de plano pago cujo checkout ainda não virou
+// linha de assinatura (a mesma regra de legacyCandidates da Fase 3).
+async function hasUnadoptedPayment(ctx: AdminCtx, userId: string, rows: SubRow[]): Promise<boolean> {
   const pays = await ctx.db.from('payments').select('asaas_checkout_id, plan_key').eq('user_id', userId)
   if (pays.error) throw dbError('payments', pays.error.message)
   const known = new Set(rows.map((r) => r.id))
   return ((pays.data as { asaas_checkout_id?: unknown; plan_key?: unknown }[] | null) ?? [])
     .some((x) => typeof x.asaas_checkout_id === 'string' && x.asaas_checkout_id !== '' && isPlanKey(x.plan_key) && !known.has(x.asaas_checkout_id))
 }
+
+// Assinante de antes da Fase 3 que ainda está num plano pago, pra troca de
+// plano (MSG_LEGACY_PAID): plano pago valendo e pagamento antigo que não virou
+// linha (só o cancelamento adota; a troca de plano não). Só lido quando a conta
+// não tem paga ativa.
+async function isLegacyPaying(ctx: AdminCtx, userId: string, rows: SubRow[]): Promise<boolean> {
+  return (await hasPaidPlan(ctx, userId)) && (await hasUnadoptedPayment(ctx, userId, rows))
+}
+
+// A regra da Ruling ADM-T26-cortesia-legado e da lista (T21): nenhuma linha
+// asaas, de qualquer status, e nenhuma cortesia ativa. Com o plano pago valendo,
+// é assinante antigo mesmo sem nada em payments (quem assinou antes de a tabela
+// existir, ou perdeu a gravação).
+const withoutBillingRows = (rows: SubRow[], now: Date): boolean =>
+  !rows.some((r) => r.kind === 'asaas')
+  && !rows.some((r) => r.kind === 'courtesy' && r.status === 'active' && (r.access_until === null || inFuture(r.access_until, now)))
 
 // Pagas ativas, da de início mais recente pra mais antiga (a mesma escolha da
 // Fase 3 em changePlan e no cancelamento).
@@ -372,14 +389,17 @@ function courtesyRefusal(rows: SubRow[], planKey: PlanKey, until: string | null,
   return null
 }
 
-// Assinante antigo na cortesia (Ruling ADM-T26-cortesia-legado), pela mesma detecção do
-// MSG_LEGACY_PAID: sem paga ativa e com pagamento antigo que não virou linha. Sem a confirmação de
-// que a cobrança antiga já foi parada no painel do Asaas, recusa (409) antes de mudar qualquer coisa.
-// Devolve se a conta é antiga, pra o registro guardar a confirmação; na conta normal o campo não
-// muda nada.
+// Assinante antigo na cortesia (Ruling ADM-T26-cortesia-legado): sem paga ativa, plano pago valendo
+// e, ou a regra da ruling (sem linha asaas e sem cortesia ativa, mesmo sem payments), ou a do
+// MSG_LEGACY_PAID (pagamento antigo que não virou linha, que também vale com cortesia ativa, o caso
+// do Encerrar). É a mesma união da tela (isLegacyPaid ou hasLegacyCharge, em src/admin/lib/actionText.ts).
+// Sem a confirmação de que a cobrança antiga já foi parada no painel do Asaas, recusa (409) antes de
+// mudar qualquer coisa. Devolve se a conta é antiga, pra o registro guardar a confirmação; na conta
+// normal o campo não muda nada.
 async function legacyCourtesyGate(ctx: AdminCtx, userId: string, rows: SubRow[], stopped: boolean): Promise<boolean> {
   if (paidActive(rows).length > 0) return false
-  if (!(await isLegacyPaying(ctx, userId, rows))) return false
+  if (!(await hasPaidPlan(ctx, userId))) return false
+  if (!withoutBillingRows(rows, ctx.now) && !(await hasUnadoptedPayment(ctx, userId, rows))) return false
   if (!stopped) throw new AdminError(409, MSG_LEGACY_COURTESY)
   return true
 }

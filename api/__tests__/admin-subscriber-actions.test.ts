@@ -578,6 +578,41 @@ describe('cortesia', () => {
       p_before: { id: 'cortesia:b', kind: 'courtesy', planKey: 'pro_anual', status: 'active', accessUntil: null, legacyChargeStopped: true } })
   })
 
+  it('assinante antigo sem payments (assinou antes de a tabela existir): a regra da ruling pede o campo e o registro guarda', async () => {
+    // Plano pago valendo, nenhuma linha asaas, nenhuma cortesia ativa e nada em payments.
+    Object.assign(profile(USER_B), { plan: 'pro_mensal', plan_expires_at: null })
+    expect(db.tables.payments.filter((x) => x.user_id === USER_B)).toEqual([])
+    const before = snapshot()
+    const refused = await post('grant-courtesy', { userId: USER_B, planKey: 'pro_anual', days: 30 })
+    expect(refused.statusCode).toBe(409)
+    expect(refused.body).toEqual({ error: MSG.legacyCourtesy })
+    expect(grantCourtesy).not.toHaveBeenCalled()
+    expect(logs).toEqual([])
+    expect(snapshot()).toEqual(before)
+    const res = await post('grant-courtesy', { userId: USER_B, planKey: 'pro_anual', days: 30, legacyChargeStopped: true })
+    expect(res.statusCode).toBe(200)
+    expect(logs[0].start).toMatchObject({ p_action: 'grant_courtesy', p_before: { subscriptions: [], legacyChargeStopped: true } })
+    // A troca de plano segue com a regra dela (MSG_LEGACY_PAID só com pagamento antigo): sem payments, é "sem paga".
+    Object.assign(profile(USER_C), { plan: 'pro_mensal', plan_expires_at: null })
+    db.tables.billing_subscriptions.splice(db.tables.billing_subscriptions.findIndex((r) => r.id === 'chk_c'), 1)
+    const plan = await post('change-plan', { userId: USER_C, planKey: 'pro_anual' })
+    expect(plan.statusCode).toBe(404)
+    expect(plan.body).toEqual({ error: MSG.noPaid })
+  })
+
+  it('sem payments, não é antigo: plano vencido, qualquer linha asaas ou cortesia ativa', async () => {
+    // Plano pago vencido no perfil: a conta está no Livre.
+    Object.assign(profile(USER_B), { plan: 'pro_mensal', plan_expires_at: '2026-11-01T03:00:00.000Z' })
+    expect((await post('grant-courtesy', { userId: USER_B, planKey: 'pro_mensal', days: 7 })).statusCode).toBe(200)
+    // C tem uma linha asaas (paga cancelada no período): não é antiga.
+    expect((await post('grant-courtesy', { userId: USER_C, planKey: 'pro_anual', days: null })).statusCode).toBe(200)
+    // B com cortesia ativa (a de 7 dias acima) e plano pago no perfil: não é antiga.
+    Object.assign(profile(USER_B), { plan: 'pro_mensal', plan_expires_at: null })
+    const end = await post('end-courtesy', { userId: USER_B, courtesyId: 'cortesia:3' })
+    expect(end.statusCode).toBe(200)
+    expect(logs.at(-1)!.start.p_before).not.toHaveProperty('legacyChargeStopped')
+  })
+
   it('conta normal não precisa do campo, e ele não muda nada', async () => {
     // B no Livre, sem pagamento antigo: com e sem o campo, a mesma cortesia e o mesmo registro.
     const without = await post('grant-courtesy', { userId: USER_B, planKey: 'pro_mensal', days: 7 })
