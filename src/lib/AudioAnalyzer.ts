@@ -594,6 +594,61 @@ import type { ClickTrackType, ClickSubdivision } from './clickLibrary';
 import { getClickSampleUrl, CLICK_SUBDIVISIONS } from './clickLibrary';
 import { attackSeconds } from './clickAttack';
 
+/**
+ * Trabalho seguido do gerador do click antes de ceder a vez (Ruling T27-gerador): montar o WAV
+ * de uma música inteira de uma vez travava a thread principal (medido no Chrome 157: 490 a 550 ms
+ * em 5 min, 884 ms em 10 min) e um play nesse instante esperava. Em pedaços de 4 ms, um play no
+ * meio sai em 2 a 11 ms (com 8 ms, 10 a 18 ms) e a montagem leva ~1,1 s em 5 min (antes ~0,5 s).
+ */
+const CLICK_RENDER_SLICE_MS = 4;
+
+/** Cede a vez (a tela e um play pedido passam) quando o pedaço de trabalho já passou do tempo. */
+function makeSliceYield(): () => Promise<void> | null {
+  let sliceStart = performance.now();
+  return () => {
+    if (performance.now() - sliceStart < CLICK_RENDER_SLICE_MS) return null;
+    return new Promise<void>((resolve) => setTimeout(() => { sliceStart = performance.now(); resolve(); }, 0));
+  };
+}
+
+/**
+ * O mesmo WAV do float32MonoToWavBlob (cabeçalho e amostras byte a byte iguais, testado em
+ * manualClickTrack.test.ts), escrito em pedaços que cedem a vez.
+ */
+async function float32MonoToWavBlobInSlices(data: Float32Array, sampleRate: number, yieldIfDue: () => Promise<void> | null): Promise<Blob> {
+  const dataBytes = data.length * 2; // 16-bit
+  const buf = new ArrayBuffer(44 + dataBytes);
+  const view = new DataView(buf);
+
+  view.setUint32(0,  0x46464952, true); // "RIFF"
+  view.setUint32(4,  36 + dataBytes, true);
+  view.setUint32(8,  0x45564157, true); // "WAVE"
+  view.setUint32(12, 0x20746d66, true); // "fmt "
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);          // PCM
+  view.setUint16(22, 1, true);          // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  view.setUint32(36, 0x61746164, true); // "data"
+  view.setUint32(40, dataBytes, true);
+
+  let offset = 44;
+  for (let i = 0; i < data.length; i++) {
+    const s = Math.max(-1, Math.min(1, data[i]));
+    view.setInt16(offset, s < 0 ? s * 32768 : s * 32767, true);
+    offset += 2;
+    // Confere o tempo a cada 64 mil amostras (~1 ms de trabalho).
+    if ((i & 0xffff) === 0xffff) {
+      const pause = yieldIfDue();
+      if (pause) await pause;
+    }
+  }
+
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
 /** Onde a grade do click cai na música (vem de detectBeatGrid em lib/beatGrid). */
 export interface ClickGridAlignment {
   /** Segundos do primeiro tempo (pode ser negativo/maior que um tempo: é normalizado). */
@@ -621,6 +676,8 @@ export async function generateManualClickTrackFromSample(
   if (!res.ok) throw new Error(`Click sample not found: ${sampleUrl}`);
   const sampleBuffer = await tmpCtx.decodeAudioData(await res.arrayBuffer());
   await tmpCtx.close().catch(() => {});
+  // A montagem (ticks e WAV) cede a vez a cada ~8 ms: nenhuma tarefa longa na thread principal.
+  const yieldIfDue = makeSliceYield();
 
   // Mix to mono
   const sampleLen = sampleBuffer.length;
@@ -665,9 +722,11 @@ export async function generateManualClickTrackFromSample(
       output[at + i] = Math.max(-1, Math.min(1, output[at + i] + sampleData[i] * vol));
     }
     tick++;
+    const pause = yieldIfDue();
+    if (pause) await pause;
   }
 
-  return { clickTrackUrl: URL.createObjectURL(float32MonoToWavBlob(output, sampleRate)) };
+  return { clickTrackUrl: URL.createObjectURL(await float32MonoToWavBlobInSlices(output, sampleRate, yieldIfDue)) };
 }
 
 export async function generateEndlessClickTrackFromSample(

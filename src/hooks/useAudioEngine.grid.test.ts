@@ -6,7 +6,8 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { makeClickShims } from '../test/clickShims'
 import { mixToMono, parseWav } from '../test/clickProbe'
 import { createFakeAudioContext, FakeAudioBuffer, nodesOf, type FakeAudioContext } from '../test/fakeAudio'
-import type { AutoClickPlan } from '../lib/autoClick'
+import type { AutoClickOkPlan, AutoClickPlan } from '../lib/autoClick'
+import type { ClickLibrarySelection } from '../lib/clickLibrary'
 import type { SongGridDetection } from '../lib/beatGrid'
 import { resolveChannelRole } from '../lib/channelNames'
 import type { SavedSong } from '../lib/repertoireSchema'
@@ -50,6 +51,13 @@ const mem = vi.hoisted(() => ({
   workerMode: 'ok' as 'ok' | 'nao-nasce' | 'quebra',
   workers: [] as unknown[],
   requests: [] as { req: GridWorkerRequest; transfer: Transferable[] }[],
+  // Montagem de verdade do WAV do click gerado (gerador real com as amostras de public/): o
+  // contexto de 44,1 kHz que ele cria e quando a amostra já foi lida e a montagem acabou.
+  realRender: false,
+  clickCtx: null as (new (opts?: { sampleRate?: number }) => unknown) | null,
+  clickBlob: null as (() => Blob | null) | null,
+  renderDecoded: false,
+  renderFinished: false,
   ctx: null as unknown,
 }))
 
@@ -124,6 +132,15 @@ vi.mock('../lib/autoClick', async (importOriginal) => {
     },
     renderAutoClick: async (...args: unknown[]) => {
       mem.renderCalls.push(args)
+      if (mem.realRender) {
+        // Como o renderAutoClick de verdade: o click da biblioteca na grade do plano, do tamanho da música.
+        const [plan, duration, sel] = args as [AutoClickOkPlan, number, ClickLibrarySelection]
+        const { generateManualClickTrackFromSample } = await vi.importActual<typeof import('../lib/AudioAnalyzer')>('../lib/AudioAnalyzer')
+        const d = plan.detection
+        await generateManualClickTrackFromSample(sel.type, sel.subdivision, d.pulseBpm, duration, true, plan.signature, { firstBeat: d.firstBeat, downbeat: d.downbeat })
+        mem.renderFinished = true
+        if (!mem.clickBlob?.()) throw new Error('o gerador não criou o WAV')
+      }
       return new Blob(['gerado'])
     },
   }
@@ -214,6 +231,11 @@ beforeEach(() => {
   mem.workers.length = 0
   mem.requests.length = 0
   mem.ctx = null
+  mem.realRender = false
+  mem.clickCtx = null
+  mem.clickBlob = null
+  mem.renderDecoded = false
+  mem.renderFinished = false
   mem.settings = { autoPan: false, audioDeviceId: 'default', outputs: { mode: 'split2', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } } }
   localStorage.setItem('mt_legacy_pans_reset:u1', '1')
   mem.buffers.clear()
@@ -224,12 +246,16 @@ beforeEach(() => {
   const decode = async (data: ArrayBuffer) => {
     const key = new TextDecoder().decode(data)
     // O WAV do gerador sai a 44,1 kHz.
+    // 5 min de bateria muda a 8 kHz (pouca memória): a duração da música do click gerado.
+    if (key === 'longo') return new FakeAudioBuffer(1, 300 * 8000, 8000)
     const samples = key === 'percussive' ? mem.percussive : mem.buffers.get(key)
     const buffer = new FakeAudioBuffer(1, samples?.length ?? 20 * SR, key === 'percussive' ? 44100 : SR)
     if (samples) buffer.copyToChannel(samples, 0)
     return buffer
   }
-  vi.stubGlobal('AudioContext', function () {
+  vi.stubGlobal('AudioContext', function (opts?: { sampleRate?: number }) {
+    // O gerador do click cria o contexto dele a 44,1 kHz só pra ler a amostra.
+    if (opts?.sampleRate === 44100 && mem.clickCtx) return new mem.clickCtx(opts)
     const ctx = createFakeAudioContext({ decode })
     mem.ctx = ctx
     return ctx
@@ -690,6 +716,56 @@ describe('Worker da grade (Ruling T27-worker)', () => {
     expect(hook.result.current.playlist[0].channels.some((c) => c.name === 'Click gerado')).toBe(true)
     expect(hook.result.current.songGrid).toMatchObject({ bpm: 120, source: 'click', meterSource: 'salvo' })
   })
+})
+
+describe('montagem do click gerado (Ruling T27-gerador)', () => {
+  const ctxOf = () => mem.ctx as FakeAudioContext
+  const startAt = (now: number) => (Math.floor(now / (128 / SR) + 1e-6) + 2) * (128 / SR)
+
+  it('play pedido no meio da montagem do WAV começa na hora, e o click entra depois, tocando', async () => {
+    mem.opts = { autoClick: true }
+    mem.plan = okPlan()
+    mem.realRender = true
+    // Gerador de verdade, com a amostra Percussive (semínima) de public/ e os calços do teste da M6.
+    const shims = makeClickShims(lerPublic)
+    class SampleCtx extends shims.AudioContext {
+      async decodeAudioData(ab: ArrayBuffer) {
+        const decoded = await super.decodeAudioData(ab)
+        mem.renderDecoded = true
+        return decoded
+      }
+    }
+    mem.clickCtx = SampleCtx
+    mem.clickBlob = shims.lastBlob
+    vi.stubGlobal('fetch', shims.fetch)
+    const urls = { create: URL.createObjectURL, revoke: URL.revokeObjectURL }
+    URL.createObjectURL = shims.createObjectURL
+    URL.revokeObjectURL = shims.revokeObjectURL
+    try {
+      const hook = await openApp()
+      await load(hook, [['DRUMS.wav', 'longo']], { bpm: 120, timeSignature: '4/4' })
+      // A amostra já foi lida e o WAV de 5 min ainda está sendo montado (o gerador cede a vez).
+      await waitFor(() => expect(mem.renderDecoded && !mem.renderFinished).toBe(true), { timeout: 10000 })
+
+      // Relógio do áudio em 3 s: o play agenda as vozes no instante comum de sempre, sem esperar.
+      ctxOf().currentTime = 3
+      await act(async () => { await hook.result.current.play() })
+      expect(hook.result.current.isPlaying).toBe(true)
+      const sources = nodesOf(ctxOf(), 'AudioBufferSourceNode')
+      expect(sources).toHaveLength(1)
+      expect(sources[0].starts[0].when).toBeCloseTo(startAt(3), 9)
+      expect(mem.renderFinished).toBe(false)
+
+      // A montagem termina e o "Click gerado" entra na música que toca.
+      await waitFor(() => expect(hook.result.current.playlist[0].channels.some((c) => c.name === 'Click gerado')).toBe(true), { timeout: 20000 })
+      expect(mem.renderFinished).toBe(true)
+      expect(hook.result.current.isPlaying).toBe(true)
+      act(() => { hook.result.current.pause() })
+    } finally {
+      URL.createObjectURL = urls.create
+      URL.revokeObjectURL = urls.revoke
+    }
+  }, 40_000)
 })
 
 describe('pré-contagem', () => {
