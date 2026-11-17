@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, createEvent, fireEvent, render, renderHook, screen, within } from '@testing-library/react'
 import { OUTPUT_WARNING_TEXT } from '../../lib/outputPlan'
+import type { OutputWarning } from '../../lib/outputPlan'
 import type {
   OutputPlan, SongGrid, StageChannel, StageClock, StageSection, StageSong, StageView,
 } from '../../lib/stageContracts'
@@ -74,6 +75,8 @@ const CHANNELS: StageChannel[] = [
   { id: 'c2', label: 'Bateria', color: '#d4a373', role: 'normal', volume: 0.8, muted: false, soloed: false, pan: 0, silenced: false },
 ]
 const SPLIT: OutputPlan = { mode: 'split2', channels: 2, vs: [1], click: [0], guide: [0], panByRole: true, fellBackFrom: null }
+const MONO: OutputPlan = { mode: 'stereo', channels: 1, vs: [0], click: [0], guide: [0], panByRole: false, fellBackFrom: 'split2' }
+const MULTI8: OutputPlan = { mode: 'multi', channels: 8, vs: [0, 1], click: [2], guide: [3], panByRole: true, fellBackFrom: null }
 const VIEW: StageView = {
   song: SONG, sections: SECTIONS, currentSection: 1, intent: null, transition: null, landed: null, grid: GRID, gridWarning: null,
   isReadingGrid: false, isPlaying: true, isCountingIn: false, precount: { enabled: false, beats: 4, times: [] }, endMode: 'continue',
@@ -102,7 +105,7 @@ const PADS: Omit<PadPanelProps, 'open' | 'onClose'> = {
 
 type ViewPatch = Partial<StageView>
 const shellProps = (view: ViewPatch = {}, extra: Partial<StageShellProps> = {}, actions = makeActions()): StageShellProps => ({
-  view: { ...VIEW, ...view }, actions, clock, peaks: null, pads: PADS, slots: { repertoire: null }, keyboardEnabled: true, ...extra,
+  view: { ...VIEW, ...view }, actions, clock, peaks: null, pads: PADS, slots: { repertoire: null }, keyboardEnabled: true, outputWarning: null, ...extra,
 })
 const renderShell = (view: ViewPatch = {}, extra: Partial<StageShellProps> = {}) => {
   const actions = makeActions()
@@ -198,6 +201,39 @@ describe('casca do palco', () => {
     expect(screen.getByRole('group', { name: 'Ajustar Refrão' })).toBeTruthy()
     rerender({ editMode: false })
     rerender({ editMode: true })
+    expect(screen.queryByRole('group', { name: /^Ajustar/ })).toBeNull()
+  })
+
+  // M3: a seleção do EDITAR é da seção, não da posição na lista.
+  it('EDITAR: marcar uma seção antes da selecionada não passa a seleção (nem o ajuste) pra outra seção', () => {
+    const { rerender, actions } = renderShell({ editMode: true })
+    const pick = (name: string) => fireEvent.click(within(screen.getByRole('group', { name: 'Seções da música' })).getByRole('button', { name }))
+    pick('Refrão')
+    expect(screen.getByRole('group', { name: 'Ajustar Refrão' })).toBeTruthy()
+
+    // MARCAR uma Ponte em 16 s, antes do Refrão: os índices de depois andam um.
+    const marked: StageSection[] = [
+      SECTIONS[0], { ...SECTIONS[1], end: 16 }, { index: 2, label: 'Ponte', color: '#8b5cf6', start: 16, end: 24, bars: 4 }, { ...SECTIONS[2], index: 3 },
+    ]
+    rerender({ editMode: true, sections: marked })
+    expect(screen.getByRole('group', { name: 'Ajustar Refrão' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Mover Refrão 1 compasso pra frente' }))
+    expect(actions.nudgeSection).toHaveBeenLastCalledWith(3, 1)
+
+    // O ajuste anda o início da selecionada (mesma quantidade de seções): a seleção continua nela.
+    const nudged = marked.map((x) => (x.index === 3 ? { ...x, start: 26 } : x.index === 2 ? { ...x, end: 26 } : x))
+    rerender({ editMode: true, sections: nudged })
+    expect(screen.getByRole('group', { name: 'Ajustar Refrão' })).toBeTruthy()
+
+    // Uma segunda marca no mesmo ponto e com o mesmo nome: não dá pra saber qual era; a seleção sai.
+    const twin: StageSection[] = [...nudged.slice(0, 3), { ...nudged[3] }, { ...nudged[3], index: 4 }]
+    rerender({ editMode: true, sections: twin })
+    expect(screen.queryByRole('group', { name: /^Ajustar/ })).toBeNull()
+
+    // A selecionada some da lista por outro caminho: a seleção sai, nunca vai pra vizinha.
+    pick('Ponte')
+    expect(screen.getByRole('group', { name: 'Ajustar Ponte' })).toBeTruthy()
+    rerender({ editMode: true, sections: [SECTIONS[0], { ...SECTIONS[1], end: 26 }, { ...SECTIONS[2], index: 2, start: 26 }] })
     expect(screen.queryByRole('group', { name: /^Ajustar/ })).toBeNull()
   })
 
@@ -313,9 +349,9 @@ describe('casca do palco', () => {
     expect(q('[data-output-alert]')).toBeNull()
     const below = q('[data-stage-scroll]')!.innerHTML
 
-    rerender({ outputs: { ...SPLIT, fellBackFrom: 'multi' } })
+    rerender({ outputs: { ...SPLIT, fellBackFrom: 'multi' } }, { outputWarning: 'poucos-canais' })
     const alert = q('[data-output-alert]')!
-    const text = 'Esta placa tem só 2 canais: Click e Guia na saída 1 · VS na saída 2.'
+    const text = `${OUTPUT_WARNING_TEXT['poucos-canais']} Agora: Click e Guia na saída 1 · VS na saída 2.`
     expect(alert.tagName).toBe('BUTTON')
     expect(alert.textContent).toBe('SAÍDAS')
     expect(alert.getAttribute('title')).toBe(text)
@@ -332,18 +368,61 @@ describe('casca do palco', () => {
     expect(actions.openOutputSettings).toHaveBeenCalledTimes(1)
     expect(actions.openSettings).not.toHaveBeenCalled()
 
-    rerender({ outputs: { mode: 'stereo', channels: 1, vs: [0], click: [0], guide: [0], panByRole: false, fellBackFrom: 'split2' } })
-    expect(q('[data-output-alert]')!.getAttribute('title')).toBe(OUTPUT_WARNING_TEXT.mono)
-
-    rerender({ outputs: { mode: 'multi', channels: 3, vs: [0, 1], click: [2], guide: [2], panByRole: true, fellBackFrom: 'multi' } })
-    expect(q('[data-output-alert]')!.getAttribute('title')).toBe('Esta placa tem só 3 canais: VS nas saídas 1 e 2 · Click e Guia na 3.')
-
-    rerender({ outputs: { mode: 'multi', channels: 8, vs: [0, 1], click: [], guide: [], panByRole: true, fellBackFrom: null } })
-    expect(q('[data-output-alert]')!.getAttribute('title')).toBe(OUTPUT_WARNING_TEXT['sem-saida-ouvido'])
-
-    // Tudo junto escolhido de propósito: sem aviso.
-    rerender({ outputs: { mode: 'stereo', channels: 2, vs: [0, 1], click: [0, 1], guide: [0, 1], panByRole: false, fellBackFrom: null } })
+    // Tudo junto escolhido de propósito: o plano não tem aviso, o palco também não.
+    rerender({ outputs: { mode: 'stereo', channels: 2, vs: [0, 1], click: [0, 1], guide: [0, 1], panByRole: false, fellBackFrom: null } }, { outputWarning: null })
     expect(q('[data-output-alert]')).toBeNull()
+  })
+
+  // I1: o selo mostra o aviso do plano (PlannedOutputs.warning), o mesmo das Configurações, com o texto de OUTPUT_WARNING_TEXT.
+  it.each<[OutputWarning, OutputPlan, string]>([
+    ['mono', MONO, OUTPUT_WARNING_TEXT.mono],
+    ['poucos-canais', { ...SPLIT, fellBackFrom: 'multi' }, `${OUTPUT_WARNING_TEXT['poucos-canais']} Agora: Click e Guia na saída 1 · VS na saída 2.`],
+    ['poucos-canais', { mode: 'multi', channels: 3, vs: [0, 1], click: [2], guide: [2], panByRole: true, fellBackFrom: 'multi' }, `${OUTPUT_WARNING_TEXT['poucos-canais']} Agora: VS nas saídas 1 e 2 · Click e Guia na 3.`],
+    ['sem-saida-ouvido', { ...MULTI8, click: [], guide: [] }, OUTPUT_WARNING_TEXT['sem-saida-ouvido']],
+    ['mapa-ajustado', MULTI8, OUTPUT_WARNING_TEXT['mapa-ajustado']],
+    ['sink-timeout', SPLIT, OUTPUT_WARNING_TEXT['sink-timeout']],
+  ])('aviso do plano "%s" aparece no selo SAÍDAS com o texto das Configurações', (warning, outputs, text) => {
+    const { actions } = renderShell({ outputs }, { outputWarning: warning })
+    const alert = q('[data-output-alert]')!
+    expect(alert).not.toBeNull()
+    expect(alert.textContent).toBe('SAÍDAS')
+    expect(alert.getAttribute('title')).toBe(text)
+    expect(alert.getAttribute('aria-label')).toBe(`Saídas: ${text} Abre as saídas nas Configurações.`)
+    expect(text).not.toContain(TRAVESSAO)
+    fireEvent.click(alert)
+    expect(actions.openOutputSettings).toHaveBeenCalledTimes(1)
+  })
+
+  it('sem aviso no plano não há selo: o palco não refaz a conta do plano pelos campos', () => {
+    const { rerender } = renderShell({ outputs: { ...SPLIT, fellBackFrom: 'multi' } }, { outputWarning: null })
+    expect(q('[data-output-alert]')).toBeNull()
+    rerender({ outputs: { ...MULTI8, click: [], guide: [] } })
+    expect(q('[data-output-alert]')).toBeNull()
+    rerender({ outputs: MONO })
+    expect(q('[data-output-alert]')).toBeNull()
+  })
+
+  // M2: OFFLINE é mais largo que ONLINE; o selo anda junto e, se não couber até o menu, fica só a luz.
+  it('o selo SAÍDAS acompanha o ONLINE virando OFFLINE (posição e "só a luz")', () => {
+    const box = (left: number, width: number) => ({ left, width, right: left + width, top: 0, bottom: 22, height: 22, x: left, y: 0, toJSON: () => ({}) }) as DOMRect
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      if (this.matches('[data-online]')) return box(140, this.getAttribute('data-online') === 'true' ? 60 : 68)
+      if (this.tagName === 'NAV') return box(300, 700)
+      if (this.matches('[data-output-alert]')) return box(0, 70)
+      return box(0, 0)
+    })
+    const { rerender } = renderShell({}, { outputWarning: 'mapa-ajustado' })
+    const chip = q('[data-output-alert]')!
+    // ONLINE termina em 200: o selo começa 12 px depois e cabe até o menu (300 - 12 - 212 = 76 >= 70).
+    expect(chip.style.left).toBe('212px')
+    expect(chip.dataset.fit).toBeUndefined()
+    rerender({ app: { ...VIEW.app, online: false } })
+    // OFFLINE termina em 208: o selo anda 8 px e sobra 68 px, menos que os 70 dele: só a luz.
+    expect(chip.style.left).toBe('220px')
+    expect(chip.dataset.fit).toBe('luz')
+    rerender({ app: { ...VIEW.app, online: true } })
+    expect(chip.style.left).toBe('212px')
+    expect(chip.dataset.fit).toBeUndefined()
   })
 
   it('no EDITAR a onda encaixa ao entrar e fica parada; a barra reserva a maior altura que já teve', () => {
@@ -422,7 +501,7 @@ describe('casca do palco', () => {
   })
 
   it('texto da casca em português e sem travessão', () => {
-    const { container } = renderShell({ editMode: true, outputs: { ...SPLIT, fellBackFrom: 'multi' }, padPanelOpen: true })
+    const { container } = renderShell({ editMode: true, outputs: { ...SPLIT, fellBackFrom: 'multi' }, padPanelOpen: true }, { outputWarning: 'poucos-canais' })
     fireEvent.click(screen.getByRole('button', { name: /^Compasso/ }))
     expect(container.textContent).not.toContain(TRAVESSAO)
     expect(container.textContent).not.toMatch(PROIBIDAS)
@@ -630,6 +709,31 @@ describe('foco: só pelo Tab', () => {
     fireEvent.click(trigger, { detail: 0 })
     expect(grid.hidden).toBe(false)
     expect(grid.contains(document.activeElement)).toBe(true)
+  })
+
+  // M5: a grade de tons entra na pilha do Esc sem o painel ligado (keyGridRef nulo) de propósito:
+  // com o painel ligado, a pilha poria o foco no diálogo ao abrir (pelo toque, contra a Ruling T18-foco;
+  // pelo teclado, tirando o foco do tom atual).
+  it('grade de tons: pelo toque o foco fica no corpo ao abrir e ao fechar; pelo teclado fica no tom atual e o Esc devolve pro botão do tom', () => {
+    const { actions } = renderShell({ intent: { target: 2, plays: 1 } })
+    const trigger = screen.getByRole('button', { name: /Escolher o tom/ })
+    const grid = q('[role="dialog"][aria-label="Escolher tom"]')!
+    tap(trigger)
+    expect(grid.hidden).toBe(false)
+    expect(document.activeElement).toBe(document.body)
+    expect(press(document.body, { key: 'Escape', code: 'Escape' }).defaultPrevented).toBe(true)
+    expect(grid.hidden).toBe(true)
+    expect(document.activeElement).toBe(document.body)
+
+    trigger.focus() // como o Tab
+    fireEvent.click(trigger, { detail: 0 })
+    expect(grid.hidden).toBe(false)
+    expect(document.activeElement).toBe(grid.querySelector('button[aria-pressed="true"]'))
+    expect(press(document.activeElement!, { key: 'Escape', code: 'Escape' }).defaultPrevented).toBe(true)
+    expect(grid.hidden).toBe(true)
+    expect(document.activeElement).toBe(trigger)
+    // Nenhum dos dois Esc chegou no pulo armado.
+    expect(actions.cancelArm).not.toHaveBeenCalled()
   })
 })
 

@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type React from 'react'
 import { OUTPUT_WARNING_TEXT, outputSummary } from '../../lib/outputPlan'
+import type { OutputWarning } from '../../lib/outputPlan'
 import { isSelfLoop } from '../../lib/sectionArm'
 import { barSeconds, nearestBarLine, pulseSeconds } from '../../lib/songGrid'
 import { gridHasPhase } from '../../lib/stageContracts'
-import type { OutputPlan, SongGrid, StageActions, StageClock, StageView } from '../../lib/stageContracts'
+import type { OutputPlan, SongGrid, StageActions, StageClock, StageSection, StageView } from '../../lib/stageContracts'
 import { Led, cx } from '../ui'
 import { MeterEditor } from './MeterEditor'
 import { MidStrip } from './MidStrip'
@@ -31,6 +32,12 @@ export interface StageShellProps {
   pads: Omit<PadPanelProps, 'open' | 'onClose'>
   slots: { repertoire: React.ReactNode; tracksMenu?: React.ReactNode; adminTools?: React.ReactNode; channelEditPanel?: React.ReactNode }
   keyboardEnabled: boolean
+  /**
+   * Aviso do plano de saídas de agora (`PlannedOutputs.warning` do motor, o mesmo que as
+   * Configurações mostram), inclusive o `sink-timeout` da troca de aparelho. Com aviso, o selo
+   * âmbar SAÍDAS aparece na barra; sem aviso, não. A T29 passa `outputPlan.warning`.
+   */
+  outputWarning: OutputWarning | null
 }
 
 /** O painel de pads abre por cima do mixer e para antes do PRINCIPAL: a largura dele (MasterStrip, w-[116px]) mais o vão do mixer (gap-2.5). */
@@ -63,18 +70,15 @@ function pulseOf(grid: SongGrid | null): StagePulse | null {
   return Number.isFinite(seconds) && seconds > 0 && Number.isFinite(grid.firstDownbeat) ? { seconds, firstDownbeat: grid.firstDownbeat } : null
 }
 
-const channelsText = (n: number) => (n === 1 ? '1 canal' : `${n} canais`)
-
 /**
- * Aviso de saída no palco (Ruling T6-2): a placa de agora não dá o que foi escolhido. Click e Guia
- * sem saída no "4 ou mais"; placa de 1 canal (tudo junto); ou a placa tem menos canais e as saídas
- * caíram pra outra divisão (diz como ficou). "Tudo junto" escolhido de propósito não é aviso.
+ * Texto do aviso de saída no palco (Ruling T6-2): o do plano, o mesmo das Configurações
+ * (`OUTPUT_WARNING_TEXT`), sem conta própria pelos campos. Na placa com menos de 4 canais o texto
+ * ganha o resumo de como as saídas ficaram (onde o Click está saindo agora).
  */
-function outputAlertText(plan: OutputPlan): string | null {
-  if (plan.mode === 'multi' && (plan.click.length === 0 || plan.guide.length === 0)) return OUTPUT_WARNING_TEXT['sem-saida-ouvido']
-  if (plan.fellBackFrom === null) return null
-  if (plan.channels <= 1) return OUTPUT_WARNING_TEXT.mono
-  return `Esta placa tem só ${channelsText(plan.channels)}: ${outputSummary(plan)}.`
+function outputAlertText(warning: OutputWarning | null, plan: OutputPlan): string | null {
+  if (warning === null) return null
+  const text = OUTPUT_WARNING_TEXT[warning]
+  return warning === 'poucos-canais' ? `${text} Agora: ${outputSummary(plan)}.` : text
 }
 
 /**
@@ -109,10 +113,34 @@ const EDIT_TOP = 10
 
 interface EditAreaProps { view: StageView; actions: StageActions; adminTools: React.ReactNode }
 
+/** Mesmas seções, com o mesmo índice, nome e início (a lista pode chegar num objeto novo a cada renderização). */
+function sameSections(a: readonly StageSection[], b: readonly StageSection[]): boolean {
+  return a.length === b.length && a.every((s, i) => s.index === b[i].index && s.label === b[i].label && s.start === b[i].start)
+}
+
+/**
+ * Seleção do EDITAR quando a lista de seções muda: ela segue a SEÇÃO, nunca a posição. Com a mesma
+ * quantidade (o ajuste mexe no início da selecionada, nunca na ordem), fica no mesmo índice se ali
+ * continua a mesma seção. Com outra quantidade (MARCAR antes dela empurra os índices), acha de novo
+ * pelo início e pelo nome. Se não achar uma só, a seleção sai: ajustar a seção errada sem perceber
+ * é pior do que tocar nela de novo.
+ */
+function followSelection(prev: readonly StageSection[], next: readonly StageSection[], selected: number): number | null {
+  const was = prev.find((s) => s.index === selected)
+  if (!was) return null
+  if (prev.length === next.length) {
+    const now = next.find((s) => s.index === selected)
+    if (now && now.label === was.label) return selected
+  }
+  const same = next.filter((s) => s.start === was.start && s.label === was.label)
+  return same.length === 1 ? same[0].index : null
+}
+
 /**
  * Modo EDITAR no lugar da botoeira: a barra de edição das seções e, embaixo, as ferramentas do
  * admin. Monta só no EDITAR e com a chave da música, então a seleção começa vazia a cada entrada
- * e a cada música. `hasPhase` é a grade COM FASE (o ajuste anda compasso); só com o BPM salvo, 1 s.
+ * e a cada música; quando as seções mudam, ela segue a seção (`followSelection`). `hasPhase` é a
+ * grade COM FASE (o ajuste anda compasso); só com o BPM salvo, 1 s.
  *
  * A altura fica reservada pela maior que a barra já teve nesta entrada (112 a 216 px, quebrando
  * linha): apagar uma seção não puxa a faixa do meio e o mixer pra cima; uma linha a mais só
@@ -120,6 +148,12 @@ interface EditAreaProps { view: StageView; actions: StageActions; adminTools: Re
  */
 function EditArea({ view, actions, adminTools }: EditAreaProps) {
   const [selected, setSelected] = useState<number | null>(null)
+  // Seções da última renderização (padrão "valor anterior"): mudou a lista, a seleção segue a seção.
+  const [shown, setShown] = useState(view.sections)
+  if (!sameSections(shown, view.sections)) {
+    if (selected !== null) setSelected(followSelection(shown, view.sections, selected))
+    setShown(view.sections)
+  }
   const boxRef = useRef<HTMLDivElement>(null)
   const [reserve, setReserve] = useState(0)
   useEffect(() => {
@@ -174,19 +208,26 @@ function EditArea({ view, actions, adminTools }: EditAreaProps) {
  * Ao vivo, a onda tem piso de 104 px (blocos com 48 px de toque) pra tudo caber a partir de 740 px de
  * altura, o mínimo do palco novo (Ruling T18-altura).
  *
- * O aviso de saídas (Ruling T6-2) fica na barra do app, ao lado do ONLINE, e abre as Configurações
- * na seção de saídas (Ruling T18-saidas): aparecer com a música tocando não muda a altura de nada.
+ * O aviso de saídas (Ruling T6-2) é o do plano (`outputWarning`), fica na barra do app, ao lado do
+ * ONLINE, e abre as Configurações na seção de saídas (Ruling T18-saidas): aparecer com a música
+ * tocando não muda a altura de nada.
  *
  * Foco (Ruling T18-foco): botões e controles do palco não pegam foco no toque ou clique, só pelo Tab
  * (`keepPointerFocusOff`, na captura do mousedown de toda a casca, slots incluídos).
  */
-export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardEnabled }: StageShellProps) {
+export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardEnabled, outputWarning }: StageShellProps) {
   const headerRef = useRef<HTMLDivElement>(null)
   const tracksRef = useRef<HTMLDivElement>(null)
   const alertRef = useRef<HTMLButtonElement>(null)
   const waveRef = useRef<HTMLDivElement>(null)
   // A grade de tons entra na pilha do Esc dos painéis: o último aberto fecha primeiro e o Esc que
-  // fecha a grade não chega ao atalho global (não cancela o pulo). O KeyCell cuida do foco dela.
+  // fecha a grade não chega ao atalho global (não cancela o pulo). O ref fica NULO de propósito (M5):
+  // ligado no diálogo, o usePanelDismiss poria o foco nele ao abrir (pelo toque, contra a Ruling
+  // T18-foco; pelo teclado, tirando o foco do tom atual). Nulo é seguro porque o foco da grade é
+  // todo do KeyCell: ao abrir, o efeito dele roda antes do da casca (foca o tom atual só pelo
+  // teclado); ao fechar com o foco dentro, roda depois da limpeza da casca e põe o foco no botão do
+  // tom. E a grade não tem ação de dois toques pro Esc procurar dentro. Testado em "grade de tons:
+  // pelo toque..." (com o diálogo ligado, ele e o teste do TOM falham).
   const keyGridRef = useRef<HTMLElement | null>(null)
 
   const songKey = view.song?.id ?? null
@@ -212,7 +253,7 @@ export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardE
   const duration = view.song?.duration ?? 0
   const barLines = useMemo(() => barLinesOf(grid, duration), [grid, duration])
   const pulse = useMemo(() => pulseOf(grid), [grid])
-  const alert = outputAlertText(view.outputs)
+  const alert = outputAlertText(outputWarning, view.outputs)
   const hasTracksMenu = slots.tracksMenu !== undefined && slots.tracksMenu !== null && slots.tracksMenu !== false
   const showAdmin = view.app.isAdmin ? slots.adminTools : null
 
@@ -242,7 +283,10 @@ export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardE
 
   // O menu FAIXAS abre embaixo do botão FAIXAS; o aviso de saídas fica depois do selo ONLINE e, se
   // não couber até o menu, mostra só a luz (o texto continua no nome e na dica). As posições
-  // dependem da largura da tela e das fontes.
+  // dependem da largura da tela, das fontes e da barra: OFFLINE é mais largo que ONLINE (o selo
+  // anda junto, e o wifi pode cair no meio do culto) e o HOST do computador alarga o menu.
+  const online = view.app.online
+  const desktop = view.app.isDesktop
   useLayoutEffect(() => {
     if (!hasTracksMenu && !alert) return
     const place = () => {
@@ -271,7 +315,7 @@ export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardE
       alive = false
       window.removeEventListener('resize', place)
     }
-  }, [hasTracksMenu, alert])
+  }, [hasTracksMenu, alert, online, desktop])
 
   const closePads = () => { if (view.padPanelOpen) actions.togglePadPanel() }
 
