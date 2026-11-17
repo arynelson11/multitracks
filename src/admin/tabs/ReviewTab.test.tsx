@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ReviewTab } from './ReviewTab'
 import { AdminApiError } from '../lib/adminApi'
+import { openExternalUrlLater } from '../../lib/desktop'
 import type { AdminQueryState } from '../hooks/useAdminQuery'
 import type { ReviewAction, ReviewEvent, ReviewFlag, ReviewQueue } from '../lib/reviewTypes'
 
@@ -146,6 +147,9 @@ function deferred<T>() {
   })
   return { promise, resolve, reject }
 }
+
+// Endereços que a aba aberta no clique nunca recebe (Minor 2 da re-revisão).
+const NOT_HTTPS = ['http://www.asaas.com/i/abc123', 'javascript:alert(1)', '']
 
 // Aba nova falsa: o window.open devolve esta janela, e o teste confere o que a tela fez com ela.
 function fakeTab() {
@@ -737,6 +741,38 @@ describe('ReviewTab', () => {
     expect(document.body.textContent).not.toContain(TRAVESSAO)
   })
 
+  it('a aba aberta no clique só recebe endereço https; o resto fecha a aba', () => {
+    for (const url of NOT_HTTPS) {
+      const tab = fakeTab()
+      const open = vi.spyOn(window, 'open').mockImplementation(() => tab as unknown as Window)
+      const later = openExternalUrlLater()
+      expect(later.go(url)).toBe(false)
+      expect(tab.location.replace).not.toHaveBeenCalled()
+      expect(tab.close).toHaveBeenCalledTimes(1)
+      // Nem tenta abrir de novo com o endereço recusado.
+      expect(open).toHaveBeenCalledTimes(1)
+      open.mockRestore()
+    }
+  })
+
+  it('a aba bloqueada também não tenta abrir endereço que não é https', () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const later = openExternalUrlLater()
+    for (const url of NOT_HTTPS) expect(later.go(url)).toBe(false)
+    expect(open).toHaveBeenCalledTimes(1)
+  })
+
+  it('fatura com endereço que não é https fecha a aba e mostra a frase', async () => {
+    h.adminGet.mockResolvedValue({ paymentId: 'pay_abc123', status: 'RECEIVED', invoiceUrl: 'javascript:alert(1)' })
+    const tab = fakeTab()
+    vi.spyOn(window, 'open').mockImplementation(() => tab as unknown as Window)
+    setup(queue({ actions: [REFUND] }))
+    fireEvent.click(button(item('Estornar à mão'), 'Ver no Asaas'))
+    await waitFor(() => expect(item('Estornar à mão').textContent).toContain('O Asaas não mandou o link da fatura.'))
+    expect(tab.close).toHaveBeenCalledTimes(1)
+    expect(tab.location.replace).not.toHaveBeenCalled()
+  })
+
   // O vi.resetModules daqui recarrega o desktop.ts com o bridge; os outros testes não dependem de ordem (realApi no topo).
   it('no app de computador a fatura abre pelo bridge, sem aba em branco', async () => {
     const openBridge = vi.fn()
@@ -749,6 +785,9 @@ describe('ReviewTab', () => {
       expect(open).not.toHaveBeenCalled()
       expect(later.go('https://www.asaas.com/i/abc123')).toBe(true)
       expect(openBridge).toHaveBeenCalledWith('https://www.asaas.com/i/abc123')
+      // Mesma regra do https antes de chamar o bridge.
+      for (const url of NOT_HTTPS) expect(later.go(url)).toBe(false)
+      expect(openBridge).toHaveBeenCalledTimes(1)
       later.cancel()
       expect(open).not.toHaveBeenCalled()
     } finally {
