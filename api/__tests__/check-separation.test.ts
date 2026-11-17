@@ -300,6 +300,9 @@ describe('check-separation: custo gravado quando o trabalho termina', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(db.writes.filter((w) => w.table === 'fx_rates')).toEqual([])
     expect(row().cost_recorded_at).toBe(NOW)
+    // sem consulta, sem log de consulta que falhou (Ruling ADM-T23-guardado)
+    expect(warn).not.toHaveBeenCalled()
+    expect(error).not.toHaveBeenCalled()
   })
 
   it('banco lento na gravação não segura a resposta: passa do teto, responde igual e o erro de depois só vai pro log', async () => {

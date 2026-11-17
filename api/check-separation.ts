@@ -17,13 +17,6 @@ const PREDICTION_ID_RE = /^[a-z0-9]{20,}$/i;
 
 const COST_RECORD_TIMEOUT_MS = 2000;
 
-// O R$ usa só o câmbio já guardado do dia de Brasília do trabalho (Ruling
-// ADM-T23-fx): o getUsdBrlOn lê fx_rates primeiro e, sem a cotação daquele dia,
-// cai neste fetch, que recusa na hora. Resultado: grava sem R$ e a varredura
-// completa. A consulta do usuário nunca espera o Banco Central.
-const storedRateOnly: typeof fetch = () =>
-    Promise.reject(new Error('a consulta da separacao usa so o cambio ja guardado'));
-
 // O que o Replicate devolve na consulta, com o começo do trabalho.
 type ConsultedPrediction = ReplicatePredictionLike & { created_at?: string | null };
 
@@ -37,8 +30,11 @@ function jobDay(p: ConsultedPrediction, now: Date): string {
     return brtToday(now);
 }
 
+// O R$ usa só o câmbio já guardado do dia de Brasília do trabalho (Rulings
+// ADM-T23-fx e ADM-T23-guardado): sem a cotação daquele dia, grava sem R$ e a
+// varredura completa. A consulta do usuário nunca espera o Banco Central.
 async function recordCost(db: SupabaseClient, id: string, prediction: ConsultedPrediction, now: Date): Promise<void> {
-    const fx = await getUsdBrlOn(db, jobDay(prediction, now), { now, fetchFn: storedRateOnly });
+    const fx = await getUsdBrlOn(db, jobDay(prediction, now), { now, storedOnly: true });
     await recordPredictionResult(db, { ...prediction, id }, fx, now);
 }
 

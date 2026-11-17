@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getStoredUsdBrl, getUsdBrl, ptaxPeriodUrl } from '../_lib/fx.js'
+import { getStoredUsdBrl, getUsdBrl, getUsdBrlOn, ptaxPeriodUrl } from '../_lib/fx.js'
 import { createFakeDb, type FakeDb, type Row } from './fakeSupabase.js'
 
 // T11: câmbio do dia (PTAX de venda do Banco Central). O Banco Central só por
@@ -208,5 +208,60 @@ describe('getStoredUsdBrl', () => {
     const db = fxDb([stored('2026-11-16', 5.3655, NOW.toISOString())])
     db.failTable('fx_rates', { message: 'permission denied for table fx_rates' })
     await expect(getStoredUsdBrl(client(db), NOW)).resolves.toBeNull()
+  })
+})
+
+// Ruling ADM-T23-guardado: a consulta que o usuário faz no fim da separação
+// (api/check-separation.ts) usa só a PTAX já guardada do dia do trabalho.
+describe('getUsdBrlOn com storedOnly', () => {
+  it('com storedOnly e sem guardado devolve null sem chamar o fetch e sem log', async () => {
+    const globalFetch = vi.fn<typeof fetch>()
+    vi.stubGlobal('fetch', globalFetch)
+    const fetchFn = vi.fn<typeof fetch>()
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const empty = fxDb()
+    expect(await getUsdBrlOn(client(empty), '2026-11-16', { now: NOW, fetchFn, storedOnly: true })).toBeNull()
+    // guardada só a de outro dia útil: fora da janela do dia 16, também null
+    const friday = fxDb([stored('2026-11-13', 5.3712, '2026-11-13T18:00:00.000Z')])
+    expect(await getUsdBrlOn(client(friday), '2026-11-16', { now: NOW, fetchFn, storedOnly: true })).toBeNull()
+    // sem fetchFn, nada de fetch global
+    expect(await getUsdBrlOn(client(empty), '2026-11-16', { now: NOW, storedOnly: true })).toBeNull()
+
+    expect(fetchFn).not.toHaveBeenCalled()
+    expect(globalFetch).not.toHaveBeenCalled()
+    expect(warn).not.toHaveBeenCalled()
+    expect(error).not.toHaveBeenCalled()
+    expect(empty.writes).toEqual([])
+    expect(friday.writes).toEqual([])
+    error.mockRestore()
+  })
+
+  it('com storedOnly e com guardado devolve o valor', async () => {
+    const fetchFn = vi.fn<typeof fetch>()
+    const db = fxDb([stored('2026-11-16', 5.3655, '2026-11-16T16:30:00.000Z'), stored('2026-11-13', 5.3712, '2026-11-13T18:00:00.000Z')])
+
+    expect(await getUsdBrlOn(client(db), '2026-11-16', { now: NOW, fetchFn, storedOnly: true })).toEqual({ rate: 5.3655, date: '2026-11-16', stale: false })
+    // domingo usa a de sexta guardada, como sem a opção
+    expect(await getUsdBrlOn(client(db), '2026-11-15', { now: NOW, fetchFn, storedOnly: true })).toEqual({ rate: 5.3712, date: '2026-11-13', stale: false })
+    expect(fetchFn).not.toHaveBeenCalled()
+    expect(warn).not.toHaveBeenCalled()
+    expect(db.writes).toEqual([])
+  })
+
+  it('sem a opção, o comportamento de hoje fica igual: sem guardado consulta o Banco Central e grava', async () => {
+    const db = fxDb()
+    const fetchFn = bcbReplies(FRIDAY_AND_MONDAY)
+
+    expect(await getUsdBrlOn(client(db), '2026-11-16', { now: NOW, fetchFn })).toEqual({ rate: 5.3655, date: '2026-11-16', stale: false })
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(fetchFn.mock.calls[0][0]).toBe(ptaxPeriodUrl('2026-11-08', '2026-11-16'))
+    expect(db.tables.fx_rates.map((r) => r.rate_date).sort()).toEqual(['2026-11-13', '2026-11-16'])
+
+    // e com o Banco Central fora segue avisando no log
+    const down = vi.fn<typeof fetch>(async () => { throw new TypeError('fetch failed') })
+    expect(await getUsdBrlOn(client(fxDb()), '2026-11-16', { now: NOW, fetchFn: down })).toBeNull()
+    expect(down).toHaveBeenCalledTimes(1)
+    expect(warn).toHaveBeenCalled()
   })
 })

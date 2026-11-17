@@ -206,10 +206,13 @@ async function storeQuotes(db: SupabaseClient, quotes: { date: string; rate: num
 // dele. Lê fx_rates; sem o dia guardado, consulta o Banco Central (janela de 8
 // dias até `day`) e grava. Banco Central fora, ou hoje antes de a PTAX sair:
 // null. Nunca lança.
+// Com storedOnly (a consulta que o usuário faz no fim da separação, Ruling
+// ADM-T23-guardado): só o guardado daquela janela; sem ele, null, sem consultar
+// o Banco Central e sem log de consulta que falhou.
 export async function getUsdBrlOn(
   db: SupabaseClient,
   day: string,
-  deps: { now?: Date; fetchFn?: typeof fetch; timeoutMs?: number } = {},
+  deps: { now?: Date; fetchFn?: typeof fetch; timeoutMs?: number; storedOnly?: boolean } = {},
 ): Promise<FxRate | null> {
   const now = deps.now ?? new Date()
   const today = brtToday(now)
@@ -217,6 +220,7 @@ export async function getUsdBrlOn(
 
   const stored = await readLatest(db, day)
   if (stored && onlyWeekendAfter(stored.date, day)) return { rate: stored.rate, date: stored.date, stale: false }
+  if (deps.storedOnly) return null
 
   let quotes: { date: string; rate: number }[]
   try {
