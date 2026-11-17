@@ -39,8 +39,11 @@ const MSG_ASAAS_NO_KEY = 'Não deu pra consultar o Asaas: configuração do serv
 
 // Status da cobrança em aberto (a mesma lista de api/_lib/reconcile.ts).
 const OPEN_STATUSES = new Set(['PENDING', 'OVERDUE', 'AWAITING_RISK_ANALYSIS'])
-// Status da assinatura no Asaas que dizem que ela parou de cobrar.
-const STOPPED_STATUSES = new Set(['INACTIVE', 'EXPIRED'])
+// Nome em português do status da assinatura no Asaas pra frase de diferença
+// (o código em inglês nunca entra na frase). Status que não está aqui (novo do
+// Asaas, ou resposta sem status) é um estado que o app não reconhece.
+const STATUS_NAMES: Record<string, string> = { INACTIVE: 'inativa', EXPIRED: 'expirada' }
+const UNKNOWN_STATE = 'num estado que o app não reconhece'
 
 // Cópia no servidor da linha de assinatura da ficha (SubscriptionRow da seção B).
 export type SubscriptionRow = {
@@ -107,15 +110,19 @@ function brDay(v: string): string {
 const cents = (v: number): number => Math.round(v * 100)
 
 // Diferenças entre a linha do app e a assinatura no Asaas agora, nesta ordem:
-// status, valor, ciclo e vencimento. Removida no Asaas só fala do status: o
-// valor e as cobranças de uma assinatura que não cobra mais não são diferença.
+// status, valor, ciclo e vencimento. Com a linha ativa no app, qualquer status
+// do Asaas que não seja ACTIVE é diferença: inativa, expirada, removida, ou um
+// estado que o app não reconhece (sem dizer o código). Removida no Asaas só
+// fala do status: o valor e as cobranças de uma assinatura que não cobra mais
+// não são diferença.
 // O vencimento compara a cobrança em aberto do ciclo (openDueDate), nunca o
 // nextDueDate da assinatura, que aponta pra próxima cobrança a ser gerada.
 export function compareWithAsaas(row: SubscriptionRow, live: AsaasLiveData): string[] {
   const out: string[] = []
   const active = row.status === 'active'
-  if (active && (live.deleted || STOPPED_STATUSES.has(live.status))) {
-    out.push(`No Asaas a assinatura está ${live.deleted ? 'REMOVIDA' : live.status}, mas no app ela está ativa.`)
+  if (active && (live.deleted || live.status !== 'ACTIVE')) {
+    const state = live.deleted ? 'removida' : Object.hasOwn(STATUS_NAMES, live.status) ? STATUS_NAMES[live.status] : UNKNOWN_STATE
+    out.push(`No Asaas a assinatura está ${state}, mas no app ela está ativa.`)
   }
   if (row.status === 'canceled' && !live.deleted && live.status === 'ACTIVE') {
     out.push('O Asaas ainda cobra esta assinatura, mas no app ela está encerrada.')

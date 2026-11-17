@@ -476,7 +476,7 @@ describe('ficha do assinante', () => {
     const res = await detail()
     expect(res.statusCode).toBe(200)
     expect(body(res).asaasLive).toEqual([{ subscriptionRef: 'sref-1', ok: true, status: '', value: null, cycle: '', openDueDate: '2026-12-17', deleted: true }])
-    expect(body(res).mismatches).toEqual(['No Asaas a assinatura está REMOVIDA, mas no app ela está ativa.'])
+    expect(body(res).mismatches).toEqual(['No Asaas a assinatura está removida, mas no app ela está ativa.'])
   })
 
   it('assinatura com deleted true no Asaas também é removida', async () => {
@@ -484,7 +484,7 @@ describe('ficha do assinante', () => {
     const res = await detail()
     expect((body(res).asaasLive as Row[])[0]).toMatchObject({ ok: true, deleted: true })
     // removida: o valor de uma assinatura que não cobra mais não vira diferença
-    expect(body(res).mismatches).toEqual(['No Asaas a assinatura está REMOVIDA, mas no app ela está ativa.'])
+    expect(body(res).mismatches).toEqual(['No Asaas a assinatura está removida, mas no app ela está ativa.'])
   })
 
   it('valor diferente sai com o valor em reais, sem espaço inquebrável', async () => {
@@ -499,7 +499,8 @@ describe('ficha do assinante', () => {
     expect((body(res).asaasLive as Row[])[0]).toEqual({
       subscriptionRef: 'sref-1', ok: true, status: '', value: null, cycle: '', openDueDate: '2026-12-17', deleted: false,
     })
-    expect(body(res).mismatches).toEqual([])
+    // sem status que se reconheça, a ficha não diz que está tudo certo
+    expect(body(res).mismatches).toEqual(['No Asaas a assinatura está num estado que o app não reconhece, mas no app ela está ativa.'])
     expect(JSON.stringify(res.body)).not.toMatch(/<b>|texto interno/)
   })
 
@@ -623,14 +624,36 @@ describe('compareWithAsaas', () => {
     expect(compareWithAsaas(subscription({ planKey: 'pro_anual', cycle: 'YEARLY' }), live({ value: 1078.8, cycle: 'YEARLY', openDueDate: null }))).toEqual([])
   })
 
-  it('app ativa e Asaas parado ou removido', () => {
-    expect(compareWithAsaas(subscription(), live({ status: 'INACTIVE' }))).toEqual(['No Asaas a assinatura está INACTIVE, mas no app ela está ativa.'])
-    expect(compareWithAsaas(subscription(), live({ status: 'EXPIRED' }))).toEqual(['No Asaas a assinatura está EXPIRED, mas no app ela está ativa.'])
+  it('app ativa e Asaas parado ou removido, em português', () => {
+    expect(compareWithAsaas(subscription(), live({ status: 'INACTIVE' }))).toEqual(['No Asaas a assinatura está inativa, mas no app ela está ativa.'])
+    expect(compareWithAsaas(subscription(), live({ status: 'EXPIRED' }))).toEqual(['No Asaas a assinatura está expirada, mas no app ela está ativa.'])
     expect(compareWithAsaas(subscription(), live({ status: '', value: null, cycle: '', openDueDate: null, deleted: true }))).toEqual([
-      'No Asaas a assinatura está REMOVIDA, mas no app ela está ativa.',
+      'No Asaas a assinatura está removida, mas no app ela está ativa.',
     ])
-    // status que não se conhece não vira frase
-    expect(compareWithAsaas(subscription(), live({ status: 'SUSPENDED' }))).toEqual([])
+    // removida vale mais que o status que vier junto
+    expect(compareWithAsaas(subscription(), live({ status: 'ACTIVE', deleted: true }))).toEqual([
+      'No Asaas a assinatura está removida, mas no app ela está ativa.',
+    ])
+    expect(compareWithAsaas(subscription(), live({ status: 'INACTIVE', deleted: true }))).toEqual([
+      'No Asaas a assinatura está removida, mas no app ela está ativa.',
+    ])
+  })
+
+  it('status desconhecido do Asaas sai sem o código', () => {
+    // status novo do Asaas, ou resposta sem status (o servidor já tira o texto que não é código)
+    for (const status of ['SUSPENDED', 'PAUSED', 'ACTIVE_X', '']) {
+      const lines = compareWithAsaas(subscription(), live({ status }))
+      expect(lines, status).toEqual(['No Asaas a assinatura está num estado que o app não reconhece, mas no app ela está ativa.'])
+      if (status) expect(lines.join(' '), status).not.toContain(status)
+    }
+    // encerrada no app: só ACTIVE no Asaas é diferença
+    for (const status of ['SUSPENDED', '', 'INACTIVE', 'EXPIRED']) {
+      expect(compareWithAsaas(subscription({ status: 'canceled' }), live({ status })), status).toEqual([])
+    }
+  })
+
+  it('ACTIVE no Asaas com a linha ativa não é diferença', () => {
+    expect(compareWithAsaas(subscription(), live({ status: 'ACTIVE' }))).toEqual([])
   })
 
   it('app encerrada e o Asaas ainda cobra', () => {
@@ -671,7 +694,7 @@ describe('compareWithAsaas', () => {
 
   it('várias diferenças juntas, na ordem: status, valor, ciclo, vencimento', () => {
     expect(compareWithAsaas(subscription(), live({ status: 'INACTIVE', value: 454.8, cycle: 'YEARLY', openDueDate: '2027-11-17' }))).toEqual([
-      'No Asaas a assinatura está INACTIVE, mas no app ela está ativa.',
+      'No Asaas a assinatura está inativa, mas no app ela está ativa.',
       'No Asaas o valor é R$ 454,80, mas o plano no app é Pro Mensal (R$ 49,90).',
       'No Asaas o ciclo é anual, mas o plano no app é mensal.',
       'No Asaas a cobrança em aberto vence em 17/11/2027, mas no app a próxima cobrança é 17/12/2026.',
@@ -685,6 +708,12 @@ describe('compareWithAsaas', () => {
       expect(line.includes(NBSP)).toBe(false)
       expect(line.includes(String.fromCharCode(0x202f))).toBe(false)
       expect(line.includes(TRAVESSAO)).toBe(false)
+    }
+    // nenhum código do Asaas (INACTIVE, EXPIRED, MONTHLY) na frase, com qualquer status
+    for (const status of ['INACTIVE', 'EXPIRED', 'SUSPENDED', '']) {
+      for (const line of compareWithAsaas(subscription(), live({ status, value: 119.9, cycle: 'YEARLY', openDueDate: '2026-12-16' }))) {
+        expect(line, status).not.toMatch(/[A-Z]{3,}/)
+      }
     }
   })
 })
