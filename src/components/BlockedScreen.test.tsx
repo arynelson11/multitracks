@@ -70,11 +70,13 @@ describe('BlockedScreen', () => {
     expect(onDeleteAccount).not.toHaveBeenCalled()
   })
 
-  it('Falar no WhatsApp abre o contato pelo openExternalUrl (funciona no app de computador)', () => {
+  it('não tem botão de WhatsApp (decisão do dono): só a frase, e nada abre fora do app', async () => {
+    fetchSubs.mockResolvedValue([active])
     setup()
-    fireEvent.click(screen.getByRole('button', { name: 'Falar no WhatsApp' }))
-    expect(openExternal).toHaveBeenCalledTimes(1)
-    expect(openExternal.mock.calls[0][0]).toMatch(/^https:\/\/wa\.me\/5522997249896\?text=/)
+    await screen.findByRole('button', { name: 'Cancelar assinatura' })
+    expect(screen.queryByRole('button', { name: /WhatsApp/ })).toBeNull()
+    expect(screen.queryByRole('link', { name: /WhatsApp/ })).toBeNull()
+    expect(openExternal).not.toHaveBeenCalled()
   })
 
   it('Excluir com EXCLUIR digitado chama onDeleteAccount, sem ele não chama', async () => {

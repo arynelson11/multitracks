@@ -3,16 +3,11 @@ import { Button, Panel } from './ui'
 import { SubscriptionPanel } from './SubscriptionPanel'
 import { isPaidPlan } from '../lib/plans'
 import { deleteAccountNotice, fetchCancelPreview } from '../lib/subscription'
-import { openExternalUrl } from '../lib/desktop'
 
-// Tela de conta bloqueada pelo admin (D10). Entra no lugar do app inteiro: a pessoa ainda
-// fala com a gente, cancela a assinatura (o bloqueio não mexe na cobrança), exclui a conta
-// ou sai. Assinar de novo não leva a lugar nenhum, porque o checkout recusa conta bloqueada.
-
-// Mesmo número de suporte da página inicial (LandingPage.tsx).
-const WHATSAPP_URL =
-  'https://wa.me/5522997249896?text=' +
-  encodeURIComponent('Olá! Minha conta do Playback Studio está bloqueada e quero entender o que aconteceu.')
+// Tela de conta bloqueada pelo admin (D10). Entra no lugar do app inteiro: a pessoa lê que
+// deve falar com a gente pelo WhatsApp (sem botão aqui, decisão do dono), cancela a assinatura
+// (o bloqueio não mexe na cobrança), exclui a conta ou sai. Assinar de novo não leva a lugar
+// nenhum, porque o checkout recusa conta bloqueada.
 
 const CONFIRM_WORD = 'EXCLUIR'
 
@@ -71,9 +66,6 @@ export function BlockedScreen({ plan, onSignOut, onDeleteAccount }: Props) {
         <Panel className="p-5 flex flex-col gap-3">
           <h1 className="text-ps-lg font-bold leading-tight">Sua conta está bloqueada</h1>
           <p className="text-ps-base text-ps-mut leading-relaxed">Fale com a gente pelo WhatsApp para entender e resolver.</p>
-          <Button tone="primary" className="self-start" onClick={() => openExternalUrl(WHATSAPP_URL)}>
-            Falar no WhatsApp
-          </Button>
         </Panel>
 
         <SubscriptionPanel plan={plan} onChanged={noop} onOpenPricing={noop} />

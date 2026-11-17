@@ -55,7 +55,8 @@ export const LEGAL_PAGES: LegalPage[] = [
 
 export const LEGAL_LINKS: LegalPage[] = LEGAL_PAGES_LIVE ? LEGAL_PAGES : []
 
-// Preço cobrado de verdade (api/checkout.ts). annualTotal é o valor cobrado no anual.
+// Preço cobrado de verdade: a tabela única do servidor (api/_lib/pricing.ts, que o api/checkout.ts usa).
+// annualTotal é o valor cobrado no anual.
 export const PRICES = {
   pro: { name: 'Pro', monthly: 49.9, annualTotal: 454.8 },
   studio: { name: 'Studio', monthly: 119.9, annualTotal: 1078.8 },
