@@ -5,7 +5,7 @@ import {
   asFake, connectedTo, createFakeAudioContext, FakeAudioBuffer, FakeAudioNode, nodesOf, reaches, valueAt,
   type FakeAudioContext, type FakeAudioContextOptions, type FakeGainNode,
 } from '../test/fakeAudio'
-import { measure, type Sig } from '../test/signalMeasure'
+import { measure, panSignal, type Sig } from '../test/signalMeasure'
 import type { SavedSong } from '../lib/repertoireSchema'
 import type { OutputSettings } from '../lib/stageContracts'
 import JSZip from 'jszip'
@@ -14,7 +14,8 @@ import { useAudioEngine } from './useAudioEngine'
 
 // T25: o motor liga o fader de cada canal no barramento do papel (grafo da T12), põe o pan
 // efetivo no panner, zera uma vez os pans do pan automático antigo, refaz o plano na troca de
-// aparelho e manda a pré-contagem pelo barramento do Click. O hook roda de verdade com o
+// aparelho e manda a pré-contagem pelo barramento do Click (desde a T26, pela entrada do canal
+// de click). O hook roda de verdade com o
 // AudioContext falso da T1 e o IndexedDB em memória; o nível sai do simulador linear da T12
 // (src/test/signalMeasure.ts) comparado com o grafo da v1.4.16 montado do mesmo jeito.
 
@@ -623,47 +624,46 @@ function onlyThrough(ctx: FakeAudioContext, from: FakeAudioNode, through: FakeGa
   return true
 }
 
-describe('pré-contagem antiga', () => {
+describe('pré-contagem (bipes da T7 pela entrada do canal de click)', () => {
   beforeEach(() => { localStorage.setItem('precount_enabled', 'true'); localStorage.setItem('precount_beats', '4') })
   afterEach(() => { localStorage.removeItem('precount_enabled'); localStorage.removeItem('precount_beats') })
 
-  // Bipe no pico do envelope (0,25 aos 3 ms), um oscilador por vez.
-  async function countIn(hook: Hook): Promise<Sig[]> {
-    const t0 = ctxOf().currentTime
+  // Ganho do caminho de cada bipe até as saídas. A saída do passa-baixa (o fim da receita do bipe)
+  // vira sinal 1, um bipe por vez; os outros bipes e as vozes (que só começam depois da contagem)
+  // contam 0. O nível do próprio bipe (picos 0,85 e 0,68) é da receita da T7 (countTones.test.ts).
+  // `inspect` confere o grafo antes do cancelamento (cancelar desliga os bipes que não soaram).
+  async function countIn(hook: Hook, inspect?: (beeps: FakeAudioNode[]) => void): Promise<Sig[]> {
     await act(async () => { await hook.result.current.playWithPrecount() })
-    const oscs = nodesOf(ctxOf(), 'OscillatorNode')
-    expect(oscs).toHaveLength(4)
     const ctx = ctxOf()
-    const out = oscs.map((osc, i) => {
-      ctx.currentTime = t0 + i * 0.6 + 0.003
-      return measure(ctx, new Map(oscs.map((o) => [o, [[o === osc ? 1 : 0]]])), 1)
-    })
+    const beeps = nodesOf(ctx, 'BiquadFilterNode')
+    expect(beeps).toHaveLength(4)
+    expect(nodesOf(ctx, 'OscillatorNode')).toHaveLength(8) // triângulo + quadrada por tempo
+    const voices = nodesOf(ctx, 'AudioBufferSourceNode')
+    const out = beeps.map((beep) => measure(ctx, new Map<unknown, Sig>([
+      ...beeps.map((b): [unknown, Sig] => [b, [[b === beep ? 1 : 0]]]),
+      ...voices.map((v): [unknown, Sig] => [v, [[0]]]),
+    ]), 1))
+    inspect?.(beeps)
     act(() => { hook.result.current.cancelCountIn() })
     return out
   }
-  // A pré-contagem da v1.4.16: oscilador -> envelope -> panner (-1 com o pan automático, 0 sem) -> destino.
-  function legacyBeep(pan: number): Sig {
-    const ctx = createFakeAudioContext()
-    const osc = ctx.createGain()
-    const env = ctx.createGain()
-    env.gain.value = 0.25
-    const panner = ctx.createStereoPanner()
-    panner.pan.value = pan
-    osc.connect(env); env.connect(panner); panner.connect(ctx.destination)
-    return measure(ctx, new Map([[osc, [[1]]]]), 1)
-  }
+  // A pré-contagem da v1.4.16 no mesmo lado: bipe mono num StereoPanner (-1 com o pan automático, 0 sem).
+  const legacySide = (pan: number): Sig => panSignal([[1]], pan)
 
   it('a pré-contagem nunca liga no destino direto', async () => {
     seed(song('s1'))
     const hook = await openApp()
     const bus = graphOf(ctxOf())
-    const beeps = await countIn(hook)
-    for (const osc of nodesOf(ctxOf(), 'OscillatorNode')) {
-      expect(reaches(osc, bus.click)).toBe(true)
-      expect(onlyThrough(ctxOf(), osc, bus.click)).toBe(true)
-    }
-    // Separados: igual à v1.4.16 com o pan automático (pico 0,25 no ouvido) e nada na VS.
-    for (const sig of beeps) close(sig, legacyBeep(-1))
+    const beeps = await countIn(hook, (nodes) => {
+      for (const beep of nodes) {
+        // Pela entrada do canal de click: passa pelo fader dele e só sai pelo barramento do Click.
+        expect(reaches(beep, chan(hook, 's1-click').gainNode)).toBe(true)
+        expect(reaches(beep, bus.click)).toBe(true)
+        expect(onlyThrough(ctxOf(), beep, bus.click)).toBe(true)
+      }
+    })
+    // Separados: no lado do ouvido como a v1.4.16 com o pan automático, e nada na VS.
+    for (const sig of beeps) close(sig, legacySide(-1))
     expect(Math.abs(beeps[0][1][0])).toBeLessThan(1e-12)
   })
 
@@ -671,7 +671,7 @@ describe('pré-contagem antiga', () => {
     mem.settings = { ...mem.settings, outputs: STEREO }
     seed(song('s1'))
     const hook = await openApp()
-    for (const sig of await countIn(hook)) close(sig, legacyBeep(0))
+    for (const sig of await countIn(hook)) close(sig, legacySide(0))
   })
 
   it('em tudo junto com o pan automático vai pro ouvido (-1) como na v1.4.16, nada no lado da VS', async () => {
@@ -679,11 +679,16 @@ describe('pré-contagem antiga', () => {
     seed(song('s1'))
     const hook = await openApp()
     const bus = graphOf(ctxOf())
-    for (const sig of await countIn(hook)) {
-      close(sig, legacyBeep(-1))
+    const sigs = await countIn(hook, (nodes) => {
+      for (const beep of nodes) {
+        expect(reaches(beep, bus.click)).toBe(true)
+        expect(onlyThrough(ctxOf(), beep, bus.click)).toBe(true)
+      }
+    })
+    for (const sig of sigs) {
+      close(sig, legacySide(-1))
       expect(sig[1][0]).toBe(0)
     }
-    for (const osc of nodesOf(ctxOf(), 'OscillatorNode')) expect(onlyThrough(ctxOf(), osc, bus.click)).toBe(true)
   })
 
   it('em 4 ou mais sai só na saída do Click, no nível do ouvido', async () => {
@@ -692,11 +697,16 @@ describe('pré-contagem antiga', () => {
     seed(song('s1'))
     const hook = await openApp()
     const bus = graphOf(ctxOf())
-    for (const sig of await countIn(hook)) {
+    const sigs = await countIn(hook, (nodes) => {
+      for (const beep of nodes) {
+        expect(reaches(beep, bus.click)).toBe(true)
+        expect(onlyThrough(ctxOf(), beep, bus.click)).toBe(true)
+      }
+    })
+    for (const sig of sigs) {
       expect(sig).toHaveLength(8)
-      sig.forEach((c, o) => (o === 2 ? expect(c[0]).toBeCloseTo(0.25, 12) : expect(c[0]).toBe(0)))
+      sig.forEach((c, o) => (o === 2 ? expect(c[0]).toBeCloseTo(1, 12) : expect(c[0]).toBe(0)))
     }
-    for (const osc of nodesOf(ctxOf(), 'OscillatorNode')) expect(onlyThrough(ctxOf(), osc, bus.click)).toBe(true)
   })
 
   it('depois de um fade-out a contagem sai no volume do principal', async () => {
@@ -705,7 +715,7 @@ describe('pré-contagem antiga', () => {
     const { master } = graphOf(ctxOf())
     // O FADE do fim da música deixou o principal quase em 0.
     master.gain.setValueAtTime(0.001, ctxOf().currentTime)
-    for (const sig of await countIn(hook)) close(sig, legacyBeep(-1))
+    for (const sig of await countIn(hook)) close(sig, legacySide(-1))
   })
 })
 
@@ -911,8 +921,12 @@ describe('corte curto nas trocas de rota (Ruling T25-corte e T25-sincrono)', () 
     const hook = await openApp()
     const bus = graphOf(ctxOf())
     await act(async () => { await hook.result.current.playWithPrecount() })
-    const panners = nodesOf(ctxOf(), 'StereoPannerNode').filter((p) => p.connections.some((c) => c.to === bus.cut.click))
-    expect(panners.length).toBeGreaterThanOrEqual(4)
+    const beeps = nodesOf(ctxOf(), 'BiquadFilterNode')
+    expect(beeps.length).toBeGreaterThanOrEqual(4)
+    for (const beep of beeps) {
+      expect(reaches(beep, bus.cut.click)).toBe(true)
+      expect(onlyThrough(ctxOf(), beep, bus.cut.click)).toBe(true)
+    }
     act(() => { hook.result.current.cancelCountIn() })
   })
 })
