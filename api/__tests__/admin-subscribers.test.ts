@@ -29,7 +29,13 @@ const MSG = {
   notFound: 'Conta não encontrada.',
   asaasSilent: 'O Asaas não respondeu agora.',
   asaasNoKey: 'Não deu pra consultar o Asaas: configuração do servidor incompleta. Avise o suporte.',
+  notChecked: 'Não conferida agora: a ficha consulta no máximo 3 assinaturas.',
 }
+
+// Cada frase de diferença começa dizendo de qual assinatura é: o plano e o mês
+// de começo em Brasília, sem id técnico. A linha padrão do teste é Pro Mensal
+// começada em outubro de 2026.
+const ofSub = (text: string, label = 'Assinatura Pro Mensal de 10/2026'): string => `${label}: ${text}`
 
 let db: FakeDb
 let asaas: FakeAsaas | null
@@ -400,7 +406,7 @@ describe('ficha do assinante', () => {
     expect(vi.mocked(console.error)).not.toHaveBeenCalled()
   })
 
-  it('no máximo 3 consultas ao Asaas', async () => {
+  it('no máximo 3 consultas ao Asaas, as ativas primeiro, e as que sobram aparecem como não conferidas', async () => {
     const ids = ['sub_a', 'sub_b', 'sub_c', 'sub_d', 'sub_e']
     const fake = setAsaas({
       subs: Object.fromEntries(ids.map((id) => [id, liveSub({ id })])),
@@ -419,9 +425,63 @@ describe('ficha do assinante', () => {
     })
     const res = await detail()
     expect(res.statusCode).toBe(200)
-    expect(subCalls(fake)).toEqual(['/subscriptions/sub_a', '/subscriptions/sub_b', '/subscriptions/sub_c'])
-    expect(paymentCalls(fake)).toEqual(['sub_a', 'sub_b', 'sub_c'])
-    expect((body(res).asaasLive as Row[]).map((l) => l.subscriptionRef)).toEqual(['r-a', 'r-b', 'r-c'])
+    // elegíveis na ordem da ficha: r-a, r-b, r-c, r-d, r-e; as ativas (r-a, r-c, r-d) vão primeiro
+    expect(subCalls(fake)).toEqual(['/subscriptions/sub_a', '/subscriptions/sub_c', '/subscriptions/sub_d'])
+    expect(paymentCalls(fake)).toEqual(['sub_a', 'sub_c', 'sub_d'])
+    const lives = body(res).asaasLive as Row[]
+    expect(lives.map((l) => l.subscriptionRef)).toEqual(['r-a', 'r-c', 'r-d', 'r-b', 'r-e'])
+    expect(lives.slice(0, 3).map((l) => l.ok)).toEqual([true, true, true])
+    // as que passaram de 3 têm a sua linha, sem consulta ao Asaas
+    expect(lives.slice(3)).toEqual([
+      { subscriptionRef: 'r-b', ok: false, error: MSG.notChecked },
+      { subscriptionRef: 'r-e', ok: false, error: MSG.notChecked },
+    ])
+  })
+
+  it('com 5 assinaturas e a ativa por último, a ativa é conferida e as 2 que sobram aparecem como não conferidas', async () => {
+    const ids = ['sub_1', 'sub_2', 'sub_3', 'sub_4', 'sub_5']
+    const fake = setAsaas({
+      subs: Object.fromEntries(ids.map((id) => [id, liveSub({ id, status: 'INACTIVE' })])),
+      payments: Object.fromEntries(ids.map((id) => [id, []])),
+    })
+    // A ficha vem com as mais novas primeiro: 4 encerradas sem a parada
+    // confirmada e, por último, a ativa mais antiga (a que dá o acesso).
+    detailAnswer = () => detailRow({
+      subscriptions: [
+        subscription({ id: 'r-1', status: 'canceled', asaasSubscriptionId: 'sub_1', startedAt: '2026-11-10T12:00:00+00:00' }),
+        subscription({ id: 'r-2', status: 'canceled', asaasSubscriptionId: 'sub_2', startedAt: '2026-11-05T12:00:00+00:00' }),
+        subscription({ id: 'r-3', status: 'canceled', asaasSubscriptionId: 'sub_3', startedAt: '2026-11-01T12:00:00+00:00' }),
+        subscription({ id: 'r-4', status: 'canceled', asaasSubscriptionId: 'sub_4', startedAt: '2026-10-20T12:00:00+00:00' }),
+        subscription({ id: 'r-5', asaasSubscriptionId: 'sub_5', startedAt: '2026-03-17T12:00:00+00:00' }),
+      ],
+    })
+    const res = await detail()
+    expect(res.statusCode).toBe(200)
+    expect(subCalls(fake)).toEqual(['/subscriptions/sub_5', '/subscriptions/sub_1', '/subscriptions/sub_2'])
+    expect(paymentCalls(fake)).toEqual(['sub_5', 'sub_1', 'sub_2'])
+    expect(body(res).asaasLive).toEqual([
+      { subscriptionRef: 'r-5', ok: true, status: 'INACTIVE', value: 49.9, cycle: 'MONTHLY', openDueDate: null, deleted: false },
+      { subscriptionRef: 'r-1', ok: true, status: 'INACTIVE', value: 49.9, cycle: 'MONTHLY', openDueDate: null, deleted: false },
+      { subscriptionRef: 'r-2', ok: true, status: 'INACTIVE', value: 49.9, cycle: 'MONTHLY', openDueDate: null, deleted: false },
+      { subscriptionRef: 'r-3', ok: false, error: MSG.notChecked },
+      { subscriptionRef: 'r-4', ok: false, error: MSG.notChecked },
+    ])
+    // a ativa parada no Asaas é a diferença, e a frase diz de qual assinatura é
+    expect(body(res).mismatches).toEqual([ofSub('no Asaas ela está inativa, mas no app ela está ativa.', 'Assinatura Pro Mensal de 03/2026')])
+  })
+
+  it('sem a chave do Asaas, as que passam de 3 também aparecem como não conferidas', async () => {
+    asaas = null
+    detailAnswer = () => detailRow({
+      subscriptions: ['a', 'b', 'c', 'd'].map((x) => subscription({ id: `r-${x}`, asaasSubscriptionId: `sub_${x}` })),
+    })
+    const res = await detail()
+    expect(body(res).asaasLive).toEqual([
+      { subscriptionRef: 'r-a', ok: false, error: MSG.asaasNoKey },
+      { subscriptionRef: 'r-b', ok: false, error: MSG.asaasNoKey },
+      { subscriptionRef: 'r-c', ok: false, error: MSG.asaasNoKey },
+      { subscriptionRef: 'r-d', ok: false, error: MSG.notChecked },
+    ])
   })
 
   it('a data compara a cobrança em aberto, não o nextDueDate da assinatura', async () => {
@@ -441,7 +501,7 @@ describe('ficha do assinante', () => {
     setAsaas({ payments: { sub_1: [jan, gone, paidNov, moved] } })
     res = await detail()
     expect((body(res).asaasLive as Row[])[0].openDueDate).toBe('2026-12-16')
-    expect(body(res).mismatches).toEqual(['No Asaas a cobrança em aberto vence em 16/12/2026, mas no app a próxima cobrança é 17/12/2026.'])
+    expect(body(res).mismatches).toEqual([ofSub('no Asaas a cobrança em aberto vence em 16/12/2026, mas no app a próxima cobrança é 17/12/2026.')])
   })
 
   it('cobrança em análise de risco também é a cobrança em aberto do ciclo', async () => {
@@ -449,7 +509,7 @@ describe('ficha do assinante', () => {
     setAsaas({ payments: { sub_1: [paidNov, risk] } })
     const res = await detail()
     expect((body(res).asaasLive as Row[])[0].openDueDate).toBe('2026-12-18')
-    expect(body(res).mismatches).toEqual(['No Asaas a cobrança em aberto vence em 18/12/2026, mas no app a próxima cobrança é 17/12/2026.'])
+    expect(body(res).mismatches).toEqual([ofSub('no Asaas a cobrança em aberto vence em 18/12/2026, mas no app a próxima cobrança é 17/12/2026.')])
   })
 
   it('com pagamento ainda não contado a data não é comparada', async () => {
@@ -476,7 +536,7 @@ describe('ficha do assinante', () => {
     const res = await detail()
     expect(res.statusCode).toBe(200)
     expect(body(res).asaasLive).toEqual([{ subscriptionRef: 'sref-1', ok: true, status: '', value: null, cycle: '', openDueDate: '2026-12-17', deleted: true }])
-    expect(body(res).mismatches).toEqual(['No Asaas a assinatura está removida, mas no app ela está ativa.'])
+    expect(body(res).mismatches).toEqual([ofSub('no Asaas ela está removida, mas no app ela está ativa.')])
   })
 
   it('assinatura com deleted true no Asaas também é removida', async () => {
@@ -484,13 +544,13 @@ describe('ficha do assinante', () => {
     const res = await detail()
     expect((body(res).asaasLive as Row[])[0]).toMatchObject({ ok: true, deleted: true })
     // removida: o valor de uma assinatura que não cobra mais não vira diferença
-    expect(body(res).mismatches).toEqual(['No Asaas a assinatura está removida, mas no app ela está ativa.'])
+    expect(body(res).mismatches).toEqual([ofSub('no Asaas ela está removida, mas no app ela está ativa.')])
   })
 
   it('valor diferente sai com o valor em reais, sem espaço inquebrável', async () => {
     setAsaas({ subs: { sub_1: liveSub({ value: 119.9 }) } })
     const res = await detail()
-    expect(body(res).mismatches).toEqual(['No Asaas o valor é R$ 119,90, mas o plano no app é Pro Mensal (R$ 49,90).'])
+    expect(body(res).mismatches).toEqual([ofSub('no Asaas o valor é R$ 119,90, mas o plano no app é Pro Mensal (R$ 49,90).')])
   })
 
   it('texto do Asaas que não é código não passa pra resposta', async () => {
@@ -500,7 +560,7 @@ describe('ficha do assinante', () => {
       subscriptionRef: 'sref-1', ok: true, status: '', value: null, cycle: '', openDueDate: '2026-12-17', deleted: false,
     })
     // sem status que se reconheça, a ficha não diz que está tudo certo
-    expect(body(res).mismatches).toEqual(['No Asaas a assinatura está num estado que o app não reconhece, mas no app ela está ativa.'])
+    expect(body(res).mismatches).toEqual([ofSub('no Asaas ela está num estado que o app não reconhece, mas no app ela está ativa.')])
     expect(JSON.stringify(res.body)).not.toMatch(/<b>|texto interno/)
   })
 
@@ -536,7 +596,7 @@ describe('ficha do assinante', () => {
       { subscriptionRef: 'sref-1', ok: false, error: MSG.asaasSilent },
       { subscriptionRef: 'sref-2', ok: true, status: 'ACTIVE', value: 49.9, cycle: 'MONTHLY', openDueDate: null, deleted: false },
     ])
-    expect(body(res).mismatches).toEqual(['O Asaas ainda cobra esta assinatura, mas no app ela está encerrada.'])
+    expect(body(res).mismatches).toEqual([ofSub('o Asaas ainda cobra, mas no app ela está encerrada.')])
   })
 
   it('Asaas lento: passa de 5 s e vira aviso', async () => {
@@ -599,6 +659,7 @@ describe('a resposta passa pela guarda da tela', () => {
       const res = await detail()
       expect(res.statusCode, JSON.stringify(world)).toBe(200)
       expect(isSubscriberDetailData(res.body), JSON.stringify(world)).toBe(true)
+      for (const line of body(res).mismatches as string[]) expect(line).toMatch(/^Assinatura Pro Mensal de 10\/2026: /)
       // cada assinatura consultada tem a sua linha: a que não deu pra conferir vem com ok false
       expect((body(res).asaasLive as Row[]).length).toBe(1)
     }
@@ -625,17 +686,17 @@ describe('compareWithAsaas', () => {
   })
 
   it('app ativa e Asaas parado ou removido, em português', () => {
-    expect(compareWithAsaas(subscription(), live({ status: 'INACTIVE' }))).toEqual(['No Asaas a assinatura está inativa, mas no app ela está ativa.'])
-    expect(compareWithAsaas(subscription(), live({ status: 'EXPIRED' }))).toEqual(['No Asaas a assinatura está expirada, mas no app ela está ativa.'])
+    expect(compareWithAsaas(subscription(), live({ status: 'INACTIVE' }))).toEqual([ofSub('no Asaas ela está inativa, mas no app ela está ativa.')])
+    expect(compareWithAsaas(subscription(), live({ status: 'EXPIRED' }))).toEqual([ofSub('no Asaas ela está expirada, mas no app ela está ativa.')])
     expect(compareWithAsaas(subscription(), live({ status: '', value: null, cycle: '', openDueDate: null, deleted: true }))).toEqual([
-      'No Asaas a assinatura está removida, mas no app ela está ativa.',
+      ofSub('no Asaas ela está removida, mas no app ela está ativa.'),
     ])
     // removida vale mais que o status que vier junto
     expect(compareWithAsaas(subscription(), live({ status: 'ACTIVE', deleted: true }))).toEqual([
-      'No Asaas a assinatura está removida, mas no app ela está ativa.',
+      ofSub('no Asaas ela está removida, mas no app ela está ativa.'),
     ])
     expect(compareWithAsaas(subscription(), live({ status: 'INACTIVE', deleted: true }))).toEqual([
-      'No Asaas a assinatura está removida, mas no app ela está ativa.',
+      ofSub('no Asaas ela está removida, mas no app ela está ativa.'),
     ])
   })
 
@@ -643,12 +704,34 @@ describe('compareWithAsaas', () => {
     // status novo do Asaas, ou resposta sem status (o servidor já tira o texto que não é código)
     for (const status of ['SUSPENDED', 'PAUSED', 'ACTIVE_X', '']) {
       const lines = compareWithAsaas(subscription(), live({ status }))
-      expect(lines, status).toEqual(['No Asaas a assinatura está num estado que o app não reconhece, mas no app ela está ativa.'])
+      expect(lines, status).toEqual([ofSub('no Asaas ela está num estado que o app não reconhece, mas no app ela está ativa.')])
       if (status) expect(lines.join(' '), status).not.toContain(status)
     }
     // encerrada no app: só ACTIVE no Asaas é diferença
     for (const status of ['SUSPENDED', '', 'INACTIVE', 'EXPIRED']) {
       expect(compareWithAsaas(subscription({ status: 'canceled' }), live({ status })), status).toEqual([])
+    }
+  })
+
+  it('cada frase diz de qual assinatura é, pelo plano e pelo mês de começo em Brasília', () => {
+    // 02:30 UTC do dia 1º de março ainda é 28 de fevereiro em Brasília
+    expect(compareWithAsaas(subscription({ startedAt: '2026-03-01T02:30:00+00:00' }), live({ status: 'INACTIVE' }))).toEqual([
+      ofSub('no Asaas ela está inativa, mas no app ela está ativa.', 'Assinatura Pro Mensal de 02/2026'),
+    ])
+    expect(compareWithAsaas(subscription({ planKey: 'pro_mensal', startedAt: '2026-03-01T03:00:00+00:00' }), live({ status: 'EXPIRED', value: 119.9 }))).toEqual([
+      ofSub('no Asaas ela está expirada, mas no app ela está ativa.', 'Assinatura Studio Mensal de 03/2026'),
+    ])
+    // sem data de começo que dê pra ler, fica só o plano; plano desconhecido, só o mês
+    expect(compareWithAsaas(subscription({ startedAt: '' }), live({ status: 'INACTIVE' }))).toEqual([
+      ofSub('no Asaas ela está inativa, mas no app ela está ativa.', 'Assinatura Pro Mensal'),
+    ])
+    expect(compareWithAsaas(subscription({ planKey: 'plano_x' as SubscriptionRow['planKey'] }), live({ status: 'INACTIVE' }))).toEqual([
+      ofSub('no Asaas ela está inativa, mas no app ela está ativa.', 'Assinatura de 10/2026'),
+    ])
+    // nenhum id técnico na frase
+    for (const line of compareWithAsaas(subscription(), live({ status: 'INACTIVE', value: 119.9, cycle: 'YEARLY', openDueDate: '2026-12-16' }))) {
+      expect(line).toMatch(/^Assinatura Pro Mensal de 10\/2026: /)
+      expect(line).not.toMatch(/sref|sub_|pay_/)
     }
   })
 
@@ -658,14 +741,14 @@ describe('compareWithAsaas', () => {
 
   it('app encerrada e o Asaas ainda cobra', () => {
     expect(compareWithAsaas(subscription({ status: 'canceled' }), live({ openDueDate: '2026-12-16' }))).toEqual([
-      'O Asaas ainda cobra esta assinatura, mas no app ela está encerrada.',
+      ofSub('o Asaas ainda cobra, mas no app ela está encerrada.'),
     ])
   })
 
   it('valor diferente do preço do plano no app', () => {
-    expect(compareWithAsaas(subscription(), live({ value: 119.9 }))).toEqual(['No Asaas o valor é R$ 119,90, mas o plano no app é Pro Mensal (R$ 49,90).'])
+    expect(compareWithAsaas(subscription(), live({ value: 119.9 }))).toEqual([ofSub('no Asaas o valor é R$ 119,90, mas o plano no app é Pro Mensal (R$ 49,90).')])
     expect(compareWithAsaas(subscription({ planKey: 'pro_anual', cycle: 'YEARLY' }), live({ value: 1000, cycle: 'YEARLY' }))).toEqual([
-      'No Asaas o valor é R$ 1.000,00, mas o plano no app é Studio Anual (R$ 1.078,80).',
+      ofSub('no Asaas o valor é R$ 1.000,00, mas o plano no app é Studio Anual (R$ 1.078,80).', 'Assinatura Studio Anual de 10/2026'),
     ])
     // centavo de arredondamento do ponto flutuante não é diferença
     expect(compareWithAsaas(subscription(), live({ value: 49.900000001 }))).toEqual([])
@@ -675,16 +758,16 @@ describe('compareWithAsaas', () => {
 
   it('ciclo diferente do plano no app', () => {
     expect(compareWithAsaas(subscription({ planKey: 'essencial_anual', cycle: 'YEARLY' }), live({ value: 454.8, cycle: 'MONTHLY' }))).toEqual([
-      'No Asaas o ciclo é mensal, mas o plano no app é anual.',
+      ofSub('no Asaas o ciclo é mensal, mas o plano no app é anual.', 'Assinatura Pro Anual de 10/2026'),
     ])
-    expect(compareWithAsaas(subscription(), live({ cycle: 'YEARLY' }))).toEqual(['No Asaas o ciclo é anual, mas o plano no app é mensal.'])
-    expect(compareWithAsaas(subscription(), live({ cycle: 'QUARTERLY' }))).toEqual(['No Asaas o ciclo é trimestral, mas o plano no app é mensal.'])
+    expect(compareWithAsaas(subscription(), live({ cycle: 'YEARLY' }))).toEqual([ofSub('no Asaas o ciclo é anual, mas o plano no app é mensal.')])
+    expect(compareWithAsaas(subscription(), live({ cycle: 'QUARTERLY' }))).toEqual([ofSub('no Asaas o ciclo é trimestral, mas o plano no app é mensal.')])
     expect(compareWithAsaas(subscription(), live({ cycle: '' }))).toEqual([])
   })
 
   it('vencimento da cobrança em aberto diferente da próxima cobrança do app', () => {
     expect(compareWithAsaas(subscription(), live({ openDueDate: '2026-12-16' }))).toEqual([
-      'No Asaas a cobrança em aberto vence em 16/12/2026, mas no app a próxima cobrança é 17/12/2026.',
+      ofSub('no Asaas a cobrança em aberto vence em 16/12/2026, mas no app a próxima cobrança é 17/12/2026.'),
     ])
     // só com a linha ativa e com cobrança em aberto conhecida
     expect(compareWithAsaas(subscription({ status: 'canceled' }), live({ status: 'INACTIVE', openDueDate: '2026-12-16' }))).toEqual([])
@@ -694,10 +777,10 @@ describe('compareWithAsaas', () => {
 
   it('várias diferenças juntas, na ordem: status, valor, ciclo, vencimento', () => {
     expect(compareWithAsaas(subscription(), live({ status: 'INACTIVE', value: 454.8, cycle: 'YEARLY', openDueDate: '2027-11-17' }))).toEqual([
-      'No Asaas a assinatura está inativa, mas no app ela está ativa.',
-      'No Asaas o valor é R$ 454,80, mas o plano no app é Pro Mensal (R$ 49,90).',
-      'No Asaas o ciclo é anual, mas o plano no app é mensal.',
-      'No Asaas a cobrança em aberto vence em 17/11/2027, mas no app a próxima cobrança é 17/12/2026.',
+      ofSub('no Asaas ela está inativa, mas no app ela está ativa.'),
+      ofSub('no Asaas o valor é R$ 454,80, mas o plano no app é Pro Mensal (R$ 49,90).'),
+      ofSub('no Asaas o ciclo é anual, mas o plano no app é mensal.'),
+      ofSub('no Asaas a cobrança em aberto vence em 17/11/2027, mas no app a próxima cobrança é 17/12/2026.'),
     ])
   })
 

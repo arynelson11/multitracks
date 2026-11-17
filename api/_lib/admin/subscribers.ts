@@ -13,9 +13,10 @@ import { lastErrorLabel } from './review.js'
 //   existe (404). O servidor acrescenta quota.limit (null pra admin), plans
 //   (a tabela única de preços) e a consulta ao Asaas na hora (D14, só GET):
 //   asaasLive e as diferenças entre o app e o Asaas em frase pronta
-//   (mismatches). Cada assinatura que não deu pra consultar volta com
-//   ok: false e a frase do porquê, sem diferença nenhuma: a ficha nunca diz
-//   que está tudo certo sem ter conferido.
+//   (mismatches, cada frase começando pela assinatura de que fala). Cada
+//   assinatura que não deu pra consultar volta com ok: false e a frase do
+//   porquê, sem diferença nenhuma, inclusive as que passam do teto de 3
+//   consultas: a ficha nunca diz que está tudo certo sem ter conferido.
 // Nenhum texto do Asaas sai daqui: só os códigos de status e ciclo (letras
 // maiúsculas), o valor e as datas; o último erro das pendências da conta passa
 // por lastErrorLabel (Ruling ADM-T6-lastError). O detalhe vai pro log.
@@ -24,7 +25,8 @@ const PAGE_SIZE = 50
 const MAX_PAGE = 1000
 const MAX_SEARCH = 120
 // No máximo 3 assinaturas consultadas, cada chamada com teto de 5 s, todas em
-// paralelo: a ficha abre em até uns 5 s mesmo com o Asaas lento.
+// paralelo: a ficha abre em até uns 5 s mesmo com o Asaas lento. As que
+// passam de 3 aparecem como não conferidas, sem chamar o Asaas.
 const MAX_ASAAS_LOOKUPS = 3
 const ASAAS_TIMEOUT_MS = 5000
 
@@ -36,6 +38,7 @@ const SORTS = ['created', 'separations', 'last_seen'] as const
 const MSG_NOT_FOUND = 'Conta não encontrada.'
 const MSG_ASAAS_SILENT = 'O Asaas não respondeu agora.'
 const MSG_ASAAS_NO_KEY = 'Não deu pra consultar o Asaas: configuração do servidor incompleta. Avise o suporte.'
+const MSG_NOT_CHECKED = `Não conferida agora: a ficha consulta no máximo ${MAX_ASAAS_LOOKUPS} assinaturas.`
 
 // Status da cobrança em aberto (a mesma lista de api/_lib/reconcile.ts).
 const OPEN_STATUSES = new Set(['PENDING', 'OVERDUE', 'AWAITING_RISK_ANALYSIS'])
@@ -109,8 +112,19 @@ function brDay(v: string): string {
 
 const cents = (v: number): number => Math.round(v * 100)
 
+// De qual assinatura a frase fala, sem id técnico: o plano e o mês de começo
+// em Brasília ("Assinatura Pro Mensal de 03/2026"). O que não dá pra ler fica
+// de fora da frase.
+function subscriptionLabel(row: SubscriptionRow): string {
+  const plan = isPlanKey(row.planKey) ? ` ${PLAN_PRICING[row.planKey].label}` : ''
+  const start = toBrtDate(row.startedAt)
+  return `Assinatura${plan}${start ? ` de ${start.slice(5, 7)}/${start.slice(0, 4)}` : ''}`
+}
+
 // Diferenças entre a linha do app e a assinatura no Asaas agora, nesta ordem:
-// status, valor, ciclo e vencimento. Com a linha ativa no app, qualquer status
+// status, valor, ciclo e vencimento, cada frase começando pela assinatura
+// ("Assinatura Pro Mensal de 03/2026: no Asaas ela está inativa, mas no app ela
+// está ativa."). Com a linha ativa no app, qualquer status
 // do Asaas que não seja ACTIVE é diferença: inativa, expirada, removida, ou um
 // estado que o app não reconhece (sem dizer o código). Removida no Asaas só
 // fala do status: o valor e as cobranças de uma assinatura que não cobra mais
@@ -118,28 +132,32 @@ const cents = (v: number): number => Math.round(v * 100)
 // O vencimento compara a cobrança em aberto do ciclo (openDueDate), nunca o
 // nextDueDate da assinatura, que aponta pra próxima cobrança a ser gerada.
 export function compareWithAsaas(row: SubscriptionRow, live: AsaasLiveData): string[] {
+  const label = subscriptionLabel(row)
   const out: string[] = []
+  const say = (text: string): void => {
+    out.push(`${label}: ${text}`)
+  }
   const active = row.status === 'active'
   if (active && (live.deleted || live.status !== 'ACTIVE')) {
     const state = live.deleted ? 'removida' : Object.hasOwn(STATUS_NAMES, live.status) ? STATUS_NAMES[live.status] : UNKNOWN_STATE
-    out.push(`No Asaas a assinatura está ${state}, mas no app ela está ativa.`)
+    say(`no Asaas ela está ${state}, mas no app ela está ativa.`)
   }
   if (row.status === 'canceled' && !live.deleted && live.status === 'ACTIVE') {
-    out.push('O Asaas ainda cobra esta assinatura, mas no app ela está encerrada.')
+    say('o Asaas ainda cobra, mas no app ela está encerrada.')
   }
   if (live.deleted) return out
 
   const plan = isPlanKey(row.planKey) ? PLAN_PRICING[row.planKey] : null
   if (plan && typeof live.value === 'number' && Number.isFinite(live.value) && cents(live.value) !== cents(plan.value)) {
-    out.push(`No Asaas o valor é ${brl(live.value)}, mas o plano no app é ${plan.label} (${brl(plan.value)}).`)
+    say(`no Asaas o valor é ${brl(live.value)}, mas o plano no app é ${plan.label} (${brl(plan.value)}).`)
   }
   const appCycle = plan?.cycle ?? row.cycle
   if (appCycle && live.cycle && live.cycle !== appCycle) {
-    out.push(`No Asaas o ciclo é ${cycleName(live.cycle)}, mas o plano no app é ${cycleName(appCycle)}.`)
+    say(`no Asaas o ciclo é ${cycleName(live.cycle)}, mas o plano no app é ${cycleName(appCycle)}.`)
   }
   const appDue = row.nextDueDate ? toBrtDate(row.nextDueDate) : null
   if (active && live.openDueDate && appDue && live.openDueDate !== appDue) {
-    out.push(`No Asaas a cobrança em aberto vence em ${brDay(live.openDueDate)}, mas no app a próxima cobrança é ${brDay(appDue)}.`)
+    say(`no Asaas a cobrança em aberto vence em ${brDay(live.openDueDate)}, mas no app a próxima cobrança é ${brDay(appDue)}.`)
   }
   return out
 }
@@ -191,13 +209,15 @@ function withTimeout<T>(p: Promise<T>): Promise<T> {
 }
 
 // Linhas pagas com assinatura no Asaas que ainda podem cobrar: ativas, ou
-// encerradas sem a parada confirmada pelo Asaas. As mais novas primeiro (a
-// ordem da ficha), no máximo 3.
-function rowsToCheck(rows: SubscriptionRow[]): SubscriptionRow[] {
-  return rows
-    .filter((s) => s.kind === 'asaas' && typeof s.asaasSubscriptionId === 'string' && s.asaasSubscriptionId !== ''
-      && (s.status === 'active' || (s.status === 'canceled' && !s.asaasStoppedAt)))
-    .slice(0, MAX_ASAAS_LOOKUPS)
+// encerradas sem a parada confirmada pelo Asaas. As ativas primeiro (a que dá
+// o acesso pode ser a mais antiga, a última da ficha) e, dentro de cada grupo,
+// as mais novas primeiro (a ordem da ficha). As 3 primeiras são consultadas; as
+// outras voltam como não conferidas.
+function rowsToCheck(rows: SubscriptionRow[]): { check: SubscriptionRow[]; skipped: SubscriptionRow[] } {
+  const eligible = rows.filter((s) => s.kind === 'asaas' && typeof s.asaasSubscriptionId === 'string' && s.asaasSubscriptionId !== ''
+    && (s.status === 'active' || (s.status === 'canceled' && !s.asaasStoppedAt)))
+  const ordered = [...eligible.filter((s) => s.status === 'active'), ...eligible.filter((s) => s.status !== 'active')]
+  return { check: ordered.slice(0, MAX_ASAAS_LOOKUPS), skipped: ordered.slice(MAX_ASAAS_LOOKUPS) }
 }
 
 async function readLive(asaas: AsaasApi, row: SubscriptionRow): Promise<AsaasLive> {
@@ -213,14 +233,15 @@ async function readLive(asaas: AsaasApi, row: SubscriptionRow): Promise<AsaasLiv
 }
 
 async function asaasLiveFor(ctx: AdminCtx, rows: SubscriptionRow[]): Promise<AsaasLive[]> {
-  const toCheck = rowsToCheck(rows)
-  if (toCheck.length === 0) return []
+  const { check, skipped } = rowsToCheck(rows)
+  if (check.length === 0) return []
+  const notChecked: AsaasLive[] = skipped.map((row) => ({ subscriptionRef: row.id, ok: false, error: MSG_NOT_CHECKED }))
   const asaas = ctx.asaas
   if (!asaas) {
     console.error('[admin] subscriber: servidor sem ASAAS_API_KEY, ficha sem a consulta ao Asaas')
-    return toCheck.map((row) => ({ subscriptionRef: row.id, ok: false, error: MSG_ASAAS_NO_KEY }))
+    return [...check.map((row): AsaasLive => ({ subscriptionRef: row.id, ok: false, error: MSG_ASAAS_NO_KEY })), ...notChecked]
   }
-  return Promise.all(toCheck.map((row) => readLive(asaas, row)))
+  return [...(await Promise.all(check.map((row) => readLive(asaas, row)))), ...notChecked]
 }
 
 // ── Lista
