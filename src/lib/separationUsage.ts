@@ -67,10 +67,25 @@ function bonusFor(row: QuotaBonusRow, now: Date): number {
   return brtMonth(period) === brtMonth(now) ? Math.trunc(bonus) : 0
 }
 
+// Teto da leitura da cota extra (Ruling ADM-T27-bonus): a separação nunca espera por ela.
+export const QUOTA_BONUS_TIMEOUT_MS = 4000
+
 // Separações extras do mês dadas pelo admin, lidas da própria linha do perfil (a RLS só
-// deixa ler a própria). Sem sessão, erro, coluna ausente (SQL do admin ainda não rodou)
-// ou extra de outro mês: 0, e vale o limite do plano, como antes do admin.
-export async function fetchQuotaBonus(now: Date = new Date()): Promise<number> {
+// deixa ler a própria). Sem sessão, erro, coluna ausente (SQL do admin ainda não rodou),
+// extra de outro mês ou leitura que passou de 4 s: 0, e vale o limite do plano, como antes
+// do admin. A resposta que chega depois do teto é descartada.
+export function fetchQuotaBonus(now: Date = new Date()): Promise<number> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(0), QUOTA_BONUS_TIMEOUT_MS)
+    const done = (bonus: number) => {
+      clearTimeout(timer)
+      resolve(bonus)
+    }
+    readQuotaBonus(now).then(done, () => done(0))
+  })
+}
+
+async function readQuotaBonus(now: Date): Promise<number> {
   if (!supabase) return 0
   try {
     const { data } = await supabase.auth.getSession()
@@ -92,4 +107,11 @@ export async function fetchQuotaBonus(now: Date = new Date()): Promise<number> {
 // então o limite nunca fica menor que o do plano.
 export function monthlyLimit(plan: string, bonus: number): number {
   return maxSeparationsPerMonth(plan) + (bonus > 0 ? Math.trunc(bonus) : 0)
+}
+
+// O que o Separador confere antes de subir o arquivo: o contador do mês e o limite com o
+// extra, lidos juntos. O extra tem teto de 4 s; sem ele, o limite é o do plano.
+export async function fetchMonthlyQuota(plan: string): Promise<{ usage: SeparationUsage | null; limit: number }> {
+  const [usage, bonus] = await Promise.all([fetchSeparationUsage(), fetchQuotaBonus()])
+  return { usage, limit: monthlyLimit(plan, bonus) }
 }

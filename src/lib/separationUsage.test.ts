@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const rpc = vi.fn()
 const getSession = vi.fn()
@@ -23,7 +23,7 @@ vi.mock('./supabase', () => ({
   },
 }))
 
-import { brtMonth, fetchQuotaBonus, fetchSeparationUsage, formatDateBR, monthlyLimit } from './separationUsage'
+import { brtMonth, fetchMonthlyQuota, fetchQuotaBonus, fetchSeparationUsage, formatDateBR, monthlyLimit, QUOTA_BONUS_TIMEOUT_MS } from './separationUsage'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
 
@@ -96,11 +96,10 @@ describe('monthlyLimit', () => {
   })
 
   it('o Separador barra pelo limite com o bônus', () => {
-    // Complemento do teste da função: a checagem antes de subir o arquivo usa o total com o
-    // extra do mês, lido junto com o contador (sem esperar uma leitura depois da outra).
+    // Complemento do teste de fetchMonthlyQuota (abaixo): a checagem antes de subir o arquivo
+    // usa o total com o extra do mês, pela mesma função.
     const studio = readFileSync(join(process.cwd(), 'src/components/SeparatorStudio.tsx'), 'utf8')
-    expect(studio).toMatch(/const \[usage, bonus\] = await Promise\.all\(\[fetchSeparationUsage\(\), fetchQuotaBonus\(\)\]\)/)
-    expect(studio).toMatch(/const maxLimit = monthlyLimit\(userPlan, bonus\)/)
+    expect(studio).toMatch(/const \{ usage, limit: maxLimit \} = await fetchMonthlyQuota\(userPlan\)/)
     expect(studio).toMatch(/if \(usage && usage\.used >= maxLimit\)/)
     expect(studio).toContain('Você já usou as ${maxLimit} separações deste mês.')
     expect(studio).not.toMatch(/maxSeparationsPerMonth\(userPlan\)/)
@@ -164,5 +163,73 @@ describe('fetchQuotaBonus', () => {
   it('o texto deste módulo não tem travessão', () => {
     const src = readFileSync(join(process.cwd(), 'src/lib/separationUsage.ts'), 'utf8')
     expect(src).not.toContain(TRAVESSAO)
+  })
+})
+
+describe('teto da cota extra (Ruling ADM-T27-bonus)', () => {
+  const NOV = '2026-11-01T03:00:00+00:00'
+  const USAGE_ROW = { used: 5, period_start: NOV, resets_at: '2026-12-01T03:00:00+00:00' }
+  // Leitura da cota extra pendurada até o teste soltar.
+  const hangBonus = (row: unknown) => {
+    let release = () => {}
+    const held = new Promise<void>((r) => { release = r })
+    profileRead.mockImplementation(async () => { await held; return { data: row, error: null } })
+    return () => release()
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-17T15:00:00Z'))
+    rpc.mockResolvedValue({ data: [USAGE_ROW], error: null })
+  })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('o teto é de 4 s', () => {
+    expect(QUOTA_BONUS_TIMEOUT_MS).toBe(4000)
+  })
+
+  it('leitura pendurada: 0 aos 4 s, e a resposta atrasada não muda o resultado', async () => {
+    const release = hangBonus({ quota_bonus: 10, quota_bonus_period: NOV })
+    let result: unknown = 'pendente'
+    void fetchQuotaBonus().then((r) => { result = r })
+    await vi.advanceTimersByTimeAsync(QUOTA_BONUS_TIMEOUT_MS - 1)
+    expect(result).toBe('pendente')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(result).toBe(0)
+    release()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(result).toBe(0)
+  })
+
+  it('leitura rápida devolve o extra e não deixa relógio ligado', async () => {
+    profileRead.mockResolvedValue({ data: { quota_bonus: 10, quota_bonus_period: NOV }, error: null })
+    await expect(fetchQuotaBonus()).resolves.toBe(10)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('com a cota extra pendurada, o Separador fica pronto aos 4 s com o limite do plano', async () => {
+    hangBonus({ quota_bonus: 10, quota_bonus_period: NOV })
+    let ready: unknown = 'pendente'
+    void fetchMonthlyQuota('free').then((r) => { ready = r })
+    await vi.advanceTimersByTimeAsync(QUOTA_BONUS_TIMEOUT_MS - 1)
+    expect(ready).toBe('pendente')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(ready).toEqual({
+      usage: { used: 5, periodStart: NOV, resetsAt: '2026-12-01T03:00:00+00:00' },
+      limit: 5,
+    })
+  })
+
+  it('com a cota extra lida a tempo, o limite do Separador soma o extra', async () => {
+    profileRead.mockResolvedValue({ data: { quota_bonus: 10, quota_bonus_period: NOV }, error: null })
+    await expect(fetchMonthlyQuota('free')).resolves.toEqual({
+      usage: { used: 5, periodStart: NOV, resetsAt: '2026-12-01T03:00:00+00:00' },
+      limit: 15,
+    })
+  })
+
+  it('leitura da cota extra que falha: o Separador segue com o limite do plano', async () => {
+    profileRead.mockRejectedValue(new Error('rede caiu'))
+    await expect(fetchMonthlyQuota('pro_mensal')).resolves.toMatchObject({ limit: 150 })
   })
 })
