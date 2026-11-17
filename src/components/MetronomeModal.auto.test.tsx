@@ -2,6 +2,8 @@
 // "Gerar click IA" do Metrônomo (M7): mostra o resultado antes de inserir, metade e dobro
 // trocam o BPM, confiança baixa avisa e não insere, compasso lembrado por música e o BPM da
 // música vai pro detector. O detector e o gerador de click são mockados.
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { MetronomeModal } from './MetronomeModal'
@@ -161,10 +163,23 @@ describe('Metrônomo: Gerar click IA', () => {
     expect(texto()).not.toContain('Confira o 1')
   })
 
-  it('com a música tocando não analisa (a conta trava a tela) e diz por quê', () => {
+  it('com a música tocando não analisa (a conta trava a tela) e diz por quê', async () => {
     abrir({ isPlaying: true })
     expect((botao('Gerar click IA') as HTMLButtonElement).disabled).toBe(true)
     expect(texto()).toContain('Pare a música pra analisar o tempo.')
+    await act(async () => { fireEvent.click(botao('Gerar click IA')) })
+    await new Promise(r => setTimeout(r, 60))
+    expect(detect).not.toHaveBeenCalled()
+  })
+
+  // Guarda de forma: o App não tem teste de comportamento barato. Sem esta ligação o modal
+  // nunca sabe que a música está tocando e a análise roda no meio do culto (Ruling M7-arquivos).
+  it('o App passa ao Metrônomo que a música está tocando (inclusive na contagem)', () => {
+    const app = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+    const start = app.indexOf('<MetronomeModal')
+    expect(start).toBeGreaterThan(-1)
+    const tag = app.slice(start, app.indexOf('/>', start))
+    expect(tag).toMatch(/\bisPlaying=\{isPlaying \|\| isCountingIn\}/)
   })
 })
 
