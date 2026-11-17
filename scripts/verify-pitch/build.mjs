@@ -57,6 +57,30 @@ function entryFor(rev) {
   return path.join(www, 'harness.jsx');
 }
 
+// `?worker&inline` do Vite (o Worker da grade da T27): o arquivo vira um pacote próprio e o import
+// devolve uma classe que cria o Worker por Blob URL, como no app. Sem isto o esbuild entrega
+// `null` no lugar da classe e o motor nunca lê a grade do click.
+const DEFINE = { 'import.meta.env': '{"DEV":false,"PROD":true,"MODE":"verify"}' };
+const inlineWorkers = {
+  name: 'vite-worker-inline',
+  setup(b) {
+    b.onResolve({ filter: /\?worker&inline$/ }, (args) => ({ path: path.resolve(args.resolveDir, args.path.replace(/\?worker&inline$/, '')), namespace: 'worker-inline' }));
+    b.onLoad({ filter: /.*/, namespace: 'worker-inline' }, async (args) => {
+      const file = ['', '.ts', '.js'].map((ext) => args.path + ext).find((f) => fs.existsSync(f) && !fs.statSync(f).isDirectory());
+      if (!file) throw new Error(`worker não encontrado: ${args.path}`);
+      const r = await esbuild({
+        entryPoints: [file], bundle: true, write: false, format: 'iife', platform: 'browser', target: 'es2022',
+        nodePaths: [path.join(ROOT, 'node_modules')], logLevel: 'warning', define: DEFINE,
+      });
+      const code = JSON.stringify(r.outputFiles[0].text);
+      return {
+        contents: `const code = ${code};\nexport default class InlineWorker { constructor(opts) { return new Worker(URL.createObjectURL(new Blob([code], { type: 'text/javascript' })), opts); } }\n`,
+        loader: 'js', watchFiles: [file],
+      };
+    });
+  },
+};
+
 export async function buildHarness({ rev } = {}) {
   const debugCopy = makeDebugCopy();
   await esbuild({
@@ -72,13 +96,13 @@ export async function buildHarness({ rev } = {}) {
     sourcemap: false,
     nodePaths: [path.join(ROOT, 'node_modules')],
     logLevel: 'warning',
-    define: { 'import.meta.env': '{"DEV":false,"PROD":true,"MODE":"verify"}' },
+    define: DEFINE,
     plugins: [{
       name: 'signalsmith-debug',
       setup(b) {
         b.onResolve({ filter: /^signalsmith-stretch$/ }, () => ({ path: debugCopy }));
       },
-    }],
+    }, inlineWorkers],
   });
   return OUT;
 }
