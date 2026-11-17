@@ -5,7 +5,7 @@ import { USER_A, USER_B, asaasDown, createBillingDb, createFakeAsaas, payment, s
 import { AsaasError, removeFuturePendingCharges, type AsaasPayment } from '../_lib/asaas.js'
 import { processStoredEvent, runPendingActions } from '../_lib/billing.js'
 import { createAdminRouter } from '../_lib/admin/http.js'
-import { futurePendingCharges, handlers, paymentStatusName } from '../_lib/admin/review.js'
+import { futurePendingCharges, handlers, lastErrorLabel, paymentStatusName } from '../_lib/admin/review.js'
 
 // Servidor das pendências (Task 6): a fila, as marcações e as pendências da
 // cobrança, e a baixa nelas. "Marcar como feito" à mão só vale pra estorno,
@@ -33,6 +33,20 @@ const MSG = {
   eventDone: 'Este aviso já foi processado.',
   noLog: 'Não deu pra registrar a ação no histórico, então nada foi feito.',
   misconfigured: 'Configuração do servidor incompleta. Avise o suporte.',
+  seenMissing: 'Falta a versão da marcação que você viu. Atualize a lista e tente de novo.',
+  asaasCaseNoId: 'Esta pendência não guarda a assinatura do Asaas, então não dá pra conferir se ela ainda cobra. Nada foi marcado.',
+  asaasDoubt: 'Não deu pra confirmar no Asaas que esta assinatura parou de cobrar. Confira no painel do Asaas antes de fechar.',
+  actionIdBad: 'A pendência está em formato inválido.',
+  asaasSilent: 'O Asaas não respondeu.',
+  unexpected: 'Erro inesperado no servidor.',
+}
+const asaasRefused = (status: number) => `O Asaas recusou o pedido. Status do Asaas: ${status}.`
+
+// Instante em microssegundos, como o Postgres guarda o timestamptz.
+function micros(iso: unknown): number {
+  const m = /^(.+T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}:\d{2})$/.exec(String(iso))
+  if (!m) throw new Error(`instante fora do formato no teste: ${String(iso)}`)
+  return Date.parse(`${m[1]}${m[3]}`) * 1000 + Number((m[2] ?? '').padEnd(6, '0'))
 }
 
 let db: FakeDb
@@ -108,12 +122,17 @@ const EVENT_PAYLOAD = {
 function installAdminSql(target: FakeDb): void {
   target.setRpc('admin_log_start', () => ++logId)
   target.setRpc('admin_log_finish', () => null)
+  // Mesma ordem do SQL de admin_resolve_flag: guarda de admin, guarda da
+  // chamada antiga (só a hora vista nula), linha, marcação e versão vista.
   target.setRpc('admin_resolve_flag', (a) => {
+    if (a.p_admin !== ADMIN_ID) throw new Error('só admin faz ação de admin')
+    if (a.p_seen_at == null) return 'changed'
     const r = target.tables.billing_subscriptions.find((x) => x.id === a.p_subscription_ref)
     if (!r) return 'not_found'
     if (!r.needs_admin_review) return 'not_flagged'
-    // Ruling ADM-T5-visto: marcação diferente da que o admin viu não muda nada
-    if ((r.admin_note ?? null) !== a.p_seen_note || (a.p_seen_at != null && r.updated_at !== a.p_seen_at)) return 'changed'
+    // Ruling ADM-T5-visto: marcação diferente da que o admin viu não muda nada.
+    // Nota com "is distinct from" (nula vale como versão); hora com folga de 1 ms.
+    if ((r.admin_note ?? null) !== (a.p_seen_note ?? null) || Math.abs(micros(r.updated_at) - micros(a.p_seen_at)) >= 1000) return 'changed'
     r.needs_admin_review = false
     r.admin_note = [r.admin_note, `conferido pelo admin em 16/11/2026: ${String(a.p_note)}`].filter(Boolean).join(' | ')
     return 'resolved'
@@ -194,9 +213,39 @@ describe('fila de pendências', () => {
     db.setRpc('admin_review_queue', () => queue)
     const res = await get('review')
     expect(res.statusCode).toBe(200)
-    expect(res.body).toEqual(queue)
+    expect(res.body).toEqual({ ...queue, events: [{ ...queue.events[0], lastError: MSG.unexpected }] })
     expect(db.rpcCalls).toEqual([{ name: 'admin_review_queue', args: {} }])
     expect(asaasCalls()).toEqual([])
+  })
+
+  it('o último erro de cada pendência e aviso da fila sai em frase pronta (Ruling ADM-T6-lastError)', async () => {
+    const action = (id: number, lastError: string | null) => ({ id, action: 'inactivate_subscription', autoRetry: true, attempts: 2, lastError, subscriptionRef: 'chk_1' })
+    const event = (id: string, lastError: string | null) => ({ id, event: 'PAYMENT_CONFIRMED', status: 'failed', attempts: 3, lastError })
+    db.setRpc('admin_review_queue', () => ({
+      actions: [
+        action(7, 'Asaas sem resposta (ECONNRESET)'),
+        action(9, 'Asaas recusou (400): A assinatura sub_1 tem cobrança em andamento no cartão final 4242.'),
+        action(10, null),
+      ],
+      flags: [],
+      events: [
+        event('evt_1', 'Falha no banco (billing_payment_confirmed): deadlock detected'),
+        event('evt_3', null),
+      ],
+      counts: { manual: 0, auto: 5, total: 5 },
+      generatedAt: '2026-11-16T15:00:00Z',
+    }))
+    const res = await get('review')
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toEqual({
+      actions: [action(7, MSG.asaasSilent), action(9, asaasRefused(400)), action(10, null)],
+      flags: [],
+      events: [event('evt_1', MSG.unexpected), event('evt_3', null)],
+      counts: { manual: 0, auto: 5, total: 5 },
+      generatedAt: '2026-11-16T15:00:00Z',
+    })
+    const text = JSON.stringify(res.body)
+    for (const raw of ['ECONNRESET', 'cartão final', 'deadlock', 'billing_payment_confirmed']) expect(text).not.toContain(raw)
   })
 
   it('erro de banco na fila vira 500 sem detalhe', async () => {
@@ -250,17 +299,51 @@ describe('conferir marcação (resolve-flag)', () => {
     expect(vi.mocked(console.error)).not.toHaveBeenCalled()
   })
 
-  it('a versão vista vai como veio: sem tirar espaços, nota nula e instante opcional', async () => {
+  it('a versão vista vai como veio: sem tirar espaços, e a nota nula vale como versão', async () => {
     const row = db.tables.billing_subscriptions[0]
     row.admin_note = ' nota com espaço no fim '
     const spaced = await post('resolve-flag', { subscriptionRef: 'chk_1', note: 'conferido', seenNote: ' nota com espaço no fim ', seenAt: SEEN_AT })
     expect(spaced.body).toEqual({ result: 'resolved' })
     expect(db.rpcCalls[0].args.p_seen_note).toBe(' nota com espaço no fim ')
-    // marcação sem nota (adminNote nulo na fila) e pedido sem o instante
+    // marcação sem nota (adminNote nulo na fila): a nota nula é comparada como valor
     Object.assign(row, { needs_admin_review: true, admin_note: null })
-    const noNote = await post('resolve-flag', { subscriptionRef: 'chk_1', note: 'conferido', seenNote: null })
+    const noNote = await post('resolve-flag', { subscriptionRef: 'chk_1', note: 'conferido', seenNote: null, seenAt: SEEN_AT })
     expect(noNote.body).toEqual({ result: 'resolved' })
-    expect(db.rpcCalls[1].args).toMatchObject({ p_seen_note: null, p_seen_at: null })
+    expect(db.rpcCalls[1].args).toMatchObject({ p_seen_note: null, p_seen_at: SEEN_AT })
+    // nota nula vista contra uma nota no banco não é a mesma versão
+    Object.assign(row, { needs_admin_review: true, admin_note: 'chargeback na cobranca pay_7' })
+    const other = await post('resolve-flag', { subscriptionRef: 'chk_1', note: 'conferido', seenNote: null, seenAt: SEEN_AT })
+    expect(other.body).toEqual({ result: 'changed' })
+    expect(row).toMatchObject({ needs_admin_review: true, admin_note: 'chargeback na cobranca pay_7' })
+  })
+
+  it('sem o instante da marcação responde 400 sem chamar o banco (Ruling ADM-T5T6-nulo)', async () => {
+    // a hora vista é obrigatória: sem ela o banco responderia changed pra sempre
+    const cases: Record<string, unknown>[] = [
+      { seenNote: SEEN_NOTE },
+      { seenNote: SEEN_NOTE, seenAt: null },
+      { seenNote: SEEN_NOTE, seenAt: '' },
+      { seenNote: SEEN_NOTE, seenAt: '   ' },
+      { seenNote: null },
+    ]
+    for (const seen of cases) {
+      const res = await post('resolve-flag', { subscriptionRef: 'chk_1', note: 'conferido', ...seen })
+      expect(res.statusCode, JSON.stringify(seen)).toBe(400)
+      expect(res.body, JSON.stringify(seen)).toEqual({ error: MSG.seenMissing })
+    }
+    expect(rpcNames()).toEqual([])
+    expect(db.tables.billing_subscriptions[0].needs_admin_review).toBe(true)
+  })
+
+  it('hora vista a menos de 1 ms da do banco confere; a 1 ms ou mais responde changed', async () => {
+    const row = db.tables.billing_subscriptions[0]
+    const far = await post('resolve-flag', { subscriptionRef: 'chk_1', note: 'conferido', seenNote: SEEN_NOTE, seenAt: '2026-11-16T09:00:00.124456+00:00' })
+    expect(far.body).toEqual({ result: 'changed' })
+    expect(row.needs_admin_review).toBe(true)
+    // a tela pode devolver só os milissegundos, ou outro fuso pro mesmo instante
+    const near = await post('resolve-flag', { subscriptionRef: 'chk_1', note: 'conferido', seenNote: SEEN_NOTE, seenAt: '2026-11-16T06:00:00.123-03:00' })
+    expect(near.body).toEqual({ result: 'resolved' })
+    expect(db.rpcCalls[1].args.p_seen_at).toBe('2026-11-16T06:00:00.123-03:00')
   })
 
   it('sem a versão vista, ou com ela quebrada, responde 400 sem chamar o banco', async () => {
@@ -300,13 +383,13 @@ describe('conferir marcação (resolve-flag)', () => {
   })
 
   it('conferir já conferida responde 409', async () => {
-    const res = await post('resolve-flag', { subscriptionRef: 'chk_2', note: 'conferido de novo', seenNote: 'conferido pelo admin em 10/11/2026: ok' })
+    const res = await post('resolve-flag', { subscriptionRef: 'chk_2', note: 'conferido de novo', seenNote: 'conferido pelo admin em 10/11/2026: ok', seenAt: SEEN_AT })
     expect(res.statusCode).toBe(409)
     expect(res.body).toEqual({ error: 'Esta marcação já foi conferida.' })
   })
 
   it('conferir marcação que não existe responde 404', async () => {
-    const res = await post('resolve-flag', { subscriptionRef: 'chk_404', note: 'conferido', seenNote: null })
+    const res = await post('resolve-flag', { subscriptionRef: 'chk_404', note: 'conferido', seenNote: null, seenAt: SEEN_AT })
     expect(res.statusCode).toBe(404)
     expect(res.body).toEqual({ error: 'Marcação não encontrada.' })
   })
@@ -492,6 +575,44 @@ describe('fechar pendência à mão (close-action)', () => {
     }
   })
 
+  // Ruling ADM-T6-asaas-duvida: o caso asaas: só fecha com prova de que o Asaas parou.
+  it('caso asaas: sem o id da assinatura não fecha nem consulta o Asaas', async () => {
+    actionRow(6).subscription_ref = 'asaas:'
+    for (const outcome of ['done', 'canceled']) {
+      const res = await close(6, outcome, 'parei no painel')
+      expect(res.statusCode, outcome).toBe(409)
+      expect(res.body, outcome).toEqual({ error: MSG.asaasCaseNoId })
+    }
+    expect(asaasCalls()).toEqual([])
+    // nada fechado e nada gravado (nem registro)
+    expect(rpcNames()).toEqual([])
+    expect(actionRow(6).status).toBe('pending')
+  })
+
+  it('caso asaas: Asaas sem status ou com status que não se conhece não fecha', async () => {
+    const answers: unknown[] = [
+      { id: 'sub_9' },
+      { id: 'sub_9', deleted: false },
+      { id: 'sub_9', status: 'SUSPENDED', deleted: false },
+      { id: 'sub_9', status: 'active' },
+      { id: 'sub_9', status: null, deleted: 'true' },
+      {},
+      '',
+      [],
+    ]
+    for (const answer of answers) {
+      for (const outcome of ['done', 'canceled']) {
+        setAsaas({ get: () => answer })
+        const res = await close(6, outcome, 'parei no painel')
+        expect(res.statusCode, `${JSON.stringify(answer)} ${outcome}`).toBe(409)
+        expect(res.body, `${JSON.stringify(answer)} ${outcome}`).toEqual({ error: MSG.asaasDoubt })
+        expect(asaas!.get).toHaveBeenCalledWith('/subscriptions/sub_9')
+      }
+    }
+    expect(rpcNames()).toEqual([])
+    expect(actionRow(6).status).toBe('pending')
+  })
+
   it('caso da conferência parcial do dia fecha sem consultar o Asaas', async () => {
     const res = await close(8, 'done', 'conferi o Asaas na mao')
     expect(res.statusCode).toBe(200)
@@ -537,7 +658,12 @@ describe('fechar pendência à mão (close-action)', () => {
   it('entrada inválida responde 400 antes de ler a pendência', async () => {
     const cases: [Record<string, unknown>, string][] = [
       [{ actionId: 3, outcome: 'apagar', note: 'conferido' }, 'O resultado está em formato inválido.'],
-      [{ actionId: 'tres', outcome: 'done', note: 'conferido' }, `A pendência precisa ser um número de 1 a ${Number.MAX_SAFE_INTEGER}.`],
+      // a frase não cita o teto do número (Minor 3 da T6)
+      [{ actionId: 'tres', outcome: 'done', note: 'conferido' }, MSG.actionIdBad],
+      [{ outcome: 'done', note: 'conferido' }, MSG.actionIdBad],
+      [{ actionId: 0, outcome: 'done', note: 'conferido' }, MSG.actionIdBad],
+      [{ actionId: 2.5, outcome: 'done', note: 'conferido' }, MSG.actionIdBad],
+      [{ actionId: 2 ** 53, outcome: 'done', note: 'conferido' }, MSG.actionIdBad],
       [{ actionId: 3, outcome: 'done' }, 'Preencha a nota.'],
       [{ actionId: 3, outcome: 'done', note: 'ok' }, 'A nota precisa ter pelo menos 3 caracteres.'],
       [{ actionId: 3, outcome: 'done', note: 'conferido', status: 'done' }, 'Campo não esperado: status.'],
@@ -581,8 +707,48 @@ describe('tentar agora (retry-action)', () => {
     setAsaas({ put: () => { throw asaasDown() } })
     const res = await post('retry-action', { actionId: 7 })
     expect(res.statusCode).toBe(200)
-    expect(res.body).toEqual({ status: 'pending', attempts: 1, lastError: 'Asaas sem resposta (ECONNRESET)' })
-    expect(actionRow(7).status).toBe('pending')
+    // o texto cru fica só no banco; a resposta e o registro levam a frase pronta
+    expect(res.body).toEqual({ status: 'pending', attempts: 1, lastError: MSG.asaasSilent })
+    expect(actionRow(7)).toMatchObject({ status: 'pending', last_error: 'Asaas sem resposta (ECONNRESET)' })
+    expect(db.rpcCalls.find((c) => c.name === 'admin_log_finish')?.args).toEqual({
+      p_id: 41, p_result: 'ok', p_after: { status: 'pending', attempts: 1, lastError: MSG.asaasSilent }, p_message: null,
+    })
+  })
+
+  it('tentar agora recusado pelo Asaas leva só o status do Asaas na resposta e no antes e depois do registro', async () => {
+    Object.assign(actionRow(7), { attempts: 2, last_error: 'Asaas sem resposta (ETIMEDOUT)' })
+    setAsaas({ put: () => { throw new AsaasError('rejected', 'Asaas recusou (400): A assinatura do cliente João tem cobrança em andamento.', 400) } })
+    const res = await post('retry-action', { actionId: 7 })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toEqual({ status: 'pending', attempts: 3, lastError: asaasRefused(400) })
+    expect(db.rpcCalls.find((c) => c.name === 'admin_log_start')?.args.p_before).toEqual({
+      action: 'inactivate_subscription', status: 'pending', attempts: 2, lastError: MSG.asaasSilent,
+    })
+    expect(db.rpcCalls.find((c) => c.name === 'admin_log_finish')?.args.p_after).toEqual({ status: 'pending', attempts: 3, lastError: asaasRefused(400) })
+    const logged = JSON.stringify(db.rpcCalls.filter((c) => c.name.startsWith('admin_log_')))
+    for (const raw of ['João', 'ETIMEDOUT', 'em andamento']) {
+      expect(logged).not.toContain(raw)
+      expect(JSON.stringify(res.body)).not.toContain(raw)
+    }
+  })
+
+  it('tentar agora com frase de erro desconhecida no banco mostra erro inesperado', async () => {
+    Object.assign(actionRow(7), { attempts: 1, last_error: 'Falha no banco (billing_action_done): permission denied for table billing_pending_actions' })
+    db.setRpc('billing_action_failed', () => null)
+    setAsaas({ put: () => { throw asaasDown() } })
+    const res = await post('retry-action', { actionId: 7 })
+    expect(res.body).toEqual({ status: 'pending', attempts: 1, lastError: MSG.unexpected })
+    expect(db.rpcCalls.find((c) => c.name === 'admin_log_start')?.args.p_before).toMatchObject({ lastError: MSG.unexpected })
+  })
+
+  it('tentar agora com id fora do padrão responde 400 sem o teto na frase', async () => {
+    for (const actionId of ['sete', 0, -7, 7.5, 2 ** 53, null]) {
+      const res = await post('retry-action', { actionId })
+      expect(res.statusCode, String(actionId)).toBe(400)
+      expect(res.body, String(actionId)).toEqual({ error: MSG.actionIdBad })
+    }
+    expect(db.reads).toEqual([])
+    expect(runPendingActions).not.toHaveBeenCalled()
   })
 
   it('tentar agora em pendência manual responde 409', async () => {
@@ -639,7 +805,7 @@ describe('reprocessar aviso do Asaas (retry-event)', () => {
     expect(rpcNames()[1]).toBe('admin_reset_event')
     expect(db.rpcCalls[0].args).toEqual({
       p_admin: ADMIN_ID, p_action: 'retry_event', p_target_user: null, p_target_ref: 'evt_1',
-      p_before: { event: 'PAYMENT_CONFIRMED', status: 'exhausted', attempts: 20, lastError: 'Asaas sem resposta (ECONNRESET)' }, p_note: null,
+      p_before: { event: 'PAYMENT_CONFIRMED', status: 'exhausted', attempts: 20, lastError: MSG.asaasSilent }, p_note: null,
     })
     expect(db.rpcCalls.find((c) => c.name === 'admin_log_finish')?.args).toEqual({
       p_id: 41, p_result: 'ok', p_after: { processed: true, result: 'extended' }, p_message: null,
@@ -805,6 +971,34 @@ describe('nome do status da cobrança (paymentStatusName)', () => {
     expect(paymentStatusName('toString')).toBe('sem dado')
     expect(paymentStatusName('<script>')).toBe('sem dado')
     expect(paymentStatusName('X'.repeat(41))).toBe('sem dado')
+  })
+})
+
+describe('último erro em frase pronta (lastErrorLabel)', () => {
+  it('troca o texto do Asaas pela frase com o status, e nulo continua nulo', () => {
+    expect(lastErrorLabel('Asaas sem resposta (ECONNRESET)')).toBe('O Asaas não respondeu.')
+    expect(lastErrorLabel('Asaas sem resposta em 9000 ms')).toBe('O Asaas não respondeu.')
+    expect(lastErrorLabel('Asaas recusou (400): O CPF do cliente Maria é inválido.')).toBe('O Asaas recusou o pedido. Status do Asaas: 400.')
+    expect(lastErrorLabel('Asaas recusou (422): erro sem descrição')).toBe('O Asaas recusou o pedido. Status do Asaas: 422.')
+    expect(lastErrorLabel(null)).toBeNull()
+    expect(lastErrorLabel(undefined)).toBeNull()
+  })
+
+  it('frase que não está no mapa vira "Erro inesperado no servidor."', () => {
+    // a Ruling ADM-T6-lastError só deixa passar as duas formas acima
+    const unknown: unknown[] = [
+      'deadlock detected',
+      'Falha no banco (billing_action_done): permission denied for table billing_pending_actions',
+      'Asaas recusou remover pay_9',
+      'Asaas recusou (abc): x',
+      'Asaas respondeu 503',
+      'reiniciado pelo admin',
+      'erro',
+      '',
+      42,
+      { message: 'Asaas sem resposta (ECONNRESET)' },
+    ]
+    for (const raw of unknown) expect(lastErrorLabel(raw), JSON.stringify(raw)).toBe('Erro inesperado no servidor.')
   })
 })
 

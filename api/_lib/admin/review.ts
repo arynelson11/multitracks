@@ -4,10 +4,12 @@ import { withAudit } from './audit.js'
 import { AdminError, int, oneOf, str, type AdminCtx, type AdminHandlers } from './http.js'
 
 // Pendências (Task 6): a fila da aba Pendências e a baixa em cada item.
-// * review: a fila inteira (admin_review_queue, T5), repassada como vem.
+// * review: a fila inteira (admin_review_queue, T5), repassada como vem, só
+//   com o último erro de cada item em frase pronta (lastErrorLabel).
 // * resolve-flag: confere uma marcação (needs_admin_review). Só no banco: a
 //   função SQL grava o registro na mesma transação (D7). Recebe a versão da
-//   marcação que o admin viu (Ruling ADM-T5-visto): se chegou marcação nova
+//   marcação que o admin viu (Ruling ADM-T5-visto), com a hora obrigatória e
+//   a nota que pode vir nula (Ruling ADM-T5T6-nulo): se chegou marcação nova
 //   enquanto a lista estava aberta, responde { result: 'changed' } e nada muda.
 // * close-action: "marcar como feito" à mão só pra estorno, caso pra olhar e
 //   remoção de cobrança futura, e o servidor confere no Asaas antes (D8).
@@ -18,6 +20,8 @@ import { AdminError, int, oneOf, str, type AdminCtx, type AdminHandlers } from '
 //   pendente antes e o resultado depois.
 // * payment-link: a fatura da cobrança no Asaas (só leitura).
 // Nenhum caminho estorna: o estorno é feito no painel do Asaas (FATOS).
+// O texto cru do último erro (last_error) fica só no banco: tudo que sai
+// daqui (resposta e registro) passa por lastErrorLabel (Ruling ADM-T6-lastError).
 
 const MSG_FLAG_NOT_FOUND = 'Marcação não encontrada.'
 const MSG_FLAG_DONE = 'Esta marcação já foi conferida.'
@@ -34,6 +38,10 @@ const MSG_EVENT_DONE = 'Este aviso já foi processado.'
 const MSG_ASAAS_SILENT = 'O Asaas não respondeu agora.'
 const MSG_SEEN_MISSING = 'Falta a versão da marcação que você viu. Atualize a lista e tente de novo.'
 const MSG_SEEN_NOTE_BAD = 'A versão da marcação está em formato inválido.'
+const MSG_ASAAS_CASE_NO_ID = 'Esta pendência não guarda a assinatura do Asaas, então não dá pra conferir se ela ainda cobra. Nada foi marcado.'
+const MSG_ASAAS_DOUBT = 'Não deu pra confirmar no Asaas que esta assinatura parou de cobrar. Confira no painel do Asaas antes de fechar.'
+const MSG_ACTION_ID_BAD = 'A pendência está em formato inválido.'
+const MSG_UNEXPECTED = 'Erro inesperado no servidor.'
 
 const paymentNotFound = (id: string): string => `O Asaas não achou a cobrança ${id}.`
 
@@ -44,11 +52,12 @@ const DISCARDABLE = new Set(['refund_payment', 'admin_review'])
 const REFUND_DONE_STATUSES = new Set(['REFUNDED', 'REFUND_REQUESTED', 'REFUND_IN_PROGRESS'])
 // Caso da conferência diária: assinatura ATIVA no Asaas sem registro no app.
 const ASAAS_CASE_PREFIX = 'asaas:'
+// Status da assinatura no Asaas que provam que ela parou de cobrar.
+const SUBSCRIPTION_STOPPED = new Set(['INACTIVE', 'EXPIRED'])
 
 const PAY_ID_RE = /^pay_[A-Za-z0-9]+$/
 // Id do aviso como o webhook grava: o do Asaas (evt_<hash>&<número>) ou sha:<hex>.
 const EVENT_ID_RE = /^[\x21-\x7E]+$/
-const MAX_ID = Number.MAX_SAFE_INTEGER
 // A nota da marcação cresce a cada marcação nova (" | "); teto folgado só pra
 // não aceitar corpo absurdo.
 const MAX_SEEN_NOTE = 50000
@@ -76,6 +85,33 @@ const PAYMENT_STATUS_NAMES: Record<string, string> = {
 export function paymentStatusName(status: string): string {
   if (Object.hasOwn(PAYMENT_STATUS_NAMES, status)) return PAYMENT_STATUS_NAMES[status]
   return /^[A-Z_]{1,40}$/.test(status) ? status.toLowerCase() : 'sem dado'
+}
+
+// ── Último erro de pendência ou aviso (last_error) em frase pronta (Ruling
+// ADM-T6-lastError). O texto cru (com a descrição do Asaas ou do banco) fica
+// só no banco e no log. Mapa fechado: o que não é uma das duas formas do
+// cliente do Asaas (toAsaasError) vira a frase genérica. A T7 usa a mesma
+// função ao ler o Registro.
+
+const ASAAS_REFUSED_RE = /^Asaas recusou \((\d{3})\)/
+
+export function lastErrorLabel(raw: unknown): string | null {
+  if (raw === null || raw === undefined) return null
+  if (typeof raw !== 'string') return MSG_UNEXPECTED
+  if (raw.startsWith('Asaas sem resposta')) return 'O Asaas não respondeu.'
+  const refused = ASAAS_REFUSED_RE.exec(raw)
+  if (refused) return `O Asaas recusou o pedido. Status do Asaas: ${refused[1]}.`
+  return MSG_UNEXPECTED
+}
+
+// A fila com o lastError de cada item de cada lista (ações e avisos) em frase
+// pronta; o resto passa como veio.
+function queueWithLabels(queue: unknown): unknown {
+  if (typeof queue !== 'object' || queue === null || Array.isArray(queue)) return queue
+  const label = (item: unknown): unknown => (typeof item === 'object' && item !== null && Object.hasOwn(item, 'lastError')
+    ? { ...item, lastError: lastErrorLabel((item as { lastError: unknown }).lastError) }
+    : item)
+  return Object.fromEntries(Object.entries(queue).map(([key, value]) => [key, Array.isArray(value) ? value.map(label) : value]))
 }
 
 // ── Cobranças futuras em aberto: as mesmas três condições de
@@ -181,12 +217,19 @@ async function removalRefusal(ctx: AdminCtx, asaas: AsaasApi, a: ActionRow): Pro
 }
 
 // Caso asaas:<id> nunca volta a ser criado depois de fechado (Q12 da
-// cobrança): só fecha se o Asaas já não cobra mais.
+// cobrança): só fecha com prova de que o Asaas parou (Ruling
+// ADM-T6-asaas-duvida): 404, removida (deleted true) ou status INACTIVE ou
+// EXPIRED. Sem o id, resposta sem status ou status que não se conhece, não fecha.
 async function stillChargingRefusal(asaas: AsaasApi, a: ActionRow): Promise<string | null> {
   const subId = a.subscription_ref.slice(ASAAS_CASE_PREFIX.length)
-  if (!subId) return null
-  const s = await getSubscription(asaas, subId)
-  return s && s.deleted !== true && s.status === 'ACTIVE' ? MSG_STILL_CHARGING : null
+  if (!subId) return MSG_ASAAS_CASE_NO_ID
+  const s: unknown = await getSubscription(asaas, subId)
+  if (s === null) return null
+  if (typeof s !== 'object' || Array.isArray(s)) return MSG_ASAAS_DOUBT
+  const { deleted, status } = s as { deleted?: unknown; status?: unknown }
+  if (deleted === true) return null
+  if (typeof status === 'string' && SUBSCRIPTION_STOPPED.has(status)) return null
+  return status === 'ACTIVE' ? MSG_STILL_CHARGING : MSG_ASAAS_DOUBT
 }
 
 async function checkBeforeClosing(ctx: AdminCtx, a: ActionRow, outcome: 'done' | 'canceled'): Promise<void> {
@@ -220,10 +263,12 @@ function seenNote(src: Record<string, unknown>): string | null {
   return v
 }
 
-// updatedAt da fila: instante ISO que existe no calendário, ou ausente/null.
-function seenAt(src: Record<string, unknown>): string | null {
+// updatedAt da fila: instante ISO que existe no calendário. Obrigatório
+// (Ruling ADM-T5T6-nulo): updated_at nunca é nulo, e sem a hora vista o banco
+// responderia changed pra sempre. Ausente, nulo ou vazio: a frase de versão faltando.
+function seenAt(src: Record<string, unknown>): string {
   const raw = str(src, 'seenAt', { label: 'o instante da marcação', optional: true, max: 40, pattern: INSTANT_RE })
-  if (raw === null) return null
+  if (raw === null) throw new AdminError(400, MSG_SEEN_MISSING)
   const [y, mo, d, h, mi, se] = INSTANT_RE.exec(raw)!.slice(1, 7).map(Number)
   const t = new Date(Date.UTC(y, mo - 1, d))
   const realDay = t.getUTCFullYear() === y && t.getUTCMonth() === mo - 1 && t.getUTCDate() === d
@@ -231,7 +276,19 @@ function seenAt(src: Record<string, unknown>): string | null {
   return raw
 }
 
-const actionState = (a: ActionRow) => ({ status: a.status, attempts: a.attempts, lastError: a.last_error })
+// Id da pendência (bigserial). A frase do int citaria o teto, um número que
+// não diz nada pro admin (Minor 3 da T6).
+function actionIdOf(body: Record<string, unknown>): number {
+  try {
+    return int(body, 'actionId', { label: 'a pendência', min: 1, max: Number.MAX_SAFE_INTEGER })
+  } catch (e) {
+    if (e instanceof AdminError) throw new AdminError(400, MSG_ACTION_ID_BAD)
+    throw e
+  }
+}
+
+// Estado da pendência pra resposta e pro registro, com o último erro em frase pronta.
+const actionState = (a: ActionRow) => ({ status: a.status, attempts: a.attempts, lastError: lastErrorLabel(a.last_error) })
 
 const payloadOf = (v: unknown): Record<string, unknown> => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {})
 
@@ -243,7 +300,7 @@ export const handlers: AdminHandlers = {
   review: {
     method: 'GET',
     fields: [],
-    run: (ctx) => rpc<unknown>(ctx, 'admin_review_queue', {}),
+    run: async (ctx) => queueWithLabels(await rpc<unknown>(ctx, 'admin_review_queue', {})),
   },
 
   'payment-link': {
@@ -289,7 +346,7 @@ export const handlers: AdminHandlers = {
     method: 'POST',
     fields: ['actionId', 'outcome', 'note'],
     run: async (ctx) => {
-      const id = int(ctx.body, 'actionId', { label: 'a pendência', min: 1, max: MAX_ID })
+      const id = actionIdOf(ctx.body)
       const outcome = oneOf(ctx.body, 'outcome', ['done', 'canceled'] as const, { label: 'o resultado' })
       const note = str(ctx.body, 'note', { label: 'a nota', min: 3, max: 500 })
       const a = await readAction(ctx, id)
@@ -309,7 +366,7 @@ export const handlers: AdminHandlers = {
     method: 'POST',
     fields: ['actionId'],
     run: async (ctx) => {
-      const id = int(ctx.body, 'actionId', { label: 'a pendência', min: 1, max: MAX_ID })
+      const id = actionIdOf(ctx.body)
       const a = await readAction(ctx, id)
       if (!a || a.status !== 'pending') throw new AdminError(409, MSG_NOT_OPEN)
       if (!a.auto_retry) throw new AdminError(409, MSG_NOT_AUTO)
@@ -339,7 +396,7 @@ export const handlers: AdminHandlers = {
       if (ev.status === 'done') throw new AdminError(409, MSG_EVENT_DONE)
       return withAudit(
         ctx,
-        { action: 'retry_event', targetRef: eventId, before: { event: ev.event, status: ev.status, attempts: ev.attempts, lastError: ev.last_error } },
+        { action: 'retry_event', targetRef: eventId, before: { event: ev.event, status: ev.status, attempts: ev.attempts, lastError: lastErrorLabel(ev.last_error) } },
         async () => {
           const reset = await rpc<string>(ctx, 'admin_reset_event', { p_admin: ctx.admin.userId, p_event_id: eventId })
           if (reset === 'not_found') throw new AdminError(404, MSG_EVENT_NOT_FOUND)
