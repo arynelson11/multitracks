@@ -1,8 +1,8 @@
 // Textos da aba Pendências: nome de cada pendência, motivo em português, linhas da nota da
-// marcação, o título dos avisos do Asaas que falharam, o texto dos diálogos e o resultado
-// de cada ação.
+// marcação, o título dos avisos do Asaas que falharam, o texto dos diálogos, o resultado
+// de cada ação e a conferência da forma da fila que chega do servidor.
 import { EMPTY, cancelSourceLabel, fmtDateTimeBR } from './fmt'
-import type { ReviewAction, ReviewEvent, ReviewFlag } from './reviewTypes'
+import type { ReviewAction, ReviewEvent, ReviewFlag, ReviewQueue } from './reviewTypes'
 
 const ACTION_TITLES: Record<string, string> = {
   refund_payment: 'Estornar à mão',
@@ -172,4 +172,76 @@ export function retryEventText(r: { processed?: unknown }): ResultText {
 export function updatedAtLabel(iso: string | null): string | null {
   const when = fmtDateTimeBR(iso)
   return when === EMPTY ? null : `Atualizado às ${when.slice(-5)}`
+}
+
+// ── Forma da fila (como a T7 no Registro, Ruling ADM-T7-forma): só desenha o que tem a forma que
+// a tela usa. Um campo de texto que viesse como objeto derrubaria o render ("Objects are not
+// valid as a React child"), e um texto que não é texto quebraria o split da nota.
+
+type Check = (v: unknown) => boolean
+
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+const isText: Check = (v) => typeof v === 'string'
+const isTextOrNull: Check = (v) => v === null || typeof v === 'string'
+const isNum: Check = (v) => typeof v === 'number' && Number.isFinite(v)
+const isNumOrNull: Check = (v) => v === null || isNum(v)
+const isCount: Check = (v) => isNum(v) && (v as number) >= 0
+
+function hasShape(v: unknown, shape: Record<string, Check>): boolean {
+  return isObj(v) && Object.entries(shape).every(([key, check]) => check(v[key]))
+}
+
+const ACTION_SHAPE: Record<string, Check> = {
+  id: (v) => Number.isSafeInteger(v),
+  action: isText,
+  reason: isTextOrNull,
+  autoRetry: (v) => typeof v === 'boolean',
+  attempts: isCount,
+  lastError: isTextOrNull,
+  nextAttemptAt: isTextOrNull,
+  createdAt: isTextOrNull,
+  subscriptionRef: isText,
+  asaasSubscriptionId: isTextOrNull,
+  paymentId: isTextOrNull,
+  dueDate: isTextOrNull,
+  amount: isNumOrNull,
+  userId: isTextOrNull,
+  email: isTextOrNull,
+  planKey: isTextOrNull,
+}
+
+const FLAG_SHAPE: Record<string, Check> = {
+  subscriptionRef: isText,
+  userId: isTextOrNull,
+  email: isTextOrNull,
+  planKey: isTextOrNull,
+  kind: isText,
+  status: isText,
+  cancelSource: isTextOrNull,
+  adminNote: isTextOrNull,
+  // Vai de volta no Conferido como a versão vista (seenAt, obrigatório no servidor).
+  updatedAt: isText,
+}
+
+const EVENT_SHAPE: Record<string, Check> = {
+  id: isText,
+  event: isText,
+  status: isText,
+  attempts: isCount,
+  lastError: isTextOrNull,
+  receivedAt: isTextOrNull,
+}
+
+const listOf = (v: unknown, shape: Record<string, Check>) => Array.isArray(v) && v.every((item) => hasShape(item, shape))
+
+/** A resposta de `?action=review` tem a forma que a aba desenha. Fora dela, a aba mostra a frase pronta. */
+export function isReviewQueue(v: unknown): v is ReviewQueue {
+  return (
+    isObj(v) &&
+    listOf(v.actions, ACTION_SHAPE) &&
+    listOf(v.flags, FLAG_SHAPE) &&
+    listOf(v.events, EVENT_SHAPE) &&
+    hasShape(v.counts, { manual: isCount, auto: isCount, total: isCount }) &&
+    isTextOrNull(v.generatedAt)
+  )
 }

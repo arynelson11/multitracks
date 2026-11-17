@@ -4,14 +4,15 @@
 //   ConfirmDialog com nota. O erro do servidor (inclusive o 409 de quando o Asaas não confirma)
 //   aparece dentro do diálogo, sempre como o próprio AdminApiError, com busy ligado durante o
 //   pedido (Ruling ADM-T4-incerto).
-// * "Tentar agora" e "Tentar de novo" não têm diálogo: resposta incerta mostra a frase do
-//   Registro e segura o botão até a lista ser recarregada, pra ninguém repetir às cegas.
-// * Toda ação que deu certo recarrega a fila. O último erro já chega do servidor em frase pronta.
-import { useEffect, useId, useRef, useState } from 'react'
+// * "Tentar agora" e "Tentar de novo" não têm diálogo: a trava contra repetir e o segurar da
+//   resposta incerta ficam fora do componente e sobrevivem à troca de aba (Ruling ADM-T8-trava).
+// * Toda ação que deu certo, e todo erro certo, recarrega a fila. O último erro já chega do
+//   servidor em frase pronta. Resposta fora do formato mostra a frase pronta (Ruling ADM-T7-forma).
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import type React from 'react'
 import { Loader2, RefreshCw } from 'lucide-react'
 import { Button, Led, Panel, cx } from '../../components/ui'
-import { openExternalUrl } from '../../lib/desktop'
+import { openExternalUrlLater } from '../../lib/desktop'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import type { AdminQueryState } from '../hooks/useAdminQuery'
 import { AdminApiError, adminGet, adminPost } from '../lib/adminApi'
@@ -24,6 +25,7 @@ import {
   eventTitle,
   flagStatusText,
   flagTitle,
+  isReviewQueue,
   noteLines,
   reasonText,
   retryActionText,
@@ -41,6 +43,8 @@ const MSG_CHANGED = 'A marcação mudou desde que você abriu. Atualize a lista.
 const MSG_UNEXPECTED_ACTION = 'Erro inesperado. Confira no Registro se a ação foi feita antes de tentar de novo.'
 const MSG_NO_INVOICE = 'O Asaas não mandou o link da fatura. Busque a cobrança pelo id no painel do Asaas.'
 const MSG_INVOICE_FAILED = 'Não deu pra abrir a fatura. Tente de novo.'
+const MSG_TAB_BLOCKED = 'O navegador bloqueou a aba nova. Libere as janelas deste site e clique de novo.'
+const MSG_BAD_SHAPE = 'Não deu pra carregar as pendências. Tente de novo.'
 
 const SPINNER = <Loader2 size={16} className="animate-spin motion-reduce:animate-none" />
 const ALERT_BOX = 'rounded-ps-md bg-ps-alert-soft px-3 py-2.5 text-ps-base text-ps-alert break-words'
@@ -90,61 +94,121 @@ function targetOf(p: Pending): CloseTarget {
 
 const toFeedback = (r: ResultText): Pick<Feedback, 'tone' | 'text'> => ({ tone: r.ok ? 'ok' : 'alert', text: r.text })
 
+// ── Memória que sobrevive à troca de aba (Ruling ADM-T8-trava). A casca desmonta a aba quando o
+// admin troca de aba: a trava dos botões sem diálogo, o segurar da resposta incerta e o resultado
+// de cada ação ficam aqui fora, uma memória por fila. A chave é o refetch do useAdminQuery da
+// casca, o mesmo enquanto o admin está aberto (useCallback sem dependência): fechar o admin
+// descarta a memória, e cada fila nova (nos testes, cada teste) começa do zero.
+
+/** running: pedido no ar. Respondido, segura até chegar outra fila (outro objeto em review.data). */
+type Lock = { running: true } | { running: false; seen: unknown }
+type Shared = { locks: Readonly<Record<string, Lock>>; feedback: Readonly<Record<string, Feedback>> }
+type Memory = { state: Shared; lastData: unknown; listeners: Set<() => void> }
+
+const memories = new WeakMap<object, Memory>()
+
+function memoryOf(owner: object): Memory {
+  let m = memories.get(owner)
+  if (!m) {
+    m = { state: { locks: {}, feedback: {} }, lastData: null, listeners: new Set() }
+    memories.set(owner, m)
+  }
+  return m
+}
+
+function listen(m: Memory, listener: () => void): () => void {
+  m.listeners.add(listener)
+  return () => {
+    m.listeners.delete(listener)
+  }
+}
+
+function change(m: Memory, next: (s: Shared) => Shared): void {
+  const s = next(m.state)
+  if (s === m.state) return
+  m.state = s
+  m.listeners.forEach((l) => l())
+}
+
+function without<T>(rec: Readonly<Record<string, T>>, key: string): Readonly<Record<string, T>> {
+  if (!Object.hasOwn(rec, key)) return rec
+  const next = { ...rec }
+  delete next[key]
+  return next
+}
+
+const isLocked = (lock: Lock | undefined, data: unknown) => lock !== undefined && (lock.running || lock.seen === data)
+
+/** A fila que a aba viu por último (o pedido que responde com a aba fechada segura contra ela) e a soltura do que esperava outra fila. */
+function seeQueue(m: Memory, data: unknown): void {
+  m.lastData = data
+  change(m, (s) => {
+    const kept = Object.entries(s.locks).filter(([, l]) => l.running || l.seen === data)
+    return kept.length === Object.keys(s.locks).length ? s : { ...s, locks: Object.fromEntries(kept) }
+  })
+}
+
+/**
+ * Depois da resposta: 'reload' recarrega a fila e segura até ela chegar (deu certo ou erro certo);
+ * 'hold' só segura (incerto: a pessoa confere no Registro e atualiza); 'free' solta na hora.
+ */
+type After = 'reload' | 'hold' | 'free'
+
+/**
+ * Roda a ação com a trava por botão. A conferência é síncrona, na memória do módulo: dois cliques
+ * no mesmo instante, ou um clique depois de voltar pra aba com o pedido no ar, não saem duas vezes.
+ * A tarefa começa ainda dentro do clique (antes do primeiro await).
+ */
+async function runLocked(m: Memory, key: string, refetch: () => Promise<void>, task: () => Promise<After>): Promise<void> {
+  if (isLocked(m.state.locks[key], m.lastData)) return
+  change(m, (s) => ({ ...s, locks: { ...s.locks, [key]: { running: true } } }))
+  let after: After = 'hold'
+  try {
+    after = await task()
+  } finally {
+    change(m, (s) => ({
+      ...s,
+      locks: after === 'free' ? without(s.locks, key) : { ...s.locks, [key]: { running: false, seen: m.lastData } },
+    }))
+    if (after === 'reload') void refetch()
+  }
+}
+
+const tryKey = (item: Item) => `tentar:${item.key}`
+const invoiceKey = (item: Item) => `fatura:${item.key}`
+
 export function ReviewTab({ onNavigate, review }: TabProps & { review: AdminQueryState<ReviewQueue> }) {
   const [pending, setPending] = useState<Pending | null>(null)
   const [busy, setBusy] = useState(false)
   const [dialogError, setDialogError] = useState<AdminApiError | null>(null)
-  const [feedback, setFeedback] = useState<Record<string, Feedback>>({})
-  // Botões sem diálogo com pedido no ar (a trava síncrona fica no ref, contra dois cliques no mesmo instante).
-  const [running, setRunning] = useState<Record<string, true>>({})
-  const inFlight = useRef(new Set<string>())
-  // Itens segurados por resposta incerta: soltam quando chega outra lista (outro objeto em review.data).
-  const [holds, setHolds] = useState<Record<string, ReviewQueue | null>>({})
-  const dataRef = useRef(review.data)
-  useEffect(() => {
-    dataRef.current = review.data
-  }, [review.data])
+
+  const { refetch } = review
+  const memory = memoryOf(refetch)
+  const subscribe = useCallback((listener: () => void) => listen(memory, listener), [memory])
+  const shared = useSyncExternalStore(subscribe, () => memory.state)
+  useEffect(() => seeQueue(memory, review.data), [memory, review.data])
 
   // Ações de outras abas (a ficha do assinante) também mudam a fila: voltar pra cá com a lista
   // já na mão recarrega. Na primeira abertura a casca já está pedindo.
-  const { refetch } = review
   const enteredWithList = useRef(review.data !== null)
   useEffect(() => {
     if (enteredWithList.current) void refetch()
   }, [refetch])
 
-  const isHeld = (key: string) => Object.hasOwn(holds, key) && holds[key] === review.data
+  const locked = (key: string) => isLocked(shared.locks[key], review.data)
+  const running = (key: string) => shared.locks[key]?.running === true
 
   const say = (item: Item, f: Pick<Feedback, 'tone' | 'text'>) =>
-    setFeedback((all) => ({ ...all, [item.key]: { ...f, label: labelOf(item) } }))
-  const forget = (key: string) =>
-    setFeedback((all) => {
-      if (!Object.hasOwn(all, key)) return all
-      const next = { ...all }
-      delete next[key]
-      return next
-    })
-
-  const quick = async (busyKey: string, task: () => Promise<void>) => {
-    if (inFlight.current.has(busyKey)) return
-    inFlight.current.add(busyKey)
-    setRunning((r) => ({ ...r, [busyKey]: true }))
-    try {
-      await task()
-    } finally {
-      inFlight.current.delete(busyKey)
-      setRunning((r) => {
-        const next = { ...r }
-        delete next[busyKey]
-        return next
-      })
-    }
-  }
+    change(memory, (s) => ({ ...s, feedback: { ...s.feedback, [item.key]: { ...f, label: labelOf(item) } } }))
+  const forget = (key: string) => change(memory, (s) => ({ ...s, feedback: without(s.feedback, key) }))
 
   const refresh = () => {
     // A frase de uma resposta incerta fica enquanto o botão estiver segurado.
-    setFeedback((all) => Object.fromEntries(Object.entries(all).filter(([key]) => isHeld(key))))
-    void review.refetch()
+    change(memory, (s) => ({
+      ...s,
+      feedback: Object.fromEntries(Object.entries(s.feedback).filter(([key]) => isLocked(s.locks[`tentar:${key}`], review.data))),
+    }))
+    void refetch()
   }
 
   const openDialog = (p: Pending) => {
@@ -180,16 +244,19 @@ export function ReviewTab({ onNavigate, review }: TabProps & { review: AdminQuer
         say(p.item, { tone: 'ok', text: closedText(targetOf(p)) })
       }
       setPending(null)
-      void review.refetch()
+      void refetch()
     } catch (e) {
-      setDialogError(e instanceof AdminApiError ? e : new AdminApiError(MSG_UNEXPECTED_ACTION, 0, true))
+      const error = e instanceof AdminApiError ? e : new AdminApiError(MSG_UNEXPECTED_ACTION, 0, true)
+      setDialogError(error)
+      // Erro certo: nada foi feito, mas a lista pode estar velha (outra aba ou a conferência fechou).
+      if (!error.uncertain) void refetch()
     } finally {
       setBusy(false)
     }
   }
 
   const retry = (item: ActionItem | EventItem) =>
-    quick(`${item.key}:tentar`, async () => {
+    runLocked(memory, tryKey(item), refetch, async () => {
       forget(item.key)
       try {
         if (item.kind === 'action') {
@@ -199,29 +266,38 @@ export function ReviewTab({ onNavigate, review }: TabProps & { review: AdminQuer
           const r = await adminPost<RetryEventResult>('retry-event', { eventId: item.data.id })
           say(item, toFeedback(retryEventText(r ?? {})))
         }
-        void review.refetch()
+        return 'reload'
       } catch (e) {
         const known = e instanceof AdminApiError
-        // Incerto: a ação pode ter sido feita. Segura até a lista ser recarregada.
-        if (!known || e.uncertain) setHolds((h) => ({ ...h, [item.key]: dataRef.current }))
         say(item, { tone: 'alert', text: known ? e.message : MSG_UNEXPECTED_ACTION })
+        // Incerto: a ação pode ter sido feita. Segura até a lista ser recarregada, sem recarregar sozinho.
+        return known && !e.uncertain ? 'reload' : 'hold'
       }
     })
 
-  const openInvoice = (item: ActionItem) =>
-    quick(`${item.key}:fatura`, async () => {
-      const id = item.data.paymentId
-      if (!id) return
+  const openInvoice = (item: ActionItem) => {
+    const id = item.data.paymentId
+    if (!id) return
+    return runLocked(memory, invoiceKey(item), refetch, async () => {
+      // A aba abre aqui, ainda dentro do clique (Ruling ADM-T8-aba); o endereço chega depois do pedido.
+      const tab = openExternalUrlLater()
       forget(item.key)
       try {
         const r = await adminGet<PaymentLink>('payment-link', { id })
         const url = r?.invoiceUrl
-        if (typeof url === 'string' && url.startsWith('https://')) openExternalUrl(url)
-        else say(item, { tone: 'alert', text: MSG_NO_INVOICE })
+        if (typeof url === 'string' && url.startsWith('https://')) {
+          if (!tab.go(url)) say(item, { tone: 'alert', text: MSG_TAB_BLOCKED })
+        } else {
+          tab.cancel()
+          say(item, { tone: 'alert', text: MSG_NO_INVOICE })
+        }
       } catch (e) {
+        tab.cancel()
         say(item, { tone: 'alert', text: e instanceof AdminApiError ? e.message : MSG_INVOICE_FAILED })
       }
+      return 'free'
     })
+  }
 
   const copyId = async (item: ActionItem) => {
     const id = item.data.paymentId
@@ -235,23 +311,23 @@ export function ReviewTab({ onNavigate, review }: TabProps & { review: AdminQuer
     }
   }
 
-  const data = review.data
+  // Resposta fora do formato vale como erro: frase pronta e Tentar de novo, nunca o render quebrado.
+  const data = isReviewQueue(review.data) ? review.data : null
   const groups = data ? splitQueue(data) : null
   const shownKeys = new Set(groups ? [...groups.mine, ...groups.auto].map((i) => i.key) : [])
   // Resultado de um item que já saiu da lista (fechou): aparece no topo.
-  const gone = Object.entries(feedback).filter(([key]) => !shownKeys.has(key))
+  const gone = Object.entries(shared.feedback).filter(([key]) => !shownKeys.has(key))
   const updated = updatedAtLabel(data?.generatedAt ?? null)
   // A lista de avisos vem com no máximo 100; o counts conta todos.
   const allEvents = data ? Math.max(0, data.counts.total - data.actions.length - data.flags.length) : 0
 
   const buttonsFor = (item: Item, main: boolean): React.ReactNode => {
-    const tryKey = `${item.key}:tentar`
     const tryButton = (label: string, target: ActionItem | EventItem) => (
       <Button
         tone={main ? 'primary' : 'default'}
         onClick={() => void retry(target)}
-        disabled={Boolean(running[tryKey]) || isHeld(item.key)}
-        icon={running[tryKey] ? SPINNER : undefined}
+        disabled={locked(tryKey(item))}
+        icon={running(tryKey(item)) ? SPINNER : undefined}
       >
         {label}
       </Button>
@@ -268,15 +344,14 @@ export function ReviewTab({ onNavigate, review }: TabProps & { review: AdminQuer
     // Só o que a cobrança tenta sozinha aceita "Tentar agora" (o servidor recusa o resto).
     const tryNow = a.autoRetry ? tryButton('Tentar agora', item) : null
     if (a.action === 'refund_payment') {
-      const invoiceKey = `${item.key}:fatura`
       return (
         <>
           {a.paymentId && (
             <>
               <Button
                 onClick={() => void openInvoice(item)}
-                disabled={Boolean(running[invoiceKey])}
-                icon={running[invoiceKey] ? SPINNER : undefined}
+                disabled={locked(invoiceKey(item))}
+                icon={running(invoiceKey(item)) ? SPINNER : undefined}
               >
                 Ver no Asaas
               </Button>
@@ -313,7 +388,7 @@ export function ReviewTab({ onNavigate, review }: TabProps & { review: AdminQuer
   const renderItem = (item: Item, main: boolean) => (
     <ItemCard
       title={item.title}
-      feedback={feedback[item.key] ?? null}
+      feedback={shared.feedback[item.key] ?? null}
       notes={item.kind === 'flag' ? noteLines(item.data.adminNote) : []}
       buttons={buttonsFor(item, main)}
     >
@@ -325,10 +400,18 @@ export function ReviewTab({ onNavigate, review }: TabProps & { review: AdminQuer
 
   let body: React.ReactNode
   if (!data || !groups) {
-    body = review.error ? null : (
+    const stillLoading = review.loading || (review.data === null && !review.error)
+    body = stillLoading ? (
       <p role="status" className="text-ps-base text-ps-mut">
         Carregando...
       </p>
+    ) : (
+      <div className="flex flex-wrap items-center gap-ps-gap">
+        <p role="alert" className="text-ps-base text-ps-alert break-words">
+          {review.error ?? MSG_BAD_SHAPE}
+        </p>
+        <Button onClick={() => void refetch()}>Tentar de novo</Button>
+      </div>
     )
   } else if (groups.mine.length === 0 && groups.auto.length === 0) {
     body = <p className="text-ps-md text-ps-bone">Nada pendente agora.</p>
@@ -376,7 +459,7 @@ export function ReviewTab({ onNavigate, review }: TabProps & { review: AdminQuer
         )}
       </div>
 
-      {review.error && (
+      {data && review.error && (
         <p role="alert" className={ALERT_BOX}>
           {review.error}
         </p>

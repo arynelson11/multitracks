@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { ReviewTab } from './ReviewTab'
 import { AdminApiError } from '../lib/adminApi'
 import type { AdminQueryState } from '../hooks/useAdminQuery'
@@ -11,14 +11,14 @@ const TRAVESSAO = String.fromCharCode(0x2014)
 // Frase do Registro: a resposta da ação não chegou e o servidor pode ter feito (Ruling ADM-T4-incerto).
 const LOST = 'A resposta do servidor não chegou. Confira no Registro se a ação foi feita antes de tentar de novo.'
 
-const h = vi.hoisted(() => ({ adminPost: vi.fn(), adminGet: vi.fn(), openExternalUrl: vi.fn() }))
+const h = vi.hoisted(() => ({ adminPost: vi.fn(), adminGet: vi.fn() }))
 
 vi.mock('../lib/adminApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/adminApi')>()),
   adminPost: h.adminPost,
   adminGet: h.adminGet,
 }))
-vi.mock('../../lib/desktop', () => ({ isElectron: false, openExternalUrl: h.openExternalUrl }))
+// O desktop.ts é o de verdade (sem bridge no jsdom: caminho da web); o window.open é falso em cada teste.
 vi.mock('../../lib/supabase', () => ({ supabase: null, getAuthHeaders: async () => ({}) }))
 
 const REFUND: ReviewAction = {
@@ -116,7 +116,14 @@ function setup(data: ReviewQueue | null, extra: Partial<Review> = {}) {
   refetch.mockClear()
   const rerender = (next: ReviewQueue | null, more: Partial<Review> = {}) =>
     view.rerender(<ReviewTab onNavigate={onNavigate} focusUserId={null} review={{ ...review, data: next, ...more }} />)
-  return { ...view, refetch, onNavigate, review, mountRefetches, rerender }
+  // Troca de aba: a casca desmonta a aba e, ao voltar, monta de novo com a fila dela (mesmo refetch).
+  const leave = () => view.unmount()
+  const comeBack = (next: ReviewQueue | null = data) => {
+    const back = render(<ReviewTab onNavigate={onNavigate} focusUserId={null} review={{ ...review, data: next }} />)
+    return (later: ReviewQueue | null) =>
+      back.rerender(<ReviewTab onNavigate={onNavigate} focusUserId={null} review={{ ...review, data: later }} />)
+  }
+  return { ...view, refetch, onNavigate, review, mountRefetches, rerender, leave, comeBack }
 }
 
 const item = (name: string | RegExp) => screen.getByRole('article', { name })
@@ -127,16 +134,22 @@ const button = (scope: HTMLElement, name: string) => within(scope).getByRole('bu
 // Promessa que o teste resolve quando quiser (pedido no ar).
 function deferred<T>() {
   let resolve!: (v: T) => void
-  const promise = new Promise<T>((r) => {
-    resolve = r
+  let reject!: (e: unknown) => void
+  const promise = new Promise<T>((ok, fail) => {
+    resolve = ok
+    reject = fail
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
+}
+
+// Aba nova falsa: o window.open devolve esta janela, e o teste confere o que a tela fez com ela.
+function fakeTab() {
+  return { opener: {} as unknown, closed: false, close: vi.fn(), location: { replace: vi.fn() } }
 }
 
 beforeEach(() => {
   h.adminPost.mockReset()
   h.adminGet.mockReset()
-  h.openExternalUrl.mockReset()
 })
 afterEach(() => {
   cleanup()
@@ -284,27 +297,55 @@ describe('ReviewTab', () => {
   })
 
   it('Ver no Asaas pede payment-link e abre a fatura', async () => {
-    h.adminGet.mockResolvedValue({ paymentId: 'pay_abc123', status: 'RECEIVED', invoiceUrl: 'https://www.asaas.com/i/abc123' })
+    // A aba abre no próprio clique (o navegador bloqueia depois de um await) e recebe o endereço depois.
+    const link = deferred<{ paymentId: string; status: string; invoiceUrl: string | null }>()
+    h.adminGet.mockReturnValue(link.promise)
+    const tab = fakeTab()
+    const open = vi.spyOn(window, 'open').mockImplementation(() => tab as unknown as Window)
     setup(queue({ actions: [REFUND] }))
     fireEvent.click(button(item('Estornar à mão'), 'Ver no Asaas'))
     expect(h.adminGet).toHaveBeenCalledWith('payment-link', { id: 'pay_abc123' })
-    await waitFor(() => expect(h.openExternalUrl).toHaveBeenCalledWith('https://www.asaas.com/i/abc123'))
+    expect(open).toHaveBeenCalledTimes(1)
+    expect(open).toHaveBeenCalledWith('', '_blank')
+    // A página de fora não alcança o app.
+    expect(tab.opener).toBeNull()
+    expect(tab.location.replace).not.toHaveBeenCalled()
+    link.resolve({ paymentId: 'pay_abc123', status: 'RECEIVED', invoiceUrl: 'https://www.asaas.com/i/abc123' })
+    await waitFor(() => expect(tab.location.replace).toHaveBeenCalledWith('https://www.asaas.com/i/abc123'))
+    expect(open).toHaveBeenCalledTimes(1)
+    expect(tab.close).not.toHaveBeenCalled()
   })
 
-  it('Ver no Asaas sem link da fatura avisa e não abre nada', async () => {
+  it('Ver no Asaas sem link da fatura fecha a aba e avisa', async () => {
     h.adminGet.mockResolvedValue({ paymentId: 'pay_abc123', status: 'RECEIVED', invoiceUrl: null })
+    const tab = fakeTab()
+    vi.spyOn(window, 'open').mockImplementation(() => tab as unknown as Window)
     setup(queue({ actions: [REFUND] }))
     fireEvent.click(button(item('Estornar à mão'), 'Ver no Asaas'))
     await waitFor(() => expect(item('Estornar à mão').textContent).toContain('O Asaas não mandou o link da fatura.'))
-    expect(h.openExternalUrl).not.toHaveBeenCalled()
+    expect(tab.close).toHaveBeenCalledTimes(1)
+    expect(tab.location.replace).not.toHaveBeenCalled()
   })
 
-  it('Ver no Asaas com o Asaas fora mostra a frase do servidor', async () => {
+  it('Ver no Asaas com o Asaas fora fecha a aba e mostra a frase do servidor', async () => {
     h.adminGet.mockRejectedValue(new AdminApiError('O Asaas não respondeu agora.', 502))
+    const tab = fakeTab()
+    vi.spyOn(window, 'open').mockImplementation(() => tab as unknown as Window)
     setup(queue({ actions: [REFUND] }))
     fireEvent.click(button(item('Estornar à mão'), 'Ver no Asaas'))
     await waitFor(() => expect(item('Estornar à mão').textContent).toContain('O Asaas não respondeu agora.'))
-    expect(h.openExternalUrl).not.toHaveBeenCalled()
+    expect(tab.close).toHaveBeenCalledTimes(1)
+    expect(tab.location.replace).not.toHaveBeenCalled()
+  })
+
+  it('Ver no Asaas com a aba bloqueada pelo navegador avisa em vez de ficar mudo', async () => {
+    h.adminGet.mockResolvedValue({ paymentId: 'pay_abc123', status: 'RECEIVED', invoiceUrl: 'https://www.asaas.com/i/abc123' })
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    setup(queue({ actions: [REFUND] }))
+    fireEvent.click(button(item('Estornar à mão'), 'Ver no Asaas'))
+    await waitFor(() => expect(item('Estornar à mão').textContent).toContain('O navegador bloqueou a aba nova.'))
+    // Tentou de novo com o endereço, e o navegador bloqueou de novo.
+    expect(open).toHaveBeenLastCalledWith('https://www.asaas.com/i/abc123', '_blank')
   })
 
   it('Já estornei no Asaas manda close-action com outcome done e a nota', async () => {
@@ -363,8 +404,9 @@ describe('ReviewTab', () => {
     fireEvent.click(button(d, 'Marcar como feito'))
     await waitFor(() => expect(within(d).getByRole('alert').textContent).toBe(msg))
     expect(dialog('Já estornei no Asaas')).toBe(d)
-    expect(refetch).not.toHaveBeenCalled()
-    // Erro certo: a ação não foi feita, então pode tentar de novo.
+    // Erro certo: a lista pode estar velha (outra aba fechou), então recarrega por trás do diálogo.
+    expect(refetch).toHaveBeenCalledTimes(1)
+    // A ação não foi feita, então pode tentar de novo.
     expect(button(d, 'Marcar como feito').disabled).toBe(false)
   })
 
@@ -493,14 +535,62 @@ describe('ReviewTab', () => {
   it('Tentar agora com o pedido no ar não sai duas vezes', async () => {
     const pending = deferred<{ status: string; attempts: number; lastError: string | null }>()
     h.adminPost.mockReturnValue(pending.promise)
-    setup(queue({ actions: [INACTIVATE] }))
+    const { refetch, rerender } = setup(queue({ actions: [INACTIVATE] }))
     const retry = button(item('Inativar assinatura no Asaas'), 'Tentar agora')
-    fireEvent.click(retry)
-    await waitFor(() => expect(button(item('Inativar assinatura no Asaas'), 'Tentar agora').disabled).toBe(true))
-    fireEvent.click(button(item('Inativar assinatura no Asaas'), 'Tentar agora'))
+    // Dois cliques antes de o React desenhar de novo: o botão ainda está ligado no segundo, e só a
+    // trava do módulo segura.
+    act(() => {
+      retry.click()
+      retry.click()
+    })
     expect(h.adminPost).toHaveBeenCalledTimes(1)
-    pending.resolve({ status: 'done', attempts: 1, lastError: null })
-    await waitFor(() => expect(button(item('Inativar assinatura no Asaas'), 'Tentar agora').disabled).toBe(false))
+    expect(button(item('Inativar assinatura no Asaas'), 'Tentar agora').disabled).toBe(true)
+    pending.resolve({ status: 'pending', attempts: 4, lastError: null })
+    await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1))
+    // Respondeu: continua segurado até a fila recarregar.
+    expect(button(item('Inativar assinatura no Asaas'), 'Tentar agora').disabled).toBe(true)
+    rerender(queue({ actions: [{ ...INACTIVATE, attempts: 4 }] }))
+    expect(button(item('Inativar assinatura no Asaas'), 'Tentar agora').disabled).toBe(false)
+  })
+
+  it('trocar de aba com o pedido no ar e voltar não manda a mesma ação de novo', async () => {
+    const pending = deferred<{ status: string; attempts: number; lastError: string | null }>()
+    h.adminPost.mockReturnValue(pending.promise)
+    const { refetch, leave, comeBack } = setup(queue({ actions: [INACTIVATE] }))
+    fireEvent.click(button(item('Inativar assinatura no Asaas'), 'Tentar agora'))
+    leave()
+    comeBack()
+    const again = button(item('Inativar assinatura no Asaas'), 'Tentar agora')
+    expect(again.disabled).toBe(true)
+    act(() => again.click())
+    expect(h.adminPost).toHaveBeenCalledTimes(1)
+    // A resposta chega com a aba nova montada e aparece nela.
+    pending.resolve({ status: 'pending', attempts: 4, lastError: 'O Asaas não respondeu.' })
+    await waitFor(() =>
+      expect(item('Inativar assinatura no Asaas').textContent).toContain('O Asaas ainda não confirmou. O Asaas não respondeu.'),
+    )
+    // Uma vez ao voltar pra aba (lista na mão) e outra depois da resposta.
+    expect(refetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('resposta incerta com a aba fechada segura o botão e a frase ao voltar', async () => {
+    const pending = deferred<never>()
+    h.adminPost.mockReturnValue(pending.promise)
+    const data = queue({ actions: [INACTIVATE] })
+    const { refetch, leave, comeBack } = setup(data)
+    fireEvent.click(button(item('Inativar assinatura no Asaas'), 'Tentar agora'))
+    leave()
+    // Com a aba fechada, a resposta se perde no meio do caminho.
+    await act(async () => pending.reject(new AdminApiError(LOST, 0, true)))
+    expect(refetch).not.toHaveBeenCalled()
+    // Volta com a mesma fila da casca: segue segurado, com a frase do Registro.
+    const update = comeBack()
+    expect(button(item('Inativar assinatura no Asaas'), 'Tentar agora').disabled).toBe(true)
+    expect(item('Inativar assinatura no Asaas').textContent).toContain(LOST)
+    // A volta pede a fila de novo; quando ela chega, solta.
+    expect(refetch).toHaveBeenCalledTimes(1)
+    update(queue({ actions: [{ ...INACTIVATE, attempts: 4 }] }))
+    expect(button(item('Inativar assinatura no Asaas'), 'Tentar agora').disabled).toBe(false)
   })
 
   it('Tentar agora com resposta incerta mostra a frase do Registro e segura o botão até a lista recarregar', async () => {
@@ -526,13 +616,15 @@ describe('ReviewTab', () => {
     expect(button(item('Inativar assinatura no Asaas'), 'Tentar agora').disabled).toBe(false)
   })
 
-  it('Tentar agora com erro certo mostra a frase e deixa tentar de novo', async () => {
+  it('Tentar agora com erro certo mostra a frase, recarrega a lista e solta quando ela chega', async () => {
     h.adminPost.mockRejectedValue(new AdminApiError('Esta pendência já foi fechada.', 409))
-    const { refetch } = setup(queue({ actions: [INACTIVATE] }))
+    const { refetch, rerender } = setup(queue({ actions: [INACTIVATE] }))
     fireEvent.click(button(item('Inativar assinatura no Asaas'), 'Tentar agora'))
     await waitFor(() => expect(item('Inativar assinatura no Asaas').textContent).toContain('Esta pendência já foi fechada.'))
+    // Já fechada quer dizer lista velha: recarrega.
+    expect(refetch).toHaveBeenCalledTimes(1)
+    rerender(queue({ actions: [{ ...INACTIVATE, attempts: 4 }] }))
     expect(button(item('Inativar assinatura no Asaas'), 'Tentar agora').disabled).toBe(false)
-    expect(refetch).not.toHaveBeenCalled()
   })
 
   it('Tentar de novo manda retry-event com o id do aviso e recarrega', async () => {
@@ -558,6 +650,32 @@ describe('ReviewTab', () => {
     expect(button(item(name), 'Tentar de novo').disabled).toBe(false)
   })
 
+  it('resposta fora do formato mostra a frase pronta e Tentar de novo, sem quebrar a tela', () => {
+    const bad: unknown[] = [
+      [],
+      'ok',
+      { actions: [], flags: [] },
+      { ...queue(), counts: null },
+      { ...queue(), actions: [{ ...REFUND, email: { nome: 'ana' } }] },
+      { ...queue(), flags: [{ ...FLAG, adminNote: 42 }] },
+      { ...queue(), events: [{ ...EXHAUSTED, attempts: '5' }] },
+    ]
+    for (const data of bad) {
+      const { refetch } = setup(data as ReviewQueue)
+      expect(screen.getByRole('alert').textContent).toBe('Não deu pra carregar as pendências. Tente de novo.')
+      expect(screen.queryByText('Nada pendente agora.')).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+      expect(refetch).toHaveBeenCalledTimes(1)
+      cleanup()
+    }
+  })
+
+  it('erro sem lista também mostra Tentar de novo', () => {
+    const { refetch } = setup(null, { error: 'O servidor demorou demais pra responder. Tente de novo.' })
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+    expect(refetch).toHaveBeenCalledTimes(1)
+  })
+
   it('com mais avisos do que a lista traz, mostra quantos de quantos', () => {
     const data = queue({ events: [EXHAUSTED, FAILED] })
     setup({ ...data, counts: { manual: 60, auto: 82, total: 142 } })
@@ -575,5 +693,24 @@ describe('ReviewTab', () => {
     expect(container.textContent).not.toContain(TRAVESSAO)
     fireEvent.click(button(item('Caso pra olhar'), 'Conferido'))
     expect(document.body.textContent).not.toContain(TRAVESSAO)
+  })
+
+  // Por último: o vi.resetModules daqui recarrega o desktop.ts com o bridge e não pode mexer nos outros testes.
+  it('no app de computador a fatura abre pelo bridge, sem aba em branco', async () => {
+    const openBridge = vi.fn()
+    const open = vi.spyOn(window, 'open')
+    window.playbackDesktop = { isElectron: true, openExternalUrl: openBridge } as unknown as Window['playbackDesktop']
+    try {
+      vi.resetModules()
+      const desktop = await vi.importActual<typeof import('../../lib/desktop')>('../../lib/desktop')
+      const later = desktop.openExternalUrlLater()
+      expect(open).not.toHaveBeenCalled()
+      expect(later.go('https://www.asaas.com/i/abc123')).toBe(true)
+      expect(openBridge).toHaveBeenCalledWith('https://www.asaas.com/i/abc123')
+      later.cancel()
+      expect(open).not.toHaveBeenCalled()
+    } finally {
+      delete window.playbackDesktop
+    }
   })
 })

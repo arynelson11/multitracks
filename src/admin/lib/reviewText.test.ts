@@ -7,6 +7,7 @@ import {
   eventTitle,
   flagStatusText,
   flagTitle,
+  isReviewQueue,
   noteLines,
   reasonText,
   retryActionText,
@@ -136,6 +137,71 @@ describe('reviewText', () => {
     expect(updatedAtLabel('2026-11-16T15:05:00.123456+00:00')).toBe('Atualizado às 12:05')
     expect(updatedAtLabel(null)).toBeNull()
     expect(updatedAtLabel('nao e data')).toBeNull()
+  })
+
+  it('isReviewQueue aceita a fila do servidor e recusa o que quebraria a tela', () => {
+    const action = {
+      id: 7,
+      action: 'refund_payment',
+      reason: 'estorno',
+      autoRetry: false,
+      attempts: 0,
+      lastError: null,
+      nextAttemptAt: '2026-11-16T12:00:00Z',
+      createdAt: '2026-11-16T12:00:00Z',
+      subscriptionRef: 'ref-1',
+      asaasSubscriptionId: null,
+      paymentId: 'pay_1',
+      dueDate: '2026-11-10',
+      amount: 29.9,
+      userId: 'u1',
+      email: 'ana@exemplo.com',
+      planKey: 'essencial_mensal',
+    }
+    const flag = {
+      subscriptionRef: 'ref-2',
+      userId: null,
+      email: null,
+      planKey: 'pro_anual',
+      kind: 'asaas',
+      status: 'active',
+      cancelSource: null,
+      adminNote: null,
+      updatedAt: '2026-11-16T14:00:00.123456+00:00',
+    }
+    const event = { id: 'evt_1&1', event: 'PAYMENT_CONFIRMED', status: 'exhausted', attempts: 5, lastError: null, receivedAt: '2026-11-15T10:00:00Z' }
+    const ok = {
+      actions: [action],
+      flags: [flag],
+      events: [event],
+      counts: { manual: 3, auto: 0, total: 3 },
+      generatedAt: '2026-11-16T15:05:00Z',
+    }
+    expect(isReviewQueue(ok)).toBe(true)
+    expect(isReviewQueue({ ...ok, actions: [], flags: [], events: [] })).toBe(true)
+    for (const bad of [
+      null,
+      [],
+      'ok',
+      { ...ok, actions: undefined },
+      { ...ok, flags: 'nada' },
+      { ...ok, events: [null] },
+      { ...ok, counts: { manual: 1, auto: 0 } },
+      { ...ok, counts: { manual: 1, auto: 0, total: -1 } },
+      { ...ok, actions: [{ ...action, id: '7' }] },
+      { ...ok, actions: [{ ...action, action: 3 }] },
+      { ...ok, actions: [{ ...action, email: { nome: 'ana' } }] },
+      { ...ok, actions: [{ ...action, autoRetry: 'sim' }] },
+      { ...ok, actions: [{ ...action, amount: '29,90' }] },
+      { ...ok, actions: [{ ...action, subscriptionRef: null }] },
+      { ...ok, flags: [{ ...flag, adminNote: 42 }] },
+      { ...ok, flags: [{ ...flag, updatedAt: null }] },
+      { ...ok, flags: [{ ...flag, planKey: ['pro'] }] },
+      { ...ok, events: [{ ...event, attempts: '5' }] },
+      { ...ok, events: [{ ...event, id: 9 }] },
+    ]) {
+      expect(isReviewQueue(bad)).toBe(false)
+    }
   })
 
   it('nenhum texto tem travessão', () => {
