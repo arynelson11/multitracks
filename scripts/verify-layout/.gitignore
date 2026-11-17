@@ -1,0 +1,3 @@
+# Saídas locais do verificador (se geram de novo a cada rodada).
+results/
+.build/
