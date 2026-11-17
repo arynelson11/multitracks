@@ -17,6 +17,12 @@
 --   preço conhecido fica sem custo.
 -- * Trabalho sem custo = cost_recorded_at, cost_usd ou cost_brl nulo. Ele conta
 --   à parte (withoutCost) e fica fora das duas somas (US$ e R$) e da média.
+-- * O sem custo se divide em dois (Ajuste ADM-sem-custo), pela mesma regra que a
+--   varredura (api/_lib/aiCost.ts) usa pra escolher o que consultar:
+--   withoutCostPending, o que ela ainda completa (nunca gravado, cost_recorded_at
+--   nulo, ou gravado com o dólar e sem o real); withoutCostUnpriced, o que ela já
+--   gravou sem dólar e nunca mais tenta (versão sem preço conhecido, concluído sem
+--   tempo, sem dado do Replicate). withoutCost continua sendo a soma dos dois.
 -- * Câmbio: PTAX de venda do Banco Central, um valor por dia em fx_rates. O R$
 --   usa a PTAX pura, sem IOF nem spread do cartão.
 -- * Excluir a conta não apaga os trabalhos (D24): user_id vira null, e o custo
@@ -100,14 +106,17 @@ revoke all on table public.fx_rates from anon, authenticated;
 -- Formato AiCosts sem os campos do servidor (prices, sweep, page e pageSize):
 -- range:   { from, to } (dias de Brasília; sem datas, o mês de Brasília de hoje).
 -- totals:  jobs; succeeded, failed, canceled e unknown pelo status; withoutCost
---          pela regra do sem custo; costUsd e costBrl somam só os trabalhos com
+--          pela regra do sem custo, dividido em withoutCostPending (a varredura
+--          ainda completa) e withoutCostUnpriced (já tentado, sem preço conhecido
+--          ou sem dado do Replicate); costUsd e costBrl somam só os trabalhos com
 --          custo; avgBrlPerSucceeded = R$ dos concluídos com custo dividido pela
 --          quantidade deles (null se nenhum); predictSeconds soma o tempo.
 -- byUser:  as 50 contas de maior costBrl (conta excluída: userId e email null).
 -- byModel: por model e stem_count, do maior costBrl pro menor; avgSeconds é a
 --          média do tempo de quem tem tempo.
 -- fx:      { minDate, maxDate } dos dias de câmbio usados no período.
--- rows:    os trabalhos, mais novos primeiro (página de 1 a 200; total conta todos).
+-- rows:    os trabalhos, mais novos primeiro (página de 1 a 200; total conta todos);
+--          costPending diz se a varredura ainda completa o custo daquele trabalho.
 create or replace function public.admin_ai_costs(p_from date, p_to date, p_limit int, p_offset int)
 returns jsonb
 language plpgsql
@@ -127,7 +136,11 @@ declare
 begin
   with j as (
     select pr.*,
-           (pr.cost_recorded_at is not null and pr.cost_usd is not null and pr.cost_brl is not null) as com_custo
+           (pr.cost_recorded_at is not null and pr.cost_usd is not null and pr.cost_brl is not null) as com_custo,
+           -- a varredura ainda volta nele: nunca gravado, ou gravado com o dólar e sem o real
+           -- (os dois filtros de sweepPendingCosts); nunca nulo, nunca junto com com_custo
+           (pr.cost_recorded_at is null
+            or (pr.cost_usd is not null and pr.cost_usd >= 0 and pr.cost_brl is null)) as a_completar
       from public.predictions pr
      where pr.created_at >= v_start
        and pr.created_at < v_end
@@ -165,6 +178,8 @@ begin
                       'canceled', count(*) filter (where j.status = 'canceled'),
                       'unknown', count(*) filter (where j.status = 'unknown'),
                       'withoutCost', count(*) filter (where not j.com_custo),
+                      'withoutCostPending', count(*) filter (where j.a_completar),
+                      'withoutCostUnpriced', count(*) filter (where not j.com_custo and not j.a_completar),
                       'costUsd', coalesce(sum(j.cost_usd) filter (where j.com_custo), 0),
                       'costBrl', coalesce(sum(j.cost_brl) filter (where j.com_custo), 0),
                       'avgBrlPerSucceeded', round(avg(j.cost_brl) filter (where j.com_custo and j.status = 'succeeded'), 4),
@@ -204,7 +219,8 @@ begin
                       'costUsd', p.cost_usd,
                       'costBrl', p.cost_brl,
                       'fxRate', p.fx_usd_brl,
-                      'fxDate', p.fx_date
+                      'fxDate', p.fx_date,
+                      'costPending', p.a_completar
                     ) order by p.created_at desc, p.replicate_id desc), '[]'::jsonb)
                from pagina p),
            'total', (select count(*) from j))
