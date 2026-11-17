@@ -136,11 +136,13 @@ export function NextPill({ transition, intent, sections, currentSection, gridWar
         <div className="flex min-w-0 flex-col">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <span className={cx(TAG, 'whitespace-nowrap text-ps-arm')}>{label}</span>
-            {/* Abaixo de 1280 o aviso da grade vira uma luz âmbar (o texto inteiro fica no title, na região
-                viva e na descrição do X): rótulo e aviso numa linha só, e o aviso nunca passa da altura do transporte. */}
-            {warning && <span title={warning.title} className={cx(TAG, 'text-ps-alert max-xl:hidden')}>{warning.label}</span>}
+            {/* Abaixo de 1440 o aviso da grade vira uma luz âmbar (o texto inteiro fica no title, na região
+                viva e na descrição do X): rótulo e aviso numa linha só, e o aviso nunca passa da altura do transporte.
+                Entre 1280 e 1439 a coluna (328 a 350 px) ainda quebra o aviso em outra linha e, com um nome de
+                2 linhas, o aviso passava da altura do transporte e era cortado em cima (verificador da T20). */}
+            {warning && <span title={warning.title} className={cx(TAG, 'text-ps-alert max-[1440px]:hidden')}>{warning.label}</span>}
             {warning && (
-              <span data-grid-warning-led="" title={warning.title} className="inline-flex self-center xl:hidden">
+              <span data-grid-warning-led="" title={warning.title} className="inline-flex self-center min-[1440px]:hidden">
                 <Led state="alert" size="sm" />
               </span>
             )}

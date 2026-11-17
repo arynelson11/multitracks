@@ -167,13 +167,13 @@ describe('aviso PRÓXIMA', () => {
     renderPill({ gridWarning: 'sem-click-lido', intent: null, transition: null })
     expect(screen.queryByText('SEM CLICK LIDO')).toBeNull()
   })
-  it('abaixo de 1280 o aviso da grade vira uma luz âmbar ao lado do rótulo (o nome continua em até 2 linhas)', () => {
+  it('abaixo de 1440 o aviso da grade vira uma luz âmbar ao lado do rótulo (o nome continua em até 2 linhas)', () => {
     renderPill({ gridWarning: 'compasso-assumido' })
     const w = screen.getByText('COMPASSO ASSUMIDO')
-    expect(w.className).toContain('max-xl:hidden')
+    expect(w.className).toContain('max-[1440px]:hidden')
     const led = w.parentElement!.querySelector('[data-grid-warning-led]') as HTMLElement
     expect(led).not.toBeNull()
-    expect(led.className).toContain('xl:hidden')
+    expect(led.className).toContain('min-[1440px]:hidden')
     expect(led.getAttribute('title')).toBe(GRID_WARNING_TEXT['compasso-assumido'].title)
     expect(led.querySelector('.bg-ps-alert')).not.toBeNull()
     // O leitor de tela continua ouvindo o aviso inteiro (região viva e descrição do X).
