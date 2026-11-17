@@ -3,6 +3,7 @@ import { PAID_STATUSES, toBrtDate } from '../billing.js'
 import { PLAN_LIMITS, effectivePlan } from '../plan.js'
 import { PLAN_PRICING, isPlanKey, type PlanKey } from '../pricing.js'
 import { AdminError, int, oneOf, str, uuid, type AdminCtx, type AdminHandlers } from './http.js'
+import { countOf, isObject } from './period.js'
 import { lastErrorLabel } from './review.js'
 
 // Assinantes (Task 25): a lista da aba e a ficha de uma conta.
@@ -75,14 +76,7 @@ export type AsaasLiveData = { status: string; value: number | null; cycle: strin
 type AsaasLive = ({ subscriptionRef: string; ok: true } & AsaasLiveData) | { subscriptionRef: string; ok: false; error: string }
 
 type Obj = Record<string, unknown>
-const isObject = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isListOfObjects = (v: unknown): v is Obj[] => Array.isArray(v) && v.every(isObject)
-
-// total é bigint: número no JSON, ou texto se passar do inteiro seguro.
-function countOf(v: unknown): number {
-  const n = typeof v === 'number' ? v : typeof v === 'string' && /^\d+$/.test(v) ? Number(v) : Number.NaN
-  return Number.isSafeInteger(n) && n >= 0 ? n : Number.NaN
-}
 
 // ── Frases das diferenças
 
