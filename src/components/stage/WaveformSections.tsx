@@ -84,9 +84,11 @@ const LOOP_BAR =
 const SELO =
   'absolute left-[7px] top-[10px] z-[3] flex h-[22px] items-center whitespace-nowrap rounded-ps-xs bg-(--ps-c) px-[7px] text-ps-sm leading-none font-extrabold tracking-[0.05em] text-ps-ink-0 data-[fit=none]:hidden'
 const SELO_CURRENT = 'shadow-[0_0_0_2px_var(--color-ps-ink-0),0_0_0_3.5px_var(--ps-c)]'
-// v5 .tg / .lp: etiqueta embaixo do selo. Armado em branco; LOOP com contorno claro.
+// v5 .tg / .lp: etiqueta embaixo do selo. Armado em branco; LOOP com contorno claro. Sem ação
+// própria, não pega o toque (Ruling T18-proxima-toque): ao lado do selo ela passa por cima do bloco
+// vizinho, e o toque ali é do vizinho (troca o alvo), nunca da armada (cancelaria o pulo).
 const TAG =
-  'absolute left-[7px] top-[38px] z-[3] flex h-[18px] items-center gap-1 whitespace-nowrap rounded-ps-xs px-1.5 text-ps-micro leading-none font-extrabold tracking-[0.1em] data-[fit=none]:hidden'
+  'pointer-events-none absolute left-[7px] top-[38px] z-[3] flex h-[18px] items-center gap-1 whitespace-nowrap rounded-ps-xs px-1.5 text-ps-micro leading-none font-extrabold tracking-[0.1em] data-[fit=none]:hidden'
 const TAG_TONE: Record<BlockTag, string> = {
   'PRÓXIMA': 'bg-ps-arm text-ps-ink',
   REPETE: 'bg-ps-arm text-ps-ink',

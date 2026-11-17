@@ -270,6 +270,60 @@ describe('selos x etiqueta', () => {
     // Os outros cabem na linha: só a que colide sai.
     expect(b.filter((x) => x.querySelector<HTMLElement>('[data-selo]')!.dataset.fit === 'none')).toHaveLength(1)
   })
+
+  // Ruling T18-proxima-toque: a etiqueta ao lado do selo da armada passa por cima do bloco vizinho
+  // (1024x740, uma linha de selos). Ela não tem ação própria: o toque nesse ponto é do bloco de baixo.
+  it('a PRÓXIMA não pega o toque: no ponto dela, em cima do bloco vizinho, o toque troca o alvo e não cancela o pulo', () => {
+    const W = 992
+    fakeLayout(W, 95, { selo: 100, tag: 66.8, ruler: 30 })
+    const nine: StageSection[] = Array.from({ length: 9 }, (_, i) => ({
+      index: i, label: `Seção Número ${i + 1}`, color: '#10b981', start: i * 10, end: (i + 1) * 10, bars: 4,
+    }))
+    const onTapSection = vi.fn()
+    const { container } = renderWave({ sections: nine, duration: 90, currentSection: 3, intent: { target: 6, plays: 1 }, onTapSection })
+    const b = blocks(container)
+    const tag = b[6].querySelector<HTMLElement>('[data-tag]')!
+    expect(tag.textContent).toBe('PRÓXIMA')
+    // Geometria (o jsdom não faz layout): blocos pela % do style, acima da faixa da régua (44 px); a
+    // etiqueta pelo left e top dela dentro do bloco armado, com a largura medida no Chrome.
+    type Box = { l: number; r: number; t: number; b: number }
+    const blockBox = (el: HTMLElement): Box => {
+      const l = (parseFloat(el.style.left) / 100) * W
+      return { l, r: l + (parseFloat(el.style.width) / 100) * W, t: 0, b: 95 - 44 }
+    }
+    const tl = blockBox(b[6]).l + parseFloat(tag.style.left)
+    const tt = parseFloat(tag.style.top)
+    const tagBox: Box = { l: tl, r: tl + 66.8, t: tt, b: tt + 18 }
+    const x = (tagBox.l + tagBox.r) / 2
+    const y = (tagBox.t + tagBox.b) / 2
+    // O meio da etiqueta fica em cima do bloco vizinho (o 8º), não do armado.
+    expect(x).toBeGreaterThan(blockBox(b[7]).l)
+    expect(x).toBeLessThan(blockBox(b[7]).r)
+    // Quem recebe o toque nesse ponto, como o navegador escolhe: o de cima que aceita ponteiro (a
+    // etiqueta, z-3, fica acima dos blocos; entre os blocos, o último no DOM fica por cima).
+    const takesPointer = (el: HTMLElement) => el.closest('.pointer-events-none') === null
+    const inside = (k: Box) => x >= k.l && x <= k.r && y >= k.t && y <= k.b
+    const stack: Array<{ el: HTMLElement; box: Box }> = [{ el: tag, box: tagBox }, ...b.map((el) => ({ el, box: blockBox(el) })).reverse()]
+    const hit = stack.find(({ el, box }) => takesPointer(el) && inside(box))!.el
+    expect(hit).toBe(b[7])
+    fireEvent.click(hit)
+    // Troca o alvo pro bloco de baixo; tocar na armada (6) cancelaria o pulo.
+    expect(onTapSection).toHaveBeenCalledTimes(1)
+    expect(onTapSection).toHaveBeenCalledWith(7)
+  })
+
+  it('nenhuma etiqueta (PRÓXIMA, REPETE, LOOP) pega o toque: o bloco de baixo recebe', () => {
+    const { container, rerenderWith } = renderWave({ intent: { target: 2, plays: 1 } })
+    const tagEl = () => container.querySelector<HTMLElement>('[data-tag]')!
+    expect(tagEl().textContent).toBe('PRÓXIMA')
+    expect(tagEl().className).toMatch(/\bpointer-events-none\b/)
+    rerenderWith({ intent: { target: 1, plays: 2 } })
+    expect(tagEl().textContent).toBe('REPETE')
+    expect(tagEl().className).toMatch(/\bpointer-events-none\b/)
+    rerenderWith({ intent: { target: 1, plays: 'infinite' }, loopOn: true })
+    expect(tagEl().textContent).toContain('LOOP')
+    expect(tagEl().className).toMatch(/\bpointer-events-none\b/)
+  })
 })
 
 describe('WaveformSections', () => {
