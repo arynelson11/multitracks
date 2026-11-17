@@ -8,8 +8,9 @@ import type { SongGrid, TimeSignature } from './stageContracts'
 // mt_meta_playlist_<userId>) e do manifest.json do ZIP de repertório.
 // v1: registros sem schemaVersion (antes da Parte 1).
 // v2: ganha sourceId, nome e papel escolhidos pelo usuário em cada canal e o modo de ordem.
-// v3: ganha a grade da música (lida no click, com o compasso manual do EDITAR) e o compasso
-//     salvo na nuvem. Os dois são opcionais: registro sem eles abre como antes.
+// v3: ganha a grade da música (lida no click, com o compasso manual do EDITAR), o compasso
+//     salvo na nuvem e, junto da grade de click, a marca do 1 não provado (downbeatAssumed,
+//     Ruling T27-campo). Todos opcionais: registro sem eles abre como antes (sem aviso).
 export const REPERTOIRE_SCHEMA_VERSION = 3
 
 export interface SavedChannel {
@@ -51,6 +52,10 @@ export interface SavedSong {
   grid?: SongGrid
   // Compasso salvo na nuvem (songs.time_signature), quando a música tem (v3).
   timeSignature?: TimeSignature
+  // O 1 da grade de click não foi provado (Ruling T27-campo): o COMPASSO ASSUMIDO volta ao
+  // reabrir, também com o compasso escolhido no EDITAR. Só `true` e só com grade de click;
+  // ausente (registros de antes) quer dizer sem aviso. Não vai pro ZIP, como a grade.
+  downbeatAssumed?: true
   schemaVersion?: number
 }
 
@@ -95,19 +100,27 @@ export function toSavedSong(song: SongLike): SavedSong {
     channelOrder: song.channelOrder ?? 'auto',
     grid: sanitizeGrid(song.grid) ?? undefined,
     timeSignature: sanitizeTimeSignature(song.timeSignature) ?? undefined,
+    downbeatAssumed: oneAssumedWith(song.grid, song.downbeatAssumed),
     schemaVersion: REPERTOIRE_SCHEMA_VERSION,
   }
 }
 
+// O 1 assumido só vale com grade de click (é dela) e só como `true`.
+function oneAssumedWith(grid: unknown, downbeatAssumed: unknown): true | undefined {
+  return downbeatAssumed === true && sanitizeGrid(grid)?.source === 'click' ? true : undefined
+}
+
 // Grade e compasso que podem entrar no aparelho: grade quebrada (bpm NaN, compasso
 // desconhecido) e compasso que o banco recusaria saem do registro, sem chave com null,
-// e a música abre sem grade, como antes da Parte 2. O resto do registro não muda.
-function savedMeter(grid: unknown, timeSignature: unknown): Pick<SavedSong, 'grid' | 'timeSignature'> {
-  const out: Pick<SavedSong, 'grid' | 'timeSignature'> = {}
+// e a música abre sem grade, como antes da Parte 2. O 1 assumido só fica com grade de click.
+// O resto do registro não muda.
+function savedMeter(grid: unknown, timeSignature: unknown, downbeatAssumed: unknown): Pick<SavedSong, 'grid' | 'timeSignature' | 'downbeatAssumed'> {
+  const out: Pick<SavedSong, 'grid' | 'timeSignature' | 'downbeatAssumed'> = {}
   const g = sanitizeGrid(grid)
   if (g) out.grid = g
   const ts = sanitizeTimeSignature(timeSignature)
   if (ts) out.timeSignature = ts
+  if (oneAssumedWith(g, downbeatAssumed)) out.downbeatAssumed = true
   return out
 }
 
@@ -128,12 +141,12 @@ export function inferChannelOrder(channels: readonly SavedChannel[]): ChannelOrd
 // v2 → v3: grade e compasso passam pela regra do palco também no registro v3, porque o
 // aparelho guarda o que vier (inclusive NaN). Idempotente.
 export function migrateSavedSong(saved: SavedSong): SavedSong {
-  const { grid, timeSignature, ...rest } = saved
+  const { grid, timeSignature, downbeatAssumed, ...rest } = saved
   const isV1 = typeof saved.schemaVersion !== 'number' || saved.schemaVersion < 2
   return {
     ...rest,
     ...(isV1 ? { channelOrder: saved.channelOrder ?? inferChannelOrder(saved.channels) } : {}),
-    ...savedMeter(grid, timeSignature),
+    ...savedMeter(grid, timeSignature, downbeatAssumed),
     schemaVersion: REPERTOIRE_SCHEMA_VERSION,
   }
 }
@@ -165,7 +178,8 @@ export function migrateManifestSong(entry: SavedSong): SavedSong {
   }
   delete out.grid
   delete out.timeSignature
-  return { ...out, ...savedMeter(null, entry.timeSignature) }
+  delete out.downbeatAssumed
+  return { ...out, ...savedMeter(null, entry.timeSignature, undefined) }
 }
 
 export interface ManifestChannel {

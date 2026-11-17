@@ -59,6 +59,10 @@ export interface Song {
     grid?: SongGrid;
     // Compasso salvo na nuvem (songs.time_signature). Ausente quer dizer não informado.
     timeSignature?: TimeSignature;
+    // O "1" da grade de click não foi provado (nem pelo acento do click nem pelas seções): o
+    // palco avisa COMPASSO ASSUMIDO, também com o compasso escolhido no EDITAR. Só existe junto
+    // de grade de click; ausente quer dizer sem aviso (Ruling T27-campo).
+    downbeatAssumed?: true;
 }
 
 export interface Marker {

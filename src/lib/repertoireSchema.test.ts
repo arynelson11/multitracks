@@ -216,3 +216,38 @@ describe('repertório v3: grade e compasso da música', () => {
     expect('timeSignature' in estranho).toBe(false)
   })
 })
+
+// Ruling T27-campo: o "1" que o click não provou (nem o acento nem as seções) fica marcado na
+// música (`downbeatAssumed`), pro COMPASSO ASSUMIDO sobreviver a reabrir mesmo com o compasso
+// escolhido no EDITAR (que troca o meterSource da grade pra 'manual'). Ausente = sem aviso.
+describe('repertório v3: o 1 assumido da grade de click', () => {
+  const manual = withMeter(clickGrid, '3/4', 1)
+
+  it('vai e volta junto da grade de click (toSavedSong e migrateSavedSong)', () => {
+    const salvo = toSavedSong({ ...v1, grid: manual, downbeatAssumed: true })
+    expect(salvo.downbeatAssumed).toBe(true)
+    const reaberto = migrateSavedSong(noAparelho(salvo))
+    expect(reaberto.downbeatAssumed).toBe(true)
+    expect(reaberto.grid).toStrictEqual(manual)
+    expect(migrateSavedSong(reaberto)).toStrictEqual(reaberto)
+  })
+
+  it('sem grade de click, ou com valor estranho, sai do registro (sem chave)', () => {
+    const semClick = migrateSavedSong(noAparelho({ ...v2, grid: { ...clickGrid, source: 'bpm' }, downbeatAssumed: true } as SavedSong))
+    expect('downbeatAssumed' in semClick).toBe(false)
+    expect(toSavedSong({ ...v1, downbeatAssumed: true }).downbeatAssumed).toBeUndefined()
+    for (const estranho of [false, 'sim', 1, null]) {
+      const gravado = { ...v2, grid: clickGrid, downbeatAssumed: estranho } as unknown as SavedSong
+      expect('downbeatAssumed' in migrateSavedSong(noAparelho(gravado))).toBe(false)
+      expect(toSavedSong(gravado).downbeatAssumed).toBeUndefined()
+    }
+    // Registro antigo, sem o campo: continua igual (sem aviso).
+    expect(migrateSavedSong(noAparelho({ ...v2, grid: clickGrid }))).toStrictEqual({ ...v2, schemaVersion: REPERTOIRE_SCHEMA_VERSION, grid: clickGrid })
+  })
+
+  it('o ZIP não leva a grade nem o 1 assumido', () => {
+    const importado = migrateManifestSong(noAparelho<SavedSong>({ ...manifestAntigo, grid: clickGrid, downbeatAssumed: true }))
+    expect('downbeatAssumed' in importado).toBe(false)
+    expect('downbeatAssumed' in toManifestSong({ ...migrateSavedSong(v1), grid: clickGrid, downbeatAssumed: true })).toBe(false)
+  })
+})
