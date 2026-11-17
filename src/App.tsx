@@ -108,6 +108,12 @@ const TOUR_STEPS_NEW_STAGE: TourStep[] = TOUR_STEPS.flatMap((step): TourStep[] =
   return [step]
 })
 
+/**
+ * Topo do fader do palco antigo (1,2, como na v1.4.16). O palco novo vai até +6 dB (FADER_MAX_GAIN):
+ * um volume acima de 1,2 que veio de lá aparece no topo, sem o preenchimento passar do trilho.
+ */
+const OLD_FADER_MAX = 1.2
+
 /** Resolução da onda grande do palco novo (picos por música; a onda junta por pixel). */
 const STAGE_WAVE_BUCKETS = 2048
 
@@ -2205,11 +2211,11 @@ export default function App() {
                       style={{ writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' } as any} />
                     <div className="logic-fader-track h-full w-3 sm:w-4 relative pointer-events-none">
                       <div className="logic-fader-fill" style={{ 
-                        height: `${(ch.volume / 1.2) * 100}%`, 
+                        height: `${(Math.min(ch.volume, OLD_FADER_MAX) / OLD_FADER_MAX) * 100}%`, 
                         background: channelFaderFill(chColor, isMutedByOther)
                       }}></div>
                     </div>
-                    <div className="logic-fader-knob absolute pointer-events-none transition-all duration-75 z-20" style={{ bottom: `calc(${(ch.volume / 1.2) * 100}% - var(--knob-half, 26px))` }}>
+                    <div className="logic-fader-knob absolute pointer-events-none transition-all duration-75 z-20" style={{ bottom: `calc(${(Math.min(ch.volume, OLD_FADER_MAX) / OLD_FADER_MAX) * 100}% - var(--knob-half, 26px))` }}>
                     </div>
                   </div>
 
@@ -2297,11 +2303,11 @@ export default function App() {
                     style={{ writingMode: 'bt-lr', WebkitAppearance: 'slider-vertical' } as any} />
                   <div className="logic-fader-track h-full w-4 sm:w-5 relative pointer-events-none">
                     <div className="logic-fader-fill" style={{ 
-                      height: `${(masterVolume / 1.2) * 100}%`, 
+                      height: `${(Math.min(masterVolume, OLD_FADER_MAX) / OLD_FADER_MAX) * 100}%`, 
                       background: 'linear-gradient(to top, rgba(212,168,67,0.5), rgba(212,168,67,0.1))'
                     }}></div>
                   </div>
-                  <div className="logic-fader-knob master absolute pointer-events-none transition-all duration-75 z-20" style={{ bottom: `calc(${(masterVolume / 1.2) * 100}% - var(--knob-half-master, 30px))` }}>
+                  <div className="logic-fader-knob master absolute pointer-events-none transition-all duration-75 z-20" style={{ bottom: `calc(${(Math.min(masterVolume, OLD_FADER_MAX) / OLD_FADER_MAX) * 100}% - var(--knob-half-master, 30px))` }}>
                   </div>
                 </div>
                 
