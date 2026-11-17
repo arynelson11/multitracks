@@ -37,7 +37,10 @@ const MSG_NO_PAID = 'Esta conta não tem assinatura paga ativa. Para dar um plan
 const MSG_PLAN_NOT_CHANGED = 'O Asaas não trocou o plano. Nada mudou.'
 const MSG_PLAN_SUB_NOT_FOUND = 'O Asaas não achou esta assinatura. Nada mudou.'
 const MSG_PLAN_HALF = 'O Asaas trocou o plano, mas o app não. A ficha ficou marcada em Pendências; use Mudar plano de novo para terminar.'
-const MSG_PLAN_HALF_UNMARKED = 'O Asaas trocou o plano, mas o app não, e não deu pra marcar a ficha em Pendências. Use Mudar plano de novo para terminar.'
+// Toda frase em que a marcação da ficha falhou diz isso: nada vai aparecer em
+// Pendências, então quem confere é o admin, no painel do Asaas.
+const NOT_FLAGGED = 'Não deu pra marcar a ficha, então nada vai aparecer em Pendências; confira no painel do Asaas'
+const MSG_PLAN_HALF_UNMARKED = `O Asaas trocou o plano, mas o app não. ${NOT_FLAGGED} e use Mudar plano de novo para terminar.`
 const MSG_PLAN_NOT_SENT = 'Erro no servidor antes de pedir a troca ao Asaas. Nada mudou.'
 const MSG_LEGACY_PAID = 'Esta conta tem uma assinatura antiga, de antes da cobrança nova, que pode estar cobrando no Asaas. Mudar plano não vale pra ela, e uma cortesia não para essa cobrança. Confira no painel do Asaas.'
 const MSG_NO_ASAAS_KEY = 'O servidor está sem a chave do Asaas.'
@@ -56,7 +59,7 @@ const MSG_QUOTA_MAX = 'A cota extra deste mês já está no máximo (1000).'
 const MSG_RESET_NO_AMOUNT = 'Zerar não leva quantidade.'
 const MSG_QUOTA_UNCONFIRMED = 'Não deu pra confirmar o ajuste da cota. Ele pode ter sido feito; confira no Registro antes de repetir.'
 const MSG_UNCERTAIN = 'O Asaas não respondeu a tempo. A mudança pode ter sido feita. A ficha foi marcada pra conferir; confira em Pendências antes de repetir.'
-const MSG_UNCERTAIN_UNMARKED = 'O Asaas não respondeu a tempo. A mudança pode ter sido feita, e não deu pra marcar a ficha. Confira no painel do Asaas antes de repetir.'
+const MSG_UNCERTAIN_UNMARKED = `O Asaas não respondeu a tempo. A mudança pode ter sido feita. ${NOT_FLAGGED} antes de repetir.`
 
 // Notas da marcação (texto do banco, sem acento como as da Fase 3).
 const noteChangePlan = (planKey: PlanKey): string =>
@@ -330,7 +333,7 @@ async function paidActiveIdsNow(ctx: AdminCtx, userId: string): Promise<string[]
 
 function cancelPartialMessage(phase3: string, flagged: boolean): string {
   const base = phase3.startsWith(CANCEL_PARTIAL_PREFIX) ? phase3 : `${CANCEL_PARTIAL_PREFIX}: ${phase3}`
-  return flagged ? `${base} ${MSG_FLAGGED}` : base
+  return `${base} ${flagged ? MSG_FLAGGED : `${NOT_FLAGGED}.`}`
 }
 
 // ── Cortesia (D9)

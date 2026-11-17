@@ -27,7 +27,7 @@ const MSG = {
   planSubNotFound: 'O Asaas não achou esta assinatura. Nada mudou.',
   noAsaasKey: 'O servidor está sem a chave do Asaas.',
   planHalf: 'O Asaas trocou o plano, mas o app não. A ficha ficou marcada em Pendências; use Mudar plano de novo para terminar.',
-  planHalfUnmarked: 'O Asaas trocou o plano, mas o app não, e não deu pra marcar a ficha em Pendências. Use Mudar plano de novo para terminar.',
+  planHalfUnmarked: 'O Asaas trocou o plano, mas o app não. Não deu pra marcar a ficha, então nada vai aparecer em Pendências; confira no painel do Asaas e use Mudar plano de novo para terminar.',
   planNotSent: 'Erro no servidor antes de pedir a troca ao Asaas. Nada mudou.',
   legacyPaid: 'Esta conta tem uma assinatura antiga, de antes da cobrança nova, que pode estar cobrando no Asaas. Mudar plano não vale pra ela, e uma cortesia não para essa cobrança. Confira no painel do Asaas.',
   cancelDown: 'O Asaas não respondeu. Nada foi cancelado.',
@@ -49,7 +49,10 @@ const MSG = {
 // Ruling ADM-T16-incerto: escrita no Asaas sem resposta que dê certeza.
 const MSG_UNCERTAIN = 'O Asaas não respondeu a tempo. A mudança pode ter sido feita. A ficha foi marcada pra conferir; confira em Pendências antes de repetir.'
 const NOTE_UNCERTAIN_PLAN = 'O Asaas não respondeu a tempo ao pedido de troca de plano para Studio Mensal em 16/11/2026 às 12:00; conferir se foi feito'
-const NOTE_UNCERTAIN_CANCEL = 'O Asaas não respondeu a tempo ao pedido de cancelamento da assinatura (agora) em 16/11/2026 às 12:00; conferir se foi feito'
+const MSG_UNCERTAIN_UNMARKED = 'O Asaas não respondeu a tempo. A mudança pode ter sido feita. Não deu pra marcar a ficha, então nada vai aparecer em Pendências; confira no painel do Asaas antes de repetir.'
+// O fim de toda frase em que a marcação da ficha falhou.
+const NOT_FLAGGED = 'Não deu pra marcar a ficha, então nada vai aparecer em Pendências; confira no painel do Asaas'
+const NOTE_UNCERTAIN_CANCEL ='O Asaas não respondeu a tempo ao pedido de cancelamento da assinatura (agora) em 16/11/2026 às 12:00; conferir se foi feito'
 // O pedido saiu e a resposta não voltou (o axios chama o timeout de ECONNABORTED).
 const asaasTimeout = () => new AsaasError('unavailable', 'Asaas sem resposta (ECONNABORTED)')
 // A conexão nem abriu: o pedido não saiu.
@@ -349,6 +352,8 @@ describe('mudar plano', () => {
     const res = await post('change-plan', { userId: USER_A, planKey: 'pro_mensal' })
     expect(res.statusCode).toBe(500)
     expect(res.body).toEqual({ error: MSG.planHalfUnmarked })
+    expect(MSG.planHalfUnmarked).toContain(NOT_FLAGGED)
+    expect(MSG.planHalfUnmarked).not.toContain('ficou marcada')
     expect(logs[0].finish).toMatchObject({ p_result: 'partial', p_message: MSG.planHalfUnmarked })
   })
 
@@ -605,6 +610,19 @@ describe('cancelar assinatura', () => {
     expect(asaasCalls()).toEqual([])
   })
 
+  it('cancelamento pela metade com a marcação que falhou diz que nada vai aparecer em Pendências', async () => {
+    db.setRpc('billing_end_subscription', () => { throw new Error('connection reset by peer') })
+    db.setRpc('billing_flag_review', () => { throw new Error('connection reset by peer') })
+    const res = await post('cancel-subscription', { userId: USER_A, when: 'period_end' })
+    expect(asaas!.del).toHaveBeenCalledWith('/subscriptions/sub_a')
+    expect(res.statusCode).toBe(500)
+    const error = 'Parte do cancelamento foi feita: Sua assinatura foi cancelada no sistema de pagamento e nada mais será cobrado, mas não conseguimos atualizar sua conta aqui. Tente de novo para ver a data certinha. Não deu pra marcar a ficha, então nada vai aparecer em Pendências; confira no painel do Asaas.'
+    expect(res.body).toEqual({ error })
+    expect(error).not.toContain('ficou marcada')
+    expect(sub('chk_a')).toMatchObject({ status: 'active', needs_admin_review: false })
+    expect(logs[0].finish).toMatchObject({ p_result: 'partial', p_message: error })
+  })
+
   it('cancelamento pela metade marca a ficha, avisa e a nova tentativa termina', async () => {
     const real = db.setRpc('billing_end_subscription', () => { throw new Error('connection reset by peer') })!
     const res = await post('cancel-subscription', { userId: USER_A, when: 'period_end' })
@@ -854,6 +872,21 @@ describe('escrita no Asaas sem resposta (incerto)', () => {
     expect(profile(USER_A).plan).toBe('essencial_mensal')
     expect(rpcNames()).not.toContain('billing_change_plan')
     expect(logs[0].finish).toEqual({ p_id: 41, p_result: 'partial', p_after: null, p_message: MSG_UNCERTAIN })
+  })
+
+  it('escrita incerta com a marcação que falhou manda conferir no painel do Asaas', async () => {
+    db.setRpc('billing_flag_review', () => { throw new Error('connection reset by peer') })
+    setAsaas({ put: () => { throw asaasTimeout() } })
+    const plan = await post('change-plan', { userId: USER_A, planKey: 'pro_mensal' })
+    expect(plan.statusCode).toBe(502)
+    expect(plan.body).toEqual({ error: MSG_UNCERTAIN_UNMARKED, uncertain: true })
+    setAsaas({ get: PAYMENTS_A, del: () => { throw asaasTimeout() } })
+    const cancel = await post('cancel-subscription', { userId: USER_A, when: 'now' })
+    expect(cancel.statusCode).toBe(502)
+    expect(cancel.body).toEqual({ error: MSG_UNCERTAIN_UNMARKED, uncertain: true })
+    expect(MSG_UNCERTAIN_UNMARKED).toContain(NOT_FLAGGED)
+    expect(sub('chk_a').needs_admin_review).toBe(false)
+    expect(logs.map((l) => [l.finish?.p_result, l.finish?.p_message])).toEqual([['partial', MSG_UNCERTAIN_UNMARKED], ['partial', MSG_UNCERTAIN_UNMARKED]])
   })
 
   it('a ação incerta lança o erro com uncertain verdadeiro, pro corpo da resposta', async () => {
