@@ -1,107 +1,268 @@
-import { useMemo, useState } from 'react';
-import { Users, UserCheck, UserX, Search, RefreshCw } from 'lucide-react';
-import { useAdminUsers } from '../hooks/useAdminUsers';
-import { useAiCostStats } from '../hooks/useAiCostStats';
-import { StatCard } from '../components/StatCard';
-import { DataTable, type Column } from '../components/DataTable';
-import { planDisplayName } from '../../lib/plans';
-import { fmtBRL, fmtUSD, fmtDate } from '../lib/format';
-import { planMonthlyBRL, userMarginBRL } from '../lib/metrics';
+// Aba Assinantes: busca por nome, e-mail ou id (espera 300 ms de pausa na digitação), filtros de
+// status, marcação (uma por vez), plano e ordem, páginas de 50 e a ficha de cada conta. A ficha é
+// só de leitura; as ações (T26) entram pela renderActions. Resposta fora do formato mostra a frase
+// pronta com Tentar de novo (Ruling ADM-T7-forma).
+import { useEffect, useId, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
+import { Button, Chip, Segmented, cx } from '../../components/ui'
+import { ErrorBox, SubscriberDetail, Tag } from '../components/SubscriberDetail'
+import { useAdminQuery } from '../hooks/useAdminQuery'
+import { EMPTY, planLabel } from '../lib/fmt'
+import {
+  FLAG_FILTERS,
+  PLAN_FILTERS,
+  SORT_OPTIONS,
+  STATUS_FILTERS,
+  billingDateText,
+  flagLabel,
+  flagNeedsYou,
+  lastAccessText,
+  pageRangeText,
+  statusLabel,
+  type FlagFilter,
+  type PlanFilter,
+  type SortKey,
+  type StatusFilter,
+} from '../lib/subscriberText'
+import { isSubscriberPage, type RenderActions, type SubscriberPage, type SubscriberRow } from '../lib/subscribersTypes'
+import type { TabProps } from '../lib/tabs'
 
-interface Row {
-  id: string; name: string; email: string; plan: string; created_at: string;
-  last_sign_in_at: string | null; is_active: boolean; separations: number;
-  revenueBRL: number; revenueExact: boolean; totalPaid: number; costUSD: number; marginBRL: number;
-}
+const SEARCH_WAIT_MS = 300
+// Teto do servidor pra busca (`q` até 120).
+const SEARCH_MAX = 120
+const MSG_BAD_SHAPE = 'Não deu pra carregar os assinantes. Tente de novo.'
 
-export function SubscribersTab() {
-  const { stats, loading, error, refetch } = useAdminUsers();
-  const { stats: ai } = useAiCostStats();
-  const [q, setQ] = useState('');
-  const [filter, setFilter] = useState<'all' | 'paid' | 'inactive' | 'negative'>('all');
+const CONTROL =
+  'min-h-ps-touch rounded-ps-md bg-ps-s2 px-3 text-ps-md text-ps-bone inset-ring inset-ring-ps-line focus:inset-ring-ps-or-line outline-none'
+const ROW =
+  'flex w-full min-h-ps-touch flex-col gap-2 rounded-ps-2xl bg-ps-s1 p-3 text-left inset-ring inset-ring-ps-line hover:inset-ring-ps-line-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
 
-  const costByUser = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const u of ai?.perUser ?? []) m.set(u.userId, u.costUSD);
-    return m;
-  }, [ai]);
+type Filters = { q: string; status: StatusFilter; flag: FlagFilter | null; plan: PlanFilter; sort: SortKey; page: number }
 
-  const rows: Row[] = useMemo(() => {
-    return (stats?.users ?? []).map(u => {
-      const costUSD = costByUser.get(u.id) ?? 0;
-      const exact = u.exact_monthly_brl ?? undefined;
-      const revenueBRL = exact ?? planMonthlyBRL(u.plan);
-      return {
-        id: u.id, name: u.display_name || u.email, email: u.email, plan: u.plan,
-        created_at: u.created_at, last_sign_in_at: u.last_sign_in_at, is_active: u.is_active,
-        separations: u.separations_count, revenueBRL, revenueExact: exact != null,
-        totalPaid: u.total_paid ?? 0, costUSD,
-        marginBRL: userMarginBRL({ plan: u.plan, costUSD, exactMonthlyBRL: exact }),
-      };
-    });
-  }, [stats, costByUser]);
+const START: Filters = { q: '', status: 'all', flag: null, plan: 'all', sort: 'created', page: 1 }
 
-  const filtered = rows.filter(r => {
-    const matchQ = !q || r.email.toLowerCase().includes(q.toLowerCase()) || r.name.toLowerCase().includes(q.toLowerCase());
-    const matchF = filter === 'all' ? true
-      : filter === 'paid' ? r.plan !== 'free'
-      : filter === 'inactive' ? !r.is_active
-      : r.marginBRL < 0;
-    return matchQ && matchF;
-  }).sort((a, b) => a.marginBRL - b.marginBRL); // pior margem primeiro
+export function SubscribersTab({ onNavigate, focusUserId, renderActions }: TabProps & { renderActions?: RenderActions }) {
+  const searchId = useId()
+  const planId = useId()
+  const [text, setText] = useState('')
+  const [filters, setFilters] = useState<Filters>(START)
+  // A conta da ficha aberta. Um focusUserId novo (vindo de outra aba) abre a ficha dele.
+  const [openId, setOpenId] = useState<string | null>(focusUserId)
+  const [seenFocus, setSeenFocus] = useState(focusUserId)
+  if (focusUserId !== seenFocus) {
+    setSeenFocus(focusUserId)
+    if (focusUserId) setOpenId(focusUserId)
+  }
 
-  const columns: Column<Row>[] = [
-    { key: 'name', header: 'Usuário', className: 'flex-1 min-w-0', render: r => (
-      <div className="min-w-0">
-        <span className="text-xs text-white font-medium truncate block">{r.name}</span>
-        <span className="text-[10px] text-text-muted/50 font-mono truncate block">{r.email}</span>
-      </div>) },
-    { key: 'plan', header: 'Plano', className: 'w-20 text-center', render: r => (
-      <span className={`text-[10px] font-bold ${r.plan === 'free' ? 'text-text-muted' : 'text-primary'}`}>{planDisplayName(r.plan)}</span>) },
-    { key: 'sep', header: 'Sep.', className: 'w-12 text-center text-[10px] text-text-muted font-mono', render: r => r.separations },
-    { key: 'rev', header: 'Paga/mês', className: 'w-20 text-right text-[10px] text-accent-green font-mono', render: r => (
-      <span title={r.revenueExact ? 'Valor exato (pagamento registrado)' : 'Aproximado pelo plano atual'}>
-        {fmtBRL(r.revenueBRL)}{r.revenueExact ? '' : ' ~'}
-      </span>) },
-    { key: 'ltv', header: 'Total pago', className: 'w-20 text-right text-[10px] text-accent-green/70 font-mono hidden sm:block', render: r => r.totalPaid > 0 ? fmtBRL(r.totalPaid) : 'sem dado' },
-    { key: 'cost', header: 'Custa IA', className: 'w-20 text-right text-[10px] text-cyan-400 font-mono', render: r => fmtUSD(r.costUSD) },
-    { key: 'margin', header: 'Margem/mês', className: 'w-24 text-right text-[10px] font-mono font-bold', render: r => (
-      <span className={r.marginBRL < 0 ? 'text-accent-red' : 'text-accent-green'}>{fmtBRL(r.marginBRL)}</span>) },
-    { key: 'signup', header: 'Cadastro', className: 'w-24 text-right text-[10px] text-text-muted font-mono hidden sm:block', render: r => fmtDate(r.created_at) },
-  ];
+  // A busca só vai pro servidor depois de 300 ms sem digitar.
+  const term = text.trim()
+  useEffect(() => {
+    if (term === filters.q) return
+    const timer = setTimeout(() => setFilters((f) => ({ ...f, q: term, page: 1 })), SEARCH_WAIT_MS)
+    return () => clearTimeout(timer)
+  }, [term, filters.q])
+
+  // Mudar um filtro volta pra primeira página.
+  const change = (next: Partial<Omit<Filters, 'page'>>) => setFilters((f) => ({ ...f, ...next, page: 1 }))
+  const goTo = (page: number) => setFilters((f) => ({ ...f, page }))
+
+  // `all` e sem marcação não vão no pedido: o servidor trata a falta como sem filtro.
+  const list = useAdminQuery<SubscriberPage>('subscribers', {
+    q: filters.q || undefined,
+    status: filters.status === 'all' ? undefined : filters.status,
+    flag: filters.flag ?? undefined,
+    plan: filters.plan === 'all' ? undefined : filters.plan,
+    sort: filters.sort,
+    page: filters.page,
+  })
+  const { loading, error } = list
+  const refetchList = list.refetch
+  const data = isSubscriberPage(list.data) ? list.data : null
+
+  // Depois de uma ação na ficha, a lista também chega de novo (o status e as marcações mudam).
+  const actions = useMemo<RenderActions | undefined>(
+    () =>
+      renderActions &&
+      ((detail, reload) =>
+        renderActions(detail, () => {
+          reload()
+          void refetchList()
+        })),
+    [renderActions, refetchList],
+  )
+
+  let content: ReactNode
+  if (!data) {
+    content = loading ? (
+      <p role="status" className="text-ps-base text-ps-mut">
+        Carregando...
+      </p>
+    ) : (
+      <ErrorBox message={error ?? MSG_BAD_SHAPE} onRetry={() => void refetchList()} />
+    )
+  } else {
+    const range = pageRangeText(data)
+    const lastPage = Math.max(1, Math.ceil(data.total / data.pageSize))
+    const showButtons = filters.page > 1 || lastPage > 1
+    content = (
+      <>
+        {error && <ErrorBox message={error} onRetry={() => void refetchList()} />}
+        {data.rows.length === 0 ? (
+          <p className="text-ps-base text-ps-mut">{data.total === 0 ? 'Nenhuma conta encontrada.' : 'Nada nesta página.'}</p>
+        ) : (
+          <ul aria-busy={loading} className={cx('flex flex-col gap-ps-gap', loading && 'opacity-60')}>
+            {data.rows.map((row) => (
+              <SubscriberItem key={row.userId} row={row} onOpen={() => setOpenId(row.userId)} />
+            ))}
+          </ul>
+        )}
+        {(range || showButtons) && (
+          <nav aria-label="Páginas de assinantes" className="flex flex-wrap items-center justify-between gap-ps-gap">
+            {showButtons && (
+              <Button onClick={() => goTo(filters.page - 1)} disabled={loading || filters.page <= 1}>
+                Anterior
+              </Button>
+            )}
+            {range && <span className="ps-num text-ps-sm text-ps-mut">{range}</span>}
+            {showButtons && (
+              <Button onClick={() => goTo(filters.page + 1)} disabled={loading || filters.page >= lastPage}>
+                Próxima
+              </Button>
+            )}
+          </nav>
+        )}
+      </>
+    )
+  }
 
   return (
-    <div className="space-y-4">
-      {error && <div className="p-3 bg-accent-red/10 border border-accent-red/20 rounded-lg text-accent-red text-xs font-mono">{error}</div>}
+    <section className="flex flex-col gap-4">
+      <header className="flex flex-col gap-1">
+        <h2 className="text-ps-md font-bold text-ps-bone">Assinantes</h2>
+        <p className="text-ps-sm text-ps-mut">Escolha uma conta pra abrir a ficha.</p>
+      </header>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard icon={Users}     label="Total"       value={stats?.totalUsers ?? 'sem dado'} color="#FF6B35" iconBg="#FF6B3510" />
-        <StatCard icon={UserCheck} label="Ativos 30d"  value={stats?.activeUsers ?? 'sem dado'} color="#10b981" iconBg="#10b98110" />
-        <StatCard icon={UserX}     label="Inativos"    value={stats?.inactiveUsers ?? 'sem dado'} color="#ef4444" iconBg="#ef444410" />
-        <StatCard icon={Users}     label="Pagantes"    value={stats?.paidSubscribers ?? 'sem dado'} subtext={`${stats?.newUsers30d ?? 0} novos 30d`} color="#8b5cf6" iconBg="#8b5cf610" />
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1">
+          <label htmlFor={searchId} className="ps-label">
+            Buscar
+          </label>
+          <input
+            id={searchId}
+            type="search"
+            value={text}
+            maxLength={SEARCH_MAX}
+            placeholder="Nome, e-mail ou id"
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(e) => setText(e.target.value)}
+            className={cx(CONTROL, 'w-full placeholder:text-ps-mut')}
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <span aria-hidden="true" className="ps-label">
+            Status
+          </span>
+          <Segmented aria-label="Status" options={STATUS_FILTERS} value={filters.status} onChange={(status) => change({ status })} className="flex-wrap" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <span aria-hidden="true" className="ps-label">
+            Marcação
+          </span>
+          <div role="group" aria-label="Marcação" className="flex flex-wrap gap-ps-gap">
+            {FLAG_FILTERS.map((o) => {
+              const on = filters.flag === o.value
+              return (
+                <Chip key={o.value} on={on} aria-pressed={on} onClick={() => change({ flag: on ? null : o.value })}>
+                  {o.label}
+                </Chip>
+              )
+            })}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
+          <div className="flex w-full flex-col gap-1 sm:w-auto">
+            <label htmlFor={planId} className="ps-label">
+              Plano
+            </label>
+            <select
+              id={planId}
+              value={filters.plan}
+              onChange={(e) => change({ plan: e.target.value as PlanFilter })}
+              // scheme-dark: a lista nativa das opções abre escura também no Windows e no Linux.
+              className={cx(CONTROL, 'w-full scheme-dark sm:w-auto')}
+            >
+              {PLAN_FILTERS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span aria-hidden="true" className="ps-label">
+              Ordem
+            </span>
+            <Segmented aria-label="Ordem" options={SORT_OPTIONS} value={filters.sort} onChange={(sort) => change({ sort })} className="flex-wrap" />
+          </div>
+        </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por email ou nome..."
-            className="w-full daw-input text-white text-xs pl-9 pr-3 py-2.5 rounded-lg font-mono" />
-        </div>
-        <div className="flex lcd-display rounded-lg overflow-hidden border border-border shrink-0">
-          {(['all','paid','inactive','negative'] as const).map(f => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`px-3 py-2 text-[9px] font-bold uppercase tracking-wider transition-all font-mono ${filter === f ? 'bg-white/10 text-white' : 'text-text-muted hover:text-white'}`}>
-              {f === 'all' ? 'Todos' : f === 'paid' ? 'Pagantes' : f === 'inactive' ? 'Inativos' : 'No vermelho'}
-            </button>
-          ))}
-        </div>
-        <button onClick={refetch} disabled={loading} className="p-2 text-text-muted hover:text-white rounded-lg disabled:opacity-30">
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-        </button>
-      </div>
+      {content}
 
-      <p className="text-[10px] text-text-muted/50 font-mono">Paga/mês = valor exato do último pagamento quando registrado, senão plano × preço (marcado com ~). Total pago = tudo que o usuário já pagou. Custo IA = real (Replicate). Margem em BRL, câmbio estimado.</p>
-      <DataTable columns={columns} rows={filtered} empty="Nenhum usuário encontrado" />
-    </div>
-  );
+      {openId && (
+        <SubscriberDetail key={openId} userId={openId} onClose={() => setOpenId(null)} onNavigate={onNavigate} renderActions={actions} />
+      )}
+    </section>
+  )
+}
+
+/** Um par rótulo e valor dentro da linha (só spans: a linha inteira é um botão). */
+function RowField({ label, value, num }: { label: string; value: string; num?: boolean }) {
+  return (
+    <span className="inline-flex min-w-0 flex-wrap items-baseline gap-x-1">
+      <span className="text-ps-sm text-ps-mut">{label}</span>
+      <span className={cx('text-ps-sm text-ps-bone break-words', num && 'ps-num')}>{value}</span>
+    </span>
+  )
+}
+
+function SubscriberItem({ row, onOpen }: { row: SubscriberRow; onOpen: () => void }) {
+  const title = row.name || row.email || row.userId
+  const date = billingDateText(row)
+  const access = lastAccessText(row)
+  return (
+    <li>
+      <button type="button" onClick={onOpen} className={ROW}>
+        <span className="flex w-full flex-wrap items-start justify-between gap-2">
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span className={cx('text-ps-base font-bold text-ps-bone', row.name || row.email ? 'break-words' : 'ps-num break-all')}>{title}</span>
+            {row.name && row.email && <span className="text-ps-sm text-ps-mut break-all">{row.email}</span>}
+          </span>
+          <Tag tone={row.status === 'paid_active' ? 'on' : 'neutral'}>{statusLabel(row.status)}</Tag>
+        </span>
+        <span className="flex flex-wrap gap-x-4 gap-y-1">
+          <RowField label="Plano" value={planLabel(row.plan)} />
+          {row.courtesyPlan && row.status !== 'courtesy' && <RowField label="Com cortesia" value={planLabel(row.courtesyPlan)} />}
+          {date && <RowField label={date.label} value={date.value} num />}
+          <RowField label="Separações no mês" value={Number.isFinite(row.separationsMonth) ? String(row.separationsMonth) : EMPTY} num />
+          {/* Sem acesso nem login, o rótulo fica pra o `sem dado` não aparecer solto. */}
+          {access === EMPTY ? (
+            <RowField label="Último acesso" value={EMPTY} />
+          ) : (
+            <span className="ps-num text-ps-sm text-ps-mut">{access}</span>
+          )}
+        </span>
+        {row.flags.length > 0 && (
+          <span className="flex flex-wrap gap-1.5">
+            {row.flags.map((flag) => (
+              <Tag key={flag} tone={flagNeedsYou(flag) ? 'alert' : 'neutral'}>
+                {flagLabel(flag)}
+              </Tag>
+            ))}
+          </span>
+        )}
+      </button>
+    </li>
+  )
 }
