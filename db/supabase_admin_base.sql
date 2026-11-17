@@ -25,6 +25,8 @@
 --   billing_enqueue_action(..., 'admin_review', ..., p_auto_retry => false),
 --   inclusive o caso da conferência parcial do dia (ref conferencia:parcial:<dia>,
 --   sem conta): tudo isso aparece aqui (P2).
+-- * "Conferido" só fecha a marcação que o admin viu na fila (nota e hora); se
+--   chegou outra depois, responde changed e nada muda (Ruling ADM-T5-visto).
 -- * Só o backend (service_role) chama as funções. As que recebem p_admin
 --   recusam com 42501 quem não é admin (public.is_admin_user).
 
@@ -59,7 +61,8 @@ revoke all on table public.admin_audit_log from anon, authenticated;
 revoke all on sequence public.admin_audit_log_id_seq from anon, authenticated;
 
 -- ─── 2. Gatilho: só inserir e fechar o pendente ─────────────────────────────
--- Vale pra todo papel, inclusive o backend e o SQL Editor. Fechar = o pendente
+-- Vale pra todo papel, inclusive o backend e o SQL Editor; só o dono da tabela
+-- (postgres na produção) ainda consegue tirar o gatilho à mão. Fechar = o pendente
 -- vira ok, failed ou partial, e só mudam o resultado, o depois, a mensagem e a
 -- hora do fim. A mesma função barra o TRUNCATE (gatilho de comando).
 create or replace function public.admin_audit_append_only() returns trigger
@@ -288,10 +291,29 @@ end;
 $$;
 
 -- ─── 5. Conferir uma marcação ───────────────────────────────────────────────
--- not_found, not_flagged (sem novo registro) ou resolved: tira a marcação,
--- acrescenta a nota ao admin_note e grava o registro, tudo na mesma transação.
+-- O admin só confere a marcação que viu (Ruling ADM-T5-visto). A versão vista é
+-- o par adminNote + updatedAt do item de flags da fila, mandado de volta em
+-- p_seen_note e p_seen_at:
+-- * a nota sozinha não basta: billing_flag_review não repete texto que já está
+--   na nota, então o mesmo aviso marcado de novo deixa a nota igual e só muda a
+--   hora (updated_at = now());
+-- * a hora sozinha não basta pra dizer o que o admin leu; as duas juntas sim.
+-- A hora vale até o milissegundo: o navegador guarda o instante em ms.
+-- Respostas: not_found; not_flagged (já conferida); changed (sem a versão vista,
+-- como numa chamada antiga, ou com a marcação diferente da vista: não mexe em
+-- nada, nem grava registro); resolved (tira a marcação, acrescenta a nota ao
+-- admin_note e grava o registro, tudo na mesma transação). O "Conferido" não
+-- mexe no updated_at (revisão, Minor 1): a conferência diária pula por 2 h a linha
+-- mexida, e o "Conferido" só muda colunas que ela não compara.
 -- Uma marcação nova (billing_flag_review) põe a assinatura de volta na fila.
-create or replace function public.admin_resolve_flag(p_admin uuid, p_subscription_ref text, p_note text)
+drop function if exists public.admin_resolve_flag(uuid, text, text);
+create or replace function public.admin_resolve_flag(
+  p_admin uuid,
+  p_subscription_ref text,
+  p_note text,
+  p_seen_note text default null,
+  p_seen_at timestamptz default null
+)
 returns text
 language plpgsql
 security definer
@@ -304,6 +326,9 @@ begin
   if not public.is_admin_user(p_admin) then
     raise exception 'só admin faz ação de admin' using errcode = '42501';
   end if;
+  if p_seen_note is null or p_seen_at is null then
+    return 'changed';
+  end if;
   select * into r from public.billing_subscriptions where id = p_subscription_ref for update;
   if not found then
     return 'not_found';
@@ -311,16 +336,19 @@ begin
   if not r.needs_admin_review then
     return 'not_flagged';
   end if;
+  if r.admin_note is distinct from p_seen_note
+     or abs(extract(epoch from (r.updated_at - p_seen_at))) >= 0.001 then
+    return 'changed';
+  end if;
   v_note := concat_ws(' | ', nullif(r.admin_note, ''),
     'conferido pelo admin em ' || to_char(now() at time zone 'America/Sao_Paulo', 'DD/MM/YYYY')
       || ': ' || coalesce(p_note, ''));
   update public.billing_subscriptions
      set needs_admin_review = false,
-         admin_note         = v_note,
-         updated_at         = now()
+         admin_note         = v_note
    where id = r.id;
   perform public.admin_audit_insert(p_admin, 'resolve_flag', r.user_id, r.id,
-    jsonb_build_object('needsAdminReview', true, 'adminNote', r.admin_note),
+    jsonb_build_object('needsAdminReview', true, 'adminNote', r.admin_note, 'updatedAt', r.updated_at),
     jsonb_build_object('needsAdminReview', false, 'adminNote', v_note),
     'ok', p_note);
   return 'resolved';
@@ -453,8 +481,8 @@ revoke execute on function public.admin_log_finish(bigint, text, jsonb, text) fr
 grant  execute on function public.admin_log_finish(bigint, text, jsonb, text) to service_role;
 revoke execute on function public.admin_review_queue() from public, anon, authenticated;
 grant  execute on function public.admin_review_queue() to service_role;
-revoke execute on function public.admin_resolve_flag(uuid, text, text) from public, anon, authenticated;
-grant  execute on function public.admin_resolve_flag(uuid, text, text) to service_role;
+revoke execute on function public.admin_resolve_flag(uuid, text, text, text, timestamptz) from public, anon, authenticated;
+grant  execute on function public.admin_resolve_flag(uuid, text, text, text, timestamptz) to service_role;
 revoke execute on function public.admin_close_action(uuid, bigint, text, text) from public, anon, authenticated;
 grant  execute on function public.admin_close_action(uuid, bigint, text, text) to service_role;
 revoke execute on function public.admin_reset_event(uuid, text) from public, anon, authenticated;
