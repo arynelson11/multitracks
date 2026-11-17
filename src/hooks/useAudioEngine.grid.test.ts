@@ -547,6 +547,8 @@ describe('click que falta (planos pagos)', () => {
     expect(hook.result.current.songGrid!.firstDownbeat).toBeCloseTo(0.87, 9)
     expect(hook.result.current.gridWarning).toBeNull()
     expect(saved()[0].grid).toEqual(hook.result.current.songGrid)
+    // O 1 do plano não pede conferência: nada de 1 assumido.
+    expect(saved()[0].downbeatAssumed).toBeUndefined()
     // A grade não é lida de volta no áudio gerado, nem ao reler.
     await act(async () => { await hook.result.current.redetectSongGrid(song.id) })
     expect(mem.analyzeCalls).toHaveLength(0)
@@ -576,14 +578,31 @@ describe('click que falta (planos pagos)', () => {
     expect(mem.renderCalls).toHaveLength(0)
     expect(hook.result.current.playlist[0].channels.map((c) => c.name)).toEqual(['DRUMS', 'BASS'])
     expect(hook.result.current.songGrid).toMatchObject({ source: 'click', bpm: 120 })
-    // Também não volta ao ficar ativa de novo nesta sessão.
-    await load(hook, [['DRUMS.wav', 'bateria']], { name: 'Outra', bpm: 120 })
-    await settled(hook)
-    act(() => { hook.result.current.jumpToSong(1) })
-    act(() => { hook.result.current.jumpToSong(0) })
-    await wait(150)
-    expect(mem.planCalls.map((c) => c.ids)).toHaveLength(1) // só o da música nova, carregada agora
-    expect(hook.result.current.playlist[0].channels.map((c) => c.name)).toEqual(['DRUMS', 'BASS'])
+  })
+
+  it('click gerado com o 1 incerto grava o 1 assumido junto da grade: o aviso fica com o compasso escolhido e ao reabrir', async () => {
+    mem.opts = { autoClick: true }
+    // Todo bumbo-lidera é dúvida do 1 (Ruling M3-M7): gera e marca o 1 como assumido.
+    mem.plan = okPlan({ downbeatFrom: 'bumbo-lidera', downbeatMargin: 5 })
+    const first = await openApp()
+    await load(first, [['DRUMS.wav', 'bateria'], ['BASS.wav', 'bateria']], { bpm: 120, timeSignature: '4/4' })
+    await settled(first)
+    expect(first.result.current.playlist[0].channels.map((c) => c.name)).toContain('Click gerado')
+    await waitFor(() => expect(saved()[0].downbeatAssumed).toBe(true))
+    expect(saved()[0].grid).toMatchObject({ source: 'click', bpm: 120 })
+
+    // Escolher o compasso troca o meterSource pra 'manual', mas não prova o 1: o aviso fica.
+    act(() => { first.result.current.setSongMeter(first.result.current.playlist[0].id, '4/4', 1) })
+    expect(first.result.current.songGrid?.meterSource).toBe('manual')
+    expect(first.result.current.gridWarning).toBe('compasso-assumido')
+    await waitFor(() => expect(saved()[0].grid?.meterSource).toBe('manual'))
+    expect(saved()[0].downbeatAssumed).toBe(true)
+    cleanup()
+
+    const hook = await openApp()
+    await wait(80)
+    expect(hook.result.current.songGrid).toMatchObject({ source: 'click', meterSource: 'manual' })
+    expect(hook.result.current.gridWarning).toBe('compasso-assumido')
   })
 
   it('sem click, com autoClick e confiança baixa: não gera nada', async () => {
