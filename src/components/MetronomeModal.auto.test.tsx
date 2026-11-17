@@ -50,11 +50,16 @@ const song = (over: { id?: string; bpm?: number; channels?: Channel[] } = {}) =>
   id: 's1', name: 'Teste', duration: 90, bpm: 135, channels: [channel('k', 'Drums'), channel('b', 'Bass')], ...over,
 })
 
-function abrir(props: Partial<Parameters<typeof MetronomeModal>[0]> = {}) {
+type ModalProps = Parameters<typeof MetronomeModal>[0]
+
+/** Abre o modal; `trocar` rerenderiza o MESMO modal com outras props (música nova, tocando...). */
+function abrir(props: Partial<ModalProps> = {}) {
   const onAddClick = vi.fn()
   const onClose = vi.fn()
-  render(<MetronomeModal isOpen onClose={onClose} playlistCurrentSong={song()} onAddClick={onAddClick} {...props} />)
-  return { onAddClick, onClose }
+  const base = { isOpen: true, onClose, playlistCurrentSong: song(), onAddClick, ...props }
+  const r = render(<MetronomeModal {...base} />)
+  const trocar = (mais: Partial<ModalProps>) => r.rerender(<MetronomeModal {...base} {...mais} />)
+  return { onAddClick, onClose, trocar }
 }
 
 /** Botão pelo texto (sem diferenciar caixa). */
@@ -180,6 +185,75 @@ describe('Metrônomo: Gerar click IA', () => {
     expect(start).toBeGreaterThan(-1)
     const tag = app.slice(start, app.indexOf('/>', start))
     expect(tag).toMatch(/\bisPlaying=\{isPlaying \|\| isCountingIn\}/)
+  })
+})
+
+// A música pode mudar com o modal aberto (AUTO depois do fim, comando da banda): o resultado é
+// da música em que a análise foi feita e nunca entra na música nova (Rodada 1, Important 1).
+describe('Metrônomo: troca de música com o modal aberto', () => {
+  const musicaB = () => song({ id: 's2', name: 'Outra', bpm: 90, channels: [channel('k2', 'Drums')] })
+
+  it('o resultado some e o "Inserir click" não aparece na música nova', async () => {
+    const { onAddClick, trocar } = abrir()
+    await gerarIA()
+    await vi.waitFor(() => expect(texto()).toContain('BPM 135.0'))
+    trocar({ playlistCurrentSong: musicaB() })
+    expect(screen.queryByRole('region', { name: 'Resultado da análise' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /inserir click/i })).toBeNull()
+    expect(texto()).not.toContain('BPM 135.0')
+    expect(onAddClick).not.toHaveBeenCalled()
+  })
+
+  it('aviso de falha também é da música em que a análise foi feita', async () => {
+    detect.mockImplementation(detection({ confidence: 0.2 }))
+    const { trocar } = abrir()
+    await gerarIA()
+    await vi.waitFor(() => expect(texto()).toContain(AVISO_CONFIANCA))
+    trocar({ playlistCurrentSong: musicaB() })
+    expect(texto()).not.toContain(AVISO_CONFIANCA)
+  })
+
+  it('click sendo gerado quando a música muda não entra na música nova', async () => {
+    let soltar: (v: { clickTrackUrl: string }) => void = () => {}
+    generate.mockImplementationOnce(() => new Promise(r => { soltar = r }))
+    const { onAddClick, onClose, trocar } = abrir()
+    await gerarIA()
+    await vi.waitFor(() => expect(texto()).toContain('BPM 135.0'))
+    await act(async () => { fireEvent.click(noResultado('Inserir click')) })
+    await vi.waitFor(() => expect(generate).toHaveBeenCalled())
+    trocar({ playlistCurrentSong: musicaB() })
+    await act(async () => { soltar({ clickTrackUrl: 'blob:click-auto' }) })
+    await new Promise(r => setTimeout(r, 30))
+    expect(onAddClick).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('o compasso passa a ser o da música nova (guardado, senão 4/4)', () => {
+    localStorage.setItem('mt_meter_s2', '3/4')
+    const { trocar } = abrir()
+    fireEvent.click(botao('6/8'))
+    trocar({ playlistCurrentSong: musicaB() })
+    expect(botao('3/4').getAttribute('aria-pressed')).toBe('true')
+    trocar({ playlistCurrentSong: song({ id: 's3' }) })
+    expect(botao('4/4').getAttribute('aria-pressed')).toBe('true')
+    trocar({ playlistCurrentSong: song() })
+    expect(botao('6/8').getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('a música que começa a tocar nos 30 ms antes da conta não deixa a análise rodar', async () => {
+    const { trocar } = abrir()
+    fireEvent.click(botao('Gerar click IA'))
+    trocar({ isPlaying: true })
+    await act(async () => { await new Promise(r => setTimeout(r, 80)) })
+    expect(detect).not.toHaveBeenCalled()
+  })
+
+  it('com a música tocando os chips de BPM também ficam desligados', async () => {
+    const { trocar } = abrir()
+    await gerarIA()
+    await vi.waitFor(() => expect(texto()).toContain('BPM 135.0'))
+    trocar({ isPlaying: true })
+    expect((noResultado('½×') as HTMLButtonElement).disabled).toBe(true)
   })
 })
 
