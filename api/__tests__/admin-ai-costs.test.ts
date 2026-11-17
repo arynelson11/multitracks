@@ -388,11 +388,59 @@ describe('ai-costs: teto de tempo do GET (o adminApi corta em 15 s)', () => {
     expect(recorded.more).toBe(true)
   })
 
+  it('o orçamento acaba antes de o prazo cortar o Replicate: nenhuma falha que não houve', async () => {
+    // Câmbio de hoje 1,9 s (sobram 6,1 s do prazo de 8 s); o real de dois trabalhos
+    // antigos leva 1,7 s cada. Às 3,4 s da varredura não cabe mais a janela inteira de
+    // 3 s do Replicate antes do prazo: o trabalho fica pra próxima, sem contar falha.
+    seedDb([
+      job('brlA', { cost_usd: 0.009, cost_recorded_at: '2026-11-03T12:01:00Z', created_at: '2026-11-03T12:00:00Z', completed_at: '2026-11-03T12:01:00Z' }),
+      job('brlB', { cost_usd: 0.009, cost_recorded_at: '2026-11-05T12:01:00Z', created_at: '2026-11-05T12:00:00Z', completed_at: '2026-11-05T12:01:00Z' }),
+      job('r0'),
+    ])
+    bcbAnswer = async (from, to) => {
+      await sleep(to === '2026-11-17' ? 1900 : 1700)
+      return ptaxResponse(from, to)
+    }
+    // o Replicate responderia em 2,95 s, dentro da janela inteira
+    replicateGet = (id) => sleep(2950).then(() => done(id))
+    const { res, ms } = await timed(get)
+    expect(res.statusCode).toBe(200)
+    expect(ms).toBeLessThanOrEqual(9000)
+    expect(res.body).toMatchObject({ sweep: { recorded: 0, unknown: 0, failed: 0, brlCompleted: 2, more: true, skipped: false } })
+    expect(calls.filter((c) => c.startsWith('replicate:'))).toEqual([])
+    expect(rowOf('r0').cost_recorded_at).toBeNull()
+    expect(error).not.toHaveBeenCalled()
+  })
+
+  it('sem a janela inteira do Replicate no prazo, a varredura nem começa e não conta falha', async () => {
+    // a primeira leitura do câmbio guardado leva 5,5 s: sobram 2,5 s, menos que os 3 s do Replicate
+    const realFrom = db.from.bind(db)
+    let slowRead = true
+    db.from = ((table: string) => {
+      const qb = realFrom(table)
+      if (table !== 'fx_rates' || !slowRead) return qb
+      slowRead = false
+      const then = qb.then.bind(qb)
+      ;(qb as unknown as { then: unknown }).then = (ok: never, err: never) => sleep(5500).then(() => then(ok, err))
+      return qb
+    }) as FakeDb['from']
+    db.tables.predictions.push(job('r0'))
+    replicateGet = (id) => sleep(2900).then(() => done(id))
+    const { res, ms } = await timed(get)
+    expect(res.statusCode).toBe(200)
+    expect(ms).toBeLessThanOrEqual(9000)
+    expect(res.body).toMatchObject({ sweep: { recorded: 0, unknown: 0, failed: 0, brlCompleted: 0, skipped: true } })
+    expect(calls.filter((c) => c.startsWith('replicate:'))).toEqual([])
+    expect(calls[calls.length - 1]).toBe('admin_ai_costs')
+    expect(error).not.toHaveBeenCalled()
+  })
+
   it('sem tempo no prazo, o câmbio usa só o guardado: nenhum fetch e nenhum log de falha', async () => {
-    // Linha do tempo (relógio falso): o câmbio de hoje leva 1,9 s; r0 leva 2,95 s no
-    // Replicate e o câmbio do dia dele 0,2 s; r1 começa às 5,05 s, dentro do orçamento,
-    // e o Replicate responde bem no fim do prazo de 8 s. Aí não sobra tempo pro câmbio
-    // do dia de r1, que não está guardado.
+    // Linha do tempo (relógio falso): o câmbio de hoje leva 1,9 s (sobram 6,1 s do prazo
+    // de 8 s, orçamento de 3,1 s); r0 leva 2,9 s no Replicate e o câmbio do dia dele 0,2 s;
+    // r1 começa no último instante do orçamento, com os 3 s inteiros do Replicate, que
+    // responde bem no fim do prazo. Aí não sobra tempo pro câmbio do dia de r1, que não
+    // está guardado.
     seedDb([
       job('r0', { created_at: '2026-11-05T12:00:00Z' }),
       job('r1', { created_at: '2026-11-06T12:00:00Z' }),
@@ -402,7 +450,7 @@ describe('ai-costs: teto de tempo do GET (o adminApi corta em 15 s)', () => {
       return ptaxResponse(from, to)
     }
     replicateGet = (id, o) => {
-      if (id === 'r0') return sleep(2950).then(() => done(id, { completed_at: '2026-11-05T12:01:00Z' }))
+      if (id === 'r0') return sleep(2900).then(() => done(id, { completed_at: '2026-11-05T12:01:00Z' }))
       return new Promise((resolve) => o?.signal?.addEventListener('abort', () => resolve(done(id, { completed_at: '2026-11-06T12:01:00Z' }))))
     }
     const { res, ms } = await timed(get)
@@ -429,21 +477,22 @@ describe('ai-costs: respostas do Replicate', () => {
     expect(rowOf('r1')).toMatchObject({ status: 'unknown', cost_recorded_at: NOW.toISOString(), cost_usd: null })
   })
 
-  it('400 e 422 de id inválido também fecham a linha como unknown; id fora do formato nem vai ao Replicate', async () => {
+  it('400, 410 e 422 de id inválido também fecham a linha como unknown; id fora do formato nem vai ao Replicate', async () => {
     seedDb([
       job('r400', { created_at: '2026-11-16T12:00:00Z' }),
-      job('r422', { created_at: '2026-11-16T12:01:00Z' }),
-      job('../models/x', { created_at: '2026-11-16T12:02:00Z' }),
+      job('r410', { created_at: '2026-11-16T12:01:00Z' }),
+      job('r422', { created_at: '2026-11-16T12:02:00Z' }),
+      job('../models/x', { created_at: '2026-11-16T12:03:00Z' }),
     ])
-    replicateGet = async (id) => { throw apiError(id === 'r400' ? 400 : 422) }
+    replicateGet = async (id) => { throw apiError(Number(id.slice(1))) }
     const res = await get()
-    expect(res.body).toMatchObject({ sweep: { unknown: 3, failed: 0, more: false } })
-    expect(calls.filter((c) => c.startsWith('replicate:'))).toEqual(['replicate:r400', 'replicate:r422'])
-    for (const id of ['r400', 'r422', '../models/x']) expect(rowOf(id)).toMatchObject({ status: 'unknown', cost_recorded_at: NOW.toISOString() })
+    expect(res.body).toMatchObject({ sweep: { unknown: 4, failed: 0, more: false } })
+    expect(calls.filter((c) => c.startsWith('replicate:'))).toEqual(['replicate:r400', 'replicate:r410', 'replicate:r422'])
+    for (const id of ['r400', 'r410', 'r422', '../models/x']) expect(rowOf(id)).toMatchObject({ status: 'unknown', cost_recorded_at: NOW.toISOString() })
   })
 
-  it('401, 429 e 500 do Replicate não fecham a linha: contam em failed e a varredura para', async () => {
-    for (const status of [401, 429, 500]) {
+  it('401, 403, 429 e 500 do Replicate não fecham a linha: contam em failed e a varredura para', async () => {
+    for (const status of [401, 403, 429, 500]) {
       seedDb([job('r1', { created_at: '2026-11-16T12:00:00Z' }), job('r2', { created_at: '2026-11-16T12:01:00Z' })])
       calls = []
       replicateGet = async () => { throw apiError(status) }
@@ -453,6 +502,21 @@ describe('ai-costs: respostas do Replicate', () => {
       expect(calls.filter((c) => c.startsWith('replicate:')), String(status)).toEqual(['replicate:r1'])
       expect(rowOf('r1').cost_recorded_at, String(status)).toBeNull()
       expect(rowOf('r1').status, String(status)).toBeNull()
+    }
+  })
+
+  it('chave recusada (401 ou 403) vai pro log como chave recusada, sem o texto do Replicate', async () => {
+    for (const status of [401, 403]) {
+      seedDb([job('r1')])
+      error.mockClear()
+      warn.mockClear()
+      replicateGet = async () => { throw apiError(status) }
+      const res = await get()
+      expect(res.statusCode, String(status)).toBe(200)
+      const logs = logText()
+      expect(logs, String(status)).toContain(`O Replicate recusou a chave (status ${status})`)
+      expect(logs, String(status)).not.toContain('texto tecnico')
+      expect(logs, String(status)).not.toContain(TOKEN)
     }
   })
 
@@ -553,6 +617,27 @@ describe('ai-costs-sweep (botão Completar custos que faltam)', () => {
     expect(replicateAuth).toEqual([])
     expect(calls).toEqual([])
     expect(predictionReads()).toEqual([])
+  })
+
+  it('chave recusada pelo Replicate (401 ou 403): o botão diz isso, sem texto técnico, e não como queda', async () => {
+    for (const status of [401, 403]) {
+      seedDb([job('r1')])
+      replicateGet = async () => { throw apiError(status) }
+      const res = await post()
+      expect(res.statusCode, String(status)).toBe(502)
+      expect(res.body).toEqual({ error: `O Replicate recusou a chave (status ${status}). Avise o suporte.` })
+      expect(rowOf('r1').cost_recorded_at).toBeNull()
+    }
+  })
+
+  it('Replicate fora (429 ou 500) no botão continua como sem resposta, com o resultado da varredura', async () => {
+    for (const status of [429, 500]) {
+      seedDb([job('r1')])
+      replicateGet = async () => { throw apiError(status) }
+      const res = await post()
+      expect(res.statusCode, String(status)).toBe(200)
+      expect(res.body).toEqual({ recorded: 0, unknown: 0, failed: 1, brlCompleted: 0, more: true })
+    }
   })
 
   it('erro do banco na varredura vira erro inesperado, sem texto do banco', async () => {

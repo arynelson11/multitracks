@@ -1,5 +1,5 @@
 import Replicate from 'replicate'
-import { addDays, brtToday } from '../billing.js'
+import { brtToday } from '../billing.js'
 import { getUsdBrl, getUsdBrlOn, type FxRate } from '../fx.js'
 import {
   HARDWARE_USD_PER_SECOND,
@@ -8,7 +8,8 @@ import {
   sweepPendingCosts,
   type ReplicatePredictionLike,
 } from '../aiCost.js'
-import { AdminError, day, int, type AdminCtx, type AdminHandlers } from './http.js'
+import { AdminError, int, type AdminCtx, type AdminHandlers } from './http.js'
+import { countOf, isObject, PAGE_SIZE, readPage, readPeriod } from './period.js'
 
 // Custos de IA (Task 24).
 // * ai-costs (GET): os trabalhos de um período em dias de Brasília, somados
@@ -24,14 +25,13 @@ import { AdminError, day, int, type AdminCtx, type AdminHandlers } from './http.
 // Teto de tempo: o adminApi corta o GET em 15 s e a função tem maxDuration de
 // 30 s. Cada varredura tem um prazo final pra tudo que sai pra rede (Replicate
 // e Banco Central): cada consulta tem o próprio teto e nunca passa do prazo,
-// porque a varredura só confere o orçamento entre um trabalho e outro.
+// porque a varredura só confere o orçamento entre um trabalho e outro. O
+// orçamento acaba antes de o prazo cortar uma consulta ao Replicate, pra
+// nenhum trabalho contar como falha só por falta de tempo.
+// Período e página seguem a regra comum de period.ts, a mesma do Financeiro.
 // Nada do Replicate nem do banco vai pra resposta: só contagens e frases
 // prontas; o detalhe fica no log, sem dado pessoal.
 
-const PAGE_SIZE = 50
-const MAX_PAGE = 1000
-// Contando o dia inicial e o final: o ano bissexto inteiro cabe.
-const MAX_DAYS = 366
 // Trabalho mais novo que isso pode estar sendo consultado agora pelo app (o
 // check-separation grava o custo quando ele termina).
 const OLDER_THAN_MS = 600_000
@@ -57,16 +57,19 @@ const BUTTON_DEFAULT_LIMIT = 50
 const BUTTON_MAX_LIMIT = 100
 const BUTTON: Omit<SweepLimits, 'limit'> = { budgetMs: 20_000, deadlineMs: 25_000, fxTimeoutMs: 3000, replicateTimeoutMs: 5000 }
 
-const MSG_INVERTED = 'A data inicial precisa vir antes da final.'
-const MSG_TOO_LONG = 'Escolha um período de até um ano.'
 const MSG_NO_REPLICATE = 'Servidor sem a chave do Replicate. A varredura não rodou; avise o suporte.'
 
 type SweepCounts = { recorded: number; unknown: number; failed: number; brlCompleted: number; more: boolean }
 type OpenSweep = SweepCounts & { skipped: boolean }
+// started falso: não sobrava a janela inteira do Replicate antes do prazo, e
+// a varredura nem começou. keyRefused: status do Replicate que recusou a chave.
+type SweepRun = { counts: SweepCounts; started: boolean; keyRefused: number | null }
 
-// skipped: a varredura não rodou (servidor sem a chave do Replicate) ou parou
-// com erro do banco antes de contar. Os números saem do mesmo jeito.
+// skipped: a varredura não rodou (servidor sem a chave do Replicate, ou sem
+// tempo no prazo) ou parou com erro do banco antes de contar. Os números saem
+// do mesmo jeito.
 const SKIPPED: OpenSweep = { recorded: 0, unknown: 0, failed: 0, brlCompleted: 0, more: false, skipped: true }
+const NOT_STARTED: SweepCounts = { recorded: 0, unknown: 0, failed: 0, brlCompleted: 0, more: true }
 
 type ReplicateClient = { predictions: { get: (id: string, opts?: { signal?: AbortSignal }) => Promise<unknown> } }
 
@@ -77,27 +80,12 @@ const REPLICATE_ID_RE = /^[A-Za-z0-9]{1,64}$/
 // unknown, senão ocupa a janela da varredura pra sempre. 401, 403, 429 e 5xx
 // são do servidor ou do Replicate, não do trabalho: a linha fica pra próxima.
 const ID_REFUSED = new Set([400, 404, 410, 422])
-
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+// 401 e 403: o Replicate recusou a chave do servidor. Não é queda: o log e o
+// botão dizem isso com frase própria, sem o texto do Replicate.
+const KEY_REFUSED = new Set([401, 403])
+const keyRefusedText = (status: number): string => `O Replicate recusou a chave (status ${status})`
 
 const errText = (e: unknown): string => (e instanceof Error ? `${e.name}: ${e.message}` : 'erro sem mensagem').slice(0, 300)
-
-// Primeiro e último dia do mês de Brasília de hoje (mesma regra do Financeiro).
-function currentMonth(now: Date): { from: string; to: string } {
-  const today = brtToday(now)
-  const from = `${today.slice(0, 7)}-01`
-  const nextMonth = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)), 1)).toISOString().slice(0, 10)
-  return { from, to: addDays(nextMonth, -1) }
-}
-
-// Dias do período contando os dois extremos (2026-11-16 a 2026-11-16 dá 1).
-const daysInRange = (from: string, to: string): number => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400_000) + 1
-
-// total é bigint: número no JSON, ou texto se passar do inteiro seguro.
-function countOf(v: unknown): number {
-  const n = typeof v === 'number' ? v : typeof v === 'string' && /^\d+$/.test(v) ? Number(v) : Number.NaN
-  return Number.isSafeInteger(n) && n >= 0 ? n : Number.NaN
-}
 
 function replicateToken(): string | null {
   const token = process.env.REPLICATE_API_TOKEN?.trim()
@@ -111,8 +99,10 @@ function httpStatusOf(e: unknown): number | null {
 
 // predictions.get com teto de tempo (o SDK não tem teto e repete sozinho em
 // 429 e 5xx). Id recusado pelo Replicate vira null (fecha como unknown); o
-// resto lança, e a varredura conta em failed e para.
-function predictionGetter(client: ReplicateClient, timeoutMs: number, remainingMs: () => number) {
+// resto lança, e a varredura conta em failed e para. Chave recusada lança com
+// a frase própria (é essa mensagem que vai pro log da varredura) e avisa quem
+// chamou.
+function predictionGetter(client: ReplicateClient, timeoutMs: number, remainingMs: () => number, onKeyRefused: (status: number) => void) {
   return async (id: string): Promise<ReplicatePredictionLike | null> => {
     if (!REPLICATE_ID_RE.test(id)) return null
     const ms = Math.min(timeoutMs, remainingMs())
@@ -132,6 +122,11 @@ function predictionGetter(client: ReplicateClient, timeoutMs: number, remainingM
     } catch (e) {
       const status = httpStatusOf(e)
       if (status !== null && ID_REFUSED.has(status)) return null
+      if (status !== null && KEY_REFUSED.has(status)) {
+        console.error(`[admin] custos de IA: ${keyRefusedText(status)}; confira a REPLICATE_API_TOKEN do servidor`)
+        onKeyRefused(status)
+        throw new Error(keyRefusedText(status))
+      }
       throw e
     } finally {
       clearTimeout(timer)
@@ -157,16 +152,26 @@ function fxOnDay(ctx: AdminCtx, timeoutMs: number, remainingMs: () => number) {
   }
 }
 
-async function sweep(ctx: AdminCtx, token: string, limits: SweepLimits, startedAt: number): Promise<SweepCounts> {
+async function sweep(ctx: AdminCtx, token: string, limits: SweepLimits, startedAt: number): Promise<SweepRun> {
   const remainingMs = () => startedAt + limits.deadlineMs - Date.now()
+  // Nenhum trabalho começa sem a janela inteira do Replicate antes do prazo:
+  // cortada no meio, a consulta contaria uma falha que não houve.
+  const budgetMs = Math.min(limits.budgetMs, remainingMs() - limits.replicateTimeoutMs)
+  if (budgetMs <= 0) return { counts: { ...NOT_STARTED }, started: false, keyRefused: null }
+  const seen: { keyRefused: number | null } = { keyRefused: null }
   const client: ReplicateClient = new Replicate({ auth: token })
-  return sweepPendingCosts(
+  const counts = await sweepPendingCosts(
     ctx.db,
-    predictionGetter(client, limits.replicateTimeoutMs, remainingMs),
+    predictionGetter(client, limits.replicateTimeoutMs, remainingMs, (status) => { seen.keyRefused = status }),
     fxOnDay(ctx, limits.fxTimeoutMs, remainingMs),
-    { now: ctx.now, limit: limits.limit, budgetMs: limits.budgetMs, olderThanMs: OLDER_THAN_MS },
+    { now: ctx.now, limit: limits.limit, budgetMs, olderThanMs: OLDER_THAN_MS },
   )
+  return { counts, started: true, keyRefused: seen.keyRefused }
 }
+
+// Só as cinco contagens do contrato (AiCostsSweep).
+const countsOf = (c: SweepCounts): SweepCounts =>
+  ({ recorded: c.recorded, unknown: c.unknown, failed: c.failed, brlCompleted: c.brlCompleted, more: c.more })
 
 // Consulta (no máximo a cada 6 horas) e grava a PTAX de hoje. Nunca derruba a aba.
 async function refreshTodayFx(ctx: AdminCtx): Promise<void> {
@@ -187,7 +192,8 @@ async function openSweep(ctx: AdminCtx, startedAt: number): Promise<OpenSweep> {
   const token = replicateToken()
   if (!token) return { ...SKIPPED }
   try {
-    return { ...(await sweep(ctx, token, OPEN, startedAt)), skipped: false }
+    const run = await sweep(ctx, token, OPEN, startedAt)
+    return { ...countsOf(run.counts), skipped: !run.started }
   } catch (e) {
     console.error('[admin] custos de IA: varredura parou com erro, os números saem do mesmo jeito:', errText(e))
     return { ...SKIPPED }
@@ -202,13 +208,8 @@ const pricesTable = () => ({
 
 async function listAiCosts(ctx: AdminCtx): Promise<unknown> {
   const startedAt = Date.now()
-  const month = currentMonth(ctx.now)
-  const from = day(ctx.query, 'from', { label: 'a data inicial', optional: true }) ?? month.from
-  const to = day(ctx.query, 'to', { label: 'a data final', optional: true }) ?? month.to
-  const page = int(ctx.query, 'page', { label: 'a página', min: 1, max: MAX_PAGE, fallback: 1 })
-  const days = daysInRange(from, to)
-  if (days < 1) throw new AdminError(400, MSG_INVERTED)
-  if (days > MAX_DAYS) throw new AdminError(400, MSG_TOO_LONG)
+  const { from, to } = readPeriod(ctx.query, ctx.now)
+  const page = readPage(ctx.query)
 
   // Câmbio de hoje antes da varredura: o trabalho de hoje já acha a PTAX guardada.
   await refreshTodayFx(ctx)
@@ -251,8 +252,10 @@ async function sweepNow(ctx: AdminCtx): Promise<SweepCounts> {
   const limit = int(ctx.body, 'limit', { label: 'o limite', min: 1, max: BUTTON_MAX_LIMIT, fallback: BUTTON_DEFAULT_LIMIT })
   const token = replicateToken()
   if (!token) throw new AdminError(500, MSG_NO_REPLICATE)
-  const r = await sweep(ctx, token, { ...BUTTON, limit }, startedAt)
-  return { recorded: r.recorded, unknown: r.unknown, failed: r.failed, brlCompleted: r.brlCompleted, more: r.more }
+  const run = await sweep(ctx, token, { ...BUTTON, limit }, startedAt)
+  // Chave recusada: a frase diz a causa (clicar de novo não resolve).
+  if (run.keyRefused !== null) throw new AdminError(502, `${keyRefusedText(run.keyRefused)}. Avise o suporte.`)
+  return countsOf(run.counts)
 }
 
 export const handlers: AdminHandlers = {
