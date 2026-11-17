@@ -2125,6 +2125,7 @@ export default function App() {
           onClose={() => setIsMetronomeModalOpen(false)} 
           playlistCurrentSong={playlist[activeSongIndex]}
           onAddClick={addChannelToActiveSong} 
+          isPlaying={isPlaying || isCountingIn}
         />
       )}
 
