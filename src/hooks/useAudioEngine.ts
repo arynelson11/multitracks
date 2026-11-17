@@ -7,9 +7,15 @@ import type { Channel, ChannelRole, Song, Marker } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { detectKey, generateEndlessClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { loadClickSelection } from '../lib/clickLibrary';
+import { attackSeconds } from '../lib/clickAttack';
+import { analyzeClickTrack, type ClickAnalysis } from '../lib/clickMeter';
+import { autoClickChecks, planAutoClick, renderAutoClick, type AutoClickCheck, type AutoClickOkPlan } from '../lib/autoClick';
+import { sanitizeTimeSignature } from '../lib/cloudBpm';
+import { barSeconds, gridFromBpm, gridFromClick, gridWarning, keepManualMeter, pulseSeconds, sanitizeGrid, withMeter } from '../lib/songGrid';
+import { isCompound, type GridWarning, type SongGrid, type StageGates, type StageMode, type TimeSignature } from '../lib/stageContracts';
 import { sanitizeSemitones } from '../lib/pitchRules';
 import { getCachedStem, getCachedStemNames, isSongCached } from '../lib/offlineCache';
-import { applyChannelMetaToList, autoPanFor, channelGain, isPitchExempt, pickMainChannel, pitchChangeAction, wantsFormantCompensation, type ChannelMetaPatch } from '../lib/channelRoles';
+import { applyChannelMetaToList, autoPanFor, channelGain, findClickChannel, isPitchExempt, pickMainChannel, pitchChangeAction, wantsFormantCompensation, type ChannelMetaPatch } from '../lib/channelRoles';
 import { arrangeChannels, resolveChannelRole, type ChannelIdentity } from '../lib/channelNames';
 import { REPERTOIRE_SCHEMA_VERSION, migrateManifestSong, migrateSavedSong, toManifestSong, toSavedSong, type SavedSong } from '../lib/repertoireSchema';
 import { createOutputGraph, type OutputGraph } from '../audio/outputGraph';
@@ -25,8 +31,9 @@ import type { OutputPlan, OutputSettings, TimelineSegment } from '../lib/stageCo
 // file:// — sem arquivo servido e sem caminho absoluto (que era o que quebrava
 // o RubberBand no desktop). Pitch puro: muda o tom sem alterar a velocidade.
 
-// O formato do repertório salvo no aparelho (SavedSong, v2 com nome, papel e
-// ordem do usuário) e do manifest do ZIP vive em src/lib/repertoireSchema.ts.
+// O formato do repertório salvo no aparelho (SavedSong, v3 com nome, papel e
+// ordem do usuário, a grade e o compasso salvo) e do manifest do ZIP vive em
+// src/lib/repertoireSchema.ts.
 
 // Instante comum de início: 2 blocos de áudio (128 amostras cada; 5,33 ms a
 // 48 kHz) depois do relógio, na mesma grade de blocos do start(0) da v1.4.9.
@@ -377,7 +384,151 @@ const withLegacyPansReset = (song: SavedSong): SavedSong => ({
     channels: song.channels.map((ch) => (Math.abs(ch.pan) === 1 ? { ...ch, pan: 0, bus: '1/2' as const } : ch)),
 });
 
-export function useAudioEngine(userId?: string) {
+// === Grade da música (Parte 2, T27; Arquitetura B) ===
+// A grade do palco vem só da faixa de click (sinal limpo, é o que a banda ouve): BPM, fase e
+// compasso lidos nela pelo analyzeClickTrack (T3) e montados pelo gridFromClick (T2). Sem click,
+// a grade sai do BPM salvo (sem fase) e, nos planos pagos, o motor gera o click que falta pelo
+// mesmo fluxo do Metrônomo (planAutoClick e renderAutoClick, M7).
+
+/** Nome do canal do click que o motor gera pra música sem click (o papel Click vem do nome). */
+const GENERATED_CLICK_NAME = 'Click gerado';
+/**
+ * Clicks que o Metrônomo grava ("Click_IA_120bpm", "Click_Classic_120bpm"; MetronomeModal.tsx):
+ * gerados pelo mesmo gerador, com cada click adiantado pelo ataque da amostra.
+ */
+const METRONOME_CLICK_NAME = /^Click_[A-Za-z]+_[\d.]+bpm$/;
+/** A leitura do click precisa de pelo menos 4 s de áudio (o mínimo do analyzeClickTrack). */
+const CLICK_MIN_SECONDS = 4;
+/** Canal de click abaixo disto (-60 dBFS) do começo ao fim é silêncio: nada a ler. */
+const CLICK_SILENCE = 1e-3;
+/**
+ * Folga antes de cada leitura síncrona (até 450 ms por canal de click; o planAutoClick, até uns
+ * 4 s numa música de 5 min): a tela mostra "lendo a grade" antes, como no Metrônomo (M7).
+ */
+const GRID_YIELD_MS = 30;
+/**
+ * Dúvidas do plano que barram o click gerado: com o tempo incerto (contratempo, BPM salvo que
+ * não bate, família 3:2 escolhida pelo BPM salvo) o click sairia fora do que a banda toca, e
+ * aqui ninguém confere antes de inserir (Ruling M2-6). O "1" incerto não barra: o click fica no
+ * tempo e o palco avisa o compasso assumido (Ruling M3-M7: todo 'bumbo-lidera' é dúvida).
+ */
+const AUTO_CLICK_BLOCKERS: ReadonlySet<AutoClickCheck> = new Set<AutoClickCheck>(['contratempo', 'bpm-salvo', 'andamento']);
+
+/** Grade e se o "1" dela é assumido (o click não provou onde ele cai e as seções não decidiram). */
+interface ReadGrid { grid: SongGrid; oneAssumed: boolean }
+/** Pedido na fila da grade: ler o click e, nos planos pagos, gerar o que falta. */
+interface GridJob { read: boolean; generate: boolean; done: (() => void)[] }
+
+/** Amostras do canal 0 de um canal de click que dá pra ler (4 s ou mais, com som); null se não dá. */
+function readableClick(buffer: AudioBuffer | undefined): Float32Array | null {
+    if (!buffer || typeof buffer.getChannelData !== 'function' || !(buffer.sampleRate > 0) || !(buffer.duration >= CLICK_MIN_SECONDS)) return null;
+    try {
+        const samples = buffer.getChannelData(0);
+        for (let i = 0; i < samples.length; i++) if (Math.abs(samples[i]) > CLICK_SILENCE) return samples;
+    } catch { /* buffer sem amostras: nada a ler */ }
+    return null;
+}
+
+/** Canais de papel Click, na ordem da música (o papel manual vale; o loop do metrônomo infinito fica de fora). */
+const clickChannelsOf = (song: Song): Channel[] => song.channels.filter((ch) => resolveChannelRole(ch) === 'click' && !isEndlessLoop(ch));
+
+/**
+ * Grade que vale pra música: a lida no click (salva no repertório) ou, sem ela, a do BPM salvo
+ * com o compasso salvo na nuvem, montada na hora (acompanha o BPM quando a biblioteca muda) e
+ * com o compasso escolhido no EDITAR, que fica salvo. Null sem click lido e sem BPM salvo.
+ */
+function songGridOf(song: Pick<Song, 'grid' | 'bpm' | 'timeSignature'>): SongGrid | null {
+    const stored = sanitizeGrid(song.grid);
+    if (stored?.source === 'click') return stored;
+    const fromBpm = typeof song.bpm === 'number' ? gridFromBpm(song.bpm, sanitizeTimeSignature(song.timeSignature)) : null;
+    return fromBpm ? sanitizeGrid(keepManualMeter(fromBpm, stored)) : null;
+}
+
+/**
+ * "1" pelas seções marcadas (Ruling T3-1), quando o click não prova onde ele cai: cada marca a
+ * partir do primeiro pulso vota no tempo do compasso mais perto dela (no composto, a pontuada)
+ * e vence o mais votado (empate: o da marca mais cedo). Devolve o novo primeiro 1, ou null sem
+ * marca que vote.
+ */
+function oneFromSections(g: SongGrid, markers: readonly Marker[] | undefined, firstPulse: number): number | null {
+    const beat = pulseSeconds(g) * (isCompound(g.signature) ? 3 : 1);
+    const beats = Math.round(barSeconds(g) / beat);
+    const votes = new Map<number, { count: number; first: number }>();
+    for (const m of markers ?? []) {
+        if (!m || !Number.isFinite(m.time) || m.time < firstPulse - beat / 2) continue;
+        const r = ((Math.round((m.time - g.firstDownbeat) / beat) % beats) + beats) % beats;
+        const v = votes.get(r);
+        if (v) { v.count++; v.first = Math.min(v.first, m.time); } else votes.set(r, { count: 1, first: m.time });
+    }
+    let best: { r: number; count: number; first: number } | null = null;
+    for (const [r, v] of votes) if (!best || v.count > best.count || (v.count === best.count && v.first < best.first)) best = { r, ...v };
+    return best ? g.firstDownbeat + best.r * beat : null;
+}
+
+/**
+ * Grade lida num canal de click, com o mesmo compasso conhecido (o escolhido no EDITAR ou o salvo
+ * na nuvem) na leitura e no gridFromClick (Aviso T27 da T3), e pelo sanitizeGrid antes de usar
+ * (Aviso T27 da T2). O "1" que o click não prova (downbeatSource 'assumed') vem das seções
+ * marcadas quando há; senão, e também com o compasso em dúvida (ambiguous), a grade sai com o
+ * compasso assumido ('padrao': acende o COMPASSO ASSUMIDO e fica salvo no repertório, Ruling
+ * W3). Null quando a leitura não dá grade.
+ */
+function gridFromReading(a: ClickAnalysis, known: TimeSignature | null, markers: readonly Marker[] | undefined): ReadGrid | null {
+    const read = sanitizeGrid(gridFromClick(a, known));
+    if (!read) return null;
+    let grid = read;
+    let oneAssumed = false;
+    if (a.downbeatSource === 'assumed') {
+        const one = oneFromSections(read, markers, a.firstPulse);
+        const fromSections = one === null ? null : sanitizeGrid({ ...read, firstDownbeat: one });
+        if (fromSections) grid = fromSections;
+        else oneAssumed = true;
+    }
+    return { grid: oneAssumed || a.ambiguous ? { ...grid, meterSource: 'padrao' } : grid, oneAssumed };
+}
+
+/**
+ * Grade do click que o motor gerou: a do plano em que ele foi gerado. O gerador põe o início
+ * audível de cada click nela (adianta cada um pelo ataque da amostra, clickAttack.ts), então ler
+ * o WAV de volta só somaria o erro do leitor (Aviso T27/M7; medido na T27: até +8,2 ms no
+ * Percussive, e o 1 perdido nas semicolcheias). Compasso: o conhecido (salvo ou escolhido) ou o
+ * 4/4 assumido; o 1 que o plano pede pra conferir sai assumido.
+ */
+function gridFromAutoClick(plan: AutoClickOkPlan, signatureKnown: boolean): ReadGrid | null {
+    const d = plan.detection;
+    const grid = sanitizeGrid({
+        bpm: d.pulseBpm, firstDownbeat: d.firstBeat + (d.downbeat * 60) / d.pulseBpm, signature: plan.signature,
+        countEvery: isCompound(plan.signature) ? 3 : 1, source: 'click', meterSource: signatureKnown ? 'salvo' : 'padrao',
+    });
+    if (!grid) return null;
+    const oneAssumed = autoClickChecks(d).includes('um');
+    return { grid: oneAssumed ? { ...grid, meterSource: 'padrao' } : grid, oneAssumed };
+}
+
+/**
+ * Click gravado pelo gerador do app (o do motor ou os do Metrônomo): a leitura põe o 1 depois do
+ * início audível pelo jeito da amostra soar (Aviso T27/M7), e a grade volta pelo ataque da
+ * amostra escolhida na biblioteca (a que o gerador usa). Outro click: 0.
+ */
+function generatedClickLead(ch: Pick<Channel, 'name'>): number {
+    if (ch.name !== GENERATED_CLICK_NAME && !METRONOME_CLICK_NAME.test(ch.name)) return 0;
+    const { type, subdivision } = loadClickSelection();
+    return attackSeconds(type, subdivision);
+}
+
+/** Leitura do click já com o início audível de um click gerado pelo app (os dois tempos andam junto). */
+function withLead(a: ClickAnalysis, lead: number): ClickAnalysis {
+    if (lead === 0) return a;
+    return { ...a, firstPulse: a.firstPulse - lead, firstDownbeat: a.firstDownbeat === null ? null : a.firstDownbeat - lead };
+}
+
+const sameGrid = (a: SongGrid | null | undefined, b: SongGrid | null | undefined): boolean =>
+    (a ?? null) === (b ?? null) || (!!a && !!b && a.bpm === b.bpm && a.firstDownbeat === b.firstDownbeat && a.signature === b.signature
+        && a.countEvery === b.countEvery && a.source === b.source && a.meterSource === b.meterSource);
+
+// `opts` (T27): `autoClick` = o plano pode gerar o click que falta (canUseBpmDetection); sem ele,
+// nunca gera. `sectionGates` e `stageMode` são da T28 (sem eles: portões liberados, palco novo).
+export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; sectionGates?: StageGates; stageMode?: StageMode }) {
     const DB_KEY_META = userId ? `mt_meta_playlist_${userId}` : 'mt_meta_playlist';
     const DB_KEY_FILES = userId ? `mt_files_${userId}` : 'mt_files';
     // Marca "os pans antigos desta conta já voltaram ao centro" (Ruling T25-legacy).
@@ -519,6 +670,14 @@ export function useAudioEngine(userId?: string) {
     // BPM salvo e id da música ativa, pro play (pré-contagem e cadeia do play de agora).
     const songBpm = activeSong?.bpm;
     const activeSongId = activeSong?.id;
+    // Grade da música ativa (T27): a lida no click, ou a do BPM salvo; null sem nenhuma.
+    const activeGrid = useMemo(() => (activeSong ? songGridOf(activeSong) : null), [activeSong]);
+    // Id da música ativa pra quem roda fora da renderização (canal novo depois de um await).
+    const activeSongIdRef = useRef<string | undefined>(undefined);
+    useEffect(() => { activeSongIdRef.current = activeSongId; }, [activeSongId]);
+    // O plano pode gerar o click que falta (opção do hook, lida na hora de gerar).
+    const autoClickRef = useRef(!!opts?.autoClick);
+    useEffect(() => { autoClickRef.current = !!opts?.autoClick; }, [opts?.autoClick]);
 
     // Papel do canal (Click, Guia, Normal), troca de tom, pan automático e ganho
     // com Solo/M saem da regra central em src/lib/channelRoles.ts. Click e Guia
@@ -810,8 +969,10 @@ export function useAudioEngine(userId?: string) {
         playPendingRef.current = false;
     };
 
-    // Core persistence. Grava o repertório v2: tudo o que já era salvo (mixagem,
-    // tom, marcadores, letra, cifra) mais sourceId, nome e papel do usuário e a ordem.
+    // Core persistence. Grava o repertório v3: tudo o que já era salvo (mixagem,
+    // tom, marcadores, letra, cifra), sourceId, nome e papel do usuário e a ordem (v2), e a
+    // grade da música e o compasso salvo na nuvem (v3; a grade só a lida no click ou com o
+    // compasso escolhido no EDITAR: a do BPM salvo é montada na hora, songGridOf).
     const saveStateToDB = async (list: Song[]) => {
         await set(DB_KEY_META, list.map(toSavedSong));
     };
@@ -1255,7 +1416,12 @@ export function useAudioEngine(userId?: string) {
                         markers: metaSong.markers,
                         lyrics: metaSong.lyrics ?? null,
                         lyricsSynced: metaSong.lyricsSynced ?? null,
-                        chords: metaSong.chords ?? null
+                        chords: metaSong.chords ?? null,
+                        // Grade e compasso do v3 (já limpos pelo migrateSavedSong). Sem eles, o
+                        // primeiro save de um v3 reaberto apagaria a grade (achado 67 do preflight);
+                        // a grade salva não é lida de novo ao reabrir.
+                        grid: metaSong.grid,
+                        timeSignature: metaSong.timeSignature
                     };
                 };
 
@@ -1263,8 +1429,18 @@ export function useAudioEngine(userId?: string) {
                 const restoredPlaylist = songResults.filter((s): s is Song => s !== null);
 
                 if (restoredPlaylist.length > 0) {
+                    // A fila da grade (abaixo) já acha as músicas, antes da renderização.
+                    playlistRef.current = restoredPlaylist;
                     setPlaylist(restoredPlaylist);
                     setDuration(restoredPlaylist[0].duration);
+                    // Grade (T27): quem ainda não tem grade de click (repertório de antes da Parte 2)
+                    // lê o click na fila, com a VS parada, e chega no culto com a grade pronta
+                    // (a troca de música do AUTO é tocando, e tocando nada é lido). A grade salva
+                    // não é lida de novo; o click gerado só quando a música fica ativa parada.
+                    for (const song of restoredPlaylist) {
+                        gridReadSeenRef.current.add(song.id);
+                        scheduleSongGrid(song, { read: true, generate: false });
+                    }
                 }
                 setIsRestoring(false);
             }
@@ -1406,8 +1582,11 @@ export function useAudioEngine(userId?: string) {
         playChainRef.current = { songId: activeSongId ?? null, channels, pitch: playPitch, compensation };
         const rate = timeStretch;
         const offset = pausedAtRef.current;
-        // Pré-contagem no BPM salvo da música (a T27 troca pela grade); sem BPM, 100.
-        const pulse = 60 / (songBpm !== undefined && Number.isFinite(songBpm) && songBpm > 0 ? songBpm : 100);
+        // Pré-contagem no pulso da grade (T27), um bipe por tempo contado como na contagem do pulo
+        // (no composto contando de 3 em 3, a pontuada); sem grade, o BPM salvo, e sem ele 100.
+        const pulse = activeGrid
+            ? pulseSeconds(activeGrid) * activeGrid.countEvery
+            : 60 / (songBpm !== undefined && Number.isFinite(songBpm) && songBpm > 0 ? songBpm : 100);
         // Tempos de 1 a 8 (o que o aparelho guardou pode vir estragado: sem contagem, nunca NaN no relógio).
         const beats = opts?.precount && Number.isInteger(precountBeats) ? Math.max(1, Math.min(8, precountBeats)) : 0;
 
@@ -1472,7 +1651,7 @@ export function useAudioEngine(userId?: string) {
         precountPendingRef.current = false;
         setIsPlaying(true);
         if (count) showCountIn(ctx, count, when, latencyOf((ctx as AudioContext).outputLatency) + (compensation ?? 0));
-    }, [channels, stopAllNodes, masterVolume, timeStretch, precountBeats, songBpm, activeSongId]);
+    }, [channels, stopAllNodes, masterVolume, timeStretch, precountBeats, songBpm, activeSongId, activeGrid]);
 
     // Pausa (e cancela a pré-contagem). A posição sai da linha do tempo antes de soltar as vozes.
     const pause = useCallback(() => {
@@ -1770,8 +1949,10 @@ export function useAudioEngine(userId?: string) {
     }, [isPlaying, updateTime]);
 
     // Load files
-    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string, songMarkers?: Marker[], overrideOriginalKey?: string | null, overrideBpm?: number, meta?: { artist?: string; lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null; sourceId?: string }) => {
+    // `meta.timeSignature`: compasso salvo na nuvem (songs.time_signature), vai pro Song.timeSignature.
+    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string, songMarkers?: Marker[], overrideOriginalKey?: string | null, overrideBpm?: number, meta?: { artist?: string; lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null; sourceId?: string; timeSignature?: TimeSignature | null }) => {
         if (!audioCtxRef.current || !masterGainRef.current) return;
+        const timeSignature = sanitizeTimeSignature(meta?.timeSignature) ?? undefined;
         setIsLoading(true);
 
         // try/finally garante que o loading sempre desligue: se qualquer decode
@@ -1857,7 +2038,8 @@ export function useAudioEngine(userId?: string) {
             markers: songMarkers,
             lyrics: meta?.lyrics ?? null,
             lyricsSynced: meta?.lyricsSynced ?? null,
-            chords: meta?.chords ?? null
+            chords: meta?.chords ?? null,
+            timeSignature
         };
         await set(DB_KEY_META, [...existingMeta, preliminarySaved]);
 
@@ -1969,16 +2151,27 @@ export function useAudioEngine(userId?: string) {
             artist: meta?.artist,
             lyrics: meta?.lyrics ?? null,
             lyricsSynced: meta?.lyricsSynced ?? null,
-            chords: meta?.chords ?? null
+            chords: meta?.chords ?? null,
+            timeSignature
         };
 
-        const newPlaylist = [...playlist, newSong];
-        if (playlist.length === 0) {
+        // Sobre o repertório mais novo, não o de quando o carregamento começou: a fila da grade
+        // pode ter mexido em outra música enquanto este decodificava (o click gerado dela).
+        const current = playlistRef.current;
+        const newPlaylist = [...current, newSong];
+        if (current.length === 0) {
             setDuration(maxDuration);
             setActiveSongIndex(0);
             setCurrentTime(0);
         }
+        // A fila da grade (abaixo) já acha a música nova, antes da renderização.
+        playlistRef.current = newPlaylist;
         updatePlaylistAndSave(newPlaylist);
+        // Grade (T27): a leitura do click (e, sem click, o click gerado) entra na fila, que só
+        // anda com a VS parada e depois deste carregamento: nada pesado aqui nem no play.
+        gridReadSeenRef.current.add(newSongId);
+        gridGenSeenRef.current.add(newSongId);
+        scheduleSongGrid(newSong, { read: true, generate: true });
         } finally {
             setIsLoading(false);
         }
@@ -2091,68 +2284,309 @@ export function useAudioEngine(userId?: string) {
         playChainRef.current = { ...chain, channels: [...chain.channels, ch] };
     };
 
-    const addChannelToActiveSong = async (file: File) => {
-        if (!audioCtxRef.current || !masterGainRef.current || !graphRef.current || !routeCutsRef.current || playlist.length === 0 || activeSongIndex < 0) return;
+    // Troca uma música do repertório fora da renderização (depois de um await), a partir da lista
+    // mais nova, e grava. Devolve a música nova, ou null se ela saiu do repertório.
+    const patchSong = (songId: string, patch: (song: Song) => Song): Song | null => {
+        const list = playlistRef.current;
+        const i = list.findIndex((s) => s.id === songId);
+        if (i < 0) return null;
+        const updated = patch(list[i]);
+        const next = [...list];
+        next[i] = updated;
+        playlistRef.current = next;
+        updatePlaylistAndSave(next);
+        return updated;
+    };
+
+    // Canal novo numa música do repertório, ativa ou não (o "adicionar canal" da música ativa e o
+    // click gerado da T27): o arquivo fica gravado por stem (não fica na memória viva: o export
+    // relê do disco) e, tocando, o canal entra já pelo addLiveVoice. Devolve o canal, ou null se
+    // a música saiu do repertório no meio.
+    const appendChannelToSong = async (songId: string, file: File): Promise<Channel | null> => {
+        const ctx = audioCtxRef.current;
         const graph = graphRef.current;
         const cuts = routeCutsRef.current;
+        if (!ctx || !graph || !cuts || !playlistRef.current.some((s) => s.id === songId)) return null;
+        const audioBuffer = await ctx.decodeAudioData(await file.arrayBuffer());
+
+        const panner = ctx.createStereoPanner();
+        setupPannerForBuffer(panner, audioBuffer);
+        const gain = ctx.createGain();
+
+        // Regra central: o fader vai pro barramento do papel e o panner pro lado dele; o
+        // pan gravado é o knob no centro.
+        const panValue = 0;
+        const uuid = crypto.randomUUID();
+        const channelName = file.name.replace(/\.[^/.]+$/, '');
+
+        gain.gain.value = 1;
+
+        panner.connect(gain);
+        connectChannel(cuts, graph, { id: uuid, name: channelName, pan: panValue }, panner, gain);
+
+        await set(fileKey(uuid), file);
+
+        const newChannel: Channel = {
+            id: uuid,
+            name: channelName,
+            buffer: audioBuffer,
+            gainNode: gain,
+            pannerNode: panner,
+            sourceNode: null,
+            volume: 1,
+            muted: false,
+            soloed: false,
+            pan: panValue,
+            bus: '1/2'
+        };
+
+        let grew = false;
+        // Ordem automática encaixa o canal novo na ordem padrão; manual põe no fim.
+        const song = patchSong(songId, (s) => {
+            grew = audioBuffer.duration > s.duration;
+            return { ...s, channels: arrangeChannels([...s.channels, newChannel], s.channelOrder), duration: grew ? audioBuffer.duration : s.duration };
+        });
+        if (!song) {
+            // A música saiu do repertório enquanto o arquivo gravava: nada dele fica no grafo nem no disco.
+            gain.disconnect();
+            panner.disconnect();
+            await del(fileKey(uuid));
+            return null;
+        }
+        if (grew && activeSongIdRef.current === songId) setDuration(song.duration);
+        // Tocando: entra já, na posição de agora.
+        await addLiveVoice(newChannel, song.channels, song.id);
+        return newChannel;
+    };
+
+    const addChannelToActiveSong = async (file: File) => {
+        const active = playlist[activeSongIndex];
+        if (!audioCtxRef.current || !masterGainRef.current || !graphRef.current || !routeCutsRef.current || !active) return;
         setIsLoading(true);
 
         try {
-            const arrayBuffer = await file.arrayBuffer();
-            const audioBuffer = await audioCtxRef.current.decodeAudioData(arrayBuffer);
-
-            const panner = audioCtxRef.current.createStereoPanner();
-            setupPannerForBuffer(panner, audioBuffer);
-            const gain = audioCtxRef.current.createGain();
-
-            // Regra central: o fader vai pro barramento do papel e o panner pro lado dele; o
-            // pan gravado é o knob no centro.
-            const panValue = 0;
-            const uuid = crypto.randomUUID();
-            const channelName = file.name.replace(/\.[^/.]+$/, '');
-
-            gain.gain.value = 1;
-
-            panner.connect(gain);
-            connectChannel(cuts, graph, { id: uuid, name: channelName, pan: panValue }, panner, gain);
-
-            await set(fileKey(uuid), file);
-
-            const newChannel: Channel = {
-                id: uuid,
-                name: channelName,
-                buffer: audioBuffer,
-                file: file,
-                gainNode: gain,
-                pannerNode: panner,
-                sourceNode: null,
-                volume: 1,
-                muted: false,
-                soloed: false,
-                pan: panValue,
-                bus: '1/2'
-            };
-
-            const newPlaylist = [...playlist];
-            const song = { ...newPlaylist[activeSongIndex] };
-            // Ordem automática encaixa o canal novo na ordem padrão; manual põe no fim.
-            song.channels = arrangeChannels([...song.channels, newChannel], song.channelOrder);
-
-            if (audioBuffer.duration > song.duration) {
-                song.duration = audioBuffer.duration;
-                setDuration(audioBuffer.duration);
-            }
-
-            newPlaylist[activeSongIndex] = song;
-            updatePlaylistAndSave(newPlaylist);
-            // Tocando: entra já, na posição de agora.
-            await addLiveVoice(newChannel, song.channels, song.id);
+            const added = await appendChannelToSong(active.id, file);
+            // Click que entra numa música sem grade de click (o "Inserir click" do Metrônomo): a
+            // grade é lida dele, na fila (com a VS tocando, espera a parada).
+            const song = added && resolveChannelRole(added) === 'click' ? playlistRef.current.find((s) => s.id === active.id) : undefined;
+            if (song) scheduleSongGrid(song, { read: true, generate: false });
         } catch (e) {
             console.error('Failed to add channel to active song:', e);
         } finally {
             setIsLoading(false);
         }
     };
+
+    // === Grade da música (T27) ===
+    // A leitura fica fora do caminho do play: cada música que precisa (carregada agora, ficou
+    // ativa sem grade de click, ganhou um canal de click ou pediu "Ler o click de novo") entra
+    // numa fila, que só anda com a VS parada (nada agendado, nenhum play pendente nem contagem
+    // esperando) e cede a tela antes de cada leitura síncrona (GRID_YIELD_MS). Leitura que
+    // encontra a VS tocando espera a próxima parada; o click gerado espera também a próxima
+    // música do AUTO entrar. Sem geração em lote: só a música carregada ou que ficou ativa.
+    const gridJobsRef = useRef(new Map<string, GridJob>());
+    const [gridPending, setGridPending] = useState<readonly string[]>([]);
+    const gridRunningRef = useRef(false);
+    // Músicas que já entraram na fila nesta sessão: ficar ativa de novo não lê outra vez, e o
+    // click gerado é tentado uma vez por música.
+    const gridReadSeenRef = useRef(new Set<string>());
+    const gridGenSeenRef = useRef(new Set<string>());
+    const lastActiveIdRef = useRef<string | null>(null);
+    // "1" assumido na última leitura de cada música: o aviso vale também com o compasso escolhido
+    // no EDITAR (Ruling W3). Sem compasso escolhido ele já fica na grade salva ('padrao').
+    const [oneAssumedSongs, setOneAssumedSongs] = useState<ReadonlySet<string>>(() => new Set());
+
+    // A VS toca ou vai tocar: algo agendado no relógio, play pendente ou contagem esperando a troca de papel.
+    const engineBusy = () => playPendingRef.current || recountQueuedRef.current || timelineRef.current.length > 0;
+    // A próxima música vai entrar sozinha (AUTO, 5 s depois do fim; ou o fade da "próxima").
+    const nextSongPending = () => autoNextTimeoutRef.current !== null || nextSongTimerRef.current !== null;
+
+    const enqueueGridJob = (songId: string, want: { read: boolean; generate: boolean }): Promise<void> => new Promise((resolve) => {
+        const job = gridJobsRef.current.get(songId) ?? { read: false, generate: false, done: [] };
+        job.read ||= want.read;
+        job.generate ||= want.generate;
+        job.done.push(resolve);
+        gridJobsRef.current.set(songId, job);
+        setGridPending([...gridJobsRef.current.keys()]);
+        kickGridJobs();
+    });
+    const finishGridJob = (songId: string) => {
+        const job = gridJobsRef.current.get(songId);
+        gridJobsRef.current.delete(songId);
+        setGridPending([...gridJobsRef.current.keys()]);
+        job?.done.forEach((resolve) => resolve());
+    };
+    const markOneAssumed = (songId: string, assumed: boolean) => {
+        setOneAssumedSongs((prev) => {
+            if (prev.has(songId) === assumed) return prev;
+            const next = new Set(prev);
+            if (assumed) next.add(songId); else next.delete(songId);
+            return next;
+        });
+    };
+
+    // Põe a música na fila: lê o click quando ainda não há grade de click e há um canal de Click
+    // com áudio; gera o click que falta só com `generate` (carregada agora, ou ficou ativa com a
+    // VS parada), no plano que pode e sem canal de Click.
+    const scheduleSongGrid = (song: Song, want: { read: boolean; generate: boolean }) => {
+        const read = want.read && sanitizeGrid(song.grid)?.source !== 'click' && clickChannelsOf(song).some((ch) => readableClick(ch.buffer) !== null);
+        const generate = want.generate && autoClickRef.current && !findClickChannel(song.channels);
+        if (read || generate) void enqueueGridJob(song.id, { read, generate });
+    };
+
+    // Passos 1 e 3: lê cada canal de Click até um dar grade (o "Click - No Drums" do Morada dá
+    // nulo); sem nenhum, vale a grade do BPM salvo (songGridOf). O compasso escolhido no EDITAR
+    // fica (keepManualMeter, depois do sanitizeGrid). 'espera' = a VS começou a tocar no meio.
+    const readSongGrid = async (songId: string): Promise<'feita' | 'espera'> => {
+        const song = playlistRef.current.find((s) => s.id === songId);
+        if (!song) return 'feita';
+        const before = sanitizeGrid(song.grid);
+        const clicks = clickChannelsOf(song);
+        // O click que o motor gerou já nasce com a grade dele (gridFromAutoClick): ler de novo só pioraria.
+        if (before?.source === 'click' && clicks.some((ch) => ch.name === GENERATED_CLICK_NAME)) return 'feita';
+        const known = before?.meterSource === 'manual' ? before.signature : sanitizeTimeSignature(song.timeSignature);
+        const bpm = typeof song.bpm === 'number' && Number.isFinite(song.bpm) ? song.bpm : null;
+        let found: ReadGrid | null = null;
+        let analyzed = 0;
+        for (const ch of clicks) {
+            const samples = readableClick(ch.buffer);
+            if (!samples) continue;
+            if (analyzed++ > 0) await new Promise((resolve) => setTimeout(resolve, GRID_YIELD_MS));
+            if (engineBusy()) return 'espera';
+            let a: ClickAnalysis | null = null;
+            try {
+                a = analyzeClickTrack(samples, ch.buffer.sampleRate, known, bpm);
+            } catch (e) {
+                console.error(`[grade] leitura do click "${ch.name}" falhou`, e);
+            }
+            found = a ? gridFromReading(withLead(a, generatedClickLead(ch)), known, song.markers) : null;
+            if (found) break;
+        }
+        const latest = playlistRef.current.find((s) => s.id === songId);
+        if (!latest) return 'feita';
+        // O compasso pode ter sido escolhido enquanto lia: vale o de agora.
+        const prev = sanitizeGrid(latest.grid);
+        const next = found
+            ? sanitizeGrid(keepManualMeter(found.grid, prev)) ?? undefined
+            : prev?.meterSource === 'manual' ? { ...prev, source: 'bpm' as const } : undefined;
+        markOneAssumed(songId, found?.oneAssumed ?? false);
+        if (!sameGrid(next, prev)) patchSong(songId, (s) => ({ ...s, grid: next }));
+        return 'feita';
+    };
+
+    // Passo 2: o click que falta, pelo fluxo do Metrônomo (M7), com o BPM salvo como referência
+    // e o compasso conhecido. Sem plano bom, ou com o tempo em dúvida, não gera (a música fica
+    // como hoje). Só o planAutoClick é síncrono (pesado); tocar durante o resto não atrapalha: o
+    // canal entra pelo addLiveVoice.
+    const generateMissingClick = async (songId: string): Promise<void> => {
+        const song = playlistRef.current.find((s) => s.id === songId);
+        if (!song || !autoClickRef.current || findClickChannel(song.channels)) return;
+        const before = sanitizeGrid(song.grid);
+        const signature = (before?.meterSource === 'manual' ? before.signature : sanitizeTimeSignature(song.timeSignature)) ?? undefined;
+        const plan = planAutoClick(song.channels, { songBpm: song.bpm, signature });
+        if (!plan.ok || autoClickChecks(plan.detection).some((c) => AUTO_CLICK_BLOCKERS.has(c))) return;
+        const made = gridFromAutoClick(plan, signature !== undefined);
+        if (!made) return;
+        const blob = await renderAutoClick(plan, song.duration, loadClickSelection());
+        const added = await appendChannelToSong(songId, new File([blob], `${GENERATED_CLICK_NAME}.wav`, { type: 'audio/wav' }));
+        if (!added) return;
+        patchSong(songId, (s) => ({ ...s, grid: sanitizeGrid(keepManualMeter(made.grid, sanitizeGrid(s.grid))) ?? undefined }));
+        markOneAssumed(songId, made.oneAssumed);
+    };
+
+    // Os passos da renderização mais nova: a fila pode ter começado a andar numa renderização
+    // antiga (a restauração, um carregamento) e cada pedido usa o motor de agora (como o playRef).
+    const gridStepsRef = useRef({ read: readSongGrid, generate: generateMissingClick });
+    useEffect(() => { gridStepsRef.current = { read: readSongGrid, generate: generateMissingClick }; });
+
+    // Próximo pedido que pode andar agora, na ordem de chegada: o click gerado (até uns 4 s) não
+    // anda com a próxima música do AUTO pra entrar, pra não atrasar a entrada dela; a leitura
+    // do click (até 450 ms) anda, e chega a tempo de a próxima tocar com a grade dela.
+    const nextGridJob = (): [string, GridJob] | null => {
+        for (const entry of gridJobsRef.current) if (!entry[1].generate || !nextSongPending()) return entry;
+        return null;
+    };
+
+    // Anda a fila enquanto a VS está parada. 'vazia' = acabou; 'espera' = a VS vai tocar (ou só
+    // sobrou click gerado esperando a próxima música entrar).
+    const runGridJobs = async (): Promise<'vazia' | 'espera'> => {
+        for (;;) {
+            if (gridJobsRef.current.size === 0) return 'vazia';
+            const head = nextGridJob();
+            if (!head) return 'espera';
+            const [songId, job] = head;
+            if (!playlistRef.current.some((s) => s.id === songId)) {
+                finishGridJob(songId);
+                continue;
+            }
+            // Cede a tela (o "lendo a grade" aparece) antes do trabalho síncrono.
+            await new Promise((resolve) => setTimeout(resolve, GRID_YIELD_MS));
+            if (engineBusy()) return 'espera';
+            if (job.generate && nextSongPending()) continue;
+            try {
+                if (job.generate) {
+                    job.generate = false;
+                    await gridStepsRef.current.generate(songId);
+                }
+                if (job.read) {
+                    if (await gridStepsRef.current.read(songId) === 'espera') return 'espera';
+                    job.read = false;
+                }
+            } catch (e) {
+                console.error('[grade] a grade da música não foi lida', e);
+            }
+            finishGridJob(songId);
+        }
+    };
+    // Põe a fila pra andar (um corredor só). Chamado ao pedir e quando a VS para; quem decide se
+    // dá pra ler é o próprio corredor, pelo engineBusy depois de ceder a tela.
+    const kickGridJobs = () => {
+        if (gridRunningRef.current || gridJobsRef.current.size === 0) return;
+        gridRunningRef.current = true;
+        void runGridJobs().then((outcome) => {
+            gridRunningRef.current = false;
+            // Pedido que chegou entre o fim da fila e aqui: anda de novo.
+            if (outcome === 'vazia') kickGridJobs();
+        });
+    };
+    useEffect(() => {
+        if (!isPlaying && gridPending.length > 0) kickGridJobs();
+    }, [isPlaying, gridPending]);
+
+    // Música que fica ativa: lê o click se ainda não leu nesta sessão; gera o click que falta só
+    // se ela ficou ativa com a VS parada ("nunca tocando": a troca de música tocando, inclusive a
+    // do AUTO, não gera, nem depois de parar).
+    useEffect(() => {
+        if (!activeSong || activeSong.id === lastActiveIdRef.current) return;
+        lastActiveIdRef.current = activeSong.id;
+        const stopped = !isPlaying && !shouldAutoPlayNext && !engineBusy();
+        const read = !gridReadSeenRef.current.has(activeSong.id);
+        const generate = stopped && !gridGenSeenRef.current.has(activeSong.id);
+        if (read) gridReadSeenRef.current.add(activeSong.id);
+        if (generate) gridGenSeenRef.current.add(activeSong.id);
+        if (read || generate) scheduleSongGrid(activeSong, { read, generate });
+    }, [activeSong, isPlaying, shouldAutoPlayNext]);
+
+    // Compasso escolhido no modo EDITAR (manual vence automático): BPM e fase continuam os da grade
+    // que vale; fica salvo no repertório e "Ler o click de novo" mantém. Sem grade, nada a escolher.
+    const setSongMeter = (songId: string, sig: TimeSignature, countEvery: 1 | 3) => {
+        const song = playlistRef.current.find((s) => s.id === songId);
+        const base = song ? songGridOf(song) : null;
+        const next = base ? sanitizeGrid(withMeter(base, sig, countEvery)) : null;
+        if (next) patchSong(songId, (s) => ({ ...s, grid: next }));
+    };
+
+    // "Ler o click de novo": refaz os passos 1 e 3 e mantém o compasso escolhido. Pela fila: com a
+    // VS tocando, a leitura (e a promessa) espera a parada.
+    const redetectSongGrid = async (songId: string): Promise<void> => {
+        if (!playlistRef.current.some((s) => s.id === songId)) return;
+        await enqueueGridJob(songId, { read: true, generate: false });
+    };
+
+    // Aviso âmbar da grade da música ativa; o 1 assumido avisa também com o compasso escolhido.
+    const songGridWarning: GridWarning | null = !activeSong ? null
+        : gridWarning(activeGrid) ?? (activeGrid?.source === 'click' && oneAssumedSongs.has(activeSong.id) ? 'compasso-assumido' : null);
+    const isReadingGrid = !!activeSongId && gridPending.includes(activeSongId);
 
     // Update markers on a song
     const setSongMarkers = (songId: string, markers: Marker[]) => {
@@ -2933,5 +3367,12 @@ export function useAudioEngine(userId?: string) {
         togglePrecountEnabled,
         playWithPrecount,
         cancelCountIn,
+
+        // Grade da música ativa (T27)
+        songGrid: activeGrid,
+        gridWarning: songGridWarning,
+        setSongMeter,
+        redetectSongGrid,
+        isReadingGrid,
     };
 }
