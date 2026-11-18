@@ -46,6 +46,7 @@ import { computePeaks } from './components/stage/wavePeaks'
 import { buildStageView, liveArmedOf, splitSongName, stageGatesFor } from './components/stage/buildStageView'
 import { addSectionAt, nudgeSection as nudgeSectionMarker, removeSection as removeSectionMarker } from './lib/sectionEdit'
 import { startAction } from './lib/sectionArm'
+import { cloudSongOf } from './lib/cloudMatch'
 import { markerIdForSpan, sectionIndexAt } from './lib/songGrid'
 import { countState } from './lib/transitionView'
 import { FADER_MAX_GAIN } from './lib/faderScale'
@@ -1382,14 +1383,18 @@ export default function App() {
                 onClick={async () => {
                   const activeSong = playlist[activeSongIndex];
                   if (!activeSong?.markers) return;
-                  const cloudSongs = await fetchCloudSongs();
-                  const match = cloudSongs.find((cs: any) => activeSong.name.includes(cs.name) || cs.name.includes(activeSong.name));
+                  // Só a música da nuvem com a id que o download gravou (sourceId), nunca pelo nome.
+                  if (!activeSong.sourceId) {
+                    alert('Esta música não veio da biblioteca da nuvem: os marcadores ficam só neste aparelho.');
+                    return;
+                  }
+                  const match = cloudSongOf(await fetchCloudSongs(), activeSong);
                   if (match) {
                     const ok = await saveMkToCloud(match.id, activeSong.markers);
-                    if (ok) alert('Marcadores salvos na nuvem! ☁️');
-                    else alert('Erro ao salvar marcadores.');
+                    if (ok) alert(`Marcadores salvos na nuvem em "${match.name}". ☁️`);
+                    else alert('Erro ao salvar marcadores na nuvem. Eles continuam neste aparelho.');
                   } else {
-                    alert('Música não encontrada na biblioteca cloud. Salve apenas localmente.');
+                    alert('Música não encontrada na biblioteca da nuvem: os marcadores ficam só neste aparelho.');
                   }
                 }}
                 className="mt-2 bg-secondary/10 text-secondary px-3 py-1 rounded-md text-[10px] font-bold hover:bg-secondary/20 cursor-pointer active:scale-95 transition-all border border-secondary/20 w-full text-center"
@@ -2593,10 +2598,11 @@ export default function App() {
             if (!activeSong) return false
             // Estado local (reflete no follower e persiste no IndexedDB)
             setSongLyrics(activeSong.id, { lyrics, lyricsSynced, chords })
-            // Nuvem: casa pela nomenclatura (mesmo padrão dos marcadores)
+            // Nuvem: só a música com a id que o download gravou (sourceId), nunca pelo nome. Sem ela,
+            // fica só no aparelho e o editor diz isso ("Salvo localmente").
+            if (!activeSong.sourceId) return false
             try {
-              const cloudSongs = await fetchCloudSongs()
-              const match = cloudSongs.find((cs: any) => activeSong.name.includes(cs.name) || cs.name.includes(activeSong.name))
+              const match = cloudSongOf(await fetchCloudSongs(), activeSong)
               if (match) {
                 return await updateSong(match.id, { lyrics, lyrics_synced: lyricsSynced, chords })
               }

@@ -37,6 +37,12 @@ describe('ligações do palco novo', () => {
     expect(app).toMatch(/setOriginalKey:\s*\(key: string \| null\)\s*=>\s*handlePremiumFeature\(\(\)\s*=>\s*\{\s*setOriginalKey\(key\);\s*changePitch\(0\)\s*\}\)/)
   })
 
+  it('marcadores e letra acham a música da nuvem pela id (sourceId), nunca pelo nome com "contém"', () => {
+    expect(app).not.toMatch(/\.includes\(\s*cs\.name\s*\)|cs\.name\.includes\(/)
+    expect(app.match(/cloudSongOf\(\s*await fetchCloudSongs\(\)\s*,\s*activeSong\s*\)/g)).toHaveLength(2)
+    expect(app).toContain('os marcadores ficam só neste aparelho')
+  })
+
   it('o motor recebe o click gerado pelo plano e os portões das seções', () => {
     expect(app).toMatch(/autoClick\s*:\s*canUseBpmDetection\(\s*userPlan\s*\)/)
     expect(app).toMatch(/sectionGates/)
