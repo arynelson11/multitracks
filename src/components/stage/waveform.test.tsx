@@ -371,8 +371,8 @@ describe('WaveformSections', () => {
     expect(blocks(container).every((b) => b.tagName === 'BUTTON' && b.type === 'button')).toBe(true)
   })
 
-  it('toque no bloco arma; arrastar na régua busca', () => {
-    const { container, p, rerenderWith } = renderWave()
+  it('toque no bloco arma; parado, tocar e arrastar na régua busca na hora', () => {
+    const { container, p } = renderWave({ isPlaying: false })
     fireEvent.click(blocks(container)[2])
     expect(p.onTapSection).toHaveBeenCalledWith(2)
     fireEvent.click(blocks(container)[3].querySelector('[data-selo]')!) // o selo faz parte do bloco
@@ -392,11 +392,70 @@ describe('WaveformSections', () => {
     const calls = vi.mocked(p.onSeek).mock.calls.length
     pointer(r, 'pointermove', 300)
     expect(vi.mocked(p.onSeek).mock.calls.length).toBe(calls) // soltou: mexer não busca
-
-    rerenderWith({ isPlaying: false }) // parado também busca
-    pointer(regua(container), 'pointerdown', 350)
-    expect(p.onSeek).toHaveBeenLastCalledWith(25)
     expect(r.className).toContain('touch-none') // arrastar com o dedo não rola a tela
+  })
+
+  it('tocando, o toque na régua só busca ao soltar o dedo, uma vez, no ponto do toque (Ruling I1-regua)', () => {
+    const { container, p } = renderWave({ isPlaying: true })
+    const r = regua(container)
+    vi.spyOn(r, 'getBoundingClientRect').mockReturnValue(rect(100, 1000))
+    pointer(r, 'pointerdown', 600)
+    expect(p.onSeek).not.toHaveBeenCalled() // o dedo encostou: nada ainda
+    pointer(r, 'pointermove', 607) // menos de 8 px de lado ainda é toque
+    expect(p.onSeek).not.toHaveBeenCalled()
+    pointer(r, 'pointerup', 607)
+    expect(p.onSeek).toHaveBeenCalledTimes(1)
+    expect(p.onSeek).toHaveBeenLastCalledWith(50)
+    pointer(r, 'pointermove', 900)
+    pointer(r, 'pointerup', 900)
+    expect(p.onSeek).toHaveBeenCalledTimes(1) // soltou: nada mais
+  })
+
+  it('tocando, o arrasto na régua mostra a prévia no playhead e busca uma vez ao soltar', () => {
+    fakeLayout(1000, 140, { selo: 60, tag: 60, ruler: 30 })
+    position = 10
+    const { container, p } = renderWave({ isPlaying: true })
+    const r = regua(container)
+    const ph = container.querySelector<HTMLElement>('[data-playhead]')!
+    vi.spyOn(r, 'getBoundingClientRect').mockReturnValue(rect(0, 1000))
+    expect(ph.style.transform).toBe('translateX(100.0px)')
+    pointer(r, 'pointerdown', 300)
+    pointer(r, 'pointermove', 500)
+    pointer(r, 'pointermove', 700)
+    frame()
+    expect(p.onSeek).not.toHaveBeenCalled() // arrastando: nenhuma busca, nem por movimento
+    expect(ph.style.transform).toBe('translateX(700.0px)') // a prévia anda com o dedo
+    position = 11 // a música segue tocando por baixo da prévia
+    frame()
+    expect(ph.style.transform).toBe('translateX(700.0px)')
+    pointer(r, 'pointerup', 750)
+    expect(p.onSeek).toHaveBeenCalledTimes(1)
+    expect(p.onSeek).toHaveBeenLastCalledWith(75) // onde o dedo soltou
+    position = 75
+    frame()
+    expect(ph.style.transform).toBe('translateX(750.0px)')
+    position = 0
+  })
+
+  it('tocando, arrasto cancelado ou que sai da régua não busca e a prévia some', () => {
+    fakeLayout(1000, 140, { selo: 60, tag: 60, ruler: 30 })
+    position = 20
+    const { container, p } = renderWave({ isPlaying: true })
+    const r = regua(container)
+    const ph = container.querySelector<HTMLElement>('[data-playhead]')!
+    vi.spyOn(r, 'getBoundingClientRect').mockReturnValue(rect(0, 1000))
+    pointer(r, 'pointerdown', 300)
+    pointer(r, 'pointermove', 800)
+    fireEvent.pointerCancel(r)
+    pointer(r, 'pointerup', 800)
+    frame()
+    expect(ph.style.transform).toBe('translateX(200.0px)') // voltou pra posição ouvida
+    pointer(r, 'pointerdown', 300)
+    pointer(r, 'pointermove', 900)
+    fireEvent.pointerLeave(r)
+    pointer(r, 'pointerup', 900)
+    expect(p.onSeek).not.toHaveBeenCalled()
+    position = 0
   })
 
   it('blocos terminam onde a faixa de toque da régua começa, e a faixa inteira tem a cara da régua', () => {
@@ -420,8 +479,8 @@ describe('WaveformSections', () => {
     expect(p.onSeek).not.toHaveBeenCalled()
   })
 
-  it('sair da régua sem captura solta o arrasto', () => {
-    const { container, p } = renderWave()
+  it('parado, sair da régua sem captura solta o arrasto', () => {
+    const { container, p } = renderWave({ isPlaying: false })
     const r = regua(container)
     vi.spyOn(r, 'getBoundingClientRect').mockReturnValue(rect(0, 1000))
     pointer(r, 'pointerdown', 100)
