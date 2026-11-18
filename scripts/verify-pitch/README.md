@@ -47,7 +47,7 @@ como no app): sem isso o motor nunca leria a grade do click aqui.
 | `JUMP` | palco novo, partes `tom0` e `tom2` (o mesmo transposto): toca da seção 1 (4 s), arma a seção 0 em 5,5 s; contagem no último compasso (6 a 8 s) e pulo no 1 de 8 s pra 0:00 |
 | `CANCEL` | arma como no `JUMP` e cancela entre o 2º e o 3º bipe |
 | `SPLIT` | partes `separados` ("Click e Guia separados"), `trocado` (o mesmo com o lado trocado) e `junto` ("Tudo junto"): nível de 2,75 a 10,75 s num play simples; no motor de agora, depois, pré-contagem e um pulo armado. Compara com a referência da v1.4.15 |
-| `PRECOUNT` | play do 0:00 com pré-contagem de 4 a 120 BPM |
+| `PRECOUNT` | partes `livre` e `trava`: play do 0:00 com pré-contagem de 4 a 120 BPM; na `trava`, a thread principal trava 15 ms no último `start()` de oscilador da contagem (o relógio passa do 1º bipe antes de o play conferir o relógio, como um aparelho ocupado) |
 
 Critérios por item: worklets ativos (0 no tom 0, 1 por canal transposto), nenhum
 duplicado, fontes sem órfãs, relógio de áudio em tempo real, posição contínua,
@@ -83,10 +83,10 @@ passa pelo worklet ou pelo atraso da compensação sai L depois.
 
 | Cenário | Passa quando |
 |---|---|
-| `JUMP` | o pulo cai no 1 do compasso (até 1 ms da linha do tempo do play); clicks de antes na linha do tempo (até 1 ms, confere o medidor); 1º click depois do pulo a até 3 ms de T (+ L no tom 2); 4 bipes em T-2, T-1,5, T-1 e T-0,5 (até 3 ms), 1319 Hz no 1; guia ao menos 40 dB abaixo de T-2+0,02 a T-0,02 e de volta (até 1 dB) depois de T+0,02; no máximo 2 fontes por canal e 1 por canal 100 ms depois de T; sem buraco de mais de 10 ms na VS (RMS 20 dB abaixo); instrumento junto do click antes do pulo (até 2 ms) e o 1º depois no 1 (até 3 ms); no tom 2, nenhum worklet novo |
+| `JUMP` | o pulo cai no 1 do compasso (até 1 ms da linha do tempo do play); clicks de antes na linha do tempo (até 1 ms, confere o medidor); 1º click depois do pulo a até 3 ms de T (+ L no tom 2); 4 bipes em T-2, T-1,5, T-1 e T-0,5 (até 3 ms), 1319 Hz no 1; guia ao menos 40 dB abaixo de T-2+0,02 a T-0,02 e de volta (até 1 dB) depois de T+0,02; no máximo 2 fontes por canal e 1 por canal 100 ms depois de T; sem buraco de mais de 10 ms na VS (RMS 20 dB abaixo); instrumento junto do click antes do pulo (até 2 ms) e o 1º depois no 1 (até 3 ms); click depois do pulo com o nível do play simples (até 0,01 dB, Ruling T30-grade); no tom 2, nenhum worklet novo |
 | `CANCEL` | os 2 primeiros bipes nos tempos; nenhum bipe 5 ms depois do cancelamento (abaixo de -50 dB até T+0,5); o click segue a linha do tempo original (até 3 ms, nenhum faltando); nenhuma voz do pulo soou; guia calada na contagem e de volta em até 15 ms (até 1 dB) |
-| `SPLIT` | em "separados" e "trocado": click e guia abaixo de -60 dB na saída da VS, instrumentos abaixo de -60 dB na saída do ouvido, contagem (pré-contagem e pulo) no ouvido e abaixo de -60 dB na VS; nas três partes, nível de cada saída igual ao da v1.4.15 com até 0,1 dB (R-24): "separados" e "trocado" contra a v1.4.15 com o pan automático (o lado trocado espelhado), "junto" contra ela sem o pan automático |
-| `PRECOUNT` | 4 bipes a 0,5 s um do outro (até 2 ms), 1319 Hz no 1; 1º click da música no 5º tempo (até 3 ms); bipes abaixo de -60 dB na VS |
+| `SPLIT` | em "separados" e "trocado": click e guia abaixo de -60 dB na saída da VS, instrumentos abaixo de -60 dB na saída do ouvido, contagem (pré-contagem e pulo) no ouvido e abaixo de -60 dB na VS; nas três partes, nível de cada saída igual ao da v1.4.15 com até 0,1 dB (R-24): "separados" e "trocado" contra a v1.4.15 com o pan automático (o lado trocado espelhado), "junto" contra ela sem o pan automático; e o click depois da pré-contagem e depois do pulo com o nível do play simples (até 0,01 dB, Ruling T30-grade) |
+| `PRECOUNT` | nas duas partes: 4 bipes a 0,5 s um do outro (até 2 ms), 1319 Hz no 1 (nenhum tique a mais: Ruling T30-reagenda); 1º click da música no 5º tempo (até 3 ms); bipes abaixo de -60 dB na VS |
 | `LOOP` | em cada volta, no tom 0 e no +2 (pelo menos 3): último click da seção e 1º da volta a até 3 ms do esperado, a volta no fim da seção pela linha do tempo (até 1 ms), sem buraco na VS e no máximo 2 fontes por canal; nenhum bipe nas voltas |
 
 Referência do `SPLIT`: `node scripts/verify-pitch/run.mjs SPLIT --rev b53a95c --tag v1415`
@@ -94,11 +94,15 @@ roda o mesmo áudio no motor da v1.4.15 (por isso o `SPLIT` só usa `loadFiles`,
 `play` e `pause` na parte que compara) e grava `results/SPLIT-<parte>_v1415.json`;
 as saídas vão gravadas no `localStorage` antes de montar o hook (a v1.4.15 só lê o
 pan automático, ligado em "separados" e "trocado"). O `SPLIT` de agora compara com
-esses arquivos e falha se eles faltarem. Os níveis são medidos num play simples:
-com pré-contagem (ou depois de um pulo) a música começa fora da grade de amostras
-e o Chrome interpola a leitura do buffer, o que tira um pouco dos agudos (-0,08 dB
-em 4500 Hz medido com a pré-contagem; o `JUMP` mostra o mesmo depois do pulo, como
-INFO, junto da previsão pela interpolação linear).
+esses arquivos e falha se eles faltarem. Os níveis são medidos num play simples,
+como na v1.4.15.
+
+Fonte que começa fora da grade de amostras (no instante ou no ponto da faixa) é
+lida pelo Chrome com interpolação linear, que tira agudos. Antes da Ruling
+T30-grade as vozes do pulo e a música da pré-contagem começavam assim: -0,113 dB
+em 4500 Hz depois do pulo (a interpolação linear prevê -0,115 dB pela fração do T,
+que o `JUMP` mostra no detalhe) e -0,083 dB depois da pré-contagem. Hoje começam
+na amostra mais perto e o `JUMP` e o `SPLIT` conferem o nível (até 0,01 dB).
 
 ## Regras puras (Node)
 
