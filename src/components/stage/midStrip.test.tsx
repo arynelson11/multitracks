@@ -378,6 +378,7 @@ describe('célula da seção atual', () => {
     rerender(<CurrentSectionCell {...secProps({ onArmRepeat, intent: { target: 1, plays: 2 } })} />)
     expect(q('[data-repeat-count]').textContent).toBe('2x')
     expect(btn('REPETIR').dataset.armed).toBe('true')
+    expect(btn('REPETIR').getAttribute('aria-pressed')).toBe('true') // o leitor de tela sabe que está armado
     expect(btn('REPETIR').className).toContain('bg-ps-arm')
     fireEvent.click(btn('Mais vezes'))
     expect(onArmRepeat).toHaveBeenLastCalledWith(3)
@@ -390,6 +391,7 @@ describe('célula da seção atual', () => {
     onArmRepeat.mockClear()
     rerender(<CurrentSectionCell {...secProps({ onArmRepeat, intent: { target: 2, plays: 1 } })} />)
     expect(btn('REPETIR').dataset.armed).toBe('false')
+    expect(btn('REPETIR').getAttribute('aria-pressed')).toBe('false')
     fireEvent.click(btn('Mais vezes'))
     rerender(<CurrentSectionCell {...secProps({ onArmRepeat, intent: { target: 1, plays: 'infinite' } })} />)
     fireEvent.click(btn('Mais vezes'))

@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import { displayBpmFromPulseBpm } from '../../lib/stageContracts'
-import type { SongGrid, StageActions, StageClock, StageView } from '../../lib/stageContracts'
+import type { StageActions, StageClock, StageView } from '../../lib/stageContracts'
 import { BigButton } from './BigButton'
 import { CurrentSectionCell } from './CurrentSectionCell'
 import { KeyCell } from './KeyCell'
+import { shownBpm } from './shownBpm'
 import { SongCell } from './SongCell'
 import { TimeCell } from './TimeCell'
 
@@ -54,17 +54,6 @@ function overflowsX(el: HTMLElement): boolean {
     if (r.width > 0 && (r.left < left || r.right > right)) return true
   }
   return false
-}
-
-/**
- * BPM exibido, sempre a semínima (Ruling T3-BPM, Ruling T13-bpm). A grade guarda o BPM do PULSO
- * (a colcheia no x/8: o "Fé" em 6/8 tem a grade em 156), então passa pela conversão única do
- * contrato (156 em 6/8 = 78, 140 em 7/8 = 70). Sem grade, ou com o BPM dela quebrado, o BPM salvo
- * da música, que já é a semínima. A mesma regra do MeterEditor.
- */
-function shownBpm(grid: SongGrid | null, songBpm: number | null): number | null {
-  const fromGrid = grid ? displayBpmFromPulseBpm(grid.bpm, grid.signature) : NaN
-  return Number.isFinite(fromGrid) ? fromGrid : songBpm
 }
 
 /** Degraus do encaixe: --ps-fit vai de 1 (tamanho cheio) a 0 (texto em 12 px, capa em 48 px) em 8 passos. */

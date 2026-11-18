@@ -3,6 +3,7 @@ import { SECTION_SHORTCUTS } from '../../lib/sectionTypes'
 import type { StageSection } from '../../lib/stageContracts'
 import { Button, cx } from '../ui'
 import { Icon } from './icons'
+import { KEY_CAP } from './sectionPadMeta'
 import { TwoTapTrashButton } from './TwoTapTrashButton'
 
 export interface SectionEditBarProps {
@@ -27,8 +28,7 @@ const ROW = 'flex flex-wrap items-center gap-ps-gap'
 const TYPE =
   'inline-flex min-h-ps-touch min-w-ps-touch shrink-0 items-center gap-2 rounded-ps-lg bg-ps-s2 px-ps-pad-x text-ps-base font-bold whitespace-nowrap select-none inset-ring inset-ring-ps-line transition-[box-shadow,transform] duration-150 hover:inset-ring-ps-line-2 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
 const DOT = 'size-2.5 shrink-0 rounded-ps-pill bg-(--ps-c)'
-const KBD =
-  'ps-num h-[18px] min-w-[18px] rounded-[5px] px-1 text-center text-ps-micro leading-[18px] font-bold text-ps-mut shadow-[inset_0_0_0_1px_var(--color-ps-line-2),0_1px_0_var(--color-ps-line-2)]'
+const KBD = KEY_CAP
 // Seção da música: faixa da cor à esquerda, como na botoeira. Selecionada = fundo e borda na cor
 // da seção (cor da seção = seção; laranja e branco ficam pra ligado e armado). Nome antigo maior
 // que 14 caracteres quebra a linha dentro do botão, nunca é cortado.

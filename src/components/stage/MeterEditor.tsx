@@ -5,6 +5,7 @@ import { Button, Segmented } from '../ui'
 import type { SegmentedOption } from '../ui'
 import { Icon } from './icons'
 import { usePanelDismiss } from './panelDismiss'
+import { shownBpm } from './shownBpm'
 
 export interface MeterEditorProps {
   grid: SongGrid | null; songBpm: number | null; busy: boolean
@@ -33,14 +34,14 @@ function meterOrigin(g: SongGrid | null): string {
 }
 
 /**
- * BPM que a pessoa vê (sempre a semínima, pela conversão única do contrato: trocar simples por
- * composto não muda o número) e de onde ele veio. Sem grade, o BPM salvo da música, se houver.
+ * BPM que a pessoa vê (a regra da faixa do meio, `shownBpm`: sempre a semínima, e trocar simples
+ * por composto não muda o número) e de onde ele veio.
  */
-function shownBpm(g: SongGrid | null, songBpm: number | null): { value: number; origin: string } | null {
-  const fromGrid = g ? displayBpmFromPulseBpm(g.bpm, g.signature) : NaN
-  if (g && Number.isFinite(fromGrid)) return { value: fromGrid, origin: g.source === 'click' ? BPM_FROM_CLICK : BPM_SAVED }
-  if (songBpm !== null && Number.isFinite(songBpm) && songBpm > 0) return { value: songBpm, origin: BPM_SAVED }
-  return null
+function bpmWithOrigin(g: SongGrid | null, songBpm: number | null): { value: number; origin: string } | null {
+  const value = shownBpm(g, songBpm)
+  if (value === null) return null
+  const fromGrid = g !== null && Number.isFinite(displayBpmFromPulseBpm(g.bpm, g.signature))
+  return { value, origin: fromGrid && g.source === 'click' ? BPM_FROM_CLICK : BPM_SAVED }
 }
 
 /**
@@ -81,7 +82,7 @@ export function MeterEditor({ grid, songBpm, busy, hasClickChannel, onChange, on
         { value: '3', label: `Contar ${countPulses(compound.signature, 3)}` },
       ]
     : []
-  const bpm = shownBpm(grid, songBpm)
+  const bpm = bpmWithOrigin(grid, songBpm)
 
   return (
     <div

@@ -108,11 +108,13 @@ export function NextPill({ transition, intent, sections, currentSection, gridWar
       setFlag(dots.children[i] as HTMLElement, 'on', on)
     }
   }
-  // Depois de cada renderização: acerta o tamanho do nome e pinta (sem esperar o quadro).
+  // O tamanho do nome só muda com o nome (a largura da coluna é do ResizeObserver abaixo): medir a
+  // cada renderização lia o layout em todo passo de fader. Pintar continua depois de cada uma.
+  const shownName = visible && section ? section.label : ''
   useLayoutEffect(() => {
     if (nameRef.current) fitName(nameRef.current)
-    paint()
-  })
+  }, [shownName])
+  useLayoutEffect(() => { paint() })
   useFrame(paint, shown !== null)
   // A largura da coluna muda com a janela: mede o nome de novo.
   useEffect(() => {

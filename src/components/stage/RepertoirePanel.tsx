@@ -18,9 +18,10 @@ export interface RepertoirePanelProps {
 const EDGE = 40
 const EDGE_STEP = 12
 
+// O espaçamento das letras sai do estado (repouso largo, armado normal), pra não disputar com a base.
 const ACTION =
-  'inline-flex shrink-0 items-center justify-center gap-1.5 min-h-ps-touch min-w-ps-touch px-ps-pad-x rounded-ps-lg font-ps-sans text-ps-sm font-bold tracking-[0.1em] whitespace-nowrap select-none transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or disabled:opacity-35 disabled:pointer-events-none'
-const ACTION_IDLE = 'bg-ps-s2 text-ps-bone inset-ring inset-ring-ps-line hover:inset-ring-ps-line-2'
+  'inline-flex shrink-0 items-center justify-center gap-1.5 min-h-ps-touch min-w-ps-touch px-ps-pad-x rounded-ps-lg font-ps-sans text-ps-sm font-bold whitespace-nowrap select-none transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or disabled:opacity-35 disabled:pointer-events-none'
+const ACTION_IDLE = 'bg-ps-s2 text-ps-bone tracking-[0.1em] inset-ring inset-ring-ps-line hover:inset-ring-ps-line-2'
 const ACTION_ARMED = 'bg-ps-alert text-ps-ink tracking-normal'
 const ICON_BTN =
   'inline-flex shrink-0 items-center justify-center min-h-ps-touch min-w-ps-touch rounded-ps-md select-none transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
@@ -159,13 +160,16 @@ function RepertoireDrawer({
         >
           {novoArmed ? 'Limpar o repertório?' : <><Icon name="plus" className="size-[15px]" />NOVO</>}
         </button>
-        <button
-          type="button" aria-label="Salvar .zip" disabled={songs.length === 0}
-          title={songs.length === 0 ? 'O repertório está vazio' : 'Salva o repertório inteiro num arquivo .zip'}
-          onClick={onExport} className={cx(ACTION, ACTION_IDLE)}
-        >
-          SALVAR .ZIP
-        </button>
+        {/* O botão desligado não recebe o ponteiro: a dica de vazio fica no invólucro (como o LOOP do transporte). */}
+        <span className="inline-flex shrink-0" title={songs.length === 0 ? 'O repertório está vazio' : undefined}>
+          <button
+            type="button" aria-label="Salvar .zip" disabled={songs.length === 0}
+            title={songs.length === 0 ? 'O repertório está vazio' : 'Salva o repertório inteiro num arquivo .zip'}
+            onClick={onExport} className={cx(ACTION, ACTION_IDLE)}
+          >
+            SALVAR .ZIP
+          </button>
+        </span>
         <button
           type="button" aria-label="Carregar .zip" title="Abre um repertório salvo em .zip"
           onClick={() => fileRef.current?.click()} className={cx(ACTION, ACTION_IDLE)}

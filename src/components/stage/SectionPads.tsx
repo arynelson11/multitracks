@@ -5,7 +5,7 @@ import type { ArmIntent, StageClock, StageGates, StageSection, StageView, Transi
 import { countState } from '../../lib/transitionView'
 import { Button, cx } from '../ui'
 import { Icon } from './icons'
-import { PAD_COUNT_TEXT, padMeta, padProgress, padReserve, padTag } from './sectionPadMeta'
+import { KEY_CAP, PAD_COUNT_TEXT, padMeta, padProgress, padReserve, padTag } from './sectionPadMeta'
 import { setFlag, setText } from './stageDom'
 import { useFrame } from './useFrame'
 
@@ -70,8 +70,7 @@ const STRIP = 'pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-(--ps-c)'
 const FILL = 'pointer-events-none absolute inset-0 origin-left scale-x-0 bg-[color-mix(in_srgb,var(--ps-c)_18%,transparent)]'
 const LAND = 'pointer-events-none absolute inset-0 animate-ps-land'
 const TOP = 'relative flex h-[18px] items-center'
-const KBD =
-  'ps-num h-[18px] min-w-[18px] rounded-[5px] px-1 text-center text-ps-micro leading-[18px] font-bold text-ps-mut shadow-[inset_0_0_0_1px_var(--color-ps-line-2),0_1px_0_var(--color-ps-line-2)]'
+const KBD = KEY_CAP
 const TAG_BOX = 'inline-flex h-[18px] items-center gap-[3px] rounded-[5px] px-1.5 text-[9.5px] leading-none font-extrabold tracking-[0.1em] whitespace-nowrap'
 // v5 .tag: no canto de cima, fora do fluxo; a largura dela já está na reserva do botão, ao lado da tecla.
 const TAG = `absolute top-0 right-0 ${TAG_BOX} text-ps-ink-0`
