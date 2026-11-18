@@ -27,6 +27,12 @@ describe('ligações do palco novo', () => {
     expect(app).toMatch(/goToStart:\s*\(\)\s*=>\s*\{\s*if\s*\(\s*startAction\(\s*isPlaying\s*,\s*sectionSpansView\.length\s*,\s*sectionGates\s*\)\s*===\s*'arm'\s*\)\s*upgradeIf\(\s*armSection\(\s*0\s*\)\s*\)\s*else\s*seekTo\(\s*0\s*\)/)
   })
 
+  it('nenhum window.prompt no App (o Electron lança "prompt() is not supported"): renomear e o metrônomo infinito usam o diálogo do app', () => {
+    expect(app).not.toMatch(/\bprompt\s*\(/)
+    expect(app).toMatch(/<TextPromptDialog[\s\S]*?createEndlessMetronomeSong\(/)
+    expect(app).toMatch(/<TextPromptDialog[\s\S]*?renameSong\(/)
+  })
+
   it('o motor recebe o click gerado pelo plano e os portões das seções', () => {
     expect(app).toMatch(/autoClick\s*:\s*canUseBpmDetection\(\s*userPlan\s*\)/)
     expect(app).toMatch(/sectionGates/)

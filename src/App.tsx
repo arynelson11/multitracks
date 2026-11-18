@@ -90,6 +90,7 @@ import { ChannelEditPanel } from './components/ChannelEditPanel'
 import { ChannelTrashButton } from './components/ChannelTrashButton'
 import { useTwoTapConfirm } from './hooks/useTwoTapConfirm'
 import { Button } from './components/ui'
+import { TextPromptDialog, endlessMetronomeBpmError, songNameError } from './components/TextPromptDialog'
 
 // ───────────────── PALCO NOVO (T29) ─────────────────
 
@@ -461,6 +462,9 @@ export default function App() {
   const [markerColor, setMarkerColor] = useState('#10b981')
   const [mobileView, setMobileView] = useState<'mixer' | 'pads'>('mixer')
   const [isSaving, setIsSaving] = useState(false)
+  // Pergunta de uma linha do próprio app (o Electron não tem window.prompt): renomear a música do
+  // menu FAIXAS e o BPM do metrônomo infinito, nos dois palcos.
+  const [textPrompt, setTextPrompt] = useState<{ kind: 'metronome' } | { kind: 'rename'; songId: string; name: string } | null>(null)
   const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false)
   const [isPrecountOpen, setIsPrecountOpen] = useState(false)
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false)
@@ -578,13 +582,7 @@ export default function App() {
   }
   const upgradeIf = (r: { upgrade: boolean }) => { if (r.upgrade) setIsPricingOpen(true) }
   const clampToSong = (t: number) => Math.max(0, Math.min(duration || 0, Number.isFinite(t) ? t : 0))
-  const promptEndlessMetronome = () => {
-    const bpmInput = window.prompt("Digite o BPM desejado para a nova faixa de Click (ex: 120):", "120")
-    if (!bpmInput) return
-    const bpm = parseInt(bpmInput, 10)
-    if (!isNaN(bpm) && bpm >= 40 && bpm <= 300) createEndlessMetronomeSong(bpm)
-    else alert("BPM inválido. Digite um número entre 40 e 300.")
-  }
+  const promptEndlessMetronome = () => setTextPrompt({ kind: 'metronome' })
 
   // Ações do palco (StageActions + a da casca) e o que os painéis do App chamam. A casca recebe
   // um objeto estável (delegateTo) que chama a versão da renderização mais nova.
@@ -702,9 +700,7 @@ export default function App() {
     tracksImport: (files: FileList) => { void loadFiles(files) },
     tracksMetronome: () => promptEndlessMetronome(),
     tracksRename: () => {
-      if (!activeSong) return
-      const name = window.prompt('Nome da música:', activeSong.name)
-      if (name !== null && name.trim()) renameSong(activeSong.id, name.trim())
+      if (activeSong) setTextPrompt({ kind: 'rename', songId: activeSong.id, name: activeSong.name })
     },
     tracksCover: (file: File) => {
       if (!activeSong) return
@@ -1414,7 +1410,7 @@ export default function App() {
   ) : null
   // Modais do App abertos: o teclado do palco fica desligado (Espaço não toca por baixo deles).
   const stageKeyboard = !isSettingsOpen && !isLibraryOpen && !isAdminOpen && !isMetronomeModalOpen && !isLyricsEditorOpen
-    && !isPadSetsModalOpen && !isPricingOpen && !isLiveModeOpen && !showTour && !showWhatsNew && !isPadSoundsOpen
+    && !isPadSetsModalOpen && !isPricingOpen && !isLiveModeOpen && !showTour && !showWhatsNew && !isPadSoundsOpen && textPrompt === null
 
   // ───────────────── MAIN APP ─────────────────
   return (
@@ -2568,6 +2564,22 @@ export default function App() {
         onToggleRemote={() => setRemoteSessionCode(prev => prev ? null : Math.random().toString(36).slice(2, 8).toUpperCase())}
       />
 
+      {/* Renomear (menu FAIXAS do palco novo) e BPM do metrônomo infinito, nos dois palcos. */}
+      {textPrompt?.kind === 'metronome' && (
+        <TextPromptDialog
+          title="Criar metrônomo (infinito)" label="BPM da nova faixa de Click, de 40 a 300" initialValue="120" submitLabel="Criar" inputMode="numeric"
+          validate={endlessMetronomeBpmError} onCancel={() => setTextPrompt(null)}
+          onSubmit={(v) => { setTextPrompt(null); createEndlessMetronomeSong(Number(v)) }}
+        />
+      )}
+      {textPrompt?.kind === 'rename' && (
+        <TextPromptDialog
+          title="Renomear esta música" label="Nome da música" initialValue={textPrompt.name}
+          validate={songNameError} onCancel={() => setTextPrompt(null)}
+          onSubmit={(v) => { const { songId } = textPrompt; setTextPrompt(null); renameSong(songId, v) }}
+        />
+      )}
+
       {/* Editor de Letra & Cifra (Admin) */}
       {isLyricsEditorOpen && playlist[activeSongIndex] && (
         <LyricsEditor
@@ -2815,16 +2827,8 @@ export default function App() {
                       }} />
                   </label>
                   <button onClick={() => {
-                    const bpmInput = window.prompt("Digite o BPM desejado para a nova faixa de Click (ex: 120):", "120");
-                    if (bpmInput) {
-                      const bpm = parseInt(bpmInput, 10);
-                      if (!isNaN(bpm) && bpm >= 40 && bpm <= 300) {
-                        createEndlessMetronomeSong(bpm);
-                        setIsMobileDrawerOpen(false);
-                      } else {
-                        alert("BPM inválido. Digite um número entre 40 e 300.");
-                      }
-                    }
+                    setIsMobileDrawerOpen(false);
+                    promptEndlessMetronome();
                   }}
                     className="w-full text-left px-3 py-3 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors border border-transparent hover:border-border">
                     <span className="text-white text-sm font-bold flex items-center gap-3">
