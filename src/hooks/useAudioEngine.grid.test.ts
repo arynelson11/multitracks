@@ -10,6 +10,7 @@ import type { AutoClickOkPlan, AutoClickPlan } from '../lib/autoClick'
 import type { ClickLibrarySelection } from '../lib/clickLibrary'
 import type { SongGridDetection } from '../lib/beatGrid'
 import { resolveChannelRole } from '../lib/channelNames'
+import { barSeconds } from '../lib/songGrid'
 import type { SavedSong } from '../lib/repertoireSchema'
 import type { StageGates, StageMode, TimeSignature } from '../lib/stageContracts'
 import type { Marker } from '../types'
@@ -365,6 +366,9 @@ describe('grade da música lida na faixa de click', () => {
     const songId = first.result.current.playlist[0].id
 
     act(() => { first.result.current.setSongMeter(songId, '3/4', 1) })
+    // Grade de click: o click é lido de novo com o compasso escolhido (frente 2 I2).
+    await settled(first)
+    expect(mem.analyzeCalls.map((c) => c.known)).toEqual([null, '3/4'])
     const manual = first.result.current.songGrid!
     expect(manual).toMatchObject({ signature: '3/4', countEvery: 1, source: 'click', meterSource: 'manual' })
     expect(manual.bpm).toBeCloseTo(120, 2)
@@ -462,6 +466,80 @@ describe('grade da música lida na faixa de click', () => {
     act(() => { hook.result.current.jumpToSong(1) })
     expect(hook.result.current.songGrid).toMatchObject({ source: 'click', meterSource: 'manual', signature: '3/4' })
     expect(hook.result.current.gridWarning).toBeNull()
+  })
+
+  it('trocar o compasso no EDITAR numa grade lida do click relê o click com o compasso novo; o aviso fica até lá (frente 2 I2)', async () => {
+    // Click sem acento em colcheia a 156 (a "Fé", 6/8): a leitura sem compasso assume 4/4 a 156.
+    mem.buffers.set('colcheia156', synthClick({ bpm: 156, seconds: 30, pulsesPerBar: 6, accent: 'none', firstPulse: 0.5 }))
+    const bar68 = (6 * 60) / 156
+    const hook = await openApp()
+    await load(hook, [['CLICK.wav', 'colcheia156']])
+    await settled(hook)
+    expect(hook.result.current.songGrid).toMatchObject({ signature: '4/4', source: 'click', meterSource: 'padrao' })
+    const id = hook.result.current.playlist[0].id
+    mem.analyzeCalls.length = 0
+    let release!: () => void
+    mem.workerGate = new Promise<void>((resolve) => { release = resolve })
+    act(() => { hook.result.current.setSongMeter(id, '6/8', 3) })
+    // Na hora: o compasso do withMeter (os pulsos do click dobrados, 1,154 s: errado neste click),
+    // com o COMPASSO ASSUMIDO aceso enquanto o click é lido de novo.
+    expect(barSeconds(hook.result.current.songGrid!)).toBeCloseTo(bar68 / 2, 3)
+    expect(hook.result.current.songGrid!.meterSource).toBe('manual')
+    expect(hook.result.current.gridWarning).toBe('compasso-assumido')
+    release()
+    mem.workerGate = null
+    await settled(hook)
+    // Relido no 6/8: o compasso certo (2,308 s), o escolhido fica.
+    expect(mem.analyzeCalls.map((c) => c.known)).toEqual(['6/8'])
+    const grid = hook.result.current.songGrid!
+    expect(grid).toMatchObject({ signature: '6/8', countEvery: 3, meterSource: 'manual', source: 'click' })
+    expect(barSeconds(grid)).toBeCloseTo(bar68, 3)
+    // Sem acento e sem seção marcada o 1 continua não provado: o aviso não some.
+    expect(hook.result.current.gridWarning).toBe('compasso-assumido')
+    await waitFor(() => expect(saved()[0].grid).toEqual(grid))
+    expect(saved()[0].downbeatAssumed).toBe(true)
+  })
+
+  it('com seções marcadas, o 6/8 escolhido num click sem acento fica no compasso certo e sem aviso depois da releitura', async () => {
+    mem.buffers.set('colcheia156', synthClick({ bpm: 156, seconds: 30, pulsesPerBar: 6, accent: 'none', firstPulse: 0.5 }))
+    const bar68 = (6 * 60) / 156
+    // Seções nas barras do 6/8 (o 1 no 1º pulso).
+    const markers = [0, 1, 2, 3].map((k) => ({ id: `m${k}`, time: 0.5 + 2 * k * bar68, label: `S${k}` }))
+    const hook = await openApp()
+    await load(hook, [['CLICK.wav', 'colcheia156']], { markers })
+    await settled(hook)
+    const id = hook.result.current.playlist[0].id
+    act(() => { hook.result.current.setSongMeter(id, '6/8', 3) })
+    await settled(hook)
+    const grid = hook.result.current.songGrid!
+    expect(grid).toMatchObject({ signature: '6/8', meterSource: 'manual', source: 'click' })
+    expect(barSeconds(grid)).toBeCloseTo(bar68, 3)
+    expect(grid.firstDownbeat).toBeCloseTo(0.5, 3)
+    expect(hook.result.current.gridWarning).toBeNull()
+  })
+
+  it('ida e volta do compasso numa grade de click sem releitura (click gerado) não tira o 1 do lugar (adiado D4)', async () => {
+    // 4/4 a 120 com o 1 em 1,7 s, na grade do click que o motor gerou (não é relido).
+    const grid = { bpm: 120, firstDownbeat: 1.7, signature: '4/4' as const, countEvery: 1 as const, source: 'click' as const, meterSource: 'salvo' as const }
+    seedSongs([{ ...savedNoClick('s1'), grid, channels: [...savedNoClick('s1').channels, ch('s1-g', 'Click gerado')] }])
+    const hook = await openApp()
+    await wait(80)
+    mem.analyzeCalls.length = 0
+    for (const [ida, conta] of [['6/8', 3], ['3/4', 1]] as const) {
+      act(() => { hook.result.current.setSongMeter('s1', ida, conta) })
+      expect(hook.result.current.songGrid!.firstDownbeat).toBeCloseTo(1.7 - barSeconds(hook.result.current.songGrid!), 9)
+      act(() => { hook.result.current.setSongMeter('s1', '4/4', 1) })
+      expect(hook.result.current.songGrid!.firstDownbeat).toBe(1.7)
+    }
+    // Pelo repertório também: a âncora vai salva.
+    act(() => { hook.result.current.setSongMeter('s1', '6/8', 3) })
+    await waitFor(() => expect(saved()[0].grid?.signature).toBe('6/8'))
+    cleanup()
+    const again = await openApp()
+    await wait(80)
+    act(() => { again.result.current.setSongMeter('s1', '4/4', 1) })
+    expect(again.result.current.songGrid!.firstDownbeat).toBe(1.7)
+    expect(mem.analyzeCalls).toHaveLength(0)
   })
 
   it('repertório de antes da grade: ao abrir, a grade de cada música com click é lida, sem esperar ela ficar ativa', async () => {

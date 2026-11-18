@@ -3418,13 +3418,26 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         if (read || generate) scheduleSongGrid(activeSong, { read, generate });
     }, [activeSong, isPlaying, shouldAutoPlayNext]);
 
-    // Compasso escolhido no modo EDITAR (manual vence automático): BPM e fase continuam os da grade
-    // que vale; fica salvo no repertório e "Ler o click de novo" mantém. Sem grade, nada a escolher.
+    // Músicas com o compasso trocado no EDITAR esperando a releitura do click (o aviso fica até ela).
+    const [meterRereads, setMeterRereads] = useState<readonly string[]>([]);
+    // Compasso escolhido no modo EDITAR (manual vence automático): fica salvo no repertório e "Ler o
+    // click de novo" mantém. Sem grade, nada a escolher. Na hora, o BPM exibido e a fase continuam os
+    // da grade que vale (withMeter). Numa grade lida do click, quem sabe se o click é colcheia ou
+    // pontuada no compasso novo é a leitura (num click sem acento a 1ª leitura assume 4/4): o click
+    // é lido de novo com o compasso escolhido, na fila, e até lá o COMPASSO ASSUMIDO fica aceso
+    // (frente 2 I2). O click que o motor gerou não é relido (a grade dele é a do plano).
     const setSongMeter = (songId: string, sig: TimeSignature, countEvery: 1 | 3) => {
         const song = playlistRef.current.find((s) => s.id === songId);
         const base = song ? songGridOf(song) : null;
         const next = base ? sanitizeGrid(withMeter(base, sig, countEvery)) : null;
-        if (next) patchSong(songId, (s) => ({ ...s, grid: next }));
+        if (!next) return;
+        const updated = patchSong(songId, (s) => ({ ...s, grid: next }));
+        const userClick = !!updated && clickChannelsOf(updated).some((ch) => ch.name !== GENERATED_CLICK_NAME && readableClick(ch.buffer) !== null);
+        if (next.source !== 'click' || !userClick || !gridWorkerUsable()) return;
+        setMeterRereads((ids) => (ids.includes(songId) ? ids : [...ids, songId]));
+        void enqueueGridJob(songId, { read: true, generate: false }).then(() => {
+            setMeterRereads((ids) => ids.filter((id) => id !== songId));
+        });
     };
 
     // "Ler o click de novo": refaz os passos 1 e 3 e mantém o compasso escolhido. Pela fila: com a
@@ -3437,7 +3450,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
 
     // Aviso âmbar da grade da música ativa; o 1 assumido avisa também com o compasso escolhido.
     const songGridWarning: GridWarning | null = !activeSong ? null
-        : gridWarning(activeGrid) ?? (activeGrid?.source === 'click' && activeSong.downbeatAssumed ? 'compasso-assumido' : null);
+        : gridWarning(activeGrid) ?? (activeGrid?.source === 'click' && (activeSong.downbeatAssumed || meterRereads.includes(activeSong.id)) ? 'compasso-assumido' : null);
     const isReadingGrid = !!activeSongId && gridPending.includes(activeSongId);
 
     // Update markers on a song

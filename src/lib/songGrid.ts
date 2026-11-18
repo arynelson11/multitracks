@@ -280,12 +280,19 @@ export function gridFromClick(a: ClickAnalysisLike, savedSignature?: TimeSignatu
  * semínima), a fase e a origem ficam: entrar num compasso de colcheia (x/8) dobra os pulsos da
  * grade e sair divide por 2, então a semínima não muda. O 1 volta pra dentro do primeiro compasso do
  * compasso novo (as barras são as mesmas), pra `barIndexAt` de 0:00 em diante nunca passar da
- * anacruse (-1).
+ * anacruse (-1). Ele parte da âncora (`anchor`, o 1 de antes da primeira troca, guardado quando ele
+ * precisou mudar pra caber), não do 1 já trazido pro compasso de agora: num compasso mais curto o 1
+ * de uma barra mais adiante viraria o de outra, e a volta pro compasso de antes levaria o 1 pro "2"
+ * da banda (adiado D4).
  */
 export function withMeter(g: SongGrid, signature: TimeSignature, countEvery: 1 | 3): SongGrid {
   const bpm = pulseBpmFromDisplayBpm(displayBpmFromPulseBpm(g.bpm, g.signature), signature)
   const next: SongGrid = { ...g, bpm, signature, countEvery: isCompound(signature) ? countEvery : 1, meterSource: 'manual' }
-  return { ...next, firstDownbeat: intoFirstBar(g.firstDownbeat, barSeconds(next)) }
+  delete next.anchor
+  const one = typeof g.anchor === 'number' && Number.isFinite(g.anchor) ? g.anchor : g.firstDownbeat
+  const firstDownbeat = intoFirstBar(one, barSeconds(next))
+  // A âncora só fica quando o 1 teve de mudar pra caber no compasso (senão ela é o próprio 1).
+  return Math.abs(firstDownbeat - one) <= EPS ? { ...next, firstDownbeat } : { ...next, firstDownbeat, anchor: one }
 }
 
 /**
@@ -311,7 +318,8 @@ export function gridWarning(g: SongGrid | null): GridWarning | null {
  * 60 a 600 colcheias), `firstDownbeat` finito e `>= 0`, compasso, `countEvery`, `source` e
  * `meterSource` conhecidos; senão nula. Devolve uma
  * grade nova só com os campos dela, com as mesmas regras do `withMeter`: 3 em 3 fora do composto
- * vira 1 e o 1 volta pra dentro do primeiro compasso (`[0, compasso)`, mesmas barras).
+ * vira 1 e o 1 volta pra dentro do primeiro compasso (`[0, compasso)`, mesmas barras). A âncora do
+ * `withMeter` fica só quando é finita, `>= 0` e cai numa barra desta grade; senão sai (o 1 fica).
  */
 export function sanitizeGrid(raw: unknown): SongGrid | null {
   if (!raw || typeof raw !== 'object') return null
@@ -325,5 +333,9 @@ export function sanitizeGrid(raw: unknown): SongGrid | null {
   if (countEvery !== 1 && countEvery !== 3) return null
   if (!source || !meterSource) return null
   const bar = (60 / bpm) * pulsesPerBar(signature)
-  return { bpm, firstDownbeat: intoFirstBar(firstDownbeat, bar), signature, countEvery: isCompound(signature) ? countEvery : 1, source, meterSource }
+  const one = intoFirstBar(firstDownbeat, bar)
+  const out: SongGrid = { bpm, firstDownbeat: one, signature, countEvery: isCompound(signature) ? countEvery : 1, source, meterSource }
+  const { anchor } = r
+  if (typeof anchor === 'number' && Number.isFinite(anchor) && anchor >= 0 && Math.abs(intoFirstBar(anchor, bar) - one) <= EPS) out.anchor = anchor
+  return out
 }

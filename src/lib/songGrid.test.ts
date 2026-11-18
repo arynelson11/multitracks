@@ -386,6 +386,37 @@ describe('BPM da música na semínima (Ruling T3-BPM)', () => {
     // Entre compostos e entre simples a grade não muda de unidade.
     expect(withMeter(seis, '12/8', 3).bpm).toBe(240); expect(withMeter(g, '3/4', 1).bpm).toBe(120)
   })
+  it('ida e volta do compasso não tira o 1 do lugar (adiado D4): 4/4 -> 6/8 -> 4/4 e 4/4 -> 3/4 -> 4/4 com o 1 em 1,7 s', () => {
+    // 4/4 a 120 (compasso de 2 s) com o 1 no último quarto do primeiro compasso.
+    const lida: SongGrid = { bpm: 120, firstDownbeat: 1.7, signature: '4/4', countEvery: 1, source: 'click', meterSource: 'acento' }
+    for (const [ida, conta] of [['6/8', 3], ['3/4', 1]] as const) {
+      const meio = withMeter(lida, ida, conta)
+      // No compasso mais curto o 1 vai pra dentro do 1º compasso (as barras são as mesmas)...
+      expect(meio.firstDownbeat).toBeLessThan(barSeconds(meio))
+      expectTime(meio.firstDownbeat, 1.7 - barSeconds(meio))
+      // ...e a âncora guarda o 1 de antes, inclusive pelo repertório (sanitizeGrid).
+      expect(meio.anchor).toBe(1.7)
+      const salvo = sanitizeGrid(JSON.parse(JSON.stringify(meio)))!
+      expect(salvo).toStrictEqual(meio)
+      const volta = withMeter(salvo, '4/4', 1)
+      expect(volta.firstDownbeat).toBe(1.7)
+      expect(volta.anchor).toBeUndefined()
+      expect(volta).toEqual({ ...lida, meterSource: 'manual' })
+    }
+    // Duas trocas seguidas pelo curto (4/4 -> 3/4 -> 6/8 -> 4/4) também voltam.
+    expect(withMeter(withMeter(withMeter(lida, '3/4', 1), '6/8', 3), '4/4', 1).firstDownbeat).toBe(1.7)
+    // O 1 que já cabe no compasso novo não ganha âncora.
+    expect(withMeter({ ...lida, firstDownbeat: 0.25 }, '3/4', 1).anchor).toBeUndefined()
+  })
+  it('âncora que não cai numa barra da grade (registro mexido) sai e o 1 fica', () => {
+    const base = { bpm: 120, firstDownbeat: 0.2, signature: '3/4', countEvery: 1, source: 'click', meterSource: 'manual' }
+    expect(sanitizeGrid({ ...base, anchor: 1.7 })!.anchor).toBe(1.7)
+    for (const anchor of [1.6, -1.3, NaN, Infinity, '1.7', null]) {
+      const limpa = sanitizeGrid({ ...base, anchor })!
+      expect(limpa.firstDownbeat).toBe(0.2)
+      expect('anchor' in limpa).toBe(false)
+    }
+  })
   it('reler o click em 4/4 com o 6/8 manual: a grade nova também conta colcheias', () => {
     const lida = gridFromClick({ bpm: 78, subdivision: 2, compound: false, firstPulse: 0.001, pulsesPerBar: null, firstDownbeat: null })
     const manual = withMeter(gridFromBpm(78)!, '6/8', 3)

@@ -69,7 +69,9 @@ export type MeterSource = 'manual' | 'salvo' | 'acento' | 'padrao'  // de onde v
  * g.signature)` (78 no "Fé" em 6/8, com a grade em 156), e a volta é `pulseBpmFromDisplayBpm`.
  * `firstDownbeat` é o primeiro "1" em segundos da música (só vale com `source: 'click'`).
  */
-export interface SongGrid { bpm: number; firstDownbeat: number; signature: TimeSignature; countEvery: 1 | 3; source: GridSource; meterSource: MeterSource }
+// `anchor` (opcional): o 1 como foi lido, antes de ir pra dentro do 1º compasso. A troca de compasso no
+// EDITAR parte dele, então a ida e volta (4/4 -> 6/8 -> 4/4) devolve o mesmo 1 (adiado D4, frente 2 I3).
+export interface SongGrid { bpm: number; firstDownbeat: number; signature: TimeSignature; countEvery: 1 | 3; source: GridSource; meterSource: MeterSource; anchor?: number }
 
 /** Só a grade lida na faixa de click sabe onde cai o "1"; com o BPM salvo a contagem fica ancorada no destino. */
 export const gridHasPhase = (g: SongGrid): boolean => g.source === 'click'
