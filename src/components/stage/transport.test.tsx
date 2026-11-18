@@ -363,6 +363,60 @@ describe('transporte', () => {
     }
     expect(screen.getByRole('radiogroup', { name: 'Fim da música' })).toBeTruthy()
   })
+  it('COMEÇO parado volta direto pro 0:00 com um toque (Ruling I3-comeco)', () => {
+    const a = actions()
+    render(<TransportBar view={view({ isPlaying: false })} actions={a} clock={clock} pulse={null} />)
+    expect(btn('COMEÇO').getAttribute('title')).toBe('Volta a VS pro 0:00')
+    fireEvent.click(btn('COMEÇO'))
+    expect(a.goToStart).toHaveBeenCalledTimes(1)
+  })
+
+  it('COMEÇO tocando com seções arma o começo como um pulo: um toque, cancelável como uma seção armada', () => {
+    const a = actions()
+    render(<TransportBar view={view({ isPlaying: true })} actions={a} clock={clock} pulse={null} />)
+    expect(btn('COMEÇO').getAttribute('title')).toBe('Arma a volta pro começo: a seção termina, conta e entra no 1 da primeira seção. Toque de novo, no X do aviso ou Esc cancela.')
+    fireEvent.click(btn('COMEÇO'))
+    expect(a.goToStart).toHaveBeenCalledTimes(1)
+  })
+
+  it('COMEÇO tocando sem seções (ou no Livre) pede o segundo toque pra voltar pro 0:00', () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1000)
+    const a = actions()
+    const { rerender } = render(<TransportBar view={view({ sections: [], currentSection: -1 })} actions={a} clock={clock} pulse={null} />)
+    fireEvent.click(btn('COMEÇO'))
+    expect(a.goToStart).not.toHaveBeenCalled()
+    const armed = btn('Toque de novo pra voltar a VS pro 0:00')
+    expect(armed.getAttribute('data-armed')).toBe('true')
+    fireEvent.click(armed) // toque que quica (menos de 350 ms): não confirma
+    expect(a.goToStart).not.toHaveBeenCalled()
+    now.mockReturnValue(1500)
+    fireEvent.click(armed)
+    expect(a.goToStart).toHaveBeenCalledTimes(1)
+    expect(btn('COMEÇO').getAttribute('data-armed')).toBe('false')
+    // No Livre a música tem seções mas o plano não arma: também pede o segundo toque.
+    const livre = { sections: false, infinite: false, maxRepeats: 1, bandSections: false }
+    rerender(<TransportBar view={view({ gates: livre })} actions={a} clock={clock} pulse={null} />)
+    fireEvent.click(btn('COMEÇO'))
+    expect(a.goToStart).toHaveBeenCalledTimes(1)
+    expect(btn('Toque de novo pra voltar a VS pro 0:00')).toBeTruthy()
+    // A música parou com o COMEÇO armado: desarma, e o toque parado volta direto.
+    rerender(<TransportBar view={view({ gates: livre, isPlaying: false })} actions={a} clock={clock} pulse={null} />)
+    fireEvent.click(btn('COMEÇO'))
+    expect(a.goToStart).toHaveBeenCalledTimes(2)
+    now.mockRestore()
+  })
+
+  it('COMEÇO armado não muda de largura (o Play ao lado não anda): os dois rótulos ocupam o mesmo lugar', () => {
+    render(<TransportBar view={view({ sections: [], currentSection: -1 })} actions={actions()} clock={clock} pulse={null} />)
+    const b = btn('COMEÇO')
+    const labels = [...b.querySelectorAll('[data-start-label]')]
+    expect(labels.map((l) => l.textContent)).toEqual(['COMEÇO', 'VOLTAR?'])
+    expect(labels.map((l) => l.getAttribute('aria-hidden'))).toEqual([null, 'true'])
+    expect(labels.every((l) => l.className.includes('[grid-area:1/1]'))).toBe(true)
+    fireEvent.click(b)
+    expect(labels.map((l) => l.getAttribute('aria-hidden'))).toEqual(['true', null])
+  })
+
   it('pontos do tour no palco novo', () => {
     const { container } = render(<TransportBar view={view()} actions={actions()} clock={clock} pulse={null} />)
     const tour = (k: string) => container.querySelector(`[data-tour="${k}"]`)

@@ -1,12 +1,14 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useId, useLayoutEffect, useRef } from 'react'
 import type React from 'react'
-import { isSelfLoop } from '../../lib/sectionArm'
+import { useTwoTapConfirm } from '../../hooks/useTwoTapConfirm'
+import { isSelfLoop, startAction } from '../../lib/sectionArm'
 import type { StageActions, StageClock, StageView } from '../../lib/stageContracts'
 import { Led, Segmented, cx } from '../ui'
 import type { SegmentedOption } from '../ui'
 import { Icon } from './icons'
 import type { IconName } from './iconNames'
 import { NextPill } from './NextPill'
+import { useExclusiveArm } from './panelDismiss'
 import { PlayButton } from './PlayButton'
 import type { StagePulse } from './PlayButton'
 
@@ -24,6 +26,10 @@ const END_MODES: SegmentedOption<StageView['endMode']>[] = [
   { value: 'fade-out', label: 'FADE' },
 ]
 const NO_CLICK = 'Esta música não tem canal de click'
+const START_SEEK = 'Volta a VS pro 0:00'
+const START_ARM = 'Arma a volta pro começo: a seção termina, conta e entra no 1 da primeira seção. Toque de novo, no X do aviso ou Esc cancela.'
+const START_CONFIRM = 'Tocando: toque duas vezes pra voltar a VS pro 0:00'
+const START_ARMED = 'Toque de novo pra voltar a VS pro 0:00'
 const NO_SECTIONS = 'Esta música ainda não tem seções. Marque no EDITAR.'
 
 // v5 .tb: ícone em cima e rótulo embaixo, 56px de altura, largura pelo texto (no mínimo 72px).
@@ -33,6 +39,8 @@ const TB =
 const TB_OFF = 'bg-ps-s1 text-ps-bone inset-ring inset-ring-ps-line hover:inset-ring-ps-line-2'
 const TB_ON = 'bg-ps-or-soft text-ps-or inset-ring inset-ring-ps-or-line'
 const TB_LABEL = 'text-ps-micro leading-none font-bold tracking-[0.1em]'
+// COMEÇO armado pro segundo toque: o âmbar das ações de dois toques do palco.
+const TB_ARMED = 'bg-ps-alert text-ps-ink'
 // Sozinho, ou a metade esquerda de um par colado (v5 .combo).
 const ROUND_SOLO = 'rounded-ps-lg'
 const ROUND_LEFT = 'rounded-l-ps-lg rounded-r-[4px]'
@@ -63,6 +71,37 @@ function TransportButton({ icon, label, toggle = false, on = false, joined = fal
       {toggle && <Led state={on ? 'on' : 'off'} size="sm" className="absolute top-[7px] right-2" />}
       <Icon name={icon} />
       <span className={cx(TB_LABEL, on ? 'text-ps-or' : 'text-ps-mut')}>{label}</span>
+    </button>
+  )
+}
+
+/**
+ * COMEÇO (Ruling I3-comeco): parado, um toque volta pro 0:00; tocando com seções, um toque arma a
+ * primeira seção como um pulo (o App arma; cancela como qualquer armada); tocando sem nada pra armar,
+ * o primeiro toque arma o "VOLTAR?" (3 s, desarma com Esc, quando a música para ou quando outra ação
+ * de dois toques do palco arma) e o segundo volta. Os dois rótulos ocupam a mesma célula, então o
+ * botão nunca muda de largura e o Play ao lado não anda.
+ */
+function StartButton({ isPlaying, sectionCount, gates, onStart }: { isPlaying: boolean; sectionCount: number; gates: StageView['gates']; onStart(): void }) {
+  const id = useId()
+  const action = startAction(isPlaying, sectionCount, gates)
+  const { armedId, press, disarm } = useTwoTapConfirm(() => onStart(), { resetKey: action })
+  const armed = action === 'confirm' && armedId === id
+  useExclusiveArm(armed, id, disarm)
+  const title = armed ? START_ARMED : action === 'arm' ? START_ARM : action === 'confirm' ? START_CONFIRM : START_SEEK
+  return (
+    <button
+      type="button" aria-label={armed ? START_ARMED : undefined} title={title} data-armed={armed ? 'true' : 'false'}
+      onClick={() => { if (action === 'confirm') press(id); else onStart() }}
+      // Tecla segurada repete o clique: só o primeiro vale (o segundo toque é uma decisão nova).
+      onKeyDown={(e) => { if (e.repeat && (e.key === 'Enter' || e.key === ' ')) e.preventDefault() }}
+      className={cx(TB, armed ? TB_ARMED : TB_OFF, ROUND_SOLO)}
+    >
+      <Icon name="start" />
+      <span className={cx('grid', TB_LABEL, armed ? 'text-ps-ink' : 'text-ps-mut')}>
+        <span data-start-label="" aria-hidden={armed ? 'true' : undefined} className={cx('[grid-area:1/1] text-center', armed && 'invisible')}>COMEÇO</span>
+        <span data-start-label="" aria-hidden={armed ? undefined : 'true'} className={cx('[grid-area:1/1] text-center', !armed && 'invisible')}>VOLTAR?</span>
+      </span>
     </button>
   )
 }
@@ -115,7 +154,7 @@ export function TransportBar({ view, actions, clock, pulse }: TransportBarProps)
       </div>
 
       <div className="flex items-center gap-2 max-xl:gap-1.5">
-        <TransportButton icon="start" label="COMEÇO" title="Volta a VS pro 0:00" onClick={actions.goToStart} />
+        <StartButton isPlaying={view.isPlaying} sectionCount={view.sections.length} gates={view.gates} onStart={actions.goToStart} />
         <PlayButton
           isPlaying={view.isPlaying} isCountingIn={view.isCountingIn} precountTimes={precount.times}
           pulse={pulse} clock={clock} onToggle={actions.togglePlay}

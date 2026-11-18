@@ -45,6 +45,7 @@ import { useStageViewport } from './components/stage/useStageViewport'
 import { computePeaks } from './components/stage/wavePeaks'
 import { buildStageView, liveArmedOf, splitSongName, stageGatesFor } from './components/stage/buildStageView'
 import { addSectionAt, nudgeSection as nudgeSectionMarker, removeSection as removeSectionMarker } from './lib/sectionEdit'
+import { startAction } from './lib/sectionArm'
 import { markerIdForSpan, sectionIndexAt } from './lib/songGrid'
 import { countState } from './lib/transitionView'
 import { FADER_MAX_GAIN } from './lib/faderScale'
@@ -589,7 +590,13 @@ export default function App() {
   // um objeto estável (delegateTo) que chama a versão da renderização mais nova.
   const stageImpl = {
     togglePlay: () => { if (isCountingIn) cancelCountIn(); else if (isPlaying) pause(); else playWithPrecount() },
-    goToStart: () => seekTo(0),
+    // COMEÇO (Ruling I3-comeco): tocando com seções, arma a primeira como um pulo (cai no 1 com a
+    // contagem e cancela como qualquer seção armada); parado, ou tocando sem nada pra armar (a
+    // casca já pediu o segundo toque), volta direto pro 0:00.
+    goToStart: () => {
+      if (startAction(isPlaying, sectionSpansView.length, sectionGates) === 'arm') upgradeIf(armSection(0))
+      else seekTo(0)
+    },
     setEndMode: (m: 'continue' | 'stop' | 'fade-out') => setPlaybackMode(m),
     togglePrecount: () => togglePrecountEnabled(!precountEnabled),
     cyclePrecountBeats: () => setPrecountBeats(precountBeats >= 8 ? 1 : precountBeats + 1),

@@ -23,6 +23,10 @@ describe('ligações do palco novo', () => {
     expect(app).toMatch(/stageMode\s*:\s*useNewStage\s*\?\s*'novo'\s*:\s*'antigo'/)
   })
 
+  it('COMEÇO tocando arma a primeira seção pela API de seção armada; senão volta pro 0:00 (Ruling I3-comeco)', () => {
+    expect(app).toMatch(/goToStart:\s*\(\)\s*=>\s*\{\s*if\s*\(\s*startAction\(\s*isPlaying\s*,\s*sectionSpansView\.length\s*,\s*sectionGates\s*\)\s*===\s*'arm'\s*\)\s*upgradeIf\(\s*armSection\(\s*0\s*\)\s*\)\s*else\s*seekTo\(\s*0\s*\)/)
+  })
+
   it('o motor recebe o click gerado pelo plano e os portões das seções', () => {
     expect(app).toMatch(/autoClick\s*:\s*canUseBpmDetection\(\s*userPlan\s*\)/)
     expect(app).toMatch(/sectionGates/)

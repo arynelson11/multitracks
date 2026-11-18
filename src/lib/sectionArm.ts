@@ -118,6 +118,17 @@ export function armLabel(intent: ArmIntent | null, current: number): { kind: 'pr
   return { kind: intent.target === current ? 'repete' : 'proxima', plays: intent.plays }
 }
 
+/**
+ * COMEÇO (Ruling I3-comeco). Parado: volta direto pro 0:00 (`'seek'`). Tocando, tudo que mexe na
+ * posição é armado: com seções e o portão delas, arma a primeira seção como um pulo (`'arm'`: a
+ * atual termina, conta e entra no 1, e cancela como qualquer seção armada). Tocando sem nada pra
+ * armar (sem seções, ou no Livre), a volta pede um segundo toque (`'confirm'`) antes de buscar.
+ */
+export function startAction(isPlaying: boolean, sectionCount: number, gates: Pick<StageGates, 'sections'>): 'seek' | 'arm' | 'confirm' {
+  if (!isPlaying) return 'seek'
+  return gates.sections && sectionCount > 0 ? 'arm' : 'confirm'
+}
+
 /** Loop infinito da própria seção `from` (sem contagem e sem calar a guia). */
 export function isSelfLoop(intent: ArmIntent | null, from: number): boolean {
   return intent !== null && intent.target === from && intent.plays === 'infinite'

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ArmIntent, Plays, StageGates } from './stageContracts'
 import {
-  afterLanding, armAt, armLabel, armRepeat, bandRepeat, isSelfLoop, stepSection, tapSection, toggleLoop,
+  afterLanding, armAt, armLabel, armRepeat, bandRepeat, isSelfLoop, startAction, stepSection, tapSection, toggleLoop,
   type ArmContext, type ArmResult,
 } from './sectionArm'
 
@@ -72,6 +72,19 @@ describe('stepSection', () => {
     ['sem seções nada muda, nem no Livre', null, 1, { sectionCount: 0, gates: livre }, armed(null)],
   ]
   it.each(rows)('%s', (_, intent, dir, patch, out) => expect(stepSection(intent, dir, ctx(patch))).toEqual(out))
+})
+
+describe('startAction (COMEÇO, Ruling I3-comeco)', () => {
+  it('parado volta direto pro 0:00, com ou sem seções, em qualquer plano', () => {
+    expect(startAction(false, 6, gates)).toBe('seek')
+    expect(startAction(false, 0, gates)).toBe('seek')
+    expect(startAction(false, 6, livre)).toBe('seek')
+  })
+  it('tocando com seções arma a primeira como um pulo', () => expect(startAction(true, 6, gates)).toBe('arm'))
+  it('tocando sem seções, ou no Livre (que não arma), pede o segundo toque', () => {
+    expect(startAction(true, 0, gates)).toBe('confirm')
+    expect(startAction(true, 6, livre)).toBe('confirm')
+  })
 })
 
 describe('armAt (REPETIR e banda)', () => {
