@@ -867,6 +867,9 @@ export default function App() {
       if (isSeparatorOpen || adminPanelShown) return
       // Conta bloqueada: a tela de bloqueio está no lugar do player.
       if (blocked) return
+      // Diálogo do app aberto (renomear, metrônomo infinito; Ruling B-dialogo): com o foco fora do
+      // campo (no Cancelar, no painel), o Espaço não toca e as letras não marcam seção por baixo dele.
+      if (textPrompt !== null) return
       const el = e.target as HTMLElement | null
       const tag = el?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return
@@ -894,7 +897,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker, isSeparatorOpen, useNewStage, adminPanelShown, blocked])
+  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker, isSeparatorOpen, useNewStage, adminPanelShown, blocked, textPrompt])
 
   // Bloqueio que chega com o app aberto (o perfil é relido ao voltar pra janela): a tela de
   // bloqueio tira o player da tela, então nada fica tocando sem controle. Para a música, a

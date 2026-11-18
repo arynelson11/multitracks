@@ -31,6 +31,7 @@ const h = vi.hoisted(() => {
     stopSample: vi.fn(() => set({ playingUrl: null })),
     signOut: vi.fn(async () => {}),
     deleteAccount: vi.fn(async () => {}),
+    setSongMarkers: vi.fn(),
     liveProps: null as null | { onToggleDevice: (ip: string) => void },
     // Chave do palco que o useSettings falso devolve (CONFIG > Geral > Palco).
     stage: 'antigo' as 'novo' | 'antigo',
@@ -60,7 +61,7 @@ vi.mock('./hooks/useAudioEngine', async () => {
     setChannelBus: fn, exportPlaylist: fn, importPlaylist: fn,
     channels: [], pause: () => h.pause(), seekTo: fn, prevSong: fn, nextSong: fn, currentTime: 0, duration: 100,
     masterVolume: 1, updateVolume: fn, toggleMute: fn, toggleSolo: fn, updateMasterVolume: fn,
-    changePitch: fn, setOriginalKey: fn, currentMarker: null, setSongMarkers: fn, setSongLyrics: fn, syncSongMeta: fn,
+    changePitch: fn, setOriginalKey: fn, currentMarker: null, setSongMarkers: (...a: unknown[]) => h.setSongMarkers(...a), setSongLyrics: fn, syncSongMeta: fn,
     playbackMode: 'continue', setPlaybackMode: fn,
     activeLoop: null, pendingJump: null, armLoop: fn, cancelLoop: fn, armJump: fn, cancelJump: fn,
     addChannelToActiveSong: fn,
@@ -190,7 +191,7 @@ describe('App com a conta bloqueada', () => {
       user: MUSICO, loading: false, isAdmin: false, blockedAt: null, userPlan: 'pro_mensal',
       isPlaying: false, isCountingIn: false, activeNote: null, playingUrl: null,
     })
-    for (const m of [h.play, h.pause, h.cancelCountIn, h.stopPad, h.stopSample, h.signOut, h.deleteAccount]) m.mockClear()
+    for (const m of [h.play, h.pause, h.cancelCountIn, h.stopPad, h.stopSample, h.signOut, h.deleteAccount, h.setSongMarkers]) m.mockClear()
     h.liveProps = null
     h.stage = 'antigo'
     remote = null
@@ -322,5 +323,53 @@ describe('App com a conta bloqueada', () => {
     fireEvent.change(screen.getByLabelText('Digite EXCLUIR para confirmar'), { target: { value: 'EXCLUIR' } })
     fireEvent.click(screen.getByRole('button', { name: 'Excluir de vez' }))
     expect(h.deleteAccount).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('atalhos com o diálogo do app aberto (Ruling B-dialogo)', () => {
+  const pressKey = (code: string) => fireEvent.keyDown(window, { code })
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
+    h.set({
+      user: MUSICO, loading: false, isAdmin: false, blockedAt: null, userPlan: 'pro_mensal',
+      isPlaying: false, isCountingIn: false, activeNote: null, playingUrl: null,
+    })
+    for (const m of [h.play, h.pause, h.setSongMarkers]) m.mockClear()
+    h.stage = 'antigo'
+  })
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('palco antigo: com o "Criar metrônomo" aberto e o foco fora do campo, Espaço e letras não mexem no player', () => {
+    render(createElement(App))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Faixas' })[0])
+    fireEvent.click(screen.getAllByText(/Criar Metrônomo \(Infinito\)/)[0])
+    expect(screen.getByRole('dialog', { name: 'Criar metrônomo (infinito)' })).toBeTruthy()
+    // O foco sai do campo (Tab pro Cancelar, clique no painel): a tecla chega na janela.
+    pressKey('Space')
+    pressKey('KeyV')
+    expect(h.play).not.toHaveBeenCalled()
+    expect(h.setSongMarkers).not.toHaveBeenCalled()
+    // Fechou o diálogo: os atalhos voltam.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    pressKey('Space')
+    expect(h.play).toHaveBeenCalledTimes(1)
+  })
+
+  it('palco novo: com o "Criar metrônomo" do FAIXAS aberto, o Espaço não toca; fechado, toca', () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => null)
+    h.stage = 'novo'
+    render(createElement(App))
+    fireEvent.click(screen.getByRole('button', { name: 'Faixas' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Criar metrônomo \(infinito\)/ }))
+    expect(screen.getByRole('dialog', { name: 'Criar metrônomo (infinito)' })).toBeTruthy()
+    pressKey('Space')
+    expect(h.play).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    pressKey('Space')
+    expect(h.play).toHaveBeenCalledTimes(1)
   })
 })
