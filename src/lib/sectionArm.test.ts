@@ -63,6 +63,11 @@ describe('stepSection', () => {
     ['alvo armado fora da lista: pra trás parte da atual', i(7, 'infinite'), -1, {}, armed(i(0, 1))],
     ['alvo armado negativo: parte da atual', i(-1, 2), 1, {}, armed(i(2, 1))],
     ['parado, alvo armado fora da lista: parte da atual', i(9, 2), 1, parado, seek(2)],
+    // Minor T4 :115: a atual na ponta não anda, e a intenção velha aponta pra seção que não existe mais.
+    ['alvo armado fora da lista com a atual no fim: a seta desarma a intenção velha', i(7, 1), 1, { current: 5 }, armed(null)],
+    ['alvo armado fora da lista com a atual no começo: pra trás desarma', i(7, 'infinite'), -1, { current: 0 }, armed(null)],
+    ['parado, alvo fora da lista com a atual no fim: desarma sem buscar', i(9, 2), 1, { ...parado, current: 5 }, armed(null)],
+    ['Livre, alvo fora da lista na ponta: desarma sem pedir plano', i(9, 2), 1, { current: 5, gates: livre }, armed(null)],
     ['Livre pede upgrade', null, 1, { gates: livre }, upgrade(null)],
     ['sem seções nada muda, nem no Livre', null, 1, { sectionCount: 0, gates: livre }, armed(null)],
   ]

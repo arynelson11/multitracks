@@ -73,7 +73,8 @@ function renamedForType(old: string, name: string): string {
   const type = defaultSectionName(name)
   if (!type || type.number !== null) return name
   const before = typeof old === 'string' ? defaultSectionName(old) : null
-  if (!before) return typeof old === 'string' ? old : name
+  // Nome próprio fica; marca sem nome (ou só com espaço) ganha o nome novo.
+  if (!before) return typeof old === 'string' && old.trim() ? old : name
   return normalizeSectionName(before.number === null ? type.type : `${type.type} ${before.number}`)
 }
 

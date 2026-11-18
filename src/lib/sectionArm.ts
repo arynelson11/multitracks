@@ -51,13 +51,15 @@ export function tapSection(intent: ArmIntent | null, index: number, c: ArmContex
 /**
  * Seta de seção: anda um a partir do alvo armado (ou da atual), presa na lista. Alvo armado
  * fora da lista (seções removidas no EDITAR) não conta: parte da atual. Presa na ponta, nada
- * muda (nunca cancela a armada). Tocando arma com 1 passagem; parado leva pro início e desarma.
+ * muda (nunca cancela a armada); só a intenção velha, com o alvo fora da lista, sai (ela apontava
+ * pra uma seção que não existe mais). Tocando arma com 1 passagem; parado leva pro início e desarma.
  */
 export function stepSection(intent: ArmIntent | null, dir: -1 | 1, c: ArmContext): ArmResult {
   if (c.sectionCount < 1) return withIntent(intent)
-  const from = intent !== null && inList(intent.target, c) ? intent.target : c.current
+  const stale = intent !== null && !inList(intent.target, c)
+  const from = intent !== null && !stale ? intent.target : c.current
   const target = Math.min(c.sectionCount - 1, Math.max(0, from + dir))
-  if (target === from) return withIntent(intent)
+  if (target === from) return withIntent(stale ? null : intent)
   if (!c.gates.sections) return askUpgrade(intent)
   if (!c.isPlaying) return seekTo(target)
   return withIntent({ target, plays: 1 })
@@ -68,7 +70,8 @@ export function stepSection(intent: ArmIntent | null, dir: -1 | 1, c: ArmContext
  * mesmo deixa igual. Parado numa seção diferente da atual, leva a VS pra lá (como o `armLoop`
  * da v1.4.16) e a chegada conta como a 1ª passagem: `{ i, 1 }` (arm-jump) só busca e desarma,
  * `{ i, N }` fica `{ i, N - 1 }`, infinito continua. Parado na atual (REPETIR, LOOP), arma sem
- * buscar.
+ * buscar. Por isso o arm-jump da banda com a VS parada NA SEÇÃO ATUAL arma "repete a atual 1x"
+ * (`{ atual, 1 }`), não posiciona (Ruling T4-c): igual à v1.4.16 e ao botão "no fim da atual" do celular.
  */
 export function armAt(intent: ArmIntent | null, index: number, plays: Plays, c: ArmContext): ArmResult {
   if (!inList(index, c)) return withIntent(intent)

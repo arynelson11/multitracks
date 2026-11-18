@@ -104,6 +104,11 @@ describe('addSectionAt', () => {
     expect(marca('Intro', 'Intro')).toEqual({ id: 'a', time: 8, label: 'Intro', color: '#3b82f6' })
   })
 
+  it('marca sem nome ganha o nome do tipo no MARCAR (não continua sem nome)', () => {
+    expect(addSectionAt(freeze([mk('a', 8, '')]), 8.4, 'Refrão', grid, () => 'n')).toEqual([{ id: 'a', time: 8, label: 'Refrão', color: REFRAO }])
+    expect(addSectionAt(freeze([mk('a', 8, '   ')]), 8.4, 'Ponte', grid, () => 'n')).toEqual([{ id: 'a', time: 8, label: 'Ponte', color: '#8b5cf6' }])
+  })
+
   it('nome dado pelo chamador (não é um tipo) continua trocando o nome', () => {
     expect(addSectionAt(freeze([mk('a', 8, 'Ministração da Palavra')]), 8.4, 'Oferta', grid, () => 'n'))
       .toEqual([{ id: 'a', time: 8, label: 'Oferta', color: '#FF6B35' }])
