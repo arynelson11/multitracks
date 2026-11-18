@@ -579,6 +579,49 @@ describe('pulo agendado no palco novo', () => {
     }
   })
 
+  it('duas trocas de papel do Click seguidas com pulo armado: a contagem só volta pra entrada do canal depois da segunda', async () => {
+    seed(song({ click: false }))
+    const hook = await openApp({ stageMode: 'novo' })
+    const bus = buses(hook)
+    await play(hook)
+    const t0 = startAt(0)
+    armAt(t0 + 1, () => hook.result.current.armSection(1))
+    run(hook, t0 + 1.025, t0 + 1.75)
+    expect(hook.result.current.transitionView?.committed).toBe(true)
+    const [countDelay] = nodesOf(ctxOf(), 'DelayNode')
+    // Corte da VS (o único lugar em que o fader do Baixo liga): a descida de cada troca marca nele.
+    const vsCut = only(chan(hook, 'bass').gainNode)
+    const cutMarks = () => vsCut.gain.events.filter((e) => e.kind === 'set' || e.kind === 'linear').length
+    // O Teclado vira Click e logo depois o Baixo (que vem antes na ordem): duas trocas na fila.
+    act(() => { hook.result.current.setChannelMeta('keys', { role: 'click' }) })
+    act(() => { hook.result.current.setChannelMeta('bass', { role: 'click' }) })
+    const keys = chan(hook, 'keys').gainNode
+    const bass = chan(hook, 'bass').gainNode
+    // O relógio anda até a 1ª troca acabar inteira (a descida da 2ª já marcada no corte, 4 + 2
+    // marcas) com a 2ª ainda esperando o fundo do corte dela (o Baixo ainda na VS).
+    const ctx = ctxOf()
+    for (let k = 0; k < 400 && !(cutMarks() >= 6 && reaches(bass, bus.vs)); k++) {
+      ctx.currentTime += 0.0005
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2)) })
+    }
+    expect(cutMarks()).toBeGreaterThanOrEqual(6)
+    expect(reaches(keys, bus.click)).toBe(true)
+    expect(reaches(bass, bus.vs)).toBe(true)
+    // O pulo é marcado de novo agora: pelo atraso da contagem, nunca pela entrada do Baixo (o 1º
+    // Click da lista), cujo fader ainda está no barramento da VS.
+    const before = beepFilters().length
+    tickAt(ctx.currentTime)
+    const again = beepFilters().slice(before)
+    expect(again.length).toBeGreaterThan(0)
+    for (const f of again) {
+      expect(connectedTo(f, countDelay)).toBe(true)
+      expect(reaches(f, bus.vs)).toBe(false)
+    }
+    for (let k = 0; k < 10 && !reaches(bass, bus.click); k++) await letAudioRun()
+    expect(reaches(bass, bus.click)).toBe(true)
+    act(() => { hook.result.current.pause() })
+  }, 20_000)
+
   it('tom trocado tocando entre dois tons diferentes de 0: as vozes do pulo nascem no tom novo', async () => {
     seed(song({ pitch: 2 }))
     const hook = await openApp({ stageMode: 'novo' })

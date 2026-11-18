@@ -833,8 +833,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     const sectionClockRef = useRef<SchedulerClock | null>(null);
     // Papel que entra ou sai de Click com a VS tocando: até a troca de rota acabar, a contagem do
     // pulo vai pelo atraso da contagem do grafo (sempre no barramento do Click), nunca pela entrada
-    // de um canal cujo fader ainda vai trocar de barramento.
-    const countViaDelayRef = useRef(false);
+    // de um canal cujo fader ainda vai trocar de barramento. Conta as trocas na fila (duas trocas
+    // seguidas: o fim da primeira não solta a contagem com a segunda ainda esperando).
+    const countViaDelayRef = useRef(0);
     // Dentro do stopAllNodes: o reset do agendador não mexe no FADE (o play refaz tudo).
     const sectionStoppingRef = useRef(false);
     // FADE (R-32) agendado no principal: rampa de `from` em `start` até 0 em `end` (tempo do contexto).
@@ -1288,7 +1289,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
                 countDestination: () => {
                     const graph = graphRef.current;
                     if (!graph) return null;
-                    if (!countViaDelayRef.current) return countDestination();
+                    if (countViaDelayRef.current === 0) return countDestination();
                     graph.countDelay.delayTime.value = playChainRef.current?.compensation ?? 0;
                     return graph.countDelay;
                 },
@@ -3792,23 +3793,34 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             const clickMoved = resolveChannelRole(before) === 'click' || resolveChannelRole(after) === 'click';
             const holdJump = clickMoved && stageModeRef.current === 'novo' && timelineRef.current.length > 0;
             if (holdJump) {
-                countViaDelayRef.current = true;
+                countViaDelayRef.current++;
                 if (sectionSchedulerRef.current?.view?.committed) sectionSchedulerRef.current.reset();
             }
+            // Ganho pela regra central (Solo e M) num instante: o do canal que trocou de papel muda
+            // junto com o barramento dele (com Solo ligado, um Normal calado que vira Click passa a
+            // tocar: antes do fundo do corte o fader ainda está no barramento da VS).
+            const applyGain = (ch: Channel, list: readonly Channel[], at: number) => {
+                if (!ch.gainNode) return;
+                ch.gainNode.gain.cancelScheduledValues(at);
+                ch.gainNode.gain.setValueAtTime(channelGain(ch, list), at);
+            };
             if (ctx && graph && cuts) {
                 switchRoute(() => {
                     earDelay?.disconnect();
                     moveFaderToRole(cuts, after);
                     syncChannelPan(ctx, after, graph.plan, autoPanRef.current, false);
+                    // Com o Solo como está agora (pode ter mudado durante a descida do corte).
+                    const latest = playlistRef.current.find((s) => s.channels.some((c) => c.id === after.id))?.channels;
+                    const current = latest?.find((c) => c.id === after.id);
+                    if (latest && current && resolveChannelRole(current) === resolveChannelRole(after)) applyGain(current, latest, ctx.currentTime);
+                    else applyGain(after, next, ctx.currentTime);
                 });
             }
-            if (holdJump) enqueueRoute(async () => { countViaDelayRef.current = false; });
-            // E quem continua tocando com Solo ligado: reaplica o ganho em todos, como o toggleSolo.
+            if (holdJump) enqueueRoute(async () => { countViaDelayRef.current = Math.max(0, countViaDelayRef.current - 1); });
+            // E quem continua tocando com Solo ligado: reaplica o ganho nos outros, como o toggleSolo
+            // (o canal que trocou de papel muda no fundo do corte, acima).
             next.forEach(ch => {
-                if (ch.gainNode && ctx) {
-                    ch.gainNode.gain.cancelScheduledValues(ctx.currentTime);
-                    ch.gainNode.gain.setValueAtTime(channelGain(ch, next), ctx.currentTime);
-                }
+                if (ctx && (ch.id !== after.id || !graph || !cuts)) applyGain(ch, next, ctx.currentTime);
             });
             // Papel que entra ou sai de Click na pré-contagem: a contagem entra pela entrada do
             // canal de click, então ela para já e recomeça do 1 depois da troca de rota, com a

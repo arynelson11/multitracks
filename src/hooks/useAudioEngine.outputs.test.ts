@@ -982,6 +982,41 @@ describe('corte curto nas trocas de rota (Ruling T25-corte e T25-sincrono)', () 
     act(() => { hook.result.current.pause() })
   })
 
+  it('Solo ligado e um Normal calado que vira Click tocando: o ganho dele só abre no fundo do corte, com o fader já fora da VS', async () => {
+    localStorage.setItem('mt_legacy_pans_reset:u1', '1')
+    seed(song('s1'))
+    const hook = await openApp()
+    const bus = graphOf(ctxOf())
+    act(() => { hook.result.current.toggleSolo('s1-bass') })
+    const keys = asFake(chan(hook, 's1-keys').gainNode)
+    const click = asFake(chan(hook, 's1-click').gainNode)
+    await act(async () => { await hook.result.current.play() })
+    ctxOf().currentTime = 1
+    expect(valueAt(keys.gain, 1)).toBe(0) // calado pelo Solo do Baixo
+    await act(async () => { hook.result.current.setChannelMeta('s1-keys', { role: 'click' }) })
+    // Antes do fundo do corte: ainda calado e ainda no barramento da VS.
+    expect(connectedTo(keys, bus.cut.vs)).toBe(true)
+    expect(valueAt(keys.gain, 1.02)).toBe(0)
+    // O relógio anda até a troca acontecer (com a máquina carregada, mais de uma volta).
+    for (let k = 0; k < 10 && !connectedTo(keys, bus.cut.click); k++) await letAudioRun()
+    expect(connectedTo(keys, bus.cut.click)).toBe(true)
+    const opened = keys.gain.events.filter((e) => e.kind === 'set' && e.value === 1 && e.time >= 1)
+    expect(opened).toHaveLength(1)
+    // Abre com os barramentos no fundo do corte: nenhum instante com o fader na VS e som.
+    expect(valueAt(bus.cut.vs.gain, opened[0].time)).toBe(0)
+
+    // O contrário: o Click que vira Normal com o Solo ligado cala no fundo do corte, não seco no fone.
+    const t = ctxOf().currentTime
+    await act(async () => { hook.result.current.setChannelMeta('s1-click', { role: 'normal' }) })
+    expect(valueAt(click.gain, t + 0.005)).toBe(1)
+    for (let k = 0; k < 10 && !connectedTo(click, bus.cut.vs); k++) await letAudioRun()
+    expect(connectedTo(click, bus.cut.vs)).toBe(true)
+    const closed = click.gain.events.filter((e) => e.kind === 'set' && e.value === 0 && e.time >= t)
+    expect(closed).toHaveLength(1)
+    expect(valueAt(bus.cut.click.gain, closed[0].time)).toBe(0)
+    act(() => { hook.result.current.pause() })
+  }, 20_000)
+
   it('a pré-contagem entra pelo corte do Click (o corte também vale pra ela)', async () => {
     localStorage.setItem('precount_enabled', 'true')
     seed(song('s1'))
