@@ -2,7 +2,7 @@
 
 > **Versão:** 1.0
 > **Data:** 2026-05-20
-> **Atualizado:** 2026-11-16 (seções 1.7 e 2.6: linguagem nova da Parte 1 do palco, publicada na v1.4.15)
+> **Atualizado:** 2026-11-18 (seções 1.7 e 2.7: palco novo da Parte 2, NÃO PUBLICADO ainda, sai na v1.4.19; seções 1.7 e 2.6: linguagem nova da Parte 1, publicada na v1.4.15)
 > **Pareado com:** `PLAYBACK_STUDIO_BRAND_BOOK.md` (estratégia + briefing pros designers)
 > **Este documento:** referência operacional pareando código existente com vocabulário atomic design (Brad Frost). Lê este se você vai TOCAR o código.
 
@@ -119,6 +119,9 @@ Definidos em `src/index.css` no bloco `@theme` — consumidos via Tailwind v4 (`
 | | `--font-ps-mono` | `'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace` |
 | Sombra | `--shadow-ps-pop` | `0 20px 50px rgba(0,0,0,.65)` |
 | Animação | `--animate-ps-blink` | `ps-blink 1.4s ease-in-out infinite` (opacidade de 1 a .35 e de volta) |
+| Armado (Parte 2) | `--animate-ps-armglow` | `ps-armglow 1.2s ease-in-out infinite` (borda branca de 2px pulsando, com brilho em volta) |
+| | `--animate-ps-stripes` | `ps-stripes .9s linear infinite` (as listras a -45 graus andam um período, 19,8px; a peça põe o fundo listrado de 14px) |
+| | `--animate-ps-land` | `ps-land .8s ease-out` (brilho de "pousou" na cor da seção, que a peça põe em `--ps-c`) |
 
 **Classes geradas:** `bg-ps-<cor>`, `text-ps-<cor>` e `inset-ring-ps-<cor>` pra cada cor da tabela; `rounded-ps-{xs,sm,md,lg,xl,2xl,pill}`; `text-ps-{micro,label,sm,base,md,lg}`; `px-ps-gutter`, `gap-ps-gap`, `px-ps-pad-x`, `min-h-ps-touch`, `min-w-ps-touch`; `font-ps-sans`, `font-ps-mono`; `shadow-ps-pop`; `animate-ps-blink`. Utilities próprias: `ps-num` (fonte mono com `tabular-nums`: números de largura fixa) e `ps-label` (rótulo pequeno em caixa alta: 10.5px, peso 700, espaçamento .14em, cor `mut`, sem quebra de linha).
 
@@ -129,7 +132,7 @@ Definidos em `src/index.css` no bloco `@theme` — consumidos via Tailwind v4 (`
 | Cor | Token | Significa |
 |---|---|---|
 | Laranja | `ps-or`, `ps-or-soft`, `ps-or-line` | Ligado (Button `on`, Chip `on`, Led `on`). O laranja cheio do Button `primary` marca a ação principal de um painel (ex.: Salvar), e o anel de foco também é laranja. |
-| Branco | `ps-arm` | Armado (Button `armed`, Led `armed`) |
+| Branco | `ps-arm` | Armado (Button `armed`, Led `armed`; no palco novo, o pulo armado: anel branco, listras andando e borda pulsando) |
 | Cor da seção | `ps-sec-*` | Seção da música (Intro, Verso, Pré, Refrão, Ponte, Final) |
 | Âmbar | `ps-alert`, `ps-alert-soft`, `ps-alert-line` | Alerta (Button `alert`, Led `alert` piscando) |
 | Musgo claro | `ps-moss-hi` | Ao vivo (Led `live` piscando) |
@@ -137,7 +140,7 @@ Definidos em `src/index.css` no bloco `@theme` — consumidos via Tailwind v4 (`
 
 Neutros (`ink`, `s1` a `s3`, `raised`, `pop`, `well`, `line*`, `bone`, `mut`, `dim`) não carregam significado: são fundo, superfície, borda e texto.
 
-**Exceção registrada, cores de família do canal:** `FAMILY_COLOR` em `src/lib/channelNames.ts` pinta a faixa de cada canal no mixer (Click `#FF6B35`, Guia `#f59e0b`, Bateria `#ef4444`, Percussão `#f97316`, Baixo `#22c55e`, Synth Bass `#16a34a`, Violão `#ec4899`, Guitarra `#f43f5e`, Teclado `#8b5cf6`, Piano `#a855f7`, Pad `#6366f1`, Ambiência `#818cf8`, Vocal `#06b6d4`, Backing `#0ea5e9`, não reconhecido `#9d9da8`). Essas cores identificam o instrumento e não são código de estado. Algumas repetem cores de estado ou de seção (Click no laranja, Bateria no vermelho do Mute, Guia, Violão e Teclado nas cores de Pré, Final e Ponte). Vieram do mockup v5 aprovado e ficam assim na Parte 1; a paleta de famílias deve ser revista com o design antes da Parte 2, que põe seção e canal na mesma tela.
+**Cores de família do canal (paleta por grupo da Parte 2, aprovada pelo dono em 2026-11-16; NÃO PUBLICADA ainda, sai na v1.4.19):** `FAMILY_COLOR` em `src/lib/channelNames.ts` pinta a faixa de cada canal no mixer, uma cor por grupo: Click ardósia `#94a3b8`, Guia pedra `#a8a29e`, Bateria e Percussão areia `#d4a373`, Baixo e Synth Bass `#22c55e`, Violão turquesa `#2dd4bf`, Guitarra verde-água `#14b8a6`, Teclado, Piano, Pad e Ambiência anil `#818cf8`, Vocal e Backing `#06b6d4`, não reconhecido `#878792`. Essas cores identificam o instrumento e não são código de estado. Nenhuma repete as cores de estado (`ps-or`, `ps-arm`, `ps-alert`, `ps-mute`, `ps-solo`; teste em `src/lib/channelNames.test.ts`) nem as de seção (teste em `src/components/stage/sectionPads.test.tsx`), e todas têm contraste de pelo menos 4,5:1 sobre `#121214`. Cor literal no código, só a que vem de dado: a da família e a da seção. Até a v1.4.18 vale a paleta da Parte 1 (Click no laranja, Bateria no vermelho do Mute, Guia, Violão e Teclado nas cores de Pré, Final e Ponte), que era a exceção registrada aqui.
 
 **Mixer atual (Parte 1, revisão final):**
 - **Fader de canal calado** (M ligado ou calado pelo Solo de outro canal): preenchimento cinza neutro, `rgba(255,255,255,0.12)` a `rgba(255,255,255,0.04)`, nunca vermelho, pra bateria calada não parecer bateria tocando. O M aceso continua marcando o mute. Canal tocando usa a cor da família. Regra em `channelFaderFill` (`src/lib/channelRoles.ts`).
@@ -368,6 +371,40 @@ Junta as classes verdadeiras com espaço. Não resolve conflito entre utilidades
 - Código de cores da seção 1.7: laranja pra ligado e ação principal, branco pra armado, âmbar pra alerta.
 
 **Limites conhecidos (resolver quando uma tela precisar):** Chip e Segmented ainda não têm o anel de foco laranja do Button; Chip não tem visual de desabilitado; a opção desabilitada do Segmented não tem estilo próprio; o Segmented chama `onChange` de novo quando se clica na opção já selecionada.
+
+### 2.7 Palco novo (`src/components/stage/`)
+
+> Parte 2 do palco (2026-11-18, NÃO PUBLICADA ainda; sai na v1.4.19 atrás da chave CONFIG > Geral > Palco, que nasce em Antigo). Fonte do visual: mockup v5 (`.superpowers/brainstorm/14859-1794743390/content/palco-desktop-v5.html`). Fatos de produto na entrada de 2026-11-18 do `PLAYBACK_STUDIO_FATOS.md`. Usa só tokens `ps-*` (seção 1.7) e as peças de `src/components/ui/` (seção 2.6).
+
+**Quando aparece:** chave em Novo e janela com pelo menos 1024 x 740 px (`isWideStage` em `stageKeys.ts`); senão, o palco antigo inteiro. A troca só vale com a música parada.
+
+**Contrato único** (`src/lib/stageContracts.ts`): `StageView` (o estado da tela, montado pelo `buildStageView` a partir do motor), `StageActions` (o que a tela pede) e `StageClock` (tempo ouvido, posição e níveis). A casca (`StageShell.tsx`) é memorizada no App: só renderiza de novo quando a vista, as ações, os pads ou os painéis mudam. O que muda a cada quadro (playhead, tempo, bolinhas da contagem, VU, anel do Play) não passa pela renderização do App: cada peça lê no próprio quadro com `useFrame`. As contas da contagem e o texto de espera ("em N comp.", "último comp.", "no fim da seção", "CLICK DESLIGADO") ficam num helper puro, `src/lib/transitionView.ts`, usado por todas as peças.
+
+**Peças, na ordem das faixas da tela:**
+
+| Faixa | Peça | O que é |
+|---|---|---|
+| Barra do app | `StageAppBar` | REPERTÓRIOS, FAIXAS, BIBLIOTECA, EDITAR, HOST (só no computador), CONFIG, INÍCIO, avatar e SAIR; selo ONLINE (musgo) ou OFFLINE (neutro); aviso âmbar SAÍDAS |
+| Transporte | `TransportBar`, `PlayButton`, `NextPill` | Fim da música (AUTO / PARAR / FADE), COMEÇO, Play com o anel no pulso do click e o número da pré-contagem, LOOP, CLICK, PRÉ-CONT., SEÇÃO ◂ ▸ e o aviso PRÓXIMA / REPETE na cor da seção |
+| Onda | `WaveformSections` | onda com a cor de cada seção, linhas de compasso, blocos de seção, selos, seta tracejada até a seção armada e régua embaixo (22px, rótulo a cada 30 s) |
+| Botoeira | `SectionPads` | um botão por seção (teclas 1 a 9), AGORA na cor da seção, armado em branco listrado, brilho ao pousar |
+| Faixa do meio | `MidStrip` com `TimeCell`, `KeyCell`, `CurrentSectionCell`, `SongCell` e `BigButton` | tempo e BPM, tom com a grade dos 12 tons, seção atual com REPETIR, música, PAD e LETRA |
+| Mixer | `StageMixer` com `ChannelStrip`, `PanKnob`, `FaderVU` e `MasterStrip` | canais (mínimo 76px, 88px no EDITAR CANAIS) e o PRINCIPAL (116px) |
+| Painéis | `RepertoirePanel`, `PadPanel` (fecham com Esc, `panelDismiss.ts`) | gaveta REPERTÓRIOS e painel de pads |
+| Modo EDITAR | `SectionEditBar`, `MeterEditor` | MARCAR pelos 6 tipos, ajustar e remover seções; compasso da música |
+
+Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓRIOS): `TwoTapTrashButton`, com a mesma cara da lixeira do EDITAR CANAIS (seção 1.7). Ícones: SVG de `icons.tsx` (nomes em `iconNames.ts`), nunca caractere que vira emoji no Mac. Exceção registrada: o menu FAIXAS, o diálogo "Sons dos pads" e as ferramentas do admin no EDITAR usam ícones do lucide (também SVG).
+
+**Regras do palco:**
+- **Tempo ouvido:** bolinhas, número grande da contagem, playhead e tempo mostrado seguem `heardNow()`, que é o relógio do áudio menos a latência de saída e a latência da entrada do canal (a do tom): `heardTime` em `src/lib/playTimeline.ts`. Nunca o `ctx.currentTime` cru, senão a tela anda na frente do que se ouve.
+- **Fader e pan só arrastando:** mudam só depois de o dedo ou o mouse andar 3px na vertical (`DRAG_START_PX` em `src/lib/faderScale.ts`); tocar sem arrastar não muda nada; arrastar de lado rola o mixer e nunca mexe no volume; gesto cancelado pelo navegador volta o valor de antes. Duplo clique volta a 0 dB ou ao centro. Teclado com foco: setas ±1 dB, PageUp e PageDown ±6 dB, Home e End no silêncio e no topo. Escala: 0 dB em 3/4 do curso, topo em +6 dB (`FADER_MAX_DB`); o palco antigo segue com o topo em 1,2.
+- **Alvo de toque de 44px, com uma exceção só:** M e S do mixer, colados, com 32px de altura e cerca de 36px de largura, pra caber 14 canais inteiros em 1280px (aprovado no mockup v5), marcados com `data-touch-exception="ms"`. Bloco de seção mais estreito que 44px na onda tem área de toque igual ao próprio retângulo (não invade o vizinho), marcado com `data-narrow`; o controle principal de armar é a botoeira.
+- **Avisos âmbar da grade:** `GRID_WARNING_TEXT` em `stageContracts.ts`: SEM GRADE (sem click e sem BPM salvo), SEM CLICK LIDO (contagem pelo BPM salvo) e COMPASSO ASSUMIDO (click sem acento no 1). Em `ps-alert` na célula TEMPO, com a explicação no `title`. No aviso PRÓXIMA, o texto aparece a partir de 1440px; abaixo vira uma luz âmbar (`Led` alert), com o texto inteiro no `title` e na célula TEMPO. "CLICK DESLIGADO" (o operador não vai ouvir a contagem) e o aviso SAÍDAS da barra também são âmbar.
+- **Armado:** branco (`ps-arm`), com as animações `--animate-ps-stripes` e `--animate-ps-armglow` juntas (`animate-[var(--animate-ps-stripes),var(--animate-ps-armglow)]`) na botoeira e nos blocos da onda; o aviso PRÓXIMA usa só `animate-ps-armglow`; ao pousar, `animate-ps-land` com a cor da seção em `--ps-c`. Com "reduzir movimento" as três param (o arquivo de tokens zera as variáveis). Não viraram token: a seta tracejada da onda fica parada (sem a animação de marcha), e o equalizador do pad tocando pisca com `animate-ps-blink` em vez das barras subindo do v5.
+- **Nenhum texto cortado nem encostando:** botões com largura pelo texto; texto que não cabe desce aos poucos (variável `--ps-fit`) até 12px, sempre a 4px da borda; em caso extremo a capa da música sai. Nome de seção em até 2 linhas, nunca cortado; nome de canal com 2 linhas sempre reservadas.
+- **Larguras:** de 1024 a 1279px, capa menor, PAD e LETRA empilhados e mixer rolando de lado com canais inteiros; 14 canais inteiros em 1280px; aviso da grade em texto no PRÓXIMA a partir de 1440px; nome do repertório na célula da música a partir de 1700px.
+- **Canal calado** (M ou Solo de outro) fica cinza, nunca vermelho, como no mixer atual (seção 1.7).
+- **Verificador:** `scripts/verify-layout/` monta a casca com dados de teste e mede no Chrome headless texto cortado, texto encostando, alvos de toque, rolagem de lado e ordem das faixas, em 9 estados e 5 tamanhos (1024x768, 1280x760, 1280x800, 1440x900 e 1920x1080). Peça nova ou mudança de layout no palco roda ele antes de entregar.
 
 ---
 
