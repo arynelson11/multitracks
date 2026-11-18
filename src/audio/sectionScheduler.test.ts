@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { asAudioContext, asFake, createFakeAudioContext, nodesOf, valueAt, type FakeAudioContext, type FakeOscillatorNode } from '../test/fakeAudio'
+import { asAudioContext, asFake, createFakeAudioContext, FakeAudioParam, nodesOf, valueAt, type FakeAudioContext, type FakeOscillatorNode } from '../test/fakeAudio'
 import type { ArmIntent, SectionSpan, SongGrid, TimelineSegment, TransitionView } from '../lib/stageContracts'
 import { startVoice, startVoicesForSwitch, type Voice } from './voices'
 import { sectionSpans } from '../lib/songGrid'
@@ -763,6 +763,97 @@ describe('pré-contagem e reset no cruzamento', () => {
     s.reset()
     expect(near(asFake(started[0][0].source).stops)).toEqual([7.9975])
   })
+})
+
+describe('varredura de reset com a volta seguinte (aviso da T17 pra T30)', () => {
+  // Seções de 1 compasso: no REPETIR, a contagem da volta seguinte começa no próprio "1" do pulo
+  // (o bipe adiantado soando em T) e a guia emenda calada; no pulo pra seção 2, só o cruzamento.
+  // Reset (pausa, busca) a cada 0,25 ms de T - 6 ms a T + 35 ms: o que tocou antes dele vem da
+  // automação de antes (como o navegador já tocou), o depois da de depois. A soma das vozes do
+  // canal fica em 1 o tempo todo e nenhum degrau passa das rampas (5 ms nas vozes, 10 ms na guia).
+  const oneBar: SectionSpan[] = [{ index: 0, start: 0, end: 2 }, { index: 1, start: 2, end: 4 }, { index: 2, start: 4, end: 20 }]
+  const SR = 48000
+  const T = 2
+  const VOICE_STEP = 1 / (FADE * SR) + 1e-9
+  const GUIDE_STEP = 1 / (0.01 * SR) + 1e-9
+  // Contribuição da voz em `t`: o envelope enquanto a fonte toca (antes do start ou depois do stop, nada).
+  const voiceAt = (v: Voice, t: number) => {
+    const src = asFake(v.source)
+    const start = src.starts[0]?.when ?? Infinity
+    const stop = src.stops.length ? Math.min(...src.stops) : Infinity
+    return t >= start && t < stop ? valueAt(v.env.gain, t) : 0
+  }
+
+  // REPETIR da seção [2,4] tocando desde o 2 dela no instante 0 (pulos em T = 2 e 4, com
+  // pré-rolagem: o alvo não é 0:00) e pulo da seção 0 pra 2 (T = 2, alvo 4).
+  const cases = [
+    ['REPETIR com a volta seguinte', { target: 1, plays: 3 }, [{ ctxStart: 0, songStart: 2 }]],
+    ['pulo pra seção 2', { target: 2, plays: 1 }, [{ ctxStart: 0, songStart: 0 }]],
+  ] as const
+  for (const [label, intent, timeline] of cases) {
+    for (const latency of [0, 0.12]) {
+      for (const withHold of [true, false]) {
+        it(`${label}, L ${latency}, ${withHold ? 'com' : 'sem'} cancelAndHoldAtTime: soma 1 e sem degrau em todo reset`, () => {
+          const saved = FakeAudioParam.prototype.cancelAndHoldAtTime
+          if (!withHold) delete (FakeAudioParam.prototype as Partial<FakeAudioParam>).cancelAndHoldAtTime
+          try {
+            let worstSum = 0, worstVoice = 0, worstGuide = 0, resets = 0
+            let where = ''
+            for (let k = -24; k <= 140; k++) {
+              const r = T + k * 0.00025
+              const h = play({ spans: oneBar, intent, armAt: 0.1, until: r, latency, timeline: [...timeline] })
+              // O cenário: o pulo de T marcado; no REPETIR, o "1" da contagem da volta seguinte em T.
+              expect(h.deps.startSwitchVoices).toHaveBeenCalledWith(T, intent.target === 1 ? 2 : 4, FADE)
+              if (intent.target === 1) expect(sounding(h.ctx)).toContain('2(1)')
+              const from = Math.min(r, T - FADE) - 0.002
+              const to = Math.max(r, T + latency) + 0.03
+              const n = Math.round((to - from) * SR)
+              const voices = () => [h.original, ...h.started.flat()]
+              const before = voices()
+              // O passado (até r) pela automação de antes do reset.
+              const sum: number[] = new Array(n).fill(0)
+              const perVoice = new Map<Voice, number[]>()
+              const guide: number[] = new Array(n).fill(0)
+              const cut = Math.round((r - from) * SR)
+              for (let i = 0; i < cut; i++) {
+                const t = from + i / SR
+                for (const v of before) {
+                  const x = voiceAt(v, t)
+                  sum[i] += x
+                  if (!perVoice.has(v)) perVoice.set(v, new Array(n).fill(0))
+                  perVoice.get(v)![i] = x
+                }
+                guide[i] = valueAt(h.guide, t)
+              }
+              h.ctx.currentTime = r
+              h.s.reset()
+              resets++
+              const after = voices()
+              for (let i = cut; i < n; i++) {
+                const t = from + i / SR
+                for (const v of after) {
+                  const x = voiceAt(v, t)
+                  sum[i] += x
+                  if (!perVoice.has(v)) perVoice.set(v, new Array(n).fill(0))
+                  perVoice.get(v)![i] = x
+                }
+                guide[i] = valueAt(h.guide, t)
+              }
+              for (let i = 0; i < n; i++) if (Math.abs(sum[i] - 1) > worstSum) { worstSum = Math.abs(sum[i] - 1); where = `r ${r.toFixed(5)} t ${(from + i / SR).toFixed(5)} soma ${sum[i]} vozes ${[...perVoice.values()].map((xs) => xs[i].toFixed(3)).join('/')} inícios ${after.map((v) => asFake(v.source).starts[0]?.when.toFixed(4) + '-' + Math.min(...asFake(v.source).stops).toFixed(4)).join(' ')}` }
+              for (const xs of perVoice.values()) for (let i = 1; i < n; i++) worstVoice = Math.max(worstVoice, Math.abs(xs[i] - xs[i - 1]))
+              for (let i = 1; i < n; i++) worstGuide = Math.max(worstGuide, Math.abs(guide[i] - guide[i - 1]))
+            }
+            expect(resets).toBe(165)
+            expect(worstSum, where).toBeLessThan(1e-9)
+            expect(worstVoice).toBeLessThanOrEqual(VOICE_STEP)
+            expect(worstGuide).toBeLessThanOrEqual(GUIDE_STEP)
+          } finally {
+            FakeAudioParam.prototype.cancelAndHoldAtTime = saved
+          }
+        }, 60_000)
+      }
+    }
+  }
 })
 
 describe('comparação da view', () => {
