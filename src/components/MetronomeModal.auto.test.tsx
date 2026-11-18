@@ -29,6 +29,7 @@ const detect = vi.mocked(detectSongGrid)
 const generate = vi.mocked(generateManualClickTrackFromSample)
 const TRAVESSAO = String.fromCharCode(0x2014)
 const AVISO_CONFIANCA = 'Não deu pra ter certeza do tempo desta música. Confira o BPM ou use o modo manual.'
+const AVISO_DESCARTADO = 'A música mudou enquanto o click era gerado: ele não entrou.'
 
 /** Detecção montada à mão: com BPM escolhido (nearBpm) a grade sai nele, senão 135. */
 function detection(over: Partial<SongGridDetection> = {}) {
@@ -226,6 +227,28 @@ describe('Metrônomo: troca de música com o modal aberto', () => {
     await new Promise(r => setTimeout(r, 30))
     expect(onAddClick).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
+    // E diz por quê (adiado da M7: antes o click sumia sem aviso).
+    expect(texto()).toContain(AVISO_DESCARTADO)
+  })
+
+  it('GERAR CLICK MANUAL: a música muda durante a geração e o click não entra na música nova; o modal fica aberto e avisa', async () => {
+    let soltar: (v: { clickTrackUrl: string }) => void = () => {}
+    generate.mockImplementationOnce(() => new Promise(r => { soltar = r }))
+    const { onAddClick, onClose, trocar } = abrir()
+    await act(async () => { fireEvent.click(botao('GERAR CLICK MANUAL')) })
+    await vi.waitFor(() => expect(generate).toHaveBeenCalled())
+    trocar({ playlistCurrentSong: musicaB() })
+    await act(async () => { soltar({ clickTrackUrl: 'blob:click-manual' }) })
+    await new Promise(r => setTimeout(r, 30))
+    expect(onAddClick).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(texto()).toContain(AVISO_DESCARTADO)
+    // Na mesma música o click entra e o modal fecha, como sempre (e o aviso some na geração nova).
+    await act(async () => { fireEvent.click(botao('GERAR CLICK MANUAL')) })
+    await vi.waitFor(() => expect(onAddClick).toHaveBeenCalledTimes(1))
+    expect((onAddClick.mock.calls[0][0] as File).name).toBe('Click_Classic_120bpm.wav')
+    expect(onClose).toHaveBeenCalled()
+    expect(texto()).not.toContain(AVISO_DESCARTADO)
   })
 
   it('o compasso passa a ser o da música nova (guardado, senão 4/4)', () => {
@@ -254,6 +277,8 @@ describe('Metrônomo: troca de música com o modal aberto', () => {
     await vi.waitFor(() => expect(texto()).toContain('BPM 135.0'))
     trocar({ isPlaying: true })
     expect((noResultado('½×') as HTMLButtonElement).disabled).toBe(true)
+    // O motivo vai no title do chip (adiado da M7).
+    expect(noResultado('½×').getAttribute('title')).toContain('pare a música pra refazer')
   })
 })
 

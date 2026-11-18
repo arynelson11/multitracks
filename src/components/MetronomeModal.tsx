@@ -49,6 +49,9 @@ type AutoState =
   | { step: 'falhou'; songId: string | undefined; reason: Extract<AutoClickPlan, { ok: false }>['reason'] | 'erro' };
 const PARADO: AutoState = { step: 'parado' };
 
+// O click gerado não entrou: a música mudou enquanto ele era feito (Gerar click manual ou Inserir click).
+const DISCARDED_TEXT = 'A música mudou enquanto o click era gerado: ele não entrou. Gere de novo na música certa.';
+
 const FAIL_TEXT: Record<Extract<AutoState, { step: 'falhou' }>['reason'], string> = {
   'confianca-baixa': 'Não deu pra ter certeza do tempo desta música. Confira o BPM ou use o modo manual.',
   'sem-faixa': 'Nenhuma faixa de bateria, percussão ou baixo pra analisar. Use o modo manual.',
@@ -125,7 +128,7 @@ function AutoClickResult({ sectionRef, plan, moveOne, halfBeat, songBpm, busy, c
           const target = Math.round(d.bpm * f.factor * 100) / 100;
           const inRange = target >= BPM_RANGE.min && target <= BPM_RANGE.max;
           return (
-            <Chip key={f.label} title={`${f.name}: ${formatBpm(target)} BPM`} disabled={busy || !canAnalyze || !inRange} onClick={() => onAnalyze(target)}>
+            <Chip key={f.label} title={`${f.name}: ${formatBpm(target)} BPM${!inRange ? ` (fora de ${BPM_RANGE.min} a ${BPM_RANGE.max} BPM)` : !canAnalyze ? ' (pare a música pra refazer)' : ''}`} disabled={busy || !canAnalyze || !inRange} onClick={() => onAnalyze(target)}>
               {f.label}
             </Chip>
           );
@@ -158,6 +161,8 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
   const [bpmInput, setBpmInput] = useState<string>('120');
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
+  // Click gerado que não entrou porque a música mudou no meio (fica até a próxima geração).
+  const [discarded, setDiscarded] = useState(false);
   const [auto, setAuto] = useState<AutoState>({ step: 'parado' });
 
   // Click library selection (persisted in localStorage)
@@ -258,6 +263,11 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
 
   const handleManualGenerate = async () => {
     if (!playlistCurrentSong) return;
+    // O click é da música em que foi pedido: a geração cede a vez e leva ~1 s (Ruling T27-gerador),
+    // e nesse meio tempo a música pode mudar (AUTO no fim, comando da banda). Aí ele não entra.
+    const forSong = songId;
+    let entered = true;
+    setDiscarded(false);
     setIsSynthesizing(true);
     setStatusMsg(`Gerando click ${clickSel.type} ${clickSel.subdivision} a ${bpm} BPM...`);
     try {
@@ -267,9 +277,14 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
       if (clickTrackUrl) {
         const res = await fetch(clickTrackUrl);
         const blob = await res.blob();
+        URL.revokeObjectURL(clickTrackUrl);
+        if (liveRef.current.songId !== forSong) {
+          entered = false;
+          setDiscarded(true);
+          return;
+        }
         const file = new File([blob], `Click_${clickSel.type}_${bpm}bpm.wav`, { type: 'audio/wav' });
         onAddClick(file);
-        URL.revokeObjectURL(clickTrackUrl);
       }
     } catch (e) {
       console.error(e);
@@ -277,7 +292,8 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
     } finally {
       setIsSynthesizing(false);
       setStatusMsg('');
-      onClose();
+      // Fica aberto quando o click não entrou, com o aviso.
+      if (entered) onClose();
     }
   };
 
@@ -311,13 +327,18 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
   const handleInsertAuto = async () => {
     if (shownAuto.step !== 'pronto') return;
     const forSong = shownAuto.songId;
+    setDiscarded(false);
     setIsSynthesizing(true);
     setStatusMsg('Gerando o click...');
     try {
       const plan = adjustAutoClick(shownAuto.plan, { moveOne: shownAuto.moveOne, halfBeat: shownAuto.halfBeat });
       const blob = await renderAutoClick(plan, songDuration, clickSel);
-      // O "Inserir" põe o click na música ativa: se ela mudou enquanto o click era gerado, não entra.
-      if (liveRef.current.songId !== forSong) return;
+      // O "Inserir" põe o click na música ativa: se ela mudou enquanto o click era gerado, não entra
+      // (e o modal diz isso).
+      if (liveRef.current.songId !== forSong) {
+        setDiscarded(true);
+        return;
+      }
       onAddClick(new File([blob], `Click_IA_${formatBpm(plan.detection.bpm)}bpm.wav`, { type: 'audio/wav' }));
       onClose();
     } catch (e) {
@@ -502,6 +523,9 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
           <div className="text-center text-[10px] font-bold text-primary animate-pulse uppercase tracking-wider mb-4">
             {statusMsg}
           </div>
+        )}
+        {discarded && !isSynthesizing && (
+          <p role="status" className="text-ps-alert text-ps-sm font-bold text-center px-2 mb-4">{DISCARDED_TEXT}</p>
         )}
 
 
