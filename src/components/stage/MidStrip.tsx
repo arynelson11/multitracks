@@ -129,9 +129,12 @@ export function MidStrip({ view, actions, clock, keyGridOpen, onKeyGridOpenChang
   const bpm = shownBpm(view.grid, song?.bpm ?? null)
 
   // Mede de novo só quando muda algum texto que mexe no tamanho (a casca renderiza a cada quadro).
+  // A seção atual entra pelo NOME que a célula mostra, não pelo índice: trocar de seção com o mesmo
+  // nome (Refrão, Refrão) não refaz as medidas no instante do pouso.
+  const currentName = view.sections.find((s) => s.index === view.currentSection)?.label ?? (view.sections.length > 0 ? '\u0000antes' : '\u0000sem')
   const fitKey = [
     song?.name, song?.artist, song?.nextName, song?.repertoireName, song?.position, song?.total, song?.originalKey, song?.pitch, bpm,
-    signature, view.gridWarning, view.editMode, view.activePad, view.currentSection, view.sections.map((s) => s.label).join('\n'),
+    signature, view.gridWarning, view.editMode, view.activePad, currentName, view.sections.map((s) => s.label).join('\n'),
   ].join('\t')
   useLayoutEffect(() => {
     if (rootRef.current) fitStrip(rootRef.current)
