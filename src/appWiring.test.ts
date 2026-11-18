@@ -33,6 +33,10 @@ describe('ligações do palco novo', () => {
     expect(app).toMatch(/<TextPromptDialog[\s\S]*?renameSong\(/)
   })
 
+  it('o palco novo define e redefine o tom original com a ação do palco antigo (setOriginalKey e tom de volta pro 0)', () => {
+    expect(app).toMatch(/setOriginalKey:\s*\(key: string \| null\)\s*=>\s*handlePremiumFeature\(\(\)\s*=>\s*\{\s*setOriginalKey\(key\);\s*changePitch\(0\)\s*\}\)/)
+  })
+
   it('o motor recebe o click gerado pelo plano e os portões das seções', () => {
     expect(app).toMatch(/autoClick\s*:\s*canUseBpmDetection\(\s*userPlan\s*\)/)
     expect(app).toMatch(/sectionGates/)

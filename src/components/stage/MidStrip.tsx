@@ -182,6 +182,7 @@ export function MidStrip({ view, actions, clock, keyGridOpen, onKeyGridOpenChang
       <KeyCell
         originalKey={song?.originalKey ?? null} pitch={song?.pitch ?? 0} gridOpen={keyGridOpen}
         onGridOpenChange={(open) => onKeyGridOpenChange(open)} onChangePitch={(s) => actions.changePitch(s)}
+        onSetOriginalKey={(key) => actions.setOriginalKey(key)}
       />
       <CurrentSectionCell
         sections={view.sections} currentSection={view.currentSection} intent={view.intent} gates={view.gates} clock={clock}

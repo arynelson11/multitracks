@@ -131,6 +131,8 @@ export interface StageActions {
   reorderChannel(from: number, to: number): void; removeChannel(id: string): void
   markSection(label: string): void; nudgeSection(index: number, bars: number): void; removeSection(index: number): void
   setMeter(sig: TimeSignature, countEvery: 1 | 3): void; redetectMeter(): void
+  /** Tom original da música (um dos 12 tons) ou nulo pra "Redefinir detecção de tom", como no palco antigo. */
+  setOriginalKey(key: string | null): void
 }
 /** Leituras de cada quadro (lidas por useFrame dentro da peça, nunca guardadas em estado do React). */
 export interface StageClock { heardNow(): number; position(): number; level(channelId: string): number; masterLevels(): { l: number; r: number } }

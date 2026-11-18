@@ -609,6 +609,9 @@ export default function App() {
     seekBy: (dt: number) => seekTo(clampToSong(heardPosition() + dt)),
     // Trocar o tom é dos planos pagos, como o TOM do palco antigo.
     changePitch: (semitones: number) => handlePremiumFeature(() => changePitch(semitones)),
+    // Tom original com a mesma ação do TOM do palco antigo: definir grava o original e volta o tom
+    // pro 0; "Redefinir detecção de tom" (nulo) apaga o original e volta pro 0. Dos planos pagos.
+    setOriginalKey: (key: string | null) => handlePremiumFeature(() => { setOriginalKey(key); changePitch(0) }),
     prevSong: () => prevSong(),
     nextSong: () => nextSong(),
     setVolume: (id: string, gain: number) => updateVolume(id, gain),

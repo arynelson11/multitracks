@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Verificador de texto cortado e de alvos de toque do palco novo (T20), no Chrome headless.
 // Uso: node scripts/verify-layout/run.mjs [--only 1280x800[,1440x900]] [--estado normal[,tom]] [--jobs 3] [--no-build]
-//   sem --estado: os 9 estados normais nos 8 tamanhos (72 combinações);
+//   sem --estado: os 10 estados normais nos 8 tamanhos (80 combinações);
 //   --estado quebrado: só a prova (um botão de largura fixa com texto longo), que tem de falhar.
 // Sai com código 1 se alguma combinação falhar (ou não responder). Resultados em scripts/verify-layout/results/.
 import http from 'node:http'
@@ -24,7 +24,7 @@ const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/M
  */
 const SIZES = ['1024x740', '1024x768', '1280x760', '1280x800', '1440x900', '1920x1080', '900x740', '810x1080']
 /** Estados da rodada normal: a mesma lista de ESTADOS em fixture.ts. */
-const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'repertorio', 'tom', 'compasso', 'config']
+const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'repertorio', 'tom', 'semtom', 'compasso', 'config']
 const PROVA = 'quebrado'
 const TIMEOUT_S = 40
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))

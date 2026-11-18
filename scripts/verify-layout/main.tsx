@@ -120,6 +120,7 @@ function tap(selector: string): void {
 /** O que abrir depois de montar: a grade de tons e o diálogo do compasso são estado da casca. */
 const PREPARE: Partial<Record<Estado, () => void>> = {
   tom: () => tap('[data-cell="tom"] button[aria-haspopup="dialog"]'),
+  semtom: () => tap('[data-cell="tom"] button[aria-haspopup="dialog"]'),
   compasso: () => tap('[data-cell="tempo"] button[title="Escolher o compasso da música"]'),
 }
 
@@ -132,6 +133,7 @@ const EXPECT: Record<Estado, { sel: string; text?: string }> = {
   livre: { sel: '[data-tour="secoes"] p' },
   repertorio: { sel: '[role="dialog"][aria-label="Repertório"]' },
   tom: { sel: '[data-cell="tom"] button[aria-expanded="true"]' },
+  semtom: { sel: '[data-cell="tom"] [data-define-original]' },
   compasso: { sel: '[data-stage-meter]' },
   config: { sel: '[data-placa="8 canais"] select' },
   quebrado: { sel: '[data-prova]' },

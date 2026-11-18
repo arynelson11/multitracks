@@ -96,7 +96,7 @@ const makeActions = (): StageShellActions => ({
   openSettings: vi.fn(), goHome: vi.fn(), signOut: vi.fn(), openUpgrade: vi.fn(), openChannelEdit: vi.fn(),
   reorderChannel: vi.fn(), removeChannel: vi.fn(),
   markSection: vi.fn(), nudgeSection: vi.fn(), removeSection: vi.fn(),
-  setMeter: vi.fn(), redetectMeter: vi.fn(), openOutputSettings: vi.fn(),
+  setMeter: vi.fn(), redetectMeter: vi.fn(), setOriginalKey: vi.fn(), openOutputSettings: vi.fn(),
 })
 const PADS: Omit<PadPanelProps, 'open' | 'onClose'> = {
   view: 'pads', onViewChange: vi.fn(), notes: NOTES, activeNote: null, songKeyIndex: 7, volume: 0.5, setName: 'Holy',

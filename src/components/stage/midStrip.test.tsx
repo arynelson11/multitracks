@@ -130,7 +130,7 @@ describe('célula de tempo', () => {
 // ---------- Tom ----------
 
 const keyProps = (p: Partial<KeyCellProps> = {}): KeyCellProps => ({
-  originalKey: 'G', pitch: 0, gridOpen: false, onGridOpenChange: () => {}, onChangePitch: () => {}, ...p,
+  originalKey: 'G', pitch: 0, gridOpen: false, onGridOpenChange: () => {}, onChangePitch: () => {}, onSetOriginalKey: () => {}, ...p,
 })
 const gridKey = (label: string) => screen.getByRole('button', { name: new RegExp(`^${label}(, |$)`) }) as HTMLButtonElement
 
@@ -206,7 +206,7 @@ describe('célula de tom', () => {
   it('grade: 12 tons, o original marcado ORIGINAL e o atual em laranja', () => {
     render(<KeyCell {...keyProps({ gridOpen: true, pitch: -1 })} />)
     const dialog = screen.getByRole('dialog')
-    expect(dialog.querySelectorAll('button')).toHaveLength(12)
+    expect(dialog.querySelectorAll('[data-key-grid] button')).toHaveLength(12)
     const orig = gridKey('G')
     expect(orig.getAttribute('aria-label')).toBe('G, original')
     expect(orig.querySelector('[data-original-tag]')?.textContent).toBe('ORIGINAL')
@@ -257,7 +257,7 @@ describe('célula de tom', () => {
     const dialog = screen.getByRole('dialog', { name: 'Escolher tom' })
     expect(dialog.textContent).toContain('Sem tom original: escolha em semitons')
     // De −6 a +6, a mesma distância que a grade de tons usa (o caminho mais curto); nada travado.
-    const keys = [...dialog.querySelectorAll('button')]
+    const keys = [...dialog.querySelectorAll('button[aria-pressed]')]
     const unit = (n: number) => `${n > 0 ? '+' : n < 0 ? MENOS : ''}${Math.abs(n)} ${Math.abs(n) === 1 ? 'semitom' : 'semitons'}${n === 0 ? ', original' : ''}`
     expect(keys.map((k) => k.getAttribute('aria-label'))).toEqual([-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6].map(unit))
     for (const k of keys) expect(k.disabled).toBe(false)
@@ -275,6 +275,40 @@ describe('célula de tom', () => {
     expect(q('[data-key-shift]').textContent).toBe('+3')
     fireEvent.click(btn('Subir meio tom'))
     expect(onChangePitch).toHaveBeenLastCalledWith(4)
+  })
+  it('sem tom original: "Definir o tom original" mostra os 12 tons e o escolhido vira o original (a ação do palco antigo)', () => {
+    const onSetOriginalKey = vi.fn()
+    const onChangePitch = vi.fn()
+    const onGridOpenChange = vi.fn()
+    const { rerender } = render(<KeyCell {...keyProps({ originalKey: null, gridOpen: true, pitch: 3, onSetOriginalKey, onChangePitch, onGridOpenChange })} />)
+    const dialog = screen.getByRole('dialog', { name: 'Escolher tom' })
+    fireEvent.click(btn('Definir o tom original'))
+    expect(dialog.textContent).toContain('Toque no tom original da música')
+    const keys = [...dialog.querySelectorAll('[data-key-grid] button')]
+    expect(keys.map((k) => k.firstElementChild?.textContent)).toEqual(['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'])
+    expect(keys[7].getAttribute('aria-label')).toBe('G, definir como tom original')
+    // Dá pra voltar pros semitons sem definir nada.
+    fireEvent.click(btn('Voltar pros semitons'))
+    expect(dialog.textContent).toContain('Sem tom original: escolha em semitons')
+    fireEvent.click(btn('Definir o tom original'))
+    fireEvent.click(btn('G, definir como tom original'))
+    expect(onSetOriginalKey).toHaveBeenCalledWith('G')
+    expect(onChangePitch).not.toHaveBeenCalled()
+    expect(onGridOpenChange).toHaveBeenLastCalledWith(false)
+    // Fechou: a próxima abertura volta pros semitons (enquanto o original não chega).
+    rerender(<KeyCell {...keyProps({ originalKey: null, gridOpen: false, pitch: 3, onSetOriginalKey, onChangePitch, onGridOpenChange })} />)
+    rerender(<KeyCell {...keyProps({ originalKey: null, gridOpen: true, pitch: 3, onSetOriginalKey, onChangePitch, onGridOpenChange })} />)
+    expect(screen.getByRole('dialog').textContent).toContain('Sem tom original: escolha em semitons')
+  })
+  it('com tom original: "Redefinir detecção de tom" apaga o original (a ação do palco antigo)', () => {
+    const onSetOriginalKey = vi.fn()
+    const onGridOpenChange = vi.fn()
+    render(<KeyCell {...keyProps({ gridOpen: true, pitch: 2, onSetOriginalKey, onGridOpenChange })} />)
+    expect(screen.queryByRole('button', { name: 'Definir o tom original' })).toBeNull()
+    fireEvent.click(btn('Redefinir detecção de tom'))
+    expect(onSetOriginalKey).toHaveBeenCalledWith(null)
+    expect(onGridOpenChange).toHaveBeenLastCalledWith(false)
+    expect(btn('Redefinir detecção de tom').className).toContain('min-h-ps-touch')
   })
 })
 
@@ -484,7 +518,7 @@ const ACTION_NAMES: (keyof StageActions)[] = [
   'toggleMute', 'toggleSolo', 'setPan', 'setMasterVolume', 'toggleMasterMute', 'togglePadPanel', 'openLyrics', 'openRepertoires',
   'openTracks', 'openLibrary', 'toggleEditMode', 'toggleChannelEditMode', 'openHost', 'openSettings', 'goHome', 'signOut',
   'openUpgrade', 'openChannelEdit', 'reorderChannel', 'removeChannel', 'markSection', 'nudgeSection', 'removeSection', 'setMeter',
-  'redetectMeter',
+  'redetectMeter', 'setOriginalKey',
 ]
 const makeActions = () => Object.fromEntries(ACTION_NAMES.map((n) => [n, vi.fn()])) as unknown as Record<keyof StageActions, ReturnType<typeof vi.fn>> & StageActions
 
@@ -541,6 +575,8 @@ describe('faixa do meio', () => {
     expect(a.openUpgrade).toHaveBeenCalledTimes(1)
     fireEvent.click(gridKey('E'))
     expect(a.changePitch).toHaveBeenLastCalledWith(-3)
+    fireEvent.click(btn('Redefinir detecção de tom'))
+    expect(a.setOriginalKey).toHaveBeenLastCalledWith(null)
   })
   it('PAD mostra o pad tocando', () => {
     renderStrip({ view: { padPanelOpen: true, activePad: 'C#' } })
