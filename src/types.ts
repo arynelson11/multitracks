@@ -63,6 +63,9 @@ export interface Song {
     // palco avisa COMPASSO ASSUMIDO, também com o compasso escolhido no EDITAR. Só existe junto
     // de grade de click; ausente quer dizer sem aviso (Ruling T27-campo).
     downbeatAssumed?: true;
+    // O usuário apagou um canal de Click desta música: o motor não gera o "Click gerado" no lugar
+    // (manual vence automático, Ruling X1-critical). Só `true`; ausente quer dizer nunca apagou.
+    clickRemoved?: true;
 }
 
 export interface Marker {

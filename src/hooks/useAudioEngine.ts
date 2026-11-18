@@ -27,7 +27,7 @@ import { createSchedulerClock, type ClockMode, type SchedulerClock } from '../au
 import { FADE as SWITCH_FADE, SectionScheduler } from '../audio/sectionScheduler';
 import { startVoice, startVoicesForSwitch, stopVoices, type Voice, type VoiceSpec } from '../audio/voices';
 import { scheduleCount, type ScheduledCount } from '../audio/countTones';
-import { effectivePan, planOutputs, sanitizeOutputs, type PlannedOutputs } from '../lib/outputPlan';
+import { cueReachesVs, effectivePan, planOutputs, sanitizeOutputs, type PlannedOutputs } from '../lib/outputPlan';
 import { ctxTimeOf, heardTime, positionAt } from '../lib/playTimeline';
 import { armAt, armRepeat as armRepeatIntent, bandRepeat, stepSection as stepSectionIntent, tapSection, toggleLoop, type ArmContext, type ArmResult } from '../lib/sectionArm';
 import type { OutputPlan, OutputSettings, TimelineSegment } from '../lib/stageContracts';
@@ -440,13 +440,65 @@ const writeLocal = (key: string, value: string): void => {
     try { localStorage.setItem(key, value); } catch (e) { console.error('Não consegui gravar no aparelho', e); }
 };
 
-// Primeira restauração de cada conta depois da migração (R-23, Ruling T25-legacy): os pans
-// ±1 que o pan automático antigo gravou voltam ao centro (o barramento da aba Buses volta
-// junto pro '1/2', que é o pan 0). A marca da conta fica no aparelho.
-const withLegacyPansReset = (song: SavedSong): SavedSong => ({
-    ...song,
-    channels: song.channels.map((ch) => (Math.abs(ch.pan) === 1 ? { ...ch, pan: 0, bus: '1/2' as const } : ch)),
-});
+/** O aparelho na hora da volta dos pans: as saídas, o pan automático e se ele vinha ligado (R-23). */
+interface LegacyPanDevice { outputs: OutputSettings; autoPan: boolean; legacyPanReset: boolean }
+
+/** Lado do ouvido que os Click e Guia em ±1 apontam, por votos de todas as músicas (empate: saída 1); null sem nenhum. */
+function legacyEarSide(songs: readonly SavedSong[]): -1 | 1 | null {
+    let left = 0;
+    let right = 0;
+    for (const song of songs) for (const ch of song.channels) {
+        if (resolveChannelRole(ch) === 'normal') continue;
+        if (ch.pan === -1) left++;
+        else if (ch.pan === 1) right++;
+    }
+    if (left + right === 0) return null;
+    return right > left ? 1 : -1;
+}
+
+/**
+ * Volta dos pans ±1 de antes desta versão (R-23, Ruling I1-rota), uma vez por conta (e no ZIP
+ * antigo), em todas as músicas. Zera SÓ o que o pan automático gravou: Click e Guia em -1 e o
+ * resto em +1 (o barramento da aba Buses volta junto pro '1/2', que é o pan 0). Canal Normal em
+ * -1 (o lado do ouvido, que o pan automático nunca dava pra ele) foi girado à mão: vira Guia
+ * manual com o pan como está, porque em "Click e Guia separados" o knob não vale e ele iria pra
+ * VS. Click ou Guia em +1 também é do operador e fica (separados manda pro ouvido pelo papel).
+ * Com o pan automático DESLIGADO ("Tudo junto" sem ele, sem o `legacyPanReset`) os ±1 são todos
+ * do operador e nada é zerado; se Click ou Guia estão num lado (`legacyEarSide`), a saída vai pra
+ * "Click e Guia separados" com o ouvido desse lado (`outputs`), nunca fica em "Tudo junto" (o
+ * click no PA), e o Normal que estava no lado do ouvido vira Guia pelo mesmo motivo. Sem
+ * `moveOutputs` (ZIP antigo num aparelho em "Tudo junto"), a saída não muda e nada muda nos canais.
+ */
+function fixLegacyPans(songs: SavedSong[], device: LegacyPanDevice, opts: { moveOutputs: boolean }): { songs: SavedSong[]; outputs: OutputSettings | null } {
+    type SavedCh = SavedSong['channels'][number];
+    // A música só vira um objeto novo quando algum canal mudou (a restauração grava só aí).
+    const each = (fix: (ch: SavedCh) => SavedCh) => songs.map((song) => {
+        const channels = song.channels.map(fix);
+        return channels.every((ch, i) => ch === song.channels[i]) ? song : { ...song, channels };
+    });
+    const toGuide = (ch: SavedCh): SavedCh => ({ ...ch, role: 'guide' });
+    const byOperator = device.outputs.mode === 'stereo' && !device.autoPan && !device.legacyPanReset;
+    if (!byOperator) {
+        const fixed = each((ch) => {
+            if (Math.abs(ch.pan) !== 1) return ch;
+            if (ch.pan === autoPanFor(ch, true).pan) return { ...ch, pan: 0, bus: '1/2' };
+            return resolveChannelRole(ch) === 'normal' ? toGuide(ch) : ch;
+        });
+        return { songs: fixed, outputs: null };
+    }
+    const ear = opts.moveOutputs ? legacyEarSide(songs) : null;
+    if (ear === null) return { songs, outputs: null };
+    return {
+        songs: each((ch) => (resolveChannelRole(ch) === 'normal' && ch.pan === ear ? toGuide(ch) : ch)),
+        outputs: { ...device.outputs, multi: { ...device.outputs.multi }, mode: 'split2', earOnSecond: ear === 1 },
+    };
+}
+
+/** O "Click gerado" mudo (Ruling X1-critical): ao abrir com a saída sem rota própria pro Click. */
+const withGeneratedClickMuted = (song: SavedSong): SavedSong =>
+    (song.channels.some((ch) => isGeneratedClick(ch) && !ch.muted)
+        ? { ...song, channels: song.channels.map((ch) => (isGeneratedClick(ch) ? { ...ch, muted: true } : ch)) }
+        : song);
 
 // === Grade da música (Parte 2, T27; Arquitetura B) ===
 // A grade do palco vem só da faixa de click (sinal limpo, é o que a banda ouve): BPM, fase e
@@ -456,6 +508,14 @@ const withLegacyPansReset = (song: SavedSong): SavedSong => ({
 
 /** Nome do canal do click que o motor gera pra música sem click (o papel Click vem do nome). */
 const GENERATED_CLICK_NAME = 'Click gerado';
+/** O canal é o click que o motor gerou (pelo nome do arquivo, que nunca muda) e ainda é Click. */
+const isGeneratedClick = (ch: ChannelIdentity): boolean => ch.name === GENERATED_CLICK_NAME && resolveChannelRole(ch) === 'click';
+/**
+ * O Click tem rota própria, longe do PA (Ruling X1-critical)? Em "Tudo junto" (com ou sem o pan
+ * automático) e na saída de 1 canal (que o plano dá como "Tudo junto") não: ali o click gerado
+ * nunca nasce, e o que já existe fica mudo.
+ */
+const clickHasOwnRoute = (plan: OutputPlan, autoPan: boolean): boolean => plan.mode !== 'stereo' && !cueReachesVs(plan, autoPan);
 /**
  * Clicks que o Metrônomo grava ("Click_IA_120bpm", "Click_Classic_120bpm"; MetronomeModal.tsx):
  * gerados pelo mesmo gerador, com cada click adiantado pelo ataque da amostra.
@@ -641,7 +701,15 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         if (perStem) return perStem;
         return legacyMap?.get(channelId);
     };
-    const { settings } = useSettings();
+    const { settings, updateSetting } = useSettings();
+    // Pra volta dos pans antigos na restauração (Ruling I1-rota), que roda fora da renderização:
+    // se o aparelho veio do pan automático ligado e como gravar a saída nova.
+    const legacyPanResetRef = useRef(settings.legacyPanReset === true);
+    const updateSettingRef = useRef(updateSetting);
+    useEffect(() => {
+        legacyPanResetRef.current = settings.legacyPanReset === true;
+        updateSettingRef.current = updateSetting;
+    });
     const audioCtxRef = useRef<AudioContext | null>(null);
     // O principal é o `master` do grafo das saídas: volume, FADE e AUTO continuam aqui.
     const masterGainRef = useRef<GainNode | null>(null);
@@ -673,6 +741,10 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     const sinkAttemptRef = useRef(0);
     const playlistRef = useRef<Song[]>([]);
     const faderBusRef = useRef(new WeakMap<GainNode, ChannelRole>());
+    // Deixa mudo o "Click gerado" de todas as músicas quando a saída não tem rota própria pro
+    // Click (Ruling X1-critical). A versão da renderização mais nova (grava o repertório da conta
+    // de agora), chamada também de dentro do corte das trocas de rota.
+    const muteGeneratedRef = useRef<() => void>(() => {});
     // Valores da renderização mais nova pra quem roda fora dela (initEngine, sinkchange,
     // canal que nasce depois de um await). O pan automático só vale em "Tudo junto" e só
     // no panner (channelPanFor).
@@ -1440,6 +1512,32 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // O repertório mais novo pra troca de rota fora da renderização (antes dos efeitos abaixo).
     useEffect(() => { playlistRef.current = playlist; }, [playlist]);
 
+    // "Click gerado" mudo fora da rota própria (Ruling X1-critical): o M aceso, o ganho em 0 na hora
+    // (dentro do corte, quando a troca de saída passa por ele) e gravado. O operador pode ligar de
+    // novo no M; o app só deixa mudo quando a saída vira "Tudo junto", ao abrir assim e quando o
+    // click gerado entra numa saída que já virou.
+    useLayoutEffect(() => {
+        muteGeneratedRef.current = () => {
+            const ctx = audioCtxRef.current;
+            const graph = graphRef.current;
+            if (!ctx || !graph || clickHasOwnRoute(graph.plan, autoPanRef.current)) return;
+            const list = playlistRef.current;
+            if (!list.some((song) => song.channels.some((ch) => isGeneratedClick(ch) && !ch.muted))) return;
+            const next = list.map((song) => {
+                if (!song.channels.some((ch) => isGeneratedClick(ch) && !ch.muted)) return song;
+                const channels = song.channels.map((ch) => (isGeneratedClick(ch) && !ch.muted ? { ...ch, muted: true } : ch));
+                for (const ch of channels) {
+                    if (!isGeneratedClick(ch) || !ch.gainNode) continue;
+                    ch.gainNode.gain.cancelScheduledValues(ctx.currentTime);
+                    ch.gainNode.gain.setValueAtTime(0, ctx.currentTime);
+                }
+                return { ...song, channels };
+            });
+            playlistRef.current = next;
+            updatePlaylistAndSave(next);
+        };
+    });
+
     // Canal novo (restauração, arquivo, canal avulso, metrônomo): pan efetivo no panner e o
     // fader no corte do barramento do papel. Nunca direto no principal.
     const connectChannel = (cuts: RouteCuts, graph: OutputGraph, ch: ChannelIdentity & { pan: number }, panner: StereoPannerNode, gain: GainNode) => {
@@ -1632,8 +1730,11 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         const graph = graphRef.current;
         if (!ctx || !graph) return;
         const max = deviceChannels(ctx);
+        const hadOwnRoute = clickHasOwnRoute(graph.plan, autoPanRef.current);
         const plan = routeOutputs(ctx, graph, outputsRef.current, max);
         syncAllPans(ctx, graph.plan, autoPanRef.current);
+        // A saída virou "Tudo junto" (ou 1 canal): o click gerado fica mudo no mesmo fundo do corte.
+        if (hadOwnRoute && !clickHasOwnRoute(graph.plan, autoPanRef.current)) muteGeneratedRef.current();
         setMaxOutputChannels(max);
         // Aparelho que não respondeu à troca: o aviso vai junto dos outros avisos de saída (T29 mostra).
         setOutputPlan(sinkTimeoutRef.current ? { ...plan, warning: 'sink-timeout' } : plan);
@@ -1761,19 +1862,28 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             // Try Restore. Registro v1 (antes da Parte 1) migra pra v2 aqui; o
             // primeiro save depois grava v2 com a mesma ordem, nome e papel.
             const storedMeta = await get<SavedSong[]>(DB_KEY_META);
-            // Primeira restauração desta conta (R-23, Rulings T25-legacy e T25-reset-sempre):
-            // os pans ±1 gravados antes desta versão (pan automático antigo, ligado ou já
-            // desligado) voltam ao centro e já ficam gravados, com todas as músicas (inclusive
-            // a que não abrir agora); depois a conta ganha a marca dela. Uma vez só por conta.
+            // Primeira restauração desta conta (R-23, Rulings T25-legacy, T25-reset-sempre e
+            // I1-rota): os pans ±1 que o pan automático gravou voltam ao centro, o que o operador
+            // girou à mão fica do lado dele (fixLegacyPans), e tudo já fica gravado, com todas as
+            // músicas (inclusive a que não abrir agora); depois a conta ganha a marca dela. Uma vez
+            // só por conta. Quem separava à mão sem o pan automático passa pra "Click e Guia
+            // separados" do mesmo lado, antes de qualquer canal ligar.
             const resetLegacyPans = readLocal(LEGACY_PANS_DONE_KEY) !== '1';
             const migratedMeta = Array.isArray(storedMeta) ? storedMeta.map(migrateSavedSong) : [];
-            const savedMeta = resetLegacyPans ? migratedMeta.map(withLegacyPansReset) : migratedMeta;
-            if (resetLegacyPans) {
-                if (savedMeta.some((s, i) => s.channels.some((ch, j) => ch.pan !== migratedMeta[i].channels[j].pan))) {
-                    await set(DB_KEY_META, savedMeta);
-                }
-                writeLocal(LEGACY_PANS_DONE_KEY, '1');
+            const fixed = resetLegacyPans
+                ? fixLegacyPans(migratedMeta, { outputs: outputsRef.current, autoPan: autoPanRef.current, legacyPanReset: legacyPanResetRef.current }, { moveOutputs: true })
+                : { songs: migratedMeta, outputs: null };
+            if (fixed.outputs) {
+                outputsRef.current = fixed.outputs;
+                applyOutputsNow();
+                const update = updateSettingRef.current;
+                if (typeof update === 'function') update('outputs', fixed.outputs);
             }
+            // O "Click gerado" de antes (v1.4.19) abre mudo quando a saída não tem rota própria pro
+            // Click: em "Tudo junto" ele iria pro PA (Ruling X1-critical).
+            const savedMeta = clickHasOwnRoute(graph.plan, autoPanRef.current) ? fixed.songs : fixed.songs.map(withGeneratedClickMuted);
+            if (savedMeta.some((s, i) => s !== migratedMeta[i])) await set(DB_KEY_META, savedMeta);
+            if (resetLegacyPans) writeLocal(LEGACY_PANS_DONE_KEY, '1');
             // Map legado (repertórios gravados antes da migração por-stem). Pode
             // não existir mais; os arquivos novos vivem em chaves por-stem.
             const savedFiles = await get<Map<string, File>>(DB_KEY_FILES);
@@ -1878,7 +1988,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
                         grid: metaSong.grid,
                         timeSignature: metaSong.timeSignature,
                         // O 1 não provado (Ruling T27-campo): o COMPASSO ASSUMIDO volta com a música.
-                        downbeatAssumed: metaSong.downbeatAssumed
+                        downbeatAssumed: metaSong.downbeatAssumed,
+                        // O usuário apagou o click dela: o click gerado não volta (Ruling X1-critical).
+                        clickRemoved: metaSong.clickRemoved === true ? true : undefined
                     };
                 };
 
@@ -3002,10 +3114,22 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         job?.done.forEach((resolve) => resolve());
     };
 
-    // A música precisa do click gerado: não tem canal de Click nem grade de click salva. A grade de
-    // click fica quando o usuário apaga o click (o gerado ou o dele), e é ela que impede o click
-    // apagado de voltar na sessão seguinte (manual vence automático).
-    const wantsGeneratedClick = (song: Song) => !findClickChannel(song.channels) && sanitizeGrid(song.grid)?.source !== 'click';
+    // A música precisa do click gerado: não tem canal de Click, nem grade de click salva, nem um
+    // click apagado pelo usuário (manual vence automático). A grade de click fica quando o usuário
+    // apaga um click que deu grade; o `clickRemoved` cobre o click dele que nunca deu grade, que
+    // senão voltaria como gerado na sessão seguinte (Ruling X1-critical, adiado da T27).
+    const wantsGeneratedClick = (song: Song) => !findClickChannel(song.channels) && sanitizeGrid(song.grid)?.source !== 'click' && !song.clickRemoved;
+    // O click gerado só nasce no palco novo e com rota própria pro Click, no plano ligado agora e
+    // no que a troca na fila vai ligar (Ruling X1-critical): no palco antigo só o Metrônomo gera,
+    // a pedido; em "Tudo junto" e na saída de 1 canal ele iria pro PA.
+    const generatedClickRoutable = (): boolean => {
+        const ctx = audioCtxRef.current;
+        const graph = graphRef.current;
+        if (!ctx || !graph) return false;
+        const wanted = planOutputs(outputsRef.current, deviceChannels(ctx));
+        return clickHasOwnRoute(graph.plan, autoPanRef.current) && clickHasOwnRoute(wanted, autoPanRef.current);
+    };
+    const mayGenerateClick = () => autoClickRef.current && stageModeRef.current === 'novo' && generatedClickRoutable();
 
     // Põe a música na fila: lê o click quando ainda não há grade de click e há um canal de Click
     // com áudio; gera o click que falta só com `generate` (carregada agora, ou ficou ativa com a
@@ -3015,7 +3139,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         if (!gridWorkerUsable()) return;
         const hasClickGrid = sanitizeGrid(song.grid)?.source === 'click';
         const read = want.read && !hasClickGrid && clickChannelsOf(song).some((ch) => readableClick(ch.buffer) !== null);
-        const generate = want.generate && autoClickRef.current && wantsGeneratedClick(song);
+        const generate = want.generate && mayGenerateClick() && wantsGeneratedClick(song);
         if (read || generate) void enqueueGridJob(song.id, { read, generate });
     };
 
@@ -3075,7 +3199,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // é feito na próxima parada. O canal entra pelo addLiveVoice se a VS já estiver tocando.
     const generateMissingClick = async (songId: string, job: GridJob): Promise<'feita' | 'espera'> => {
         const song = playlistRef.current.find((s) => s.id === songId);
-        if (!song || !autoClickRef.current || !wantsGeneratedClick(song)) return 'feita';
+        if (!song || !mayGenerateClick() || !wantsGeneratedClick(song)) return 'feita';
         const before = sanitizeGrid(song.grid);
         const signature = (before?.meterSource === 'manual' ? before.signature : sanitizeTimeSignature(song.timeSignature)) ?? undefined;
         let plan = job.plan;
@@ -3108,10 +3232,13 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         if (!made) return 'feita';
         const blob = await renderAutoClick(plan, song.duration, loadClickSelection());
         // O usuário pôs um click (ou ele ganhou grade) enquanto o plano e o WAV saíam: o dele vence.
+        // E a saída ou o palco podem ter mudado nesse meio tempo: sem rota própria, nada entra.
         const latest = playlistRef.current.find((s) => s.id === songId);
-        if (!latest || !wantsGeneratedClick(latest)) return 'feita';
+        if (!latest || !wantsGeneratedClick(latest) || !mayGenerateClick()) return 'feita';
         const added = await appendChannelToSong(songId, new File([blob], `${GENERATED_CLICK_NAME}.wav`, { type: 'audio/wav' }));
         if (!added) return 'feita';
+        // A saída virou "Tudo junto" durante a leitura do WAV: ele entra mudo.
+        muteGeneratedRef.current();
         patchSong(songId, (s) => ({
             ...s, grid: sanitizeGrid(keepManualMeter(made.grid, sanitizeGrid(s.grid))) ?? undefined, downbeatAssumed: made.oneAssumed ? true : undefined,
         }));
@@ -3515,6 +3642,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         }
 
         song.channels = song.channels.filter(c => c.id !== channelId);
+        // Click apagado pelo usuário (o dele ou o gerado): o motor não gera outro no lugar, nem na
+        // sessão seguinte, mesmo que ele nunca tenha dado grade (Ruling X1-critical).
+        if (ch && resolveChannelRole(ch) === 'click' && !isEndlessLoop(ch)) song.clickRemoved = true;
         newPlaylist[activeSongIndex] = song;
         updatePlaylistAndSave(newPlaylist);
 
@@ -3821,7 +3951,11 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             // ZIP de antes desta versão (sem knobPans): os pans ±1 são do pan automático antigo
             // e entram no centro, como no reset da conta (Ruling T25-reset-sempre).
             const fromLegacyZip = data.knobPans !== true;
-            const importedMeta: SavedSong[] = (data.songs as SavedSong[]).map(migrateManifestSong).map((s) => (fromLegacyZip ? withLegacyPansReset(s) : s));
+            // ZIP antigo: a mesma volta dos pans da restauração (Ruling I1-rota), sem mexer na saída
+            // do aparelho; num aparelho em "Tudo junto" sem o pan automático os ±1 do ZIP ficam.
+            const manifestSongs = (data.songs as SavedSong[]).map(migrateManifestSong);
+            const device: LegacyPanDevice = { outputs: outputsRef.current, autoPan: autoPanRef.current, legacyPanReset: legacyPanResetRef.current };
+            const importedMeta: SavedSong[] = fromLegacyZip ? fixLegacyPans(manifestSongs, device, { moveOutputs: false }).songs : manifestSongs;
 
             // Limpa o repertório anterior (Map legado + chaves por-stem órfãs)
             // antes de importar o novo, pra não deixar stems velhos no disco.

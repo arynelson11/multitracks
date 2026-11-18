@@ -5,7 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type MockIn
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { makeClickShims } from '../test/clickShims'
 import { mixToMono, parseWav } from '../test/clickProbe'
-import { createFakeAudioContext, FakeAudioBuffer, nodesOf, type FakeAudioContext } from '../test/fakeAudio'
+import { asFake, createFakeAudioContext, FakeAudioBuffer, nodesOf, valueAt, type FakeAudioContext, type FakeAudioContextOptions } from '../test/fakeAudio'
 import type { AutoClickOkPlan, AutoClickPlan } from '../lib/autoClick'
 import type { ClickLibrarySelection } from '../lib/clickLibrary'
 import type { SongGridDetection } from '../lib/beatGrid'
@@ -59,6 +59,8 @@ const mem = vi.hoisted(() => ({
   renderDecoded: false,
   renderFinished: false,
   ctx: null as unknown,
+  // Opções do contexto falso do motor (ex.: aparelho de 1 canal).
+  ctxOpts: {} as FakeAudioContextOptions,
 }))
 
 class FakeGridWorker {
@@ -231,6 +233,7 @@ beforeEach(() => {
   mem.workers.length = 0
   mem.requests.length = 0
   mem.ctx = null
+  mem.ctxOpts = {}
   mem.realRender = false
   mem.clickCtx = null
   mem.clickBlob = null
@@ -256,7 +259,7 @@ beforeEach(() => {
   vi.stubGlobal('AudioContext', function (opts?: { sampleRate?: number }) {
     // O gerador do click cria o contexto dele a 44,1 kHz só pra ler a amostra.
     if (opts?.sampleRate === 44100 && mem.clickCtx) return new mem.clickCtx(opts)
-    const ctx = createFakeAudioContext({ decode })
+    const ctx = createFakeAudioContext({ ...mem.ctxOpts, decode })
     mem.ctx = ctx
     return ctx
   })
@@ -525,7 +528,7 @@ describe('grade da música lida na faixa de click', () => {
 
 describe('click que falta (planos pagos)', () => {
   it('sem click, com autoClick e plano ok: gera "Click gerado" e a grade é a do click gerado', async () => {
-    mem.opts = { autoClick: true }
+    mem.opts = { autoClick: true, stageMode: 'novo' }
     mem.plan = okPlan()
     const hook = await openApp()
     await load(hook, [['DRUMS.wav', 'bateria'], ['BASS.wav', 'bateria']], { bpm: 120, timeSignature: '4/4' })
@@ -556,7 +559,7 @@ describe('click que falta (planos pagos)', () => {
   })
 
   it('o "Click gerado" que o usuário apagou não volta ao reabrir, nem depois de "Ler o click de novo"', async () => {
-    mem.opts = { autoClick: true }
+    mem.opts = { autoClick: true, stageMode: 'novo' }
     mem.plan = okPlan()
     const first = await openApp()
     await load(first, [['DRUMS.wav', 'bateria'], ['BASS.wav', 'bateria']], { bpm: 120, timeSignature: '4/4' })
@@ -581,7 +584,7 @@ describe('click que falta (planos pagos)', () => {
   })
 
   it('click gerado com o 1 incerto grava o 1 assumido junto da grade: o aviso fica com o compasso escolhido e ao reabrir', async () => {
-    mem.opts = { autoClick: true }
+    mem.opts = { autoClick: true, stageMode: 'novo' }
     // Todo bumbo-lidera é dúvida do 1 (Ruling M3-M7): gera e marca o 1 como assumido.
     mem.plan = okPlan({ downbeatFrom: 'bumbo-lidera', downbeatMargin: 5 })
     const first = await openApp()
@@ -606,7 +609,7 @@ describe('click que falta (planos pagos)', () => {
   })
 
   it('sem click, com autoClick e confiança baixa: não gera nada', async () => {
-    mem.opts = { autoClick: true }
+    mem.opts = { autoClick: true, stageMode: 'novo' }
     mem.plan = { ok: false, reason: 'confianca-baixa', label: 'Bateria' }
     const hook = await openApp()
     await load(hook, [['DRUMS.wav', 'bateria'], ['BASS.wav', 'bateria']], { bpm: 120 })
@@ -619,7 +622,7 @@ describe('click que falta (planos pagos)', () => {
   })
 
   it('pode estar no contratempo: não gera; 1 incerto (bumbo-lidera): gera e avisa COMPASSO ASSUMIDO', async () => {
-    mem.opts = { autoClick: true }
+    mem.opts = { autoClick: true, stageMode: 'novo' }
     mem.plan = okPlan({ offbeatRisk: true })
     const hook = await openApp()
     await load(hook, [['DRUMS.wav', 'bateria']], { bpm: 120, timeSignature: '4/4' })
@@ -638,7 +641,7 @@ describe('click que falta (planos pagos)', () => {
   })
 
   it('música salva sem click gera só quando fica ativa parada, nunca tocando', async () => {
-    mem.opts = { autoClick: true }
+    mem.opts = { autoClick: true, stageMode: 'novo' }
     mem.plan = okPlan()
     seedSongs([savedNoClick('s1'), savedNoClick('s2')])
     const hook = await openApp()
@@ -663,6 +666,149 @@ describe('click que falta (planos pagos)', () => {
     await waitFor(() => expect(hook.result.current.playlist[1].channels.some((c) => c.name === 'Click gerado')).toBe(true), { timeout: 5000 })
     await settled(hook)
     expect(mem.planCalls.map((c) => c.ids)).toEqual([['s1-d', 's1-b'], ['s2-d', 's2-b']])
+  })
+})
+
+describe('click gerado nunca no PA (Ruling X1-critical)', () => {
+  const SPLIT = { mode: 'split2', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } }
+  const STEREO = { ...SPLIT, mode: 'stereo' }
+  const geradoOf = (hook: Hook, i = 0) => hook.result.current.playlist[i].channels.find((c) => c.name === 'Click gerado')
+  const savedGerado = (i = 0) => saved()[i].channels.find((c) => c.name === 'Click gerado')
+  // Fader -> corte do papel (o único lugar em que ele liga), pra conferir o fundo do corte.
+  const cutOf = (fader: unknown) => {
+    const out = asFake(fader as AudioNode).connections
+    expect(out).toHaveLength(1)
+    return out[0].to as unknown as { gain: AudioParam }
+  }
+
+  it('palco antigo: o motor não gera o click sozinho, nem ao carregar nem ao ficar ativa', async () => {
+    mem.opts = { autoClick: true, stageMode: 'antigo' }
+    mem.plan = okPlan()
+    seedSongs([savedNoClick('s1')])
+    const hook = await openApp()
+    await wait(150)
+    await load(hook, [['DRUMS.wav', 'bateria'], ['BASS.wav', 'bateria']], { name: 'Nova', bpm: 120, timeSignature: '4/4' })
+    act(() => { hook.result.current.jumpToSong(1) })
+    await wait(150)
+    expect(mem.planCalls).toHaveLength(0)
+    expect(mem.renderCalls).toHaveLength(0)
+    expect(hook.result.current.playlist.flatMap((s) => s.channels).map((c) => c.name)).not.toContain('Click gerado')
+    // Sem stageMode (o padrão do hook) é o palco antigo também.
+    cleanup()
+    mem.opts = { autoClick: true }
+    const plain = await openApp()
+    await load(plain, [['DRUMS.wav', 'bateria']], { name: 'Outra', bpm: 120 })
+    await wait(150)
+    expect(mem.planCalls).toHaveLength(0)
+  })
+
+  it.each([
+    ['Tudo junto', STEREO, false, 2],
+    ['Tudo junto com o pan automático', STEREO, true, 2],
+    ['saída de 1 canal (Click e Guia separados escolhido)', SPLIT, false, 1],
+  ] as const)('palco novo em %s: não gera (o click iria pro PA)', async (_name, outputs, autoPan, channels) => {
+    mem.opts = { autoClick: true, stageMode: 'novo' }
+    mem.plan = okPlan()
+    mem.settings = { ...mem.settings, outputs, autoPan }
+    mem.ctxOpts = { maxChannelCount: channels }
+    const hook = await openApp()
+    await load(hook, [['DRUMS.wav', 'bateria'], ['BASS.wav', 'bateria']], { bpm: 120, timeSignature: '4/4' })
+    await wait(150)
+    expect(mem.planCalls).toHaveLength(0)
+    expect(geradoOf(hook)).toBeUndefined()
+    expect(hook.result.current.gridWarning).toBe('sem-click-lido')
+  })
+
+  it('a saída vira Tudo junto depois: o "Click gerado" fica mudo, gravado; o operador pode ligar de novo', async () => {
+    mem.opts = { autoClick: true, stageMode: 'novo' }
+    mem.plan = okPlan()
+    mem.settings = { ...mem.settings, outputs: SPLIT }
+    const hook = await openApp()
+    await load(hook, [['DRUMS.wav', 'bateria'], ['BASS.wav', 'bateria']], { bpm: 120, timeSignature: '4/4' })
+    await settled(hook)
+    expect(geradoOf(hook)!.muted).toBe(false)
+
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    await act(async () => { hook.rerender() })
+    expect(geradoOf(hook)!.muted).toBe(true)
+    const ctx = mem.ctx as FakeAudioContext
+    expect(valueAt(asFake(geradoOf(hook)!.gainNode).gain, ctx.currentTime + 1)).toBe(0)
+    await waitFor(() => expect(savedGerado()!.muted).toBe(true))
+    // O M é do operador: ligado de novo à mão, fica (a saída não mudou).
+    act(() => { hook.result.current.toggleMute(geradoOf(hook)!.id) })
+    expect(geradoOf(hook)!.muted).toBe(false)
+    await act(async () => { hook.rerender() })
+    expect(geradoOf(hook)!.muted).toBe(false)
+  })
+
+  it('tocando, a troca pra Tudo junto deixa o "Click gerado" mudo no fundo do corte, junto com a rota', async () => {
+    mem.opts = { autoClick: true, stageMode: 'novo' }
+    mem.plan = okPlan()
+    mem.settings = { ...mem.settings, outputs: SPLIT }
+    const hook = await openApp()
+    await load(hook, [['DRUMS.wav', 'bateria'], ['BASS.wav', 'bateria']], { bpm: 120, timeSignature: '4/4' })
+    await settled(hook)
+    const ctx = mem.ctx as FakeAudioContext
+    await act(async () => { await hook.result.current.play() })
+    ctx.currentTime = 1
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    await act(async () => { hook.rerender() })
+    // Ainda no Click até o fundo do corte.
+    expect(geradoOf(hook)!.muted).toBe(false)
+    const timer = setInterval(() => { ctx.currentTime += 0.001 }, 1)
+    try { await wait(80) } finally { clearInterval(timer) }
+    const g = geradoOf(hook)!
+    expect(g.muted).toBe(true)
+    const off = asFake(g.gainNode).gain.events.filter((e) => e.kind === 'set' && e.value === 0)
+    expect(off).toHaveLength(1)
+    // O ganho do click gerado vai a 0 com os barramentos no fundo do corte (nenhum instante com ele na VS e som).
+    const drums = hook.result.current.playlist[0].channels.find((c) => c.name === 'DRUMS')!
+    expect(valueAt(cutOf(drums.gainNode).gain, off[0].time)).toBe(0)
+    act(() => { hook.result.current.pause() })
+  })
+
+  it('abrir com o "Click gerado" de antes e a saída em Tudo junto: abre mudo e fica gravado; em separados fica como está', async () => {
+    const grid = { bpm: 120, firstDownbeat: 0.87, signature: '4/4' as const, countEvery: 1 as const, source: 'click' as const, meterSource: 'salvo' as const }
+    const withGenerated = (id: string): SavedSong => ({ ...savedNoClick(id), grid, channels: [...savedNoClick(id).channels, ch(`${id}-g`, 'Click gerado')] })
+    mem.opts = { autoClick: true, stageMode: 'antigo' }
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    seedSongs([withGenerated('s1'), withGenerated('s2')])
+    const hook = await openApp()
+    expect(geradoOf(hook, 0)!.muted).toBe(true)
+    expect(geradoOf(hook, 1)!.muted).toBe(true)
+    expect(geradoOf(hook, 0)!.gainNode.gain.value).toBe(0)
+    expect([savedGerado(0)!.muted, savedGerado(1)!.muted]).toEqual([true, true])
+    cleanup()
+
+    mem.settings = { ...mem.settings, outputs: SPLIT }
+    seedSongs([withGenerated('s3')])
+    const split = await openApp()
+    expect(geradoOf(split)!.muted).toBe(false)
+    expect(geradoOf(split)!.gainNode.gain.value).toBe(1)
+  })
+
+  it('click do usuário que nunca deu grade, apagado: o click gerado não aparece no lugar, nem ao reabrir', async () => {
+    mem.opts = { autoClick: true, stageMode: 'novo' }
+    mem.plan = okPlan()
+    const withClick: SavedSong = { ...savedNoClick('s1'), channels: [...savedNoClick('s1').channels, ch('s1-c', 'CLICK')] }
+    seedSongs([withClick], (id) => (id === 's1-c' ? 'tom' : 'bateria'))
+    const first = await openApp()
+    await settled(first)
+    // O tom contínuo não dá grade: sem grade de click salva.
+    expect(saved()[0].grid).toBeUndefined()
+    await act(async () => { await first.result.current.removeChannel('s1-c') })
+    await waitFor(() => expect(saved()[0].channels.map((c) => c.name)).toEqual(['DRUMS', 'BASS']))
+    expect(saved()[0].clickRemoved).toBe(true)
+    cleanup()
+
+    mem.planCalls.length = 0
+    mem.renderCalls.length = 0
+    const hook = await openApp()
+    await wait(200)
+    expect(mem.planCalls).toHaveLength(0)
+    expect(mem.renderCalls).toHaveLength(0)
+    expect(hook.result.current.playlist[0].channels.map((c) => c.name)).toEqual(['DRUMS', 'BASS'])
+    expect(hook.result.current.playlist[0].clickRemoved).toBe(true)
   })
 })
 
@@ -760,7 +906,7 @@ describe('Worker da grade (Ruling T27-worker)', () => {
   })
 
   it('click que falta: só as faixas do tempo vão pro Worker, e o plano que volta com a VS tocando só vira click na parada', async () => {
-    mem.opts = { autoClick: true }
+    mem.opts = { autoClick: true, stageMode: 'novo' }
     mem.plan = okPlan()
     let release!: () => void
     mem.workerGate = new Promise<void>((resolve) => { release = resolve })
@@ -799,7 +945,7 @@ describe('montagem do click gerado (Ruling T27-gerador)', () => {
   const startAt = (now: number) => (Math.floor(now / (128 / SR) + 1e-6) + 2) * (128 / SR)
 
   it('play pedido no meio da montagem do WAV começa na hora, e o click entra depois, tocando', async () => {
-    mem.opts = { autoClick: true }
+    mem.opts = { autoClick: true, stageMode: 'novo' }
     mem.plan = okPlan()
     mem.realRender = true
     // Gerador de verdade, com a amostra Percussive (semínima) de public/ e os calços do teste da M6.

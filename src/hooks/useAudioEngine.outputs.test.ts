@@ -278,6 +278,7 @@ describe('barramento por papel', () => {
 
 describe('pan efetivo', () => {
   it('em separados o pan efetivo é o do papel, nunca o do knob', async () => {
+    localStorage.setItem('mt_legacy_pans_reset:u1', '1') // conta já passou pela volta dos ±1 antigos
     seed(song('s1', { click: 0.6, guide: 0.3, bass: -1, keys: 0.2 }))
     const hook = await openApp()
     expect([panOf(hook, 's1-click'), panOf(hook, 's1-guide'), panOf(hook, 's1-bass'), panOf(hook, 's1-keys')]).toEqual([-1, -1, 1, 1])
@@ -340,18 +341,70 @@ describe('pan efetivo', () => {
     expect(savedPans('s3')[0]).toEqual([-1, '1/2'])
   })
 
-  it('aparelho que já estava sem pan automático: a conta também zera os ±1 antigos uma vez', async () => {
-    // Ruling T25-reset-sempre: não depende do legacyPanReset nem do pan automático de agora.
+  it('pan automático desligado e Click/Guia separados à mão (Sonda A): vai pra Click e Guia separados do mesmo lado, nada zerado, nada no PA', async () => {
+    // Ruling I1-rota: o aparelho em "Tudo junto" sem o pan automático (veio dele desligado). Os ±1 são do operador.
     mem.settings = { ...mem.settings, autoPan: false, legacyPanReset: false, outputs: STEREO }
-    seed(song('s1', { click: -1, bass: 1, keys: 0.5 }))
+    seed(song('s1', { click: -1, guide: -1, bass: 1, keys: 1 }), song('s2', { click: -1, bass: 1, keys: 0.5 }))
     const hook = await openApp()
-    expect(hook.result.current.channels.map((c) => c.pan)).toEqual([0, 0, 0, 0.5])
-    expect(savedPans('s1').map(([p]) => p)).toEqual([0, 0, 0, 0.5])
-    // Depois do reset, o knob que o operador puser em ±1 fica.
-    await act(async () => { hook.result.current.updatePan('s1-bass', 1) })
+    // A saída vai pra separados com o ouvido na saída 1 (o lado do -1), gravada pelas Configurações.
+    expect(mem.updates).toEqual([['outputs', { ...STEREO, mode: 'split2', earOnSecond: false }]])
+    expect(hook.result.current.outputPlan.mode).toBe('split2')
+    // Nada zerado (o pan automático não gravou nada) e o papel dos canais fica.
+    expect(hook.result.current.channels.map((c) => c.pan)).toEqual([-1, -1, 1, 1])
+    expect(savedPans('s1').map(([p]) => p)).toEqual([-1, -1, 1, 1])
+    expect(savedPans('s2').map(([p]) => p)).toEqual([-1, 0, 1, 0.5])
+    expect(hook.result.current.channels.map((c) => c.role)).toEqual([undefined, undefined, undefined, undefined])
+    // Click e Guia só no ouvido, Baixo e Teclado só na VS.
+    const sig = await playAndMeasure(hook, IDS)
+    for (const k of [0, 1]) { expect(part(sig, 0, k)).toBeGreaterThan(0.5); expect(part(sig, 1, k)).toBeLessThan(1e-6) }
+    for (const k of [2, 3]) { expect(part(sig, 1, k)).toBeGreaterThan(0.5); expect(part(sig, 0, k)).toBeLessThan(1e-6) }
+    act(() => { hook.result.current.pause() })
+    expect(localStorage.getItem('mt_legacy_pans_reset:u1')).toBe('1')
+    // Uma vez só: o knob que o operador puser em ±1 depois fica, e a saída não muda de novo.
+    await act(async () => { hook.result.current.updatePan('s1-bass', -1) })
     cleanup()
+    mem.updates.length = 0
     const again = await openApp()
-    expect(again.result.current.channels.find((c) => c.id === 's1-bass')!.pan).toBe(1)
+    expect(again.result.current.channels.find((c) => c.id === 's1-bass')!.pan).toBe(-1)
+    expect(mem.updates).toEqual([])
+  })
+
+  it('pan automático desligado com Click e Guia à direita: separados com o ouvido na saída 2; Normal no lado do ouvido vira Guia', async () => {
+    mem.settings = { ...mem.settings, autoPan: false, legacyPanReset: false, outputs: STEREO }
+    seed(song('s1', { click: 1, guide: 1, bass: -1, keys: 1 }))
+    const hook = await openApp()
+    expect(mem.updates).toEqual([['outputs', { ...STEREO, mode: 'split2', earOnSecond: true }]])
+    // O Teclado estava no ouvido (+1): em separados o knob não vale, então ele vira Guia manual.
+    const byId = (id: string) => hook.result.current.channels.find((c) => c.id === id)!
+    expect(['s1-click', 's1-guide', 's1-bass', 's1-keys'].map((id) => [byId(id).pan, byId(id).role])).toEqual([[1, undefined], [1, undefined], [-1, undefined], [1, 'guide']])
+    expect((mem.db.get(metaKey()) as SavedSong[])[0].channels.find((c) => c.id === 's1-keys')!.role).toBe('guide')
+    expect([panOf(hook, 's1-click'), panOf(hook, 's1-guide'), panOf(hook, 's1-bass'), panOf(hook, 's1-keys')]).toEqual([1, 1, -1, 1])
+  })
+
+  it('pan automático desligado sem Click nem Guia em ±1: continua em Tudo junto, nada muda', async () => {
+    mem.settings = { ...mem.settings, autoPan: false, legacyPanReset: false, outputs: STEREO }
+    seed(song('s1', { click: 0, guide: 0.2, bass: -1, keys: 1 }))
+    const hook = await openApp()
+    expect(mem.updates).toEqual([])
+    expect(hook.result.current.channels.map((c) => [c.pan, c.role])).toEqual([[0, undefined], [0.2, undefined], [-1, undefined], [1, undefined]])
+    expect([panOf(hook, 's1-bass'), panOf(hook, 's1-keys')]).toEqual([-1, 1])
+  })
+
+  it('pan automático ligado e um Normal girado à mão pro ouvido: ele vira Guia e não perde o lado; só o que o pan automático gravou zera', async () => {
+    mem.settings = { ...mem.settings, legacyPanReset: true }
+    const s1: SavedSong = { ...song('s1', { click: -1, guide: 1, bass: 1 }), channels: [...song('s1', { click: -1, guide: 1, bass: 1 }).channels, ch('s1-cmd', 'Voz de comando', -1)] }
+    seed(s1)
+    const hook = await openApp()
+    expect(mem.updates).toEqual([])
+    const byId = (id: string) => hook.result.current.channels.find((c) => c.id === id)!
+    // Click em -1 e Baixo em +1 eram do pan automático: voltam a 0. A Guia em +1 era do operador: fica.
+    expect([byId('s1-click').pan, byId('s1-guide').pan, byId('s1-bass').pan]).toEqual([0, 1, 0])
+    expect(byId('s1-cmd')).toMatchObject({ pan: -1, role: 'guide' })
+    // Em separados: Click, Guia e a voz de comando no ouvido (saída 1).
+    expect([panOf(hook, 's1-click'), panOf(hook, 's1-guide'), panOf(hook, 's1-cmd'), panOf(hook, 's1-bass')]).toEqual([-1, -1, -1, 1])
+    const saved = (mem.db.get(metaKey()) as SavedSong[])[0].channels
+    expect(['s1-click', 's1-guide', 's1-bass', 's1-keys', 's1-cmd'].map((id) => { const c = saved.find((x) => x.id === id)!; return [c.pan, c.role] }))
+      .toEqual([[0, undefined], [1, undefined], [0, undefined], [0, undefined], [-1, 'guide']])
   })
 
   it('ZIP da v1.4.15 com ±1 entra com pan 0; ZIP exportado agora guarda o knob', async () => {
@@ -378,6 +431,16 @@ describe('pan efetivo', () => {
     const hook = await openApp()
     await importZip(hook, await old.generateAsync({ type: 'blob' }))
     expect(savedPans('z1')).toEqual([[0, '1/2'], [0, '1/2'], [0, '1/2'], [0.3, '1/2']])
+
+    // O mesmo ZIP antigo num aparelho em "Tudo junto" sem o pan automático: os ±1 ficam (o click
+    // continua num lado, nunca no centro, que é o PA) e a saída do aparelho não muda (Ruling I1-rota).
+    cleanup()
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    const tudoJunto = await openApp()
+    await importZip(tudoJunto, await old.generateAsync({ type: 'blob' }))
+    expect(savedPans('z1')).toEqual([[-1, '1/2'], [0, '1/2'], [1, '1/2'], [0.3, '1/2']])
+    expect(mem.updates).toEqual([])
+    mem.settings = { ...mem.settings, outputs: SPLIT }
 
     // Exportado por esta versão: o ±1 do knob volta igual.
     cleanup()
@@ -415,7 +478,7 @@ describe('pan efetivo', () => {
     expect(localStorage.getItem('mt_legacy_pans_reset:u2')).toBe('1')
     cleanup()
     // Sem conta (anônimo) é outra marca.
-    seedFor('anon', song('c1', { click: 1 }))
+    seedFor('anon', song('c1', { click: -1 }))
     mem.db.set('mt_meta_playlist', mem.db.get(metaKey('anon')))
     for (const id of ['c1-click', 'c1-guide', 'c1-bass', 'c1-keys']) mem.db.set(`mt_files:ch:${id}`, mem.db.get(`mt_files_anon:ch:${id}`))
     const hook = renderHook(() => useAudioEngine())

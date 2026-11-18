@@ -56,6 +56,9 @@ export interface SavedSong {
   // reabrir, também com o compasso escolhido no EDITAR. Só `true` e só com grade de click;
   // ausente (registros de antes) quer dizer sem aviso. Não vai pro ZIP, como a grade.
   downbeatAssumed?: true
+  // O usuário apagou um canal de Click (Ruling X1-critical): o click gerado não volta no lugar.
+  // Só `true`; ausente nos registros de antes. Não vai pro ZIP, como a grade.
+  clickRemoved?: true
   schemaVersion?: number
 }
 
@@ -101,6 +104,7 @@ export function toSavedSong(song: SongLike): SavedSong {
     grid: sanitizeGrid(song.grid) ?? undefined,
     timeSignature: sanitizeTimeSignature(song.timeSignature) ?? undefined,
     downbeatAssumed: oneAssumedWith(song.grid, song.downbeatAssumed),
+    clickRemoved: song.clickRemoved === true ? true : undefined,
     schemaVersion: REPERTOIRE_SCHEMA_VERSION,
   }
 }
