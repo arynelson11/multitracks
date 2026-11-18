@@ -32,6 +32,8 @@ const h = vi.hoisted(() => {
     signOut: vi.fn(async () => {}),
     deleteAccount: vi.fn(async () => {}),
     liveProps: null as null | { onToggleDevice: (ip: string) => void },
+    // Chave do palco que o useSettings falso devolve (CONFIG > Geral > Palco).
+    stage: 'antigo' as 'novo' | 'antigo',
   }
 })
 
@@ -80,11 +82,11 @@ vi.mock('./hooks/useAudioEngine', async () => {
     },
   }
 })
-// O App da v1.4.19 lê a chave do palco (CONFIG > Geral > Palco) no useSettings: aqui no palco
-// antigo, o padrão de quem nunca mexeu na chave.
+// O App lê a chave do palco (CONFIG > Geral > Palco) no useSettings: o palco antigo nos casos de
+// sempre e o palco novo (padrão da v1.4.20) nos casos dele, com a tela de 1024x768 do jsdom.
 vi.mock('./contexts/SettingsContext', async (orig) => ({
   ...(await orig<typeof import('./contexts/SettingsContext')>()),
-  useSettings: () => ({ settings: { stageVersion: 'antigo' } }),
+  useSettings: () => ({ settings: { stageVersion: h.stage } }),
 }))
 vi.mock('./hooks/usePadSynth', async () => {
   const { useSyncExternalStore } = await import('react')
@@ -190,6 +192,7 @@ describe('App com a conta bloqueada', () => {
     })
     for (const m of [h.play, h.pause, h.cancelCountIn, h.stopPad, h.stopSample, h.signOut, h.deleteAccount]) m.mockClear()
     h.liveProps = null
+    h.stage = 'antigo'
     remote = null
   })
   afterEach(() => {
@@ -251,6 +254,36 @@ describe('App com a conta bloqueada', () => {
     expect(blockedShown()).toBe(false)
     pressSpace()
     expect(h.play).toHaveBeenCalledTimes(1)
+  })
+
+  it('palco novo (chave Novo, tela larga): conta bloqueada vê a tela de bloqueio no lugar do palco, e o Espaço não toca', () => {
+    // O palco novo desenha a onda num canvas (o jsdom não tem) e mede com ResizeObserver (posto acima).
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => null)
+    h.stage = 'novo'
+    h.set({ blockedAt: BLOCKED_AT })
+    render(createElement(App))
+    expect(blockedShown()).toBe(true)
+    expect(document.querySelector('[data-stage-shell]')).toBeNull()
+    pressSpace()
+    expect(h.play).not.toHaveBeenCalled()
+    // Desbloqueada: o palco novo aparece e o Espaço (atalho do palco novo) toca.
+    act(() => h.set({ blockedAt: null }))
+    expect(blockedShown()).toBe(false)
+    expect(document.querySelector('[data-stage-shell]')).not.toBeNull()
+    pressSpace()
+    expect(h.play).toHaveBeenCalledTimes(1)
+  })
+
+  it('palco novo: o bloqueio chega com a música tocando e para tudo, como no palco antigo', () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => null)
+    h.stage = 'novo'
+    render(createElement(App))
+    expect(document.querySelector('[data-stage-shell]')).not.toBeNull()
+    act(() => h.set({ isPlaying: true, activeNote: 'C' }))
+    act(() => h.set({ blockedAt: BLOCKED_AT }))
+    expect(blockedShown()).toBe(true)
+    expect(h.pause).toHaveBeenCalledTimes(1)
+    expect(h.stopPad).toHaveBeenCalledTimes(1)
   })
 
   it('admin com blockedAt preenchido segue no player', () => {

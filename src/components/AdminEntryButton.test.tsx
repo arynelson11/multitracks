@@ -16,6 +16,8 @@ const h = vi.hoisted(() => {
     subscribe: (l: () => void) => { listeners.add(l); return () => { listeners.delete(l) } },
     play: vi.fn(),
     pause: vi.fn(),
+    // Chave do palco que o useSettings falso devolve (CONFIG > Geral > Palco).
+    stage: 'antigo' as 'novo' | 'antigo',
   }
 })
 
@@ -50,11 +52,11 @@ vi.mock('../hooks/useAudioEngine', () => {
   }
   return { useAudioEngine: () => engine }
 })
-// O App da v1.4.19 lê a chave do palco (CONFIG > Geral > Palco) no useSettings: aqui no palco
-// antigo, o padrão de quem nunca mexeu na chave.
+// O App lê a chave do palco (CONFIG > Geral > Palco) no useSettings: o palco antigo nos casos de
+// sempre e o palco novo (padrão da v1.4.20) nos casos dele, com a tela de 1024x768 do jsdom.
 vi.mock('../contexts/SettingsContext', async (orig) => ({
   ...(await orig<typeof import('../contexts/SettingsContext')>()),
-  useSettings: () => ({ settings: { stageVersion: 'antigo' } }),
+  useSettings: () => ({ settings: { stageVersion: h.stage } }),
 }))
 vi.mock('../hooks/usePadSynth', () => {
   const pads = {
@@ -179,8 +181,9 @@ describe('App com o admin aberto', () => {
     h.setAuth({ user: ADMIN, loading: false, isAdmin: true, userPlan: 'pro_mensal' })
     h.play.mockReset()
     h.pause.mockReset()
+    h.stage = 'antigo'
   })
-  afterEach(() => { vi.unstubAllGlobals() })
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
   const pressSpace = () => fireEvent.keyDown(window, { code: 'Space' })
   const openAdmin = async () => {
@@ -199,6 +202,32 @@ describe('App com o admin aberto', () => {
     expect(panelShown()).toBe(false)
     pressSpace()
     expect(h.play).toHaveBeenCalledTimes(1)
+  })
+
+  it('palco novo: o ADMIN fica no EDITAR, só pra admin, e abre o admin dentro do app', async () => {
+    // O palco novo desenha a onda num canvas (o jsdom não tem).
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => null)
+    h.stage = 'novo'
+    const { unmount } = render(<App />)
+    expect(document.querySelector('[data-stage-shell]')).not.toBeNull()
+    // Fora do EDITAR não tem ADMIN; no EDITAR, as ferramentas do admin.
+    expect(screen.queryByRole('button', { name: 'ADMIN' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'ADMIN' }))
+    await screen.findByRole('button', { name: 'Voltar ao app' })
+    // Com o admin aberto, o Espaço não toca a música por baixo; ao voltar, o palco novo volta.
+    pressSpace()
+    expect(h.play).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar ao app' }))
+    expect(document.querySelector('[data-stage-shell]')).not.toBeNull()
+    unmount()
+
+    // Quem não é admin não vê o ADMIN nem no EDITAR.
+    act(() => h.setAuth({ user: MUSICO, isAdmin: false }))
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
+    expect(screen.queryByRole('button', { name: 'ADMIN' })).toBeNull()
+    expect(screen.getByRole('group', { name: 'Marcar seção' })).toBeTruthy()
   })
 
   it('com o admin aberto a sessão cai: quem entra depois tem o Espaço tocando', async () => {
