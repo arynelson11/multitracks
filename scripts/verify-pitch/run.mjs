@@ -55,8 +55,9 @@ export const SCENARIOS = {
   CANCEL: { query: 'seq=CANCEL&song=palco&n=8&order=A', timeout: 90 },
   // Saídas: "Click e Guia separados" (normal e com o lado trocado) e "Tudo junto"; nível igual ao da v1.4.15.
   SPLIT: { parts: [{ id: 'separados', query: 'seq=SPLIT&song=limpo&n=8&order=A&saida=split2' }, { id: 'trocado', query: 'seq=SPLIT&song=limpo&n=8&order=A&saida=split2t' }, { id: 'junto', query: 'seq=SPLIT&song=limpo&n=8&order=A&saida=stereo' }], timeout: 90 },
-  // Pré-contagem de 4 a 120 BPM no play do 0:00.
-  PRECOUNT: { query: 'seq=PRECOUNT&song=limpo&n=8&order=A', timeout: 90 },
+  // Pré-contagem de 4 a 120 BPM no play do 0:00; na parte `trava`, a thread principal trava 15 ms
+  // no fim da contagem marcada (o relógio passa do 1º bipe antes de o play conferir o relógio).
+  PRECOUNT: { parts: [{ id: 'livre', query: 'seq=PRECOUNT&song=limpo&n=8&order=A' }, { id: 'trava', query: 'seq=PRECOUNT&song=limpo&n=8&order=A&trava=1' }], timeout: 90 },
 };
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json' };

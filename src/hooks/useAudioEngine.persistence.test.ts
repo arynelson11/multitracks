@@ -29,6 +29,8 @@ const PITCH_LATENCY = 0.12
 // (START_LEAD_QUANTA); com o relógio parado em 0 no play, isso dá 2 blocos.
 const SAMPLE_RATE = 48000
 const START_LEAD = (2 * 128) / SAMPLE_RATE
+// Com pré-contagem o 1º bipe sai com a folga de reserva (15 blocos, 40 ms; Ruling T30-reagenda).
+const COUNT_LEAD = (15 * 128) / SAMPLE_RATE
 
 const mem = vi.hoisted(() => ({
   db: new Map<string, unknown>(),
@@ -519,14 +521,15 @@ describe('setChannelMeta', () => {
       await act(async () => { await result.current.playWithPrecount() })
       expect(result.current.isCountingIn).toBe(true)
       expect(result.current.isPlaying).toBe(true)
-      // 1 tempo a 72 BPM (o BPM da música): o bipe no instante comum, as vozes um pulso depois.
+      // 1 tempo a 72 BPM (o BPM da música): o bipe com a folga de reserva, as vozes um pulso depois
+      // (na amostra mais perto: Ruling T30-grade).
       const pulse = 60 / 72
       expect(mem.beeps).toHaveLength(1)
       // O bipe entra pelo Click (com o tom -2, pelo atraso igual à latência do worklet).
       expect(mem.beeps[0].connectedTo).toMatchObject({ delayTime: { value: PITCH_LATENCY } })
       expect((mem.beeps[0].connectedTo as FakeLink).connectedTo).toBe(channel(result, 'a').pannerNode)
       expect(mem.sources).toHaveLength(3)
-      for (const s of mem.sources) expect(s.when).toBeCloseTo(START_LEAD + pulse, 9)
+      for (const s of mem.sources) expect(s.when).toBeCloseTo(COUNT_LEAD + pulse, 4)
 
       // Na contagem o Click vira Normal: a contagem para na hora e recomeça do 1 depois da troca
       // de rota (aqui sem corte: com tudo parado não há o que cortar). Sem canal de click no meio

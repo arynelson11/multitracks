@@ -2083,24 +2083,37 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
                 specs.push({ channelId: ch.id, buffer: ch.buffer, entry: entryFor(ch, playPitch, compensation), loop: isEndlessLoop(ch) });
             }
             const voices = specs.map((spec) => buildVoice(ctx, spec, rate));
-            const t0 = nextRenderQuantum(ctx, leadQuanta);
+            // Com pré-contagem o 1º bipe sai com a folga de reserva (40 ms): com 2 blocos ele nascia
+            // atrasado quando o navegador calcula vários blocos de uma vez (medido no Chrome sob
+            // carga: o relógio da thread principal pulou 12,6 ms enquanto a contagem era marcada) e
+            // começava no meio do ataque. As faixas entram um tempo depois; ninguém ouve 35 ms a mais
+            // entre apertar o play e o 1º bipe (Ruling T30-reagenda).
+            const t0 = nextRenderQuantum(ctx, beats > 0 ? Math.max(leadQuanta, Math.ceil(RETRY_LEAD_S * ctx.sampleRate / 128)) : leadQuanta);
             // t0 já está na grade de blocos (logo, de amostras); com pré-contagem, o 5º tempo vai
             // pra amostra mais perto (Ruling T30-grade).
             const when = beats > 0 ? onSampleGrid(t0 + beats * pulse, ctx.sampleRate) : t0;
-            for (const v of voices) v.source.start(when, offset);
+            // Ruling T30-reagenda: a contagem é marcada logo depois de ler o relógio, antes do laço de
+            // start() das faixas (o trecho que pode demorar), pra o 1º bipe nunca nascer atrasado.
             const count = beats > 0
                 ? scheduleCount(ctx, countDestination(), Array.from({ length: beats }, (_, k) => ({ at: t0 + k * pulse, label: k + 1 })))
                 : null;
+            for (const v of voices) v.source.start(when, offset);
             return { t0, when, voices, count };
         };
 
         let scheduled = scheduleAll(START_LEAD_QUANTA);
-        // O relógio chegou no instante comum antes de o laço terminar: o motor
+        // O relógio chegou no instante das faixas antes de o laço terminar: o motor
         // pode ter calculado aquele bloco com parte das faixas ainda sem start(),
         // e essas começariam um bloco depois até o próximo reinício. Descarta e
         // agenda de novo com a folga de reserva. Raro: precisa de 2 blocos de
         // áudio calculados durante um laço de microssegundos.
-        if (ctx.currentTime >= scheduled.t0) {
+        // Ruling T30-reagenda: com pré-contagem as faixas começam um tempo inteiro depois do 1º
+        // bipe, então só o instante delas conta. Cancelar uma contagem que já começou deixava um
+        // tique de ~8 ms no ouvido (medido no Chrome sob carga, harness da T30); a contagem segue
+        // e as faixas, já marcadas relativas a ela, valem. Nenhuma automação nova (Ruling ÁUDIO:
+        // nada de rampa depois de um setTarget em curso, que é o que o cancelamento do bipe faz).
+        // Só uma trava maior que o tempo até a música (a contagem já tocou) refaz tudo junto.
+        if (ctx.currentTime >= scheduled.when) {
             for (const v of scheduled.voices) {
                 try { v.source.stop(); } catch { /* já parada */ }
                 v.source.disconnect();

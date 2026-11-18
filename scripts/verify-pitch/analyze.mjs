@@ -672,6 +672,8 @@ function stagePrecount(S) {
   const accents = beeps.map((b, i) => b.accent === (i === 0)).every(Boolean);
   add('pre-contagem', `4 bipes a 0,5 s um do outro (até ${PRECOUNT_STEP_MS} ms), 1319 Hz no 1`, beeps.length === 4 && steps.every((d) => Math.abs(d - msOf(BEAT_S)) <= PRECOUNT_STEP_MS) && accents,
     `${beeps.length} bipes; passos ${steps.map((d) => fmt(d, 2)).join(', ')} ms; ${beeps.map((b) => (b.accent ? '1319' : '988')).join(' ')} Hz`);
+  const stall = R.events.find((e) => e.type === 'oscStall');
+  if (stall) info('pre-contagem', 'trava forçada no fim da contagem marcada', `${stall.ms} ms; relógio ${fmt(stall.ctxBefore, 5)} -> ${fmt(stall.ctxAfter, 5)} (1º bipe em ${fmt(beeps[0]?.t ?? NaN, 5)})`);
   const precountEv = R.events.find((e) => e.type === 'precountTimes');
   if (precountEv && beeps.length) info('pre-contagem', 'bipes medidos x precountTimes do motor', beeps.map((b, i) => fmt(msOf(b.t - (precountEv.times[i] ?? NaN)), 2)).join(', ') + ' ms');
   const first = beeps.length ? onsetsAt(M, ear, FC, cfg.clickAttack, beeps[0].t + 0.05, beeps[0].t + 3)[0] : undefined;

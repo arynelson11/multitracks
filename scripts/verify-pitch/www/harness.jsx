@@ -50,6 +50,23 @@ BaseAudioContext.prototype.createBufferSource = function () {
   s.addEventListener('ended', () => { endedAt.set(s, this.currentTime); });
   return s;
 };
+// PRECOUNT com trava=1 (Ruling T30-reagenda): trava a thread principal 15 ms no último start() de
+// oscilador da pré-contagem (o fim da contagem marcada), como um aparelho ocupado naquela hora: o
+// relógio passa do 1º bipe antes de o play conferir o relógio.
+const protoOscStart = OscillatorNode.prototype.start;
+OscillatorNode.prototype.start = function (...a) {
+  const st = window.__oscStall;
+  if (st) {
+    if (st.skip > 0) st.skip--;
+    else {
+      window.__oscStall = null;
+      const c0 = this.context.currentTime, t0 = performance.now();
+      while (performance.now() - t0 < st.ms) { /* trava */ }
+      ev('oscStall', { ms: st.ms, ctxBefore: c0, ctxAfter: this.context.currentTime });
+    }
+  }
+  return protoOscStart.apply(this, a);
+};
 // Saídas gravadas antes de o SettingsProvider ler (perfil do Chrome novo a cada cenário). O mesmo
 // objeto serve pra v1.4.15 (só lê o autoPan) e pro motor de agora (lê as saídas; o autoPan só
 // vale em "Tudo junto").
@@ -491,6 +508,8 @@ async function main() {
     // Play do 0:00 com pré-contagem de 4 a 120 BPM.
     PRECOUNT: async () => {
       await precountOn();
+      // 4 bipes = 8 osciladores (triângulo e quadrada): trava no 8º.
+      if (q.get('trava')) window.__oscStall = { skip: 7, ms: 15 };
       ev('play', { precount: true });
       await E().play({ precount: true });
       await sleep(50);

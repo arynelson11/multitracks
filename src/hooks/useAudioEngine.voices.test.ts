@@ -20,6 +20,8 @@ const SR = 48000
 const QUANTUM = 128 / SR
 // Instante comum do play: 2 blocos de 128 amostras depois do relógio, na grade de blocos.
 const startAt = (now: number) => (Math.floor(now / QUANTUM + 1e-6) + 2) * QUANTUM
+// Com pré-contagem o 1º bipe sai com a folga de reserva (15 blocos, 40 ms; Ruling T30-reagenda).
+const countStartAt = (now: number) => (Math.floor(now / QUANTUM + 1e-6) + 15) * QUANTUM
 // Latência do worklet de tom no modo ao vivo, como o mock do pacote informa.
 const PITCH_LATENCY = 0.12
 
@@ -332,7 +334,7 @@ describe('pré-contagem no relógio do áudio', () => {
     ctxOf().currentTime = 1
     await act(async () => { await hook.result.current.playWithPrecount() })
 
-    const t0 = startAt(1)
+    const t0 = countStartAt(1)
     const times = [t0, t0 + 0.5, t0 + 1, t0 + 1.5]
     beepStarts().forEach((at, k) => expect(at).toBeCloseTo(times[k], 12))
     expect(beepStarts()).toHaveLength(4)
@@ -356,7 +358,7 @@ describe('pré-contagem no relógio do áudio', () => {
     seed(song({ bpm: 120 }))
     const hook = await openApp()
     await act(async () => { await hook.result.current.playWithPrecount() })
-    const t0 = startAt(0)
+    const t0 = countStartAt(0)
     // Entre o 2º e o 3º bipe, o 2º ainda soando.
     const now = t0 + 0.6
     ctxOf().currentTime = now
@@ -455,7 +457,7 @@ describe('pré-contagem no relógio do áudio', () => {
     await act(async () => { await hook.result.current.playWithPrecount() })
     ctxOf().currentTime = 0.3
     act(() => { hook.result.current.seekTo(6) })
-    const t0 = startAt(0.3)
+    const t0 = countStartAt(0.3)
     expect(beepStarts().slice(2)).toEqual([t0, t0 + 0.5])
     const next = live(sourcesOf(hook, 'bass'))
     expect(next).toHaveLength(1)
@@ -475,7 +477,7 @@ describe('cauda do bipe e da soltura dentro do corte das trocas', () => {
     const hook = await openApp()
     await act(async () => { await hook.result.current.playWithPrecount() })
     const ctx = ctxOf()
-    const t0 = startAt(0)
+    const t0 = countStartAt(0)
     // No meio da sustentação do 2º bipe (pico 0,68).
     const now = t0 + 0.5 + 0.03
     ctx.currentTime = now
@@ -575,7 +577,7 @@ describe('atraso de compensação de quem sai do ouvido', () => {
     seed(song({ bpm: 120, pitch: 2 }))
     const hook = await openApp()
     await act(async () => { await hook.result.current.playWithPrecount() })
-    const t0 = startAt(0)
+    const t0 = countStartAt(0)
     // O 2º bipe parou na fonte há 10 ms (t0 + 0,5 + 0,22) e ainda sai do atraso até L depois.
     ctxOf().currentTime = t0 + 0.5 + 0.22 + 0.01
     act(() => { hook.result.current.pause() })

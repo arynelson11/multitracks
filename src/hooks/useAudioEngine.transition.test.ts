@@ -23,6 +23,8 @@ const QUANTUM = 128 / SR
 const PITCH_LATENCY = 0.12
 // Instante comum do play: 2 blocos de 128 amostras depois do relógio, na grade de blocos.
 const startAt = (now: number) => (Math.floor(now / QUANTUM + 1e-6) + 2) * QUANTUM
+// Com pré-contagem o 1º bipe sai com a folga de reserva (15 blocos, 40 ms; Ruling T30-reagenda).
+const countStartAt = (now: number) => (Math.floor(now / QUANTUM + 1e-6) + 15) * QUANTUM
 // Música de 20 s a 120 BPM em 4/4 (pulso 0,5 s, compasso 2 s) com o 1 em 0:00 lido no click.
 const LEN_S = 20
 const GRID: SongGrid = { bpm: 120, firstDownbeat: 0, signature: '4/4', countEvery: 1, source: 'click', meterSource: 'acento' }
@@ -892,7 +894,7 @@ describe('grade de amostras e rede de segurança (T30)', () => {
     // Parado num ponto fora da grade de amostras (posição lida de um toque na onda).
     act(() => { hook.result.current.seekTo(1.23456789) })
     await act(async () => { await hook.result.current.play({ precount: true }) })
-    const t0 = startAt(0)
+    const t0 = countStartAt(0)
     const pulse = 60 / ODD_BPM.bpm
     expect(near(beepTimes())).toEqual(near([0, 1, 2, 3].map((k) => t0 + k * pulse)))
     const voices = sources()
@@ -909,4 +911,59 @@ describe('grade de amostras e rede de segurança (T30)', () => {
     expect(hook.result.current.heardPosition()).toBeCloseTo(voices[0].starts[0].offset + 1, 9)
   })
 
+  it('rede de segurança com pré-contagem: o relógio passa do 1º bipe no laço e a contagem segue, sem tique falso', async () => {
+    seed(song())
+    const hook = await openApp({ stageMode: 'novo' })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    // No 1º start() de fonte o relógio pula 50 ms: passou do instante do 1º bipe (40 ms).
+    const real = FakeAudioBufferSourceNode.prototype.start
+    let jumped = false
+    const spy = vi.spyOn(FakeAudioBufferSourceNode.prototype, 'start').mockImplementation(function (this: FakeAudioBufferSourceNode, ...a: Parameters<typeof real>) {
+      if (!jumped) { jumped = true; ctxOf().currentTime += 0.05 }
+      return real.apply(this, a)
+    })
+    try {
+      await act(async () => { await hook.result.current.play({ precount: true }) })
+    } finally {
+      spy.mockRestore()
+    }
+    const t0 = countStartAt(0)
+    // Uma contagem só, a primeira, sem nenhum bipe cortado antes do fim da receita.
+    expect(near(beepTimes())).toEqual(near([t0, t0 + 0.5, t0 + 1, t0 + 1.5]))
+    for (const tri of triangles()) expect(Math.min(...tri.stops)).toBeCloseTo(tri.starts[0].when + 0.22, 9)
+    // As vozes da 1ª leva valem (começam um compasso depois, longe do relógio): nada reagendado.
+    expect(sources()).toHaveLength(4)
+    for (const s of sources()) {
+      expect(s.stops).toHaveLength(0)
+      expect(s.starts[0].when).toBeCloseTo(t0 + 2, 9)
+    }
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('rede de segurança com pré-contagem: travou até depois do instante da música, aí reagenda tudo junto', async () => {
+    seed(song())
+    const hook = await openApp({ stageMode: 'novo' })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const real = FakeAudioBufferSourceNode.prototype.start
+    let jumped = false
+    const spy = vi.spyOn(FakeAudioBufferSourceNode.prototype, 'start').mockImplementation(function (this: FakeAudioBufferSourceNode, ...a: Parameters<typeof real>) {
+      // Trava de mais de 4 tempos (a contagem inteira já tocou): até a entrada da música passou.
+      if (!jumped) { jumped = true; ctxOf().currentTime += 2.1 }
+      return real.apply(this, a)
+    })
+    try {
+      await act(async () => { await hook.result.current.play({ precount: true }) })
+    } finally {
+      spy.mockRestore()
+    }
+    // A 1ª leva sai e a 2ª entra com a folga de reserva, contagem e música juntas.
+    expect(sources()).toHaveLength(8)
+    const second = sources().slice(4)
+    const t1 = beepTimes()[4]
+    expect(beepTimes()).toHaveLength(8)
+    for (const s of second) expect(s.starts[0].when).toBeCloseTo(t1 + 2, 9)
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
+  })
 })
