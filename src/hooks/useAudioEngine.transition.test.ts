@@ -23,6 +23,9 @@ const QUANTUM = 128 / SR
 const PITCH_LATENCY = 0.12
 // Instante comum do play: 2 blocos de 128 amostras depois do relógio, na grade de blocos.
 const startAt = (now: number) => (Math.floor(now / QUANTUM + 1e-6) + 2) * QUANTUM
+// Busca tocando (Ruling I4-busca): a voz velha desce a partir da folga do corte (10 ms) e as novas
+// começam no máximo 6,4 ms antes disso, na grade de blocos; nunca antes dos 2 blocos de sempre.
+const seekStartAt = (now: number, lead = 0.01) => Math.max(startAt(now), Math.ceil((now + lead - 0.0064) / QUANTUM - 1e-6) * QUANTUM)
 // Com pré-contagem o 1º bipe sai com a folga de reserva (15 blocos, 40 ms; Ruling T30-reagenda).
 const countStartAt = (now: number) => (Math.floor(now / QUANTUM + 1e-6) + 15) * QUANTUM
 // Música de 20 s a 120 BPM em 4/4 (pulso 0,5 s, compasso 2 s) com o 1 em 0:00 lido no click.
@@ -490,8 +493,11 @@ describe('pulo agendado no palco novo', () => {
     const now = t0 + 4.2
     ctxOf().currentTime = now
     act(() => { hook.result.current.seekTo(16) })
-    const t1 = startAt(now)
-    expect(valueAt(gain, t1)).toBeCloseTo(0.8, 9)
+    const t1 = seekStartAt(now)
+    // A voz velha segue em ganho 1 até a folga do corte: o principal desce pro FADE dali, em 5 ms (Ruling I2-proxima).
+    expect(valueAt(gain, t1)).toBe(1)
+    expect(valueAt(gain, now + 0.015)).toBeCloseTo((t1 + 4 - (now + 0.015)) / 5, 9)
+    expect(maxStep(gain, now, now + 0.03).step).toBeLessThanOrEqual(0.01)
     expect(valueAt(gain, t1 + 0.5)).toBeCloseTo(0.7, 9)
     armAt(t1 + 0.5, () => hook.result.current.armSection(0))
     // Segura no relógio mais a folga do corte (10 ms): a thread do áudio já calculou o de agora.
@@ -671,11 +677,15 @@ describe('FADE e volume principal', () => {
       // A rampa do FADE segue com o volume novo: 0,6 em 15 s, 0,3 em 17,5 s.
       expect(valueAt(gain, t0 + 17.5)).toBeCloseTo(0.3, 9)
 
-      // No meio da rampa (busca pra 16 s: 0,8 x 0,6 na entrada), de 0,6 até 1.
+      // No meio da rampa (busca pra 16 s: 0,8 x 0,6 na entrada), de 0,6 até 1. O principal desce
+      // pro FADE a partir da folga do corte, em 5 ms (a voz velha segue em ganho 1 até ali).
       ctxOf().currentTime = t0 + 1.3
       act(() => { hook.result.current.seekTo(16) })
-      const t1 = startAt(t0 + 1.3)
-      expect(valueAt(gain, t1)).toBeCloseTo(0.48, 9)
+      const t1 = seekStartAt(t0 + 1.3)
+      const settled = t0 + 1.3 + 0.015
+      expect(valueAt(gain, t1)).toBeCloseTo(0.6, 9)
+      expect(valueAt(gain, settled)).toBeCloseTo((0.6 * (t1 + 4 - settled)) / 5, 9)
+      expect(maxStep(gain, t0 + 1.3, settled + 0.01).step).toBeLessThanOrEqual(0.01)
       drag(hook, t1 + 0.5, [0.68, 0.76, 0.84, 0.92, 1])
       expect(maxStep(gain, t1 + 0.5, t1 + 0.7).step).toBeLessThanOrEqual(0.01)
       // Depois, a mesma curva com o volume 1: 0,6 em 17 s, 0 no fim.
@@ -720,6 +730,106 @@ describe('FADE e volume principal', () => {
   })
 })
 
+describe('música velha soltando e o principal (Ruling I2-proxima)', () => {
+  // Fontes vivas de agora (as vozes da música que toca).
+  const voicesNow = () => live(sources())
+  // O maior som que a voz velha faz no principal entre `from` e `to`: principal x envelope dela.
+  function loudestOld(old: FakeAudioBufferSourceNode[], from: number, to: number) {
+    const gain = master().gain
+    let worst = 0
+    // De 2 em 2 amostras: o envelope e o principal andam devagar (rampas de 3 ms ou mais).
+    for (let k = 0; from + k / SR <= to; k += 2) {
+      const t = from + k / SR
+      worst = Math.max(worst, valueAt(gain, t) * Math.max(...old.map((s) => valueAt(envOf(s).gain, t))))
+    }
+    return worst
+  }
+
+  it('"próxima" tocando: a música velha nunca sai mais alta que no fim do fade; o principal sobe depois que ela calou', async () => {
+    const a = song()
+    const b: SavedSong = { ...song(), id: 's2', name: 'Outra', channels: song().channels.map((c) => ({ ...c, id: `b-${c.id}` })) }
+    mem.db.set(META, structuredClone([a, b]))
+    for (const x of [a, b]) for (const c of x.channels) mem.db.set(`mt_files_u1:ch:${c.id}`, new File([/BASS|KEYS/.test(c.name) ? 'stereo' : 'mono'], `${c.name}.wav`))
+    const hook = await openApp()
+    await play(hook)
+    const gain = master().gain
+    const old = voicesNow()
+    expect(old).toHaveLength(4)
+    // O timer do fade de 1,5 s da "próxima" fica com o teste.
+    const timers: (() => void)[] = []
+    const realSetTimeout = window.setTimeout.bind(window)
+    const spy = vi.spyOn(window, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => {
+      if (ms === 1500) { timers.push(fn); return 0 }
+      return realSetTimeout(fn, ms)
+    }) as unknown as typeof window.setTimeout)
+    ctxOf().currentTime = 2
+    try { act(() => { hook.result.current.nextSong() }) } finally { spy.mockRestore() }
+    expect(timers).toHaveLength(1)
+    const exec = 3.5
+    ctxOf().currentTime = exec
+    const fadeEnd = valueAt(gain, exec)
+    expect(fadeEnd).toBeLessThan(0.02)
+    await act(async () => { timers[0]() })
+    expect(hook.result.current.activeSongIndex).toBe(1)
+    expect(hook.result.current.isPlaying).toBe(true)
+    expect(voicesNow()).toHaveLength(4)
+    // A voz velha (em ganho 1 até a folga do corte, depois descendo) nunca soa acima do fim do fade.
+    expect(loudestOld(old, exec, exec + 0.06)).toBeLessThanOrEqual(fadeEnd + 1e-9)
+    // A cauda acaba em 40 ms; o principal chega no volume 5 ms depois, sem degrau.
+    expect(valueAt(gain, exec + 0.039)).toBeLessThan(0.02)
+    expect(valueAt(gain, exec + 0.046)).toBe(1)
+    expect(maxStep(gain, exec, exec + 0.06).step).toBeLessThanOrEqual(0.01)
+    // Só set e rampa linear depois do setTarget da descida (Ruling ÁUDIO): nada de rampa exponencial.
+    expect(gain.events.filter((e) => e.kind === 'exp')).toEqual([])
+  }, 20_000)
+
+  it.each([
+    ['com cancelAndHoldAtTime', true],
+    ['sem cancelAndHoldAtTime (Firefox)', false],
+  ])('busca saindo dos últimos 5 s com FADE: o rabo da posição velha não sobe; o principal vai pro volume depois que ele calou, %s', async (_name, withHold) => {
+    const savedHold = FakeAudioParam.prototype.cancelAndHoldAtTime
+    if (!withHold) delete (FakeAudioParam.prototype as Partial<FakeAudioParam>).cancelAndHoldAtTime
+    try {
+    seed(song())
+    const hook = await openApp()
+    act(() => { hook.result.current.setPlaybackMode('fade-out') })
+    act(() => { hook.result.current.seekTo(17) })
+    await play(hook)
+    const t0 = startAt(0)
+    const gain = master().gain
+    // Posição 18: o FADE em 0,4.
+    const now = t0 + 1
+    ctxOf().currentTime = now
+    expect(valueAt(gain, now)).toBeCloseTo(0.4, 9)
+    const old = voicesNow()
+    act(() => { hook.result.current.seekTo(2) })
+    // O nível segurado com a folga do corte (o FADE ainda descendo até ali).
+    const held = valueAt(gain, now + 0.01)
+    expect(held).toBeCloseTo(0.4 - 0.01 / 5, 9)
+    expect(loudestOld(old, now, now + 0.06)).toBeLessThanOrEqual(0.4 + 1e-9)
+    expect(valueAt(gain, now + 0.039)).toBeCloseTo(held, 9)
+    expect(valueAt(gain, now + 0.046)).toBe(1)
+    expect(maxStep(gain, now, now + 0.06).step).toBeLessThanOrEqual(0.01)
+    // O FADE volta pro fim da música a partir da posição nova (2 s): 15 s depois, no volume ainda.
+    const t1 = seekStartAt(now)
+    expect(valueAt(gain, t1 + 12.9)).toBe(1)
+    expect(valueAt(gain, t1 + 15.5)).toBeCloseTo(0.5, 9)
+    } finally {
+      FakeAudioParam.prototype.cancelAndHoldAtTime = savedHold
+    }
+  }, 20_000)
+
+  it('busca sem FADE: o principal fica no volume, sem nenhum evento novo de subida', async () => {
+    seed(song())
+    const hook = await openApp()
+    await play(hook)
+    const gain = master().gain
+    ctxOf().currentTime = 1
+    act(() => { hook.result.current.seekTo(5) })
+    for (const t of [1, 1.005, 1.01, 1.02, 1.05]) expect(valueAt(gain, t)).toBe(1)
+  })
+})
+
 describe('modo antigo e adaptadores', () => {
   it('modo antigo: sem bipe, salto no fim da seção pelo caminho antigo', async () => {
     seed(song())
@@ -735,14 +845,15 @@ describe('modo antigo e adaptadores', () => {
     expect(hook.result.current.sectionIntent).toBeNull()
     frame(t0 + 3.9)
     expect(sources()).toHaveLength(4)
-    // O quadro que vê a troca de seção busca o Refrão: voz nova no ponto 8, na folga de 2 blocos.
+    // O quadro que vê a troca de seção busca o Refrão: voz nova no ponto 8, na folga de sempre
+    // (2 blocos, ou até 6,4 ms antes de a voz velha descer: Ruling I4-busca).
     const now = t0 + 4.01
     frame(now)
     const jumped = live(sources())
     expect(jumped).toHaveLength(4)
     for (const s of jumped) {
       expect(s.starts[0].offset).toBe(8)
-      expect(s.starts[0].when).toBeCloseTo(startAt(now), 9)
+      expect(s.starts[0].when).toBeCloseTo(seekStartAt(now), 9)
     }
     expect(hook.result.current.pendingJump).toBeNull()
     // Nada de contagem, guia calada nem relógio do Worker.

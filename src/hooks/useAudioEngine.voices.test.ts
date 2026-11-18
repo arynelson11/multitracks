@@ -246,6 +246,37 @@ describe('vozes no play', () => {
     }
   })
 
+  it.each([0, 0.012])('busca tocando (baseLatency %s s): a voz velha fica em ganho 1 por cima da nova no máximo 6,4 ms, em qualquer fase do bloco (Ruling I4-busca)', async (baseLatency) => {
+    seed(song())
+    const hook = await openApp()
+    ctxOf().baseLatency = baseLatency
+    await act(async () => { await hook.result.current.play() })
+    const lead = Math.max(0.01, 2 * baseLatency)
+    for (const [k, phase] of [0, 0.3, 0.6, 0.9].entries()) {
+      const now = 1 + k * 0.5 + phase * QUANTUM
+      ctxOf().currentTime = now
+      const old = Object.fromEntries(['click', 'guide', 'bass', 'keys'].map((id) => [id, live(sourcesOf(hook, id))[0]]))
+      act(() => { hook.result.current.seekTo(5) })
+      const starts = new Set<number>()
+      for (const id of ['click', 'guide', 'bass', 'keys']) {
+        const next = live(sourcesOf(hook, id))
+        expect(next).toHaveLength(1)
+        const W = next[0].starts[0].when
+        starts.add(W)
+        // A voz velha começa a descer com a folga do corte, como antes.
+        const release = envOf(old[id]).gain.events.filter((e) => e.kind === 'target').map((e) => e.time)
+        expect(release).toEqual([now + lead])
+        expect(valueAt(envOf(old[id]).gain, now + lead)).toBe(1)
+        // A nova começa no máximo 6,4 ms antes disso (nunca antes dos 2 blocos), na grade de blocos.
+        expect(now + lead - W, `fase ${phase}`).toBeLessThanOrEqual(0.0064 + 1e-9)
+        expect(W).toBeGreaterThanOrEqual(startAt(now) - 1e-12)
+        expect(Math.abs(W / QUANTUM - Math.round(W / QUANTUM))).toBeLessThan(1e-6)
+      }
+      // Todas as faixas no mesmo instante.
+      expect(starts.size).toBe(1)
+    }
+  })
+
   it('pausar tocando solta as vozes com rampa curta e guarda a posição da linha do tempo', async () => {
     seed(song())
     const hook = await openApp()

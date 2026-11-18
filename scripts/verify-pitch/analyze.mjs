@@ -25,11 +25,21 @@ const CH_LEVEL_DB = -70;   // SONGS: nível mínimo de cada faixa da música toc
 // RESTART e no LOOP aceita 2 blocos + 1 bloco de tolerância + 0,5 ms de medição
 // (revisão da v1.4.16, seção 6); transposto, só a latência compensada a mais. Os
 // critérios de alinhamento entre faixas (START_EPS_MS, SPREAD_MS) não mudam.
+// Desde a v1.4.20 (Ruling I4-busca), na busca e na volta do LOOP do palco antigo com a VS tocando,
+// as vozes novas começam no máximo 6,4 ms antes de a voz velha começar a descer (a soltura começa
+// na folga do corte, max(10 ms, 2 x baseLatency); no Chrome deste Mac, 10,67 ms): com a chamada no
+// fim de um bloco, isso dá 1 bloco a mais que os 2 de sempre. A mediana do tempo de reação no
+// RESTART e no LOOP aceita esse bloco também, e a folga agendada exata segue a regra nova.
 const V149_SEEK_MS = 0.0;
 const V149_LOOP_HOLE_MS = 0.0;
 const START_LEAD_QUANTA = 2;
 const REACTION_SLACK_QUANTA = 1;
-const RESTART_SLACK_MS = (START_LEAD_QUANTA + REACTION_SLACK_QUANTA) * 128 / 48 + 0.5;
+const SEEK_OVERLAP_QUANTA = 1;
+const RESTART_SLACK_MS = (START_LEAD_QUANTA + REACTION_SLACK_QUANTA + SEEK_OVERLAP_QUANTA) * 128 / 48 + 0.5;
+// Ruling I4-busca: a voz velha em ganho 1 por cima da nova, no máximo (useAudioEngine.ts, SEEK_OVERLAP_MAX_S).
+const SEEK_OVERLAP_MAX_S = 0.0064;
+// A soltura das vozes: a fonte para 30 ms depois do começo da curva (VOICE_RELEASE_STOP).
+const VOICE_RELEASE_STOP_S = 0.03;
 // Folga de reserva da rede de segurança do play() (RETRY_LEAD_S = 40 ms).
 const RETRY_LEAD_S = 0.04;
 const LEAD_EPS_MS = 0.01;  // `when` - relógio no start(), gravado com 10 µs de resolução
@@ -356,22 +366,39 @@ export function analyze(key, R, opts = {}) {
     // 128 amostras, 2 blocos depois do relógio que o 1º start() do grupo lê (o mesmo
     // lido no fim da preparação). O play que a rede de segurança reagendou (grupo
     // seguinte a um descartado) usa a folga de reserva, também em blocos inteiros.
-    const qMs = 128 / cfg.sampleRate * 1000;
+    const q = 128 / cfg.sampleRate;
+    const qMs = q * 1000;
     const retryQ = Math.ceil(RETRY_LEAD_S * cfg.sampleRate / 128);
     const retried = new Set(allGroups.filter((g, i) => i > 0 && redone.includes(allGroups[i - 1])));
+    // Início da soltura das vozes do grupo anterior que soavam (a fonte para 30 ms depois dele).
+    const releaseOf = (prev) => {
+      const at = (prev || []).filter((r) => typeof r.stopWhen === 'number' && typeof r.ctxAtStop === 'number' && r.eff < r.ctxAtStop && r.stopWhen > r.ctxAtStop + VOICE_RELEASE_STOP_S / 2)
+        .map((r) => r.stopWhen - VOICE_RELEASE_STOP_S);
+      return at.length ? Math.max(...at) : null;
+    };
     const bad = [];
-    let n = 0;
-    for (const g of allGroups) {
+    let n = 0, capped = 0;
+    allGroups.forEach((g, i) => {
       const first = g[0];
-      if (!(first.when > 0)) continue;
+      if (!(first.when > 0)) return;
       n++;
       const want = retried.has(g) ? retryQ : START_LEAD_QUANTA;
-      const leadMs = (first.when - first.ctxAtStart) * 1000;
+      const base = first.ctxAtStart + want * q;
+      // A voz velha ainda em ganho 1: a nova no máximo 6,4 ms antes de ela descer, no limite de bloco.
+      // O stopWhen vem gravado com 10 µs: perto do limite de bloco, vale qualquer um dos dois.
+      const rel = releaseOf(allGroups[i - 1]);
+      const wants = [base];
+      if (rel !== null && rel > first.ctxAtStart) {
+        const x = (rel - SEEK_OVERLAP_MAX_S) / q;
+        for (const k of new Set([Math.ceil(x - 1e-6), Math.ceil(x - 2e-5 / q), Math.ceil(x + 2e-5 / q)])) wants.push(Math.max(base, k * q));
+      }
       const grid = first.when * cfg.sampleRate / 128;
-      if (Math.abs(leadMs - want * qMs) > LEAD_EPS_MS || Math.abs(grid - Math.round(grid)) > 1e-6) bad.push(`${fmt(leadMs, 3)} ms (esperado ${want} blocos)`);
-    }
-    add('R1-2', `folga agendada exata: when na grade, ${START_LEAD_QUANTA} blocos depois do relógio no start() (reagendado: ${retryQ} blocos)`, n > 0 && bad.length === 0,
-      `${n} plays, ${retried.size} reagendados; fora: ${bad.length ? bad.slice(0, 4).join(', ') : 'nenhum'}`);
+      const ok = wants.slice(rel !== null && rel > first.ctxAtStart ? 1 : 0).some((w) => Math.abs(first.when - w) * 1000 <= LEAD_EPS_MS);
+      if (first.when - base > LEAD_EPS_MS / 1000) capped++;
+      if (!ok || Math.abs(grid - Math.round(grid)) > 1e-6) bad.push(`${fmt((first.when - first.ctxAtStart) * 1000, 3)} ms (esperado ${want} blocos${rel !== null ? ', soltura em ' + fmt((rel - first.ctxAtStart) * 1000, 2) + ' ms' : ''})`);
+    });
+    add('R1-2', `folga agendada exata: when na grade, ${START_LEAD_QUANTA} blocos depois do relógio no start(), ou até ${SEEK_OVERLAP_MAX_S * 1000} ms antes da soltura da voz velha (Ruling I4-busca; reagendado: ${retryQ} blocos)`, n > 0 && bad.length === 0,
+      `${n} plays, ${retried.size} reagendados, ${capped} esperando a soltura; fora: ${bad.length ? bad.slice(0, 4).join(', ') : 'nenhum'}`);
   }
 
   if (palco) analyzeStage(R, opts, add, (item, name, detail) => checks.push({ item, scenario: label, name, pass: true, info: true, detail }));

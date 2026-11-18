@@ -120,6 +120,13 @@ const FADE_OUT_S = 5;
 // Volume principal mexido com o FADE marcado: chega no valor novo em 50 ms, só por rampa linear
 // (nunca rampa depois de setTarget em curso, Ruling ÁUDIO).
 const MASTER_RAMP_S = 0.05;
+// Descida do principal na "próxima" tocando: setTarget pra 0,01 com constante de 0,3 s (cerca de
+// -35 dB em 1,5 s, quando a troca acontece).
+const NEXT_FADE_FLOOR = 0.01;
+const NEXT_FADE_TC = 0.3;
+// O principal volta pro volume em 5 ms por rampa linear depois que a música velha calou (Ruling
+// I2-proxima).
+const MASTER_SETTLE_S = 0.005;
 
 /**
  * Segura o parâmetro em `t` sem mudar o valor: `cancelAndHoldAtTime` onde existe; no Firefox,
@@ -137,12 +144,15 @@ function holdParam(param: AudioParam, t: number): void {
 
 /**
  * Solta as vozes (ver acima). `startOf` diz quando cada uma começa (tempo do contexto).
- * Devolve até quando ainda sai som delas (a cauda conta pro corte das trocas de rota).
+ * Devolve até quando ainda sai som delas (`until`: a cauda conta pro corte das trocas de rota e
+ * segura o principal do play seguinte) e o instante em que a curva começa a descer (`at`, nulo se
+ * nenhuma voz soava): até ali a voz velha segue em ganho 1.
  */
-function releaseVoices(ctx: BaseAudioContext, voices: readonly Voice[], startOf: (v: Voice) => number): number {
+function releaseVoices(ctx: BaseAudioContext, voices: readonly Voice[], startOf: (v: Voice) => number): { at: number | null; until: number } {
     const now = ctx.currentTime;
     const t = now + cutLead(ctx);
     let until = now;
+    let at: number | null = null;
     for (const v of voices) {
         if (startOf(v) > t) {
             // Ainda não começou (pré-contagem ou play recém-agendado): para antes de soar.
@@ -153,9 +163,22 @@ function releaseVoices(ctx: BaseAudioContext, voices: readonly Voice[], startOf:
         v.env.gain.setTargetAtTime(0, t, VOICE_RELEASE_TC);
         stopVoices([v], t + VOICE_RELEASE_STOP);
         until = t + VOICE_RELEASE_STOP;
+        at = t;
     }
-    return until;
+    return { at, until };
 }
+
+// Ruling I4-busca: na busca e em cada volta do LOOP do palco antigo, a voz velha fica em ganho 1
+// por cima da nova no máximo isto (a sobreposição aceita na Ruling T26-busca), em qualquer
+// aparelho. A soltura começa com a folga do corte (cutLead: 10 ms, ou duas latências do aparelho);
+// com a latência grande (Windows, placa com buffer de 10 ms) as vozes novas esperam até a voz velha
+// estar a no máximo isto de começar a descer, em vez de somar com ela por até 20 ms em ganho 1.
+const SEEK_OVERLAP_MAX_S = 0.0064;
+/** O primeiro limite de bloco de áudio (128 amostras) a partir de `t`. */
+const quantumAtOrAfter = (ctx: BaseAudioContext, t: number): number => {
+    const quantum = 128 / ctx.sampleRate;
+    return Math.ceil(t / quantum - 1e-6) * quantum;
+};
 
 /** FADE agendado no principal: rampa de `from` em `start` até 0 em `end` (tempo do contexto). */
 interface FadeRamp { start: number; end: number; from: number }
@@ -950,6 +973,15 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // a folga do corte, depois descendo) e o fim de um bipe cancelado. Conta como "algo soando"
     // pro corte das trocas de rota (rodada 1 da T26: I1 e Minor c da revisão).
     const soundingUntilRef = useRef(0);
+    // Instante em que a soltura das vozes que soavam começou a descer (Ruling I4-busca): o play
+    // seguinte não começa as vozes novas mais de SEEK_OVERLAP_MAX_S antes dele.
+    const releaseAtRef = useRef(0);
+    // O principal fora do FADE, pro play com a música velha ainda soltando (Ruling I2-proxima):
+    // `nextFadeRef` é a descida da "próxima" (setTarget pra 0,01 com constante de 0,3 s a partir
+    // de `t0`, do nível `from`); `masterRestRef` é o nível em que a parada (busca, pausa) deixou o
+    // principal segurado no meio do FADE. Qualquer escrita do principal fora deles os apaga.
+    const nextFadeRef = useRef<{ t0: number; from: number } | null>(null);
+    const masterRestRef = useRef<number | null>(null);
     // Panner da contagem sem canal de click (Opção A da T26), criado uma vez no initEngine.
     const countPannerRef = useRef<StereoPannerNode | null>(null);
     // Cada play() pega um número. Se outro play() (troca de tom, seek...) começar
@@ -1357,8 +1389,10 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     };
     // Marca a rampa do FADE, se o modo é FADE e a música toca. `musicStart` (play): a música entra
     // ali, então começar no meio dos 5 s sai no nível proporcional sem degrau audível; tocando, a
-    // rampa nova parte do nível de agora, com a folga do corte. Quem chama confere a intenção.
-    const scheduleFade = (ctx: BaseAudioContext, musicStart?: number) => {
+    // rampa nova parte do nível de agora, com a folga do corte. `notBefore` (play): o principal
+    // ainda está segurado ou subindo até ali (setMasterForPlay) e a rampa começa depois. Quem
+    // chama confere a intenção.
+    const scheduleFade = (ctx: BaseAudioContext, musicStart?: number, notBefore?: number | null) => {
         const gain = masterGainRef.current?.gain;
         const tl = timelineRef.current;
         const dur = durationRef.current;
@@ -1370,7 +1404,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         const start = ctxTimeOf(tl, dur - FADE_OUT_S, now, rate);
         const end = ctxTimeOf(tl, dur, now, rate);
         // Tocando, depois da rampa curta que ainda corre (ela termina no nível de onde a nova parte).
-        const t0 = musicStart ?? Math.max(masterHoldAt(ctx), volumeRampAt(masterHoldAt(ctx))?.t1 ?? 0);
+        const t0 = Math.max(musicStart ?? Math.max(masterHoldAt(ctx), volumeRampAt(masterHoldAt(ctx))?.t1 ?? 0), notBefore ?? 0);
         if (!Number.isFinite(start) || !Number.isFinite(end) || end <= t0) return;
         const held = fadeHeldRef.current;
         const volume = masterVolumeRef.current;
@@ -1380,6 +1414,60 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         gain.linearRampToValueAtTime(0, end);
         fadeRef.current = { start: at, end, from };
         fadeHeldRef.current = null;
+    };
+    // Nível do principal em `t` com o FADE já tirado pela parada: a descida da "próxima", o nível em
+    // que a parada o segurou no meio do FADE, ou o volume.
+    const restingMasterAt = (t: number): number => {
+        const n = nextFadeRef.current;
+        if (n) return t <= n.t0 ? n.from : NEXT_FADE_FLOOR + (n.from - NEXT_FADE_FLOOR) * Math.exp(-(t - n.t0) / NEXT_FADE_TC);
+        return masterRestRef.current ?? masterVolumeRef.current;
+    };
+    /**
+     * O principal no play, depois de agendar as vozes (Ruling I2-proxima). Nada soltando: volta pro
+     * volume na hora, como sempre. Com a música velha ainda soltando (a "próxima" no fim do fade de
+     * 1,5 s; a busca saindo dos últimos 5 s com FADE), ele fica no nível de agora (com a folga do
+     * corte) e só sobe depois que a cauda dela calou, em 5 ms por rampa linear: a música velha nunca
+     * sai mais alta que estava. Descer (busca pra dentro do FADE) começa já, também em 5 ms. O alvo
+     * é o volume ou, com o FADE, o nível dele na posição nova. Devolve até quando o principal está
+     * nessa volta (o FADE só começa depois), ou null. Só set e rampa linear (Ruling ÁUDIO).
+     */
+    const setMasterForPlay = (ctx: BaseAudioContext, withFade: boolean): number | null => {
+        const gain = masterGainRef.current?.gain;
+        const now = ctx.currentTime;
+        const hold = masterHoldAt(ctx);
+        const level = restingMasterAt(hold);
+        // Sem cancelAndHoldAtTime (Firefox), a parada segurou o principal no meio do FADE por uma
+        // rampa que termina no nível de agora (dropFade): segurar de novo refaz essa rampa, porque
+        // apagar a partir de `hold` tiraria o fim dela e o principal voltaria pro ponto de antes.
+        const heldByRamp = masterRestRef.current !== null && typeof masterGainRef.current?.gain.cancelAndHoldAtTime !== 'function';
+        nextFadeRef.current = null;
+        masterRestRef.current = null;
+        if (!gain) return null;
+        const volume = masterVolumeRef.current;
+        const tail = soundingUntilRef.current;
+        if (!(tail > now)) {
+            gain.cancelScheduledValues(now);
+            gain.setValueAtTime(volume, now);
+            return null;
+        }
+        // Alvo em `t`: o volume, ou o FADE da linha do tempo nova (a mesma conta do scheduleFade).
+        const tl = timelineRef.current;
+        const dur = durationRef.current;
+        const fadeOn = withFade && playbackModeRef.current === 'fade-out' && dur > FADE_OUT_S && tl.length > 0;
+        const rate = timeStretchRef.current;
+        const fade: FadeRamp = fadeOn
+            ? { start: ctxTimeOf(tl, dur - FADE_OUT_S, now, rate), end: ctxTimeOf(tl, dur, now, rate), from: volume }
+            : { start: Infinity, end: Infinity, from: volume };
+        const targetAt = (t: number) => fadeLevelAt(fade, t);
+        const from = targetAt(Math.max(hold, tail) + MASTER_SETTLE_S) > level ? Math.max(hold, tail) : hold;
+        const to = from + MASTER_SETTLE_S;
+        const target = targetAt(to);
+        holdMasterAt(gain, hold, level, heldByRamp);
+        if (from > hold) gain.setValueAtTime(level, from);
+        gain.linearRampToValueAtTime(target, to);
+        // O modelo do principal (masterLevelAt) conhece a volta: volume mexido nela segue dali.
+        volumeRampRef.current = { t0: from, v0: level, t1: to, v1: target };
+        return to;
     };
     // O FADE segue o pedido de seção (chamado a cada mudança da transição ou da intenção, e no
     // pouso): pedido armado ou pulo marcado tiram a rampa; o pulo marcado devolve o principal no
@@ -2056,13 +2144,16 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             sectionStoppingRef.current = false;
         }
         if (ctx) dropFade(ctx, false);
+        // No meio do FADE o principal ficou segurado nesse nível: o play seguinte parte dele.
+        if (fadeHeldRef.current !== null) masterRestRef.current = fadeHeldRef.current;
         clearFadeState();
         endCountIn();
         const voices = voicesRef.current;
         voicesRef.current = [];
         if (ctx && voices.length > 0) {
             const starts = voiceStartsRef.current;
-            const until = releaseVoices(ctx, voices, (v) => starts.get(v) ?? 0);
+            const { at, until } = releaseVoices(ctx, voices, (v) => starts.get(v) ?? 0);
+            if (at !== null) releaseAtRef.current = Math.max(releaseAtRef.current, at);
             // Click e Guia com a música transposta passam pelo atraso de compensação: a cauda
             // deles ainda sai L depois (a pausa não esvazia o atraso).
             if (until > ctx.currentTime) {
@@ -2110,14 +2201,8 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         }
         if (gen !== playGenRef.current) return;
 
-        // Reset master gain in case a previous fade-out left it near zero. Vale pra
-        // pré-contagem também (ela sai pelo principal). O FADE marcado sai junto (refeito abaixo).
-        if (masterGainRef.current) {
-            clearFadeState();
-            masterGainRef.current.gain.cancelScheduledValues(ctx.currentTime);
-            masterGainRef.current.gain.setValueAtTime(masterVolume, ctx.currentTime);
-        }
-
+        // O principal volta pro volume no fim (setMasterForPlay), depois de agendar as vozes: a
+        // música velha pode estar soltando ainda.
         stopAllNodes();
 
         // Clear any auto-next timeout if user manually played
@@ -2200,7 +2285,10 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             // carga: o relógio da thread principal pulou 12,6 ms enquanto a contagem era marcada) e
             // começava no meio do ataque. As faixas entram um tempo depois; ninguém ouve 35 ms a mais
             // entre apertar o play e o 1º bipe (Ruling T30-reagenda).
-            const t0 = nextRenderQuantum(ctx, beats > 0 ? Math.max(leadQuanta, Math.ceil(RETRY_LEAD_S * ctx.sampleRate / 128)) : leadQuanta);
+            // Ruling I4-busca: com a voz velha ainda em ganho 1 (busca, volta do LOOP do palco antigo),
+            // as novas começam no máximo SEEK_OVERLAP_MAX_S antes de ela descer, no limite de bloco.
+            const released = releaseAtRef.current > ctx.currentTime ? quantumAtOrAfter(ctx, releaseAtRef.current - SEEK_OVERLAP_MAX_S) : 0;
+            const t0 = Math.max(released, nextRenderQuantum(ctx, beats > 0 ? Math.max(leadQuanta, Math.ceil(RETRY_LEAD_S * ctx.sampleRate / 128)) : leadQuanta));
             // t0 já está na grade de blocos (logo, de amostras); com pré-contagem, o 5º tempo vai
             // pra amostra mais perto (Ruling T30-grade).
             const when = beats > 0 ? onSampleGrid(t0 + beats * pulse, ctx.sampleRate) : t0;
@@ -2249,8 +2337,11 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         precountPendingRef.current = false;
         setIsPlaying(true);
         if (count) showCountIn(ctx, count, when, latencyOf((ctx as AudioContext).outputLatency) + (compensation ?? 0));
-        // FADE do fim (R-32), com a música entrando em `when`; com intenção armada não começa.
-        if (!(stageModeRef.current === 'novo' && sectionSchedulerRef.current?.intent)) scheduleFade(ctx, when);
+        // Principal e FADE do fim (R-32), com a música entrando em `when`; com intenção armada o FADE
+        // não começa. Vale pra pré-contagem também (ela sai pelo principal).
+        const withFade = !(stageModeRef.current === 'novo' && sectionSchedulerRef.current?.intent);
+        const settled = setMasterForPlay(ctx, withFade);
+        if (withFade) scheduleFade(ctx, when, settled);
         // Palco novo: o relógio do Worker liga e o agendador olha o plano a partir daqui.
         if (stageModeRef.current === 'novo') {
             setPlayingSpan(sectionIndexAt(spansRef.current, offset));
@@ -2373,11 +2464,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         setDuration(playlist[activeSongIndex + 1].duration);
         setShouldAutoPlayNext(true);
 
-        if (masterGainRef.current && audioCtxRef.current) {
-            masterGainRef.current.gain.setValueAtTime(0.01, audioCtxRef.current.currentTime);
-            masterGainRef.current.gain.exponentialRampToValueAtTime(masterVolume || 0.01, audioCtxRef.current.currentTime + 1.0);
-        }
-    }, [activeSongIndex, playlist, masterVolume, stopAllNodes]);
+        // O principal continua onde a "próxima" deixou (o fim do fade de 1,5 s): o play da música
+        // seguinte só o devolve pro volume depois que a cauda da velha calou (setMasterForPlay).
+    }, [activeSongIndex, playlist, stopAllNodes]);
 
     const nextSong = useCallback(() => {
         if (activeSongIndex >= playlist.length - 1) return;
@@ -2398,12 +2487,16 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
                 }, 1500);
                 // O FADE e o pulo armado saem antes (com o timer já marcado, o FADE não volta): o
                 // setTarget da troca nunca é seguido por rampa (Ruling ÁUDIO).
+                // O nível de onde a descida parte, pelo modelo do principal (FADE, rampa curta ou volume).
+                const t0 = masterHoldAt(ctx);
+                const from = nextFadeRef.current ? restingMasterAt(t0) : masterLevelAt(t0).level;
                 dropFade(ctx, false);
                 fadeHeldRef.current = null;
                 dropSectionIntent();
                 // No mesmo instante em que o FADE segurou o principal (depois dele, o setTarget
                 // seria apagado pelo ponto segurado).
-                masterGainRef.current.gain.setTargetAtTime(0.01, masterHoldAt(ctx), 0.3);
+                masterGainRef.current.gain.setTargetAtTime(NEXT_FADE_FLOOR, t0, NEXT_FADE_TC);
+                nextFadeRef.current = { t0, from };
             }
         } else {
             executeNextSong();
@@ -3754,7 +3847,12 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             // linear (retimeFadeVolume); sem ele, como sempre.
             const ctx = audioCtxRef.current;
             if (fadeRef.current || fadeHeldRef.current !== null || volumeRampAt(ctx.currentTime)) retimeFadeVolume(ctx, masterGainRef.current.gain, volume);
-            else masterGainRef.current.gain.setTargetAtTime(volume, ctx.currentTime, 0.05);
+            else {
+                masterGainRef.current.gain.setTargetAtTime(volume, ctx.currentTime, 0.05);
+                // O principal vai pro volume: a descida da "próxima" e o nível da parada deixam de valer.
+                nextFadeRef.current = null;
+                masterRestRef.current = null;
+            }
             masterVolumeRef.current = volume;
             setMasterVolume(volume);
         }
