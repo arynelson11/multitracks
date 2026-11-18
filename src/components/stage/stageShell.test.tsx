@@ -156,6 +156,24 @@ describe('casca do palco', () => {
     expect(q('[data-output-alert]')).toBeNull()
   })
 
+  it('abaixo de 1024 px (tocando, com a trava segurando o palco novo) a casca rola de lado e nada fica fora de alcance (Ruling I2-estreito)', () => {
+    renderShell()
+    const shell = q('[data-stage-shell]')!
+    const hscroll = q('[data-stage-hscroll]')!
+    const content = hscroll.firstElementChild as HTMLElement
+    // A casca não corta: a rolagem de lado é dela, e o conteúdo tem no mínimo os 1024 px do palco novo.
+    expect(hscroll.parentElement).toBe(shell)
+    expect(hscroll.className).toMatch(/(^| )overflow-x-auto( |$)/)
+    expect(hscroll.hasAttribute('data-scroll-reach')).toBe(true)
+    expect(content.className).toContain('min-w-[1024px]')
+    // A barra do app (com SAIR) e a área do palco (com PAD, LETRA e o aviso PRÓXIMA) rolam juntas.
+    expect(content.contains(q('header')!)).toBe(true)
+    expect(content.contains(q('[data-stage-scroll]')!)).toBe(true)
+    expect(content.contains(screen.getByRole('button', { name: 'Sair' }))).toBe(true)
+    // A gaveta REPERTÓRIOS fica fora da rolagem (abre na borda da tela, não no começo do conteúdo).
+    expect(hscroll.contains(q('[data-stage-drawer]')!)).toBe(false)
+  })
+
   it('modo EDITAR troca a botoeira pela barra de edição', () => {
     const tools = <p data-admin-tool="">Editor de marcadores</p>
     const { rerender, actions } = renderShell({}, { slots: { repertoire: null, adminTools: tools } })
