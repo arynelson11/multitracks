@@ -10,6 +10,26 @@ Os sintéticos e a sonda de click também existem em TypeScript pro Vitest
 tempo (`src/lib/beatGrid.equivalence.test.ts` e `src/lib/tempo/*.test.ts`) usam
 esses. Estes scripts ficam pra medir de novo a tabela inteira do relatório.
 
+## Antes de rodar: os arquivos que não vão pro git
+
+- `v149/` (fontes da v1.4.9, usadas por `harness.mjs` e `realdemo.mjs`):
+
+  ```bash
+  mkdir -p v149
+  git show 5e051c2:src/lib/AudioAnalyzer.ts > v149/AudioAnalyzer.ts
+  git show 5e051c2:src/lib/clickLibrary.ts > v149/clickLibrary.ts
+  git show 5e051c2:src/components/MetronomeModal.tsx > v149/MetronomeModal.tsx
+  ```
+
+- `demo-wav/` (stems do demo em WAV, usadas por `realdemo.mjs` e `stemsagree.mjs`):
+
+  ```bash
+  mkdir -p demo-wav
+  for f in ../../public/demo/*.mp3; do ffmpeg -loglevel error -i "$f" "demo-wav/$(basename "$f" .mp3).wav"; done
+  ```
+
+O `harness.mjs` e o `realdemo.mjs` precisam da `v149/`; o `realdemo.mjs` e o `stemsagree.mjs`, da `demo-wav/`.
+
 ## Rodar
 
 ```bash
@@ -32,21 +52,3 @@ node build.mjs downbeat.mjs && node dist/downbeat.mjs      # o "1" em 54 cenári
 | `cointoss.mjs` | baixo em colcheias e shaker: tempo ou contratempo |
 | `names.mjs` | qual faixa o AUTO escolhe pelo nome (não precisa de build) |
 | `realdemo.mjs`, `stemsagree.mjs` | música real: as stems do demo |
-
-## Arquivos que não vão pro git
-
-- `v149/` (fontes da v1.4.9, usadas por `harness.mjs` e `realdemo.mjs`):
-
-  ```bash
-  mkdir -p v149
-  git show 5e051c2:src/lib/AudioAnalyzer.ts > v149/AudioAnalyzer.ts
-  git show 5e051c2:src/lib/clickLibrary.ts > v149/clickLibrary.ts
-  git show 5e051c2:src/components/MetronomeModal.tsx > v149/MetronomeModal.tsx
-  ```
-
-- `demo-wav/` (stems do demo em WAV, usadas por `realdemo.mjs` e `stemsagree.mjs`):
-
-  ```bash
-  mkdir -p demo-wav
-  for f in ../../public/demo/*.mp3; do ffmpeg -loglevel error -i "$f" "demo-wav/$(basename "$f" .mp3).wav"; done
-  ```

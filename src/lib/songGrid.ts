@@ -85,9 +85,10 @@ export function snapToBar(t: number, g: SongGrid | null): number {
 export type SpanSnap = 'bar' | 'pulse' | 'raw'
 
 /**
- * Trecho de seção: o `SectionSpan` da T1 mais o jeito do encaixe do início. A T11 usa o
- * `snappedTo` do trecho seguinte pra saber se o fim deste (o `switchAt`) cai no pulso do click:
- * `'bar'` e `'pulse'` caem; `'raw'` só sai sem grade com fase, ou em 0:00 fora da grade.
+ * Trecho de seção: o `SectionSpan` da T1 mais o jeito do encaixe do início. `'bar'` e `'pulse'`
+ * caem na grade do click; `'raw'` só sai sem grade com fase, ou em 0:00 fora da grade. Hoje só os
+ * testes leem o `snappedTo` (o pulo da T11 confere a grade por conta própria); fica pra quem
+ * precisar saber se o início de um trecho caiu no pulso.
  */
 export interface SnappedSpan extends SectionSpan { snappedTo: SpanSnap }
 

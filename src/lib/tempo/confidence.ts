@@ -10,7 +10,10 @@
 import { combScore } from './onsets';
 
 /**
- * Abaixo deste valor a música não tem pulso confiável e nada é gerado sozinho.
+ * Corte dos sintéticos: abaixo deste valor a música de teste não tem pulso confiável. Só os
+ * testes dos sintéticos usam: o app usa os cortes medidos nas multitracks reais (Ruling M2-1),
+ * `AUTO_CLICK_MIN_CONFIDENCE` (0,5, Metrônomo e click gerado) e `SEPARATOR_MIN_CONFIDENCE`
+ * (0,14, Separador), em src/lib/autoClick.ts. Não use este valor pra decidir se o click é gerado.
  * Calibrado só com o grupo `calibracao` de src/test/tempoCases.ts (60 s, 48 kHz),
  * no meio do vão entre o maior negativo, 0,4404 (`baixo-por-compasso-96`), e o
  * menor positivo, 0,9999 (`bass-colcheias`): (0,4404 + 0,9999) / 2 = 0,72.

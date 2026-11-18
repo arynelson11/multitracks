@@ -582,12 +582,18 @@ interface GridJob { read: boolean; generate: boolean; plan?: AutoClickOkPlan; do
 /** Worker da grade vivo e os pedidos esperando resposta. */
 interface GridWorkerLink { worker: Worker; calls: Map<number, (r: GridWorkerResponse | null) => void>; next: number }
 
-/** Amostras do canal 0 de um canal de click que dá pra ler (4 s ou mais, com som); null se não dá. */
+/**
+ * Amostras do canal 0 de um canal de click que dá pra ler (4 s ou mais, com som); null se não dá.
+ * Procura o som de 16 em 16 amostras (um terço de ms a 48 kHz; um click soa por dezenas de ms):
+ * a varredura é síncrona e um canal mudo de 10 min custava dezenas de ms na thread principal
+ * (revisão macro, frente 1 M4).
+ */
+const CLICK_SCAN_STRIDE = 16;
 function readableClick(buffer: AudioBuffer | undefined): Float32Array | null {
     if (!buffer || typeof buffer.getChannelData !== 'function' || !(buffer.sampleRate > 0) || !(buffer.duration >= CLICK_MIN_SECONDS)) return null;
     try {
         const samples = buffer.getChannelData(0);
-        for (let i = 0; i < samples.length; i++) if (Math.abs(samples[i]) > CLICK_SILENCE) return samples;
+        for (let i = 0; i < samples.length; i += CLICK_SCAN_STRIDE) if (Math.abs(samples[i]) > CLICK_SILENCE) return samples;
     } catch { /* buffer sem amostras: nada a ler */ }
     return null;
 }

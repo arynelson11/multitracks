@@ -39,6 +39,7 @@ como no app): sem isso o motor nunca leria a grade do click aqui.
 | `LOOP` | palco novo: LOOP da seção 1 da música de teste por `toggleSectionLoop`, 5 voltas no tom 0, troca pro +2 tocando (o pedido fica), 5 voltas no +2 e sai do loop |
 | `LOOP_ANTIGO` | palco antigo (`armLoop`): loop de seção tocando, no tom 0 e no +2: buraco na emenda (descontado o atraso do rAF que detecta o fim da seção) e volta sem await |
 | `STALL` | laço de `start()` travado 15 ms no meio (o motor de áudio passa do instante comum): o play descarta e reagenda todas as faixas juntas |
+| `SEEKS_ANTIGO`, `RESTART_ANTIGO`, `SONGS_ANTIGO` | os mesmos `SEEKS`, `RESTART` e `SONGS` montados com `stageMode: 'antigo'` (revisão macro, frente 1 M9) |
 | `SONGS` | repertório com 3 músicas: A (24 canais) +2, B (10) +3, C (30) +2, remove B com C tocando, A de volta (+2) e no tom 0. Fontes sem órfãs, worklets rodando = faixas transpostas da música atual, total de worklets <= maior música, sem salto de posição, som em todas as faixas |
 | `PENDENTE` | play transposto pela 1ª vez e troca de música antes do worklet nascer (por jumpToSong, prevSong e nextSong): a música anterior não pode tocar |
 | `NAN` | tom inválido (NaN) chegando no motor |
@@ -55,9 +56,13 @@ todas as faixas no mesmo instante, click x instrumento em ±2 ms, click/guia for
 do worklet, formantes só em voz, saída sem NaN e com som. No RESTART, LOOP, SEEKS
 e STALL, a folga agendada é conferida exata (`when` na grade de blocos, 2 blocos
 depois do relógio no `start()`; reagendado pela rede de segurança, 15 blocos a
-48 kHz). O tempo de reação (da chamada até o som) no RESTART e no LOOP aceita, na
-mediana, 1 bloco a mais: ele é medido do relógio na chamada, e o motor pode virar
-um bloco antes do fim da preparação das fontes.
+48 kHz). Desde a v1.4.20 (Ruling I4-busca), com a voz velha ainda em ganho 1 (busca
+ou volta do LOOP do palco antigo tocando), as vozes novas começam no máximo 6,4 ms
+antes de ela começar a descer (a soltura começa na folga do corte, que cresce com o
+`baseLatency`), no limite de bloco: o critério acha o começo da soltura pelo `stop()`
+da voz velha (30 ms depois dele). O tempo de reação (da chamada até o som) no RESTART
+e no LOOP aceita, na mediana, 1 bloco a mais por isso e outro porque ele é medido do
+relógio na chamada, e o motor pode virar um bloco antes do fim da preparação das fontes.
 
 ## Palco novo (T30)
 

@@ -38,6 +38,11 @@ export const SCENARIOS = {
   STALL: { query: 'seq=STALL&n=8&order=A', timeout: 90 },
   // Repertório: A (24 canais) +2, B (10) +3, C (30) +2, remove B, A de volta e no tom 0.
   SONGS: { query: 'seq=SONGS&order=A&dur=30', timeout: 180 },
+  // Os mesmos SEEKS, RESTART e SONGS no palco antigo, o que todo usuário usava até a v1.4.19
+  // (revisão macro, frente 1 M9): o caminho do som é o mesmo, mas o portão confere os dois.
+  SEEKS_ANTIGO: { query: 'seq=SEEKS&stage=antigo&n=22&order=A', timeout: 120 },
+  RESTART_ANTIGO: { query: 'seq=RESTART&stage=antigo&n=8&order=A', timeout: 90 },
+  SONGS_ANTIGO: { query: 'seq=SONGS&stage=antigo&order=A&dur=30', timeout: 180 },
   // Play transposto pendente + troca de música (jumpToSong, prevSong, nextSong) antes do worklet nascer.
   PENDENTE: { query: 'seq=PENDENTE&order=A&dur=20', timeout: 120 },
   // Nível de faixa mono e estéreo (pan total e centro), tom 0 x transposto.

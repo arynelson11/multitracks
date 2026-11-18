@@ -655,11 +655,12 @@ function interpret(
     if (k !== null && k > 2 && bar.m === k) return interpretation({ subdivision: k, compound: false, meter: null, downbeat: null, beat: bar })
     const beats = knownSignature ? signaturePulses(knownSignature) : null
     if (beats !== null && bar.m % beats === 0 && bar.m / beats <= 3) {
-      const ratio = bar.m / beats
+      // Pulsos do click por tempo do compasso salvo (não confundir com a razão do BPM salvo, `ratio`).
+      const perBeat = bar.m / beats
       const byBpm = k !== null && bar.m % (k * beats) === 0
       return interpretation({
-        subdivision: (byBpm ? k : ratio) as 1 | 2 | 3, compound: false, meter: beats, downbeat: bar,
-        ambiguous: !byBpm && ratio > 1 && !two,
+        subdivision: (byBpm ? k : perBeat) as 1 | 2 | 3, compound: false, meter: beats, downbeat: bar,
+        ambiguous: !byBpm && perBeat > 1 && !two,
       })
     }
     return fromBar(pulseBpm, bar, two, k)
