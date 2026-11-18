@@ -16,6 +16,9 @@ export interface MeterEditorProps {
 type CountValue = '1' | '3'
 
 const SIGNATURE_OPTIONS: SegmentedOption<TimeSignature>[] = TIME_SIGNATURES.map((s) => ({ value: s, label: s }))
+// Sem grade o compasso não tem onde valer (o App não grava): desligado, com o motivo.
+const NO_GRID_OPTIONS: SegmentedOption<TimeSignature>[] = SIGNATURE_OPTIONS.map((o) => ({ ...o, disabled: true }))
+const NO_GRID = 'Sem click lido e sem BPM salvo não há compasso pra escolher. Salve o BPM da música ou importe o canal de Click.'
 const METER_ORIGIN: Record<Exclude<MeterSource, 'padrao'>, string> = {
   acento: 'Lido no acento do click', salvo: 'Salvo na biblioteca', manual: 'Escolhido por você',
 }
@@ -98,10 +101,14 @@ export function MeterEditor({ grid, songBpm, busy, hasClickChannel, onChange, on
         </button>
       </div>
 
-      <Segmented
-        aria-label="Compasso" options={SIGNATURE_OPTIONS} value={grid?.signature ?? null} onChange={pickSignature}
-        className="flex-wrap self-start"
-      />
+      {/* O botão desligado não recebe o ponteiro: a dica fica no invólucro, e o motivo também se lê embaixo. */}
+      <span className="inline-flex self-start" title={grid ? undefined : NO_GRID}>
+        <Segmented
+          aria-label="Compasso" options={grid ? SIGNATURE_OPTIONS : NO_GRID_OPTIONS} value={grid?.signature ?? null} onChange={pickSignature}
+          className="flex-wrap self-start"
+        />
+      </span>
+      {!grid && <p data-meter-note="" className="max-w-[360px] px-1 text-ps-sm text-ps-mut">{NO_GRID}</p>}
       {compound && (
         <Segmented
           aria-label="Contagem" options={countOptions} value={compound.countEvery === 3 ? '3' : '1'}
