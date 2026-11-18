@@ -11,6 +11,20 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.19',
+    date: '2026-11-18',
+    title: 'Palco novo como opção e saídas separadas',
+    items: [
+      'O palco novo chegou como opção. Pra ligar, vá em Configurações > Geral > Palco e escolha Novo. Vale quando a música parar.',
+      'O palco de sempre continua sendo o padrão, e dá pra voltar pra ele no mesmo lugar.',
+      'No palco novo, a seção que você escolhe com a música tocando entra no 1 do compasso, com a contagem no click e sem parar a música.',
+      'Saídas separadas: o Click e a Guia podem ir só pro fone, com a música no PA. Fica em Configurações > Geral e vale nos dois palcos.',
+      'Quem usava o pan automático já começa com o Click e a Guia separados.',
+      'Música sem click ganha um click gerado sozinho, nos planos pagos, quando o app tem certeza do tempo.',
+      'Com o Click no mudo, a pré-contagem também fica muda.',
+    ],
+  },
+  {
     version: '1.4.18',
     date: '2026-11-17',
     title: 'Cancele pelo app e cota que renova todo mês',
