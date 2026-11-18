@@ -395,20 +395,22 @@ describe('WaveformSections', () => {
     expect(r.className).toContain('touch-none') // arrastar com o dedo não rola a tela
   })
 
-  it('tocando, o toque na régua só busca ao soltar o dedo, uma vez, no ponto do toque (Ruling I1-regua)', () => {
+  it('tocando, um toque simples na régua não faz nada: nem ao encostar nem ao soltar (Ruling I1-regua-2)', () => {
+    fakeLayout(1000, 140, { selo: 60, tag: 60, ruler: 30 })
+    position = 10
     const { container, p } = renderWave({ isPlaying: true })
     const r = regua(container)
+    const ph = container.querySelector<HTMLElement>('[data-playhead]')!
     vi.spyOn(r, 'getBoundingClientRect').mockReturnValue(rect(100, 1000))
     pointer(r, 'pointerdown', 600)
-    expect(p.onSeek).not.toHaveBeenCalled() // o dedo encostou: nada ainda
-    pointer(r, 'pointermove', 607) // menos de 8 px de lado ainda é toque
+    pointer(r, 'pointermove', 608) // até 8 px de lado ainda é toque
+    frame()
+    expect(ph.style.transform).toBe('translateX(100.0px)') // nem prévia
+    pointer(r, 'pointerup', 608)
     expect(p.onSeek).not.toHaveBeenCalled()
-    pointer(r, 'pointerup', 607)
-    expect(p.onSeek).toHaveBeenCalledTimes(1)
-    expect(p.onSeek).toHaveBeenLastCalledWith(50)
-    pointer(r, 'pointermove', 900)
-    pointer(r, 'pointerup', 900)
-    expect(p.onSeek).toHaveBeenCalledTimes(1) // soltou: nada mais
+    frame()
+    expect(ph.style.transform).toBe('translateX(100.0px)')
+    position = 0
   })
 
   it('tocando, o arrasto na régua mostra a prévia no playhead e busca uma vez ao soltar', () => {
@@ -437,7 +439,38 @@ describe('WaveformSections', () => {
     position = 0
   })
 
-  it('tocando, arrasto cancelado ou que sai da régua não busca e a prévia some', () => {
+  it('tocando, com o ponteiro capturado, o arrasto que sai da régua continua e busca uma vez ao soltar, preso na régua', () => {
+    fakeLayout(1000, 140, { selo: 60, tag: 60, ruler: 30 })
+    position = 10
+    const { container, p } = renderWave({ isPlaying: true })
+    const r = regua(container)
+    const ph = container.querySelector<HTMLElement>('[data-playhead]')!
+    vi.spyOn(r, 'getBoundingClientRect').mockReturnValue(rect(0, 1000))
+    // O navegador captura o ponteiro: os movimentos fora da régua continuam chegando nela.
+    const capture = vi.fn()
+    Object.defineProperty(r, 'setPointerCapture', { value: capture, configurable: true })
+    pointer(r, 'pointerdown', 300)
+    expect(capture).toHaveBeenCalledTimes(1)
+    pointer(r, 'pointermove', 600)
+    fireEvent.pointerLeave(r) // com a captura o dedo saiu da régua, mas o arrasto não acaba
+    pointer(r, 'pointermove', 5000)
+    frame()
+    expect(ph.style.transform).toBe('translateX(1000.0px)') // prévia presa no fim da régua
+    expect(p.onSeek).not.toHaveBeenCalled()
+    pointer(r, 'pointerup', 5000)
+    fireEvent(r, new MouseEvent('lostpointercapture', { bubbles: true }))
+    expect(p.onSeek).toHaveBeenCalledTimes(1)
+    expect(p.onSeek).toHaveBeenLastCalledWith(100)
+    // Captura perdida antes de soltar (o navegador tomou o gesto): cancela sem buscar.
+    pointer(r, 'pointerdown', 300)
+    pointer(r, 'pointermove', 700)
+    fireEvent(r, new MouseEvent('lostpointercapture', { bubbles: true }))
+    pointer(r, 'pointerup', 700)
+    expect(p.onSeek).toHaveBeenCalledTimes(1)
+    position = 0
+  })
+
+  it('tocando, arrasto cancelado ou que sai da régua sem captura não busca e a prévia some', () => {
     fakeLayout(1000, 140, { selo: 60, tag: 60, ruler: 30 })
     position = 20
     const { container, p } = renderWave({ isPlaying: true })
