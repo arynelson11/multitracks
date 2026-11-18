@@ -55,7 +55,8 @@ export const LEGAL_PAGES: LegalPage[] = [
 
 export const LEGAL_LINKS: LegalPage[] = LEGAL_PAGES_LIVE ? LEGAL_PAGES : []
 
-// Preço cobrado de verdade (api/checkout.ts). annualTotal é o valor cobrado no anual.
+// Preço cobrado de verdade: a tabela única do servidor (api/_lib/pricing.ts, que o api/checkout.ts usa).
+// annualTotal é o valor cobrado no anual.
 export const PRICES = {
   pro: { name: 'Pro', monthly: 49.9, annualTotal: 454.8 },
   studio: { name: 'Studio', monthly: 119.9, annualTotal: 1078.8 },
@@ -147,6 +148,7 @@ export const FAQS: Faq[] = [
   },
   {
     q: 'Posso cancelar quando quiser?',
-    a: `Sim, sem multa: a assinatura deixa de renovar, no mensal e no anual. Por enquanto o cancelamento é feito pelo nosso atendimento: chame no WhatsApp ${CONTACT.whatsappDisplay} ou mande um email pra ${CONTACT.email} pedindo o cancelamento. Se você contratou há até 7 dias, pode desistir e receber de volta o que pagou (é o direito de arrependimento do Código de Defesa do Consumidor).${LEGAL_PAGES_LIVE ? ' As regras estão na página Cancelamento, no rodapé do site.' : ''}`,
+    // Regras da cobrança no FATOS (seção 2, "Cobrança, cota e cancelamento"): mudou lá, muda aqui.
+    a: `Sim, sem multa: a assinatura deixa de renovar, no mensal e no anual. Você mesmo cancela no app, em Configurações, aba Assinatura, no botão Cancelar assinatura. Nada mais é cobrado e você continua com o plano até o fim do período já pago; depois a conta volta pro Livre, sem apagar seus arquivos. Se cancelar em até 7 dias do primeiro pagamento da assinatura, vale o direito de arrependimento do Código de Defesa do Consumidor: na primeira assinatura da conta, o valor integral é estornado no cartão e a conta volta pro Livre na hora; numa assinatura seguinte, o estorno não é automático, o pedido vem pra nossa equipe e o direito continua valendo. Se preferir, chame no WhatsApp ${CONTACT.whatsappDisplay} ou mande um email pra ${CONTACT.email}.${LEGAL_PAGES_LIVE ? ' As regras estão na página Cancelamento, no rodapé do site.' : ''}`,
   },
 ]

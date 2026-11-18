@@ -1,5 +1,5 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { verifyUser } from './_lib/auth.js';
+import { verifyActiveUser } from './_lib/auth.js';
 import { applyCors } from './_lib/cors.js';
 
 const R2_ACCOUNT_ID        = process.env.VITE_R2_ACCOUNT_ID || process.env.R2_ACCOUNT_ID;
@@ -56,7 +56,8 @@ export default async function handler(req: any, res: any) {
         return res.status(500).json({ error: 'Server misconfigured' });
     }
 
-    const auth = await verifyUser(req);
+    // Conta bloqueada pelo admin não envia arquivo.
+    const auth = await verifyActiveUser(req);
     if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
 
     const { sourceUrl, key, contentType = 'audio/wav' } = req.body || {};

@@ -1,3 +1,4 @@
+-- SUPERADO: as regras de admin deste arquivo foram trocadas pelo papel profiles.is_admin (db/supabase_admin_papel.sql). Não rodar de novo.
 -- ============================================================
 -- ADMIN DASHBOARD: Setup SQL para Supabase
 -- Execute este script no SQL Editor do Supabase

@@ -1,41 +1,100 @@
-import { useState, type ReactNode } from 'react';
-import { Shield, LogOut } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+// Casca do admin na linguagem nova: topo com a marca, o e-mail e a saída, e as abas.
+// Dentro do app (com onClose) a saída é "Voltar ao app"; na web em /admin, "Sair".
+import { useId, useRef } from 'react'
+import type React from 'react'
+import { PlaybackStudioWordmark } from '../components/brand/PlaybackStudioWordmark'
+import { Button, Chip, Led } from '../components/ui'
+import type { AdminTabId } from './lib/tabs'
+import type { ReviewQueue } from './lib/reviewTypes'
 
-export interface AdminTab { id: string; label: string; icon: LucideIcon; content: ReactNode; }
+type ShellTab = { id: AdminTabId; label: string }
 
-export function AdminShell({ email, onSignOut, tabs }: {
-  email: string | null; onSignOut: () => void; tabs: AdminTab[];
-}) {
-  const [active, setActive] = useState(tabs[0]?.id);
-  const current = tabs.find(t => t.id === active) ?? tabs[0];
+type AdminShellProps = {
+  email: string | null
+  tabs: ShellTab[]
+  active: AdminTabId
+  onSelect: (id: AdminTabId) => void
+  onClose?: () => void
+  onSignOut: () => void
+  reviewCount: ReviewQueue['counts'] | null
+  children?: React.ReactNode
+}
+
+// O Chip ainda não tem anel de foco (DESIGN_SYSTEM 2.6): a aba leva o do Button.
+const TAB_FOCUS = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
+
+export function AdminShell({ email, tabs, active, onSelect, onClose, onSignOut, reviewCount, children }: AdminShellProps) {
+  const baseId = useId()
+  const listRef = useRef<HTMLDivElement>(null)
+  const tabId = (id: AdminTabId) => `${baseId}-tab-${id}`
+  const panelId = `${baseId}-panel`
+
+  // Setas, Home e End andam entre as abas e já abrem a escolhida (padrão de abas do WAI-ARIA).
+  const onTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const last = tabs.length - 1
+    let next: number
+    if (e.key === 'ArrowRight') next = index === last ? 0 : index + 1
+    else if (e.key === 'ArrowLeft') next = index === 0 ? last : index - 1
+    else if (e.key === 'Home') next = 0
+    else if (e.key === 'End') next = last
+    else return
+    e.preventDefault()
+    onSelect(tabs[next].id)
+    listRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
+  }
 
   return (
-    <div className="min-h-screen bg-[#0e0e10] text-white">
-      <header className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-border bg-[#141416] sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-primary/10 rounded-lg border border-primary/20"><Shield size={18} className="text-primary" /></div>
-          <div>
-            <h1 className="font-black text-xs uppercase tracking-wider">Painel Administrativo</h1>
-            <p className="text-[10px] text-text-muted font-mono">{email}</p>
+    <div className="min-h-screen bg-ps-ink text-ps-bone font-ps-sans">
+      <header className="sticky top-0 z-10 bg-ps-ink border-b border-ps-line">
+        {/* Mesma largura do conteúdo, pra marca, abas e tela começarem na mesma coluna. */}
+        <div className="mx-auto max-w-6xl">
+          {/* Marca e saída numa linha; o e-mail, que pode ser comprido, ganha a linha de baixo inteira.
+              O pt-1 das abas deixa espaço pro anel de foco, que a rolagem cortaria. */}
+          <div className="flex flex-wrap items-center justify-between gap-x-3 px-ps-gutter pt-1">
+            <div className="flex min-h-ps-touch items-center gap-2">
+              <PlaybackStudioWordmark size="sm" />
+              <span className="ps-label">Admin</span>
+            </div>
+            {onClose ? (
+              <Button tone="ghost" onClick={onClose}>
+                Voltar ao app
+              </Button>
+            ) : (
+              <Button tone="ghost" onClick={onSignOut}>
+                Sair
+              </Button>
+            )}
+          </div>
+          {email && <p className="px-ps-gutter pb-2 text-ps-sm text-ps-mut break-all">{email}</p>}
+          <div ref={listRef} role="tablist" aria-label="Áreas do admin" className="flex gap-ps-gap overflow-x-auto px-ps-gutter pt-1 pb-3">
+            {tabs.map((t, i) => {
+              const selected = t.id === active
+              const isReview = t.id === 'review'
+              return (
+                <Chip
+                  key={t.id}
+                  id={tabId(t.id)}
+                  role="tab"
+                  aria-selected={selected}
+                  aria-controls={panelId}
+                  tabIndex={selected ? 0 : -1}
+                  on={selected}
+                  onClick={() => onSelect(t.id)}
+                  onKeyDown={(e) => onTabKeyDown(e, i)}
+                  className={TAB_FOCUS}
+                >
+                  {t.label}
+                  {isReview && reviewCount && reviewCount.total > 0 && <span className="ps-num">{reviewCount.total}</span>}
+                  {isReview && reviewCount && reviewCount.manual > 0 && <Led state="alert" size="sm" label="Precisa de você" />}
+                </Chip>
+              )
+            })}
           </div>
         </div>
-        <button onClick={onSignOut} className="flex items-center gap-1.5 text-text-muted hover:text-white text-xs px-3 py-1.5 rounded-lg hover:bg-white/5 transition-all">
-          <LogOut size={14} /> Sair
-        </button>
       </header>
-      <nav className="flex gap-1 px-4 sm:px-6 pt-4 overflow-x-auto border-b border-border">
-        {tabs.map(t => {
-          const Icon = t.icon;
-          return (
-            <button key={t.id} onClick={() => setActive(t.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-lg whitespace-nowrap transition-all ${active === t.id ? 'bg-[#141416] text-white border-b-2 border-primary' : 'text-text-muted hover:text-white'}`}>
-              <Icon size={14} /> {t.label}
-            </button>
-          );
-        })}
-      </nav>
-      <main className="p-4 sm:p-6 max-w-6xl mx-auto">{current?.content}</main>
+      <main id={panelId} role="tabpanel" aria-labelledby={tabId(active)} className="mx-auto max-w-6xl px-ps-gutter py-4">
+        {children}
+      </main>
     </div>
-  );
+  )
 }

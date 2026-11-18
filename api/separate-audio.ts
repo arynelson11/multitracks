@@ -1,24 +1,20 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import Replicate from 'replicate';
 import { createClient } from '@supabase/supabase-js';
-import { verifyUser } from './_lib/auth.js';
+import { verifyActiveUser } from './_lib/auth.js';
 import { applyCors } from './_lib/cors.js';
-import { PAID_PLANS } from './_lib/plan.js';
-
-const DEMUCS_VERSION = '25a173108cff36ef9f80f854c162d01df9e6528be175794b81158fa03836d953';
-
-// Ajuste aqui se mudar a estratégia comercial.
-const PLAN_LIMITS: Record<string, number> = {
-    free:              5,
-    essencial_mensal:  50,
-    essencial_anual:   50,
-    pro_mensal:        150,
-    pro_anual:         150,
-};
+import { PAID_PLANS, PLAN_LIMITS, getQuotaBonus, getUserPlan } from './_lib/plan.js';
+import { DEMUCS_VERSION } from './_lib/aiCost.js';
 
 // Planos pagos podem separar em 2/4/6 faixas. O Livre (free) só 2 (vocal+instrumental).
 // PAID_PLANS vem de _lib/plan (fonte única, compartilhada com insert-song/insert-stems).
 const VALID_STEM_COUNTS = new Set([2, 4, 6]);
+
+// Coluna que não existe: 42703 no Postgres, PGRST204 no PostgREST (cache do schema).
+// Quer dizer que db/supabase_admin_custos.sql ainda não rodou.
+function isMissingColumn(e: { code?: string } | null): boolean {
+    return !!e && (e.code === '42703' || e.code === 'PGRST204');
+}
 
 function getAllowedAudioPrefix(): string | null {
     const raw = process.env.VITE_R2_PUBLIC_URL || process.env.R2_PUBLIC_URL;
@@ -40,7 +36,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return;
     }
 
-    const auth = await verifyUser(req);
+    // Conta bloqueada pelo admin não separa (403 com a frase de BLOCKED_MESSAGE).
+    const auth = await verifyActiveUser(req);
     if (!auth.ok) { res.status(auth.status).json({ error: auth.error }); return; }
 
     const audioUrl: unknown = req.body?.audioUrl;
@@ -59,18 +56,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Admin não tem cota nem trava de faixas.
     if (!auth.isAdmin) {
-        const { data: profile, error: profErr } = await supabase
-            .from('profiles')
-            .select('plan')
-            .eq('id', auth.userId)
-            .maybeSingle();
-
-        if (profErr) {
-            console.error('[separate-audio] profile lookup failed:', profErr.message);
+        // Plano efetivo: cancelado vale até plan_expires_at, depois é Livre.
+        let plan: string;
+        try {
+            plan = await getUserPlan(supabase, auth.userId);
+        } catch (e) {
+            console.error('[separate-audio] profile lookup failed:', e instanceof Error ? e.message : 'erro');
             res.status(500).json({ error: 'Profile lookup failed' });
             return;
         }
-        const plan  = profile?.plan ?? 'free';
 
         // Trava de faixas por plano (server-side): Livre só separa em 2 faixas.
         // Impede burlar a trava client-side (plans.ts) mandando stemCount: 4/6.
@@ -82,7 +76,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return;
         }
 
-        const limit = PLAN_LIMITS[plan] ?? PLAN_LIMITS.free;
+        // Cota extra do mês dada pelo admin soma no limite. Se a leitura falhar,
+        // separa com o limite do plano: a leitura nova nunca derruba a separação.
+        let bonus = 0;
+        try {
+            bonus = await getQuotaBonus(supabase, auth.userId);
+        } catch (e) {
+            console.warn('[separate-audio] cota extra nao lida, segue com o limite do plano:', e instanceof Error ? e.message.slice(0, 200) : 'erro');
+        }
+        const limit = (PLAN_LIMITS[plan] ?? PLAN_LIMITS.free) + bonus;
 
         const { data: consumed, error: rpcErr } = await supabase
             .rpc('consume_separation_token', { p_user_id: auth.userId, p_limit: limit });
@@ -93,7 +95,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return;
         }
         if (consumed !== true) {
-            res.status(402).json({ error: 'Quota exceeded for your plan', plan, limit });
+            // A cota é por mês civil (horário de Brasília): o RPC zera o contador
+            // sozinho na primeira separação do mês (db/supabase_cota_mensal.sql).
+            res.status(402).json({
+                error: `Você já usou as ${limit} separações deste mês. O contador volta a zero no dia 1º.`,
+                plan,
+                limit,
+            });
             return;
         }
     }
@@ -116,12 +124,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
 
         // Registra ownership da prediction para o check-separation validar depois
-        // (impede que outro usuário consulte esta separação por ID). Best-effort:
-        // falha aqui não deve derrubar a resposta, mas é logada.
+        // (impede que outro usuário consulte esta separação por ID), junto com o
+        // modelo do demucs, a versão, as faixas e o status pro custo de IA.
+        // Best-effort: falha aqui não deve derrubar a resposta, mas é logada.
         if (prediction?.id) {
-            const { error: ownErr } = await supabase
+            const owner = { replicate_id: prediction.id, user_id: auth.userId };
+            let { error: ownErr } = await supabase
                 .from('predictions')
-                .insert({ replicate_id: prediction.id, user_id: auth.userId });
+                .insert({ ...owner, model: model_name, version: DEMUCS_VERSION, stem_count: requestedStems, status: 'starting' });
+            if (isMissingColumn(ownErr)) {
+                // Sem as colunas do custo, grava só o dono: a consulta da separação segue funcionando.
+                console.warn('[separate-audio] colunas do custo de IA ausentes, grava so o dono:', ownErr?.code);
+                ({ error: ownErr } = await supabase.from('predictions').insert(owner));
+            }
             if (ownErr) {
                 console.error('[separate-audio] ownership insert failed:', ownErr.message);
             }

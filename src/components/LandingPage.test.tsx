@@ -69,10 +69,15 @@ describe('LandingPage: textos', () => {
     const cancelar = FAQS.find(f => f.q === 'Posso cancelar quando quiser?')?.a ?? ''
     expect(cancelar).toMatch(/^Sim, sem multa: a assinatura deixa de renovar, no mensal e no anual\./)
     expect(cancelar).toContain('7 dias')
+    // v1.4.18: a pessoa cancela sozinha no app; o atendimento ficou como alternativa.
+    expect(cancelar).toContain('em Configurações, aba Assinatura, no botão Cancelar assinatura')
+    expect(cancelar).toContain('continua com o plano até o fim do período já pago')
+    expect(cancelar).toContain('na primeira assinatura da conta, o valor integral é estornado no cartão')
+    expect(cancelar).not.toContain('Por enquanto')
     expect(text()).toContain('Cancele quando quiser: a assinatura deixa de renovar, sem multa')
   })
 
-  it('todas as perguntas da FAQ aparecem, inclusive a de VS e a de cancelamento pelo atendimento', () => {
+  it('todas as perguntas da FAQ aparecem, inclusive a de VS e a de cancelamento (com o atendimento como alternativa)', () => {
     renderLanding()
     for (const f of FAQS) expect(text()).toContain(f.q)
     expect(FAQS.find(f => f.q === 'Posso cancelar quando quiser?')?.a).toMatch(/WhatsApp .* email/)

@@ -1,3 +1,4 @@
+-- SUPERADO: as regras de admin deste arquivo foram trocadas pelo papel profiles.is_admin (db/supabase_admin_papel.sql). Não rodar de novo.
 -- ============================================
 -- Multitracks Cloud Library - Supabase Setup
 -- Execute este SQL no Supabase SQL Editor

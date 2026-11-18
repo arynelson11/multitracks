@@ -1,6 +1,30 @@
 {
   "cleanUrls": true,
   "trailingSlash": false,
+  "functions": {
+    "api/webhook/asaas.ts": {
+      "maxDuration": 60
+    },
+    "api/checkout.ts": {
+      "maxDuration": 30
+    },
+    "api/delete-account.ts": {
+      "maxDuration": 30
+    },
+    "api/admin-stats.ts": {
+      "maxDuration": 30
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/webhook/asaas",
+      "schedule": "30 9 * * *"
+    },
+    {
+      "path": "/api/webhook/asaas?action=reconcile",
+      "schedule": "0 11 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",

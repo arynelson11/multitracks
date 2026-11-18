@@ -1,6 +1,8 @@
 import { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo, lazy, Suspense, memo } from 'react'
 import { Play, Pause, SkipBack, SkipForward, Music, ListMusic, GripVertical, Edit2, Pencil, Check, Trash2, Loader2, Settings, Plus, FolderOpen, Download, Upload, X, ChevronRight, Cloud, Wand2, Timer, Move, LogOut, Shield, Home, Disc, Repeat, Square, Menu, Server } from 'lucide-react'
 const AdminApp = lazy(() => import('./admin/AdminApp'))
+// Mesma função a cada render: o InAppAdmin importa de novo com ela no "Tentar de novo".
+const loadAdminApp = () => import('./admin/AdminApp')
 import { BrandLogo } from './components/BrandLogo'
 import { PlayMark } from './components/brand/PlayMark'
 import { useAudioEngine } from './hooks/useAudioEngine'
@@ -22,12 +24,15 @@ import { GuidedTour, type TourStep } from './components/GuidedTour'
 import { WhatsNewModal } from './components/WhatsNewModal'
 import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/SectionBar'
 import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections, canUseBpmDetection } from './lib/plans'
-import { isAdminEmail } from './lib/admin'
+import { AdminEntryButton, InAppAdmin } from './components/AdminEntryButton'
+import { BlockedScreen } from './components/BlockedScreen'
+import { shouldShowBlocked } from './lib/profileFlags'
 import { usePasswordRecovery } from './hooks/usePasswordRecovery'
 import { cancelPasswordRecovery, finishPasswordRecovery } from './lib/passwordRecovery'
 import { NewPasswordPage } from './components/NewPasswordPage'
 import { keyToSemitone, semitonesBetweenKeys } from './lib/pitchRules'
 import { InstallAppBanner } from './components/InstallAppBanner'
+import { RenewalNoticeBanner } from './components/RenewalNoticeBanner'
 import { AUDIO_FILE_ACCEPT } from './lib/uploadContentType'
 import { useDesktopUpdate } from './hooks/useDesktopUpdate'
 import { CURRENT_VERSION } from './lib/changelog'
@@ -338,11 +343,11 @@ function PadSoundsDialog({ custom, names, onLoad, onClear, onClose }: PadSoundsD
   )
 }
 
-/** Abre a tela interna do admin (/admin), a mesma do botão ADMIN do palco antigo. */
-const openAdminPage = () => { window.location.href = '/admin' }
-
 export default function App() {
-  const { user, loading, signOut, userPlan } = useAuth()
+  const { user, loading, signOut, userPlan, isAdmin, blockedAt, deleteAccount } = useAuth()
+  // Conta comum bloqueada pelo admin: a tela de bloqueio entra no lugar do app (o servidor
+  // recusa as funções dela). Sem a data do bloqueio, ou com a leitura do perfil falhando, nada muda.
+  const blocked = shouldShowBlocked({ user, blockedAt, isAdmin })
   // Volta do link de recuperar senha: mostra a tela Criar nova senha antes de tudo.
   const isRecoveringPassword = usePasswordRecovery()
   const isOnline = useNetworkStatus()
@@ -381,7 +386,7 @@ export default function App() {
   // A trava da R-25: a escolha nova só entra com a VS parada (nem tocando nem na pré-contagem).
   if (wantNewStage !== useNewStage && !isPlaying && !isCountingIn) setUseNewStage(wantNewStage)
 
-  const { playPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume, selectedPadSet, selectPadSet, padMode } = usePadSynth()
+  const { playPad, stopPad, activeNote, loadCustomPad, clearCustomPad, customPads, customPadNames, padVolume, updatePadVolume, selectedPadSet, selectPadSet, padMode } = usePadSynth()
   const [isPricingOpen, setIsPricingOpen] = useState(false)
   const [padActiveView, setPadActiveView] = useState<'pads' | 'samples' | 'loops'>('pads')
   const [activeFolder, setActiveFolder] = useState<string | null>(null)
@@ -417,6 +422,14 @@ export default function App() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [isChannelEditMode, setIsChannelEditMode] = useState(false)
   const [isSeparatorOpen, setIsSeparatorOpen] = useState(false)
+  // Admin dentro do app (web e computador): estado interno, nunca o endereço, porque o
+  // app de computador roda de file://. O isAdminOpen abaixo é o envio de músicas.
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false)
+  // O painel só vale com o papel. Sem ele (a sessão caiu, a conta perdeu o papel, a leitura
+  // falhou), fecha de vez: não reabre sozinho por cima do player na próxima leitura boa.
+  if (isAdminPanelOpen && !isAdmin) setIsAdminPanelOpen(false)
+  // A mesma condição decide se o painel aparece e se os atalhos do player param.
+  const adminPanelShown = isAdminPanelOpen && isAdmin
   const [forceShowSplash, setForceShowSplash] = useState(false)
   const [isMetronomeModalOpen, setIsMetronomeModalOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -510,7 +523,6 @@ export default function App() {
   const [settingsFocus, setSettingsFocus] = useState<'outputs' | null>(null)
   // Analisador de cada canal, ligado no fader (o VU do palco antigo e o medidor do palco novo).
   const analysersRef = useRef<Record<string, AnalyserNode>>({})
-  const isAdmin = isAdminEmail(user?.email)
   const activeSong: Song | undefined = playlist[activeSongIndex]
 
   // A grade com identidade estável (Aviso T18 M4): o motor monta um objeto novo a cada mudança no
@@ -799,6 +811,8 @@ export default function App() {
     const cleanup = window.playbackDesktop.onRemoteCommand((cmd) => {
       const allowed = !!cmd.ip && approvedIps.includes(cmd.ip)
       if (!allowed) return
+      // Conta bloqueada: o player não está na tela, então a banda não toca nada por trás.
+      if (blocked) return
       switch (cmd.action) {
         case 'toggle-play': isPlaying ? pause() : playWithPrecount(); break
         case 'next': nextSong(); break
@@ -818,7 +832,7 @@ export default function App() {
       }
     })
     return cleanup
-  }, [approvedIps, userPlan, isPlaying, pause, playWithPrecount, nextSong, prevSong, jumpToSong, updateVolume, toggleMute, toggleSolo, changePitch, playPad, updatePadVolume, armLoop, cancelLoop, armJump])
+  }, [approvedIps, userPlan, isPlaying, pause, playWithPrecount, nextSong, prevSong, jumpToSong, updateVolume, toggleMute, toggleSolo, changePitch, playPad, updatePadVolume, armLoop, cancelLoop, armJump, blocked])
 
   // Cria uma seção no ponto atual com o nome dado. Usado pelo menu "Marcar" e
   // pelos atalhos de teclado (V, R, ...).
@@ -840,8 +854,11 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       // A página de separação tem seus próprios atalhos (Espaço toca os multitracks
       // separados, não a playlist). Enquanto ela estiver aberta, o App não responde
-      // ao teclado pra não controlar a playback errada.
-      if (isSeparatorOpen) return
+      // ao teclado pra não controlar a playback errada. O admin também: lá Espaço e
+      // setas são dos botões e das abas, e uma letra não pode marcar seção na música.
+      if (isSeparatorOpen || adminPanelShown) return
+      // Conta bloqueada: a tela de bloqueio está no lugar do player.
+      if (blocked) return
       const el = e.target as HTMLElement | null
       const tag = el?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return
@@ -869,7 +886,18 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker, isSeparatorOpen, useNewStage])
+  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker, isSeparatorOpen, useNewStage, adminPanelShown, blocked])
+
+  // Bloqueio que chega com o app aberto (o perfil é relido ao voltar pra janela): a tela de
+  // bloqueio tira o player da tela, então nada fica tocando sem controle. Para a música, a
+  // contagem, o pad e a prévia de sample. O Separador para o próprio som ao sair da tela.
+  useEffect(() => {
+    if (!blocked) return
+    if (isCountingIn) cancelCountIn()
+    if (isPlaying) pause()
+    if (activeNote) stopPad()
+    if (playingUrl) stopPlayback()
+  }, [blocked, isCountingIn, cancelCountIn, isPlaying, pause, activeNote, stopPad, playingUrl, stopPlayback])
 
   const handleStartLiveMode = async () => {
     // Modo Ao Vivo é exclusivo dos planos pagos.
@@ -1221,9 +1249,19 @@ export default function App() {
     return <LandingPage onEnter={() => setShowAuth(true)} />
   }
 
+  // ───────────────── CONTA BLOQUEADA (pelo admin) ─────────────────
+  // No lugar do Separador e do player. Conta admin nunca cai aqui (shouldShowBlocked).
+  if (blocked) return <BlockedScreen plan={userPlan} onSignOut={signOut} onDeleteAccount={deleteAccount} />
+
   // ───────────────── SEPARATOR (acessível da tela inicial) ─────────────────
   if (isSeparatorOpen) {
     return <SeparatorStudio onClose={() => setIsSeparatorOpen(false)} />
+  }
+
+  // ───────────────── ADMIN (dentro do app, só pra quem tem o papel) ─────────────────
+  // Se o pedaço do admin não carregar ou quebrar, o InAppAdmin mostra a frase com a volta pro app.
+  if (adminPanelShown) {
+    return <InAppAdmin load={loadAdminApp} onClose={() => setIsAdminPanelOpen(false)} />
   }
 
   // ───────────────── SPLASH ─────────────────
@@ -1355,12 +1393,12 @@ export default function App() {
             </div>
   )
 
-  // Ferramentas do admin no EDITAR do palco novo (a casca só mostra pra admin): a tela interna do
-  // admin, o editor de marcadores e o de letra e cifra, como no palco antigo.
+  // Ferramentas do admin no EDITAR do palco novo (a casca só mostra pra admin): o admin dentro do
+  // app (o mesmo que o botão ADMIN do palco antigo abre), o editor de marcadores e o de letra e cifra.
   const stageAdminTools = useNewStage && isEditMode && isAdmin ? (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={openAdminPage} icon={<Shield size={14} />}>ADMIN</Button>
+        <Button onClick={() => setIsAdminPanelOpen(true)} icon={<Shield size={14} />}>ADMIN</Button>
         <Button tone={isMarkerEditorOpen ? 'on' : 'default'} onClick={() => setIsMarkerEditorOpen(!isMarkerEditorOpen)} icon={<Pencil size={14} />}>Editor avançado</Button>
         <Button onClick={() => setIsLyricsEditorOpen(true)} icon={<Edit2 size={14} />}>Letra e cifra</Button>
       </div>
@@ -1639,13 +1677,9 @@ export default function App() {
               <span className="hidden min-[1680px]:inline">{isEditMode ? 'OK' : 'EDITAR'}</span>
             </button>
 
-            {/* Admin Dashboard - only for admin */}
-            {(isAdminEmail(user?.email)) && (
-              <button onClick={openAdminPage}
-                className="transport-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-bold cursor-pointer text-primary/70 hover:text-primary border border-primary/20 hover:border-primary/40 transition-all">
-                <Shield size={14} /><span className="hidden min-[1680px]:inline">ADMIN</span>
-              </button>
-            )}
+            {/* Admin: abre dentro do app, só pra quem tem o papel */}
+            <AdminEntryButton isAdmin={isAdmin} variant="toolbar"
+              onOpen={() => { setIsAdminPanelOpen(true); setIsMobileDrawerOpen(false) }} />
 
             {/* Live Mode - only for Electron */}
             {window.playbackDesktop?.isElectron && (
@@ -2086,7 +2120,7 @@ export default function App() {
                 }}
               />
               {/* Ferramentas avançadas (admin): cor/letra por marcador + salvar na nuvem */}
-              {isAdminEmail(user?.email) && (
+              {isAdmin && (
                 <div className="flex items-center gap-1.5 mt-1.5">
                   <button
                     onClick={() => setIsMarkerEditorOpen(!isMarkerEditorOpen)}
@@ -2106,7 +2140,7 @@ export default function App() {
           )}
 
           {/* ─── Marker Editor Panel (Admin) ─── */}
-          {isMarkerEditorOpen && isAdminEmail(user?.email) && markerEditorPanel()}
+          {isMarkerEditorOpen && isAdmin && markerEditorPanel()}
         </section>
 
         {/* ─── Mobile View Toggle ─── */}
@@ -2491,7 +2525,7 @@ export default function App() {
       />
 
       {/* Admin Modal */}
-      {isAdminEmail(user?.email) && (
+      {isAdmin && (
         <AdminModal
         isOpen={isAdminOpen}
         onClose={() => setIsAdminOpen(false)}
@@ -2501,6 +2535,7 @@ export default function App() {
       {showTour && <GuidedTour steps={useNewStage ? TOUR_STEPS_NEW_STAGE : TOUR_STEPS} onClose={closeTour} />}
       {showWhatsNew && <WhatsNewModal onClose={closeWhatsNew} />}
       <InstallAppBanner />
+      <RenewalNoticeBanner userId={user?.id} plan={userPlan} />
 
       <LiveModeModal
         isOpen={isLiveModeOpen}
@@ -2557,7 +2592,7 @@ export default function App() {
         onClose={() => setIsPadSetsModalOpen(false)}
         onSelect={selectPadSet}
         selectedPadSet={selectedPadSet}
-        isAdmin={isAdminEmail(user?.email)}
+        isAdmin={isAdmin}
       />
 
       {/* EDITAR dos pads no palco novo: carregar ou tirar o som de cada tom. */}
@@ -2698,17 +2733,9 @@ export default function App() {
 
                   <hr className="border-border my-2" />
 
-                  {/* ADMIN */}
-                  {(isAdminEmail(user?.email)) && (
-                    <button onClick={openAdminPage}
-                      className="w-full text-left px-3 py-3 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors border border-transparent hover:border-border">
-                      <span className="text-white text-sm font-bold flex items-center gap-3">
-                        <Shield size={16} className="text-primary" />
-                        Admin
-                      </span>
-                      <ChevronRight size={14} className="text-text-muted" />
-                    </button>
-                  )}
+                  {/* ADMIN: abre dentro do app, só pra quem tem o papel */}
+                  <AdminEntryButton isAdmin={isAdmin} variant="drawer"
+                    onOpen={() => { setIsAdminPanelOpen(true); setIsMobileDrawerOpen(false) }} />
 
                   {/* CONFIG */}
                   <button onClick={() => { setIsSettingsOpen(true); setIsMobileDrawerOpen(false); }}

@@ -1,3 +1,4 @@
+-- SUPERADO: as regras de admin deste arquivo foram trocadas pelo papel profiles.is_admin (db/supabase_admin_papel.sql). Não rodar de novo.
 -- ╔══════════════════════════════════════════════════════════════════════╗
 -- ║  Histórico durável de pagamentos por usuário (unit economics).          ║
 -- ║  Gravado pelo webhook do Asaas no CHECKOUT_PAID. Leitura só admin.       ║

@@ -6,7 +6,6 @@ import { updateSong, type CloudSong } from '../lib/supabase';
 import { updateCachedSongMeta } from '../lib/offlineCache';
 import { uploadToR2 } from '../lib/r2';
 import { type Marker } from '../types';
-import { isAdminEmail } from '../lib/admin';
 import { INVALID_BPM_MESSAGE, editedBpmColumns, preciseBpm } from '../lib/cloudBpm';
 import type { TimeSignatureType } from '../lib/AudioAnalyzer';
 
@@ -35,8 +34,7 @@ export function LibraryModal({ isOpen, onClose, onDownload, onSongEdited }: Libr
         isOnline
     } = useCloudLibrary();
 
-    const { user } = useAuth();
-    const isAdmin = isAdminEmail(user?.email);
+    const { user, isAdmin } = useAuth();
 
     const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
     // bpmText: o que está digitado no campo de BPM (undefined = não mexeu).

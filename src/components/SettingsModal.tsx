@@ -6,13 +6,13 @@ import type { Channel } from '../types';
 import { buildChannelLabels } from '../lib/channelNames';
 import { PricingModal } from './PricingModal';
 import { AudioOutputSelect } from './AudioOutputSelect';
-import { supabase } from '../lib/supabase';
-import { planDisplayName, isPaidPlan, maxSeparationsPerMonth } from '../lib/plans';
+import { planDisplayName, isPaidPlan } from '../lib/plans';
+import { SeparationUsageMeter } from './SeparationUsageMeter';
+import { SubscriptionPanel } from './SubscriptionPanel';
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark';
 import { ProfileTab } from './ProfileTab';
 import { CHANGELOG } from '../lib/changelog';
 import { Sparkles } from 'lucide-react';
-import { isAdminEmail } from '../lib/admin';
 import { StageVersionSetting } from './settings/StageVersionSetting';
 import { AudioOutputsSection } from './settings/AudioOutputsSection';
 import { CUE_TO_PA_CONFIRM_TEXT, needsCueToPaConfirm, type OutputWarning } from '../lib/outputPlan';
@@ -40,22 +40,10 @@ type Tab = 'Perfil' | 'Geral' | 'Buses' | 'Novidades' | 'Assinatura' | 'Sobre';
 
 export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin, onReplayTour, desktopUpdate, onInstallUpdate, focusSection = null, isPlaying = false, maxOutputChannels = 2, outputWarning = null }: SettingsModalProps) {
     const { settings, updateSetting, canPickOutput, outputLoadWarnings } = useSettings();
-    const { user, updateProfile, updatePassword, signOutEverywhere, deleteAccount } = useAuth();
+    // Plano efetivo (cancelado vale até a data de fim, depois é Livre).
+    const { user, userPlan, isAdmin, refreshPlan, updateProfile, updatePassword, signOutEverywhere, deleteAccount } = useAuth();
     const [activeTab, setActiveTab] = useState<Tab>('Perfil');
     const [isPricingOpen, setIsPricingOpen] = useState(false);
-    const [userPlan, setUserPlan] = useState<string>('free');
-
-    useEffect(() => {
-        const fetchPlan = async () => {
-            if (user && supabase) {
-                const { data } = await supabase.from('profiles').select('plan').eq('id', user.id).single();
-                if (data) setUserPlan(data.plan || 'free');
-            }
-        };
-        fetchPlan();
-    }, [user]);
-
-    const isAdmin = isAdminEmail(user?.email);
 
     // Aberto pelo aviso SAÍDAS: vai pra aba Geral (ajuste no render, quando abre) e rola até as saídas.
     const outputsRef = useRef<HTMLDivElement>(null);
@@ -312,28 +300,14 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                                         : 'Obrigado por apoiar o Playback Studio. Aproveite tudo do seu plano.'}
                                 </p>
 
-                                {(() => {
-                                    const maxLimit = maxSeparationsPerMonth(userPlan);
-                                    const currentUsage = parseInt(localStorage.getItem('separator_usage') || '0');
-                                    const usagePercent = Math.min(100, Math.round((currentUsage / maxLimit) * 100));
-                                    
-                                    return (
-                                        <div className="w-full bg-white/5 rounded-lg p-4 mb-6 border border-white/10 text-left">
-                                            <div className="flex justify-between items-center mb-2">
-                                                <span className="text-white text-xs font-bold uppercase tracking-wider">Separações de Faixas com IA</span>
-                                                <span className="text-text-muted text-[10px] font-mono">{currentUsage} / {maxLimit} usadas</span>
-                                            </div>
-                                            <div className="w-full h-2 bg-black/50 rounded-full overflow-hidden">
-                                                <div 
-                                                    className={`h-full rounded-full transition-all duration-500 ${usagePercent > 90 ? 'bg-red-500' : 'bg-primary'}`} 
-                                                    style={{ width: `${usagePercent}%` }}
-                                                />
-                                            </div>
-                                            <p className="text-white/30 text-[9px] font-mono mt-2">O limite é renovado a cada ciclo de faturamento.</p>
-                                        </div>
-                                    );
-                                })()}
-                                
+                                <SeparationUsageMeter plan={userPlan} isAdmin={isAdmin} />
+
+                                <SubscriptionPanel
+                                    plan={userPlan}
+                                    onChanged={() => { void refreshPlan(); }}
+                                    onOpenPricing={() => setIsPricingOpen(true)}
+                                />
+
                                 <button
                                     onClick={() => setIsPricingOpen(true)}
                                     className="px-6 py-3 bg-laranja text-bone text-xs font-bold uppercase tracking-wider rounded-lg transition-transform hover:scale-105 active:scale-95 shadow-lg shadow-laranja/25 mb-2"

@@ -1,121 +1,137 @@
 /// <reference types="node" />
-import { createClient } from '@supabase/supabase-js';
-import { timingSafeEqual } from 'node:crypto';
+import { createClient } from '@supabase/supabase-js'
+import { createHash, timingSafeEqual } from 'node:crypto'
+import { asaasFromEnv } from '../_lib/asaas.js'
+import { isBillingEvent, processStoredEvent, runDailyJob, runPendingActions, sanitizeAsaasPayload } from '../_lib/billing.js'
+import { RECONCILE_CRON, runReconcile } from '../_lib/reconcile.js'
 
-// Webhook do Asaas: confirma o pagamento e ativa o plano no Supabase.
-// Autenticação: o Asaas envia, em todo POST, o header `asaas-access-token` com
-// o valor que você cadastra no painel (igual ao ASAAS_WEBHOOK_TOKEN aqui).
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const webhookToken = process.env.ASAAS_WEBHOOK_TOKEN;
-
-const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const VALID_PLANS = new Set(['essencial_mensal', 'essencial_anual', 'pro_mensal', 'pro_anual']);
-
-// Valores por plano (espelha PLAN_PRICING de api/checkout.ts). Usado para
-// registrar o pagamento em public.payments (unit economics).
-const PLAN_VALUES: Record<string, { value: number; cycle: 'MONTHLY' | 'YEARLY' }> = {
-  essencial_mensal: { value: 49.90, cycle: 'MONTHLY' },
-  essencial_anual:  { value: 454.80, cycle: 'YEARLY' },
-  pro_mensal:       { value: 119.90, cycle: 'MONTHLY' },
-  pro_anual:        { value: 1078.80, cycle: 'YEARLY' },
-};
+// Webhook do Asaas + job diário de cobrança.
+//
+// POST (Asaas): checkout pago, assinatura e cobranças. Autenticação pelo header
+// `asaas-access-token` (= ASAAS_WEBHOOK_TOKEN, comparação em tempo constante).
+// O evento é GRAVADO (sem dados de cartão) antes de processar e a resposta é
+// 200 assim que está gravado: o que falhar no processamento (Asaas ou rede
+// fora do ar) fica 'failed' e o job tenta de novo, sem travar a fila
+// Sequencial do Asaas. Só autenticação errada responde 401; só falha ao gravar
+// o evento responde 500 (aí o Asaas reenvia, que é o certo). Idempotente pelo
+// id do evento: evento já processado responde 200 sem repetir nada.
+//
+// GET (Vercel Cron, 1x por dia): header `Authorization: Bearer <CRON_SECRET>`.
+// Roda o job diário (o mesmo do pg_cron), reprocessa eventos que falharam e
+// tenta de novo as pendências com o Asaas.
+// GET ?action=reconcile (outro cron diário, mesmo segredo): conferência entre o
+// app e o Asaas que só lê o Asaas e só marca pro admin (api/_lib/reconcile.ts).
+// Também é reconhecida pelo cabeçalho x-vercel-cron-schedule do agendamento dela.
+//
+// Regras em api/_lib/billing.ts; estado em db/supabase_assinaturas.sql.
 
 function safeEqualStr(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ab.length !== bb.length) return false;
-  return timingSafeEqual(ab, bb);
+  const ab = Buffer.from(a)
+  const bb = Buffer.from(b)
+  if (ab.length !== bb.length) return false
+  return timingSafeEqual(ab, bb)
 }
 
-// Valida o par userId/planKey (venha de onde vier) antes de ativar o plano.
-function validRef(userId?: string, planKey?: string): boolean {
-  return !!userId && !!planKey && UUID_V4_RE.test(userId) && VALID_PLANS.has(planKey);
+function header(req: any, name: string): string { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const v = req.headers?.[name]
+  return typeof v === 'string' ? v : ''
 }
 
-export default async function handler(req: any, res: any) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+function getAction(req: any): string { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const q = req.query?.action
+  if (typeof q === 'string' && q) return q
+  if (typeof req.url === 'string' && req.url.includes('?')) {
+    const v = new URLSearchParams(req.url.slice(req.url.indexOf('?') + 1)).get('action')
+    if (v) return v
+  }
+  return header(req, 'x-vercel-cron-schedule') === RECONCILE_CRON ? 'reconcile' : ''
+}
 
-  if (!webhookToken || !supabaseUrl || !serviceRoleKey) {
-    console.error('[asaas-webhook] server misconfigured: missing env vars');
-    return res.status(500).json({ error: 'Server misconfiguration' });
+export default async function handler(req: any, res: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (req.method !== 'POST' && req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' })
+
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.error('[asaas-webhook] server misconfigured: missing env vars')
+    return res.status(500).json({ error: 'Server misconfiguration' })
   }
 
-  const provided = typeof req.headers?.['asaas-access-token'] === 'string'
-    ? req.headers['asaas-access-token'] as string
-    : '';
+  // ── Job diário (Vercel Cron) ──
+  if (req.method === 'GET') {
+    const cronSecret = process.env.CRON_SECRET
+    const auth = header(req, 'authorization')
+    if (!cronSecret || !auth.startsWith('Bearer ') || !safeEqualStr(auth.slice(7), cronSecret)) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+    if (getAction(req) === 'reconcile') {
+      try {
+        const out = await runReconcile({ db: createClient(supabaseUrl, serviceRoleKey), asaas: asaasFromEnv(5000) })
+        console.log('[billing-reconcile] ok', out)
+        return res.status(200).json({ ok: true, reconcile: out })
+      } catch (e) {
+        console.error('[billing-reconcile] falhou:', e instanceof Error ? e.message : 'erro')
+        return res.status(500).json({ error: 'Reconcile failed' })
+      }
+    }
+    try {
+      const out = await runDailyJob({ db: createClient(supabaseUrl, serviceRoleKey), asaas: asaasFromEnv(5000) })
+      console.log('[billing-job] ok', out)
+      return res.status(200).json({ ok: true, ...out })
+    } catch (e) {
+      console.error('[billing-job] falhou:', e instanceof Error ? e.message : 'erro')
+      return res.status(500).json({ error: 'Job failed' })
+    }
+  }
+
+  // ── Webhook do Asaas ──
+  const webhookToken = process.env.ASAAS_WEBHOOK_TOKEN
+  if (!webhookToken) {
+    console.error('[asaas-webhook] server misconfigured: missing ASAAS_WEBHOOK_TOKEN')
+    return res.status(500).json({ error: 'Server misconfiguration' })
+  }
+  if (webhookToken.length < 32) console.warn('[asaas-webhook] ASAAS_WEBHOOK_TOKEN curto: o Asaas pede de 32 a 255 caracteres')
+  const provided = header(req, 'asaas-access-token')
   if (!provided || !safeEqualStr(provided, webhookToken)) {
-    console.warn('[asaas-webhook] invalid or missing token');
-    return res.status(401).json({ error: 'Unauthorized' });
+    console.warn('[asaas-webhook] invalid or missing token')
+    return res.status(401).json({ error: 'Unauthorized' })
   }
 
-  try {
-    const payload = typeof req.body === 'object' && req.body ? req.body : {};
-    const event: string | undefined = payload?.event;
-
-    // Ativamos o plano no CHECKOUT_PAID (1ª cobrança da assinatura concluída).
-    if (event !== 'CHECKOUT_PAID') {
-      return res.status(200).json({ received: true, ignored: event ?? 'no-event' });
-    }
-
-    const checkout = payload?.checkout ?? {};
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
-
-    // 1) Caminho principal: vínculo gravado por nós (checkout id -> user/plano).
-    let userId: string | undefined;
-    let planKey: string | undefined;
-    if (checkout?.id) {
-      const { data } = await supabase
-        .from('pending_checkouts')
-        .select('user_id, plan_key')
-        .eq('id', checkout.id)
-        .single();
-      if (data) { userId = data.user_id; planKey = data.plan_key; }
-    }
-
-    // 2) Bônus: se o Asaas tiver propagado nosso externalReference, usa também.
-    if (!validRef(userId, planKey) && typeof checkout?.externalReference === 'string' && checkout.externalReference.includes('::')) {
-      const [u, p] = checkout.externalReference.split('::');
-      userId = u; planKey = p;
-    }
-
-    if (!validRef(userId, planKey)) {
-      console.warn('[asaas-webhook] could not resolve user/plan', { checkoutId: checkout?.id });
-      return res.status(200).json({ received: true, reason: 'no-ref' });
-    }
-
-    const { error } = await supabase.from('profiles').update({ plan: planKey }).eq('id', userId);
-    if (error) {
-      console.error('[asaas-webhook] supabase update failed:', error.message);
-      return res.status(500).json({ error: 'Failed to update profile' });
-    }
-
-    // Registra o pagamento para histórico por usuário (unit economics).
-    // Upsert por checkout.id => idempotente se o Asaas reenviar o webhook.
-    const priced = PLAN_VALUES[planKey];
-    if (checkout?.id && priced) {
-      const { error: payErr } = await supabase
-        .from('payments')
-        .upsert({
-          id: checkout.id,
-          user_id: userId,
-          plan_key: planKey,
-          value: priced.value,
-          cycle: priced.cycle,
-          asaas_checkout_id: checkout.id,
-        }, { onConflict: 'id' });
-      if (payErr) console.error('[asaas-webhook] payments insert failed:', payErr.message);
-    }
-
-    // Limpa o vínculo já consumido (não bloqueia o sucesso se falhar).
-    if (checkout?.id) {
-      await supabase.from('pending_checkouts').delete().eq('id', checkout.id);
-    }
-
-    console.log('[asaas-webhook] plan updated', { plan: planKey });
-    return res.status(200).json({ received: true, updated: true });
-  } catch (error: any) {
-    console.error('[asaas-webhook] handler error:', error?.message);
-    return res.status(500).json({ error: 'Internal Server Error' });
+  const payload: Record<string, unknown> = typeof req.body === 'object' && req.body ? req.body : {}
+  const event = payload.event
+  if (!isBillingEvent(event)) {
+    return res.status(200).json({ received: true, ignored: typeof event === 'string' ? event : 'no-event' })
   }
+
+  const db = createClient(supabaseUrl, serviceRoleKey)
+  const deps = { db, asaas: asaasFromEnv(5000) }
+  const eventId = typeof payload.id === 'string' && payload.id
+    ? payload.id
+    : `sha:${createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 40)}`
+
+  // 1. Grava o evento (sem cartão). Já existe: responde conforme o estado.
+  let attempts = 0
+  const { error: insErr } = await db.from('asaas_webhook_events')
+    .insert({ id: eventId, event, payload: sanitizeAsaasPayload(payload), status: 'pending' })
+  if (insErr) {
+    if (insErr.code !== '23505') {
+      console.error('[asaas-webhook] nao gravou o evento, o Asaas vai reenviar:', insErr.message)
+      return res.status(500).json({ error: 'Could not persist event' })
+    }
+    const { data } = await db.from('asaas_webhook_events').select('status, attempts').eq('id', eventId).maybeSingle()
+    const row = data as { status?: string; attempts?: number } | null
+    if (row?.status === 'done') return res.status(200).json({ received: true, duplicate: true })
+    attempts = row?.attempts ?? 0
+  }
+
+  // 2. Processa. Falha fica 'failed' pro job; a resposta é 200 de qualquer jeito.
+  const outcome = await processStoredEvent(deps, eventId, payload, attempts)
+
+  // 3. Aproveita pra tentar de novo pendências antigas com o Asaas (best-effort).
+  try { await runPendingActions(deps, { limit: 3 }) } catch (e) {
+    console.warn('[asaas-webhook] pendencias ficam pro job:', e instanceof Error ? e.message : 'erro')
+  }
+
+  console.log('[asaas-webhook] recebido', { event, processed: outcome.ok, result: outcome.result })
+  return res.status(200).json({ received: true, processed: outcome.ok, result: outcome.result })
 }

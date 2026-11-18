@@ -11,6 +11,20 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.18',
+    date: '2026-11-17',
+    title: 'Cancele pelo app e cota que renova todo mês',
+    items: [
+      'Agora você cancela a assinatura sozinho, em Configurações > Assinatura, no botão Cancelar assinatura.',
+      'Cancelou? Nada mais é cobrado e você continua com o plano até o fim do período já pago. Seus arquivos não somem.',
+      'Na primeira assinatura da conta, cancelar em até 7 dias devolve o valor inteiro no cartão e a conta volta pro Livre na hora.',
+      'As separações do plano voltam a zero todo dia 1º, no horário de Brasília. A aba Assinatura mostra quantas você já usou no mês.',
+      'No plano mensal, o app avisa quando faltam 3 dias para a assinatura vencer.',
+      'Conta bloqueada agora tem uma tela própria, onde dá pra ver a assinatura, cancelar ou sair.',
+      'Para a equipe do Playback Studio: um painel de administração novo, dentro do app.',
+    ],
+  },
+  {
     version: '1.4.17',
     date: '2026-11-16',
     title: 'Site mais fácil de achar e nova senha',

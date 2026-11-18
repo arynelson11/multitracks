@@ -1,3 +1,4 @@
+-- SUPERADO: as regras de admin deste arquivo foram trocadas pelo papel profiles.is_admin (db/supabase_admin_papel.sql). Não rodar de novo.
 -- ╔══════════════════════════════════════════════════════════════════════╗
 -- ║  Biblioteca de separações em nuvem = recurso PAGO (Pro/Studio).         ║
 -- ║  Trava server-side via RLS. Rodar uma vez no Supabase SQL Editor.       ║
