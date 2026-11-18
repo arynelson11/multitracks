@@ -131,7 +131,7 @@ describe('lixeira do canal pede segundo toque', () => {
     const classes = trashOf('Guitarra').className.split(/\s+/)
     expect(classes).toEqual(expect.arrayContaining(['min-h-ps-touch', 'min-w-ps-touch', 'whitespace-nowrap']))
     expect(classes.some((c) => /^w-\d|^w-\[/.test(c))).toBe(false)
-    // Âmbar do token de alerta (ps-alert), não o #f59e0b da família Guia e da seção Pré.
+    // Âmbar do token de alerta (ps-alert), não o #f59e0b da seção Pré.
     expect(classes).toContain('bg-ps-alert')
     expect(trashOf('Guitarra').className).not.toContain('#f59e0b')
   })
