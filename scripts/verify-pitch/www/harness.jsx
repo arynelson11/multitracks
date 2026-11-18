@@ -583,7 +583,8 @@ async function main() {
   }));
   const plan = LEGACY ? null : E().outputPlan;
   const res = {
-    cfg: { SEQ, N, ORDER, CLICK, measure, DUR, sampleRate: ctx.sampleRate, pansAtLoad, pannerCfg, songSizes,
+    // baseLatency: a folga do corte do motor sai dela (a soltura da busca, Ruling I4-busca).
+    cfg: { SEQ, N, ORDER, CLICK, measure, DUR, sampleRate: ctx.sampleRate, baseLatency: ctx.baseLatency, pansAtLoad, pannerCfg, songSizes,
       maxTransposable: MULTI ? Math.max(...SONG_SIZES) : undefined, voice: [...VOICE].filter((v) => instr.includes(v)), instruments: instr, channels: chNames,
       SONG, STAGE, PITCH, SAIDA, LEGACY, clickAttack: CLICK_ATTACK,
       outputs: plan ? { mode: plan.mode, click: plan.click, guide: plan.guide, vs: plan.vs } : null,

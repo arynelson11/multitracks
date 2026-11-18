@@ -61,8 +61,10 @@ ou volta do LOOP do palco antigo tocando), as vozes novas começam no máximo 6,
 antes de ela começar a descer (a soltura começa na folga do corte, que cresce com o
 `baseLatency`), no limite de bloco: o critério acha o começo da soltura pelo `stop()`
 da voz velha (30 ms depois dele). O tempo de reação (da chamada até o som) no RESTART
-e no LOOP aceita, na mediana, 1 bloco a mais por isso e outro porque ele é medido do
-relógio na chamada, e o motor pode virar um bloco antes do fim da preparação das fontes.
+e no LOOP aceita, na mediana, essa espera (pela `baseLatency` que a página grava: com 10 ms,
+a folga do corte é 20 ms e a busca responde em uns 14 a 17 ms) e mais 1 bloco, porque ele é
+medido do relógio na chamada e o motor pode virar um bloco antes do fim da preparação das
+fontes.
 
 ## Palco novo (T30)
 

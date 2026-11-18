@@ -26,18 +26,31 @@ const CH_LEVEL_DB = -70;   // SONGS: nível mínimo de cada faixa da música toc
 // (revisão da v1.4.16, seção 6); transposto, só a latência compensada a mais. Os
 // critérios de alinhamento entre faixas (START_EPS_MS, SPREAD_MS) não mudam.
 // Desde a v1.4.20 (Ruling I4-busca), na busca e na volta do LOOP do palco antigo com a VS tocando,
-// as vozes novas começam no máximo 6,4 ms antes de a voz velha começar a descer (a soltura começa
-// na folga do corte, max(10 ms, 2 x baseLatency); no Chrome deste Mac, 10,67 ms): com a chamada no
-// fim de um bloco, isso dá 1 bloco a mais que os 2 de sempre. A mediana do tempo de reação no
-// RESTART e no LOOP aceita esse bloco também, e a folga agendada exata segue a regra nova.
+// as vozes novas começam no máximo 6,4 ms antes de a voz velha começar a descer, e a soltura começa
+// na folga do corte, max(10 ms, 2 x baseLatency): com a latência do aparelho grande (o Chrome
+// headless a 44,1 kHz chega a 10 ms, a folga a 20 ms) a busca espera por ela, em vez de somar a
+// música velha com a nova por até 14 ms. A mediana do tempo de reação no RESTART e no LOOP aceita
+// essa espera (pela baseLatency que a página grava), e a folga agendada exata segue a regra nova.
 const V149_SEEK_MS = 0.0;
 const V149_LOOP_HOLE_MS = 0.0;
 const START_LEAD_QUANTA = 2;
 const REACTION_SLACK_QUANTA = 1;
-const SEEK_OVERLAP_QUANTA = 1;
-const RESTART_SLACK_MS = (START_LEAD_QUANTA + REACTION_SLACK_QUANTA + SEEK_OVERLAP_QUANTA) * 128 / 48 + 0.5;
 // Ruling I4-busca: a voz velha em ganho 1 por cima da nova, no máximo (useAudioEngine.ts, SEEK_OVERLAP_MAX_S).
 const SEEK_OVERLAP_MAX_S = 0.0064;
+// Folga do corte do motor (useAudioEngine.ts, cutLead).
+const CUT_LEAD_MIN_S = 0.01;
+/**
+ * Folga do play numa busca tocando (ms): 2 blocos, ou o 1º limite de bloco a no máximo 6,4 ms antes
+ * de a soltura da voz velha começar (no pior caso da fase, mais 1 bloco), mais 1 bloco de
+ * tolerância e 0,5 ms de medição. Sem a baseLatency gravada (resultado antigo), a conta de antes
+ * com 1 bloco a mais.
+ */
+function restartSlackMs(cfg) {
+  const q = 128 / (cfg.sampleRate || 48000);
+  const bl = typeof cfg.baseLatency === 'number' && Number.isFinite(cfg.baseLatency) && cfg.baseLatency > 0 ? cfg.baseLatency : null;
+  const lead = bl === null ? (START_LEAD_QUANTA + 1) * q : Math.max(START_LEAD_QUANTA * q, Math.max(CUT_LEAD_MIN_S, 2 * bl) - SEEK_OVERLAP_MAX_S + q);
+  return (lead + REACTION_SLACK_QUANTA * q) * 1000 + 0.5;
+}
 // A soltura das vozes: a fonte para 30 ms depois do começo da curva (VOICE_RELEASE_STOP).
 const VOICE_RELEASE_STOP_S = 0.03;
 // Folga de reserva da rede de segurança do play() (RETRY_LEAD_S = 40 ms).
@@ -304,7 +317,7 @@ export function analyze(key, R, opts = {}) {
         if (r !== undefined) gR.push((r - e.ctx - 0.55) * 1000);
       }
       const sl = stats(gL), sr = stats(gR);
-      const limit = V149_SEEK_MS + RESTART_SLACK_MS + (p !== 0 ? LATENCY_MS : 0);
+      const limit = V149_SEEK_MS + restartSlackMs(cfg) + (p !== 0 ? LATENCY_MS : 0);
       add('R1-2', `reinício (seek) no tom ${p}: chamada até o 2º click novo, menos 0,55 s (mediana <= ${fmt(limit, 2)} ms)`, !!sl && !!sr && sl.med <= limit && sr.med <= limit,
         sl && sr ? `click: mediana ${fmt(sl.med, 1)} ms, ${fmt(sl.min, 1)} a ${fmt(sl.max, 1)} ms; instrumento: mediana ${fmt(sr.med, 1)} ms, ${fmt(sr.min, 1)} a ${fmt(sr.max, 1)} ms (n ${sl.n})` : 'sem onsets');
     }
@@ -344,7 +357,7 @@ export function analyze(key, R, opts = {}) {
           if (lp) { hole.push((t1 - t0 - 0.5137) * 1000 - lp.over); over.push(lp.over); }
         }
         const sr = stats(raw), sh = stats(hole), so = stats(over);
-        const limit = V149_LOOP_HOLE_MS + RESTART_SLACK_MS + (p !== 0 ? LATENCY_MS : 0);
+        const limit = V149_LOOP_HOLE_MS + restartSlackMs(cfg) + (p !== 0 ? LATENCY_MS : 0);
         add('R1-2', `loop no tom ${p}, ${side === 'L' ? 'click' : 'instrumento'}: buraco na emenda, sem o atraso do rAF (mediana <= ${fmt(limit, 2)} ms)`, !!sh && sh.med <= limit,
           sh ? `buraco: mediana ${fmt(sh.med, 1)} ms, ${fmt(sh.min, 1)} a ${fmt(sh.max, 1)} ms; emenda medida: mediana ${fmt(sr.med, 1)} ms; atraso do rAF: mediana ${fmt(so.med, 1)} ms, ${fmt(so.min, 1)} a ${fmt(so.max, 1)} ms (n ${sh.n})` : 'sem emendas');
       }
