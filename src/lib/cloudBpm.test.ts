@@ -52,10 +52,12 @@ vi.mock('idb-keyval', () => ({
   keys: async () => [...fakeIdb.store.keys()],
 }))
 
-// Usuário já autenticado (admin, pra não depender do lookup do plano).
-vi.mock('../../api/_lib/auth.js', () => ({
-  verifyUser: async () => ({ ok: true, userId: 'u-admin', email: 'admin@exemplo.com', isAdmin: true }),
-}))
+// Usuário já autenticado (admin, pra não depender do lookup do plano). Desde a v1.4.18 o
+// insert-song confere a conta com o verifyActiveUser (conta bloqueada não salva na nuvem).
+vi.mock('../../api/_lib/auth.js', () => {
+  const adminOk = async () => ({ ok: true, userId: 'u-admin', email: 'admin@exemplo.com', isAdmin: true, blocked: false })
+  return { verifyUser: adminOk, verifyActiveUser: adminOk }
+})
 
 const COLUNA_FALTANDO = {
   code: 'PGRST204',

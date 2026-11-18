@@ -66,6 +66,12 @@ vi.mock('./hooks/useAudioEngine', async () => {
     precountEnabled: false, precountBeats: 4,
     setPrecountBeats: fn, togglePrecountEnabled: fn, playWithPrecount: () => h.play(), cancelCountIn: () => h.cancelCountIn(),
     createEndlessMetronomeSong: fn,
+    // Campos que o motor ganhou na v1.4.19 (palco novo, saídas separadas, grade): parados, como no palco antigo.
+    outputPlan: { mode: 'split2', channels: 2, vs: [0], click: [1], guide: [1], panByRole: true, fellBackFrom: null, warning: null },
+    maxOutputChannels: 2, masterMuted: false, toggleMasterMute: fn, getOutputLevels: () => [],
+    sectionIntent: null, transitionView: null, landed: null, sectionSpansView: [], armSection: fn, stepSection: fn, armRepeat: fn, toggleSectionLoop: fn, cancelArm: fn,
+    heardNow: () => 0, heardPosition: () => 0, precountTimes: [],
+    songGrid: null, gridWarning: null, setSongMeter: fn, redetectSongGrid: fn, isReadingGrid: false,
   }
   return {
     useAudioEngine: () => {
@@ -74,6 +80,12 @@ vi.mock('./hooks/useAudioEngine', async () => {
     },
   }
 })
+// O App da v1.4.19 lê a chave do palco (CONFIG > Geral > Palco) no useSettings: aqui no palco
+// antigo, o padrão de quem nunca mexeu na chave.
+vi.mock('./contexts/SettingsContext', async (orig) => ({
+  ...(await orig<typeof import('./contexts/SettingsContext')>()),
+  useSettings: () => ({ settings: { stageVersion: 'antigo' } }),
+}))
 vi.mock('./hooks/usePadSynth', async () => {
   const { useSyncExternalStore } = await import('react')
   const fn = () => {}
