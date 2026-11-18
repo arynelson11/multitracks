@@ -257,7 +257,7 @@ describe('célula de tom', () => {
     const dialog = screen.getByRole('dialog', { name: 'Escolher tom' })
     expect(dialog.textContent).toContain('Sem tom original: escolha em semitons')
     // De −6 a +6, a mesma distância que a grade de tons usa (o caminho mais curto); nada travado.
-    const keys = [...dialog.querySelectorAll('button[aria-pressed]')]
+    const keys = [...dialog.querySelectorAll<HTMLButtonElement>('button[aria-pressed]')]
     const unit = (n: number) => `${n > 0 ? '+' : n < 0 ? MENOS : ''}${Math.abs(n)} ${Math.abs(n) === 1 ? 'semitom' : 'semitons'}${n === 0 ? ', original' : ''}`
     expect(keys.map((k) => k.getAttribute('aria-label'))).toEqual([-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6].map(unit))
     for (const k of keys) expect(k.disabled).toBe(false)
