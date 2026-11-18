@@ -22,6 +22,8 @@ export interface FaderVUProps {
   onChange(gain: number): void
   /** Falso enquanto a camada do EDITAR CANAIS cobre o fader: sai do Tab e ignora o teclado. */
   focusable?: boolean
+  /** O que o medidor mostra (PRINCIPAL: as saídas 1 e 2 da placa), no fim da dica do fader. */
+  meterTitle?: string
   className?: string
   /** Por cima do fader (balão da contagem no canal de Click). */
   children?: ReactNode
@@ -101,7 +103,7 @@ const SCALE_BOX = 'ps-num pointer-events-none absolute inset-y-3 left-0 w-[18px]
  * balão mostra o valor durante o arrasto. Com foco, o teclado ajusta em dB. O nível acende segmentado DENTRO do trilho, com marca de pico, lido a
  * cada quadro e escrito direto no DOM (sem estado do React). Marca de 0 dB em 3/4 do curso.
  */
-export function FaderVU({ gain, variant, fill, quiet, readLevel, label, onChange, focusable = true, className, children }: FaderVUProps) {
+export function FaderVU({ gain, variant, fill, quiet, readLevel, label, onChange, focusable = true, meterTitle, className, children }: FaderVUProps) {
   const master = variant === 'principal'
   const [dragF, setDragF] = useState<number | null>(null)
   const dragRef = useRef<Drag | null>(null)
@@ -212,7 +214,7 @@ export function FaderVU({ gain, variant, fill, quiet, readLevel, label, onChange
       aria-valuenow={ariaDb(shownGain)}
       aria-valuetext={dbText(shownGain)}
       tabIndex={focusable ? 0 : -1}
-      title="Arraste para ajustar. Duplo clique volta para 0 dB."
+      title={`Arraste para ajustar. Duplo clique volta para 0 dB.${meterTitle ? ` ${meterTitle}.` : ''}`}
       data-fader={variant}
       data-quiet={quiet}
       data-dragging={dragF !== null}

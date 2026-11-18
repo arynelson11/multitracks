@@ -31,6 +31,8 @@ export interface EngineStageState {
 export interface StageUiState {
   plan: string | null; isAdmin: boolean; online: boolean; isDesktop: boolean; userName: string | null; hostActive: boolean
   editMode: boolean; channelEditMode: boolean; padPanelOpen: boolean; activePad: string | null; repertoireName: string | null
+  /** Pan automático das Configurações (trava o knob em "Tudo junto"). */
+  autoPan?: boolean
 }
 
 /** Teto do REPETIR no palco (o mesmo 9 do palco antigo; a banda ganha uma passagem a mais no motor). */
@@ -146,6 +148,7 @@ export function buildStageView(e: EngineStageState, ui: StageUiState): StageView
     padPanelOpen: ui.padPanelOpen,
     activePad: ui.activePad,
     app: { online: ui.online, isDesktop: ui.isDesktop, isAdmin: ui.isAdmin, userName: ui.userName, hostActive: ui.hostActive },
+    autoPan: ui.autoPan === true,
   }
 }
 

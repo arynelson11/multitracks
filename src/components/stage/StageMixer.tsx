@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type React from 'react'
 import { fitStrips } from '../../lib/faderScale'
 import type { StageActions, StageChannel, StageClock, StageView } from '../../lib/stageContracts'
@@ -6,8 +6,9 @@ import { useTwoTapConfirm } from '../../hooks/useTwoTapConfirm'
 import { cx } from '../ui'
 import { ChannelStrip } from './ChannelStrip'
 import { MasterStrip } from './MasterStrip'
+import { useExclusiveArm } from './panelDismiss'
 
-export interface StageMixerProps { view: Pick<StageView, 'channels' | 'channelEditMode' | 'outputs' | 'click' | 'transition' | 'master'>; actions: StageActions; clock: StageClock }
+export interface StageMixerProps { view: Pick<StageView, 'channels' | 'channelEditMode' | 'outputs' | 'click' | 'transition' | 'master' | 'autoPan'>; actions: StageActions; clock: StageClock }
 
 /** Largura mínima do canal: 14 canais inteiros em 1280 px (mockup v5). */
 const STRIP_MIN_PX = 76
@@ -26,10 +27,18 @@ const SLOT =
 
 interface Drag { from: number; over: number }
 
-/** Pan decide a saída? Não em "Click e Guia separados"; em "4 ou mais saídas", só nos canais normais. */
-function panEditable(mode: StageView['outputs']['mode'], ch: StageChannel): boolean {
-  if (mode === 'split2') return false
-  return mode !== 'multi' || ch.role === 'normal'
+const NO_PAN_SPLIT = 'Com Click e Guia separados o pan não decide a saída'
+const NO_PAN_AUTO = 'Com o pan automático ligado o lado vem do papel do canal (Click e Guia de um lado, o resto do outro). Desligue nas Configurações pra girar o knob.'
+
+/**
+ * Por que o knob não muda o som (o title dele), ou nulo quando muda. Em "Click e Guia separados" o
+ * pan não decide a saída; em "4 ou mais saídas", só nos canais normais. Em "Tudo junto" com o pan
+ * automático ligado o motor usa o lado do papel de cada canal (Aviso T29 :286).
+ */
+function panLock(mode: StageView['outputs']['mode'], ch: StageChannel, autoPan: boolean): string | null {
+  if (mode === 'split2') return NO_PAN_SPLIT
+  if (mode === 'multi') return ch.role === 'normal' ? null : NO_PAN_SPLIT
+  return autoPan ? NO_PAN_AUTO : null
 }
 
 /**
@@ -39,7 +48,7 @@ function panEditable(mode: StageView['outputs']['mode'], ch: StageChannel): bool
  * lápis, alça de arrastar (ponteiro, vale no toque; as setas também movem) e lixeira de 2 toques.
  */
 export function StageMixer({ view, actions, clock }: StageMixerProps) {
-  const { channels, channelEditMode, outputs, click, transition, master } = view
+  const { channels, channelEditMode, outputs, click, transition, master, autoPan = false } = view
   const scrollRef = useRef<HTMLDivElement>(null)
   const [innerWidth, setInnerWidth] = useState(0)
   // Altura da barra de rolagem de lado, medida: 5 px onde vale o ::-webkit-scrollbar do index.css
@@ -51,6 +60,10 @@ export function StageMixer({ view, actions, clock }: StageMixerProps) {
   // Trocar de música (outros canais) ou sair do EDITAR CANAIS desarma a lixeira.
   const resetKey = `${channelEditMode}|${channels.map((ch) => ch.id).join('|')}`
   const trash = useTwoTapConfirm((id) => actions.removeChannel(id), { resetKey })
+  // Uma lixeira armada no palco inteiro (Ruling T16-lixeira): armar a do canal desarma a da seção e
+  // a do REPERTÓRIOS, e armar uma delas desarma a do canal.
+  const trashId = useId()
+  useExclusiveArm(trash.armedId !== null, trashId, trash.disarm)
 
   useEffect(() => {
     const el = scrollRef.current
@@ -138,7 +151,7 @@ export function StageMixer({ view, actions, clock }: StageMixerProps) {
             >
               <ChannelStrip
                 ch={ch}
-                panEditable={panEditable(outputs.mode, ch)}
+                panLock={panLock(outputs.mode, ch, autoPan)}
                 editMode={channelEditMode}
                 clock={clock}
                 count={ch.id === click.channelId ? transition : null}
@@ -162,6 +175,7 @@ export function StageMixer({ view, actions, clock }: StageMixerProps) {
         onVolume={(g) => actions.setMasterVolume(g)}
         onToggleMute={() => actions.toggleMasterMute()}
         onToggleChannelEdit={() => actions.toggleChannelEditMode()}
+        outputs={outputs}
       />
     </section>
   )

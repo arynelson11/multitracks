@@ -119,6 +119,8 @@ export interface StageView {
   channels: StageChannel[]; master: { volume: number; muted: boolean }; outputs: OutputPlan; gates: StageGates
   editMode: boolean; channelEditMode: boolean; padPanelOpen: boolean; activePad: string | null
   app: { online: boolean; isDesktop: boolean; isAdmin: boolean; userName: string | null; hostActive: boolean }
+  /** Pan automático ligado nas Configurações. Só muda o som em "Tudo junto", onde o lado vem do papel e o knob trava. */
+  autoPan?: boolean
 }
 export interface StageActions {
   togglePlay(): void; goToStart(): void; setEndMode(m: StageView['endMode']): void; togglePrecount(): void; cyclePrecountBeats(): void

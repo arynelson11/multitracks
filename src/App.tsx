@@ -556,12 +556,12 @@ export default function App() {
     landed, songGrid: stageGrid, gridWarning, isReadingGrid, outputPlan, masterVolume, masterMuted,
   }, {
     plan: userPlan, isAdmin, online: isOnline, isDesktop: isDesktopApp, userName, hostActive, editMode: isEditMode,
-    channelEditMode: isChannelEditMode, padPanelOpen: isPadPanelOpen, activePad: activeNote, repertoireName: null,
+    channelEditMode: isChannelEditMode, padPanelOpen: isPadPanelOpen, activePad: activeNote, repertoireName: null, autoPan: settings.autoPan,
   }) : null), [
     useNewStage, activeSong, playlist, activeSongIndex, duration, sectionSpansView, stageSection, isPlaying, isCountingIn, precountEnabled,
     precountBeats, precountTimes, playbackMode, sectionIntent, transitionView, landed, stageGrid, gridWarning, isReadingGrid, outputPlan,
     masterVolume, masterMuted, userPlan, isAdmin, isOnline, isDesktopApp, userName, hostActive, isEditMode, isChannelEditMode,
-    isPadPanelOpen, activeNote,
+    isPadPanelOpen, activeNote, settings.autoPan,
   ])
 
   // Grava o compasso na nuvem quem pode editar BPM e tom daquela música (R-30): o admin nas músicas

@@ -110,6 +110,12 @@ describe('buildStageView', () => {
     expect(stageGatesFor('pro_anual')).toEqual(buildStageView(engine(), { ...UI, plan: 'pro_anual' }).gates)
   })
 
+  it('o pan automático das Configurações chega na vista (trava o knob em Tudo junto); ausente é desligado', () => {
+    expect(buildStageView(engine(), { ...UI, autoPan: true }).autoPan).toBe(true)
+    expect(buildStageView(engine(), { ...UI, autoPan: false }).autoPan).toBe(false)
+    expect(buildStageView(engine(), UI).autoPan).toBe(false)
+  })
+
   it('click ligado = canal de click sem M; música sem click = channelId null', () => {
     const ligado = buildStageView(engine({ song: song('a', { channels: [channel('d', 'Bateria.wav'), channel('k', 'Click.wav')] }) }), UI)
     expect(ligado.click).toEqual({ channelId: 'k', on: true })

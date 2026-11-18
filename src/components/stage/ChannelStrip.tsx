@@ -12,7 +12,8 @@ import { setFlag, setText } from './stageDom'
 import { useFrame } from './useFrame'
 
 export interface ChannelStripProps {
-  ch: StageChannel; panEditable: boolean; editMode: boolean; clock: Pick<StageClock, 'level' | 'heardNow'>; count: TransitionView | null
+  /** Por que o pan está travado (o title do knob), ou nulo quando o knob decide o som. */
+  ch: StageChannel; panLock: string | null; editMode: boolean; clock: Pick<StageClock, 'level' | 'heardNow'>; count: TransitionView | null
   onVolume(gain: number): void; onPan(pan: number): void; onMute(): void; onSolo(): void; onEdit(): void; onRemove(): void; dragHandle?: React.HTMLAttributes<HTMLElement>
   /** Lixeira já tocada uma vez (useTwoTapConfirm no StageMixer, uma armada por vez): o próximo toque apaga. */
   removeArmed?: boolean
@@ -55,7 +56,7 @@ const GRIP =
  * canal apagado. No canal de Click, balão com o número da contagem ouvida (countState).
  */
 export function ChannelStrip({
-  ch, panEditable, editMode, clock, count, onVolume, onPan, onMute, onSolo, onEdit, onRemove, dragHandle, removeArmed = false,
+  ch, panLock, editMode, clock, count, onVolume, onPan, onMute, onSolo, onEdit, onRemove, dragHandle, removeArmed = false,
 }: ChannelStripProps) {
   const nameRef = useRef<HTMLSpanElement>(null)
   const countRef = useRef<HTMLSpanElement>(null)
@@ -106,7 +107,7 @@ export function ChannelStrip({
             nem toque; o leitor de tela pula) e fora do Tab também onde o inert não existe. */}
         <div inert={editMode} className="flex min-h-0 w-full flex-1 flex-col items-center gap-1.5">
           <div className={cx('w-full', quiet && DIM)}>
-            <PanKnob pan={ch.pan} editable={panEditable} label={ch.label} onChange={onPan} focusable={!editMode} />
+            <PanKnob pan={ch.pan} editable={panLock === null} lockedTitle={panLock ?? undefined} label={ch.label} onChange={onPan} focusable={!editMode} />
           </div>
           <FaderVU
             variant="canal" gain={ch.volume} fill={channelFaderFill(ch.color, quiet)} quiet={quiet}
