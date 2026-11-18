@@ -558,6 +558,21 @@ describe('grade da música lida na faixa de click', () => {
     expect(mem.analyzeCalls).toHaveLength(2)
   })
 
+  it('click de tom puro é lido: a procura do som olha todas as amostras (pular caía nos zeros da onda)', async () => {
+    // 3 kHz a 48 kHz: a onda dá uma volta a cada 16 amostras e cada click começa num múltiplo de 16.
+    const x = new Float32Array(20 * SR)
+    for (let k = 0; k * 0.5 < 19.5; k++) {
+      const s0 = Math.round(k * 0.5 * SR)
+      for (let j = 0; j < 0.02 * SR; j++) x[s0 + j] = (k % 4 === 0 ? 0.8 : 0.4) * Math.sin((2 * Math.PI * 3000 * j) / SR)
+    }
+    mem.buffers.set('tom3k', x)
+    const hook = await openApp()
+    await load(hook, [['CLICK.wav', 'tom3k']], { bpm: 120 })
+    await settled(hook)
+    expect(mem.analyzeCalls).toHaveLength(1)
+    expect(hook.result.current.songGrid).toMatchObject({ source: 'click', signature: '4/4' })
+  })
+
   it('com dois canais de Click, usa o primeiro que dá grade', async () => {
     const hook = await openApp()
     await load(hook, [['Click - No Drums.wav', 'tom'], ['CLICK.wav', 'click44']], { bpm: 120 })
