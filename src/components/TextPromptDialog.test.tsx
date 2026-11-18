@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { TextPromptDialog, endlessMetronomeBpmError, songNameError } from './TextPromptDialog'
+import { TextPromptDialog } from './TextPromptDialog'
+import { endlessMetronomeBpmError, songNameError } from '../lib/textPromptRules'
 import type { TextPromptDialogProps } from './TextPromptDialog'
 
 afterEach(cleanup)

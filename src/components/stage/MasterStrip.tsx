@@ -14,7 +14,7 @@ export interface MasterStripProps {
  * sempre são a VS. Em "Click e Guia separados" um lado é o ouvido da banda; em "4 ou mais" a VS
  * pode estar noutro par.
  */
-export function masterMeterTitle(plan: OutputPlan): string {
+function masterMeterTitle(plan: OutputPlan): string {
   if (plan.channels <= 1) return 'Medidor: a saída única da placa (tudo junto, em mono)'
   if (plan.mode === 'split2') {
     return plan.vs[0] === 1

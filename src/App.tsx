@@ -91,7 +91,8 @@ import { ChannelEditPanel } from './components/ChannelEditPanel'
 import { ChannelTrashButton } from './components/ChannelTrashButton'
 import { useTwoTapConfirm } from './hooks/useTwoTapConfirm'
 import { Button } from './components/ui'
-import { TextPromptDialog, endlessMetronomeBpmError, songNameError } from './components/TextPromptDialog'
+import { TextPromptDialog } from './components/TextPromptDialog'
+import { endlessMetronomeBpmError, songNameError } from './lib/textPromptRules'
 
 // ───────────────── PALCO NOVO (T29) ─────────────────
 
