@@ -56,6 +56,12 @@ const nextRenderQuantum = (ctx: BaseAudioContext, quanta: number): number => {
     const quantum = 128 / ctx.sampleRate;
     return (Math.floor(ctx.currentTime / quantum + 1e-6) + quanta) * quantum;
 };
+// Ruling T30-grade: instante (tempo do contexto) ou ponto da faixa na amostra mais perto. Fonte que
+// começa fora da grade de amostras, no instante ou no ponto da faixa, é lida pelo navegador com
+// interpolação linear, que tira agudos: medido no Chrome pelo harness da T30, -0,11 dB em 4,5 kHz
+// depois do pulo e -0,08 dB depois da pré-contagem; com a fração no meio da amostra, a conta dá
+// uns -2 dB em 10 kHz. Desloca no máximo meia amostra (~10 µs a 48 kHz).
+const onSampleGrid = (t: number, sampleRate: number): number => Math.round(t * sampleRate) / sampleRate;
 
 // Faixa mono: o panner trabalha com 1 canal. A saída do worklet de tom é
 // estéreo (L = R) e, com o panner no padrão, o StereoPanner passava a tratar a
@@ -1123,14 +1129,23 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         if (!chain) return [];
         const rate = timeStretchRef.current;
         const specs: VoiceSpec[] = chain.channels.map((ch) => ({ channelId: ch.id, buffer: ch.buffer, entry: entryFor(ch, chain.pitch, chain.compensation), loop: isEndlessLoop(ch) }));
-        const voices = startVoicesForSwitch(ctx, specs, T, targetOffset, fade, rate);
         const preroll = targetOffset >= fade * rate;
+        // Ruling T30-grade: a voz começa numa amostra exata (T - fade com pré-rolagem, T no 0:00) e
+        // num ponto de amostra exata da faixa, a no máximo meia amostra do plano. O envelope dela
+        // anda junto (sobe em [T' - fade, T']); as que saem descem no T do plano: a soma dos dois
+        // fica a menos de 0,2% de 1 nos 5 ms do cruzamento, sem degrau.
+        const sr = ctx.sampleRate;
+        const lead = preroll ? fade * rate : 0;
+        const startAt = onSampleGrid(T - (preroll ? fade : 0), sr);
+        const alignedT = startAt + (preroll ? fade : 0);
+        const alignedTarget = preroll ? onSampleGrid(targetOffset - lead, sr) + lead : onSampleGrid(targetOffset, sr);
+        const voices = startVoicesForSwitch(ctx, specs, alignedT, alignedTarget, fade, rate);
         // Com pré-rolagem o envelope nasce em 0 já agora, não só em T - fade: no Chrome, com T - fade
         // caindo um arredondamento depois da amostra em que a fonte começa, essa primeira amostra
         // saía no ganho padrão 1 (pico de uma amostra do som inteiro, medido com o hook real).
         // Agora é sempre antes de T - fade (o plano pede o pulo a pelo menos 50 ms).
         if (preroll) for (const v of voices) v.env.gain.setValueAtTime(0, ctx.currentTime);
-        for (const v of voices) voiceStartsRef.current.set(v, preroll ? T - fade : T);
+        for (const v of voices) voiceStartsRef.current.set(v, startAt);
         return voices;
     };
     // O pulo pousou: as vozes novas passam a ser as do motor (soltura, medidor e harness usam).
@@ -2035,7 +2050,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         const compensation = channels.some(viaPitch) ? pitchLatencyRef.current : null;
         playChainRef.current = { songId: activeSongId ?? null, channels, pitch: playPitch, compensation };
         const rate = timeStretch;
-        const offset = pausedAtRef.current;
+        // Ruling T30-grade: o ponto da faixa numa amostra exata (o instante do play já é a grade de
+        // blocos; o da pré-contagem é arredondado abaixo). A linha do tempo usa o mesmo ponto.
+        const offset = onSampleGrid(Math.max(0, pausedAtRef.current), ctx.sampleRate);
         // Pré-contagem no pulso da grade (T27), um bipe por tempo contado como na contagem do pulo
         // (no composto contando de 3 em 3, a pontuada); sem grade, o BPM salvo, e sem ele 100.
         const pulse = activeGrid
@@ -2067,8 +2084,10 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             }
             const voices = specs.map((spec) => buildVoice(ctx, spec, rate));
             const t0 = nextRenderQuantum(ctx, leadQuanta);
-            const when = t0 + beats * pulse;
-            for (const v of voices) v.source.start(when, Math.max(0, offset));
+            // t0 já está na grade de blocos (logo, de amostras); com pré-contagem, o 5º tempo vai
+            // pra amostra mais perto (Ruling T30-grade).
+            const when = beats > 0 ? onSampleGrid(t0 + beats * pulse, ctx.sampleRate) : t0;
+            for (const v of voices) v.source.start(when, offset);
             const count = beats > 0
                 ? scheduleCount(ctx, countDestination(), Array.from({ length: beats }, (_, k) => ({ at: t0 + k * pulse, label: k + 1 })))
                 : null;

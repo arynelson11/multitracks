@@ -400,6 +400,7 @@ const SILENT_DB = -60;        // "não chega" numa saída (seno de amplitude 1 =
 const NO_BEEP_DB = -50;       // bipe ausente (os bipes soam perto de -4 dB)
 const NO_BEEP_AFTER_S = 0.005;
 const BEEP_EVENT_DB = -20;    // pulso com cara de bipe na frequência dele
+const GRID_MATCH_DB = 0.01;   // click depois do pulo e da pré-contagem x play simples (Ruling T30-grade)
 const SPLIT_MATCH_DB = 0.1;   // nível igual ao da v1.4.15 (R-24)
 const HOLE_MAX_MS = 10;       // buraco na VS em volta do pulo
 const HOLE_DB = -20;          // buraco = RMS do passo 20 dB abaixo do nível da VS
@@ -455,6 +456,8 @@ const beepsAt = (M, side, from, to) => [
   ...onsetsAt(M, side, F_BEEP, BEEP_ATTACK_S, from, to).map((b) => ({ ...b, accent: false })),
   ...onsetsAt(M, side, F_ACCENT, BEEP_ATTACK_S, from, to).map((b) => ({ ...b, accent: true })),
 ].sort((a, b) => a.t - b.t);
+// Energia de um click de teste (o pulso inteiro, em dB) que começa em `c`, na saída `side`.
+const burstDb = (M, side, c) => { let e = 0; for (let h = M.at(c - 0.005); h < M.n && M.t[h] < c + 0.04; h++) e += M.amp(h, side, FC) ** 2; return 10 * Math.log10(e + 1e-24); };
 const maxDbIn = (M, side, f, a, b) => { let m = 0; for (const h of M.inside(a, b)) m = Math.max(m, M.amp(h, side, f)); return dB(m); };
 const meanDbIn = (M, side, f, a, b) => { const hs = M.inside(a, b); let acc = 0; for (const h of hs) acc += M.amp(h, side, f) ** 2; return 10 * Math.log10(acc / Math.max(1, hs.length) + 1e-24); };
 
@@ -588,15 +591,17 @@ function stageJump(S) {
     `calada: ${fmt(muted, 1)} dB; depois: ${fmt(back, 2)} dB (guia a ${fmt(dB(g0), 1)} dB)`);
   stageVoices(S, tag, 'pulo', T);
   stageHole(S, tag, 'pulo', Th);
-  // Nível dos clicks comuns (fora o 1) depois do pulo x antes: as vozes do pulo começam fora da
-  // grade de amostras (T não é múltiplo de 1/48000) e o Chrome interpola a leitura do buffer
-  // (linear), o que tira um pouco dos agudos. Informativo; a previsão é a da interpolação linear.
-  const burst = (c) => { let e = 0; for (let h = M.at(c - 0.005); h < M.n && M.t[h] < c + 0.04; h++) e += M.amp(h, ear, FC) ** 2; return 10 * Math.log10(e + 1e-24); };
-  const lvBefore = [4.5, 5, 5.5].map((s) => burst(ctxIn(seg, s) + L));
-  const lvAfter = [0.5, 1, 1.5].map((s) => burst(Th + (s - target)));
+  // Nível dos clicks comuns (fora o 1) depois do pulo x antes (play simples, na grade de amostras).
+  // Fonte que começa fora da grade de amostras é lida pelo Chrome com interpolação linear e perde
+  // agudos (Ruling T30-grade): antes da correção, -0,113 dB em 4500 Hz, o que a interpolação
+  // linear prevê pela fração do T (a previsão sai no detalhe, pra quem desconfiar da medida).
+  const lvBefore = [4.5, 5, 5.5].map((s) => burstDb(M, ear, ctxIn(seg, s) + L));
+  const lvAfter = [0.5, 1, 1.5].map((s) => burstDb(M, ear, Th + (s - target)));
   const mu = (((-T * cfg.sampleRate) % 1) + 1) % 1, w = (2 * Math.PI * FC) / cfg.sampleRate;
   const predicted = 10 * Math.log10((1 - mu) ** 2 + mu ** 2 + 2 * mu * (1 - mu) * Math.cos(w));
-  info('pulo', `${tag}: nível do click depois do pulo x antes (vozes fora da grade de amostras)`, `${fmt(median(lvAfter) - median(lvBefore), 3)} dB; fração de amostra da leitura ${fmt(mu, 3)}; interpolação linear prevê ${fmt(predicted, 3)} dB em ${FC} Hz`);
+  const lvDiff = median(lvAfter) - median(lvBefore);
+  add('pulo', `${tag}: click depois do pulo com o nível do play simples (até ${GRID_MATCH_DB} dB, Ruling T30-grade)`, Math.abs(lvDiff) <= GRID_MATCH_DB,
+    `${fmt(lvDiff, 4)} dB; fração de amostra do T ${fmt(mu, 3)} (fora da grade, a interpolação linear tiraria ${fmt(predicted, 3)} dB em ${FC} Hz)`);
   if (cfg.PITCH) {
     const w = R.events.filter((e) => e.type === 'worklets');
     const a = w.find((e) => e.label === 'no armar'), b = w.find((e) => e.label === 'depois do pulo');
@@ -769,6 +774,21 @@ function stageSplit(R, M, opts, add, info) {
     const vsCount = wins.length ? Math.max(...wins.map(([x, y]) => Math.max(maxDbIn(M, vs, F_BEEP, x, y), maxDbIn(M, vs, F_ACCENT, x, y)))) : NaN;
     add('saidas', `${part}: contagem (pré-contagem e pulo) no ouvido e abaixo de ${SILENT_DB} dB na VS`, pre.length === 4 && jb.length === 4 && vsCount <= SILENT_DB,
       `no ouvido: ${pre.length} bipes na pré-contagem, ${jb.length} no pulo; na VS ${fmt(vsCount, 1)} dB`);
+  }
+  // Ruling T30-grade: o click depois da pré-contagem e depois do pulo sai com o nível do play
+  // simples (clicks comuns da mesma faixa; antes da correção, -0,082 dB depois da pré-contagem).
+  {
+    const ear = out.click[0];
+    const preEv = R.events.find((e) => e.type === 'play' && e.precount);
+    const prePlay = preEv ? startGroups(R).find((g) => g.tStart >= preEv.t && g.sounded) : null;
+    const J = stageJumps(R).find((j) => j.landed);
+    const plainOf = (s) => L.play.when + (s - L.play.offset);
+    const base = median([3.5, 4.5, 5.5].map((s) => burstDb(M, ear, plainOf(s))));
+    const afterPre = prePlay ? median([11.5, 12.5, 13.5].map((s) => burstDb(M, ear, prePlay.when + (s - prePlay.offset)))) - base : NaN;
+    const afterJump = J ? median([0.5, 1, 1.5].map((s) => burstDb(M, ear, J.T + s))) - base : NaN;
+    add('saidas', `${part}: click depois da pré-contagem e depois do pulo com o nível do play simples (até ${GRID_MATCH_DB} dB, Ruling T30-grade)`,
+      Math.abs(afterPre) <= GRID_MATCH_DB && Math.abs(afterJump) <= GRID_MATCH_DB,
+      `depois da pré-contagem ${fmt(afterPre, 4)} dB (música em ${prePlay ? fmt(((prePlay.when * cfg.sampleRate) % 1 + 1) % 1, 3) : '?'} de amostra); depois do pulo ${fmt(afterJump, 4)} dB`);
   }
   if (opts.tag === REF_TAG) return;
   const refFile = path.join(HERE, 'results', `SPLIT-${part}_${REF_TAG}.json`);

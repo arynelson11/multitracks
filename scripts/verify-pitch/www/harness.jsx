@@ -516,7 +516,8 @@ async function main() {
         await E().play({ precount: true });
         await untilPos(12.5, 8000);
         arm(0);
-        await untilLanded(0, 0.6, 3.5);
+        // Toca até 1,8 s depois do pouso: os clicks de 0,5, 1 e 1,5 s medem o nível depois do pulo.
+        await untilLanded(0, 1.8, 3.5);
       }
       pause();
       await sleep(300);

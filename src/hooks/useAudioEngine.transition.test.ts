@@ -2,8 +2,8 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { act, cleanup, renderHook } from '@testing-library/react'
 import {
-  connectedTo, createFakeAudioContext, FakeAudioBuffer, FakeAudioParam, nodesOf, reaches, valueAt,
-  type FakeAudioBufferSourceNode, type FakeAudioContext, type FakeAudioNode, type FakeGainNode,
+  connectedTo, createFakeAudioContext, FakeAudioBuffer, FakeAudioBufferSourceNode, FakeAudioParam, nodesOf, reaches, valueAt,
+  type FakeAudioContext, type FakeAudioNode, type FakeGainNode,
 } from '../test/fakeAudio'
 import type { SavedSong } from '../lib/repertoireSchema'
 import type { OutputSettings, SongGrid, StageGates, StageMode } from '../lib/stageContracts'
@@ -812,4 +812,101 @@ describe('modo antigo e adaptadores', () => {
     expect(sectionClock()?.running).toBe(false)
     expect(triangles()).toHaveLength(4)
   })
+})
+
+// Ruling T30-grade (achado do harness da T30 no Chrome): fonte que começa fora da grade de
+// amostras (instante ou ponto da faixa) é lida pelo navegador com interpolação linear, que tira
+// agudos (-0,11 dB em 4,5 kHz depois do pulo; até uns -2 dB em 10 kHz). As vozes do pulo e a
+// música da pré-contagem começam numa amostra exata e num ponto de amostra exata da faixa, a no
+// máximo meia amostra (~10 µs) do plano.
+// Ruling T30-reagenda: a rede de segurança do play (o relógio passou do instante comum durante o
+// laço de start()) não pode cancelar uma contagem que já começou (sobrava um tique de ~8 ms no
+// ouvido, medido no Chrome sob carga): com pré-contagem as vozes começam um tempo depois, longe.
+describe('grade de amostras e rede de segurança (T30)', () => {
+  // O 1 lido num click de verdade cai fora da grade de amostras (0,77 ms no click de teste da T30).
+  const OFF_GRID: SongGrid = { ...GRID, firstDownbeat: 0.0007675 }
+  // Andamento lido com decimais: 4 pulsos não dão um número inteiro de amostras.
+  const ODD_BPM: SongGrid = { ...GRID, bpm: 119.99992 }
+  const onGrid = (t: number) => Math.abs(t * SR - Math.round(t * SR)) < 1e-6
+  const halfSample = 0.5 / SR + 1e-12
+
+  it('as vozes do pulo começam numa amostra exata, no ponto de amostra exata, e o pulo cai no 1', async () => {
+    seed({ ...song(), grid: OFF_GRID })
+    const hook = await openApp({ stageMode: 'novo' })
+    await play(hook)
+    const t0 = startAt(0)
+    const before = live(sources())
+    armAt(t0 + 1, () => hook.result.current.armSection(1))
+    const span = hook.result.current.sectionSpansView[1]
+    expect(span.start).toBeCloseTo(4.0007675, 9)
+    const T = t0 + span.start
+    expect(hook.result.current.transitionView!.switchAt).toBeCloseTo(T, 9)
+    expect(onGrid(T - 0.005)).toBe(false)
+    run(hook, t0 + 1.025, t0 + 1.75)
+    const fresh = sources().filter((s) => !before.includes(s))
+    expect(fresh).toHaveLength(4)
+    for (const s of fresh) {
+      const { when, offset } = s.starts[0]
+      expect(onGrid(when)).toBe(true)
+      expect(onGrid(offset)).toBe(true)
+      expect(Math.abs(when - (T - 0.005))).toBeLessThanOrEqual(halfSample)
+      expect(Math.abs(offset - (span.start - 0.005))).toBeLessThanOrEqual(halfSample)
+      // A fonte entra com o envelope em 0 e ele chega em 1 no 1 do plano.
+      expect(valueAt(envOf(s).gain, when)).toBe(0)
+      expect(valueAt(envOf(s).gain, T)).toBeCloseTo(1, 2)
+    }
+    const landings = run(hook, t0 + 1.775, T + 0.1)
+    expect(landings).toHaveLength(1)
+    expect(landings[0].at).toBeCloseTo(T, 9)
+    // Depois do pouso a posição anda da seção de destino (o último tique não cai em T + 0,1 exato).
+    expect(hook.result.current.heardPosition()).toBeCloseTo(span.start + (ctxOf().currentTime - landings[0].at), 9)
+  })
+
+  it('pulo pra 0:00 (sem pré-rolagem): a voz começa na amostra mais perto do 1, do começo da faixa', async () => {
+    seed({ ...song(), grid: OFF_GRID })
+    const hook = await openApp({ stageMode: 'novo' })
+    await play(hook)
+    const t0 = startAt(0)
+    // Tocando a Intro desde 3 s: arma a própria Intro de novo (REPETE), que volta pro 0:00 no fim dela.
+    ctxOf().currentTime = t0
+    await act(async () => { hook.result.current.seekTo(3) })
+    const t1 = startAt(t0)
+    const before = sources()
+    expect(live(before)).toHaveLength(4)
+    armAt(t1 + 0.1, () => hook.result.current.armSection(0))
+    const T = t1 + (hook.result.current.sectionSpansView[0].end - 3)
+    expect(hook.result.current.transitionView!.switchAt).toBeCloseTo(T, 9)
+    run(hook, t1 + 0.125, T - 0.1)
+    const fresh = sources().filter((s) => !before.includes(s))
+    expect(fresh).toHaveLength(4)
+    for (const s of fresh) {
+      expect(onGrid(s.starts[0].when)).toBe(true)
+      expect(Math.abs(s.starts[0].when - T)).toBeLessThanOrEqual(halfSample)
+      expect(s.starts[0].offset).toBe(0)
+    }
+  })
+
+  it('pré-contagem: a música começa numa amostra exata, do ponto de amostra exata, no 5º tempo', async () => {
+    seed({ ...song(), grid: ODD_BPM })
+    const hook = await openApp({ stageMode: 'novo' })
+    // Parado num ponto fora da grade de amostras (posição lida de um toque na onda).
+    act(() => { hook.result.current.seekTo(1.23456789) })
+    await act(async () => { await hook.result.current.play({ precount: true }) })
+    const t0 = startAt(0)
+    const pulse = 60 / ODD_BPM.bpm
+    expect(near(beepTimes())).toEqual(near([0, 1, 2, 3].map((k) => t0 + k * pulse)))
+    const voices = sources()
+    expect(voices).toHaveLength(4)
+    for (const s of voices) {
+      const { when, offset } = s.starts[0]
+      expect(onGrid(when)).toBe(true)
+      expect(onGrid(offset)).toBe(true)
+      expect(Math.abs(when - (t0 + 4 * pulse))).toBeLessThanOrEqual(halfSample)
+      expect(Math.abs(offset - 1.23456789)).toBeLessThanOrEqual(halfSample)
+    }
+    // A linha do tempo é a das vozes: a posição de agora sai do ponto onde elas começaram.
+    ctxOf().currentTime = voices[0].starts[0].when + 1
+    expect(hook.result.current.heardPosition()).toBeCloseTo(voices[0].starts[0].offset + 1, 9)
+  })
+
 })
