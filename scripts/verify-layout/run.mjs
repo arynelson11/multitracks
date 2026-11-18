@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Verificador de texto cortado e de alvos de toque do palco novo (T20), no Chrome headless.
 // Uso: node scripts/verify-layout/run.mjs [--only 1280x800[,1440x900]] [--estado normal[,tom]] [--jobs 3] [--no-build]
-//   sem --estado: os 9 estados normais nos 5 tamanhos (45 combinações);
+//   sem --estado: os 9 estados normais nos 8 tamanhos (72 combinações);
 //   --estado quebrado: só a prova (um botão de largura fixa com texto longo), que tem de falhar.
 // Sai com código 1 se alguma combinação falhar (ou não responder). Resultados em scripts/verify-layout/results/.
 import http from 'node:http'
@@ -17,8 +17,12 @@ const OUT = path.join(HERE, '.build')
 const RES = path.join(HERE, 'results')
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
-/** Tamanhos de tela do palco novo (Global Constraints do plano). */
-const SIZES = ['1024x768', '1280x760', '1280x800', '1440x900', '1920x1080']
+/**
+ * Tamanhos de tela do palco novo (Global Constraints do plano), mais a menor tela dele (1024x740,
+ * Ruling T18-altura) e duas abaixo de 1024 px, onde o palco novo só fica tocando (a trava da R-25:
+ * iPad girado ou janela estreitada; Ruling I2-estreito): ali vale "nada inalcançável", a casca rola de lado.
+ */
+const SIZES = ['1024x740', '1024x768', '1280x760', '1280x800', '1440x900', '1920x1080', '900x740', '810x1080']
 /** Estados da rodada normal: a mesma lista de ESTADOS em fixture.ts. */
 const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'repertorio', 'tom', 'compasso', 'config']
 const PROVA = 'quebrado'
@@ -158,7 +162,7 @@ server.close()
 results.sort((a, b) => combos.findIndex((c) => c.estado === a.estado && c.size === a.size) - combos.findIndex((c) => c.estado === b.estado && c.size === b.size))
 let failed = 0
 let total = 0
-const counts = { texts: 0, targets: 0, msException: 0, narrowException: 0 }
+const counts = { texts: 0, targets: 0, msException: 0, narrowException: 0, iconButtons: 0 }
 for (const r of results) {
   if (r.fatal) {
     failed++
@@ -173,5 +177,5 @@ for (const r of results) {
   for (const f of r.failures) console.log(`  (${f.kind}) ${f.selector}${f.text ? ` "${f.text}"` : ''}\n      ${f.detail}`)
 }
 console.log(`\n${results.length} combinações: ${results.length - failed} ok, ${failed} com falha (${total} falhas).`)
-console.log(`Medidos: ${counts.texts} textos e ${counts.targets} alvos de toque; exceções aceitas: ${counts.msException} M/S (32x30) e ${counts.narrowException} blocos estreitos da onda.`)
+console.log(`Medidos: ${counts.texts} textos, ${counts.iconButtons} botões só de ícone e ${counts.targets} alvos de toque; exceções aceitas: ${counts.msException} M/S (32x30) e ${counts.narrowException} blocos estreitos da onda.`)
 process.exit(failed === 0 ? 0 : 1)

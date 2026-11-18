@@ -4,7 +4,10 @@
 //   (a) cortado: texto que não cabe na própria caixa (overflow diferente de visible) ou que passa
 //       de um contêiner que corta (overflow hidden ou clip, ou antes do começo de uma rolagem); numa
 //       fileira que rola de lado, nada pela metade na borda (Ruling T10-rolagem: parado, nenhum botão
-//       aparece pela metade). Vale também pra caixa que emoldura o texto (selo, botão, aviso);
+//       aparece pela metade), fora a casca inteira que rola de lado abaixo de 1024 px
+//       (`data-scroll-reach`, Ruling I2-estreito: o que fica na borda chega rolando). Vale também pra
+//       caixa que emoldura o texto (selo, botão, aviso) e pra caixa do botão só de ícone (o X do aviso
+//       PRÓXIMA, a lixeira);
 //   (b) encostando: em botão, [role=radio] e selo, o texto fica a 4 px ou mais das bordas na
 //       horizontal; em caixa maior (célula, painel), o texto não sai dela;
 //   (c) toque: button, [role=button], [role=radio], input e select com 44x44 px; M/S do mixer
@@ -19,7 +22,7 @@ export type FailureKind = 'cortado' | 'encostando' | 'toque' | 'rolagem' | 'estr
 export interface Failure { kind: FailureKind; selector: string; text: string; detail: string }
 export interface CheckReport {
   name: string; estado: string; viewport: { w: number; h: number }
-  failures: Failure[]; counts: { texts: number; targets: number; msException: number; narrowException: number }
+  failures: Failure[]; counts: { texts: number; targets: number; msException: number; narrowException: number; iconButtons: number }
   fatal?: string
 }
 
@@ -253,8 +256,10 @@ function walkClips(start: Element, box: Box, fail: (detail: string) => void): Vi
     } else if (vx && (xs === 'auto' || xs === 'scroll')) {
       const before = vx[1] <= b.left + EPS
       const after = vx[0] >= b.right - EPS
+      // A casca que rola de lado na tela estreita (Ruling I2-estreito): o que está na borda chega rolando.
+      const reach = c.hasAttribute('data-scroll-reach')
       if (before && c.scrollLeft <= 0) fail(`fica antes do começo da fileira que rola ${where} (não chega rolando)`)
-      else if (!before && !after) {
+      else if (!before && !after && !reach) {
         if (vx[0] < b.left - EPS) fail(`pela metade na borda esquerda da fileira que rola ${where} (${px(b.left - vx[0])} escondidos)`)
         if (vx[1] > b.right + EPS) fail(`pela metade na borda direita da fileira que rola ${where} (${px(vx[1] - b.right)} escondidos)`)
       }
@@ -341,6 +346,21 @@ function textFrame(el: Element): Element | null {
   return control ? visible ?? control : visible
 }
 
+/**
+ * (a) Botão só de ícone (o X do aviso PRÓXIMA, a lixeira, o Metrônomo): sem texto próprio ele não
+ * entra na conta dos textos, então a caixa dele é medida aqui, com as mesmas regras de corte.
+ */
+function checkIconButtons(add: (f: Failure) => void, frames: Set<Element>, counts: CheckReport['counts']) {
+  for (const el of document.querySelectorAll(CONTROL)) {
+    if (frames.has(el) || (el.textContent ?? '').trim() !== '' || !isShown(el) || el.closest('[inert]')) continue
+    frames.add(el)
+    counts.iconButtons++
+    const r = el.getBoundingClientRect()
+    const name = el.getAttribute('aria-label') ?? el.getAttribute('title') ?? ''
+    walkClips(el, { left: r.left, right: r.right, top: r.top, bottom: r.bottom }, (detail) => add({ kind: 'cortado', selector: describe(el), text: name, detail: `o botão só de ícone ${detail}` }))
+  }
+}
+
 /** (c) Alvos de toque. */
 function checkTargets(add: (f: Failure) => void, counts: CheckReport['counts']) {
   for (const el of document.querySelectorAll(TARGET)) {
@@ -370,7 +390,7 @@ function runChecks(): Pick<CheckReport, 'failures' | 'counts'> {
     seen.add(key)
     failures.push(f)
   }
-  const counts = { texts: 0, targets: 0, msException: 0, narrowException: 0 }
+  const counts = { texts: 0, targets: 0, msException: 0, narrowException: 0, iconButtons: 0 }
   const frames = new Set<Element>()
 
   for (const el of document.body.querySelectorAll('*')) {
@@ -387,6 +407,7 @@ function runChecks(): Pick<CheckReport, 'failures' | 'counts'> {
       checkFrameCut(frame, g, add)
     }
   }
+  checkIconButtons(add, frames, counts)
   checkTargets(add, counts)
 
   const page = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth)
@@ -441,11 +462,11 @@ export async function verifyPage(name: string, estado: string, steps: PageSteps 
     await post(name, { ...base, ...result })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    await post(name, { ...base, failures: [], counts: { texts: 0, targets: 0, msException: 0, narrowException: 0 }, fatal: message })
+    await post(name, { ...base, failures: [], counts: { texts: 0, targets: 0, msException: 0, narrowException: 0, iconButtons: 0 }, fatal: message })
   }
 }
 
 /** Erro antes de medir (estado desconhecido, falha ao montar): o run.mjs mostra e sai com 1. */
 export function reportFatal(name: string, estado: string, message: string): void {
-  void post(name, { name, estado, viewport: { w: window.innerWidth, h: window.innerHeight }, failures: [], counts: { texts: 0, targets: 0, msException: 0, narrowException: 0 }, fatal: message })
+  void post(name, { name, estado, viewport: { w: window.innerWidth, h: window.innerHeight }, failures: [], counts: { texts: 0, targets: 0, msException: 0, narrowException: 0, iconButtons: 0 }, fatal: message })
 }
