@@ -14,6 +14,10 @@ const h = vi.hoisted(() => ({
   flags: {} as Record<string, FlagsRow>,
   flagsHold: null as Promise<void> | null,
   listeners: [] as ((event: string, session: unknown) => void)[],
+  // Plano de cada conta no banco (sem linha: Pro Mensal, como antes) e o aparelho sem internet
+  // (as duas leituras falham como o supabase-js falha sem rede).
+  plans: {} as Record<string, { plan: string; plan_expires_at: string | null }>,
+  offline: false,
 }))
 
 vi.mock('../lib/supabase', () => ({
@@ -30,7 +34,8 @@ vi.mock('../lib/supabase', () => ({
       select: (cols: string) => ({
         eq: (_col: string, id: string) => ({
           maybeSingle: async () => {
-            if (!cols.includes('is_admin')) return { data: { plan: 'pro_mensal', plan_expires_at: null }, error: null }
+            if (h.offline) return { data: null, error: { message: 'TypeError: Failed to fetch' } }
+            if (!cols.includes('is_admin')) return { data: h.plans[id] ?? { plan: 'pro_mensal', plan_expires_at: null }, error: null }
             if (h.flagsHold) await h.flagsHold
             return { data: h.flags[id] ?? null, error: null }
           },
@@ -128,6 +133,7 @@ vi.mock('../components/SubscriptionPanel', () => ({ SubscriptionPanel: () => nul
 
 import { useAuth } from './useAuth'
 import App from '../App'
+import { PLAN_CACHE_KEY, readPlanCache, savePlanCache } from '../lib/planCache'
 
 const TETO = 4000
 const ADMIN = { id: 'u-adm', email: 'equipe@exemplo.com' }
@@ -148,10 +154,14 @@ beforeEach(() => {
   h.flags = {}
   h.flagsHold = null
   h.listeners.length = 0
+  h.plans = {}
+  h.offline = false
+  localStorage.clear()
 })
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
+  localStorage.clear()
 })
 
 describe('useAuth: teto de 4 s na leitura do papel e do bloqueio', () => {
@@ -224,6 +234,145 @@ describe('useAuth: teto de 4 s na leitura do papel e do bloqueio', () => {
     await advance(TETO)
     expect(result.current.loading).toBe(false)
     expect(result.current.isAdmin).toBe(true)
+  })
+})
+
+describe('useAuth: plano guardado no aparelho (sem internet)', () => {
+  const PAGO = { id: 'u-pago', email: 'pago@exemplo.com' }
+  const OUTRA = { id: 'u-outra', email: 'outra@exemplo.com' }
+  const DAY = 86_400_000
+  const agoMs = (ms: number) => new Date(Date.now() - ms)
+  const fire = (event: string, session: FakeSession | null) => act(() => { for (const cb of h.listeners) cb(event, session) })
+
+  it('leitura que deu certo grava o plano no aparelho', async () => {
+    h.session = sessionOf(PAGO)
+    h.flags[PAGO.id] = { is_admin: false, blocked_at: null }
+    renderHook(() => useAuth())
+    await flush()
+    expect(readPlanCache(PAGO.id)).toEqual({ plan: 'pro_mensal', planExpiresAt: null, isAdmin: false })
+  })
+
+  it('sem internet, a conta que pagava abre com o plano guardado', async () => {
+    savePlanCache(PAGO.id, { plan: 'pro_mensal', planExpiresAt: null, isAdmin: false })
+    h.session = sessionOf(PAGO)
+    h.offline = true
+    const { result } = renderHook(() => useAuth())
+    await flush()
+    expect(result.current.loading).toBe(false)
+    expect(result.current.userPlan).toBe('pro_mensal')
+    expect(result.current.isAdmin).toBe(false)
+  })
+
+  it('sem internet e sem plano guardado, abre como Livre (como antes)', async () => {
+    h.session = sessionOf(PAGO)
+    h.offline = true
+    const { result } = renderHook(() => useAuth())
+    await flush()
+    expect(result.current.loading).toBe(false)
+    expect(result.current.userPlan).toBe('free')
+  })
+
+  it('plano guardado com data de fim passada abre como Livre', async () => {
+    savePlanCache(PAGO.id, { plan: 'pro_mensal', planExpiresAt: agoMs(DAY).toISOString(), isAdmin: false }, agoMs(2 * DAY))
+    h.session = sessionOf(PAGO)
+    h.offline = true
+    const { result } = renderHook(() => useAuth())
+    await flush()
+    expect(result.current.userPlan).toBe('free')
+  })
+
+  it('plano guardado há mais de 30 dias sem conferir abre como Livre', async () => {
+    savePlanCache(PAGO.id, { plan: 'pro_mensal', planExpiresAt: null, isAdmin: false }, agoMs(30 * DAY + 60_000))
+    h.session = sessionOf(PAGO)
+    h.offline = true
+    const { result } = renderHook(() => useAuth())
+    await flush()
+    expect(result.current.userPlan).toBe('free')
+  })
+
+  it('leitura que falha não renova o prazo do plano guardado', async () => {
+    const checkedAt = agoMs(29 * DAY)
+    savePlanCache(PAGO.id, { plan: 'pro_mensal', planExpiresAt: null, isAdmin: false }, checkedAt)
+    h.session = sessionOf(PAGO)
+    h.offline = true
+    renderHook(() => useAuth())
+    await flush()
+    await act(async () => { window.dispatchEvent(new Event('playback-plan-changed')) })
+    await flush()
+    expect(JSON.parse(localStorage.getItem(PLAN_CACHE_KEY) ?? 'null')?.checkedAt).toBe(checkedAt.toISOString())
+  })
+
+  it('admin sem internet continua admin', async () => {
+    savePlanCache(ADMIN.id, { plan: 'free', planExpiresAt: null, isAdmin: true })
+    h.session = sessionOf(ADMIN)
+    h.offline = true
+    const { result } = renderHook(() => useAuth())
+    await flush()
+    expect(result.current.loading).toBe(false)
+    expect(result.current.isAdmin).toBe(true)
+    expect(result.current.blockedAt).toBeNull()
+  })
+
+  it('papel que estoura o teto: a conta usa o papel guardado, e o prazo não é renovado', async () => {
+    const checkedAt = agoMs(DAY)
+    savePlanCache(ADMIN.id, { plan: 'free', planExpiresAt: null, isAdmin: true }, checkedAt)
+    h.session = sessionOf(ADMIN)
+    h.flags[ADMIN.id] = { is_admin: true, blocked_at: null }
+    hangFlags()
+    const { result } = renderHook(() => useAuth())
+    await advance(TETO)
+    expect(result.current.loading).toBe(false)
+    expect(result.current.isAdmin).toBe(true)
+    expect(JSON.parse(localStorage.getItem(PLAN_CACHE_KEY) ?? 'null')?.checkedAt).toBe(checkedAt.toISOString())
+  })
+
+  it('outra conta no mesmo aparelho não herda o plano nem o papel guardados', async () => {
+    h.session = sessionOf(ADMIN)
+    h.flags[ADMIN.id] = { is_admin: true, blocked_at: null }
+    const { result } = renderHook(() => useAuth())
+    await flush()
+    expect(readPlanCache(ADMIN.id)).toEqual({ plan: 'pro_mensal', planExpiresAt: null, isAdmin: true })
+
+    h.offline = true
+    fire('SIGNED_IN', sessionOf(OUTRA))
+    await flush()
+    expect(result.current.user?.id).toBe(OUTRA.id)
+    expect(result.current.loading).toBe(false)
+    expect(result.current.userPlan).toBe('free')
+    expect(result.current.isAdmin).toBe(false)
+    expect(readPlanCache(OUTRA.id)).toBeNull()
+  })
+
+  it('sair da conta apaga o plano guardado', async () => {
+    h.session = sessionOf(PAGO)
+    h.flags[PAGO.id] = { is_admin: false, blocked_at: null }
+    const { result } = renderHook(() => useAuth())
+    await flush()
+    expect(readPlanCache(PAGO.id)).not.toBeNull()
+
+    fire('SIGNED_OUT', null)
+    await flush()
+    expect(result.current.user).toBeNull()
+    expect(readPlanCache(PAGO.id)).toBeNull()
+    expect(localStorage.getItem(PLAN_CACHE_KEY)).toBeNull()
+  })
+
+  it('abrir sem sessão (login vencido sem internet) não apaga o plano guardado: só sair da conta apaga', async () => {
+    savePlanCache(PAGO.id, { plan: 'pro_mensal', planExpiresAt: null, isAdmin: false })
+    renderHook(() => useAuth())
+    fire('INITIAL_SESSION', null)
+    await flush()
+    expect(readPlanCache(PAGO.id)).toEqual({ plan: 'pro_mensal', planExpiresAt: null, isAdmin: false })
+  })
+
+  it('conta bloqueada não fica com plano guardado no aparelho', async () => {
+    savePlanCache(PAGO.id, { plan: 'pro_mensal', planExpiresAt: null, isAdmin: false })
+    h.session = sessionOf(PAGO)
+    h.flags[PAGO.id] = { is_admin: false, blocked_at: '2026-11-19T12:00:00Z' }
+    const { result } = renderHook(() => useAuth())
+    await flush()
+    expect(result.current.blockedAt).toBe('2026-11-19T12:00:00Z')
+    expect(readPlanCache(PAGO.id)).toBeNull()
   })
 })
 

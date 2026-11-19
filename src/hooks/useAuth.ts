@@ -4,6 +4,7 @@ import { apiUrl } from '../lib/api';
 import { effectivePlan, fetchPlanState } from '../lib/planState';
 import { syncBillingOnLogin } from '../lib/subscription';
 import { fetchProfileFlagsWithin, touchLastSeen } from '../lib/profileFlags';
+import { clearPlanCache, readPlanCache, savePlanCache } from '../lib/planCache';
 import type { User, Session } from '@supabase/supabase-js';
 
 const PLAN_CHANGED_EVENT = 'playback-plan-changed';
@@ -27,18 +28,23 @@ export function useAuth() {
 
     // Plano, papel e bloqueio vêm juntos: o carregando cobre os três. A leitura do papel e do
     // bloqueio tem teto de 4 s (Ruling ADM-T27-teto); a do plano segue como antes, sem teto.
+    // A leitura inteira que dá certo fica guardada no aparelho (planCache); é ela que vale
+    // quando a conta abre sem internet, até a data de fim do plano ou 30 dias sem conferir.
     const fetchPlan = useCallback(async (userId: string) => {
         const [state, flags] = await Promise.all([fetchPlanState(userId), fetchProfileFlagsWithin(userId)]);
         if (sessionUserRef.current !== userId) return;
         const sameAccount = profileUserRef.current === userId;
         profileUserRef.current = userId;
         if (!state) {
-            // Erro de rede: a mesma conta mantém o que já tinha (plano, papel e bloqueio);
-            // outra conta não herda nada da anterior.
+            // Erro de rede: a mesma conta mantém o que já tinha (plano, papel e bloqueio). A conta
+            // que ainda não foi lida nesta aba abre com o último plano e papel conhecidos neste
+            // aparelho (só os dela; sem eles, Livre e sem admin). Outra conta não herda nada da
+            // anterior. Nada é regravado: o prazo de 30 dias conta da última leitura que deu certo.
             if (!sameAccount) {
-                setRawPlan('free');
-                setPlanExpiresAt(null);
-                setIsAdmin(false);
+                const saved = readPlanCache(userId);
+                setRawPlan(saved?.plan ?? 'free');
+                setPlanExpiresAt(saved?.planExpiresAt ?? null);
+                setIsAdmin(saved?.isAdmin ?? false);
                 setBlockedAt(null);
             }
             return;
@@ -46,17 +52,21 @@ export function useAuth() {
         setRawPlan(state.plan);
         setPlanExpiresAt(state.planExpiresAt);
         if (!flags) {
-            // A leitura do papel estourou o teto: no carregamento de uma conta vale não admin e
-            // não bloqueado, e o app abre; a mesma conta (releitura) mantém o que já tinha. A
-            // resposta atrasada é descartada: nada reabre sozinho, só a próxima leitura.
+            // A leitura do papel estourou o teto: no carregamento de uma conta vale o papel
+            // guardado neste aparelho pra ela (sem ele, não admin), não bloqueado, e o app abre;
+            // a mesma conta (releitura) mantém o que já tinha. A resposta atrasada é descartada:
+            // nada reabre sozinho, só a próxima leitura. Sem o papel lido, nada é regravado.
             if (!sameAccount) {
-                setIsAdmin(false);
+                setIsAdmin(readPlanCache(userId)?.isAdmin ?? false);
                 setBlockedAt(null);
             }
             return;
         }
         setIsAdmin(flags.isAdmin);
         setBlockedAt(flags.blockedAt);
+        // Conta bloqueada não fica com plano guardado (sem internet ela abriria com ele).
+        if (flags.blockedAt) clearPlanCache();
+        else savePlanCache(userId, { ...state, isAdmin: flags.isAdmin });
     }, []);
 
     // Se a data de fim chegar com o app aberto, reavalia sozinho.
@@ -92,7 +102,7 @@ export function useAuth() {
         });
 
         // Listen for changes on auth state (login, logout, etc)
-        const { data: { subscription } } = supabase!.auth.onAuthStateChange((_event, session) => {
+        const { data: { subscription } } = supabase!.auth.onAuthStateChange((event, session) => {
             setSession(session);
             setUser(session?.user ?? null);
             sessionUserRef.current = session?.user?.id ?? null;
@@ -103,6 +113,10 @@ export function useAuth() {
                 touchLastSeen(session.user.id);
                 fetchPlan(session.user.id).finally(() => setLoading(false));
             } else {
+                // Sair da conta apaga o plano guardado no aparelho. Abrir sem sessão não apaga: sem
+                // internet e com o login vencido, o supabase-js abre sem sessão e a volta da rede
+                // traz a mesma conta de novo (o plano guardado é só dela, de qualquer forma).
+                if (event === 'SIGNED_OUT') clearPlanCache();
                 profileUserRef.current = null;
                 setRawPlan('free');
                 setPlanExpiresAt(null);
