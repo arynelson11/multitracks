@@ -288,12 +288,14 @@ export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardE
   if (view.editMode && editWave !== null) waveStyle = { flex: 'none', height: editWave }
   else if (view.editMode && normalWave !== null) waveStyle = { flex: '0 1 auto', height: normalWave }
 
-  // O menu FAIXAS abre embaixo do botão FAIXAS; o aviso de saídas fica depois do selo ONLINE e, se
-  // não couber até o menu, mostra só a luz (o texto continua no nome e na dica). As posições
-  // dependem da largura da tela, das fontes e da barra: OFFLINE é mais largo que ONLINE (o selo
-  // anda junto, e o wifi pode cair no meio do culto) e o HOST do computador alarga o menu.
+  // O menu FAIXAS abre embaixo do botão FAIXAS; o aviso de saídas fica depois do selo ONLINE (ou
+  // do selo do Livre, quando ele está na barra) e, se não couber até o menu, mostra só a luz (o
+  // texto continua no nome e na dica). As posições dependem da largura da tela, das fontes e da
+  // barra: OFFLINE é mais largo que ONLINE (o selo anda junto, e o wifi pode cair no meio do
+  // culto), o HOST do computador alarga o menu e o selo do Livre aparece e some com o Play.
   const online = view.app.online
   const desktop = view.app.isDesktop
+  const livreBadge = view.app.livre !== null
   useLayoutEffect(() => {
     if (!hasTracksMenu && !alert) return
     const place = () => {
@@ -304,7 +306,7 @@ export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardE
       const faixas = header.querySelector<HTMLElement>('[data-tour="faixas"]')
       if (tracks && faixas) tracks.style.left = `${Math.max(0, Math.round(faixas.getBoundingClientRect().left - box.left))}px`
       const chip = alertRef.current
-      const badge = header.querySelector<HTMLElement>('[data-online]')
+      const badge = header.querySelector<HTMLElement>('[data-livre-badge]') ?? header.querySelector<HTMLElement>('[data-online]')
       if (chip && badge) {
         const left = Math.round(badge.getBoundingClientRect().right - box.left + ALERT_GAP)
         chip.style.left = `${left}px`
@@ -322,7 +324,7 @@ export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardE
       alive = false
       window.removeEventListener('resize', place)
     }
-  }, [hasTracksMenu, alert, online, desktop])
+  }, [hasTracksMenu, alert, online, desktop, livreBadge])
 
   const closePads = () => { if (view.padPanelOpen) actions.togglePadPanel() }
 

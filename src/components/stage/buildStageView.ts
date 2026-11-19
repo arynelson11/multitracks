@@ -31,6 +31,8 @@ export interface EngineStageState {
 export interface StageUiState {
   plan: string | null; isAdmin: boolean; online: boolean; isDesktop: boolean; userName: string | null; hostActive: boolean
   editMode: boolean; channelEditMode: boolean; padPanelOpen: boolean; activePad: string | null; repertoireName: string | null
+  /** Músicas do mês no palco pro selo do Livre; nulo pra conta paga (e pro admin). */
+  livre: StageView['app']['livre']
   /** Pan automático das Configurações (trava o knob em "Tudo junto"). */
   autoPan?: boolean
 }
@@ -147,7 +149,11 @@ export function buildStageView(e: EngineStageState, ui: StageUiState): StageView
     channelEditMode: ui.channelEditMode,
     padPanelOpen: ui.padPanelOpen,
     activePad: ui.activePad,
-    app: { online: ui.online, isDesktop: ui.isDesktop, isAdmin: ui.isAdmin, userName: ui.userName, hostActive: ui.hostActive },
+    app: {
+      online: ui.online, isDesktop: ui.isDesktop, isAdmin: ui.isAdmin, userName: ui.userName, hostActive: ui.hostActive,
+      // Selo do Livre só com o palco parado: nunca com a música tocando ou na pré-contagem.
+      livre: ui.livre && !e.isPlaying && !e.isCountingIn ? ui.livre : null,
+    },
     autoPan: ui.autoPan === true,
   }
 }

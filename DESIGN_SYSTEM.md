@@ -2,7 +2,7 @@
 
 > **Versão:** 1.0
 > **Data:** 2026-05-20
-> **Atualizado:** 2026-11-19 (seção 2.8: `<LimitScreen>`, a tela de limite do Livre com a oferta do primeiro mês, Parte 3, não publicado; seção 2.7: `<StageDialog>`, a janela por cima da Parte 3, não publicado; seções 1.7 e 2.7: palco novo da Parte 2, publicado na v1.4.19 atrás da chave que nascia em Antigo; as correções da revisão macro e a chave nascendo em Novo saíram na v1.4.20, publicada em 2026-11-19; seções 1.7 e 2.6: linguagem nova da Parte 1, publicada na v1.4.15)
+> **Atualizado:** 2026-11-19 (seção 2.8: `<HouseAdCard>`, o cartão do anúncio da casa, e `<LivreBadge>`, o selo do Livre na barra do palco novo, Parte 3, não publicado; seção 2.8: `<LimitScreen>`, a tela de limite do Livre com a oferta do primeiro mês, Parte 3, não publicado; seção 2.7: `<StageDialog>`, a janela por cima da Parte 3, não publicado; seções 1.7 e 2.7: palco novo da Parte 2, publicado na v1.4.19 atrás da chave que nascia em Antigo; as correções da revisão macro e a chave nascendo em Novo saíram na v1.4.20, publicada em 2026-11-19; seções 1.7 e 2.6: linguagem nova da Parte 1, publicada na v1.4.15)
 > **Pareado com:** `PLAYBACK_STUDIO_BRAND_BOOK.md` (estratégia + briefing pros designers)
 > **Este documento:** referência operacional pareando código existente com vocabulário atomic design (Brad Frost). Lê este se você vai TOCAR o código.
 
@@ -386,7 +386,7 @@ Junta as classes verdadeiras com espaço. Não resolve conflito entre utilidades
 
 | Faixa | Peça | O que é |
 |---|---|---|
-| Barra do app | `StageAppBar` | REPERTÓRIOS, FAIXAS, BIBLIOTECA, EDITAR, HOST (só no computador), CONFIG, INÍCIO, avatar e SAIR; selo ONLINE (musgo) ou OFFLINE (neutro); aviso âmbar SAÍDAS |
+| Barra do app | `StageAppBar` | REPERTÓRIOS, FAIXAS, BIBLIOTECA, EDITAR, HOST (só no computador), CONFIG, INÍCIO, avatar e SAIR; selo ONLINE (musgo) ou OFFLINE (neutro); selo do Livre (`LivreBadge`, seção 2.8, Parte 3, não publicado) ao lado dele; aviso âmbar SAÍDAS depois dos selos |
 | Transporte | `TransportBar`, `PlayButton`, `NextPill` | Fim da música (AUTO / PARAR / FADE), COMEÇO, Play com o anel no pulso do click e o número da pré-contagem, LOOP, CLICK, PRÉ-CONT., SEÇÃO ◂ ▸ e o aviso PRÓXIMA / REPETE na cor da seção |
 | Onda | `WaveformSections` | onda da música inteira (o maior pico entre os canais Normal, v1.4.21) com a cor de cada seção, linhas de compasso, blocos de seção, selos, seta tracejada até a seção armada, régua embaixo (22px, rótulo a cada 30 s) e agulha pegável (faixa de 24px em volta do playhead, em toda a altura, cursor de pegar; v1.4.21). Sem blocos (sem seções ou no Livre), a onda inteira vale como a régua |
 | Botoeira | `SectionPads` | um botão por seção (teclas 1 a 9), AGORA na cor da seção, armado em branco listrado, brilho ao pousar |
@@ -408,7 +408,7 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 - **Larguras:** de 1024 a 1279px, capa menor, PAD e LETRA empilhados e mixer rolando de lado com canais inteiros; 14 canais inteiros em 1280px; aviso da grade em texto no PRÓXIMA a partir de 1440px; o nome do repertório na célula da música aparece a partir de 1700px quando a vista traz um (`repertoireName`; o app ainda não guarda nome de repertório e passa nulo). Abaixo de 1024px (só tocando), a casca rola de lado.
 - **Canal calado** (M ou Solo de outro) fica cinza, nunca vermelho, como no mixer atual (seção 1.7).
 - **Knob que não muda o som fica travado** (apagado, sem arrasto, motivo no `title`): em "Click e Guia separados"; em "4 ou mais", no Click e na Guia; e, na v1.4.20, em "Tudo junto" com o pan automático ligado (o lado vem do papel). O medidor do PRINCIPAL mostra as saídas 1 e 2 da placa, não a VS: a dica do fader e a descrição do grupo dizem o que cada barra é em cada modo (v1.4.20).
-- **Verificador:** `scripts/verify-layout/` monta a casca com dados de teste e mede no Chrome headless texto cortado, texto encostando, alvos de toque, rolagem de lado e ordem das faixas. Na v1.4.20: 10 estados (o novo `semtom`, grade de tons sem tom original) e 8 tamanhos (1024x740, 1024x768, 1280x760, 1280x800, 1440x900, 1920x1080 e, abaixo de 1024, 900x740 e 810x1080, onde vale "nada inalcançável"), mais a regra do botão só de ícone (o X do PRÓXIMA). Peça nova ou mudança de layout no palco roda ele antes de entregar.
+- **Verificador:** `scripts/verify-layout/` monta a casca com dados de teste e mede no Chrome headless texto cortado, texto encostando, alvos de toque, rolagem de lado e ordem das faixas. Na Parte 3 (não publicado): 11 estados (o novo `selo`, barra com o selo do Livre, seção 2.8), a casca sem rolar de lado a partir de 1024px e o aviso SAÍDAS sem cobrir os selos nem o menu. Na v1.4.20: 10 estados (o novo `semtom`, grade de tons sem tom original) e 8 tamanhos (1024x740, 1024x768, 1280x760, 1280x800, 1440x900, 1920x1080 e, abaixo de 1024, 900x740 e 810x1080, onde vale "nada inalcançável"), mais a regra do botão só de ícone (o X do PRÓXIMA). Peça nova ou mudança de layout no palco roda ele antes de entregar.
 
 #### `<StageDialog>`: janela por cima (`src/components/stage/StageDialog.tsx`, Parte 3, não publicado)
 
@@ -459,6 +459,32 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 - **Pagamento abrindo** (`busyPlan`): os dois botões da oferta ficam desligados e o do plano escolhido ganha `aria-busy`; "Agora não", "Ver todos os planos" e o X continuam, pra pessoa poder sair.
 - **Erro:** frase pronta de quem chama, dentro da tela, em âmbar (`text-ps-alert`, `role="alert"`), embaixo da oferta. Nunca `window.alert` (o app de computador roda de `file://`). Com o erro a oferta continua e dá pra tentar de novo.
 - Teste: `src/components/livre/limitScreen.test.tsx`.
+
+#### `<HouseAdCard>`: cartão do anúncio da casa (`src/components/livre/HouseAdCard.tsx`, textos em `adCopy.ts`)
+
+```tsx
+<HouseAdCard placement="home" onCta={abrirPlanos} onDismiss={esconder} />
+<HouseAdCard placement="separation-done" onCta={abrirPlanos} onDismiss={esconder} />
+```
+
+- **Quando usar:** o anúncio da casa do Livre em dois lugares (spec seção 6): `home` na tela inicial, no máximo uma vez por dia, e `separation-done` ao lado do resultado de uma separação que acabou de terminar. Quem monta é o `AdSlot` (T18), que decide pelas regras de `livreRules.ts` (`shouldShowHomeAd`, `shouldShowSeparationAd`, um anúncio grande por sessão), grava `ad_shown` e `ad_clicked` e garante a regra do Livre: **nunca com a música tocando ou na pré-contagem**. A peça só mostra.
+- **Partes:** `Panel variant="raised"` (seção 2.6) com padding de 16px, `role="region"` com o nome do título; título em `bone` (16px, negrito), a frase do resultado em `mut` (só no `home`) e, embaixo à direita, "Agora não" (`ghost`) e "Conhecer o Pro" (`primary`, laranja, a ação principal), com alvo de 44px, largura pelo texto e quebrando linha quando não cabem. Títulos e frases quebram linha, nunca cortam.
+- **Textos** (`HOME_AD` e `SEPARATION_AD`): "O que o Pro faz por você" com "Seu culto inteiro no palco, a banda acompanhando no celular e cada faixa pronta pra levar pro ensaio." e "No Pro você baixa essas faixas e salva na nuvem". Resultado antes de recurso, sem número de vendas, nenhum travessão.
+- **É cartão, não janela:** fica no fluxo da tela, sem som, sem vídeo, sem camada por cima, sem posição fixa e sem puxar o foco; nada em volta fica bloqueado. "Agora não" chama `onDismiss` (quem monta esconde de vez).
+- Teste: `src/components/livre/houseAd.test.tsx`.
+
+#### `<LivreBadge>`: selo do Livre (`src/components/livre/LivreBadge.tsx`, texto em `adCopy.ts`)
+
+```tsx
+<LivreBadge used={2} limit={3} onClick={abrirPlanos} /> // LIVRE · 2 de 3 músicas este mês
+```
+
+- **Quando usar:** só na barra do palco novo (`StageAppBar`), ao lado do selo ONLINE/OFFLINE, quando a vista traz `app.livre`. O `buildStageView` só passa `app.livre` com a música parada e fora da pré-contagem (tocando, o selo some); conta paga e admin recebem nulo. O palco antigo e o Separador não têm selo. O toque chama `openLivreBadge` (abre os Planos; a T17 grava o clique como `ad_clicked` no lugar `badge`).
+- **Partes:** botão de 44px de alvo (`min-h-ps-touch` e `min-w-ps-touch`) com a pílula visível de 22px, as mesmas medidas do selo ONLINE/OFFLINE (`text-ps-micro`, extranegrito, `tracking-[0.14em]`) nas cores neutras do OFFLINE (`bg-ps-s2`, `text-ps-mut`, anel `line-2`): é informação, não alerta (nada de âmbar) nem ação principal (nada de laranja além do anel de foco de todo botão). `title="Ver os planos"`.
+- **Texto** (`livreBadgeText`): "LIVRE · 2 de 3 músicas este mês", nunca mais do que o limite nem número quebrado ou negativo. **Abaixo de 1280px** a barra não tem lugar pro texto inteiro com OFFLINE, HOST e o aviso SAÍDAS: o selo mostra "LIVRE · 2 de 3" (`livreBadgeShort`) e o "Playback Studio" ao lado do PlayMark sai enquanto o selo está na barra; o nome do botão (`aria-label`) continua com o texto inteiro. Medido em 1024px: OFFLINE, o selo curto, SAÍDAS e o menu cabem sem rolar de lado; em 1280px o texto inteiro cabe com o SAÍDAS.
+- **Aviso SAÍDAS:** a casca põe o aviso depois do selo do Livre quando ele está na barra (senão depois do ONLINE) e acerta a posição quando o selo aparece e some com o Play.
+- **Verificador:** estado `selo` em `scripts/verify-layout/` (OFFLINE, HOST, SAÍDAS e "3 de 3", palco parado), com duas regras novas da casca: a partir de 1024px nada rola de lado, e o aviso SAÍDAS não cobre o ONLINE, o selo nem o menu.
+- Teste: `src/components/livre/houseAd.test.tsx` (peça e texto), `src/components/stage/panels.test.tsx` (barra), `src/components/stage/buildStageView.test.ts` (some tocando) e `src/components/stage/stageShell.test.tsx` (posição do SAÍDAS).
 
 ---
 

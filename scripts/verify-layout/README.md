@@ -8,7 +8,7 @@ nova: usa o Vite, o React e o Tailwind do repo e o Google Chrome da máquina.
 
 ```bash
 source ~/.nvm/nvm.sh && nvm use 24
-node scripts/verify-layout/run.mjs                                    # 10 estados x 8 tamanhos (80 combinações)
+node scripts/verify-layout/run.mjs                                    # 11 estados x 8 tamanhos (88 combinações)
 node scripts/verify-layout/run.mjs --only 1280x800 --estado quebrado  # prova: tem de sair com 1
 node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
 ```
@@ -16,7 +16,7 @@ node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
 | Opção | O que faz |
 |---|---|
 | `--only 1280x800[,1440x900]` | só esses tamanhos (padrão: os 8) |
-| `--estado normal[,tom]` | só esses estados (padrão: os 10 normais; `quebrado` é a prova) |
+| `--estado normal[,tom]` | só esses estados (padrão: os 11 normais; `quebrado` é a prova) |
 | `--jobs N` | quantos Chrome ao mesmo tempo (padrão 3) |
 | `--no-build` | usa a página já montada em `.build/` |
 
@@ -40,6 +40,7 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `pads` | painel de pads aberto, pad G# tocando |
 | `editar` | modo EDITAR (barra de marcar seções), parado |
 | `livre` | plano Livre: convite pra marcar seções e o aviso SEM CLICK LIDO |
+| `selo` | plano Livre parado com o selo "LIVRE · 3 de 3 músicas este mês" na barra, OFFLINE, HOST ligado e o aviso SAÍDAS (o pior caso da barra; abaixo de 1280 px o selo encurta e o "Playback Studio" sai) |
 | `repertorio` | gaveta REPERTÓRIOS aberta com 6 músicas e Anotações |
 | `tom` | grade de tons aberta (toque no botão do tom), com "Redefinir detecção de tom" |
 | `semtom` | grade aberta sem tom original: semitons em 3 linhas, com "Definir o tom original" ao lado do 0 |
@@ -89,8 +90,13 @@ Para todo elemento com texto próprio que está na tela:
   sem rolar na vertical. Folga só no `editar` e no `compasso`, até 38 px (a T18
   aceitou o EDITAR rolar em tela baixa; na v1.4.20, 38 px em 1024x740 com o
   mixer no mínimo de 200 px no EDITAR); ao vivo, nada. Abaixo de 1024 px a
-  barra da rolagem de lado da casca soma na folga. Vale
-  pra cada `[data-stage-shell]` da página (a prova tem um palco de mentira).
+  barra da rolagem de lado da casca soma na folga. A partir de 1024 px a casca
+  (`[data-stage-hscroll]`) não rola de lado: a barra do app inteira cabe, com
+  OFFLINE, HOST, o aviso SAÍDAS e o selo do Livre (Parte 3; a regra (a) não vê
+  isso, porque a casca que rola de lado não acusa o que passa da borda). O
+  aviso SAÍDAS, que fica por cima da barra, não cobre o selo ONLINE, o selo do
+  Livre nem o menu. Vale pra cada `[data-stage-shell]` da página (a prova tem
+  um palco de mentira).
 
 Não usa `elementFromPoint`: o que está por cima de quê não é medido, então as
 etiquetas PRÓXIMA, REPETE e LOOP da onda (`pointer-events-none`) não mudam nada.

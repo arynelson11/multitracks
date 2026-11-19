@@ -8,6 +8,7 @@ import { PadPanel } from './PadPanel'
 import type { PadPanelProps } from './PadPanel'
 import { RepertoirePanel } from './RepertoirePanel'
 import type { RepertoirePanelProps, RepertoireSongItem } from './RepertoirePanel'
+import { HouseAdCard } from '../livre/HouseAdCard'
 import { StageAppBar } from './StageAppBar'
 import type { StageAppBarProps } from './StageAppBar'
 import { TwoTapTrashButton } from './TwoTapTrashButton'
@@ -50,10 +51,10 @@ const expectPortuguese = (root: HTMLElement) => {
 
 // ---------- Barra do app ----------
 
-const APP: StageView['app'] = { online: true, isDesktop: false, isAdmin: false, userName: 'Ary Nelson', hostActive: false }
+const APP: StageView['app'] = { online: true, isDesktop: false, isAdmin: false, userName: 'Ary Nelson', hostActive: false, livre: null }
 const appActions = () => ({
   openRepertoires: vi.fn(), openTracks: vi.fn(), openLibrary: vi.fn(), toggleEditMode: vi.fn(),
-  openHost: vi.fn(), openSettings: vi.fn(), goHome: vi.fn(), signOut: vi.fn(),
+  openHost: vi.fn(), openSettings: vi.fn(), goHome: vi.fn(), signOut: vi.fn(), openLivreBadge: vi.fn(),
 }) satisfies StageAppBarProps['actions']
 const renderBar = (app: Partial<StageView['app']> = {}, editMode = false) => {
   const actions = appActions()
@@ -62,6 +63,7 @@ const renderBar = (app: Partial<StageView['app']> = {}, editMode = false) => {
 }
 const tour = (name: string) => document.querySelector(`[data-tour="${name}"]`) as HTMLElement | null
 const badge = () => document.querySelector('[data-online]') as HTMLElement
+const livreBadge = () => document.querySelector('[data-livre-badge]') as HTMLElement | null
 
 describe('barra do app', () => {
   it('HOST só no desktop e EDITAR aceso no modo editar', () => {
@@ -118,6 +120,38 @@ describe('barra do app', () => {
     // Neutro: nem o âmbar do alerta, nem vermelho, nem o musgo do ONLINE.
     expect(badge().outerHTML).not.toMatch(/alert|red|mute|moss|#/)
     expect(badge().title).not.toBe('')
+  })
+
+  it('a barra do app mostra o selo com app.livre e o toque chama openLivreBadge', () => {
+    const { actions } = renderBar({ isDesktop: true, online: false, hostActive: true, livre: { used: 2, limit: 3 } })
+    const selo = screen.getByRole('button', { name: 'LIVRE · 2 de 3 músicas este mês' })
+    expect(selo).toBe(livreBadge())
+    expect(selo.title).toBe('Ver os planos')
+    expectTouch(selo)
+    // Ao lado do selo ONLINE/OFFLINE, fora do menu.
+    expect(badge().nextElementSibling).toBe(selo)
+    expect(within(screen.getByRole('navigation', { name: 'Navegação do app' })).queryByText(/LIVRE/)).toBeNull()
+    fireEvent.click(selo)
+    expect(actions.openLivreBadge).toHaveBeenCalledTimes(1)
+    for (const other of ['openRepertoires', 'openTracks', 'openLibrary', 'toggleEditMode', 'openHost', 'openSettings', 'goHome', 'signOut'] as const) {
+      expect(actions[other]).not.toHaveBeenCalled()
+    }
+  })
+
+  it('sem app.livre a barra não mostra o selo', () => {
+    const { rerender, actions } = renderBar({ livre: null })
+    expect(livreBadge()).toBeNull()
+    expect(screen.getByRole('banner').textContent).not.toMatch(/LIVRE|músicas este mês/)
+    // Sem o selo a marca fica sempre; com ele, abaixo de 1280 px fica só o PlayMark (a barra cabe em 1024 px).
+    const wordmark = () => document.querySelector('[data-wordmark]') as HTMLElement
+    expect(wordmark().textContent).toBe('Playback Studio')
+    expect(wordmark().className).not.toContain('hidden')
+    rerender(<StageAppBar app={{ ...APP, livre: { used: 0, limit: 3 } }} editMode={false} actions={actions} />)
+    expect(livreBadge()!.textContent).toBe('LIVRE · 0 de 3 músicas este mês')
+    expect(wordmark().className.split(/\s+/)).toEqual(['hidden', 'xl:inline'])
+    rerender(<StageAppBar app={{ ...APP, livre: null }} editMode={false} actions={actions} />)
+    expect(livreBadge()).toBeNull()
+    expect(wordmark().className).not.toContain('hidden')
   })
 })
 
@@ -626,10 +660,23 @@ describe('Esc e textos', () => {
     expect(p.onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('nenhum travessão nos textos do anúncio e do selo', () => {
+    const { container } = render(
+      <>
+        <StageAppBar app={{ ...APP, isDesktop: true, online: false, livre: { used: 3, limit: 3 } }} editMode={false} actions={appActions()} />
+        <HouseAdCard placement="home" onCta={() => {}} onDismiss={() => {}} />
+        <HouseAdCard placement="separation-done" onCta={() => {}} onDismiss={() => {}} />
+      </>,
+    )
+    expect(livreBadge()).not.toBeNull()
+    expect(container.querySelectorAll('[data-house-ad]')).toHaveLength(2)
+    expectPortuguese(container)
+  })
+
   it('textos em português, sem travessão', () => {
     const { container } = render(
       <>
-        <StageAppBar app={{ ...APP, isDesktop: true, online: false }} editMode actions={appActions()} />
+        <StageAppBar app={{ ...APP, isDesktop: true, online: false, livre: { used: 2, limit: 3 } }} editMode actions={appActions()} />
         <RepertoirePanel {...repProps()} />
         <PadPanel {...padProps()} />
       </>,

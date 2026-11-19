@@ -38,8 +38,9 @@ function engine(patch: Partial<EngineStageState> = {}): EngineStageState {
 
 const UI: StageUiState = {
   plan: 'pro_mensal', isAdmin: false, online: true, isDesktop: true, userName: 'Ary', hostActive: false,
-  editMode: false, channelEditMode: false, padPanelOpen: false, activePad: null, repertoireName: null,
+  editMode: false, channelEditMode: false, padPanelOpen: false, activePad: null, repertoireName: null, livre: null,
 }
+const build = (e: Partial<EngineStageState> = {}, ui: Partial<StageUiState> = {}) => buildStageView(engine(e), { ...UI, ...ui })
 
 describe('buildStageView', () => {
   it('canais com rótulo, cor, papel e calado pelo solo', () => {
@@ -160,6 +161,20 @@ describe('buildStageView', () => {
     expect(liveArmedOf({ ...v, intent: { target: 0, plays: 3 } })).toEqual({ index: 0, label: 'Intro', color: '#3b82f6', kind: 'repete', plays: 3 })
     expect(liveArmedOf({ ...v, intent: null })).toBeNull()
     expect(liveArmedOf({ ...v, intent: { target: 7, plays: 1 } })).toBeNull()
+  })
+
+  describe('selo do Livre (app.livre)', () => {
+    const L = { used: 2, limit: 3 }
+    it('o selo some com a música tocando e na pré-contagem', () => {
+      expect(build({ isPlaying: true }, { livre: L }).app.livre).toBeNull()
+      expect(build({ isCountingIn: true }, { livre: L }).app.livre).toBeNull()
+      expect(build({ isPlaying: true, isCountingIn: true }, { livre: L }).app.livre).toBeNull()
+      expect(build({}, { livre: L }).app.livre).toEqual(L)
+    })
+    it('conta paga: app.livre nulo', () => {
+      expect(build({}, { livre: null }).app.livre).toBeNull()
+      expect(build({ isPlaying: true }, { livre: null }).app.livre).toBeNull()
+    })
   })
 
   it('nenhum texto com travessão', () => {

@@ -512,7 +512,7 @@ const VIEW: StageView = {
   click: { channelId: 'c1', on: true }, channels: [], master: { volume: 1, muted: false },
   outputs: { mode: 'stereo', channels: 2, vs: [0, 1], click: [0, 1], guide: [0, 1], panByRole: false, fellBackFrom: null },
   gates: PAGO, editMode: false, channelEditMode: false, padPanelOpen: false, activePad: null,
-  app: { online: true, isDesktop: false, isAdmin: false, userName: null, hostActive: false },
+  app: { online: true, isDesktop: false, isAdmin: false, userName: null, hostActive: false, livre: null },
 }
 const ACTION_NAMES: (keyof StageActions)[] = [
   'togglePlay', 'goToStart', 'setEndMode', 'togglePrecount', 'cyclePrecountBeats', 'toggleClick', 'openMetronome', 'tapSection',
@@ -520,7 +520,7 @@ const ACTION_NAMES: (keyof StageActions)[] = [
   'toggleMute', 'toggleSolo', 'setPan', 'setMasterVolume', 'toggleMasterMute', 'togglePadPanel', 'openLyrics', 'openRepertoires',
   'openTracks', 'openLibrary', 'toggleEditMode', 'toggleChannelEditMode', 'openHost', 'openSettings', 'goHome', 'signOut',
   'openUpgrade', 'openChannelEdit', 'reorderChannel', 'removeChannel', 'markSection', 'nudgeSection', 'removeSection', 'setMeter',
-  'redetectMeter', 'setOriginalKey',
+  'redetectMeter', 'setOriginalKey', 'openLivreBadge',
 ]
 const makeActions = () => Object.fromEntries(ACTION_NAMES.map((n) => [n, vi.fn()])) as unknown as Record<keyof StageActions, ReturnType<typeof vi.fn>> & StageActions
 

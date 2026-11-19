@@ -131,6 +131,7 @@ const EXPECT: Record<Estado, { sel: string; text?: string }> = {
   pads: { sel: '[role="dialog"][aria-label="Pads"]' },
   editar: { sel: '[role="group"][aria-label="Marcar seção"]' },
   livre: { sel: '[data-tour="secoes"] p' },
+  selo: { sel: 'header [data-livre-badge]', text: 'LIVRE · 3 de 3 músicas este mês' },
   repertorio: { sel: '[role="dialog"][aria-label="Repertório"]' },
   tom: { sel: '[data-cell="tom"] button[aria-expanded="true"]' },
   semtom: { sel: '[data-cell="tom"] [data-define-original]' },
@@ -186,6 +187,22 @@ function shellStructure(shell: Element, allowance: number): Failure[] {
   const room = allowance + bar
   if (scroll && extra > room + 1) {
     out.push({ kind: 'estrutura', selector: describe(scroll), text: '', detail: `o palco rola ${extra}px na vertical (${scroll.scrollHeight}px numa área de ${scroll.clientHeight}px; folga neste estado: ${allowance}px${bar > 0 ? ` + ${bar}px da barra de rolagem de lado` : ''})` })
+  }
+  // A partir de 1024 px a casca não rola de lado: a barra do app inteira cabe (com OFFLINE, HOST, o
+  // aviso SAÍDAS e o selo do Livre). A rolagem de lado só vale abaixo de 1024 px (Ruling I2-estreito).
+  if (hscroll && window.innerWidth >= 1024 && hscroll.scrollWidth > hscroll.clientWidth + 1) {
+    out.push({ kind: 'estrutura', selector: describe(hscroll), text: '', detail: `a casca rola ${hscroll.scrollWidth - hscroll.clientWidth}px de lado em ${window.innerWidth}px (o conteúdo tem ${hscroll.scrollWidth}px)` })
+  }
+  // O aviso SAÍDAS fica por cima da barra (absoluto): não pode cobrir o selo ONLINE, o do Livre nem o menu.
+  const outAlert = shell.querySelector('[data-output-alert]')
+  if (outAlert) {
+    const a = outAlert.getBoundingClientRect()
+    const nav = shell.querySelector('header nav')
+    for (const sel of ['[data-online]', '[data-livre-badge]']) {
+      const el = shell.querySelector(sel)
+      if (el && a.left < el.getBoundingClientRect().right - 0.5) out.push({ kind: 'estrutura', selector: describe(outAlert), text: outAlert.textContent?.trim() ?? '', detail: `o aviso SAÍDAS começa em ${a.left.toFixed(1)}px, em cima de ${sel} (termina em ${el.getBoundingClientRect().right.toFixed(1)}px)` })
+    }
+    if (nav && a.right > nav.getBoundingClientRect().left + 0.5) out.push({ kind: 'estrutura', selector: describe(outAlert), text: outAlert.textContent?.trim() ?? '', detail: `o aviso SAÍDAS termina em ${a.right.toFixed(1)}px, em cima do menu (começa em ${nav.getBoundingClientRect().left.toFixed(1)}px)` })
   }
   const repName = shell.querySelector('[data-repertoire-name]')
   const shown = repName !== null && repName.getClientRects().length > 0

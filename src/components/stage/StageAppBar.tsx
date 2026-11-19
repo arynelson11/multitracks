@@ -1,12 +1,13 @@
 import type React from 'react'
 import type { StageActions, StageView } from '../../lib/stageContracts'
+import { LivreBadge } from '../livre/LivreBadge'
 import { cx } from '../ui'
 import { Icon } from './icons'
 import type { IconName } from './iconNames'
 
 export interface StageAppBarProps {
   app: StageView['app']; editMode: boolean
-  actions: Pick<StageActions, 'openRepertoires' | 'openTracks' | 'openLibrary' | 'toggleEditMode' | 'openHost' | 'openSettings' | 'goHome' | 'signOut'>
+  actions: Pick<StageActions, 'openRepertoires' | 'openTracks' | 'openLibrary' | 'toggleEditMode' | 'openHost' | 'openSettings' | 'goHome' | 'signOut' | 'openLivreBadge'>
 }
 
 // v5 .online: selo de 22 px. ONLINE no musgo; OFFLINE neutro (sem internet o que está no
@@ -52,7 +53,8 @@ function initial(name: string | null): string {
 
 /**
  * Barra fina do app no palco novo (mockup v5): PlayMark e "Playback Studio", selo ONLINE ou
- * OFFLINE e o menu REPERTÓRIOS, FAIXAS, BIBLIOTECA, EDITAR (aceso no modo EDITAR), HOST (só no
+ * OFFLINE, o selo do Livre ao lado dele (só com `app.livre`: conta Livre e palco parado; o toque
+ * abre os Planos; abaixo de 1280 px o selo encurta e o "Playback Studio" sai, fica o PlayMark) e o menu REPERTÓRIOS, FAIXAS, BIBLIOTECA, EDITAR (aceso no modo EDITAR), HOST (só no
  * app do computador; aceso com o host ligado), CONFIG, INÍCIO, avatar e SAIR. Os `data-tour`
  * são os mesmos do palco antigo, pro tour achar os botões.
  */
@@ -62,7 +64,8 @@ export function StageAppBar({ app, editMode, actions }: StageAppBarProps) {
     <header className="flex h-11 shrink-0 items-center gap-3 border-b border-ps-line bg-ps-ink-0 pr-3 pl-ps-gutter font-ps-sans">
       <div className="flex shrink-0 items-center gap-2 text-[15px] font-semibold tracking-[-0.01em] whitespace-nowrap text-ps-bone">
         <Icon name="mark" className="size-[22px] text-ps-or" />
-        <span>Playback <i className="font-semibold text-ps-or">Studio</i></span>
+        {/* Com o selo do Livre, abaixo de 1280 px fica só o PlayMark: senão a barra não cabe em 1024 px com OFFLINE, HOST e SAÍDAS. */}
+        <span data-wordmark="" className={cx(app.livre && 'hidden xl:inline')}>Playback <i className="font-semibold text-ps-or">Studio</i></span>
       </div>
       <span
         data-online={app.online ? 'true' : 'false'}
@@ -72,6 +75,7 @@ export function StageAppBar({ app, editMode, actions }: StageAppBarProps) {
         <span aria-hidden="true" className={cx('size-1.5 shrink-0 rounded-full', app.online ? DOT_ONLINE : DOT_OFFLINE)} />
         {app.online ? 'ONLINE' : 'OFFLINE'}
       </span>
+      {app.livre && <LivreBadge used={app.livre.used} limit={app.livre.limit} onClick={actions.openLivreBadge} />}
 
       <nav aria-label="Navegação do app" className="ml-auto flex shrink-0 items-center gap-0.5">
         <NavButton data-tour="repertorios" text="REPERTÓRIOS" aria-label="Repertórios" title="Lista do repertório e Anotações" onClick={actions.openRepertoires} />

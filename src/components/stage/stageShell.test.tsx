@@ -82,7 +82,7 @@ const VIEW: StageView = {
   isReadingGrid: false, isPlaying: true, isCountingIn: false, precount: { enabled: false, beats: 4, times: [] }, endMode: 'continue',
   click: { channelId: 'c1', on: true }, channels: CHANNELS, master: { volume: 1, muted: false }, outputs: SPLIT,
   gates: { sections: true, infinite: true, maxRepeats: 8, bandSections: true }, editMode: false, channelEditMode: false,
-  padPanelOpen: false, activePad: null, app: { online: true, isDesktop: false, isAdmin: false, userName: 'Ary', hostActive: false },
+  padPanelOpen: false, activePad: null, app: { online: true, isDesktop: false, isAdmin: false, userName: 'Ary', hostActive: false, livre: null },
 }
 const clock: StageClock = { heardNow: () => 10, position: () => 10, level: () => 0, masterLevels: () => ({ l: 0, r: 0 }) }
 
@@ -93,7 +93,7 @@ const makeActions = (): StageShellActions => ({
   prevSong: vi.fn(), nextSong: vi.fn(), setVolume: vi.fn(), toggleMute: vi.fn(), toggleSolo: vi.fn(),
   setPan: vi.fn(), setMasterVolume: vi.fn(), toggleMasterMute: vi.fn(), togglePadPanel: vi.fn(), openLyrics: vi.fn(),
   openRepertoires: vi.fn(), openTracks: vi.fn(), openLibrary: vi.fn(), toggleEditMode: vi.fn(), toggleChannelEditMode: vi.fn(), openHost: vi.fn(),
-  openSettings: vi.fn(), goHome: vi.fn(), signOut: vi.fn(), openUpgrade: vi.fn(), openChannelEdit: vi.fn(),
+  openSettings: vi.fn(), goHome: vi.fn(), signOut: vi.fn(), openUpgrade: vi.fn(), openChannelEdit: vi.fn(), openLivreBadge: vi.fn(),
   reorderChannel: vi.fn(), removeChannel: vi.fn(),
   markSection: vi.fn(), nudgeSection: vi.fn(), removeSection: vi.fn(),
   setMeter: vi.fn(), redetectMeter: vi.fn(), setOriginalKey: vi.fn(), openOutputSettings: vi.fn(),
@@ -441,6 +441,35 @@ describe('casca do palco', () => {
     rerender({ app: { ...VIEW.app, online: true } })
     expect(chip.style.left).toBe('212px')
     expect(chip.dataset.fit).toBeUndefined()
+  })
+
+  // Parte 3: o selo do Livre fica ao lado do ONLINE; o aviso SAÍDAS vem depois dele e volta quando ele some (Play).
+  it('com o selo do Livre na barra, o aviso SAÍDAS vem depois do selo e volta pro ONLINE quando o selo some', () => {
+    const box = (left: number, width: number) => ({ left, width, right: left + width, top: 0, bottom: 22, height: 22, x: left, y: 0, toJSON: () => ({}) }) as DOMRect
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      if (this.matches('[data-online]')) return box(140, 60)
+      if (this.matches('[data-livre-badge]')) return box(212, 104)
+      if (this.tagName === 'NAV') return box(420, 600)
+      if (this.matches('[data-output-alert]')) return box(0, 70)
+      return box(0, 0)
+    })
+    const LIVRE = { used: 2, limit: 3 }
+    const { rerender, actions } = renderShell({ isPlaying: false, app: { ...VIEW.app, livre: LIVRE } }, { outputWarning: 'mapa-ajustado' })
+    const selo = screen.getByRole('button', { name: 'LIVRE · 2 de 3 músicas este mês' })
+    expect(selo.title).toBe('Ver os planos')
+    fireEvent.click(selo)
+    expect(actions.openLivreBadge).toHaveBeenCalledTimes(1)
+    expect(actions.openUpgrade).not.toHaveBeenCalled()
+    const chip = q('[data-output-alert]')!
+    // O selo termina em 316: o aviso começa 12 px depois e cabe até o menu (420 - 12 - 328 = 80 >= 70).
+    expect(chip.style.left).toBe('328px')
+    expect(chip.dataset.fit).toBeUndefined()
+    // Tocou: a vista chega sem o selo e o aviso volta pra depois do ONLINE.
+    rerender({ isPlaying: true, app: { ...VIEW.app, livre: null } })
+    expect(q('[data-livre-badge]')).toBeNull()
+    expect(chip.style.left).toBe('212px')
+    rerender({ isPlaying: false, app: { ...VIEW.app, livre: LIVRE } })
+    expect(chip.style.left).toBe('328px')
   })
 
   it('no EDITAR a onda encaixa ao entrar e fica parada; a barra reserva a maior altura que já teve', () => {

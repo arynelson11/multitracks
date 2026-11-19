@@ -11,7 +11,7 @@ import type {
 } from '../../src/lib/stageContracts'
 
 /** Estados da rodada normal, nessa ordem (o run.mjs tem a mesma lista). */
-export const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'repertorio', 'tom', 'semtom', 'compasso', 'config'] as const
+export const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config'] as const
 /** Estado de prova: um botão de largura fixa com texto longo, que o verificador tem de acusar. */
 export const ESTADO_PROVA = 'quebrado'
 export type Estado = (typeof ESTADOS)[number] | typeof ESTADO_PROVA
@@ -125,7 +125,7 @@ const BASE: StageView = {
   isReadingGrid: false, isPlaying: true, isCountingIn: false, precount: { enabled: true, beats: 4, times: [] }, endMode: 'continue',
   click: { channelId: 'c01', on: true }, channels: CHANNELS, master: { volume: 0.9, muted: false }, outputs: SPLIT, gates: PAGO,
   editMode: false, channelEditMode: false, padPanelOpen: false, activePad: null,
-  app: { online: true, isDesktop: true, isAdmin: false, userName: 'Ary Nelson', hostActive: false },
+  app: { online: true, isDesktop: true, isAdmin: false, userName: 'Ary Nelson', hostActive: false, livre: null },
 }
 
 /** Vista do palco em cada estado; `config` não usa o palco. */
@@ -145,6 +145,10 @@ export function viewFor(estado: Estado): StageView {
       return { ...BASE, editMode: true, isPlaying: false }
     case 'livre':
       return { ...BASE, gates: LIVRE, grid: { ...GRID, source: 'bpm' }, gridWarning: 'sem-click-lido' }
+    case 'selo':
+      // Pior caso da barra com o selo do Livre (Parte 3): palco parado (o selo só aparece parado),
+      // OFFLINE (mais largo que ONLINE), HOST ligado, o aviso SAÍDAS e as 3 músicas do mês usadas.
+      return { ...BASE, gates: LIVRE, isPlaying: false, app: { ...BASE.app, online: false, hostActive: true, livre: { used: 3, limit: 3 } } }
     case 'semtom':
       // Grade de tons sem tom original (a maior): semitons em 3 linhas, com "Definir o tom original" ao lado do 0.
       return { ...BASE, song: { ...SONG, originalKey: null, pitch: 3 } }
@@ -153,9 +157,9 @@ export function viewFor(estado: Estado): StageView {
   }
 }
 
-/** Aviso âmbar SAÍDAS na barra: aparece no estado em que a barra está no pior caso. */
+/** Aviso âmbar SAÍDAS na barra: aparece nos estados em que a barra está no pior caso (no `selo`, junto com o selo do Livre). */
 export function outputWarningFor(estado: Estado): OutputWarning | null {
-  return estado === 'contando' ? 'sink-timeout' : null
+  return estado === 'contando' || estado === 'selo' ? 'sink-timeout' : null
 }
 
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const

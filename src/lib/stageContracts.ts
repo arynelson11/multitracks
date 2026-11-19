@@ -120,7 +120,11 @@ export interface StageView {
   endMode: 'continue' | 'stop' | 'fade-out'; click: { channelId: string | null; on: boolean }
   channels: StageChannel[]; master: { volume: number; muted: boolean }; outputs: OutputPlan; gates: StageGates
   editMode: boolean; channelEditMode: boolean; padPanelOpen: boolean; activePad: string | null
-  app: { online: boolean; isDesktop: boolean; isAdmin: boolean; userName: string | null; hostActive: boolean }
+  /**
+   * `livre`: selo do Livre na barra ("LIVRE · 2 de 3 músicas este mês"), só com a música parada e
+   * fora da pré-contagem (o buildStageView zera tocando); nulo pra conta paga.
+   */
+  app: { online: boolean; isDesktop: boolean; isAdmin: boolean; userName: string | null; hostActive: boolean; livre: { used: number; limit: number } | null }
   /** Pan automático ligado nas Configurações. Só muda o som em "Tudo junto", onde o lado vem do papel e o knob trava. */
   autoPan?: boolean
 }
@@ -132,6 +136,8 @@ export interface StageActions {
   setPan(id: string, pan: number): void; setMasterVolume(gain: number): void; toggleMasterMute(): void; togglePadPanel(): void; openLyrics(): void
   openRepertoires(): void; openTracks(): void; openLibrary(): void; toggleEditMode(): void; toggleChannelEditMode(): void; openHost(): void
   openSettings(): void; goHome(): void; signOut(): void; openUpgrade(): void; openChannelEdit(id: string): void
+  /** Toque no selo do Livre: abre os Planos (a T17 grava o clique). */
+  openLivreBadge(): void
   reorderChannel(from: number, to: number): void; removeChannel(id: string): void
   markSection(label: string): void; nudgeSection(index: number, bars: number): void; removeSection(index: number): void
   setMeter(sig: TimeSignature, countEvery: 1 | 3): void; redetectMeter(): void

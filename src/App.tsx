@@ -563,7 +563,7 @@ export default function App() {
     landed, songGrid: stageGrid, gridWarning, isReadingGrid, outputPlan, masterVolume, masterMuted,
   }, {
     plan: userPlan, isAdmin, online: isOnline, isDesktop: isDesktopApp, userName, hostActive, editMode: isEditMode,
-    channelEditMode: isChannelEditMode, padPanelOpen: isPadPanelOpen, activePad: activeNote, repertoireName: null, autoPan: settings.autoPan,
+    channelEditMode: isChannelEditMode, padPanelOpen: isPadPanelOpen, activePad: activeNote, repertoireName: null, livre: null, autoPan: settings.autoPan,
   }) : null), [
     useNewStage, activeSong, playlist, activeSongIndex, duration, sectionSpansView, stageSection, isPlaying, isCountingIn, precountEnabled,
     precountBeats, precountTimes, playbackMode, sectionIntent, transitionView, landed, stageGrid, gridWarning, isReadingGrid, outputPlan,
@@ -640,6 +640,7 @@ export default function App() {
     goHome: () => setForceShowSplash(true),
     signOut: () => { void signOut() },
     openUpgrade: () => setIsPricingOpen(true),
+    openLivreBadge: () => setIsPricingOpen(true),
     openChannelEdit: (id: string) => setEditing({ channelId: id, songIndex: activeSongIndex }),
     reorderChannel: (from: number, to: number) => {
       const arr = [...channels]
