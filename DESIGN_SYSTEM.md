@@ -2,7 +2,7 @@
 
 > **Versão:** 1.0
 > **Data:** 2026-05-20
-> **Atualizado:** 2026-11-19 (seções 1.7 e 2.7: palco novo da Parte 2, publicado na v1.4.19 atrás da chave que nascia em Antigo; as correções da revisão macro e a chave nascendo em Novo saíram na v1.4.20, publicada em 2026-11-19; seções 1.7 e 2.6: linguagem nova da Parte 1, publicada na v1.4.15)
+> **Atualizado:** 2026-11-19 (seção 2.7: `<StageDialog>`, a janela por cima da Parte 3, não publicado; seções 1.7 e 2.7: palco novo da Parte 2, publicado na v1.4.19 atrás da chave que nascia em Antigo; as correções da revisão macro e a chave nascendo em Novo saíram na v1.4.20, publicada em 2026-11-19; seções 1.7 e 2.6: linguagem nova da Parte 1, publicada na v1.4.15)
 > **Pareado com:** `PLAYBACK_STUDIO_BRAND_BOOK.md` (estratégia + briefing pros designers)
 > **Este documento:** referência operacional pareando código existente com vocabulário atomic design (Brad Frost). Lê este se você vai TOCAR o código.
 
@@ -409,6 +409,29 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 - **Canal calado** (M ou Solo de outro) fica cinza, nunca vermelho, como no mixer atual (seção 1.7).
 - **Knob que não muda o som fica travado** (apagado, sem arrasto, motivo no `title`): em "Click e Guia separados"; em "4 ou mais", no Click e na Guia; e, na v1.4.20, em "Tudo junto" com o pan automático ligado (o lado vem do papel). O medidor do PRINCIPAL mostra as saídas 1 e 2 da placa, não a VS: a dica do fader e a descrição do grupo dizem o que cada barra é em cada modo (v1.4.20).
 - **Verificador:** `scripts/verify-layout/` monta a casca com dados de teste e mede no Chrome headless texto cortado, texto encostando, alvos de toque, rolagem de lado e ordem das faixas. Na v1.4.20: 10 estados (o novo `semtom`, grade de tons sem tom original) e 8 tamanhos (1024x740, 1024x768, 1280x760, 1280x800, 1440x900, 1920x1080 e, abaixo de 1024, 900x740 e 810x1080, onde vale "nada inalcançável"), mais a regra do botão só de ícone (o X do PRÓXIMA). Peça nova ou mudança de layout no palco roda ele antes de entregar.
+
+#### `<StageDialog>`: janela por cima (`src/components/stage/StageDialog.tsx`, Parte 3, não publicado)
+
+```tsx
+<StageDialog
+  open={aberta}
+  title="As 3 separações deste mês acabaram"
+  onClose={fechar}
+  size="sm"
+  footer={<><Button tone="ghost" onClick={fechar}>Agora não</Button><Button tone="primary" onClick={verPlanos}>Ver os planos</Button></>}
+>
+  <p>No Pro são 50 separações por mês.</p>
+</StageDialog>
+```
+
+- **Quando usar:** janela que pede uma decisão antes de seguir, por cima do palco novo, do antigo e do Separador (primeiro uso: a tela de limite do Livre). Não é pra cartão que não bloqueia nada (o anúncio da casa é cartão no fluxo da tela), nem pra gaveta do palco (REPERTÓRIOS e pads usam `panelDismiss.ts`), nem pra pergunta de uma linha (`TextPromptDialog`). Uma janela dessas por vez. Quem abre garante a regra do Livre: nunca com a música tocando ou na pré-contagem.
+- **Props:** `open`, `title` (o `h2`, ligado por `aria-labelledby`), `onClose`, `children` (o conteúdo), `footer` (as ações, fora da rolagem, alinhadas à direita e quebrando linha quando não cabem) e `size`. Fechada não renderiza nada.
+- **Tamanhos:** `md` (padrão, `max-w-lg`, até 512px) e `sm` (`max-w-sm`, até 384px). A camada (`fixed inset-0 z-[120]`, fundo `bg-black/60`) deixa 16px de folga em volta (`p-ps-gutter`), então cabe em 360px de largura. A caixa é o `Panel variant="pop"` (seção 2.6) com padding de 20px, nunca mais alta que a tela: o conteúdo rola dentro e o título e o rodapé ficam parados.
+- **Fechar:** X do palco (`Icon name="x"`) no canto, `aria-label="Fechar"`, 44 x 44px (`min-h-ps-touch` e `min-w-ps-touch`). O título quebra linha ao lado dele, nunca cortado.
+- **Foco:** abre no primeiro elemento focável, que é o Fechar (um Enter solto fecha, nunca compra). Tab e Shift+Tab giram dentro da janela, pulando o que está desligado; clique no texto deixa o foco na caixa (`tabIndex -1`). Ao fechar, ou quando quem chama tira a janela do ar aberta, o foco volta pra quem abriu; se nessa hora o foco já está em outro lugar fora dela, fica lá.
+- **Esc e teclas:** o Esc fecha e é tratado na captura da `window`, antes da pilha dos painéis do palco: um REPERTÓRIOS aberto por baixo continua aberto e o pulo armado não é cancelado. Nenhuma tecla de dentro chega aos atalhos do palco (Espaço não toca, 1 a 9 não armam, setas não pulam).
+- **Toque fora:** fecha. Toque dentro não fecha, e apertar dentro e soltar fora (arrastar pra selecionar o texto) também não.
+- Teste: `src/components/stage/stageDialog.test.tsx`.
 
 ---
 
