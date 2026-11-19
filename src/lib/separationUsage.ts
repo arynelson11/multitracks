@@ -51,11 +51,23 @@ const BRT_DAY = new Intl.DateTimeFormat('en-CA', {
   day: '2-digit',
 })
 
-// "AAAA-MM" do mês de Brasília (23:30 de 30/11 em Brasília já é 01/12 em UTC).
-export function brtMonth(at: Date | string): string {
+function brtParts(at: Date | string): { year: string; month: string; day: string } {
   const parts = BRT_DAY.formatToParts(new Date(at))
   const get = (type: string) => parts.find((x) => x.type === type)?.value ?? ''
-  return `${get('year')}-${get('month')}`
+  return { year: get('year'), month: get('month'), day: get('day') }
+}
+
+// "AAAA-MM" do mês de Brasília (23:30 de 30/11 em Brasília já é 01/12 em UTC).
+export function brtMonth(at: Date | string): string {
+  const p = brtParts(at)
+  return `${p.year}-${p.month}`
+}
+
+// "AAAA-MM-DD" do dia de Brasília, com o mesmo formatador: o dia vira à meia-noite de
+// Brasília (03:00 UTC). Usado pelos minutos do Ao Vivo e pelo anúncio do Livre.
+export function brtDay(at: Date | string): string {
+  const p = brtParts(at)
+  return `${p.year}-${p.month}-${p.day}`
 }
 
 type QuotaBonusRow = { quota_bonus?: unknown; quota_bonus_period?: unknown }
