@@ -1,6 +1,6 @@
 # Parte 3: o app todo no layout do palco, e o Livre como amostra
 
-> Desenho aprovado em conversa com o dono em 2026-11-19 (aguardando a aprovação deste documento). Continua o spec `2026-11-15-palco-ao-vivo-design.md` (Parte 3, "demais telas") e junta a mudança do plano Livre. Fonte única dos fatos do produto: `PLAYBACK_STUDIO_FATOS.md`. Marcações: **[dono]** = decidido pelo dono; **[Claude]** = escolha minha, pra o dono conferir.
+> Desenho aprovado em conversa com o dono em 2026-11-19 (documento aprovado pelo dono em 2026-11-19: "Isso ai, aprovado. pode seguir"). Continua o spec `2026-11-15-palco-ao-vivo-design.md` (Parte 3, "demais telas") e junta a mudança do plano Livre. Fonte única dos fatos do produto: `PLAYBACK_STUDIO_FATOS.md`. Marcações: **[dono]** = decidido pelo dono; **[Claude]** = escolha minha, pra o dono conferir.
 
 ## 1. Intenção e porquê
 
