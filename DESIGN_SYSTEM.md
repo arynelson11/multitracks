@@ -2,7 +2,7 @@
 
 > **Versão:** 1.0
 > **Data:** 2026-05-20
-> **Atualizado:** 2026-11-19 (seção 2.7: `<StageDialog>`, a janela por cima da Parte 3, não publicado; seções 1.7 e 2.7: palco novo da Parte 2, publicado na v1.4.19 atrás da chave que nascia em Antigo; as correções da revisão macro e a chave nascendo em Novo saíram na v1.4.20, publicada em 2026-11-19; seções 1.7 e 2.6: linguagem nova da Parte 1, publicada na v1.4.15)
+> **Atualizado:** 2026-11-19 (seção 2.8: `<LimitScreen>`, a tela de limite do Livre com a oferta do primeiro mês, Parte 3, não publicado; seção 2.7: `<StageDialog>`, a janela por cima da Parte 3, não publicado; seções 1.7 e 2.7: palco novo da Parte 2, publicado na v1.4.19 atrás da chave que nascia em Antigo; as correções da revisão macro e a chave nascendo em Novo saíram na v1.4.20, publicada em 2026-11-19; seções 1.7 e 2.6: linguagem nova da Parte 1, publicada na v1.4.15)
 > **Pareado com:** `PLAYBACK_STUDIO_BRAND_BOOK.md` (estratégia + briefing pros designers)
 > **Este documento:** referência operacional pareando código existente com vocabulário atomic design (Brad Frost). Lê este se você vai TOCAR o código.
 
@@ -415,7 +415,7 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 ```tsx
 <StageDialog
   open={aberta}
-  title="As 3 separações deste mês acabaram"
+  title="As separações deste mês acabaram"
   onClose={fechar}
   size="sm"
   footer={<><Button tone="ghost" onClick={fechar}>Agora não</Button><Button tone="primary" onClick={verPlanos}>Ver os planos</Button></>}
@@ -432,6 +432,33 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 - **Esc e teclas:** o Esc fecha e é tratado na captura da `window`, antes da pilha dos painéis do palco: um REPERTÓRIOS aberto por baixo continua aberto e o pulo armado não é cancelado. Nenhuma tecla de dentro chega aos atalhos do palco (Espaço não toca, 1 a 9 não armam, setas não pulam).
 - **Toque fora:** fecha. Toque dentro não fecha, e apertar dentro e soltar fora (arrastar pra selecionar o texto) também não.
 - Teste: `src/components/stage/stageDialog.test.tsx`.
+
+### 2.8 Livre (`src/components/livre/`)
+
+> Parte 3 (2026-11-19, não publicado). As peças do Livre como amostra: o que acabou, o que o Pro faz e a oferta do primeiro mês. Usa só tokens `ps-*` (seção 1.7), as peças de `src/components/ui/` (seção 2.6) e o `StageDialog` (seção 2.7). As regras de quando aparecem ficam em `src/lib/livreRules.ts`, nunca na peça.
+
+#### `<LimitScreen>`: tela de limite (`src/components/livre/LimitScreen.tsx`, textos em `limitCopy.ts`)
+
+```tsx
+<LimitScreen
+  kind="stage-songs"
+  offer={{ status: 'active', expiresAt: '2026-11-21T15:00:00.000Z', prices: { essencial_mensal: 24.9, pro_mensal: 59.9 } }}
+  busyPlan={null}
+  error={null}
+  onChoose={assinar}      // 'essencial_mensal' = Pro Mensal, 'pro_mensal' = Studio Mensal
+  onSeePlans={abrirPlanos}
+  onClose={fechar}
+/>
+```
+
+- **Quando usar:** quando o Livre bate num limite (`LimitKind`: `separations`, `stage-songs`, `live`, `repertoire`, `download`), no palco novo, no antigo e no Separador. Quem abre é o `LimitGate` (T16), que busca a oferta, abre o pagamento e passa o erro. A peça só mostra: nunca abre sozinha, e quem chama garante a regra do Livre pela fila de `livreRules.ts` (`queueRequest` e `queueSettle`): **nunca com a música tocando ou na pré-contagem**; pedida tocando, espera a música parar; aberta quando a música volta a tocar, sai e não volta sozinha.
+- **Partes:** `StageDialog` `size="sm"` com o título do limite (o único `h2`), o texto do que o Pro faz (`mut`) e, com a oferta no ar, um quadro (`bg-ps-s1`, anel `line`, raio 12px) com "Primeiro mês com desconto", o relógio e os dois botões, um embaixo do outro na largura do quadro (cabe em 360px sem cortar o preço), e a frase do preço cheio de depois.
+- **Textos** (`LIMIT_COPY` e `OFFER_COPY`): resultado antes de recurso, sem número de vendas, nenhum travessão. O título das separações não leva o número ("As separações deste mês acabaram"), porque o admin pode dar separações a mais pra conta. O preço com desconto vem do servidor (`offer.prices`); o preço cheio de "Depois do primeiro mês" sai de `PRICES` (`src/content/site.ts`) com `formatReais`, nunca escrito à mão.
+- **Três casos da oferta** (`OfferView`): `active` mostra "Assinar o Pro por R$ 24,90" (laranja, `tone="primary"`, a ação principal), "Assinar o Studio por R$ 59,90" (`default`) e, no rodapé, "Agora não" (`ghost`) e "Ver todos os planos" (`default`). `none` e `loading` mostram só "Agora não" e "Ver os planos" (laranja), sem preço nenhum; oferta `active` já vencida ou com data estragada vira o caso sem oferta.
+- **Relógio:** "Termina em 47:59:59", em `ps-num`, cor `bone`, neutro (não é alerta, nem âmbar nem laranja), `role="timer"` (o leitor de tela não lê a cada segundo). Anda a cada 1s só com a oferta no ar; horas passam de 24 (`formatCountdown`, `HH:MM:SS`); o segundo quebrado conta inteiro, então nunca mostra 00:00:00 com a oferta no ar. Ao zerar, a oferta some, fica o caso sem oferta e o relógio para. A oferta que chega depois do carregando começa no relógio de agora.
+- **Pagamento abrindo** (`busyPlan`): os dois botões da oferta ficam desligados e o do plano escolhido ganha `aria-busy`; "Agora não", "Ver todos os planos" e o X continuam, pra pessoa poder sair.
+- **Erro:** frase pronta de quem chama, dentro da tela, em âmbar (`text-ps-alert`, `role="alert"`), embaixo da oferta. Nunca `window.alert` (o app de computador roda de `file://`). Com o erro a oferta continua e dá pra tentar de novo.
+- Teste: `src/components/livre/limitScreen.test.tsx`.
 
 ---
 
