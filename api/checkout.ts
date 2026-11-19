@@ -135,12 +135,13 @@ export default async function handler(req: any, res: any) {
         cancelUrl: `${baseUrl}/?payment=cancelled`,
         expiredUrl: `${baseUrl}/?payment=expired`,
       },
-      // Com a oferta, o item (e a assinatura que o Asaas cria dele) sai com o valor do primeiro
-      // mês e o texto diz o preço de depois; depois do primeiro pagamento o servidor troca a
-      // assinatura pro preço cheio.
+      // Nome do item: o label do plano (o Asaas aceita até 30 caracteres no nome e 150 na
+      // descrição). Com a oferta, o item (e a assinatura que o Asaas cria dele) sai com o valor
+      // do primeiro mês e a descrição diz o preço de depois; depois do primeiro pagamento o
+      // servidor troca a assinatura pro preço cheio.
       items: [offer
         ? { ...offer.item, quantity: 1 }
-        : { name: plan.description, description: plan.description, quantity: 1, value: plan.value }],
+        : { name: plan.label, description: plan.description, quantity: 1, value: plan.value }],
       subscription: { cycle: plan.cycle, nextDueDate: today },
       // Sem customerData: o checkout hospedado do Asaas coleta nome, CPF,
       // telefone e endereço do pagador na própria página (mais simples e seguro).

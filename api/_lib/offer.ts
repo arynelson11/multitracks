@@ -30,13 +30,15 @@ function reais(v: number): string {
 
 // O item do checkout do Asaas com a oferta: a página de pagamento é a última tela antes do
 // cartão e precisa dizer o preço de depois do primeiro mês. Tudo sai de OFFER_PRICING e
-// PLAN_PRICING. Depois do primeiro pagamento, a troca pro preço cheio devolve a descrição
-// normal à assinatura.
+// PLAN_PRICING. Limites do Asaas pro item (POST /v3/checkouts): nome até 30 caracteres e
+// descrição até 150; por isso o nome é o label do plano (o mesmo do checkout sem oferta) e
+// o preço de depois vai na descrição. Depois do primeiro pagamento, a troca pro preço cheio
+// devolve a descrição normal à assinatura.
 export function offerCheckoutItem(planKey: OfferPlanKey): { name: string; description: string; value: number } {
   const plan = PLAN_PRICING[planKey]
   const value = OFFER_PRICING[planKey]
   return {
-    name: `${plan.description}, 1º mês ${reais(value)}`,
+    name: `${plan.label} (1º mês)`,
     description: `Primeiro mês por ${reais(value)}. A partir do segundo mês, ${reais(plan.value)} por mês. Cancele quando quiser.`,
     value,
   }

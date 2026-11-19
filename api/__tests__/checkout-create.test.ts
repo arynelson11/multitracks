@@ -110,7 +110,7 @@ describe('checkout com a oferta do primeiro mês', () => {
     expect(res.body).toEqual({ url: 'https://asaas.test/c/chk_9' })
     expect(post).toHaveBeenCalledTimes(1)
     expect(item()).toEqual({
-      name: 'Playback Studio Pro (mensal), 1º mês R$ 24,90',
+      name: 'Pro Mensal (1º mês)',
       description: 'Primeiro mês por R$ 24,90. A partir do segundo mês, R$ 49,90 por mês. Cancele quando quiser.',
       quantity: 1,
       value: 24.9,
@@ -126,7 +126,7 @@ describe('checkout com a oferta do primeiro mês', () => {
     const res = await create('pro_mensal', { offer: true })
     expect(res.statusCode).toBe(200)
     expect(item()).toEqual({
-      name: 'Playback Studio Studio (mensal), 1º mês R$ 59,90',
+      name: 'Studio Mensal (1º mês)',
       description: 'Primeiro mês por R$ 59,90. A partir do segundo mês, R$ 119,90 por mês. Cancele quando quiser.',
       quantity: 1,
       value: 59.9,
@@ -275,7 +275,7 @@ describe('checkout com a oferta do primeiro mês', () => {
       db.tables.pending_checkouts = []
       const res = await create('essencial_mensal', extra)
       expect(res.statusCode, JSON.stringify(extra)).toBe(200)
-      expect(item()).toEqual({ name: 'Playback Studio Pro (mensal)', description: 'Playback Studio Pro (mensal)', quantity: 1, value: 49.9 })
+      expect(item()).toEqual({ name: 'Pro Mensal', description: 'Playback Studio Pro (mensal)', quantity: 1, value: 49.9 })
       const row = db.tables.pending_checkouts[0]
       expect(Object.keys(row)).not.toContain('offer_month')
       expect(Object.keys(row)).not.toContain('offer_value')
@@ -336,6 +336,29 @@ describe('checkout com a oferta do primeiro mês', () => {
     expect(third.statusCode).toBe(409)
     expect(third.body).toEqual({ error: FIRST_ONLY, offerEnded: true })
     expect(post).not.toHaveBeenCalled()
+  })
+
+  // Limites do Asaas pra itens do checkout (POST /v3/checkouts, CheckoutSessionItemsDTO):
+  // name até 30 caracteres e description até 150. Vale pra todo item que o checkout manda.
+  it('todo item que o checkout pode mandar cabe no limite do Asaas (nome até 30, descrição até 150)', async () => {
+    const cases: [string, Record<string, unknown>][] = [
+      ['essencial_mensal', {}], ['essencial_anual', {}], ['pro_mensal', {}], ['pro_anual', {}],
+      ['essencial_mensal', { offer: true }], ['pro_mensal', { offer: true }],
+    ]
+    const sent: { name: string; description: string }[] = []
+    for (const [planKey, extra] of cases) {
+      post.mockClear()
+      db.tables.pending_checkouts = []
+      const res = await create(planKey, extra)
+      expect(res.statusCode, `${planKey} ${JSON.stringify(extra)}`).toBe(200)
+      sent.push(item())
+    }
+    expect(sent.map((i) => i.name)).toEqual(['Pro Mensal', 'Pro Anual', 'Studio Mensal', 'Studio Anual', 'Pro Mensal (1º mês)', 'Studio Mensal (1º mês)'])
+    for (const i of sent) {
+      expect(i.name.length, i.name).toBeLessThanOrEqual(30)
+      expect(i.description.length, i.description).toBeLessThanOrEqual(150)
+      expect(JSON.stringify(i)).not.toContain(TRAVESSAO)
+    }
   })
 
   it('quem já tem o mesmo plano ativo continua recebendo o 409 de hoje, sem ler a oferta', async () => {

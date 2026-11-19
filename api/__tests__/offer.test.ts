@@ -332,19 +332,22 @@ describe('preços e listas da oferta', () => {
   it('offerCheckoutItem diz o preço do primeiro mês e o de depois, montados dos preços, sem travessão', () => {
     const TRAVESSAO = String.fromCharCode(0x2014)
     expect(offerCheckoutItem('essencial_mensal')).toEqual({
-      name: 'Playback Studio Pro (mensal), 1º mês R$ 24,90',
+      name: 'Pro Mensal (1º mês)',
       description: 'Primeiro mês por R$ 24,90. A partir do segundo mês, R$ 49,90 por mês. Cancele quando quiser.',
       value: 24.9,
     })
     expect(offerCheckoutItem('pro_mensal')).toEqual({
-      name: 'Playback Studio Studio (mensal), 1º mês R$ 59,90',
+      name: 'Studio Mensal (1º mês)',
       description: 'Primeiro mês por R$ 59,90. A partir do segundo mês, R$ 119,90 por mês. Cancele quando quiser.',
       value: 59.9,
     })
     for (const k of ['essencial_mensal', 'pro_mensal'] as const) {
       const it = offerCheckoutItem(k)
       expect(it.value).toBe(OFFER_PRICING[k])
-      expect(it.name.startsWith(PLAN_PRICING[k].description)).toBe(true)
+      expect(it.name).toBe(`${PLAN_PRICING[k].label} (1º mês)`)
+      // limites do Asaas pro item do checkout: nome até 30, descrição até 150
+      expect(it.name.length).toBeLessThanOrEqual(30)
+      expect(it.description.length).toBeLessThanOrEqual(150)
       expect(JSON.stringify(it)).not.toContain(TRAVESSAO)
     }
   })
