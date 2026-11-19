@@ -53,8 +53,12 @@ describe('getUserPlan', () => {
 })
 
 describe('limites de separação por plano', () => {
-  it('Livre 5, Pro 50 e Studio 150 por mês, mensal e anual iguais', () => {
-    expect(PLAN_LIMITS).toEqual({ free: 5, essencial_mensal: 50, essencial_anual: 50, pro_mensal: 150, pro_anual: 150 })
+  it('PLAN_LIMITS do Livre é 3', () => {
+    expect(PLAN_LIMITS.free).toBe(3)
+  })
+
+  it('Livre 3, Pro 50 e Studio 150 por mês, mensal e anual iguais', () => {
+    expect(PLAN_LIMITS).toEqual({ free: 3, essencial_mensal: 50, essencial_anual: 50, pro_mensal: 150, pro_anual: 150 })
   })
 })
 

@@ -11,6 +11,7 @@ import { DEMUCS_VERSION } from '../_lib/aiCost.js'
 // por conta própria (isso perderia uma separação quando duas chegam juntas).
 
 const USER = '11111111-1111-4111-8111-111111111111'
+const TRAVESSAO = String.fromCharCode(0x2014)
 let db: FakeDb
 const createPrediction = vi.fn()
 
@@ -94,9 +95,9 @@ afterEach(() => {
 
 describe('separate-audio: cota mensal', () => {
   it('duas separações ao mesmo tempo na virada do mês: as duas passam e o contador fica em 2', async () => {
-    // Livre que gastou as 5 de outubro; 1º de novembro, 00:00:05 em Brasília
+    // Livre que gastou as 3 de outubro; 1º de novembro, 00:00:05 em Brasília
     vi.setSystemTime(new Date('2026-11-01T03:00:05Z'))
-    setup({ id: USER, plan: 'free', tokens_used: 5, tokens_period_start: '2026-10-01T03:00:00.000Z' })
+    setup({ id: USER, plan: 'free', tokens_used: 3, tokens_period_start: '2026-10-01T03:00:00.000Z' })
 
     const [a, b] = await Promise.all([separate(), separate()])
 
@@ -109,30 +110,30 @@ describe('separate-audio: cota mensal', () => {
     expect(db.rpcCalls.filter((c) => c.name === 'consume_separation_token')).toHaveLength(2)
   })
 
-  it('no mesmo mês, com 4 de 5 usadas e duas ao mesmo tempo, só uma passa', async () => {
+  it('no mesmo mês, com 2 de 3 usadas e duas ao mesmo tempo, só uma passa', async () => {
     vi.setSystemTime(new Date('2026-11-20T15:00:00Z'))
-    setup({ id: USER, plan: 'free', tokens_used: 4, tokens_period_start: '2026-11-01T03:00:00.000Z' })
+    setup({ id: USER, plan: 'free', tokens_used: 2, tokens_period_start: '2026-11-01T03:00:00.000Z' })
 
     const results = await Promise.all([separate(), separate()])
     const codes = results.map((r) => r.statusCode).sort()
 
     expect(codes).toEqual([200, 402])
-    expect(db.tables.profiles[0].tokens_used).toBe(5)
+    expect(db.tables.profiles[0].tokens_used).toBe(3)
     const blocked = results.find((r) => r.statusCode === 402)!
     const msg = (blocked.body as { error: string }).error
-    expect(msg).toContain('5 separações')
+    expect(msg).toContain('3 separações')
     expect(msg).toContain('dia 1º')
-    expect(msg).not.toContain('—')
+    expect(msg).not.toContain(TRAVESSAO)
   })
 
-  it('plano cancelado que já passou da data conta como Livre (limite 5)', async () => {
+  it('plano cancelado que já passou da data conta como Livre (limite 3)', async () => {
     vi.setSystemTime(new Date('2026-12-20T15:00:00Z'))
-    setup({ id: USER, plan: 'essencial_mensal', plan_expires_at: '2026-12-17T03:00:00Z', tokens_used: 5, tokens_period_start: '2026-12-01T03:00:00.000Z' })
+    setup({ id: USER, plan: 'essencial_mensal', plan_expires_at: '2026-12-17T03:00:00Z', tokens_used: 3, tokens_period_start: '2026-12-01T03:00:00.000Z' })
 
     const res = await separate()
 
     expect(res.statusCode).toBe(402)
-    expect(db.rpcCalls[0]).toMatchObject({ name: 'consume_separation_token', args: { p_limit: 5 } })
+    expect(db.rpcCalls[0]).toMatchObject({ name: 'consume_separation_token', args: { p_limit: 3 } })
   })
 
   it('plano cancelado ainda dentro da data mantém o limite pago (50)', async () => {
@@ -163,32 +164,32 @@ describe('separate-audio: cota mensal', () => {
 describe('separate-audio: cota extra do mês', () => {
   const NOV = '2026-11-01T03:00:00Z'
 
-  it('cota extra do mês soma no limite: Livre com 10 extras separa até 15', async () => {
+  it('cota extra do mês soma no limite: Livre com 10 extras separa até 13', async () => {
     vi.setSystemTime(new Date('2026-11-16T15:00:00Z'))
-    setup({ id: USER, plan: 'free', tokens_used: 14, tokens_period_start: '2026-11-01T03:00:00.000Z', quota_bonus: 10, quota_bonus_period: NOV })
+    setup({ id: USER, plan: 'free', tokens_used: 12, tokens_period_start: '2026-11-01T03:00:00.000Z', quota_bonus: 10, quota_bonus_period: NOV })
 
     const ok = await separate()
     const over = await separate()
 
     expect(ok.statusCode).toBe(200)
-    expect(db.rpcCalls[0]).toMatchObject({ name: 'consume_separation_token', args: { p_limit: 15 } })
+    expect(db.rpcCalls[0]).toMatchObject({ name: 'consume_separation_token', args: { p_limit: 13 } })
     expect(over.statusCode).toBe(402)
-    expect(over.body).toMatchObject({ plan: 'free', limit: 15 })
+    expect(over.body).toMatchObject({ plan: 'free', limit: 13 })
     const msg = (over.body as { error: string }).error
-    expect(msg).toContain('15 separações')
-    expect(msg).not.toContain(String.fromCharCode(0x2014))
-    expect(db.tables.profiles[0].tokens_used).toBe(15)
+    expect(msg).toContain('13 separações')
+    expect(msg).not.toContain(TRAVESSAO)
+    expect(db.tables.profiles[0].tokens_used).toBe(13)
   })
 
-  it('cota extra dada em outubro não vale em novembro: limite 5', async () => {
+  it('cota extra dada em outubro não vale em novembro: limite 3', async () => {
     vi.setSystemTime(new Date('2026-11-16T15:00:00Z'))
-    setup({ id: USER, plan: 'free', tokens_used: 5, tokens_period_start: '2026-11-01T03:00:00.000Z', quota_bonus: 10, quota_bonus_period: '2026-10-01T03:00:00Z' })
+    setup({ id: USER, plan: 'free', tokens_used: 3, tokens_period_start: '2026-11-01T03:00:00.000Z', quota_bonus: 10, quota_bonus_period: '2026-10-01T03:00:00Z' })
 
     const res = await separate()
 
     expect(res.statusCode).toBe(402)
-    expect(db.rpcCalls[0]).toMatchObject({ name: 'consume_separation_token', args: { p_limit: 5 } })
-    expect((res.body as { error: string }).error).toContain('5 separações')
+    expect(db.rpcCalls[0]).toMatchObject({ name: 'consume_separation_token', args: { p_limit: 3 } })
+    expect((res.body as { error: string }).error).toContain('3 separações')
   })
 
   it('cota extra soma também no plano pago (50 + 20)', async () => {
@@ -217,10 +218,93 @@ describe('separate-audio: cota extra do mês', () => {
     const res = await separate()
 
     expect(res.statusCode).toBe(200)
-    expect(db.rpcCalls[0]).toMatchObject({ name: 'consume_separation_token', args: { p_limit: 5 } })
+    expect(db.rpcCalls[0]).toMatchObject({ name: 'consume_separation_token', args: { p_limit: 3 } })
     expect(warn).toHaveBeenCalledTimes(1)
     expect(warn.mock.calls.flat().map(String).join(' ')).not.toContain(USER)
     warn.mockRestore()
+  })
+})
+
+// Livre como amostra (Parte 3, D2): 3 separações por mês, em 4 ou 6 faixas no
+// app novo. O servidor não força mais 2 faixas e ainda aceita 2, pra o app de
+// computador antigo seguir separando com a cota nova.
+describe('separate-audio: Livre em 4 ou 6 faixas', () => {
+  const NOV = '2026-11-01T03:00:00.000Z'
+  const input = (call = 0) => (createPrediction.mock.calls[call][0] as { input: Record<string, unknown> }).input
+
+  it('Livre separa em 4 faixas com htdemucs e conta 1', async () => {
+    vi.setSystemTime(new Date('2026-11-16T15:00:00Z'))
+    setup({ id: USER, plan: 'free', tokens_used: 0, tokens_period_start: NOV })
+
+    const res = await separate(4)
+
+    expect(res.statusCode).toBe(200)
+    expect(input().model_name).toBe('htdemucs')
+    expect(input()).not.toHaveProperty('two_stems')
+    expect(db.tables.profiles[0].tokens_used).toBe(1)
+    expect(db.rpcCalls[0]).toMatchObject({ name: 'consume_separation_token', args: { p_limit: 3 } })
+    expect(db.tables.predictions[0]).toMatchObject({ user_id: USER, model: 'htdemucs', stem_count: 4 })
+  })
+
+  it('Livre separa em 6 faixas com htdemucs_6s', async () => {
+    vi.setSystemTime(new Date('2026-11-16T15:00:00Z'))
+    setup({ id: USER, plan: 'free', tokens_used: 0, tokens_period_start: NOV })
+
+    const res = await separate(6)
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toMatchObject({ success: true, model_name: 'htdemucs_6s' })
+    expect(input().model_name).toBe('htdemucs_6s')
+    expect(input()).not.toHaveProperty('two_stems')
+    expect(db.tables.profiles[0].tokens_used).toBe(1)
+    expect(db.tables.predictions[0]).toMatchObject({ model: 'htdemucs_6s', stem_count: 6 })
+  })
+
+  it('Livre no app antigo pedindo 2 faixas ainda separa', async () => {
+    vi.setSystemTime(new Date('2026-11-16T15:00:00Z'))
+    setup({ id: USER, plan: 'free', tokens_used: 0, tokens_period_start: NOV })
+
+    const res = await separate(2)
+
+    expect(res.statusCode).toBe(200)
+    expect(input().model_name).toBe('htdemucs')
+    expect(input().two_stems).toBe('vocals')
+    // a cota é a nova, mesmo no app antigo
+    expect(db.rpcCalls[0]).toMatchObject({ name: 'consume_separation_token', args: { p_limit: 3 } })
+    expect(db.tables.profiles[0].tokens_used).toBe(1)
+  })
+
+  it('a 4ª separação do Livre no mês recebe 402 com limit 3', async () => {
+    vi.setSystemTime(new Date('2026-11-16T15:00:00Z'))
+    setup({ id: USER, plan: 'free', tokens_used: 0, tokens_period_start: NOV })
+
+    const first = [await separate(4), await separate(6), await separate(4)]
+    const res = await separate(4)
+
+    expect(first.map((r) => r.statusCode)).toEqual([200, 200, 200])
+    expect(res.statusCode).toBe(402)
+    expect(res.body).toMatchObject({ plan: 'free', limit: 3 })
+    const msg = (res.body as { error: string }).error
+    expect(msg).toContain('3 separações')
+    expect(msg).not.toContain(TRAVESSAO)
+    // a recusada não chega no serviço de separação nem gasta
+    expect(createPrediction).toHaveBeenCalledTimes(3)
+    expect(db.tables.profiles[0].tokens_used).toBe(3)
+  })
+
+  it('Livre com cota extra 2 do admin vai até 5', async () => {
+    vi.setSystemTime(new Date('2026-11-16T15:00:00Z'))
+    setup({ id: USER, plan: 'free', tokens_used: 3, tokens_period_start: NOV, quota_bonus: 2, quota_bonus_period: NOV })
+
+    const extra = [await separate(4), await separate(6)]
+    const over = await separate(4)
+
+    expect(extra.map((r) => r.statusCode)).toEqual([200, 200])
+    expect(db.rpcCalls[0]).toMatchObject({ name: 'consume_separation_token', args: { p_limit: 5 } })
+    expect(over.statusCode).toBe(402)
+    expect(over.body).toMatchObject({ plan: 'free', limit: 5 })
+    expect((over.body as { error: string }).error).toContain('5 separações')
+    expect(db.tables.profiles[0].tokens_used).toBe(5)
   })
 })
 

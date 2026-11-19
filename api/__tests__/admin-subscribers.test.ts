@@ -331,10 +331,10 @@ describe('ficha do assinante', () => {
       [{ plan: 'pro_anual', planExpiresAt: '2026-12-31T03:00:00+00:00' }, 150],
       [{ plan: 'essencial_anual' }, 50],
       // cancelada com o período já acabado conta como Livre, mesmo com o plano pago gravado
-      [{ plan: 'pro_mensal', planExpiresAt: '2026-11-16T14:59:59+00:00' }, 5],
-      [{ plan: 'free' }, 5],
-      [{ plan: 'plano_que_nao_existe' }, 5],
-      [{ plan: 'constructor' }, 5],
+      [{ plan: 'pro_mensal', planExpiresAt: '2026-11-16T14:59:59+00:00' }, 3],
+      [{ plan: 'free' }, 3],
+      [{ plan: 'plano_que_nao_existe' }, 3],
+      [{ plan: 'constructor' }, 3],
       [{ plan: 'free', isAdmin: true }, null],
       [{ plan: 'pro_mensal', isAdmin: true }, null],
     ]

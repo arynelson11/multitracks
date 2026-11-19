@@ -5,8 +5,9 @@
 import { brtToday } from './billing.js';
 
 // Separações por mês civil de Brasília. Ajuste aqui se mudar a estratégia comercial.
+// Livre 3 (amostra da Parte 3): o app novo oferece 4 ou 6 faixas, o servidor aceita 2, 4 e 6.
 export const PLAN_LIMITS: Record<string, number> = {
-    free:              5,
+    free:              3,
     essencial_mensal:  50,
     essencial_anual:   50,
     pro_mensal:        150,

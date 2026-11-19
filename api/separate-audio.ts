@@ -3,11 +3,12 @@ import Replicate from 'replicate';
 import { createClient } from '@supabase/supabase-js';
 import { verifyActiveUser } from './_lib/auth.js';
 import { applyCors } from './_lib/cors.js';
-import { PAID_PLANS, PLAN_LIMITS, getQuotaBonus, getUserPlan } from './_lib/plan.js';
+import { PLAN_LIMITS, getQuotaBonus, getUserPlan } from './_lib/plan.js';
 import { DEMUCS_VERSION } from './_lib/aiCost.js';
 
-// Planos pagos podem separar em 2/4/6 faixas. O Livre (free) só 2 (vocal+instrumental).
-// PAID_PLANS vem de _lib/plan (fonte única, compartilhada com insert-song/insert-stems).
+// Todo plano separa em 2, 4 ou 6 faixas. O app novo oferece só 4 e 6 ao Livre;
+// o servidor aceita 2 também, pra o app de computador antigo seguir separando
+// (decisão D2 da Parte 3). O que segura o custo é a cota do mês (PLAN_LIMITS).
 const VALID_STEM_COUNTS = new Set([2, 4, 6]);
 
 // Coluna que não existe: 42703 no Postgres, PGRST204 no PostgREST (cache do schema).
@@ -54,7 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    // Admin não tem cota nem trava de faixas.
+    // Admin não tem cota.
     if (!auth.isAdmin) {
         // Plano efetivo: cancelado vale até plan_expires_at, depois é Livre.
         let plan: string;
@@ -63,16 +64,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         } catch (e) {
             console.error('[separate-audio] profile lookup failed:', e instanceof Error ? e.message : 'erro');
             res.status(500).json({ error: 'Profile lookup failed' });
-            return;
-        }
-
-        // Trava de faixas por plano (server-side): Livre só separa em 2 faixas.
-        // Impede burlar a trava client-side (plans.ts) mandando stemCount: 4/6.
-        if (!PAID_PLANS.has(plan) && requestedStems !== 2) {
-            res.status(403).json({
-                error: 'Seu plano Livre permite separação em 2 faixas. Assine o Pro para 4 ou 6 faixas.',
-                plan,
-            });
             return;
         }
 
