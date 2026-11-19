@@ -6,6 +6,10 @@ import { armLabel, isSelfLoop } from '../../lib/sectionArm'
 import type { ArmIntent, StageSection, TransitionView } from '../../lib/stageContracts'
 import { countState, transitionWaitText } from '../../lib/transitionView'
 
+/** Caixa da tecla do atalho, a mesma na botoeira e na barra do EDITAR. */
+export const KEY_CAP =
+  'ps-num h-[18px] min-w-[18px] rounded-[5px] px-1 text-center text-ps-micro leading-[18px] font-bold text-ps-mut shadow-[inset_0_0_0_1px_var(--color-ps-line-2),0_1px_0_var(--color-ps-line-2)]'
+
 export interface PadMetaContext { current: number; position: number; transition: TransitionView | null; heardNow: number }
 export interface PadTag { kind: 'agora' | 'proxima' | 'repete'; text: string; loop: boolean }
 /** Linha de baixo da armada no último compasso (ao lado dela entra o número grande da contagem). */

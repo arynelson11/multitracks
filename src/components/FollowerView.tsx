@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { Wifi, WifiOff, FastForward, Music, FileText, Music2, Eye, EyeOff, Play, Pause, SkipBack, SkipForward, ListMusic, X, Check, SlidersHorizontal, LayoutGrid, Plus, Minus, Repeat, Infinity as InfinityIcon, CornerUpLeft } from 'lucide-react';
 import type { FollowerState } from '../hooks/useLiveSync';
 import type { LiveArmed } from '../types';
+import { FADER_MAX_GAIN } from '../lib/faderScale';
 
 interface SyncedLine { time: number; text: string }
 
@@ -449,8 +450,9 @@ export function FollowerView({ state, isConnected, sendCommand }: FollowerViewPr
                     >S</button>
                   </div>
                 </div>
+                {/* Mesmo teto do fader do palco (+6 dB): com 1,2, um canal acima caía no primeiro toque. */}
                 <input
-                  type="range" min={0} max={1.2} step={0.01} value={ch.volume}
+                  type="range" min={0} max={FADER_MAX_GAIN} step={0.01} value={ch.volume}
                   onChange={(e) => sendCommand('set-volume', { id: ch.id, value: parseFloat(e.target.value) })}
                   className="w-full accent-primary cursor-pointer"
                 />

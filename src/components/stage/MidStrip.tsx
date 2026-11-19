@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import { displayBpmFromPulseBpm } from '../../lib/stageContracts'
-import type { SongGrid, StageActions, StageClock, StageView } from '../../lib/stageContracts'
+import type { StageActions, StageClock, StageView } from '../../lib/stageContracts'
 import { BigButton } from './BigButton'
 import { CurrentSectionCell } from './CurrentSectionCell'
 import { KeyCell } from './KeyCell'
+import { shownBpm } from './shownBpm'
 import { SongCell } from './SongCell'
 import { TimeCell } from './TimeCell'
 
@@ -54,17 +54,6 @@ function overflowsX(el: HTMLElement): boolean {
     if (r.width > 0 && (r.left < left || r.right > right)) return true
   }
   return false
-}
-
-/**
- * BPM exibido, sempre a semínima (Ruling T3-BPM, Ruling T13-bpm). A grade guarda o BPM do PULSO
- * (a colcheia no x/8: o "Fé" em 6/8 tem a grade em 156), então passa pela conversão única do
- * contrato (156 em 6/8 = 78, 140 em 7/8 = 70). Sem grade, ou com o BPM dela quebrado, o BPM salvo
- * da música, que já é a semínima. A mesma regra do MeterEditor.
- */
-function shownBpm(grid: SongGrid | null, songBpm: number | null): number | null {
-  const fromGrid = grid ? displayBpmFromPulseBpm(grid.bpm, grid.signature) : NaN
-  return Number.isFinite(fromGrid) ? fromGrid : songBpm
 }
 
 /** Degraus do encaixe: --ps-fit vai de 1 (tamanho cheio) a 0 (texto em 12 px, capa em 48 px) em 8 passos. */
@@ -140,9 +129,12 @@ export function MidStrip({ view, actions, clock, keyGridOpen, onKeyGridOpenChang
   const bpm = shownBpm(view.grid, song?.bpm ?? null)
 
   // Mede de novo só quando muda algum texto que mexe no tamanho (a casca renderiza a cada quadro).
+  // A seção atual entra pelo NOME que a célula mostra, não pelo índice: trocar de seção com o mesmo
+  // nome (Refrão, Refrão) não refaz as medidas no instante do pouso.
+  const currentName = view.sections.find((s) => s.index === view.currentSection)?.label ?? (view.sections.length > 0 ? '\u0000antes' : '\u0000sem')
   const fitKey = [
     song?.name, song?.artist, song?.nextName, song?.repertoireName, song?.position, song?.total, song?.originalKey, song?.pitch, bpm,
-    signature, view.gridWarning, view.editMode, view.activePad, view.currentSection, view.sections.map((s) => s.label).join('\n'),
+    signature, view.gridWarning, view.editMode, view.activePad, currentName, view.sections.map((s) => s.label).join('\n'),
   ].join('\t')
   useLayoutEffect(() => {
     if (rootRef.current) fitStrip(rootRef.current)
@@ -182,6 +174,7 @@ export function MidStrip({ view, actions, clock, keyGridOpen, onKeyGridOpenChang
       <KeyCell
         originalKey={song?.originalKey ?? null} pitch={song?.pitch ?? 0} gridOpen={keyGridOpen}
         onGridOpenChange={(open) => onKeyGridOpenChange(open)} onChangePitch={(s) => actions.changePitch(s)}
+        onSetOriginalKey={(key) => actions.setOriginalKey(key)}
       />
       <CurrentSectionCell
         sections={view.sections} currentSection={view.currentSection} intent={view.intent} gates={view.gates} clock={clock}

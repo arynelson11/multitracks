@@ -9,9 +9,13 @@ export interface AppSettings {
     audioDeviceId: string;
     // Saídas de áudio por papel (spec 5e): Tudo junto, Click e Guia separados ou 4 ou mais.
     outputs: OutputSettings;
-    // Palco novo ou antigo (R-25). Padrão: antigo, por enquanto (Ruling T29-padrao): o novo só
-    // vale quando o próprio usuário escolheu 'novo' em CONFIG > Geral > Palco.
+    // Palco novo ou antigo (R-25). Padrão: novo a partir da v1.4.20 (Ruling V1420-padrao). O
+    // antigo só vale quando o próprio usuário escolheu 'antigo' em CONFIG > Geral > Palco.
     stageVersion: StageVersion;
+    // Marca de que a pessoa escolheu o palco na chave (gravada em qualquer troca dela). A v1.4.19
+    // gravava 'antigo' como padrão junto de qualquer configuração, então 'antigo' sem a marca não
+    // prova escolha e abre no novo.
+    stageVersionChosen: boolean;
     // Informativo: o aparelho veio do pan automático (R-23). O motor zera os pans ±1 antigos
     // de cada conta uma vez, na primeira restauração dela, com ou sem este flag (Ruling
     // T25-reset-sempre).
@@ -60,8 +64,9 @@ function readStoredSettings(): { settings: AppSettings; warnings: OutputWarning[
             audioDeviceId: typeof raw.audioDeviceId === 'string' ? raw.audioDeviceId : 'default',
             outputs: migrated.outputs,
             autoPan: migrated.autoPan,
-            // Só a escolha gravada 'novo' liga o palco novo; ausente ou valor estranho fica no antigo.
-            stageVersion: raw.stageVersion === 'novo' ? 'novo' : 'antigo',
+            // O antigo só com a escolha gravada (a marca); ausente, sem marca ou valor estranho abre no novo.
+            stageVersion: raw.stageVersion === 'antigo' && raw.stageVersionChosen === true ? 'antigo' : 'novo',
+            stageVersionChosen: raw.stageVersionChosen === true,
             // Fica gravado (informativo; o motor não depende dele).
             legacyPanReset: migrated.resetLegacyPans || raw.legacyPanReset === true,
         },
@@ -102,7 +107,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         // Escolha de saídas gravada pelo operador: os avisos da leitura antiga não valem mais.
         if (key === 'outputs') setOutputLoadWarnings([]);
         setSettings(prev => {
-            const next = { ...prev, [key]: value };
+            // Trocar a chave do palco é a escolha da pessoa: grava a marca junto (Ruling V1420-padrao).
+            const next = key === 'stageVersion' ? { ...prev, stageVersion: value as StageVersion, stageVersionChosen: true } : { ...prev, [key]: value };
             localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
             return next;
         });

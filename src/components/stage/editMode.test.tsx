@@ -262,7 +262,8 @@ describe('MeterEditor', () => {
   })
 
   it('trocar o compasso entrega o que o sanitizeGrid aceita e devolve igual', () => {
-    for (const from of [GRID, FE, { ...FE, countEvery: 1 } as SongGrid, null]) {
+    // Sem grade o seletor fica desligado (teste acima).
+    for (const from of [GRID, FE, { ...FE, countEvery: 1 } as SongGrid]) {
       cleanup()
       const { props } = renderMeter({ grid: from })
       for (const sig of TIME_SIGNATURES) {
@@ -271,12 +272,10 @@ describe('MeterEditor', () => {
         expect(gotSig).toBe(sig)
         const compound = sig === '6/8' || sig === '12/8'
         // Simples conta tudo; composto mantém a contagem de quem já era composto, senão de 3 em 3 (como a leitura do click).
-        const expected = !compound ? 1 : from && (from.signature === '6/8' || from.signature === '12/8') ? from.countEvery : 3
-        expect(every, `${from?.signature} -> ${sig}`).toBe(expected)
-        if (from) {
-          const next = withMeter(from, gotSig, every)
-          expect(sanitizeGrid(next)).toEqual(next)
-        }
+        const expected = !compound ? 1 : from.signature === '6/8' || from.signature === '12/8' ? from.countEvery : 3
+        expect(every, `${from.signature} -> ${sig}`).toBe(expected)
+        const next = withMeter(from, gotSig, every)
+        expect(sanitizeGrid(next)).toEqual(next)
       }
     }
   })
@@ -336,6 +335,16 @@ describe('MeterEditor', () => {
     const ligado = screen.getByRole('button', { name: 'Ler o click de novo' }) as HTMLButtonElement
     expect(ligado.disabled).toBe(false)
     expect(ligado.closest('[title]')).toBeNull()
+  })
+
+  it('sem grade o seletor fica desligado e diz por quê (escolher não faria nada)', () => {
+    const { props } = renderMeter({ grid: null, songBpm: null })
+    for (const r of radios('Compasso')) expect((r as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('radio', { name: '3/4' }))
+    expect(props.onChange).not.toHaveBeenCalled()
+    const why = 'Sem click lido e sem BPM salvo não há compasso pra escolher. Salve o BPM da música ou importe o canal de Click.'
+    expect(screen.getByRole('radiogroup', { name: 'Compasso' }).closest('[title]')?.getAttribute('title')).toBe(why)
+    expect(document.querySelector('[data-meter-note]')?.textContent).toBe(why)
   })
 
   it('sem grade: nada escolhido e o BPM salvo, se houver', () => {

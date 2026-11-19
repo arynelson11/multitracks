@@ -195,15 +195,16 @@ function EditArea({ view, actions, adminTools }: EditAreaProps) {
  * (grade de tons aberta, compasso aberto, seção selecionada no EDITAR) e liga o teclado.
  *
  * Alturas (v5): barra 44 px, transporte clamp(72px,9vh,88px), faixa do meio clamp(168px,20vh,208px);
- * a onda (1,15) e o mixer (1, no mínimo 220 px) dividem o resto. A botoeira tem a altura dos nomes
+ * a onda (1,15) e o mixer (1, no mínimo 220 px; 200 no EDITAR) dividem o resto. A botoeira tem a altura dos nomes
  * da música (64 a 81 px) e guarda a dela com a música tocando.
  *
  * EDITAR: ao entrar, a onda fica no máximo com a altura que tinha fora dele e encolhe só o que
  * precisar pra barra de edição caber (até 88 px de onda, blocos com 44 px de toque); depois fica
  * parada. Marcar uma seção que abre uma linha nova na barra empurra só o que está embaixo dela
- * (tira do mixer acima de 220 px): MARCAR e o que está acima nunca andam enquanto se marca. Janela
- * redimensionada ou outra música encaixam de novo. Se não couber, o palco rola na vertical em vez
- * de cortar (EDITAR com duas linhas de seções em 1024x768).
+ * (tira do mixer acima de 200 px, o que o PRINCIPAL precisa com o fader no mínimo de 60): MARCAR e
+ * o que está acima nunca andam enquanto se marca. Janela redimensionada ou outra música encaixam de
+ * novo. Se não couber, o palco rola na vertical em vez de cortar (EDITAR com duas linhas de seções
+ * em 1024x740 rola 38 px, a folga aceita).
  *
  * Ao vivo, a onda tem piso de 104 px (blocos com 48 px de toque) pra tudo caber a partir de 740 px de
  * altura, o mínimo do palco novo (Ruling T18-altura).
@@ -214,6 +215,12 @@ function EditArea({ view, actions, adminTools }: EditAreaProps) {
  *
  * Foco (Ruling T18-foco): botões e controles do palco não pegam foco no toque ou clique, só pelo Tab
  * (`keepPointerFocusOff`, na captura do mousedown de toda a casca, slots incluídos).
+ *
+ * Tela estreita (Ruling I2-estreito): o App só troca de palco com a música parada, então o palco novo
+ * pode ficar na tela abaixo dos 1024 px tocando (iPad girado, janela estreitada, Split View). A barra
+ * do app e a área do palco têm no mínimo 1024 px e a casca rola de lado (`data-stage-hscroll`): nada
+ * fica cortado nem fora de alcance (PAD, LETRA, SAIR, o aviso PRÓXIMA com o X) até a música parar e o
+ * app trocar pro palco de sempre. A gaveta REPERTÓRIOS e o painel do canal ficam fora da rolagem.
  */
 export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardEnabled, outputWarning }: StageShellProps) {
   const headerRef = useRef<HTMLDivElement>(null)
@@ -324,79 +331,83 @@ export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardE
       data-stage-shell="" onMouseDownCapture={keepPointerFocusOff}
       className="relative flex h-dvh w-full min-w-0 flex-col overflow-hidden bg-ps-ink font-ps-sans text-ps-bone"
     >
-      <div ref={headerRef} className="relative z-30 shrink-0">
-        <StageAppBar app={view.app} editMode={view.editMode} actions={actions} />
-        {alert && (
-          <button
-            ref={alertRef} type="button" data-output-alert="" title={alert} aria-label={`Saídas: ${alert} Abre as saídas nas Configurações.`}
-            onClick={() => actions.openOutputSettings()}
-            className="group absolute top-0 left-0 inline-flex h-11 min-w-ps-touch items-center justify-center rounded-ps-sm select-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ps-or"
-          >
-            <span className="inline-flex h-[22px] items-center gap-1.5 rounded-ps-pill bg-ps-alert-soft px-[9px] text-ps-micro leading-none font-extrabold tracking-[0.14em] whitespace-nowrap text-ps-alert inset-ring inset-ring-ps-alert-line">
-              <Led state="alert" size="sm" />
-              <span className="group-data-[fit=luz]:hidden">SAÍDAS</span>
-            </span>
-          </button>
-        )}
-        {hasTracksMenu && <div ref={tracksRef} data-stage-tracks-menu="" className="absolute top-full left-0 z-50">{slots.tracksMenu}</div>}
-      </div>
-
-      <div data-stage-scroll="" className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
-        <main aria-label="Palco" className="flex min-h-0 flex-1 flex-col">
-          <TransportBar view={view} actions={actions} clock={clock} pulse={pulse} />
-
-          <div
-            ref={waveRef} data-stage-wave="" style={waveStyle}
-            className={cx('flex flex-[1.15_1_0px] flex-col px-ps-gutter', view.editMode ? 'min-h-[96px] pt-2' : 'min-h-[104px] pt-3')}
-          >
-            <div className="min-h-0 flex-1">
-              <WaveformSections
-                peaks={peaks} duration={duration} sections={view.sections} currentSection={view.currentSection} isPlaying={view.isPlaying}
-                intent={view.intent} loopOn={isSelfLoop(view.intent, view.currentSection)} barLines={barLines} sectionsAllowed={view.gates.sections}
-                clock={clock} onTapSection={(i) => actions.tapSection(i)} onSeek={(t) => actions.seek(t)}
-              />
-            </div>
+      <div data-stage-hscroll="" data-scroll-reach="" className="flex min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
+        <div className="flex min-h-0 min-w-[1024px] flex-1 flex-col">
+          <div ref={headerRef} className="relative z-30 shrink-0">
+            <StageAppBar app={view.app} editMode={view.editMode} actions={actions} />
+            {alert && (
+              <button
+                ref={alertRef} type="button" data-output-alert="" title={alert} aria-label={`Saídas: ${alert} Abre as saídas nas Configurações.`}
+                onClick={() => actions.openOutputSettings()}
+                className="group absolute top-0 left-0 inline-flex h-11 min-w-ps-touch items-center justify-center rounded-ps-sm select-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ps-or"
+              >
+                <span className="inline-flex h-[22px] items-center gap-1.5 rounded-ps-pill bg-ps-alert-soft px-[9px] text-ps-micro leading-none font-extrabold tracking-[0.14em] whitespace-nowrap text-ps-alert inset-ring inset-ring-ps-alert-line">
+                  <Led state="alert" size="sm" />
+                  <span className="group-data-[fit=luz]:hidden">SAÍDAS</span>
+                </span>
+              </button>
+            )}
+            {hasTracksMenu && <div ref={tracksRef} data-stage-tracks-menu="" className="absolute top-full left-0 z-50">{slots.tracksMenu}</div>}
           </div>
 
-          {view.editMode ? (
-            <EditArea key={songKey ?? ''} view={view} actions={actions} adminTools={showAdmin} />
-          ) : (
-            <div data-stage-sections="" className="shrink-0">
-              <SectionPads
-                sections={view.sections} currentSection={view.currentSection} intent={view.intent} transition={view.transition}
-                isPlaying={view.isPlaying} landed={view.landed} gates={view.gates} clock={clock}
-                onTap={(i) => actions.tapSection(i)} onUpgrade={() => actions.openUpgrade()}
-                songId={songKey} hasGrid={view.grid !== null}
-              />
-            </div>
-          )}
+          <div data-stage-scroll="" className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
+            <main aria-label="Palco" className="flex min-h-0 flex-1 flex-col">
+              <TransportBar view={view} actions={actions} clock={clock} pulse={pulse} />
 
-          <div data-stage-mid="" className="relative z-20 shrink-0">
-            {meterOpen && view.editMode && (
-              <div data-stage-meter="" className="absolute bottom-full left-ps-gutter z-40 max-w-[calc(100%-32px)]">
-                <MeterEditor
-                  grid={view.grid} songBpm={view.song?.bpm ?? null} busy={view.isReadingGrid} hasClickChannel={view.click.channelId !== null}
-                  onChange={(sig, countEvery) => actions.setMeter(sig, countEvery)} onRedetect={() => actions.redetectMeter()}
-                  onClose={() => setMeterOpen(false)}
+              <div
+                ref={waveRef} data-stage-wave="" style={waveStyle}
+                className={cx('flex flex-[1.15_1_0px] flex-col px-ps-gutter', view.editMode ? 'min-h-[96px] pt-2' : 'min-h-[104px] pt-3')}
+              >
+                <div className="min-h-0 flex-1">
+                  <WaveformSections
+                    peaks={peaks} duration={duration} sections={view.sections} currentSection={view.currentSection} isPlaying={view.isPlaying}
+                    intent={view.intent} loopOn={isSelfLoop(view.intent, view.currentSection)} barLines={barLines} sectionsAllowed={view.gates.sections}
+                    clock={clock} onTapSection={(i) => actions.tapSection(i)} onSeek={(t) => actions.seek(t)}
+                  />
+                </div>
+              </div>
+
+              {view.editMode ? (
+                <EditArea key={songKey ?? ''} view={view} actions={actions} adminTools={showAdmin} />
+              ) : (
+                <div data-stage-sections="" className="shrink-0">
+                  <SectionPads
+                    sections={view.sections} currentSection={view.currentSection} intent={view.intent} transition={view.transition}
+                    isPlaying={view.isPlaying} landed={view.landed} gates={view.gates} clock={clock}
+                    onTap={(i) => actions.tapSection(i)} onUpgrade={() => actions.openUpgrade()}
+                    songId={songKey} hasGrid={view.grid !== null}
+                  />
+                </div>
+              )}
+
+              <div data-stage-mid="" className="relative z-20 shrink-0">
+                {meterOpen && view.editMode && (
+                  <div data-stage-meter="" className="absolute bottom-full left-ps-gutter z-40 max-w-[calc(100%-32px)]">
+                    <MeterEditor
+                      grid={view.grid} songBpm={view.song?.bpm ?? null} busy={view.isReadingGrid} hasClickChannel={view.click.channelId !== null}
+                      onChange={(sig, countEvery) => actions.setMeter(sig, countEvery)} onRedetect={() => actions.redetectMeter()}
+                      onClose={() => setMeterOpen(false)}
+                    />
+                  </div>
+                )}
+                <MidStrip
+                  view={view} actions={actions} clock={clock} keyGridOpen={keyGridOpen}
+                  onKeyGridOpenChange={(open) => setKeyGridOpen(open)} onOpenMeter={() => setMeterOpen(true)}
                 />
               </div>
-            )}
-            <MidStrip
-              view={view} actions={actions} clock={clock} keyGridOpen={keyGridOpen}
-              onKeyGridOpenChange={(open) => setKeyGridOpen(open)} onOpenMeter={() => setMeterOpen(true)}
-            />
-          </div>
 
-          <div
-            data-stage-mixer=""
-            className={cx('relative z-10 mx-ps-gutter mt-3 flex min-h-[220px] flex-[1_1_0px]', view.editMode ? 'mb-2.5' : 'mb-3.5')}
-          >
-            <StageMixer view={view} actions={actions} clock={clock} />
-            <div data-stage-pads-layer="" className="absolute inset-y-0 z-20 flex" style={{ right: PADS_RIGHT }}>
-              <PadPanel {...pads} open={view.padPanelOpen} onClose={closePads} />
-            </div>
+              <div
+                data-stage-mixer=""
+                className={cx('relative z-10 mx-ps-gutter mt-3 flex flex-[1_1_0px]', view.editMode ? 'min-h-[200px] mb-2.5' : 'min-h-[220px] mb-3.5')}
+              >
+                <StageMixer view={view} actions={actions} clock={clock} />
+                <div data-stage-pads-layer="" className="absolute inset-y-0 z-20 flex" style={{ right: PADS_RIGHT }}>
+                  <PadPanel {...pads} open={view.padPanelOpen} onClose={closePads} />
+                </div>
+              </div>
+            </main>
           </div>
-        </main>
+        </div>
       </div>
 
       <div data-stage-drawer="" className="absolute top-11 bottom-0 left-0 z-40 flex">{slots.repertoire}</div>

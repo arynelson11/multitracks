@@ -121,6 +121,8 @@ export interface StageView {
   channels: StageChannel[]; master: { volume: number; muted: boolean }; outputs: OutputPlan; gates: StageGates
   editMode: boolean; channelEditMode: boolean; padPanelOpen: boolean; activePad: string | null
   app: { online: boolean; isDesktop: boolean; isAdmin: boolean; userName: string | null; hostActive: boolean }
+  /** Pan automático ligado nas Configurações. Só muda o som em "Tudo junto", onde o lado vem do papel e o knob trava. */
+  autoPan?: boolean
 }
 export interface StageActions {
   togglePlay(): void; goToStart(): void; setEndMode(m: StageView['endMode']): void; togglePrecount(): void; cyclePrecountBeats(): void
@@ -133,6 +135,8 @@ export interface StageActions {
   reorderChannel(from: number, to: number): void; removeChannel(id: string): void
   markSection(label: string): void; nudgeSection(index: number, bars: number): void; removeSection(index: number): void
   setMeter(sig: TimeSignature, countEvery: 1 | 3): void; redetectMeter(): void
+  /** Tom original da música (um dos 12 tons) ou nulo pra "Redefinir detecção de tom", como no palco antigo. */
+  setOriginalKey(key: string | null): void
 }
 /** Leituras de cada quadro (lidas por useFrame dentro da peça, nunca guardadas em estado do React). */
 export interface StageClock { heardNow(): number; position(): number; level(channelId: string): number; masterLevels(): { l: number; r: number } }

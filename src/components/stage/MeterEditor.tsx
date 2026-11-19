@@ -5,6 +5,7 @@ import { Button, Segmented } from '../ui'
 import type { SegmentedOption } from '../ui'
 import { Icon } from './icons'
 import { usePanelDismiss } from './panelDismiss'
+import { shownBpm } from './shownBpm'
 
 export interface MeterEditorProps {
   grid: SongGrid | null; songBpm: number | null; busy: boolean
@@ -16,6 +17,9 @@ export interface MeterEditorProps {
 type CountValue = '1' | '3'
 
 const SIGNATURE_OPTIONS: SegmentedOption<TimeSignature>[] = TIME_SIGNATURES.map((s) => ({ value: s, label: s }))
+// Sem grade o compasso não tem onde valer (o App não grava): desligado, com o motivo.
+const NO_GRID_OPTIONS: SegmentedOption<TimeSignature>[] = SIGNATURE_OPTIONS.map((o) => ({ ...o, disabled: true }))
+const NO_GRID = 'Sem click lido e sem BPM salvo não há compasso pra escolher. Salve o BPM da música ou importe o canal de Click.'
 const METER_ORIGIN: Record<Exclude<MeterSource, 'padrao'>, string> = {
   acento: 'Lido no acento do click', salvo: 'Salvo na biblioteca', manual: 'Escolhido por você',
 }
@@ -30,14 +34,14 @@ function meterOrigin(g: SongGrid | null): string {
 }
 
 /**
- * BPM que a pessoa vê (sempre a semínima, pela conversão única do contrato: trocar simples por
- * composto não muda o número) e de onde ele veio. Sem grade, o BPM salvo da música, se houver.
+ * BPM que a pessoa vê (a regra da faixa do meio, `shownBpm`: sempre a semínima, e trocar simples
+ * por composto não muda o número) e de onde ele veio.
  */
-function shownBpm(g: SongGrid | null, songBpm: number | null): { value: number; origin: string } | null {
-  const fromGrid = g ? displayBpmFromPulseBpm(g.bpm, g.signature) : NaN
-  if (g && Number.isFinite(fromGrid)) return { value: fromGrid, origin: g.source === 'click' ? BPM_FROM_CLICK : BPM_SAVED }
-  if (songBpm !== null && Number.isFinite(songBpm) && songBpm > 0) return { value: songBpm, origin: BPM_SAVED }
-  return null
+function bpmWithOrigin(g: SongGrid | null, songBpm: number | null): { value: number; origin: string } | null {
+  const value = shownBpm(g, songBpm)
+  if (value === null) return null
+  const fromGrid = g !== null && Number.isFinite(displayBpmFromPulseBpm(g.bpm, g.signature))
+  return { value, origin: fromGrid && g.source === 'click' ? BPM_FROM_CLICK : BPM_SAVED }
 }
 
 /**
@@ -78,7 +82,7 @@ export function MeterEditor({ grid, songBpm, busy, hasClickChannel, onChange, on
         { value: '3', label: `Contar ${countPulses(compound.signature, 3)}` },
       ]
     : []
-  const bpm = shownBpm(grid, songBpm)
+  const bpm = bpmWithOrigin(grid, songBpm)
 
   return (
     <div
@@ -98,10 +102,14 @@ export function MeterEditor({ grid, songBpm, busy, hasClickChannel, onChange, on
         </button>
       </div>
 
-      <Segmented
-        aria-label="Compasso" options={SIGNATURE_OPTIONS} value={grid?.signature ?? null} onChange={pickSignature}
-        className="flex-wrap self-start"
-      />
+      {/* O botão desligado não recebe o ponteiro: a dica fica no invólucro, e o motivo também se lê embaixo. */}
+      <span className="inline-flex self-start" title={grid ? undefined : NO_GRID}>
+        <Segmented
+          aria-label="Compasso" options={grid ? SIGNATURE_OPTIONS : NO_GRID_OPTIONS} value={grid?.signature ?? null} onChange={pickSignature}
+          className="flex-wrap self-start"
+        />
+      </span>
+      {!grid && <p data-meter-note="" className="max-w-[360px] px-1 text-ps-sm text-ps-mut">{NO_GRID}</p>}
       {compound && (
         <Segmented
           aria-label="Contagem" options={countOptions} value={compound.countEvery === 3 ? '3' : '1'}

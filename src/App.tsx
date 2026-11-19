@@ -45,6 +45,8 @@ import { useStageViewport } from './components/stage/useStageViewport'
 import { computePeaks } from './components/stage/wavePeaks'
 import { buildStageView, liveArmedOf, splitSongName, stageGatesFor } from './components/stage/buildStageView'
 import { addSectionAt, nudgeSection as nudgeSectionMarker, removeSection as removeSectionMarker } from './lib/sectionEdit'
+import { startAction } from './lib/sectionArm'
+import { cloudSongOf } from './lib/cloudMatch'
 import { markerIdForSpan, sectionIndexAt } from './lib/songGrid'
 import { countState } from './lib/transitionView'
 import { FADER_MAX_GAIN } from './lib/faderScale'
@@ -89,6 +91,8 @@ import { ChannelEditPanel } from './components/ChannelEditPanel'
 import { ChannelTrashButton } from './components/ChannelTrashButton'
 import { useTwoTapConfirm } from './hooks/useTwoTapConfirm'
 import { Button } from './components/ui'
+import { TextPromptDialog } from './components/TextPromptDialog'
+import { endlessMetronomeBpmError, songNameError } from './lib/textPromptRules'
 
 // ───────────────── PALCO NOVO (T29) ─────────────────
 
@@ -460,6 +464,9 @@ export default function App() {
   const [markerColor, setMarkerColor] = useState('#10b981')
   const [mobileView, setMobileView] = useState<'mixer' | 'pads'>('mixer')
   const [isSaving, setIsSaving] = useState(false)
+  // Pergunta de uma linha do próprio app (o Electron não tem window.prompt): renomear a música do
+  // menu FAIXAS e o BPM do metrônomo infinito, nos dois palcos.
+  const [textPrompt, setTextPrompt] = useState<{ kind: 'metronome' } | { kind: 'rename'; songId: string; name: string } | null>(null)
   const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false)
   const [isPrecountOpen, setIsPrecountOpen] = useState(false)
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false)
@@ -550,12 +557,12 @@ export default function App() {
     landed, songGrid: stageGrid, gridWarning, isReadingGrid, outputPlan, masterVolume, masterMuted,
   }, {
     plan: userPlan, isAdmin, online: isOnline, isDesktop: isDesktopApp, userName, hostActive, editMode: isEditMode,
-    channelEditMode: isChannelEditMode, padPanelOpen: isPadPanelOpen, activePad: activeNote, repertoireName: null,
+    channelEditMode: isChannelEditMode, padPanelOpen: isPadPanelOpen, activePad: activeNote, repertoireName: null, autoPan: settings.autoPan,
   }) : null), [
     useNewStage, activeSong, playlist, activeSongIndex, duration, sectionSpansView, stageSection, isPlaying, isCountingIn, precountEnabled,
     precountBeats, precountTimes, playbackMode, sectionIntent, transitionView, landed, stageGrid, gridWarning, isReadingGrid, outputPlan,
     masterVolume, masterMuted, userPlan, isAdmin, isOnline, isDesktopApp, userName, hostActive, isEditMode, isChannelEditMode,
-    isPadPanelOpen, activeNote,
+    isPadPanelOpen, activeNote, settings.autoPan,
   ])
 
   // Grava o compasso na nuvem quem pode editar BPM e tom daquela música (R-30): o admin nas músicas
@@ -577,19 +584,19 @@ export default function App() {
   }
   const upgradeIf = (r: { upgrade: boolean }) => { if (r.upgrade) setIsPricingOpen(true) }
   const clampToSong = (t: number) => Math.max(0, Math.min(duration || 0, Number.isFinite(t) ? t : 0))
-  const promptEndlessMetronome = () => {
-    const bpmInput = window.prompt("Digite o BPM desejado para a nova faixa de Click (ex: 120):", "120")
-    if (!bpmInput) return
-    const bpm = parseInt(bpmInput, 10)
-    if (!isNaN(bpm) && bpm >= 40 && bpm <= 300) createEndlessMetronomeSong(bpm)
-    else alert("BPM inválido. Digite um número entre 40 e 300.")
-  }
+  const promptEndlessMetronome = () => setTextPrompt({ kind: 'metronome' })
 
   // Ações do palco (StageActions + a da casca) e o que os painéis do App chamam. A casca recebe
   // um objeto estável (delegateTo) que chama a versão da renderização mais nova.
   const stageImpl = {
     togglePlay: () => { if (isCountingIn) cancelCountIn(); else if (isPlaying) pause(); else playWithPrecount() },
-    goToStart: () => seekTo(0),
+    // COMEÇO (Ruling I3-comeco): tocando com seções, arma a primeira como um pulo (cai no 1 com a
+    // contagem e cancela como qualquer seção armada); parado, ou tocando sem nada pra armar (a
+    // casca já pediu o segundo toque), volta direto pro 0:00.
+    goToStart: () => {
+      if (startAction(isPlaying, sectionSpansView.length, sectionGates) === 'arm') upgradeIf(armSection(0))
+      else seekTo(0)
+    },
     setEndMode: (m: 'continue' | 'stop' | 'fade-out') => setPlaybackMode(m),
     togglePrecount: () => togglePrecountEnabled(!precountEnabled),
     cyclePrecountBeats: () => setPrecountBeats(precountBeats >= 8 ? 1 : precountBeats + 1),
@@ -604,6 +611,9 @@ export default function App() {
     seekBy: (dt: number) => seekTo(clampToSong(heardPosition() + dt)),
     // Trocar o tom é dos planos pagos, como o TOM do palco antigo.
     changePitch: (semitones: number) => handlePremiumFeature(() => changePitch(semitones)),
+    // Tom original com a mesma ação do TOM do palco antigo: definir grava o original e volta o tom
+    // pro 0; "Redefinir detecção de tom" (nulo) apaga o original e volta pro 0. Dos planos pagos.
+    setOriginalKey: (key: string | null) => handlePremiumFeature(() => { setOriginalKey(key); changePitch(0) }),
     prevSong: () => prevSong(),
     nextSong: () => nextSong(),
     setVolume: (id: string, gain: number) => updateVolume(id, gain),
@@ -695,9 +705,7 @@ export default function App() {
     tracksImport: (files: FileList) => { void loadFiles(files) },
     tracksMetronome: () => promptEndlessMetronome(),
     tracksRename: () => {
-      if (!activeSong) return
-      const name = window.prompt('Nome da música:', activeSong.name)
-      if (name !== null && name.trim()) renameSong(activeSong.id, name.trim())
+      if (activeSong) setTextPrompt({ kind: 'rename', songId: activeSong.id, name: activeSong.name })
     },
     tracksCover: (file: File) => {
       if (!activeSong) return
@@ -859,6 +867,9 @@ export default function App() {
       if (isSeparatorOpen || adminPanelShown) return
       // Conta bloqueada: a tela de bloqueio está no lugar do player.
       if (blocked) return
+      // Diálogo do app aberto (renomear, metrônomo infinito; Ruling B-dialogo): com o foco fora do
+      // campo (no Cancelar, no painel), o Espaço não toca e as letras não marcam seção por baixo dele.
+      if (textPrompt !== null) return
       const el = e.target as HTMLElement | null
       const tag = el?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return
@@ -886,7 +897,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker, isSeparatorOpen, useNewStage, adminPanelShown, blocked])
+  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker, isSeparatorOpen, useNewStage, adminPanelShown, blocked, textPrompt])
 
   // Bloqueio que chega com o app aberto (o perfil é relido ao voltar pra janela): a tela de
   // bloqueio tira o player da tela, então nada fica tocando sem controle. Para a música, a
@@ -1376,14 +1387,18 @@ export default function App() {
                 onClick={async () => {
                   const activeSong = playlist[activeSongIndex];
                   if (!activeSong?.markers) return;
-                  const cloudSongs = await fetchCloudSongs();
-                  const match = cloudSongs.find((cs: any) => activeSong.name.includes(cs.name) || cs.name.includes(activeSong.name));
+                  // Só a música da nuvem com a id que o download gravou (sourceId), nunca pelo nome.
+                  if (!activeSong.sourceId) {
+                    alert('Esta música não veio da biblioteca da nuvem: os marcadores ficam só neste aparelho.');
+                    return;
+                  }
+                  const match = cloudSongOf(await fetchCloudSongs(), activeSong);
                   if (match) {
                     const ok = await saveMkToCloud(match.id, activeSong.markers);
-                    if (ok) alert('Marcadores salvos na nuvem! ☁️');
-                    else alert('Erro ao salvar marcadores.');
+                    if (ok) alert(`Marcadores salvos na nuvem em "${match.name}". ☁️`);
+                    else alert('Erro ao salvar marcadores na nuvem. Eles continuam neste aparelho.');
                   } else {
-                    alert('Música não encontrada na biblioteca cloud. Salve apenas localmente.');
+                    alert('Música não encontrada na biblioteca da nuvem: os marcadores ficam só neste aparelho.');
                   }
                 }}
                 className="mt-2 bg-secondary/10 text-secondary px-3 py-1 rounded-md text-[10px] font-bold hover:bg-secondary/20 cursor-pointer active:scale-95 transition-all border border-secondary/20 w-full text-center"
@@ -1407,7 +1422,7 @@ export default function App() {
   ) : null
   // Modais do App abertos: o teclado do palco fica desligado (Espaço não toca por baixo deles).
   const stageKeyboard = !isSettingsOpen && !isLibraryOpen && !isAdminOpen && !isMetronomeModalOpen && !isLyricsEditorOpen
-    && !isPadSetsModalOpen && !isPricingOpen && !isLiveModeOpen && !showTour && !showWhatsNew && !isPadSoundsOpen
+    && !isPadSetsModalOpen && !isPricingOpen && !isLiveModeOpen && !showTour && !showWhatsNew && !isPadSoundsOpen && textPrompt === null
 
   // ───────────────── MAIN APP ─────────────────
   return (
@@ -2561,6 +2576,22 @@ export default function App() {
         onToggleRemote={() => setRemoteSessionCode(prev => prev ? null : Math.random().toString(36).slice(2, 8).toUpperCase())}
       />
 
+      {/* Renomear (menu FAIXAS do palco novo) e BPM do metrônomo infinito, nos dois palcos. */}
+      {textPrompt?.kind === 'metronome' && (
+        <TextPromptDialog
+          title="Criar metrônomo (infinito)" label="BPM da nova faixa de Click, de 40 a 300" initialValue="120" submitLabel="Criar" inputMode="numeric"
+          validate={endlessMetronomeBpmError} onCancel={() => setTextPrompt(null)}
+          onSubmit={(v) => { setTextPrompt(null); createEndlessMetronomeSong(Number(v)) }}
+        />
+      )}
+      {textPrompt?.kind === 'rename' && (
+        <TextPromptDialog
+          title="Renomear esta música" label="Nome da música" initialValue={textPrompt.name}
+          validate={songNameError} onCancel={() => setTextPrompt(null)}
+          onSubmit={(v) => { const { songId } = textPrompt; setTextPrompt(null); renameSong(songId, v) }}
+        />
+      )}
+
       {/* Editor de Letra & Cifra (Admin) */}
       {isLyricsEditorOpen && playlist[activeSongIndex] && (
         <LyricsEditor
@@ -2571,10 +2602,11 @@ export default function App() {
             if (!activeSong) return false
             // Estado local (reflete no follower e persiste no IndexedDB)
             setSongLyrics(activeSong.id, { lyrics, lyricsSynced, chords })
-            // Nuvem: casa pela nomenclatura (mesmo padrão dos marcadores)
+            // Nuvem: só a música com a id que o download gravou (sourceId), nunca pelo nome. Sem ela,
+            // fica só no aparelho e o editor diz isso ("Salvo localmente").
+            if (!activeSong.sourceId) return false
             try {
-              const cloudSongs = await fetchCloudSongs()
-              const match = cloudSongs.find((cs: any) => activeSong.name.includes(cs.name) || cs.name.includes(activeSong.name))
+              const match = cloudSongOf(await fetchCloudSongs(), activeSong)
               if (match) {
                 return await updateSong(match.id, { lyrics, lyrics_synced: lyricsSynced, chords })
               }
@@ -2808,16 +2840,8 @@ export default function App() {
                       }} />
                   </label>
                   <button onClick={() => {
-                    const bpmInput = window.prompt("Digite o BPM desejado para a nova faixa de Click (ex: 120):", "120");
-                    if (bpmInput) {
-                      const bpm = parseInt(bpmInput, 10);
-                      if (!isNaN(bpm) && bpm >= 40 && bpm <= 300) {
-                        createEndlessMetronomeSong(bpm);
-                        setIsMobileDrawerOpen(false);
-                      } else {
-                        alert("BPM inválido. Digite um número entre 40 e 300.");
-                      }
-                    }
+                    setIsMobileDrawerOpen(false);
+                    promptEndlessMetronome();
                   }}
                     className="w-full text-left px-3 py-3 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors border border-transparent hover:border-border">
                     <span className="text-white text-sm font-bold flex items-center gap-3">

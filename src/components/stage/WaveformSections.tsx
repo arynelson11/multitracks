@@ -47,6 +47,8 @@ const ARC_CLEAR = 4
 const ARC_STROKE = 3
 /** Bloco mais estreito que o alvo de toque: só marcado (`data-narrow`) pro verificador da T20; a área de toque é o próprio retângulo. */
 const TOUCH = 44
+/** Tocando, o dedo na régua só vira arrasto depois de andar isto de lado (o mesmo do fader); antes é toque e não busca. */
+const RULER_DRAG_PX = 8
 
 type BlockState = 'atual' | 'armada' | 'repete'
 type BlockTag = 'PRÓXIMA' | 'REPETE' | 'LOOP'
@@ -54,6 +56,8 @@ type BlockTag = 'PRÓXIMA' | 'REPETE' | 'LOOP'
 interface Block { s: StageSection; left: number; width: number; state: BlockState | undefined; tag: BlockTag | null; loop: boolean }
 /** Selo posto na tela (px), pra seta não passar por cima. */
 interface Placed { l: number; r: number; bottom: number }
+/** Dedo na régua: se a VS tocava quando ele encostou, onde encostou, se já virou arrasto e se o ponteiro ficou capturado. */
+interface RulerPress { playing: boolean; downX: number; dragging: boolean; captured: boolean }
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
@@ -104,7 +108,8 @@ function token(el: Element, name: string): string {
  * Onda grande do palco novo (v5 linhas 109 a 140, v6 buildWave): forma de onda na cor da
  * seção a 34% com a parte tocada mais clara, linhas de compasso, blocos das seções (tocar
  * arma; parado, vai pra seção), selo com o nome, etiqueta PRÓXIMA, REPETE ou LOOP, seta
- * tracejada do fim da atual até a armada e régua embaixo (arrastar busca, tocando ou parado).
+ * tracejada do fim da atual até a armada e régua embaixo (parado, encostar e arrastar buscam; tocando,
+ * só o arrasto busca, uma vez ao soltar o dedo, com a prévia no playhead; o toque simples não faz nada).
  * Playhead e parte tocada andam por useFrame, direto no DOM. Os selos que não cabem lado a
  * lado descem de linha (nunca se encostam, nunca cortam o nome). Sem `sectionsAllowed`: só a
  * onda e a régua.
@@ -122,7 +127,9 @@ export function WaveformSections({
   const widthRef = useRef(0)
   const lastFracRef = useRef<number | null>(null)
   const drawnRef = useRef<{ key: string; peaks: Float32Array | null } | null>(null)
-  const dragRef = useRef(false)
+  const pressRef = useRef<RulerPress | null>(null)
+  // Prévia do arrasto tocando (segundos da música): o playhead mostra ela até soltar o dedo.
+  const previewRef = useRef<number | null>(null)
   const lastSeekRef = useRef<number | null>(null)
   const layoutRef = useRef<() => void>(() => {})
 
@@ -158,7 +165,7 @@ export function WaveformSections({
     const ph = playheadRef.current
     const played = playedRef.current
     if (!ph || !played) return
-    const pos = clock.position()
+    const pos = previewRef.current ?? clock.position()
     const f = dur > 0 && Number.isFinite(pos) ? clamp01(pos / dur) : 0
     // Só escreve quando o playhead anda um pixel do aparelho (tocando, ~0,07 px por quadro numa música de 5 min).
     const w = widthRef.current
@@ -367,29 +374,70 @@ export function WaveformSections({
     return () => { alive = false; ro.disconnect() }
   }, [])
 
-  const seekFrom = (el: HTMLElement, clientX: number) => {
+  /** Segundos da música no ponto `clientX` da régua; nulo sem largura ou sem música. */
+  const timeAt = (el: HTMLElement, clientX: number): number | null => {
     const r = el.getBoundingClientRect()
-    if (!(r.width > 0) || !(dur > 0)) return
-    const t = clamp01((clientX - r.left) / r.width) * dur
-    if (t === lastSeekRef.current) return
+    if (!(r.width > 0) || !(dur > 0)) return null
+    return clamp01((clientX - r.left) / r.width) * dur
+  }
+  const seekFrom = (el: HTMLElement, clientX: number) => {
+    const t = timeAt(el, clientX)
+    if (t === null || t === lastSeekRef.current) return
     lastSeekRef.current = t
     onSeek(t)
   }
+  // Parado, como sempre: encostar e arrastar buscam na hora. Tocando (Ruling I1-regua-2), a busca não
+  // tem volta: um toque simples (até 8 px de lado) não faz nada, nem ao encostar nem ao soltar (o
+  // dedo que cai alto ao armar uma seção não leva a VS pra outro ponto); só o arrasto mostra a
+  // prévia no playhead e busca uma vez, onde o dedo soltou. Com o ponteiro capturado, sair da régua
+  // arrastando continua valendo (o ponto fica preso na régua); cancelado, captura perdida antes de
+  // soltar ou saída sem captura não buscam.
   const onRulerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button > 0) return
-    dragRef.current = true
-    lastSeekRef.current = null
+    let captured = false
     try {
-      e.currentTarget.setPointerCapture?.(e.pointerId)
+      if (e.currentTarget.setPointerCapture) {
+        e.currentTarget.setPointerCapture(e.pointerId)
+        captured = true
+      }
     } catch {
       // Sem captura o arrasto vale enquanto o dedo estiver em cima da régua (sair dela solta).
     }
-    seekFrom(e.currentTarget, e.clientX)
+    pressRef.current = { playing: isPlaying, downX: e.clientX, dragging: false, captured }
+    previewRef.current = null
+    lastSeekRef.current = null
+    if (!isPlaying) seekFrom(e.currentTarget, e.clientX)
   }
   const onRulerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (dragRef.current) seekFrom(e.currentTarget, e.clientX)
+    const press = pressRef.current
+    if (!press) return
+    if (!press.playing) { seekFrom(e.currentTarget, e.clientX); return }
+    if (!press.dragging && Math.abs(e.clientX - press.downX) <= RULER_DRAG_PX) return
+    press.dragging = true
+    previewRef.current = timeAt(e.currentTarget, e.clientX)
+    paint()
   }
-  const stopDrag = () => { dragRef.current = false }
+  const stopDrag = () => {
+    pressRef.current = null
+    if (previewRef.current === null) return
+    previewRef.current = null
+    paint()
+  }
+  const onRulerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const press = pressRef.current
+    pressRef.current = null
+    previewRef.current = null
+    if (!press?.playing) return
+    // Toque simples tocando: nada.
+    if (press.dragging) {
+      const t = timeAt(e.currentTarget, e.clientX)
+      if (t !== null) onSeek(t)
+    }
+    paint()
+  }
+  // Com o ponteiro capturado o dedo pode sair da régua arrastando (o navegador continua mandando os
+  // movimentos pra ela); sem captura, sair dela solta sem buscar.
+  const onRulerLeave = () => { if (!pressRef.current?.captured) stopDrag() }
 
   return (
     <div
@@ -454,17 +502,18 @@ export function WaveformSections({
         ))}
         </div>
       </div>
-      {/* Faixa de toque da régua: os mesmos 44 px da faixa que se vê; os blocos terminam em cima dela. */}
+      {/* Faixa de toque da régua: os mesmos 44 px da faixa que se vê; os blocos terminam em cima dela.
+          Tocando, só o arrasto busca, ao soltar o dedo (Ruling I1-regua-2). */}
       <div
         data-testid="regua"
         title="Arraste pra buscar"
         className="absolute inset-x-0 bottom-0 z-[4] h-ps-touch cursor-ew-resize touch-none"
         onPointerDown={onRulerDown}
         onPointerMove={onRulerMove}
-        onPointerUp={stopDrag}
+        onPointerUp={onRulerUp}
         onPointerCancel={stopDrag}
         onLostPointerCapture={stopDrag}
-        onPointerLeave={stopDrag}
+        onPointerLeave={onRulerLeave}
       />
       <div
         ref={playheadRef}

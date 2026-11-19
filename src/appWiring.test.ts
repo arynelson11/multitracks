@@ -23,6 +23,26 @@ describe('ligações do palco novo', () => {
     expect(app).toMatch(/stageMode\s*:\s*useNewStage\s*\?\s*'novo'\s*:\s*'antigo'/)
   })
 
+  it('COMEÇO tocando arma a primeira seção pela API de seção armada; senão volta pro 0:00 (Ruling I3-comeco)', () => {
+    expect(app).toMatch(/goToStart:\s*\(\)\s*=>\s*\{\s*if\s*\(\s*startAction\(\s*isPlaying\s*,\s*sectionSpansView\.length\s*,\s*sectionGates\s*\)\s*===\s*'arm'\s*\)\s*upgradeIf\(\s*armSection\(\s*0\s*\)\s*\)\s*else\s*seekTo\(\s*0\s*\)/)
+  })
+
+  it('nenhum window.prompt no App (o Electron lança "prompt() is not supported"): renomear e o metrônomo infinito usam o diálogo do app', () => {
+    expect(app).not.toMatch(/\bprompt\s*\(/)
+    expect(app).toMatch(/<TextPromptDialog[\s\S]*?createEndlessMetronomeSong\(/)
+    expect(app).toMatch(/<TextPromptDialog[\s\S]*?renameSong\(/)
+  })
+
+  it('o palco novo define e redefine o tom original com a ação do palco antigo (setOriginalKey e tom de volta pro 0)', () => {
+    expect(app).toMatch(/setOriginalKey:\s*\(key: string \| null\)\s*=>\s*handlePremiumFeature\(\(\)\s*=>\s*\{\s*setOriginalKey\(key\);\s*changePitch\(0\)\s*\}\)/)
+  })
+
+  it('marcadores e letra acham a música da nuvem pela id (sourceId), nunca pelo nome com "contém"', () => {
+    expect(app).not.toMatch(/\.includes\(\s*cs\.name\s*\)|cs\.name\.includes\(/)
+    expect(app.match(/cloudSongOf\(\s*await fetchCloudSongs\(\)\s*,\s*activeSong\s*\)/g)).toHaveLength(2)
+    expect(app).toContain('os marcadores ficam só neste aparelho')
+  })
+
   it('o motor recebe o click gerado pelo plano e os portões das seções', () => {
     expect(app).toMatch(/autoClick\s*:\s*canUseBpmDetection\(\s*userPlan\s*\)/)
     expect(app).toMatch(/sectionGates/)

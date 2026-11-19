@@ -41,8 +41,8 @@ export function ConfigPage() {
  * texto passando de um contêiner que corta, selo com o texto colado na borda, alvo de toque de 32 px,
  * item pela metade numa fileira que rola de lado, faixa larga que faz a página rolar de lado, caixa do
  * texto cortada (com o texto inteiro), texto acima do começo de uma rolagem, texto saindo de caixa
- * grande, M/S abaixo de 32x30, bloco estreito baixo e, num palco de mentira, faixas fora de ordem e
- * a área do palco rolando na vertical.
+ * grande, M/S abaixo de 32x30, bloco estreito baixo, botão só de ícone cortado e, num palco de
+ * mentira, faixas fora de ordem e a área do palco rolando na vertical.
  */
 export function BrokenCases() {
   return (
@@ -74,6 +74,12 @@ export function BrokenCases() {
         </div>
         <button type="button" data-prova-ms="" data-touch-exception="ms" className="size-6 rounded-ps-sm bg-ps-s2 text-ps-sm font-extrabold text-ps-bone">M</button>
         <button type="button" data-prova-estreito="" data-narrow="" aria-label="Bloco estreito" className="h-8 w-6 rounded-ps-sm bg-ps-s2" />
+        {/* Botão só de ícone cortado de lado (o X do PRÓXIMA fora da tela): sem texto, só a regra do ícone pega. */}
+        <div data-prova-icone="" className="h-12 w-6 overflow-hidden">
+          <button type="button" aria-label="Fechar a prova" className="inline-flex size-11 items-center justify-center rounded-ps-md bg-ps-s2 text-ps-bone">
+            <svg aria-hidden="true" viewBox="0 0 10 10" className="size-3"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" /></svg>
+          </button>
+        </div>
       </div>
       {/* Palco de mentira, sem texto: faixas fora de ordem (mixer antes da faixa do meio) e a área que rola maior que a janela dela. */}
       <div data-stage-shell="" data-prova-palco="" aria-hidden="true" className="fixed top-24 right-4 z-[60] flex w-16 flex-col bg-ps-ink">
@@ -114,6 +120,7 @@ function tap(selector: string): void {
 /** O que abrir depois de montar: a grade de tons e o diálogo do compasso são estado da casca. */
 const PREPARE: Partial<Record<Estado, () => void>> = {
   tom: () => tap('[data-cell="tom"] button[aria-haspopup="dialog"]'),
+  semtom: () => tap('[data-cell="tom"] button[aria-haspopup="dialog"]'),
   compasso: () => tap('[data-cell="tempo"] button[title="Escolher o compasso da música"]'),
 }
 
@@ -126,6 +133,7 @@ const EXPECT: Record<Estado, { sel: string; text?: string }> = {
   livre: { sel: '[data-tour="secoes"] p' },
   repertorio: { sel: '[role="dialog"][aria-label="Repertório"]' },
   tom: { sel: '[data-cell="tom"] button[aria-expanded="true"]' },
+  semtom: { sel: '[data-cell="tom"] [data-define-original]' },
   compasso: { sel: '[data-stage-meter]' },
   config: { sel: '[data-placa="8 canais"] select' },
   quebrado: { sel: '[data-prova]' },
@@ -143,9 +151,10 @@ const BANDS = ['header', 'section[aria-label="Transporte"]', '[data-stage-wave]'
 /** O nome do repertório ao lado de "MÚSICA 3 DE 6" só aparece a partir desta largura (v6 linha 244). */
 const REPERTOIRE_NAME_MIN_W = 1700
 /**
- * Quanto a área do palco pode rolar na vertical, por estado. Ao vivo, nada: em 760 e 768 px de altura
+ * Quanto a área do palco pode rolar na vertical, por estado. Ao vivo, nada: a partir de 740 px de altura
  * tudo tem de caber parado. No EDITAR (e no compasso, que abre nele) a T18 aceitou rolar até 38 px em
- * tela baixa, com duas linhas de seções (medido: 30 px em 1024x768).
+ * tela baixa, com duas linhas de seções (medido na v1.4.20: 38 px em 1024x740, 18 px em 1024x768).
+ * Abaixo de 1024 px de largura a barra da rolagem de lado da casca (Ruling I2-estreito) também conta.
  */
 const SCROLL_ALLOWANCE: Partial<Record<Estado, number>> = { editar: 38, compasso: 38 }
 
@@ -171,8 +180,12 @@ function shellStructure(shell: Element, allowance: number): Failure[] {
   }
   const scroll = shell.querySelector('[data-stage-scroll]')
   const extra = scroll ? scroll.scrollHeight - scroll.clientHeight : 0
-  if (scroll && extra > allowance + 1) {
-    out.push({ kind: 'estrutura', selector: describe(scroll), text: '', detail: `o palco rola ${extra}px na vertical (${scroll.scrollHeight}px numa área de ${scroll.clientHeight}px; folga neste estado: ${allowance}px)` })
+  // Na tela estreita a barra da rolagem de lado (quando o sistema mostra uma) come a altura dela.
+  const hscroll = shell.querySelector<HTMLElement>('[data-stage-hscroll]')
+  const bar = hscroll ? Math.max(0, hscroll.offsetHeight - hscroll.clientHeight) : 0
+  const room = allowance + bar
+  if (scroll && extra > room + 1) {
+    out.push({ kind: 'estrutura', selector: describe(scroll), text: '', detail: `o palco rola ${extra}px na vertical (${scroll.scrollHeight}px numa área de ${scroll.clientHeight}px; folga neste estado: ${allowance}px${bar > 0 ? ` + ${bar}px da barra de rolagem de lado` : ''})` })
   }
   const repName = shell.querySelector('[data-repertoire-name]')
   const shown = repName !== null && repName.getClientRects().length > 0

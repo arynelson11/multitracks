@@ -2,21 +2,21 @@
 
 Verificador da T20 (Parte 2). Monta o palco novo (`StageShell`) e as duas seções
 das Configurações da T19 com os dados de `fixture.ts`, abre no Chrome headless
-em 5 tamanhos de tela e mede o que está na tela. Regra do dono: nenhum texto
+em 8 tamanhos de tela e mede o que está na tela. Regra do dono: nenhum texto
 encostando na borda ou cortado. Não entra no app e não precisa de dependência
 nova: usa o Vite, o React e o Tailwind do repo e o Google Chrome da máquina.
 
 ```bash
 source ~/.nvm/nvm.sh && nvm use 24
-node scripts/verify-layout/run.mjs                                    # 9 estados x 5 tamanhos (45 combinações)
+node scripts/verify-layout/run.mjs                                    # 10 estados x 8 tamanhos (80 combinações)
 node scripts/verify-layout/run.mjs --only 1280x800 --estado quebrado  # prova: tem de sair com 1
 node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
 ```
 
 | Opção | O que faz |
 |---|---|
-| `--only 1280x800[,1440x900]` | só esses tamanhos (padrão: os 5) |
-| `--estado normal[,tom]` | só esses estados (padrão: os 9 normais; `quebrado` é a prova) |
+| `--only 1280x800[,1440x900]` | só esses tamanhos (padrão: os 8) |
+| `--estado normal[,tom]` | só esses estados (padrão: os 10 normais; `quebrado` é a prova) |
 | `--jobs N` | quantos Chrome ao mesmo tempo (padrão 3) |
 | `--no-build` | usa a página já montada em `.build/` |
 
@@ -26,8 +26,12 @@ em `results/<estado>_<LxA>.json`. Outro Chrome: `CHROME=/caminho/do/chrome`.
 
 ## Tamanhos e estados
 
-Tamanhos: `1024x768`, `1280x760`, `1280x800`, `1440x900` e `1920x1080` (o palco
-novo liga a partir de 740 px de altura, Ruling T18-altura).
+Tamanhos: `1024x740` (a menor tela do palco novo, Ruling T18-altura), `1024x768`,
+`1280x760`, `1280x800`, `1440x900` e `1920x1080`, mais duas larguras abaixo de
+1024: `900x740` (janela estreitada) e `810x1080` (iPad girado pra retrato). O
+palco novo só fica nelas com a música tocando (a troca de palco espera a música
+parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
+"nada inalcançável": o que passa da borda da casca chega rolando.
 
 | Estado | O que mostra |
 |---|---|
@@ -37,10 +41,11 @@ novo liga a partir de 740 px de altura, Ruling T18-altura).
 | `editar` | modo EDITAR (barra de marcar seções), parado |
 | `livre` | plano Livre: convite pra marcar seções e o aviso SEM CLICK LIDO |
 | `repertorio` | gaveta REPERTÓRIOS aberta com 6 músicas e Anotações |
-| `tom` | grade de tons aberta (toque no botão do tom) |
+| `tom` | grade de tons aberta (toque no botão do tom), com "Redefinir detecção de tom" |
+| `semtom` | grade aberta sem tom original: semitons em 3 linhas, com "Definir o tom original" ao lado do 0 |
 | `compasso` | diálogo do compasso aberto no EDITAR |
 | `config` | as duas seções da T19 numa página própria: placa de 2 canais (caindo de 4 ou mais, com avisos) e de 8 canais |
-| `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso pra cada ramo das regras (14 falhas, uma por ramo) |
+| `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso pra cada ramo das regras (15 falhas, uma por ramo) |
 
 O fixture é o pior caso de texto: 14 canais com os nomes organizados mais
 longos da Parte 1 ("Percussão Dedilhado Ambiente"), 9 seções (uma "Refrão
@@ -62,7 +67,10 @@ Para todo elemento com texto próprio que está na tela:
   borda com ela parada (Ruling T10-rolagem); o que está todo fora chega rolando.
   Dentro de um contêiner que rola na vertical, o que fica embaixo chega rolando;
   quem barra a área do palco rolando é a regra de estrutura. A caixa que emoldura o texto (selo, botão, aviso PRÓXIMA) também
-  não pode ser cortada. Na vertical conta a tinta das letras (medida no canvas
+  não pode ser cortada, nem a caixa do botão só de ícone (o X do aviso PRÓXIMA,
+  a lixeira, o Metrônomo), que não tem texto próprio. A casca que rola de lado
+  na tela estreita (`data-scroll-reach`) não acusa o que fica pela metade na
+  borda dela: chega rolando. Na vertical conta a tinta das letras (medida no canvas
   com a fonte do elemento), não a caixa da linha.
 - **(b) encostando**: em `button`, `[role=button]`, `[role=radio]` e selos
   (caixa visível de até 40 px de altura), o texto fica a 4 px ou mais das
@@ -79,7 +87,9 @@ Para todo elemento com texto próprio que está na tela:
   por cima da outra em qualquer largura, o nome do repertório ao lado de
   "MÚSICA 3 DE 6" só a partir de 1700 px e a área do palco (`[data-stage-scroll]`)
   sem rolar na vertical. Folga só no `editar` e no `compasso`, até 38 px (a T18
-  aceitou o EDITAR rolar em tela baixa; 30 px em 1024x768); ao vivo, nada. Vale
+  aceitou o EDITAR rolar em tela baixa; na v1.4.20, 38 px em 1024x740 com o
+  mixer no mínimo de 200 px no EDITAR); ao vivo, nada. Abaixo de 1024 px a
+  barra da rolagem de lado da casca soma na folga. Vale
   pra cada `[data-stage-shell]` da página (a prova tem um palco de mentira).
 
 Não usa `elementFromPoint`: o que está por cima de quê não é medido, então as

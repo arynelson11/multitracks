@@ -1,11 +1,15 @@
-import { useEffect, useId, useLayoutEffect, useRef } from 'react'
+import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { KEY_NAMES, keyIndex, transposeKeyName } from '../../lib/keyNames'
 import { sanitizeSemitones, semitonesBetweenKeys } from '../../lib/pitchRules'
 import { Chip, Panel, cx } from '../ui'
 import { Icon } from './icons'
 
-export interface KeyCellProps { originalKey: string | null; pitch: number; gridOpen: boolean; onGridOpenChange(open: boolean): void; onChangePitch(semitones: number): void }
+export interface KeyCellProps {
+  originalKey: string | null; pitch: number; gridOpen: boolean; onGridOpenChange(open: boolean): void; onChangePitch(semitones: number): void
+  /** Grava o tom original da música (um dos 12 tons) ou, com nulo, "Redefinir detecção de tom": a ação do palco antigo. */
+  onSetOriginalKey(key: string | null): void
+}
 
 const UNKNOWN = 'Tom original desconhecido'
 /** Sinal de menos tipográfico (U+2212), como no v5. */
@@ -17,6 +21,7 @@ const shiftTitle = (s: number): string => `Transposto ${Math.abs(s)} ${Math.abs(
 /** Sem tom original, a grade escolhe em semitons, na mesma distância que a grade de tons dá (caminho mais curto). */
 const SEMITONE_STEPS: readonly number[] = [-6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6]
 const SEMITONE_NOTE = 'Sem tom original: escolha em semitons'
+const DEFINE_NOTE = 'Toque no tom original da música'
 const semitoneLabel = (n: number): string => `${n === 0 ? '0' : shiftText(n)} ${Math.abs(n) === 1 ? 'semitom' : 'semitons'}${n === 0 ? ', original' : ''}`
 
 // v5 .cell com 12 px de lado (o v5 tem 16): em 1280 a coluna tem 176 px e a fileira −1 ORIG. +1 com
@@ -32,13 +37,18 @@ const GRID_KEY =
   'flex min-h-[50px] min-w-ps-touch flex-col items-center justify-center gap-1 rounded-ps-md px-1.5 transition-[box-shadow,transform] duration-150 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
 const GRID_IDLE = 'bg-ps-s2 text-ps-bone inset-ring inset-ring-ps-line hover:inset-ring-ps-line-3'
 const GRID_CURRENT = 'bg-ps-or text-ps-on-or'
+// O que o palco antigo faz com o tom original, alvo de 44 px: "Definir o tom original" ao lado do 0 na
+// grade de semitons (a grade não cresce), e embaixo da grade "Redefinir detecção de tom" ou "Voltar pros semitons".
+const ORIGINAL_BTN =
+  'flex min-h-ps-touch min-w-ps-touch items-center justify-center rounded-ps-md px-3 text-center text-ps-sm leading-tight font-bold text-ps-mut inset-ring inset-ring-ps-line transition-[box-shadow,color] duration-150 hover:text-ps-bone hover:inset-ring-ps-line-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
+const FOOT_BTN = cx(ORIGINAL_BTN, 'mt-2.5 w-full')
 
 /** Botão da grade: o rótulo em cima e ORIGINAL embaixo (reservado em todos, visível no original); o atual em laranja. */
 function GridButton({ aria, original, current, wide = false, onChoose, children }: { aria: string; original: boolean; current: boolean; wide?: boolean; onChoose(): void; children: ReactNode }) {
   return (
     <button
       type="button" aria-pressed={current} aria-label={aria} onClick={() => onChoose()}
-      className={cx(GRID_KEY, wide && 'col-span-6', current ? GRID_CURRENT : GRID_IDLE)}
+      className={cx(GRID_KEY, wide && 'col-span-3', current ? GRID_CURRENT : GRID_IDLE)}
     >
       <span className="text-ps-md leading-none font-extrabold whitespace-nowrap">{children}</span>
       <span
@@ -64,9 +74,11 @@ function KeyName({ name }: { name: string }) {
  * (`onGridOpenChange`), e o Esc é da casca (que fecha a grade sem cancelar o pulo). Escolher um
  * tom vai pelo caminho mais curto. Sem tom original, nada trava (Ruling T13-semitom): a grade mostra
  * a mudança em semitons, de −6 a +6, com a nota "Sem tom original: escolha em semitons"; o motor
- * recebe semitons, como sempre.
+ * recebe semitons, como sempre. Embaixo da grade fica o que o palco antigo faz com o tom original:
+ * sem ele, "Definir o tom original" troca a grade pelos 12 tons e o escolhido vira o original; com
+ * ele, "Redefinir detecção de tom" apaga o original (`onSetOriginalKey(null)`).
  */
-export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChangePitch }: KeyCellProps) {
+export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChangePitch, onSetOriginalKey }: KeyCellProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -75,6 +87,9 @@ export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChan
   const openedByPointer = useRef(false)
   const changeRef = useRef(onGridOpenChange)
   const dialogId = useId()
+  // Sem tom original: escolhendo o original (os 12 tons) em vez dos semitons. Fechar a grade volta pros semitons.
+  const [defining, setDefining] = useState(false)
+  if (defining && !gridOpen) setDefining(false)
 
   const shift = sanitizeSemitones(Math.round(pitch))
   const originalIndex = keyIndex(originalKey)
@@ -116,6 +131,11 @@ export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChan
     if (semitones !== null) onChangePitch(sanitizeSemitones(semitones))
     onGridOpenChange(false)
   }
+  const setOriginal = (key: string | null) => {
+    onSetOriginalKey(key)
+    onGridOpenChange(false)
+  }
+  const choosingOriginal = defining && originalIndex === null
 
   return (
     <div ref={rootRef} data-cell="tom" data-tour="tom" className={CELL}>
@@ -160,10 +180,10 @@ export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChan
         <Panel variant="pop" className="p-3">
           <div className="mb-2.5 flex items-center justify-between gap-4">
             <span className="ps-label leading-none">Tom da música</span>
-            <span className="text-ps-sm text-ps-mut">{originalIndex !== null ? 'original marcado' : SEMITONE_NOTE}</span>
+            <span className="text-ps-sm text-ps-mut">{originalIndex !== null ? 'original marcado' : choosingOriginal ? DEFINE_NOTE : SEMITONE_NOTE}</span>
           </div>
           {originalIndex !== null ? (
-            <div className="grid grid-cols-6 gap-1.5">
+            <div data-key-grid="" className="grid grid-cols-6 gap-1.5">
               {KEY_NAMES.map((name, i) => {
                 const label = transposeKeyName(originalKey, i - originalIndex) ?? name
                 return (
@@ -176,17 +196,42 @@ export function KeyCell({ originalKey, pitch, gridOpen, onGridOpenChange, onChan
                 )
               })}
             </div>
-          ) : (
-            // −6 a −1 na primeira linha, o 0 (original) na linha toda, +1 a +6 embaixo.
-            <div className="grid grid-cols-6 gap-1.5">
-              {SEMITONE_STEPS.map((n) => (
-                <GridButton
-                  key={n} aria={semitoneLabel(n)} original={n === 0} current={n === shift} wide={n === 0} onChoose={() => choose(n === shift ? null : n)}
-                >
-                  <span className="ps-num">{n === 0 ? '0' : shiftText(n)}</span>
+          ) : choosingOriginal ? (
+            <div data-key-grid="" className="grid grid-cols-6 gap-1.5">
+              {KEY_NAMES.map((name) => (
+                <GridButton key={name} aria={`${name}, definir como tom original`} original={false} current={false} onChoose={() => setOriginal(name)}>
+                  <KeyName name={name} />
                 </GridButton>
               ))}
             </div>
+          ) : (
+            // −6 a −1 na primeira linha; no meio o 0 (original) e "Definir o tom original"; +1 a +6 embaixo.
+            <div className="grid grid-cols-6 gap-1.5">
+              {SEMITONE_STEPS.map((n) => (
+                <Fragment key={n}>
+                  <GridButton
+                    aria={semitoneLabel(n)} original={n === 0} current={n === shift} wide={n === 0} onChoose={() => choose(n === shift ? null : n)}
+                  >
+                    <span className="ps-num">{n === 0 ? '0' : shiftText(n)}</span>
+                  </GridButton>
+                  {n === 0 && (
+                    <button type="button" data-define-original="" onClick={() => setDefining(true)} className={cx(ORIGINAL_BTN, 'col-span-3')}>
+                      Definir o tom original
+                    </button>
+                  )}
+                </Fragment>
+              ))}
+            </div>
+          )}
+          {originalIndex !== null && (
+            <button type="button" title="Apaga o tom original desta música (volta pro tom original e pra escolha em semitons)" onClick={() => setOriginal(null)} className={FOOT_BTN}>
+              Redefinir detecção de tom
+            </button>
+          )}
+          {choosingOriginal && (
+            <button type="button" onClick={() => setDefining(false)} className={FOOT_BTN}>
+              Voltar pros semitons
+            </button>
           )}
         </Panel>
       </div>

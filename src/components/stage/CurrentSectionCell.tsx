@@ -117,7 +117,7 @@ export function CurrentSectionCell({ sections, currentSection, intent, gates, cl
       </div>
       <div className="flex items-center gap-1.5 max-xl:gap-1" title={disabled ? disabledHint : undefined}>
         <button
-          type="button" data-armed={repeatArmed ? 'true' : 'false'} disabled={disabled} onClick={() => onArmRepeat(n)}
+          type="button" data-armed={repeatArmed ? 'true' : 'false'} aria-pressed={repeatArmed} disabled={disabled} onClick={() => onArmRepeat(n)}
           title={repeatArmed ? 'Repetição armada: ao fim da seção conta no click e volta pro começo dela' : 'Repete a seção atual: termina, conta no click e volta pro começo dela'}
           className={cx(REPEAT, repeatArmed ? REPEAT_ARMED : REPEAT_OFF)}
         >

@@ -13,6 +13,8 @@ export interface PanKnobProps {
   onChange(pan: number): void
   /** Falso enquanto a camada do EDITAR CANAIS cobre o knob: sai do Tab e ignora o teclado. */
   focusable?: boolean
+  /** Por que o knob está travado (title), quando `editable` é falso. Padrão: o de Click e Guia separados. */
+  lockedTitle?: string
 }
 
 const NO_PAN = 'Com Click e Guia separados o pan não decide a saída'
@@ -43,7 +45,7 @@ const VALUE = 'ps-num min-w-[4ch] text-left text-ps-micro leading-none font-bold
  * duplo clique centraliza; com foco, setas pra esquerda e pra direita. Sem edição fica apagado,
  * sem foco, não arrasta e explica no title.
  */
-export function PanKnob({ pan, editable, label, onChange, focusable = true }: PanKnobProps) {
+export function PanKnob({ pan, editable, label, onChange, focusable = true, lockedTitle = NO_PAN }: PanKnobProps) {
   const [dragP, setDragP] = useState<number | null>(null)
   const dragRef = useRef<Drag | null>(null)
   const p = dragP ?? (Number.isFinite(pan) ? Math.min(1, Math.max(-1, pan)) : 0)
@@ -124,7 +126,7 @@ export function PanKnob({ pan, editable, label, onChange, focusable = true }: Pa
       aria-valuetext={text}
       aria-disabled={editable ? undefined : true}
       tabIndex={editable ? (focusable ? 0 : -1) : undefined}
-      title={editable ? 'Pan: arraste para cima ou para baixo. Duplo clique centraliza.' : NO_PAN}
+      title={editable ? 'Pan: arraste para cima ou para baixo. Duplo clique centraliza.' : lockedTitle}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endOwn}

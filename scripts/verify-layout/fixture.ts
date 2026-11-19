@@ -11,7 +11,7 @@ import type {
 } from '../../src/lib/stageContracts'
 
 /** Estados da rodada normal, nessa ordem (o run.mjs tem a mesma lista). */
-export const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'repertorio', 'tom', 'compasso', 'config'] as const
+export const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'repertorio', 'tom', 'semtom', 'compasso', 'config'] as const
 /** Estado de prova: um botão de largura fixa com texto longo, que o verificador tem de acusar. */
 export const ESTADO_PROVA = 'quebrado'
 export type Estado = (typeof ESTADOS)[number] | typeof ESTADO_PROVA
@@ -145,6 +145,9 @@ export function viewFor(estado: Estado): StageView {
       return { ...BASE, editMode: true, isPlaying: false }
     case 'livre':
       return { ...BASE, gates: LIVRE, grid: { ...GRID, source: 'bpm' }, gridWarning: 'sem-click-lido' }
+    case 'semtom':
+      // Grade de tons sem tom original (a maior): semitons em 3 linhas, com "Definir o tom original" ao lado do 0.
+      return { ...BASE, song: { ...SONG, originalKey: null, pitch: 3 } }
     default:
       return BASE
   }

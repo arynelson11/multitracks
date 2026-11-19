@@ -9,10 +9,12 @@ import { FADER_MAX_GAIN, dragPan, faderToGain } from '../../lib/faderScale'
 import type { OutputMode, OutputPlan, StageActions, StageChannel, StageClock, TransitionView } from '../../lib/stageContracts'
 import { StageMixer } from './StageMixer'
 import type { StageMixerProps } from './StageMixer'
+import { TwoTapTrashButton } from './TwoTapTrashButton'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
 const PROIBIDAS = /\b(next|play|cancel|start|repeat|section|edit|settings|upgrade)\b/i
 const NO_PAN = 'Com Click e Guia separados o pan não decide a saída'
+const NO_PAN_AUTO = 'Com o pan automático ligado o lado vem do papel do canal (Click e Guia de um lado, o resto do outro). Desligue nas Configurações pra girar o knob.'
 
 // requestAnimationFrame falso: guarda os pedidos e solta um quadro por vez.
 let pending = new Map<number, FrameRequestCallback>()
@@ -230,6 +232,26 @@ describe('pan', () => {
 
     rerenderWith(view({ outputs: plan('stereo') }))
     for (const ch of CHANNELS) expect(panOf(ch.label).getAttribute('aria-disabled')).toBeNull()
+  })
+
+  it('pan travado em Tudo junto com o pan automático ligado (o motor usa o lado do papel, o knob não mudaria o som)', () => {
+    const { actions, rerenderWith } = renderMixer(view({ outputs: plan('stereo'), autoPan: true }))
+    for (const ch of CHANNELS) {
+      const pan = panOf(ch.label)
+      expect(pan.getAttribute('aria-disabled')).toBe('true')
+      expect(pan.getAttribute('title')).toBe(NO_PAN_AUTO)
+      pointer(pan, 'pointerdown', { clientY: 100 })
+      pointer(pan, 'pointermove', { clientY: 50 })
+      pointer(pan, 'pointerup', { clientY: 50 })
+      fireEvent.doubleClick(pan)
+    }
+    expect(actions.setPan).not.toHaveBeenCalled()
+    // Desligado, ou fora de Tudo junto (onde o pan automático não existe), o knob volta à regra do plano.
+    rerenderWith(view({ outputs: plan('stereo'), autoPan: false }))
+    for (const ch of CHANNELS) expect(panOf(ch.label).getAttribute('aria-disabled')).toBeNull()
+    rerenderWith(view({ outputs: plan('multi'), autoPan: true }))
+    expect(panOf('Bateria').getAttribute('aria-disabled')).toBeNull()
+    expect(panOf('Click').getAttribute('title')).toBe(NO_PAN)
   })
 })
 
@@ -614,6 +636,31 @@ describe('EDITAR CANAIS', () => {
     expect(trash('Bateria').textContent).toBe('')
   })
 
+  it('lixeira de canal entra no "uma armada por vez" do palco inteiro (Ruling T16-lixeira)', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    const onOther = vi.fn()
+    render(
+      <>
+        <StageMixer view={view({ channelEditMode: true })} actions={makeActions()} clock={clock} />
+        <TwoTapTrashButton label="Apagar a seção Refrão" confirmLabel="Toque de novo para apagar a seção Refrão" onConfirm={onOther} />
+      </>,
+    )
+    const trash = (label: string) => within(strip(label)).getByRole('button', { name: new RegExp(`canal ${label}$`) })
+    const other = () => screen.getByRole('button', { name: /seção Refrão$/ })
+    // Armar a lixeira do canal desarma a de fora (a da seção, no EDITAR).
+    fireEvent.click(other())
+    expect(other().getAttribute('data-armed')).toBe('true')
+    fireEvent.click(trash('Bateria'))
+    expect(trash('Bateria').textContent).toBe('Apagar?')
+    expect(other().getAttribute('data-armed')).toBe('false')
+    // E armar a de fora desarma a do canal.
+    act(() => { vi.advanceTimersByTime(400) })
+    fireEvent.click(other())
+    expect(other().getAttribute('data-armed')).toBe('true')
+    expect(trash('Bateria').textContent).toBe('')
+    expect(onOther).not.toHaveBeenCalled()
+  })
+
   it('alça arrasta o canal pra outra posição pelo ponteiro (vale no toque); as setas também movem', () => {
     const { actions } = renderMixer(view({ channelEditMode: true }))
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
@@ -690,6 +737,29 @@ describe('nome do canal', () => {
 })
 
 describe('PRINCIPAL', () => {
+  it('o medidor diz o que mede: as saídas 1 e 2 da placa (em separados, um lado é o ouvido; em 4 ou mais, a VS pode estar fora)', () => {
+    const { rerenderWith } = renderMixer(view({ outputs: plan('stereo') }))
+    const said = () => masterStrip().getAttribute('aria-description')
+    const tip = () => masterStrip().querySelector<HTMLElement>('[data-fader="principal"]')!.getAttribute('title')
+    const expectSaid = (text: string) => {
+      expect(said()).toBe(text)
+      expect(tip()).toBe(`Arraste para ajustar. Duplo clique volta para 0 dB. ${text}.`)
+    }
+    expectSaid('Medidor: saídas 1 e 2 da placa (a VS com tudo junto)')
+    rerenderWith(view({ outputs: { ...plan('split2'), vs: [1], click: [0], guide: [0] } }))
+    expectSaid('Medidor: saídas 1 e 2 da placa. A saída 1 é o Click e a Guia (o ouvido da banda), a 2 é a VS')
+    rerenderWith(view({ outputs: { ...plan('split2'), vs: [0], click: [1], guide: [1] } }))
+    expectSaid('Medidor: saídas 1 e 2 da placa. A saída 1 é a VS, a 2 é o Click e a Guia (o ouvido da banda)')
+    rerenderWith(view({ outputs: { ...plan('multi'), channels: 8, vs: [2, 3], click: [0], guide: [1] } }))
+    expectSaid('Medidor: saídas 1 e 2 da placa. A VS está nas saídas 3 e 4, fora deste medidor')
+    rerenderWith(view({ outputs: { ...plan('multi'), channels: 8, vs: [0, 1], click: [2], guide: [3] } }))
+    expectSaid('Medidor: saídas 1 e 2 da placa (a VS)')
+    rerenderWith(view({ outputs: { ...plan('stereo'), channels: 1, vs: [0] } }))
+    expectSaid('Medidor: a saída única da placa (tudo junto, em mono)')
+    // Os canais continuam com a dica de sempre.
+    expect(within(strip('Bateria')).getByRole('slider', { name: 'Volume Bateria' }).getAttribute('title')).toBe('Arraste para ajustar. Duplo clique volta para 0 dB.')
+  })
+
   it('EDITAR CANAIS, fader com L/R e escala, mudo geral e o nome', () => {
     const { actions, rerenderWith } = renderMixer()
     const m = masterStrip()
