@@ -534,11 +534,11 @@ export function WaveformSections({
         className="pointer-events-none absolute inset-y-0 left-0 z-[5] -ml-px w-0.5 bg-ps-bone shadow-[0_0_10px_color-mix(in_srgb,var(--color-ps-bone)_80%,transparent)] will-change-transform before:absolute before:top-0 before:-left-[5px] before:border-x-[6px] before:border-t-[9px] before:border-x-transparent before:border-t-ps-bone before:content-['']"
       >
         {/* Agulha pegável (Ruling AGULHA): 24 px em volta da linha, em toda a altura da onda, por cima
-            dos blocos e da régua; anda com a linha (filha dela). Mesma regra da régua. */}
+            dos blocos e da régua; anda com a linha (filha dela). Mesma regra da régua. Sem dica (title):
+            tocando, a agulha passa por baixo do mouse parado e a dica apareceria sozinha. */}
         {dur > 0 && (
           <div
             data-agulha=""
-            title="Arraste a agulha pra levar a música"
             className="pointer-events-auto absolute inset-y-0 left-1/2 w-6 -translate-x-1/2 cursor-grab touch-none active:cursor-grabbing"
             onPointerDown={(e) => onScrubDown(e, 'onda')}
             onPointerMove={onScrubMove}
