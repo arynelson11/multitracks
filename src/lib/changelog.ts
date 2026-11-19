@@ -11,6 +11,19 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.21',
+    date: '2026-11-19',
+    title: 'Cores no mixer, agulha e onda no palco novo',
+    items: [
+      'No mixer, Soprano, Contralto, Tenor, Barítono e Mezzo agora aparecem com a cor das vozes.',
+      'Strings, Cordas, Orquestra e FX agora aparecem com a cor do teclado.',
+      'No palco novo, dá pra pegar a agulha e arrastar pra qualquer ponto da música.',
+      'Com a música tocando, ela só pula pro ponto novo quando você solta a agulha.',
+      'A onda grande do palco novo mostra a música inteira, desde o primeiro som.',
+      'Numa música muito grande, a onda pode levar alguns segundos pra aparecer.',
+    ],
+  },
+  {
     version: '1.4.20',
     date: '2026-11-19',
     title: 'Palco novo como padrão e ajustes do palco',
