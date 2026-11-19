@@ -104,7 +104,9 @@ export default async function handler(req: any, res: any) {
         cancelUrl: `${baseUrl}/?payment=cancelled`,
         expiredUrl: `${baseUrl}/?payment=expired`,
       },
-      items: [{ name: plan.description, description: plan.description, quantity: 1, value: plan.value }],
+      // name: o Asaas aceita no máximo 30 caracteres ("Playback Studio Studio (mensal)"
+      // tinha 31), então vai o nome curto do plano; description cabe nos 150.
+      items: [{ name: plan.label, description: plan.description, quantity: 1, value: plan.value }],
       subscription: { cycle: plan.cycle, nextDueDate: today },
       // Sem customerData: o checkout hospedado do Asaas coleta nome, CPF,
       // telefone e endereço do pagador na própria página (mais simples e seguro).

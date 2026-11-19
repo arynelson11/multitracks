@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRes, type FakeDb } from './fakeSupabase.js'
 import { USER_A, createBillingDb, subRow } from './billingHarness.js'
+import { PLAN_PRICING, type PlanKey } from '../_lib/pricing.js'
 
 // Criar checkout: recusa (409) quando já existe assinatura ativa do mesmo
 // plano (duas abas, app antigo) e nunca devolve detalhe do Asaas ao navegador.
@@ -80,5 +81,35 @@ describe('checkout: erro do Asaas', () => {
     expect(res.statusCode).toBe(502)
     expect(JSON.stringify(res.body)).not.toContain('detalhe interno')
     expect(res.body).not.toHaveProperty('details')
+  })
+})
+
+describe('checkout: item dentro dos limites do Asaas (NOME-ITEM)', () => {
+  // docs.asaas.com/reference/criar-novo-checkout: items[].name até 30
+  // caracteres, items[].description até 150. "Playback Studio Studio (mensal)"
+  // tinha 31 e podia derrubar a venda do Studio Mensal.
+  const planKeys = Object.keys(PLAN_PRICING) as PlanKey[]
+
+  it('cobre os 4 planos que o checkout aceita', () => {
+    expect([...planKeys].sort()).toEqual(['essencial_anual', 'essencial_mensal', 'pro_anual', 'pro_mensal'])
+  })
+
+  it.each(planKeys)('%s: name é o nome curto do plano (até 30) e description até 150', async (planKey) => {
+    const plan = PLAN_PRICING[planKey]
+    const res = await create(planKey)
+    expect(res.statusCode).toBe(200)
+    expect(post).toHaveBeenCalledTimes(1)
+    const [path, payload] = post.mock.calls[0] as [string, { items: Array<Record<string, unknown>>; subscription: Record<string, unknown> }]
+    expect(path).toBe('/checkouts')
+    expect(payload.items).toHaveLength(1)
+    const item = payload.items[0] as { name: string; description: string; quantity: number; value: number }
+    expect(item.name).toBe(plan.label)
+    expect(item.name.length).toBeLessThanOrEqual(30)
+    expect(item.description).toBe(plan.description)
+    expect(item.description.length).toBeLessThanOrEqual(150)
+    // nada mais muda: valor, quantidade e ciclo seguem os mesmos
+    expect(item.quantity).toBe(1)
+    expect(item.value).toBe(plan.value)
+    expect(payload.subscription.cycle).toBe(plan.cycle)
   })
 })

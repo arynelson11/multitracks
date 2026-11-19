@@ -173,6 +173,9 @@ Confirmado por prints do produto em produção (2026-07-08):
 
 ## 6. Histórico de mudanças (para saber o que foi feito sem rodar tudo)
 
+### 2026-11-19: Nome do item no checkout do Asaas com no máximo 30 caracteres [v1.4.23]
+**NÃO PUBLICADO, sai na v1.4.23.** O nome do item no checkout do Asaas (`items[].name` em `api/checkout.ts`) passa a ser o nome curto do plano (`PLAN_PRICING[x].label`: Pro Mensal, Pro Anual, Studio Mensal, Studio Anual), por causa do limite de 30 caracteres da documentação do Asaas; o Studio Mensal mandava "Playback Studio Studio (mensal)", com 31. A descrição do item segue a mesma (`PLAN_PRICING[x].description`, dentro dos 150). Valor, ciclo, cobrança e webhook não mudam; nada no webhook, na conferência diária ou no admin lê o nome do item. Teste: `api/__tests__/checkout-create.test.ts` (NOME-ITEM).
+
 ### 2026-11-19: Funil do Livre no admin, registro de eventos do produto e plano guardado no aparelho sem internet (Parte 3, Publicação 1a) [v1.4.22]
 **Publicado:** v1.4.22 em 2026-11-19 (site + Mac + Windows juntos), a partir do HEAD da `feat/parte3-telas-livre` (`cd4586b`, já com a v1.4.21 publicada juntada pelo merge `8f92c62`), com a main avançada por fast-forward até o commit do release. Os 2 SQL rodaram na produção antes do deploy, com o OK do dono, nesta ordem: `db/supabase_eventos.sql` (tabela `public.product_events`) e `db/supabase_admin_funil.sql` (função `public.admin_funnel()`). É a Publicação 1a da Parte 3 (Onda 1, tarefas T1 a T4; spec `docs/superpowers/specs/2026-11-19-parte3-telas-e-livre-design.md`, plano `docs/superpowers/plans/2026-11-19-parte3-livre-amostra.md`, decisão D1): sai antes pra medir o "antes" na produção. **Não entram nesta versão** e seguem não publicados: o Livre novo, o anúncio da casa e a oferta do primeiro mês (Publicação 1b, Ondas 2 a 6, com o `db/supabase_oferta.sql`).
 
