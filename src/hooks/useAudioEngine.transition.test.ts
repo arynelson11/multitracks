@@ -829,6 +829,39 @@ describe('música velha soltando e o principal (Ruling I2-proxima)', () => {
   it.each([
     ['com cancelAndHoldAtTime', true],
     ['sem cancelAndHoldAtTime (Firefox)', false],
+  ])('"próxima" logo depois de uma busca tocando (na volta curta do principal): a descida de 1,5 s acontece, sem degrau, %s', async (_name, withHold) => {
+    const savedHold = FakeAudioParam.prototype.cancelAndHoldAtTime
+    if (!withHold) delete (FakeAudioParam.prototype as Partial<FakeAudioParam>).cancelAndHoldAtTime
+    try {
+      const a = song()
+      const b: SavedSong = { ...song(), id: 's2', name: 'Outra', channels: song().channels.map((c) => ({ ...c, id: `b-${c.id}` })) }
+      mem.db.set(META, structuredClone([a, b]))
+      for (const x of [a, b]) for (const c of x.channels) mem.db.set(`mt_files_u1:ch:${c.id}`, new File([/BASS|KEYS/.test(c.name) ? 'stereo' : 'mono'], `${c.name}.wav`))
+      const hook = await openApp()
+      await play(hook)
+      const gain = master().gain
+      // Busca tocando: o principal faz a volta curta (até a folga do corte + 5 ms).
+      ctxOf().currentTime = 1
+      act(() => { hook.result.current.seekTo(5) })
+      const spy = vi.spyOn(window, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => (ms === 1500 ? 0 : globalThis.setTimeout(fn, ms))) as unknown as typeof window.setTimeout)
+      ctxOf().currentTime = 1.002
+      try { act(() => { hook.result.current.nextSong() }) } finally { spy.mockRestore() }
+      // A descida acontece (em 1,5 s o principal está perto de 0,01) e sem degrau.
+      expect(valueAt(gain, 2.5)).toBeLessThan(0.02)
+      expect(maxStep(gain, 1, 1.1).step).toBeLessThanOrEqual(0.01)
+      // Nenhuma rampa depois do setTarget da descida (Ruling ÁUDIO).
+      const ev = gain.events
+      const target = ev.findIndex((e) => e.kind === 'target')
+      expect(target).toBeGreaterThanOrEqual(0)
+      expect(ev.slice(target + 1).filter((e) => e.kind === 'linear' || e.kind === 'exp')).toEqual([])
+    } finally {
+      FakeAudioParam.prototype.cancelAndHoldAtTime = savedHold
+    }
+  }, 20_000)
+
+  it.each([
+    ['com cancelAndHoldAtTime', true],
+    ['sem cancelAndHoldAtTime (Firefox)', false],
   ])('busca saindo dos últimos 5 s com FADE: o rabo da posição velha não sobe; o principal vai pro volume depois que ele calou, %s', async (_name, withHold) => {
     const savedHold = FakeAudioParam.prototype.cancelAndHoldAtTime
     if (!withHold) delete (FakeAudioParam.prototype as Partial<FakeAudioParam>).cancelAndHoldAtTime

@@ -2499,6 +2499,15 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
                 dropFade(ctx, false);
                 fadeHeldRef.current = null;
                 dropSectionIntent();
+                // A volta curta do principal ainda corre em t0 (a do play depois de uma busca ou da
+                // "próxima" anterior, até ~45 ms; o dropFade sem FADE não segura): segura nela antes,
+                // senão o setTarget ficaria antes do fim da rampa e a descida não aconteceria (Ruling
+                // N2-entra, Ruling ÁUDIO: nada de rampa depois de setTarget).
+                if (volumeRampAt(t0)) {
+                    const { level, inRamp } = masterLevelAt(t0);
+                    holdMasterAt(masterGainRef.current.gain, t0, level, inRamp);
+                    volumeRampRef.current = null;
+                }
                 // No mesmo instante em que o FADE segurou o principal (depois dele, o setTarget
                 // seria apagado pelo ponto segurado).
                 masterGainRef.current.gain.setTargetAtTime(NEXT_FADE_FLOOR, t0, NEXT_FADE_TC);
