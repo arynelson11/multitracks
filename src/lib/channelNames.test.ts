@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  FAMILY_COLOR, arrangeChannels, buildChannelLabels, channelFamily, familySourceName, isDrumPieceToken, nameTokens, recognizeChannel,
-  resolveChannelRole, roleFromName, sortChannelsByDefault, type ChannelFamily, type ChannelIdentity,
+  FAMILY_COLOR, arrangeChannels, buildChannelLabels, channelFamily, familySourceName, isDrumPieceToken, isEffectsChannel, nameTokens,
+  recognizeChannel, resolveChannelRole, roleFromName, sortChannelsByDefault, type ChannelFamily, type ChannelIdentity,
 } from './channelNames'
 
 const mk = (names: string[]): ChannelIdentity[] => names.map((name, i) => ({ id: `c${i}`, name }))
@@ -631,5 +631,115 @@ describe('nomes da calibração com multitracks reais (M5, rodada 3)', () => {
   it('estilo com Click ou Guia não muda o papel', () => {
     expect([roleFromName('Loop Pop Click'), roleFromName('LOOP AXÉ GUIA'), roleFromName('Rock Tempo'), roleFromName('Groove 120')])
       .toEqual(['click', 'guide', 'normal', 'normal'])
+  })
+})
+
+// Hotfix pedido pelo dono (2026-11-19): "contralto, soprano, tenor é vocal, são tipos de
+// vozes. strings é teclado e FX também". Antes ficavam cinza, no fim (não reconhecidos).
+describe('vozes do coro são Backing (hotfix 2026-11-19)', () => {
+  it.each([
+    ['Soprano', 'Soprano'], ['SOPRANO', 'Soprano'], ['Sopranos', 'Soprano'], ['Soprano 2', 'Soprano'],
+    ['Contralto', 'Contralto'], ['CONTRALTOS', 'Contralto'], ['Contralto_1.wav', 'Contralto'],
+    ['Tenor', 'Tenor'], ['TENORES', 'Tenor'], ['Tenors', 'Tenor'],
+    ['Barítono', 'Barítono'], ['BARITONOS', 'Barítono'], ['Baritone', 'Barítono'], ['Baritones', 'Barítono'],
+    ['Mezzo', 'Mezzo'], ['Coro Tenor', 'Backing'], ['Soprano L', 'Soprano L'], ['Tenor Solo', 'Tenor Solo'],
+    ['Alto', 'Contralto'], ['ALTO', 'Contralto'], ['Alto 2', 'Contralto'], ['Alto L', 'Contralto L'], ['Altos', 'Contralto'],
+  ])('%s vira %s (Backing, cor das vozes, papel Normal)', (raw, label) => {
+    const ch = { id: '1', name: raw }
+    expect(recognizeChannel(raw)).toEqual({ label, family: 'backing' })
+    expect(roleFromName(raw)).toBe('normal')
+    expect(buildChannelLabels([ch])[0]).toMatchObject({ label, family: 'backing', role: 'normal', color: FAMILY_COLOR.backing })
+  })
+  it('ALTO é palavra fraca: com outra palavra não vira voz ("Sax Alto" é o saxofone)', () => {
+    expect(recognizeChannel('Sax Alto')).toEqual({ label: 'Sax Alto', family: 'desconhecido' })
+    expect(recognizeChannel('Alto Sax')).toEqual({ label: 'Alto Sax', family: 'desconhecido' })
+    expect(recognizeChannel('Alto Falante')).toEqual({ label: 'Alto Falante', family: 'desconhecido' })
+    expect(recognizeChannel('Pad Alto')).toEqual({ label: 'Pad', family: 'pad' })
+    expect(recognizeChannel('BV alto')).toEqual({ label: 'Backing', family: 'backing' })
+    expect(recognizeChannel('LOOP AXÉ - ALTO')).toEqual({ label: 'Loop', family: 'percussao' })
+    expect(recognizeChannel('Loop Pop Alto')).toEqual({ label: 'Loop', family: 'percussao' })
+  })
+  it('loop com estilo e nome de voz ou de Strings: vale a outra família, como "Loop Pop Vocal"', () => {
+    expect(recognizeChannel('Loop Pop Tenor')).toEqual({ label: 'Tenor Loop', family: 'backing' })
+    expect(recognizeChannel('LOOP AXÉ STRINGS')).toEqual({ label: 'Strings Loop', family: 'teclado' })
+  })
+  it('saxofone e outros sopros com nome de voz não viram voz', () => {
+    for (const raw of ['Sax Tenor', 'Sax Soprano', 'Sax Barítono', 'Tenor Sax', 'Saxofone Tenor', 'Trombone Tenor', 'Flauta Contralto']) {
+      expect(recognizeChannel(raw).family).toBe('desconhecido')
+    }
+  })
+  it('nome que já tinha família continua nela', () => {
+    expect(recognizeChannel('Voz Soprano')).toEqual({ label: 'Vocal', family: 'vocal' })
+    expect(recognizeChannel('Lead Tenor')).toEqual({ label: 'Vocal', family: 'vocal' })
+    expect(recognizeChannel('Tenor Amb')).toEqual({ label: 'Ambiência', family: 'ambiencia' })
+    expect(recognizeChannel('Baritone GTR')).toEqual({ label: 'Guitarra', family: 'guitarra' })
+    expect(recognizeChannel('Tenor Bass')).toEqual({ label: 'Baixo', family: 'baixo' })
+    expect(recognizeChannel('Piano Soprano')).toEqual({ label: 'Piano', family: 'piano' })
+  })
+  it('BAIXO continua sendo o instrumento, não a voz', () => {
+    expect(recognizeChannel('Baixo')).toEqual({ label: 'Baixo', family: 'baixo' })
+    expect(recognizeChannel('BAIXO 2')).toEqual({ label: 'Baixo', family: 'baixo' })
+  })
+  it('vozes iguais entram na numeração; o nome do usuário também decide', () => {
+    expect(labels(['Soprano 2', 'Soprano 1', 'Tenor'])).toEqual(['Soprano 2', 'Soprano 1', 'Tenor'])
+    expect(channelFamily({ id: '1', name: 'Track 3', customName: 'Contralto' })).toBe('backing')
+  })
+  it('com Click ou Guia o papel continua o mesmo', () => {
+    expect([roleFromName('Soprano Guia'), roleFromName('Tenor Click'), roleFromName('Guia Contralto')]).toEqual(['guide', 'click', 'guide'])
+    expect(channelFamily({ id: '1', name: 'Soprano Guia' })).toBe('guia')
+  })
+})
+
+describe('Strings, Orquestra e FX são Teclado (hotfix 2026-11-19)', () => {
+  it.each([
+    ['Strings', 'Strings'], ['STRINGS', 'Strings'], ['String', 'Strings'], ['STR', 'Strings'], ['Strings 2', 'Strings'],
+    ['STRINGS_1.wav', 'Strings'], ['Cordas', 'Cordas'], ['ORCH', 'Orquestra'], ['Orchestra', 'Orquestra'],
+    ['Orquestra', 'Orquestra'], ['Strings FX', 'Strings FX'], ['Strings L', 'Strings L'],
+    ['FX', 'FX'], ['Fx', 'FX'], ['fx', 'FX'], ['FX 2', 'FX'], ['FX_1.wav', 'FX'], ['FX L', 'FX L'], ['SFX', 'FX'], ['SFX 3', 'FX'],
+  ])('%s vira %s (Teclado, cor do teclado, papel Normal)', (raw, label) => {
+    const ch = { id: '1', name: raw }
+    expect(recognizeChannel(raw)).toEqual({ label, family: 'teclado' })
+    expect(roleFromName(raw)).toBe('normal')
+    expect(buildChannelLabels([ch])[0]).toMatchObject({ label, family: 'teclado', role: 'normal', color: FAMILY_COLOR.teclado })
+  })
+  it('Loop FX continua Percussão', () => {
+    for (const raw of ['Loop FX', 'Loop Fx', 'LOOP FX', 'Loops FX', 'Loop FX 2', 'Loop Pop FX']) {
+      expect(recognizeChannel(raw)).toEqual({ label: 'Loop FX', family: 'percussao' })
+    }
+  })
+  it('FX com palavra de outra família fica de complemento, como antes', () => {
+    expect(recognizeChannel('Vocal FX')).toEqual({ label: 'Vocal FX', family: 'vocal' })
+    expect(recognizeChannel('GTR FX')).toEqual({ label: 'Guitarra FX', family: 'guitarra' })
+    expect(recognizeChannel('KICK FX')).toEqual({ label: 'Bumbo FX', family: 'bateria' })
+    expect(recognizeChannel('Keys FX')).toEqual({ label: 'Teclado FX', family: 'teclado' })
+    expect(recognizeChannel('Pad FX')).toEqual({ label: 'Pad FX', family: 'pad' })
+  })
+  it('FX com palavra desconhecida continua não reconhecido, como antes', () => {
+    expect(recognizeChannel('Outros/Fx')).toEqual({ label: 'Outros/Fx', family: 'desconhecido' })
+    expect(recognizeChannel('Tempo FX')).toEqual({ label: 'Tempo FX', family: 'desconhecido' })
+    expect(recognizeChannel('Riser FX')).toEqual({ label: 'Riser FX', family: 'desconhecido' })
+  })
+  it('Strings e Orquestra não tiram a família de quem já tinha', () => {
+    expect(recognizeChannel('Orch Perc')).toEqual({ label: 'Percussão', family: 'percussao' })
+    expect(recognizeChannel('Orch Drums')).toEqual({ label: 'Bateria', family: 'bateria' })
+    expect(recognizeChannel('String Pad')).toEqual({ label: 'Pad', family: 'pad' })
+    expect(recognizeChannel('GTR Strings')).toEqual({ label: 'Guitarra', family: 'guitarra' })
+    expect(recognizeChannel('Strings Amb')).toEqual({ label: 'Ambiência', family: 'ambiencia' })
+  })
+  it('isEffectsChannel: só o canal que ficou no Teclado pelo FX sozinho', () => {
+    for (const name of ['FX', 'FX 2', 'Fx_1.wav', 'SFX', 'FX L', 'FX A']) expect(isEffectsChannel({ id: '1', name })).toBe(true)
+    for (const name of ['Strings FX', 'Keys FX', 'Loop FX', 'Vocal FX', 'Outros/Fx', 'Strings', 'KEYS']) {
+      expect(isEffectsChannel({ id: '1', name })).toBe(false)
+    }
+    expect(isEffectsChannel({ id: '1', name: 'FX', customName: 'Teclado' })).toBe(false)
+    expect(isEffectsChannel({ id: '1', name: 'Track 4', customName: 'FX' })).toBe(true)
+  })
+  it('ordem padrão: Teclado antes da voz principal, vozes do coro depois dela', () => {
+    const input = ['Tenor', 'Vocal', 'Soprano', 'Strings', 'FX', 'Contralto', 'Keys', 'Click', 'Drums']
+    expect(sortChannelsByDefault(mk(input)).map((c) => c.name)).toEqual(['Click', 'Drums', 'Strings', 'FX', 'Keys', 'Vocal',
+      'Tenor', 'Soprano', 'Contralto'])
+  })
+  it('com Click ou Guia o papel continua o mesmo', () => {
+    expect([roleFromName('FX Click'), roleFromName('Strings Guia'), roleFromName('FX')]).toEqual(['click', 'guide', 'normal'])
   })
 })
