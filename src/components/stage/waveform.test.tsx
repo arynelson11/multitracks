@@ -771,3 +771,149 @@ describe('WaveformSections', () => {
     for (const [family, color] of Object.entries(FAMILY_COLOR)) expect(sectionColors.has(color.toLowerCase()), family).toBe(false)
   })
 })
+
+// Ruling AGULHA (dono, 2026-11-19): a agulha (playhead) é pegável em toda a altura da onda e leva a
+// música pra onde soltar; numa onda sem blocos (música sem seções ou Livre) a onda inteira vale como a régua.
+describe('agulha pegável (Ruling AGULHA)', () => {
+  const agulha = (c: HTMLElement) => c.querySelector<HTMLElement>('[data-agulha]')!
+  /** Onda de 1000 px começando em 0 (a agulha mede a onda inteira, não a si mesma). */
+  const waveRect = (c: HTMLElement) => vi.spyOn(c.querySelector<HTMLElement>('[data-waveform]')!, 'getBoundingClientRect').mockReturnValue(rect(0, 1000))
+
+  it('a agulha tem uma faixa de 24 px pegável em toda a altura, por cima dos blocos e da régua, com cursor de arrastar', () => {
+    fakeLayout(1000, 140, { selo: 60, tag: 60, ruler: 30 })
+    position = 30
+    const { container } = renderWave({ isPlaying: false })
+    const ph = container.querySelector<HTMLElement>('[data-playhead]')!
+    const a = agulha(container)
+    expect(a).not.toBeNull()
+    expect(ph.contains(a)).toBe(true) // anda junto com a linha (o mesmo translateX)
+    expect(ph.style.transform).toBe('translateX(300.0px)')
+    for (const c of ['pointer-events-auto', 'inset-y-0', 'w-6', '-translate-x-1/2', 'touch-none', 'cursor-grab', 'active:cursor-grabbing']) {
+      expect(a.className.split(/\s+/)).toContain(c)
+    }
+    // A linha fica acima dos blocos e da faixa de toque da régua (z-4).
+    expect(ph.className).toContain('z-[5]')
+    position = 0
+  })
+
+  it('parado, arrastar a agulha busca na hora, andando com o dedo, e soltar encerra', () => {
+    fakeLayout(1000, 140, { selo: 60, tag: 60, ruler: 30 })
+    position = 30
+    const { container, p } = renderWave({ isPlaying: false })
+    waveRect(container)
+    const a = agulha(container)
+    pointer(a, 'pointerdown', 305)
+    expect(p.onSeek).toHaveBeenLastCalledWith(30.5)
+    pointer(a, 'pointermove', 500)
+    expect(p.onSeek).toHaveBeenLastCalledWith(50)
+    pointer(a, 'pointermove', 5000)
+    expect(p.onSeek).toHaveBeenLastCalledWith(100) // presa no fim da onda
+    pointer(a, 'pointerup', 5000)
+    const calls = vi.mocked(p.onSeek).mock.calls.length
+    pointer(a, 'pointermove', 200)
+    expect(vi.mocked(p.onSeek).mock.calls.length).toBe(calls) // soltou: mexer não busca
+    expect(p.onTapSection).not.toHaveBeenCalled() // nem foi pra seção do bloco de baixo
+    position = 0
+  })
+
+  it('tocando, arrastar a agulha mostra a prévia e busca uma vez ao soltar', () => {
+    fakeLayout(1000, 140, { selo: 60, tag: 60, ruler: 30 })
+    position = 10
+    const { container, p } = renderWave({ isPlaying: true })
+    waveRect(container)
+    const a = agulha(container)
+    const ph = container.querySelector<HTMLElement>('[data-playhead]')!
+    const capture = vi.fn()
+    Object.defineProperty(a, 'setPointerCapture', { value: capture, configurable: true })
+    pointer(a, 'pointerdown', 102)
+    expect(capture).toHaveBeenCalledTimes(1) // o dedo continua valendo fora dos 24 px
+    pointer(a, 'pointermove', 400)
+    fireEvent.pointerLeave(a) // capturado: sair da faixa não solta
+    pointer(a, 'pointermove', 620)
+    frame()
+    expect(p.onSeek).not.toHaveBeenCalled()
+    expect(ph.style.transform).toBe('translateX(620.0px)') // prévia com o dedo
+    position = 11
+    frame()
+    expect(ph.style.transform).toBe('translateX(620.0px)')
+    pointer(a, 'pointerup', 650)
+    expect(p.onSeek).toHaveBeenCalledTimes(1)
+    expect(p.onSeek).toHaveBeenLastCalledWith(65)
+    expect(p.onTapSection).not.toHaveBeenCalled()
+    position = 0
+  })
+
+  it('tocando, um toque na agulha sem arrastar além de 8 px não faz nada (nem arma o bloco de baixo)', () => {
+    fakeLayout(1000, 140, { selo: 60, tag: 60, ruler: 30 })
+    position = 30
+    const { container, p } = renderWave({ isPlaying: true })
+    waveRect(container)
+    const a = agulha(container)
+    const ph = container.querySelector<HTMLElement>('[data-playhead]')!
+    pointer(a, 'pointerdown', 295)
+    pointer(a, 'pointermove', 303)
+    frame()
+    expect(ph.style.transform).toBe('translateX(300.0px)')
+    pointer(a, 'pointerup', 303)
+    fireEvent.click(a)
+    expect(p.onSeek).not.toHaveBeenCalled()
+    expect(p.onTapSection).not.toHaveBeenCalled()
+    // Arrasto cancelado pelo navegador também não busca e a prévia some.
+    pointer(a, 'pointerdown', 300)
+    pointer(a, 'pointermove', 700)
+    fireEvent.pointerCancel(a)
+    pointer(a, 'pointerup', 700)
+    frame()
+    expect(p.onSeek).not.toHaveBeenCalled()
+    expect(ph.style.transform).toBe('translateX(300.0px)')
+    position = 0
+  })
+
+  it('música sem seções: a onda inteira vale como a régua (parado, tocar busca; tocando, só o arrasto, ao soltar)', () => {
+    for (const o of [{ sections: [] as StageSection[] }, { sectionsAllowed: false }]) {
+      const { container, p, rerenderWith, unmount } = renderWave({ ...o, isPlaying: false })
+      const r = regua(container)
+      // A faixa de toque cobre a onda toda (não só os 44 px de baixo); o visual da régua continua embaixo.
+      expect(r.className).toMatch(/(^| )inset-y-0( |$)/)
+      expect(r.className).not.toMatch(/(^| )h-ps-touch( |$)/)
+      expect(container.querySelector<HTMLElement>('[data-ruler]')!.className).toMatch(/(^| )h-ps-touch( |$)/)
+      vi.spyOn(r, 'getBoundingClientRect').mockReturnValue(rect(0, 1000))
+      pointer(r, 'pointerdown', 400)
+      expect(p.onSeek).toHaveBeenLastCalledWith(40)
+      pointer(r, 'pointermove', 450)
+      expect(p.onSeek).toHaveBeenLastCalledWith(45)
+      pointer(r, 'pointerup', 450)
+      vi.mocked(p.onSeek).mockClear()
+      rerenderWith({ ...o, isPlaying: true })
+      pointer(r, 'pointerdown', 200)
+      pointer(r, 'pointerup', 204)
+      expect(p.onSeek).not.toHaveBeenCalled() // toque simples tocando: nada
+      pointer(r, 'pointerdown', 200)
+      pointer(r, 'pointermove', 800)
+      expect(p.onSeek).not.toHaveBeenCalled()
+      pointer(r, 'pointerup', 820)
+      expect(p.onSeek).toHaveBeenCalledTimes(1)
+      expect(p.onSeek).toHaveBeenLastCalledWith(82)
+      unmount()
+    }
+  })
+
+  it('música com seções: tocar no bloco ainda arma (ou vai pra seção parado) e arrastar a partir do bloco não busca', () => {
+    fakeLayout(1000, 140, { selo: 60, tag: 60, ruler: 30 })
+    const { container, p, rerenderWith } = renderWave({ isPlaying: true })
+    expect(regua(container).className).toMatch(/(^| )h-ps-touch( |$)/) // a régua segue só embaixo
+    const refrao = blocks(container)[2]
+    pointer(refrao, 'pointerdown', 300)
+    pointer(refrao, 'pointermove', 600)
+    pointer(refrao, 'pointerup', 600)
+    expect(p.onSeek).not.toHaveBeenCalled()
+    fireEvent.click(refrao)
+    expect(p.onTapSection).toHaveBeenLastCalledWith(2)
+    rerenderWith({ isPlaying: false })
+    pointer(blocks(container)[3], 'pointerdown', 550)
+    pointer(blocks(container)[3], 'pointermove', 800)
+    fireEvent.click(blocks(container)[3])
+    expect(p.onTapSection).toHaveBeenLastCalledWith(3)
+    expect(p.onSeek).not.toHaveBeenCalled()
+  })
+})
