@@ -66,16 +66,18 @@ function setup(profile: Row) {
   })
 }
 
-async function separate(stemCount = 2) {
+const AUDIO = 'https://r2.exemplo.com/temp/musica.mp3'
+
+async function post(body: Record<string, unknown>) {
   const { default: handler } = await import('../separate-audio.js')
   const res = createRes()
-  const req = {
-    method: 'POST',
-    headers: { authorization: 'Bearer x' },
-    body: { audioUrl: 'https://r2.exemplo.com/temp/musica.mp3', stemCount },
-  }
+  const req = { method: 'POST', headers: { authorization: 'Bearer x' }, body }
   await handler(req as unknown as VercelRequest, res as unknown as VercelResponse)
   return res
+}
+
+async function separate(stemCount: unknown = 2) {
+  return post({ audioUrl: AUDIO, stemCount })
 }
 
 beforeEach(() => {
@@ -305,6 +307,46 @@ describe('separate-audio: Livre em 4 ou 6 faixas', () => {
     expect(over.body).toMatchObject({ plan: 'free', limit: 5 })
     expect((over.body as { error: string }).error).toContain('5 separações')
     expect(db.tables.profiles[0].tokens_used).toBe(5)
+  })
+
+  // Sem a trava antiga do Livre, a lista 2, 4 e 6 é a única guarda das faixas:
+  // fora dela a resposta é 400 antes da cota (não gasta nem chega no Replicate).
+  it.each([3, 8, 1, 0, '4', null, { n: 4 }] as const)('stemCount %j fora de 2, 4 e 6 dá 400 sem gastar a cota', async (stems) => {
+    vi.setSystemTime(new Date('2026-11-16T15:00:00Z'))
+    setup({ id: USER, plan: 'free', tokens_used: 0, tokens_period_start: NOV })
+
+    const res = await separate(stems)
+
+    expect(res.statusCode).toBe(400)
+    expect(db.rpcCalls).toEqual([])
+    expect(createPrediction).not.toHaveBeenCalled()
+    expect(db.tables.profiles[0].tokens_used).toBe(0)
+    expect(db.tables.predictions).toEqual([])
+  })
+
+  it('sem stemCount no pedido separa em 4 faixas, como antes', async () => {
+    vi.setSystemTime(new Date('2026-11-16T15:00:00Z'))
+    setup({ id: USER, plan: 'free', tokens_used: 0, tokens_period_start: NOV })
+
+    const res = await post({ audioUrl: AUDIO })
+
+    expect(res.statusCode).toBe(200)
+    expect(input().model_name).toBe('htdemucs')
+    expect(input()).not.toHaveProperty('two_stems')
+    expect(db.tables.profiles[0].tokens_used).toBe(1)
+  })
+
+  // Plano gravado com nome de chave do protótipo cai no limite do Livre
+  // (como a ficha do admin em api/_lib/admin/subscribers.ts), em vez de
+  // mandar um limite que não é número pro banco e responder 500.
+  it.each(['constructor', '__proto__', 'toString', 'plano_que_nao_existe'])('plano gravado como %s usa o limite do Livre', async (plan) => {
+    vi.setSystemTime(new Date('2026-11-16T15:00:00Z'))
+    setup({ id: USER, plan, plan_expires_at: null, tokens_used: 0, tokens_period_start: NOV })
+
+    const res = await separate(4)
+
+    expect(res.statusCode).toBe(200)
+    expect(db.rpcCalls[0]).toEqual({ name: 'consume_separation_token', args: { p_user_id: USER, p_limit: 3 } })
   })
 })
 

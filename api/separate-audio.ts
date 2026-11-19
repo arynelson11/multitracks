@@ -42,16 +42,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!auth.ok) { res.status(auth.status).json({ error: auth.error }); return; }
 
     const audioUrl: unknown = req.body?.audioUrl;
-    const stemCount: unknown = req.body?.stemCount ?? 4;
+    // Sem stemCount no pedido vale 4. Com ele, só o número 2, 4 ou 6: texto, null
+    // ou outro número é recusado aqui, antes da cota. Sem trava de faixas por
+    // plano, esta é a única guarda das faixas no Livre.
+    const stemCount: unknown = req.body?.stemCount === undefined ? 4 : req.body.stemCount;
     if (typeof audioUrl !== 'string' || !audioUrl.startsWith(allowedPrefix)) {
         res.status(400).json({ error: 'audioUrl must be hosted on our storage' });
         return;
     }
-    const requestedStems = typeof stemCount === 'number' ? stemCount : 4;
-    if (!VALID_STEM_COUNTS.has(requestedStems)) {
+    if (typeof stemCount !== 'number' || !VALID_STEM_COUNTS.has(stemCount)) {
         res.status(400).json({ error: 'stemCount must be 2, 4 or 6' });
         return;
     }
+    const requestedStems = stemCount;
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
@@ -75,7 +78,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         } catch (e) {
             console.warn('[separate-audio] cota extra nao lida, segue com o limite do plano:', e instanceof Error ? e.message.slice(0, 200) : 'erro');
         }
-        const limit = (PLAN_LIMITS[plan] ?? PLAN_LIMITS.free) + bonus;
+        // Plano desconhecido conta como Livre, como a ficha do admin. Object.hasOwn
+        // pra um nome como "constructor" não virar um limite que não é número.
+        const limit = (Object.hasOwn(PLAN_LIMITS, plan) ? PLAN_LIMITS[plan] : PLAN_LIMITS.free) + bonus;
 
         const { data: consumed, error: rpcErr } = await supabase
             .rpc('consume_separation_token', { p_user_id: auth.userId, p_limit: limit });
