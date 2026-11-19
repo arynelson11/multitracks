@@ -9,10 +9,13 @@
 //   (fora do recebido e do estornado) é contada à parte; câmbio com mais de 4 dias, ou sem câmbio,
 //   acende o alerta e a linha do câmbio em âmbar, sempre com a data.
 // * O total de Pendências e o Led da aba ficam na casca (AdminShell); aqui só os alertas do mês.
+// * Depois dos números do mês, o funil do Livre (FunnelPanel), que pede o próprio `?action=funnel`:
+//   um erro nele não derruba a visão geral, e o Atualizar daqui pede só a visão geral.
 import { useId } from 'react'
 import type React from 'react'
 import { ChevronRight, RefreshCw } from 'lucide-react'
 import { Button, Led, Panel } from '../../components/ui'
+import { FunnelPanel } from '../components/FunnelPanel'
 import { useAdminQuery } from '../hooks/useAdminQuery'
 import { EMPTY, cancelSourceLabel, fmtBRL, fmtDay, fmtUSD, planLabel } from '../lib/fmt'
 import { amountOf, countEntries, countOf, isOverview, type CountEntry, type Overview } from '../lib/overviewTypes'
@@ -146,6 +149,7 @@ export function OverviewTab({ onNavigate }: TabProps) {
       <div aria-busy={loading} className={loading ? 'flex flex-col gap-5 opacity-60' : 'flex flex-col gap-5'}>
         <Alerts items={alertsOf(data)} onNavigate={onNavigate} />
         <Numbers data={data} />
+        <FunnelPanel />
         <div className="grid gap-ps-gap lg:grid-cols-3">
           <Subscribers data={data} onNavigate={onNavigate} />
           <Cancellations data={data} />

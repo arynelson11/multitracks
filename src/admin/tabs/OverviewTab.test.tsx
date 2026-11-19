@@ -4,8 +4,11 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { OverviewTab } from './OverviewTab'
 import { AdminApiError } from '../lib/adminApi'
 import type { Overview } from '../lib/overviewTypes'
+import type { Funnel } from '../lib/funnelTypes'
 
-const h = vi.hoisted(() => ({ adminGet: vi.fn() }))
+// Responde por ação, como o servidor (Ruling R3): a visão geral e o funil do Livre, que o painel
+// do funil pede sozinho, têm cada um o seu formato e a sua fila de respostas.
+const h = vi.hoisted(() => ({ adminGet: vi.fn(), overview: vi.fn(), funnel: vi.fn() }))
 
 vi.mock('../lib/adminApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../lib/adminApi')>()),
@@ -17,6 +20,14 @@ vi.mock('../../lib/supabase', () => ({ supabase: null, getAuthHeaders: async () 
 const TRAVESSAO = String.fromCharCode(0x2014)
 const MSG_BAD_SHAPE = 'Não deu pra carregar a visão geral. Tente de novo.'
 const FX_SOURCE = '(PTAX de venda do Banco Central, sem IOF nem spread).'
+
+// A resposta de `?action=funnel` (T2): um mês com números e um vazio.
+const FUNNEL: Funnel = {
+  months: [
+    { month: '2026-11', label: 'novembro de 2026', signups: 3, firstSeparation: 2, paying: 1, medianDaysToPay: 2.5, offersShown: 0, offersUsed: 0, adsShown: 0, adsClicked: 0 },
+    { month: '2026-10', label: 'outubro de 2026', signups: 0, firstSeparation: 0, paying: 0, medianDaysToPay: null, offersShown: 0, offersUsed: 0, adsShown: 0, adsClicked: 0 },
+  ],
+}
 
 // Sem custo (Ruling ADM-sem-custo-visao): o alerta conta só o que a varredura ainda completa
 // (alerts.withoutCostPending); as notas do custo e da margem contam o total (aiCost.withoutCost).
@@ -55,7 +66,7 @@ const alertsList = () => screen.getByRole('list', { name: 'Pedindo atenção' })
 const fxLine = () => screen.getByText((_, el) => el?.tagName === 'P' && text(el).startsWith('Câmbio guardado mais recente:'))
 
 async function show(data: unknown, onNavigate = vi.fn()) {
-  h.adminGet.mockResolvedValue(data)
+  h.overview.mockResolvedValue(data)
   const view = render(<OverviewTab onNavigate={onNavigate} focusUserId={null} />)
   await screen.findByRole('heading', { level: 2, name: /Visão geral/ })
   return { ...view, onNavigate }
@@ -63,12 +74,21 @@ async function show(data: unknown, onNavigate = vi.fn()) {
 
 beforeEach(() => {
   h.adminGet.mockReset()
+  h.overview.mockReset()
+  h.funnel.mockReset()
+  h.funnel.mockResolvedValue(FUNNEL)
+  // Ação sem resposta aqui é recusada como desconhecida (400), nunca com o corpo de outra ação.
+  h.adminGet.mockImplementation(async (action: string, params?: unknown) => {
+    if (action === 'overview') return h.overview(params)
+    if (action === 'funnel') return h.funnel(params)
+    throw new AdminApiError(`Ação desconhecida: ${action}`, 400)
+  })
 })
 afterEach(cleanup)
 
 describe('OverviewTab', () => {
   it('pede a ação overview e mostra o mês no título e os quatro números', async () => {
-    h.adminGet.mockResolvedValue(overview())
+    h.overview.mockResolvedValue(overview())
     render(<OverviewTab onNavigate={vi.fn()} focusUserId={null} />)
     expect(screen.getByText('Carregando...')).toBeTruthy()
     await screen.findByRole('heading', { level: 2, name: 'Visão geral de novembro de 2026' })
@@ -105,7 +125,7 @@ describe('OverviewTab', () => {
     const data = overview()
     const revenue: Record<string, unknown> = { ...data.revenue }
     delete revenue.disputed
-    h.adminGet.mockResolvedValue({ ...data, revenue })
+    h.overview.mockResolvedValue({ ...data, revenue })
     render(<OverviewTab onNavigate={vi.fn()} focusUserId={null} />)
     expect((await screen.findByRole('alert')).textContent).toBe(MSG_BAD_SHAPE)
   })
@@ -243,11 +263,11 @@ describe('OverviewTab', () => {
 
   it('resposta sem a divisão do sem custo (servidor de antes) ou sem o total vira a frase pronta', async () => {
     const old = { manual: 0, auto: 0, blockedWithActiveSub: 0, withoutCost: 3, fxOld: false }
-    h.adminGet.mockResolvedValueOnce({ ...overview(), alerts: old })
+    h.overview.mockResolvedValueOnce({ ...overview(), alerts: old })
     const first = render(<OverviewTab onNavigate={vi.fn()} focusUserId={null} />)
     expect((await screen.findByRole('alert')).textContent).toBe(MSG_BAD_SHAPE)
     first.unmount()
-    h.adminGet.mockResolvedValueOnce({ ...overview(), aiCost: { jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31 } })
+    h.overview.mockResolvedValueOnce({ ...overview(), aiCost: { jobs: 40, succeeded: 37, failed: 3, costBrl: 12.4, costUsd: 2.31 } })
     render(<OverviewTab onNavigate={vi.fn()} focusUserId={null} />)
     expect((await screen.findByRole('alert')).textContent).toBe(MSG_BAD_SHAPE)
   })
@@ -321,23 +341,23 @@ describe('OverviewTab', () => {
   })
 
   it('resposta fora do formato mostra a frase pronta e Tentar de novo pede de novo', async () => {
-    h.adminGet.mockResolvedValueOnce({ rows: [], total: 0 }).mockResolvedValueOnce(overview())
+    h.overview.mockResolvedValueOnce({ rows: [], total: 0 }).mockResolvedValueOnce(overview())
     render(<OverviewTab onNavigate={vi.fn()} focusUserId={null} />)
     expect((await screen.findByRole('alert')).textContent).toBe(MSG_BAD_SHAPE)
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
     await screen.findByRole('heading', { level: 2, name: 'Visão geral de novembro de 2026' })
-    expect(h.adminGet).toHaveBeenCalledTimes(2)
+    expect(h.overview).toHaveBeenCalledTimes(2)
   })
 
   it('alertas fora do formato não viram Nada pedindo atenção', async () => {
-    h.adminGet.mockResolvedValue({ ...overview(), alerts: { manual: '3', auto: 0, blockedWithActiveSub: 0, withoutCostPending: 0, fxOld: false } })
+    h.overview.mockResolvedValue({ ...overview(), alerts: { manual: '3', auto: 0, blockedWithActiveSub: 0, withoutCostPending: 0, fxOld: false } })
     render(<OverviewTab onNavigate={vi.fn()} focusUserId={null} />)
     expect((await screen.findByRole('alert')).textContent).toBe(MSG_BAD_SHAPE)
     expect(screen.queryByText('Nada pedindo atenção agora.')).toBeNull()
   })
 
   it('erro do servidor mostra a frase dele e Tentar de novo', async () => {
-    h.adminGet.mockRejectedValue(new AdminApiError('Erro inesperado no servidor.', 500))
+    h.overview.mockRejectedValue(new AdminApiError('Erro inesperado no servidor.', 500))
     render(<OverviewTab onNavigate={vi.fn()} focusUserId={null} />)
     expect((await screen.findByRole('alert')).textContent).toBe('Erro inesperado no servidor.')
     expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeTruthy()
@@ -345,13 +365,53 @@ describe('OverviewTab', () => {
 
   it('Atualizar pede a visão geral de novo', async () => {
     await show(overview())
+    await screen.findByRole('table', { name: 'Funil do Livre' })
     fireEvent.click(screen.getByRole('button', { name: 'Atualizar' }))
-    await waitFor(() => expect(h.adminGet).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(h.overview).toHaveBeenCalledTimes(2))
+    // O funil foi pedido uma vez, quando a visão geral abriu, e continua na tela.
+    expect(h.funnel).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('table', { name: 'Funil do Livre' })).toBeTruthy()
+  })
+
+  it('o funil do Livre aparece depois dos números do mês, pedido com 6 meses', async () => {
+    await show(overview())
+    const panel = screen.getByRole('group', { name: 'Funil do Livre' })
+    await within(panel).findByRole('table', { name: 'Funil do Livre' })
+    expect(h.adminGet).toHaveBeenCalledWith('funnel', { months: 6 })
+    expect(h.funnel).toHaveBeenCalledTimes(1)
+    expect(text(panel)).toContain('2 (67%)')
+    // depois dos quatro números e antes dos assinantes
+    const after = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(after(group('Margem do mês'), panel)).toBe(true)
+    expect(after(panel, group('Assinantes'))).toBe(true)
+  })
+
+  it('erro no funil fica no painel dele e não derruba os números do mês', async () => {
+    h.funnel.mockReset()
+    h.funnel.mockRejectedValueOnce(new AdminApiError('Erro inesperado no servidor.', 500)).mockResolvedValueOnce(FUNNEL)
+    await show(overview())
+    const panel = screen.getByRole('group', { name: 'Funil do Livre' })
+    expect((await within(panel).findByRole('alert')).textContent).toBe('Erro inesperado no servidor.')
+    expect(text(group('Recebido no mês'))).toContain('R$ 480,50')
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    fireEvent.click(within(panel).getByRole('button', { name: 'Tentar de novo' }))
+    await within(panel).findByRole('table', { name: 'Funil do Livre' })
+    expect(h.funnel).toHaveBeenCalledTimes(2)
+    expect(h.overview).toHaveBeenCalledTimes(1)
+  })
+
+  it('a visão geral sem resposta não pede o funil', async () => {
+    h.overview.mockRejectedValue(new AdminApiError('Erro inesperado no servidor.', 500))
+    render(<OverviewTab onNavigate={vi.fn()} focusUserId={null} />)
+    await screen.findByRole('alert')
+    expect(h.funnel).not.toHaveBeenCalled()
+    expect(screen.queryByRole('group', { name: 'Funil do Livre' })).toBeNull()
   })
 
   it('botões com alvo de 44 px, só tokens ps-* e texto sem travessão', async () => {
     const data = overview({ aiCost: aiCostWith(1, 1), alerts: { manual: 1, auto: 2, blockedWithActiveSub: 1, withoutCostPending: 1, fxOld: true } })
     const { container } = await show({ ...data, subscribers: { ...data.subscribers, legacyPaid: 1 } })
+    await screen.findByRole('table', { name: 'Funil do Livre' })
     const buttons = screen.getAllByRole('button')
     expect(buttons.length).toBe(7)
     for (const b of buttons) expect(b.className, b.textContent ?? '').toContain('min-h-ps-touch')
