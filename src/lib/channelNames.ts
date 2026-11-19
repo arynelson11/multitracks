@@ -69,7 +69,7 @@ interface FamilyRule {
   weakWords: ReadonlySet<string>
   // Palavras que podem ficar ao lado da palavra fraca sem tirar dela a família, além de
   // número e andamento: lado do par estéreo, variação ou posição ("Loop L", "Loop A",
-  // "Floor Tom"). Só Percussão e Bateria têm; a marca de andamento do Click (isTempoMark) não muda.
+  // "Floor Tom", "FX L", "Alto 2"). O Click não tem: a marca de andamento dele (isTempoMark) não muda.
   weakCompanions: ReadonlySet<string>
   // A palavra fraca também conta quando o nome já tem palavra forte da família
   // ("Tom Drum" é a peça Tom). Só a Bateria tem.
@@ -78,10 +78,16 @@ interface FamilyRule {
   // qualquer palavra que não seja de outra família ("LOOP AXÉ - REFRÃO" é Loop; "Loop Pop
   // Vocal" continua Vocal). Só a Percussão tem (estilo musical do loop).
   weakAnchors: ReadonlySet<string>
+  // A palavra fraca desta regra trava a âncora de outra ("Loop Pop Beat" não é Loop). ALTO
+  // não trava: é fraca por ser palavra comum ("LOOP AXÉ - ALTO" continua Loop).
+  weakBlocksAnchor: boolean
+  // Com uma destas no nome, a regra não casa nada: sopro com nome de voz ("Sax Tenor",
+  // "Trombone Tenor") não é voz. Só a regra das vozes do coro tem.
+  vetoWords: ReadonlySet<string>
   sequences: readonly (readonly string[])[]
-  // Peças com rótulo próprio dentro da família (bateria e percussão). Peça que também
-  // é palavra fraca só dá o rótulo quando decide a família ("Loop 2" é Loop; "PERC LOOP"
-  // continua Percussão Loop).
+  // Peças com rótulo próprio dentro da família (bateria, percussão, Strings e FX, vozes do
+  // coro). Peça que também é palavra fraca só dá o rótulo quando decide a família ("Loop 2"
+  // é Loop; "PERC LOOP" continua Percussão Loop).
   pieces?: ReadonlyMap<string, string>
 }
 
@@ -93,6 +99,8 @@ const rule = (
     weakCompanions?: readonly string[]
     weakJoinsStrong?: boolean
     weakAnchors?: readonly string[]
+    weakBlocksAnchor?: boolean
+    vetoWords?: readonly string[]
     sequences?: readonly (readonly string[])[]
     pieces?: Record<string, string>
   } = {},
@@ -103,6 +111,8 @@ const rule = (
   weakCompanions: new Set(extra.weakCompanions ?? []),
   weakJoinsStrong: extra.weakJoinsStrong ?? false,
   weakAnchors: new Set(extra.weakAnchors ?? []),
+  weakBlocksAnchor: extra.weakBlocksAnchor ?? true,
+  vetoWords: new Set(extra.vetoWords ?? []),
   sequences: extra.sequences ?? [],
   pieces: extra.pieces ? new Map(Object.entries(extra.pieces)) : undefined,
 })
@@ -114,6 +124,22 @@ const DRUM_PIECES: Record<string, string> = {
   OH: 'Overhead', OVERHEAD: 'Overhead', OVERHEADS: 'Overhead', TOM: 'Tom', TOMS: 'Tons',
 }
 const DRUM_PIECE_TOKENS: ReadonlySet<string> = new Set(Object.keys(DRUM_PIECES))
+
+// Lado do par estéreo: pode ficar ao lado da palavra fraca de FX e de ALTO.
+const SIDE_WORDS = ['L', 'R', 'LEFT', 'RIGHT', 'ESQ', 'DIR']
+
+// Strings, orquestra e efeitos (pedido do dono, 2026-11-19: "strings é teclado e FX também").
+// Regra à parte, no fim da lista: nome que já tinha família continua nela ("Orch Perc" é
+// Percussão, "Strings Amb" é Ambiência). FX e SFX são fracas: só sozinhas, com número,
+// andamento, lado ou variação ("FX 2", "FX L"); "Loop FX" continua Percussão e "Vocal FX", Vocal.
+const EFFECTS_RULE = rule('teclado', ['STRINGS', 'STRING', 'STR', 'CORDAS', 'ORCH', 'ORCHESTRA', 'ORQUESTRA'], {
+  weakWords: ['FX', 'SFX'],
+  weakCompanions: [...SIDE_WORDS, 'A', 'B'],
+  pieces: {
+    STRINGS: 'Strings', STRING: 'Strings', STR: 'Strings', CORDAS: 'Cordas',
+    ORCH: 'Orquestra', ORCHESTRA: 'Orquestra', ORQUESTRA: 'Orquestra', FX: 'FX', SFX: 'FX',
+  },
+})
 
 // Ordem de prioridade: vence a primeira família que tiver alguma palavra no nome.
 const FAMILY_RULES: readonly FamilyRule[] = [
@@ -164,6 +190,24 @@ const FAMILY_RULES: readonly FamilyRule[] = [
   // LEADVOCAL, LEADVOX (grudados) e VOCALISTA: grafias que a regra antiga de formantes pegava.
   rule('vocal', ['VOX', 'VOCAL', 'VOCALS', 'VOCAIS', 'VOC', 'VOZ', 'VOZES', 'VOICE', 'LEAD', 'LV', 'LEADVOCAL', 'LEADVOX', 'VOCALISTA']),
   rule('ambiencia', ['AMB', 'AMBIENCE', 'AMBIENT', 'AMBIENCIA']),
+  EFFECTS_RULE,
+  // Vozes do coro (pedido do dono, 2026-11-19: "contralto, soprano, tenor é vocal, são tipos
+  // de vozes"): Backing, com o nome da voz no rótulo. Por último, como as Strings: nome que
+  // já tinha família continua nela ("Baritone GTR" é Guitarra, "Voz Soprano" é Vocal). ALTO
+  // é fraca ("Sax Alto", "Pad Alto"): só sozinha, com número ou lado. BAIXO não entra: é o instrumento.
+  rule('backing', ['SOPRANO', 'SOPRANOS', 'CONTRALTO', 'CONTRALTOS', 'TENOR', 'TENORES', 'TENORS', 'BARITONO',
+    'BARITONOS', 'BARITONE', 'BARITONES', 'MEZZO'], {
+    weakWords: ['ALTO', 'ALTOS'],
+    weakCompanions: SIDE_WORDS,
+    weakBlocksAnchor: false,
+    vetoWords: ['SAX', 'SAXES', 'SAXOFONE', 'SAXOFONES', 'SAXOPHONE', 'SAXOPHONES', 'TROMBONE', 'TROMBONES',
+      'FLAUTA', 'FLAUTAS', 'FLUTE', 'FLUTES', 'CLARINETE', 'CLARINETES', 'CLARINET', 'CLARINETS', 'UKULELE', 'UKE', 'BANJO'],
+    pieces: {
+      SOPRANO: 'Soprano', SOPRANOS: 'Soprano', CONTRALTO: 'Contralto', CONTRALTOS: 'Contralto', ALTO: 'Contralto',
+      ALTOS: 'Contralto', TENOR: 'Tenor', TENORES: 'Tenor', TENORS: 'Tenor', BARITONO: 'Barítono', BARITONOS: 'Barítono',
+      BARITONE: 'Barítono', BARITONES: 'Barítono', MEZZO: 'Mezzo',
+    },
+  }),
 ]
 
 const ROLE_FAMILIES: ReadonlySet<ChannelFamily> = new Set(['click', 'guia'])
@@ -256,9 +300,9 @@ export function isDrumPieceToken(token: string): boolean {
 const TEMPO_MARKS: ReadonlySet<string> = new Set(['BPM'])
 const isTempoMark = (token: string) => /^\p{N}+$/u.test(token) || TEMPO_MARKS.has(token)
 
-// Palavra de alguma família (forte, peça ou fraca): trava a âncora da palavra fraca.
+// Palavra de alguma família (forte, peça ou fraca que trava âncora): trava a âncora da palavra fraca.
 function isFamilyWord(token: string): boolean {
-  return FAMILY_RULES.some((r) => r.words.has(token) || r.pieces?.has(token) || r.weakWords.has(token))
+  return FAMILY_RULES.some((r) => r.words.has(token) || (r.weakWords.has(token) ? r.weakBlocksAnchor : r.pieces?.has(token)))
 }
 
 // Palavra fraca só conta quando todo o resto do nome é marca de andamento (ou, na
@@ -281,6 +325,7 @@ function weakHits(tokens: readonly string[], familyRule: FamilyRule): Set<number
 // lado de palavra forte dela).
 function familyHits(tokens: readonly string[], familyRule: FamilyRule): Set<number> {
   const hits = new Set<number>()
+  if (tokens.some((token) => familyRule.vetoWords.has(token))) return hits
   tokens.forEach((token, i) => {
     const isStrongPiece = familyRule.pieces?.has(token) && !familyRule.weakWords.has(token)
     if (familyRule.words.has(token) || isStrongPiece) hits.add(i)
@@ -452,6 +497,14 @@ function familySource(ch: ChannelIdentity): { name: string; family: ChannelFamil
 // Mesma regra do channelFamily, pra quem precisa olhar as palavras desse nome (tempoSources).
 export function familySourceName(ch: ChannelIdentity): string {
   return familySource(ch).name
+}
+
+// Canal de efeito: o nome que decide a família ficou no Teclado só pelo FX ou SFX ("FX",
+// "FX 2", "SFX L"). Riser e varredura não são acorde nem marcam seção: a onda do SectionBar
+// e a harmonia do tempo não usam. "Strings FX" e "Keys FX" são instrumento.
+export function isEffectsChannel(ch: ChannelIdentity): boolean {
+  const match = matchFamily(familySourceName(ch), true)
+  return match?.familyRule === EFFECTS_RULE && [...match.hits].every((i) => EFFECTS_RULE.weakWords.has(match.tokens[i]))
 }
 
 export function channelFamily(ch: ChannelIdentity): ChannelFamily {

@@ -234,3 +234,30 @@ describe('formantes só em voz, pela família da regra central', () => {
     expect(wantsFormantCompensation({ id: '3', name: 'DRUMS', role: 'normal' })).toBe(false)
   })
 })
+
+// Hotfix 2026-11-19: vozes do coro (Backing) ganham formantes como o Backing; Strings,
+// Orquestra e FX (Teclado) nunca ganham e nunca saem da troca de tom.
+describe('vozes do coro e Teclado novo no tom (hotfix 2026-11-19)', () => {
+  it.each(['Soprano', 'Contralto', 'Tenor', 'Tenores', 'Barítono', 'Baritone', 'Mezzo', 'Alto', 'Alto 2', 'Voz Soprano', 'Coro Tenor'])(
+    '%s: com formantes, transpõe e vai pra PA', (name) => {
+      const ch = { id: '1', name }
+      expect(wantsFormantCompensation(ch)).toBe(true)
+      expect(isPitchExempt(ch)).toBe(false)
+      expect(autoPanFor(ch, true)).toEqual({ pan: 1, bus: '2' })
+    })
+  it.each(['Strings', 'STR', 'Cordas', 'Orch', 'Orquestra', 'FX', 'FX 2', 'SFX', 'Strings FX', 'Sax Alto', 'Sax Tenor', 'Loop FX'])(
+    '%s: sem formantes, transpõe e vai pra PA', (name) => {
+      const ch = { id: '1', name }
+      expect(wantsFormantCompensation(ch)).toBe(false)
+      expect(isPitchExempt(ch)).toBe(false)
+      expect(autoPanFor(ch, true)).toEqual({ pan: 1, bus: '2' })
+    })
+  it('nome do usuário: "Track 3" renomeado "Soprano" ganha formantes', () => {
+    expect(wantsFormantCompensation({ id: '1', name: 'Track 3', customName: 'Soprano' })).toBe(true)
+  })
+  it('a onda do SectionBar não usa canal de FX sozinho', () => {
+    const list = sortChannelsByDefault([{ id: 'f', name: 'FX' }, { id: 'k', name: 'Keys' }, { id: 'd', name: 'DRUMS' }])
+    expect(pickWaveformChannel(list)?.id).toBe('k')
+    expect(pickWaveformChannel([{ id: 'f', name: 'FX 2' }, { id: 's', name: 'Strings FX' }])?.id).toBe('s')
+  })
+})

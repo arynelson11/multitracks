@@ -5,8 +5,8 @@
 // canais (família, papel manual e palavra inteira do nome), nunca por pedaço de texto.
 // Puro: sem React, sem IndexedDB, sem Web Audio.
 import {
-  FAMILY_LABEL, FAMILY_RANK, channelFamily, familySourceName, isDrumPieceToken, nameTokens, type ChannelFamily,
-  type ChannelIdentity,
+  FAMILY_LABEL, FAMILY_RANK, channelFamily, familySourceName, isDrumPieceToken, isEffectsChannel, nameTokens,
+  type ChannelFamily, type ChannelIdentity,
 } from './channelNames'
 import { findClickChannel } from './channelRoles'
 
@@ -92,7 +92,8 @@ export function pickTempoSources<T extends ChannelIdentity>(channels: readonly T
   // Primeiro Baixo; sem ele, primeiro Synth Bass. Sem bateria nem percussão, ele é o pulso.
   const bass = first('baixo') ?? first('synthBass')
   const pulse = percussive.length > 0 ? pickPulse(percussive) : bass ? [bass] : []
-  const harmony = candidates.filter((c) => HARMONY_FAMILIES.has(c.family)).slice(0, HARMONY_MAX)
+  // Canal de efeito ("FX" sozinho é Teclado no mixer) não é acorde: fica fora da harmonia.
+  const harmony = candidates.filter((c) => HARMONY_FAMILIES.has(c.family) && !isEffectsChannel(c.ch)).slice(0, HARMONY_MAX)
   const analyzed = bass ? [...pulse, bass] : pulse
 
   return {

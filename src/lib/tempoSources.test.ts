@@ -241,3 +241,17 @@ describe('contrato', () => {
     expect(label).not.toContain(TRAVESSAO)
   })
 })
+
+// Hotfix 2026-11-19: FX sozinho virou Teclado no mixer, mas é efeito, não acorde:
+// fica fora da harmonia, como a peça com FX fica fora do pulso. Strings entra.
+describe('FX sozinho fica fora da harmonia (hotfix 2026-11-19)', () => {
+  it('FX e SFX não entram; Strings, Strings FX e Keys FX entram', () => {
+    expect(pick(mk(['Click', 'DRUMS', 'BASS', 'FX', 'SFX 2', 'KEYS', 'Strings'])).harmony).toEqual(['KEYS', 'Strings'])
+    expect(pick(mk(['FX L', 'Strings FX', 'Keys FX'])).harmony).toEqual(['Strings FX', 'Keys FX'])
+  })
+  it('vozes do coro nunca entram na análise', () => {
+    expect(pick(mk(['Click', 'Soprano', 'Contralto', 'Tenor', 'Pad', 'Bass']))).toEqual({
+      click: 'Click', pulse: ['Bass'], bass: 'Bass', harmony: ['Pad'], label: 'Baixo',
+    })
+  })
+})

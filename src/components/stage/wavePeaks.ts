@@ -1,6 +1,6 @@
 // Contas da onda grande do palco (T9), sem React e sem canvas: picos, seta do armado,
 // linhas dos selos e o tom mais claro da parte tocada. O SectionBar do palco antigo usa o
-// mesmo computePeaks.
+// computePeaks (um canal); a onda grande do palco novo, o computeMixPeaks (a música inteira).
 
 /**
  * Picos da forma de onda: o maior |x| de cada balde, normalizado pelo maior de todos (0 a 1).
@@ -22,6 +22,67 @@ export function computePeaks(data: Float32Array, buckets: number): Float32Array 
     peaks[i] = peak
     if (peak > max) max = peak
   }
+  for (let i = 0; i < count; i++) peaks[i] = peaks[i] / max
+  return peaks
+}
+
+/**
+ * Trabalho seguido da onda grande antes de ceder a vez à tela: o mesmo pedaço de 4 ms do gerador
+ * do click (Ruling T27-gerador). A música pode trocar sozinha tocando (AUTO) e nenhuma tarefa da
+ * thread principal pode passar de 50 ms.
+ */
+export const MIX_PEAKS_SLICE_MS = 4
+
+/** Cede a vez (setTimeout 0) quando o pedaço de trabalho já passou de `sliceMs`; antes disso, nulo. */
+export function makeSliceYield(sliceMs = MIX_PEAKS_SLICE_MS): () => Promise<void> | null {
+  let sliceStart = performance.now()
+  return () => {
+    if (performance.now() - sliceStart < sliceMs) return null
+    return new Promise<void>((resolve) => setTimeout(() => { sliceStart = performance.now(); resolve() }, 0))
+  }
+}
+
+/** `signal`: cancela no meio (devolve nulo). `yieldIfDue`: quem cede a vez (padrão: a cada 4 ms). */
+export interface MixPeaksOptions { signal?: AbortSignal; yieldIfDue?: () => Promise<void> | null }
+
+/**
+ * Picos da onda grande com a música inteira (Ruling ONDA-MIX): por balde, o maior |x| entre todas
+ * as `sources` (cada lado de cada canal), normalizado pelo maior de todos (0 a 1). Mesma regra do
+ * computePeaks (com uma fonte só, o mesmo resultado): balde de `floor(n / buckets)` amostras, com
+ * `n` o tamanho da maior fonte, amostra que falta conta 0 e o resto da divisão fica de fora.
+ * Calcula aos pedaços: confere o relógio a cada balde e cede a vez quando passa do pedaço, então
+ * 25 canais estéreo de 7 min não travam a tela. Cancelado (`signal`): para no próximo balde e
+ * devolve nulo.
+ */
+export async function computeMixPeaks(sources: readonly Float32Array[], buckets: number, opts: MixPeaksOptions = {}): Promise<Float32Array | null> {
+  const { signal } = opts
+  const yieldIfDue = opts.yieldIfDue ?? makeSliceYield()
+  const count = Number.isFinite(buckets) && buckets > 0 ? Math.floor(buckets) : 0
+  const peaks = new Float32Array(count)
+  const length = sources.reduce((m, d) => Math.max(m, d.length), 0)
+  const block = Math.floor(length / count) || 1
+  for (const data of sources) {
+    for (let i = 0; i < count; i++) {
+      if (signal?.aborted) return null
+      const start = i * block
+      const end = Math.min(start + block, data.length)
+      // O maior pra cima e o maior pra baixo (mais rápido que Math.abs em cada amostra).
+      let hi = 0
+      let lo = 0
+      for (let j = start; j < end; j++) {
+        const v = data[j]
+        if (v > hi) hi = v
+        else if (v < lo) lo = v
+      }
+      const peak = hi > -lo ? hi : -lo
+      if (peak > peaks[i]) peaks[i] = peak
+      const pause = yieldIfDue()
+      if (pause) await pause
+    }
+  }
+  if (signal?.aborted) return null
+  let max = 0.0001
+  for (let i = 0; i < count; i++) if (peaks[i] > max) max = peaks[i]
   for (let i = 0; i < count; i++) peaks[i] = peaks[i] / max
   return peaks
 }
