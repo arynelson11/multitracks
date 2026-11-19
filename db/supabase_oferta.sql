@@ -23,14 +23,18 @@
 --     none    os dois nulos (nenhum registro no mês e nenhuma janela ativa)
 -- * Só a tela de limite abre janela (offer_open_window, com o limite que abriu
 --   em trigger_kind). Ao abrir, grava offer_shown em product_events na mesma
---   transação; offer_mark_used grava offer_used. Os dois só uma vez por registro.
+--   transação; offer_mark_used grava offer_used. offer_shown uma vez por registro;
+--   offer_used uma vez por conta (já usada noutro mês, a resposta é 'already').
 -- * CPF: o servidor guarda só o HMAC-SHA256 em hex (64 letras), nunca o número.
 --   offer_record_cpf devolve true quando outra conta (ou uma conta já excluída)
---   usou a oferta com o mesmo hash: o servidor marca a ficha pro admin.
+--   usou a oferta com o mesmo hash: o servidor marca a ficha pro admin. Duas
+--   contas com o mesmo hash ao mesmo tempo se veem (trava pelo hash). Sem o
+--   registro da conta naquele mês, recusa com P0002 (o hash nunca some calado).
 -- * Excluir a conta não apaga o registro: user_id vira null e o hash fica, pra
 --   conferência de conta nova continuar valendo.
 -- * pending_checkouts guarda o mês da janela (offer_month) e o valor cobrado no
---   primeiro mês (offer_value) quando o checkout sai com a oferta.
+--   primeiro mês (offer_value) quando o checkout sai com a oferta: os dois juntos
+--   (AAAA-MM e valor maior que zero) ou nenhum.
 -- * Pendência nova restore_full_price: depois do primeiro pagamento com
 --   desconto, a assinatura no Asaas volta pro preço cheio (tentada até dar certo).
 -- * Quem grava e lê é só o backend (service_role). O usuário não lê nem grava a
@@ -91,6 +95,21 @@ revoke all on sequence public.first_month_offers_id_seq from anon, authenticated
 -- ─── 2. Checkout com a oferta ───────────────────────────────────────────────
 alter table public.pending_checkouts add column if not exists offer_month text;
 alter table public.pending_checkouts add column if not exists offer_value numeric(12, 2);
+-- os dois juntos (mês AAAA-MM e valor maior que zero) ou nenhum
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.pending_checkouts'::regclass and contype = 'c' and conname = 'pending_checkouts_offer_check'
+  ) then
+    alter table public.pending_checkouts
+      add constraint pending_checkouts_offer_check
+      check ((offer_month is null and offer_value is null)
+             or (offer_month is not null and offer_value is not null
+                 and offer_month ~ '^[0-9]{4}-[0-9]{2}$' and offer_value > 0));
+  end if;
+end;
+$$;
 
 -- ─── 3. Pendência de voltar ao preço cheio ──────────────────────────────────
 -- Troca o CHECK de action (o nome que tiver; o padrão do Postgres é
@@ -219,8 +238,10 @@ end;
 $$;
 
 -- Primeiro pagamento com desconto confirmado. 'marked' grava used_at, o
--- checkout e offer_used; 'already' quando o registro daquele mês já estava
--- usado (nenhum evento novo); 'no_offer' sem registro da conta naquele mês.
+-- checkout e offer_used; 'already' quando a conta já usou a oferta, em qualquer
+-- mês (nenhum evento novo); 'no_offer' sem registro da conta naquele mês. As
+-- chamadas da mesma conta esperam a vez (trava das linhas da conta), então dois
+-- pagamentos ao mesmo tempo, mesmo de meses diferentes, dão um uso só.
 create or replace function public.offer_mark_used(
   p_user_id     uuid,
   p_month       text,
@@ -240,26 +261,29 @@ begin
     raise exception 'oferta sem conta' using errcode = '22023';
   end if;
 
+  perform 1 from public.first_month_offers where user_id = p_user_id order by id for update;
+  if exists (select 1 from public.first_month_offers where user_id = p_user_id and used_at is not null) then
+    return 'already';
+  end if;
+
   update public.first_month_offers
      set used_at = v_now,
          checkout_id = p_checkout_id
    where user_id = p_user_id and month = p_month and used_at is null
   returning id into v_id;
-  if v_id is not null then
-    perform public.record_product_event(p_user_id, 'offer_used', null, null, v_now);
-    return 'marked';
+  if v_id is null then
+    return 'no_offer';
   end if;
-
-  if exists (select 1 from public.first_month_offers where user_id = p_user_id and month = p_month) then
-    return 'already';
-  end if;
-  return 'no_offer';
+  perform public.record_product_event(p_user_id, 'offer_used', null, null, v_now);
+  return 'marked';
 end;
 $$;
 
 -- Guarda o hash do CPF no registro da conta e do mês e devolve true se outra
 -- conta (ou uma conta já excluída) usou a oferta com o mesmo hash. Hash fora do
--- formato (64 letras de 0-9 e a-f) recusa com 23514, mesmo sem o registro.
+-- formato (64 letras de 0-9 e a-f) recusa com 23514, mesmo sem o registro. Sem
+-- o registro da conta naquele mês recusa com P0002 (nada gravado). A trava pelo
+-- hash faz a segunda de duas chamadas ao mesmo tempo esperar a primeira e vê-la.
 create or replace function public.offer_record_cpf(p_user_id uuid, p_month text, p_cpf_hash text)
 returns boolean
 language plpgsql
@@ -267,6 +291,8 @@ volatile
 security definer
 set search_path = public, pg_temp
 as $$
+declare
+  v_n integer;
 begin
   if p_user_id is null then
     raise exception 'oferta sem conta' using errcode = '22023';
@@ -275,9 +301,15 @@ begin
     raise exception 'hash do CPF fora do formato (64 letras de 0-9 e a-f)' using errcode = '23514';
   end if;
 
+  perform pg_advisory_xact_lock(hashtextextended(p_cpf_hash, 0));
+
   update public.first_month_offers
      set cpf_hash = p_cpf_hash
    where user_id = p_user_id and month = p_month;
+  get diagnostics v_n = row_count;
+  if v_n = 0 then
+    raise exception 'sem registro da oferta dessa conta nesse mes' using errcode = 'P0002';
+  end if;
 
   return exists (
     select 1
@@ -339,9 +371,14 @@ begin
     'first_month_offers:first_month_offers_trigger_kind_check:''repertoire''',
     'first_month_offers:first_month_offers_trigger_kind_check:''download''',
     'first_month_offers:first_month_offers_cpf_hash_check:[0-9a-f]{64}',
-    'billing_pending_actions:billing_pending_actions_action_check:''restore_full_price''',
+    'billing_pending_actions:billing_pending_actions_action_check:''delete_subscription''',
+    'billing_pending_actions:billing_pending_actions_action_check:''inactivate_subscription''',
+    'billing_pending_actions:billing_pending_actions_action_check:''delete_future_payments''',
+    'billing_pending_actions:billing_pending_actions_action_check:''refund_payment''',
     'billing_pending_actions:billing_pending_actions_action_check:''admin_review''',
-    'billing_pending_actions:billing_pending_actions_action_check:''delete_future_payments'''
+    'billing_pending_actions:billing_pending_actions_action_check:''restore_full_price''',
+    'pending_checkouts:pending_checkouts_offer_check:offer_value > (0)::numeric',
+    'pending_checkouts:pending_checkouts_offer_check:[0-9]{4}-[0-9]{2}'
   ]
   loop
     if not exists (
@@ -370,8 +407,17 @@ begin
   ) then
     raise exception 'Indice unico first_month_offers_user_month_uidx faltando';
   end if;
+  if to_regclass('public.first_month_offers_cpf_hash_idx') is null then
+    raise exception 'Indice first_month_offers_cpf_hash_idx faltando';
+  end if;
   if not (select relrowsecurity from pg_class where oid = 'public.first_month_offers'::regclass) then
     raise exception 'RLS desligada em first_month_offers';
+  end if;
+  if has_table_privilege('anon', 'public.first_month_offers', 'select, insert, update, delete, truncate, references, trigger')
+     or has_table_privilege('authenticated', 'public.first_month_offers', 'select, insert, update, delete, truncate, references, trigger')
+     or has_sequence_privilege('anon', 'public.first_month_offers_id_seq', 'usage, select, update')
+     or has_sequence_privilege('authenticated', 'public.first_month_offers_id_seq', 'usage, select, update') then
+    raise exception 'first_month_offers ou a sequencia dela com privilegio pra anon ou authenticated';
   end if;
 
   foreach c in array array[
@@ -393,6 +439,9 @@ begin
        or has_function_privilege('anon', to_regprocedure(c), 'execute') then
       raise exception '% executavel fora do backend', c;
     end if;
+    if not has_function_privilege('service_role', to_regprocedure(c), 'execute') then
+      raise exception '% sem execute pro service_role', c;
+    end if;
   end loop;
 end;
 $$;
@@ -411,6 +460,10 @@ select conname, pg_get_constraintdef(oid) as regra
   from pg_constraint
  where conrelid = 'public.first_month_offers'::regclass and contype = 'c'
  order by conname;
+-- Espera 1 linha: o CHECK dos dois juntos, mês AAAA-MM e valor maior que zero.
+select conname, pg_get_constraintdef(oid) as regra
+  from pg_constraint
+ where conrelid = 'public.pending_checkouts'::regclass and contype = 'c' and conname = 'pending_checkouts_offer_check';
 -- Espera 2 linhas: offer_month (text) e offer_value (numeric 12, 2).
 select column_name, data_type, numeric_precision, numeric_scale
   from information_schema.columns
