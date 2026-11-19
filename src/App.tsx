@@ -42,7 +42,7 @@ import type { StageShellActions } from './components/stage/StageShell'
 import type { PadPanelProps } from './components/stage/PadPanel'
 import { RepertoirePanel } from './components/stage/RepertoirePanel'
 import { useStageViewport } from './components/stage/useStageViewport'
-import { computePeaks } from './components/stage/wavePeaks'
+import { useMixPeaks } from './components/stage/useMixPeaks'
 import { buildStageView, liveArmedOf, splitSongName, stageGatesFor } from './components/stage/buildStageView'
 import { addSectionAt, nudgeSection as nudgeSectionMarker, removeSection as removeSectionMarker } from './lib/sectionEdit'
 import { startAction } from './lib/sectionArm'
@@ -86,7 +86,7 @@ import { LyricsEditor } from './components/LyricsEditor'
 import { useNetworkStatus } from './hooks/useNetworkStatus'
 import { useLiveSync } from './hooks/useLiveSync'
 import { buildChannelLabels, FAMILY_COLOR, type ChannelLabel } from './lib/channelNames'
-import { channelFaderFill, channelGain, findClickChannel, isSilencedBySolo, pickWaveformChannel } from './lib/channelRoles'
+import { channelFaderFill, channelGain, findClickChannel, isSilencedBySolo, pickWaveformChannel, waveformMixChannels } from './lib/channelRoles'
 import { ChannelEditPanel } from './components/ChannelEditPanel'
 import { ChannelTrashButton } from './components/ChannelTrashButton'
 import { useTwoTapConfirm } from './hooks/useTwoTapConfirm'
@@ -499,8 +499,14 @@ export default function App() {
     () => new Map(buildChannelLabels(channels).map((l) => [l.id, l])),
     [channels],
   )
-  // Onda do SectionBar: primeiro instrumento harmônico, não a bateria. Só recalcula quando os canais mudam.
+  // Onda do SectionBar (palco antigo): primeiro instrumento harmônico, não a bateria. Só recalcula quando os canais mudam.
   const sectionWaveBuffer = useMemo(() => (pickWaveformChannel(channels) ?? channels[0])?.buffer || null, [channels])
+  // Onda grande do palco novo: a música inteira, todos os canais Normal (Ruling ONDA-MIX). A lista é
+  // nova a cada fader mexido; o useMixPeaks só recomeça a conta quando os canais mudam de verdade.
+  const stageWaveBuffers = useMemo(
+    () => (useNewStage ? waveformMixChannels(channels).flatMap((ch) => (ch.buffer ? [ch.buffer] : [])) : null),
+    [useNewStage, channels],
+  )
 
   // EDITAR CANAIS: lixeira com dois toques (o primeiro arma, o segundo em até 3 s apaga).
   // Trocar de música desarma (resetKey é a música ativa).
@@ -727,11 +733,10 @@ export default function App() {
     masterLevels: () => getOutputLevels(),
   }), [heardNow, heardPosition, getOutputLevels])
 
-  // Onda grande: picos do canal da onda (pickWaveformChannel), uma vez por música.
-  const stagePeaks = useMemo(
-    () => (useNewStage && sectionWaveBuffer ? computePeaks(sectionWaveBuffer.getChannelData(0), STAGE_WAVE_BUCKETS) : null),
-    [useNewStage, sectionWaveBuffer],
-  )
+  // Onda grande: o maior pico entre todos os canais Normal, uma vez por música, aos pedaços que cedem a
+  // vez à tela (nenhuma tarefa longa, a música pode trocar sozinha tocando); vazia até ficar pronta e
+  // cancelada se a música trocar antes (Ruling ONDA-MIX).
+  const stagePeaks = useMixPeaks(stageWaveBuffers, STAGE_WAVE_BUCKETS)
 
   // Tom da música agora (índice de 0 a 11) pro "TOM" da grade de pads; nulo sem tom original.
   const stageOriginalKey = keyToSemitone(activeSong?.originalKey ?? null)

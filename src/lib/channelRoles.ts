@@ -82,18 +82,26 @@ export function findClickChannel<T extends ChannelIdentity>(channels: readonly T
 }
 
 // Canal de referência pra detecção de tom (e pro tempo, quando não há bateria nem
-// baixo). A onda do SectionBar usa pickWaveformChannel.
+// baixo). A onda do SectionBar (palco antigo) usa pickWaveformChannel.
 export function pickMainChannel<T extends ChannelIdentity>(channels: readonly T[]): T | undefined {
   return channels.find((ch) => resolveChannelRole(ch) === 'normal')
 }
 
-// Onda do SectionBar: instrumento harmônico marca melhor as seções que a bateria (cheia
-// de picos), que a ordem padrão põe como primeiro Normal. Primeiro Normal que não seja
-// bateria nem percussão; senão o primeiro Normal. Tom e tempo seguem com pickMainChannel.
+// Onda do SectionBar (palco antigo): instrumento harmônico marca melhor as seções que a
+// bateria (cheia de picos), que a ordem padrão põe como primeiro Normal. Primeiro Normal que
+// não seja bateria nem percussão; senão o primeiro Normal. Tom e tempo seguem com
+// pickMainChannel. A onda grande do palco novo não usa mais um canal só: waveformMixChannels.
 const PERCUSSIVE_FAMILIES: ReadonlySet<ChannelFamily> = new Set(['bateria', 'percussao'])
 export function pickWaveformChannel<T extends ChannelIdentity>(channels: readonly T[]): T | undefined {
   return channels.find((ch) => resolveChannelRole(ch) === 'normal' && !PERCUSSIVE_FAMILIES.has(channelFamily(ch)))
     ?? pickMainChannel(channels)
+}
+
+// Onda grande do palco novo (Ruling ONDA-MIX, dono 2026-11-19): a música inteira, então todos
+// os canais Normal, com bateria e percussão (um canal só, como o Baixo que entra em 1:18,
+// deixava o começo da música sem onda). Click e Guia ficam de fora; vale o papel manual.
+export function waveformMixChannels<T extends ChannelIdentity>(channels: readonly T[]): T[] {
+  return channels.filter((ch) => resolveChannelRole(ch) === 'normal')
 }
 
 // Fonte do tempo: bateria, depois baixo, depois o primeiro normal, depois o primeiro.
