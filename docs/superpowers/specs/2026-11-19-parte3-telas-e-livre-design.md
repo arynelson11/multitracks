@@ -105,7 +105,7 @@ O sucesso se mede no admin, e o "antes" tem de existir antes de o Livre novo ir 
 
 ## 11. Restrições
 
-- Cada parte: TDD onde houver comportamento, suíte, `tsc -b`, build do desktop, verify-layout (e verify-pitch se tocar o motor), FATOS e DESIGN_SYSTEM atualizados no mesmo passo, português do Brasil, nenhum travessão "—" em texto, vocabulário "multitracks" e "separação de faixas".
+- Cada parte: TDD onde houver comportamento, suíte, `tsc -b`, build do desktop, verify-layout (e verify-pitch se tocar o motor), FATOS e DESIGN_SYSTEM atualizados no mesmo passo, português do Brasil, nenhum travessão (o traço longo, U+2014) em texto, vocabulário "multitracks" e "separação de faixas".
 - No máximo 12 funções em `api/` (Hobby da Vercel): nada de arquivo novo na raiz de `api/`; reaproveitar `checkout.ts`, `separate-audio.ts` e o roteador do admin.
 - Publicação de cada parte pelo @devops (web + Mac + Windows juntos), depois do portão; o dono é avisado a cada uma. SQL novo na produção (registro da oferta, mudança de cota) só com o OK do dono.
 - O palco antigo continua existindo como reserva (Configurações > Geral > Palco > Antigo) e recebe as regras do Livre também (mesmos limites), sem restyle.
