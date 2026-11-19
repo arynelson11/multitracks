@@ -2,7 +2,7 @@
 
 > **Versão:** 1.0
 > **Data:** 2026-05-20
-> **Atualizado:** 2026-11-18 (seções 1.7 e 2.7: palco novo da Parte 2, publicado na v1.4.19 atrás da chave que nascia em Antigo; as correções da revisão macro e a chave nascendo em Novo saem na v1.4.20, NÃO PUBLICADA ainda; seções 1.7 e 2.6: linguagem nova da Parte 1, publicada na v1.4.15)
+> **Atualizado:** 2026-11-19 (seções 1.7 e 2.7: palco novo da Parte 2, publicado na v1.4.19 atrás da chave que nascia em Antigo; as correções da revisão macro e a chave nascendo em Novo saíram na v1.4.20, publicada em 2026-11-19; seções 1.7 e 2.6: linguagem nova da Parte 1, publicada na v1.4.15)
 > **Pareado com:** `PLAYBACK_STUDIO_BRAND_BOOK.md` (estratégia + briefing pros designers)
 > **Este documento:** referência operacional pareando código existente com vocabulário atomic design (Brad Frost). Lê este se você vai TOCAR o código.
 
@@ -376,7 +376,7 @@ Junta as classes verdadeiras com espaço. Não resolve conflito entre utilidades
 
 ### 2.7 Palco novo (`src/components/stage/`)
 
-> Parte 2 do palco (2026-11-18, publicada na v1.4.19 atrás da chave CONFIG > Geral > Palco, que nascia em Antigo). Na v1.4.20 (NÃO PUBLICADA ainda) a chave nasce em Novo e entram as correções da revisão macro marcadas "v1.4.20" abaixo. Fonte do visual: mockup v5 (`.superpowers/brainstorm/14859-1794743390/content/palco-desktop-v5.html`). Fatos de produto na entrada de 2026-11-18 do `PLAYBACK_STUDIO_FATOS.md`. Usa só tokens `ps-*` (seção 1.7) e as peças de `src/components/ui/` (seção 2.6).
+> Parte 2 do palco (2026-11-18, publicada na v1.4.19 atrás da chave CONFIG > Geral > Palco, que nascia em Antigo). Na v1.4.20 (publicada em 2026-11-19) a chave nasce em Novo e entram as correções da revisão macro marcadas "v1.4.20" abaixo. Fonte do visual: mockup v5 (`.superpowers/brainstorm/14859-1794743390/content/palco-desktop-v5.html`). Fatos de produto na entrada de 2026-11-18 do `PLAYBACK_STUDIO_FATOS.md`. Usa só tokens `ps-*` (seção 1.7) e as peças de `src/components/ui/` (seção 2.6).
 
 **Quando aparece:** chave em Novo e janela com pelo menos 1024 x 740 px (`isWideStage` em `stageKeys.ts`); senão, o palco antigo inteiro. A troca só vale com a música parada. Na v1.4.20 a chave nasce em Novo: `stageVersionChosen` marca quem trocou a chave, e 'antigo' sem a marca (o padrão que a v1.4.19 gravava) abre no Novo. Tocando, a trava pode deixar o palco novo numa janela abaixo dos 1024 px (iPad girado, janela estreitada): a casca tem no mínimo 1024 px e rola de lado (`data-stage-hscroll`, v1.4.20), sem cortar nada, até a música parar.
 
