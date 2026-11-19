@@ -21,7 +21,8 @@ const TOKEN = 'token-de-usuario-comum'
 const ADMIN = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 const ADMIN_TOKEN = 'token-de-admin'
 
-// As 20 ações de /api/admin-stats?action=, com o método de cada uma (seção A).
+// As 21 ações de /api/admin-stats?action=, com o método de cada uma (seção A;
+// funnel entrou na Parte 3, T2).
 const ACTIONS: Record<string, 'GET' | 'POST'> = {
   review: 'GET',
   'payment-link': 'GET',
@@ -43,6 +44,7 @@ const ACTIONS: Record<string, 'GET' | 'POST'> = {
   'ai-costs-sweep': 'POST',
   subscribers: 'GET',
   subscriber: 'GET',
+  funnel: 'GET',
 }
 
 let db: FakeDb
@@ -95,14 +97,14 @@ afterEach(() => {
 })
 
 describe('registro das ações do admin', () => {
-  it('o registro tem exatamente as 20 ações do contrato, cada uma com o método dela', () => {
+  it('o registro tem exatamente as 21 ações do contrato, cada uma com o método dela', () => {
     expect([...names].sort()).toEqual(Object.keys(ACTIONS).sort())
-    expect(names).toHaveLength(20)
+    expect(names).toHaveLength(21)
     for (const name of names) expect(ADMIN_HANDLERS[name].method, name).toBe(ACTIONS[name])
   })
 
   it('todas as ações registradas respondem 403 pra usuário comum', async () => {
-    expect(names).toHaveLength(20)
+    expect(names).toHaveLength(21)
     const runs = names.map((name) => vi.spyOn(ADMIN_HANDLERS[name], 'run'))
     // usuário comum, e a conta com o e-mail do dono mas is_admin falso no banco
     for (const email of [OTHER, OWNER]) {
