@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRes, type FakeDb } from './fakeSupabase.js'
-import { USER_A, createBillingDb, subRow } from './billingHarness.js'
+import { USER_A, createBillingDb, createFakeAsaas, payment, subRow } from './billingHarness.js'
+import { handleAsaasEvent } from '../_lib/billing.js'
 
 // Criar checkout: recusa (409) quando já existe assinatura ativa do mesmo
 // plano (duas abas, app antigo) e nunca devolve detalhe do Asaas ao navegador.
@@ -75,6 +76,7 @@ describe('checkout: troca confirmada na tela (I7)', () => {
 
 describe('checkout: erro do Asaas', () => {
   it('não devolve detalhe do Asaas ao navegador', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     post.mockRejectedValue(Object.assign(new Error('Request failed'), { response: { data: { errors: [{ code: 'invalid_x', description: 'detalhe interno' }] } } }))
     const res = await create('pro_mensal')
     expect(res.statusCode).toBe(502)
@@ -92,6 +94,8 @@ describe('checkout com a oferta do primeiro mês', () => {
   const ACTIVE = { status: 'active', expiresAt: '2026-11-21T15:00:00.000Z', month: '2026-11' }
   const ENDED = 'A oferta do primeiro mês terminou. O preço agora é o cheio.'
   const FIRST_ONLY = 'A oferta do primeiro mês vale só na primeira assinatura da conta.'
+  const DOWN = 'Não deu para abrir o pagamento agora. Tente de novo em alguns minutos.'
+  const TRAVESSAO = String.fromCharCode(0x2014)
   const item = () => post.mock.calls[0][1].items[0] as { value: number; name: string; description: string }
 
   beforeEach(() => {
@@ -105,8 +109,13 @@ describe('checkout com a oferta do primeiro mês', () => {
     expect(res.statusCode).toBe(200)
     expect(res.body).toEqual({ url: 'https://asaas.test/c/chk_9' })
     expect(post).toHaveBeenCalledTimes(1)
-    expect(item().value).toBe(24.9)
-    expect(item().name).toBe('Playback Studio Pro (mensal)')
+    expect(item()).toEqual({
+      name: 'Playback Studio Pro (mensal), 1º mês R$ 24,90',
+      description: 'Primeiro mês por R$ 24,90. A partir do segundo mês, R$ 49,90 por mês. Cancele quando quiser.',
+      quantity: 1,
+      value: 24.9,
+    })
+    expect(JSON.stringify(item())).not.toContain(TRAVESSAO)
     expect(post.mock.calls[0][1].subscription).toEqual({ cycle: 'MONTHLY', nextDueDate: '2026-11-19' })
     expect(db.tables.pending_checkouts[0]).toMatchObject({ id: 'chk_9', user_id: USER_A, plan_key: 'essencial_mensal', offer_value: 24.9, offer_month: '2026-11' })
     // só lê a janela (com a hora do servidor), nunca abre
@@ -116,7 +125,13 @@ describe('checkout com a oferta do primeiro mês', () => {
   it('oferta no Studio Mensal: 59.9', async () => {
     const res = await create('pro_mensal', { offer: true })
     expect(res.statusCode).toBe(200)
-    expect(item().value).toBe(59.9)
+    expect(item()).toEqual({
+      name: 'Playback Studio Studio (mensal), 1º mês R$ 59,90',
+      description: 'Primeiro mês por R$ 59,90. A partir do segundo mês, R$ 119,90 por mês. Cancele quando quiser.',
+      quantity: 1,
+      value: 59.9,
+    })
+    expect(JSON.stringify(item())).not.toContain(TRAVESSAO)
     expect(post.mock.calls[0][1].subscription.cycle).toBe('MONTHLY')
     expect(db.tables.pending_checkouts[0]).toMatchObject({ plan_key: 'pro_mensal', offer_value: 59.9, offer_month: '2026-11' })
   })
@@ -158,18 +173,30 @@ describe('checkout com a oferta do primeiro mês', () => {
     expect(post).not.toHaveBeenCalled()
   })
 
-  it('active com o relógio já vencido ou sem o mês: 409, nunca cobra', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  it('active com o relógio já vencido (ou vencendo agora): 409, nunca cobra', async () => {
     for (const answer of [
       { status: 'active', expiresAt: '2026-11-19T14:59:59.000Z', month: '2026-11' },
       { status: 'active', expiresAt: OFFER_NOW, month: '2026-11' },
-      { status: 'active', expiresAt: '2026-11-21T15:00:00.000Z', month: null },
-      { status: 'active', expiresAt: 'amanhã', month: '2026-11' },
     ]) {
       db.setRpc('offer_current', () => answer)
       const res = await create('essencial_mensal', { offer: true })
       expect(res.statusCode, JSON.stringify(answer)).toBe(409)
-      expect((res.body as { offerEnded: boolean }).offerEnded).toBe(true)
+      expect(res.body).toEqual({ error: ENDED, offerEnded: true })
+    }
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  it('resposta do registro fora do formato (active sem o mês ou com data estragada): 500, nunca cobra', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    for (const answer of [
+      { status: 'active', expiresAt: '2026-11-21T15:00:00.000Z', month: null },
+      { status: 'active', expiresAt: 'amanhã', month: '2026-11' },
+      { status: 'talvez' },
+    ]) {
+      db.setRpc('offer_current', () => answer)
+      const res = await create('essencial_mensal', { offer: true })
+      expect(res.statusCode, JSON.stringify(answer)).toBe(500)
+      expect(res.body).toEqual({ error: DOWN })
     }
     expect(post).not.toHaveBeenCalled()
   })
@@ -198,16 +225,29 @@ describe('checkout com a oferta do primeiro mês', () => {
     expect(item().value).toBe(24.9)
   })
 
-  it('registro da oferta fora do ar (SQL ainda não rodou ou erro do banco): 409 com offerEnded, nunca o preço cheio', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  it('registro da oferta fora do ar (SQL ainda não rodou ou erro do banco): 500, nunca o preço cheio nem a frase de oferta terminada', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     db.setRpc('offer_current', () => { throw new Error('function public.offer_current does not exist') })
     const res = await create('essencial_mensal', { offer: true })
-    expect(res.statusCode).toBe(409)
-    expect(res.body).toEqual({ error: ENDED, offerEnded: true })
+    expect(res.statusCode).toBe(500)
+    expect(res.body).toEqual({ error: DOWN })
     expect(JSON.stringify(res.body)).not.toContain('does not exist')
     expect(post).not.toHaveBeenCalled()
     expect(db.tables.pending_checkouts).toEqual([])
-    expect(warn).toHaveBeenCalled()
+    expect(error).toHaveBeenCalled()
+  })
+
+  it('a contagem das assinaturas é lida uma vez só: uma falha numa segunda leitura não vira o 409 de oferta terminada', async () => {
+    const from = db.from.bind(db)
+    let paymentsReads = 0
+    db.from = (table: string) => {
+      if (table === 'payments' && ++paymentsReads > 1) db.failTable('payments', { message: 'connection reset', code: '08006' })
+      return from(table)
+    }
+    const res = await create('essencial_mensal', { offer: true })
+    expect(res.statusCode).toBe(200)
+    expect(item().value).toBe(24.9)
+    expect(paymentsReads).toBe(1)
   })
 
   it('erro ao ler as assinaturas da conta: 500 sem abrir pagamento', async () => {
@@ -235,12 +275,67 @@ describe('checkout com a oferta do primeiro mês', () => {
       db.tables.pending_checkouts = []
       const res = await create('essencial_mensal', extra)
       expect(res.statusCode, JSON.stringify(extra)).toBe(200)
-      expect(item().value).toBe(49.9)
+      expect(item()).toEqual({ name: 'Playback Studio Pro (mensal)', description: 'Playback Studio Pro (mensal)', quantity: 1, value: 49.9 })
       const row = db.tables.pending_checkouts[0]
       expect(Object.keys(row)).not.toContain('offer_month')
       expect(Object.keys(row)).not.toContain('offer_value')
     }
     expect(db.rpcCalls).toEqual([])
+  })
+
+  // Duas abas: o checkout aberto e ainda não pago não conta como assinatura (barrar o segundo
+  // deixaria sem pagar quem fecha a página do Asaas e clica de novo). Se os dois forem pagos,
+  // a regra da compra repetida (enforceSinglePaid) deixa uma assinatura só, para a outra no
+  // Asaas (sem renovação: nada de segundo mês com desconto) e manda o estorno pro admin; e a
+  // conta perde o direito à oferta. (A oferta marcada como usada uma vez só é do webhook, T13.)
+  it('duas abas: dois checkouts com oferta abrem; pagos os dois, fica um e o outro não ganha um segundo mês com desconto', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    post
+      .mockResolvedValueOnce({ data: { id: 'chk_a', link: 'https://asaas.test/c/chk_a' } })
+      .mockResolvedValueOnce({ data: { id: 'chk_b', link: 'https://asaas.test/c/chk_b' } })
+    expect((await create('essencial_mensal', { offer: true })).statusCode).toBe(200)
+    vi.setSystemTime(new Date('2026-11-19T15:00:30.000Z'))
+    expect((await create('essencial_mensal', { offer: true })).statusCode).toBe(200)
+    expect(post.mock.calls.map((c) => c[1].items[0].value)).toEqual([24.9, 24.9])
+    expect(db.tables.pending_checkouts.map((r) => [r.id, r.offer_value])).toEqual([['chk_a', 24.9], ['chk_b', 24.9]])
+
+    // os dois pagos, a da aba A primeiro (12:10 e 12:12 de Brasília)
+    const charges = (x: string) => [payment({ id: `pay_${x}1`, subscription: `sub_${x}`, checkoutSession: `chk_${x}`, value: 24.9, dueDate: '2026-11-19', originalDueDate: '2026-11-19', confirmedDate: '2026-11-19', status: 'CONFIRMED' })]
+    const asaas = createFakeAsaas({
+      get: (path, params) => {
+        const q = (params ?? {}) as Record<string, unknown>
+        const sub = /^\/subscriptions\/sub_([ab])$/.exec(path)
+        if (sub) return { id: `sub_${sub[1]}`, checkoutSession: `chk_${sub[1]}`, status: 'ACTIVE', value: 24.9 }
+        if (path === '/payments' && typeof q.checkoutSession === 'string') return { data: charges(String(q.checkoutSession).slice(-1)) }
+        if (path === '/payments' && typeof q.subscription === 'string') return { data: charges(String(q.subscription).slice(-1)), hasMore: false }
+        return { data: [], hasMore: false }
+      },
+    })
+    vi.setSystemTime(new Date('2026-11-19T15:30:00.000Z'))
+    const deps = { db: db as never, asaas }
+    for (const x of ['a', 'b']) {
+      const minute = x === 'a' ? '10' : '12'
+      await handleAsaasEvent(deps, { event: 'CHECKOUT_PAID', dateCreated: `2026-11-19 12:${minute}:00`, checkout: { id: `chk_${x}`, customer: 'cus_1' } })
+      await handleAsaasEvent(deps, { event: 'PAYMENT_CONFIRMED', dateCreated: `2026-11-19 12:${minute}:01`, payment: charges(x)[0] })
+    }
+
+    const subs = db.tables.billing_subscriptions.filter((r) => r.kind === 'asaas')
+    expect(subs.filter((r) => r.status === 'active').map((r) => r.id)).toEqual(['chk_a'])
+    const other = subs.find((r) => r.id === 'chk_b')!
+    expect(other).toMatchObject({ status: 'canceled', cancel_source: 'duplicate', needs_admin_review: true })
+    expect(String(other.admin_note)).toContain('compra duplicada: estornar a mao (ficou a chk_a)')
+    // a renovação da aba B para no Asaas (já parada ou com a pendência de parar aberta)
+    const stopB = other.asaas_stopped_at != null
+      || db.tables.billing_pending_actions.some((a) => a.subscription_ref === 'chk_b' && a.action === 'inactivate_subscription' && a.status === 'pending')
+    expect(stopB).toBe(true)
+    // e a conta não tem mais direito: um terceiro checkout com oferta (agora do Studio, pra não
+    // cair no "já tem este plano") é recusado
+    post.mockClear()
+    const third = await create('pro_mensal', { offer: true })
+    expect(third.statusCode).toBe(409)
+    expect(third.body).toEqual({ error: FIRST_ONLY, offerEnded: true })
+    expect(post).not.toHaveBeenCalled()
   })
 
   it('quem já tem o mesmo plano ativo continua recebendo o 409 de hoje, sem ler a oferta', async () => {

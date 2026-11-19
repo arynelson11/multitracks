@@ -7,8 +7,8 @@ import { PLAN_PRICING, isPlanKey } from './_lib/pricing.js';
 import { asaasBaseUrl, asaasFromEnv } from './_lib/asaas.js';
 import { BillingError, accountSubscriptionCount, brtToday, cancelSubscriptionForUser, previewCancellation, runPendingActions } from './_lib/billing.js';
 import {
-  OFFER_PRICING, isAdKind, isAdPlacement, isOfferPlan, isOfferTrigger, readOffer, recordAdEvent,
-  type OfferPlanKey, type OfferStatus,
+  OFFER_PRICING, isAdKind, isAdPlacement, isOfferPlan, isOfferTrigger, offerCheckoutItem, readOffer, readOfferWindow,
+  recordAdEvent, type OfferAnswer, type OfferPlanKey, type OfferStatus,
 } from './_lib/offer.js';
 
 // Ações de cobrança do usuário logado:
@@ -96,11 +96,11 @@ export default async function handler(req: any, res: any) {
     // Com a oferta, o servidor confere tudo antes de abrir o pagamento. Sem direito ou sem
     // janela: 409 com offerEnded e nada no Asaas (o app mostra o preço cheio e a pessoa
     // decide). Nunca cobra o preço cheio por baixo.
-    let offer: { month: string; value: number } | null = null;
+    let offer: { month: string; item: ReturnType<typeof offerCheckoutItem> } | null = null;
     if (offerPlan) {
       const checked = await checkOfferForCheckout(db, userId, new Date());
       if (checked.kind === 'error') return res.status(checked.status).json(checked.body);
-      offer = { month: checked.month, value: OFFER_PRICING[offerPlan] };
+      offer = { month: checked.month, item: offerCheckoutItem(offerPlan) };
     }
 
     const apiKey = process.env.ASAAS_API_KEY;
@@ -136,8 +136,11 @@ export default async function handler(req: any, res: any) {
         expiredUrl: `${baseUrl}/?payment=expired`,
       },
       // Com a oferta, o item (e a assinatura que o Asaas cria dele) sai com o valor do primeiro
-      // mês; depois do primeiro pagamento o servidor troca a assinatura pro preço cheio.
-      items: [{ name: plan.description, description: plan.description, quantity: 1, value: offer ? offer.value : plan.value }],
+      // mês e o texto diz o preço de depois; depois do primeiro pagamento o servidor troca a
+      // assinatura pro preço cheio.
+      items: [offer
+        ? { ...offer.item, quantity: 1 }
+        : { name: plan.description, description: plan.description, quantity: 1, value: plan.value }],
       subscription: { cycle: plan.cycle, nextDueDate: today },
       // Sem customerData: o checkout hospedado do Asaas coleta nome, CPF,
       // telefone e endereço do pagador na própria página (mais simples e seguro).
@@ -161,7 +164,7 @@ export default async function handler(req: any, res: any) {
         const { error: linkErr } = await db.from('pending_checkouts').insert({
           id: checkoutId, user_id: userId, plan_key: planKey, switch_confirmed: body.confirmedSwitch === true,
           created_at: new Date().toISOString(), // decide entre planos diferentes pagos juntos
-          ...(offer ? { offer_month: offer.month, offer_value: offer.value } : {}),
+          ...(offer ? { offer_month: offer.month, offer_value: offer.item.value } : {}),
         });
         if (linkErr) {
           console.error('[checkout] failed to save pending_checkout:', linkErr.message);
@@ -193,30 +196,31 @@ type OfferCheck =
   | { kind: 'error'; status: number; body: { error: string; offerEnded?: true } };
 
 // A conta tem direito ao desconto agora? Primeira assinatura da conta (mesma regra do
-// arrependimento) e janela aberta no registro, lida sem abrir janela nova. Erro ao ler as
-// assinaturas: 500 (nada mudou, tenta de novo). Erro ou resposta estranha do registro da
-// oferta (inclusive o SQL ainda não rodado): 409 de oferta terminada.
+// arrependimento, lida uma vez) e janela aberta no registro, lida sem abrir janela nova.
+// Falha do banco (assinaturas, registro da oferta, inclusive o SQL ainda não rodado, ou
+// resposta fora do formato): 500, nada no Asaas, a pessoa tenta de novo (nunca a frase falsa
+// de oferta terminada). O 409 de oferta terminada é só quando o registro diz que não há janela.
 async function checkOfferForCheckout(db: SupabaseClient, userId: string, now: Date): Promise<OfferCheck> {
+  const down = { kind: 'error', status: 500, body: { error: MSG_CHECKOUT_DOWN } } as const;
   let count: number;
   try {
     count = await accountSubscriptionCount(db, userId);
   } catch (e) {
     console.error('[checkout] nao deu pra conferir a primeira assinatura:', e instanceof Error ? e.message : 'erro');
-    return { kind: 'error', status: 500, body: { error: MSG_CHECKOUT_DOWN } };
+    return down;
   }
-  const firstOnly = { kind: 'error', status: 409, body: { error: MSG_OFFER_FIRST_ONLY, offerEnded: true } } as const;
-  const ended = { kind: 'error', status: 409, body: { error: MSG_OFFER_ENDED, offerEnded: true } } as const;
-  if (count > 0) return firstOnly;
+  if (count > 0) return { kind: 'error', status: 409, body: { error: MSG_OFFER_FIRST_ONLY, offerEnded: true } };
+  let answer: OfferAnswer;
   try {
-    // readOffer confere as assinaturas de novo (leitura pequena) antes de ler a janela
-    const answer = await readOffer(db, userId, { open: false, now });
-    if (answer.status === 'ineligible') return firstOnly;
-    if (answer.status !== 'active' || !answer.month || !(Date.parse(answer.expiresAt ?? '') > now.getTime())) return ended;
-    return { kind: 'ok', month: answer.month };
+    answer = await readOfferWindow(db, userId, { open: false, now });
   } catch (e) {
-    console.warn('[checkout] oferta nao conferida, checkout recusado (409):', e instanceof Error ? e.message.slice(0, 200) : 'erro');
-    return ended;
+    console.error('[checkout] nao deu pra conferir a oferta:', e instanceof Error ? e.message.slice(0, 200) : 'erro');
+    return down;
   }
+  if (answer.status !== 'active' || !answer.month || !(Date.parse(answer.expiresAt ?? '') > now.getTime())) {
+    return { kind: 'error', status: 409, body: { error: MSG_OFFER_ENDED, offerEnded: true } };
+  }
+  return { kind: 'ok', month: answer.month };
 }
 
 // Estado da oferta de QUEM ESTÁ LOGADO. Com open: true (só a tela de limite), abre a janela

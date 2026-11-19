@@ -6,7 +6,7 @@ import { BLOCKED_MESSAGE } from '../_lib/auth.js'
 import { accountSubscriptionCount } from '../_lib/billing.js'
 import { PLAN_PRICING } from '../_lib/pricing.js'
 import {
-  AD_KINDS, AD_PLACEMENTS, OFFER_PRICING, OFFER_TRIGGERS, OFFER_WINDOW_HOURS, isOfferPlan,
+  AD_KINDS, AD_PLACEMENTS, OFFER_PRICING, OFFER_TRIGGERS, OFFER_WINDOW_HOURS, isOfferPlan, offerCheckoutItem,
 } from '../_lib/offer.js'
 
 // Oferta do primeiro mês e eventos de anúncio por ?action= no api/checkout.ts (Parte 3, T12).
@@ -326,6 +326,26 @@ describe('preços e listas da oferta', () => {
       const full = PLAN_PRICING[key as keyof typeof PLAN_PRICING]
       expect(full.cycle, key).toBe('MONTHLY')
       expect(value, key).toBeLessThan(full.value)
+    }
+  })
+
+  it('offerCheckoutItem diz o preço do primeiro mês e o de depois, montados dos preços, sem travessão', () => {
+    const TRAVESSAO = String.fromCharCode(0x2014)
+    expect(offerCheckoutItem('essencial_mensal')).toEqual({
+      name: 'Playback Studio Pro (mensal), 1º mês R$ 24,90',
+      description: 'Primeiro mês por R$ 24,90. A partir do segundo mês, R$ 49,90 por mês. Cancele quando quiser.',
+      value: 24.9,
+    })
+    expect(offerCheckoutItem('pro_mensal')).toEqual({
+      name: 'Playback Studio Studio (mensal), 1º mês R$ 59,90',
+      description: 'Primeiro mês por R$ 59,90. A partir do segundo mês, R$ 119,90 por mês. Cancele quando quiser.',
+      value: 59.9,
+    })
+    for (const k of ['essencial_mensal', 'pro_mensal'] as const) {
+      const it = offerCheckoutItem(k)
+      expect(it.value).toBe(OFFER_PRICING[k])
+      expect(it.name.startsWith(PLAN_PRICING[k].description)).toBe(true)
+      expect(JSON.stringify(it)).not.toContain(TRAVESSAO)
     }
   })
 

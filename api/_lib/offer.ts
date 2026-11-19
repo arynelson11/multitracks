@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { accountSubscriptionCount } from './billing.js'
+import { PLAN_PRICING } from './pricing.js'
 
 // Oferta do primeiro mês e eventos de anúncio (Parte 3, D7 e D8). O registro da oferta, a
 // janela de 48 horas e os eventos moram no SQL (db/supabase_oferta.sql e
@@ -19,6 +20,26 @@ export type OfferPlanKey = keyof typeof OFFER_PRICING
 
 export function isOfferPlan(k: unknown): k is OfferPlanKey {
   return typeof k === 'string' && Object.hasOwn(OFFER_PRICING, k)
+}
+
+// 'R$ 24,90' (vírgula nos centavos, como o formatReais do app). Só valores de plano mensal,
+// todos abaixo de mil.
+function reais(v: number): string {
+  return `R$ ${v.toFixed(2).replace('.', ',')}`
+}
+
+// O item do checkout do Asaas com a oferta: a página de pagamento é a última tela antes do
+// cartão e precisa dizer o preço de depois do primeiro mês. Tudo sai de OFFER_PRICING e
+// PLAN_PRICING. Depois do primeiro pagamento, a troca pro preço cheio devolve a descrição
+// normal à assinatura.
+export function offerCheckoutItem(planKey: OfferPlanKey): { name: string; description: string; value: number } {
+  const plan = PLAN_PRICING[planKey]
+  const value = OFFER_PRICING[planKey]
+  return {
+    name: `${plan.description}, 1º mês ${reais(value)}`,
+    description: `Primeiro mês por ${reais(value)}. A partir do segundo mês, ${reais(plan.value)} por mês. Cancele quando quiser.`,
+    value,
+  }
 }
 
 // Os limites que abrem a janela. A mesma lista vive no app (LIMIT_KINDS em
@@ -62,15 +83,25 @@ function parseAnswer(data: unknown): OfferAnswer {
 }
 
 // Estado da oferta da conta. Conta que já teve assinatura (accountSubscriptionCount > 0):
-// 'ineligible' sem chamar o registro (nada é gravado). Senão, com `open` abre a janela do mês
-// se ainda não houver (só a tela de limite pede isso, com o limite em `trigger`); sem `open`
-// só lê. Erro de banco ou resposta estranha lança: quem chama decide (sem oferta).
+// 'ineligible' sem chamar o registro (nada é gravado). Senão, o registro (readOfferWindow).
+// Erro de banco ou resposta estranha lança: quem chama decide (sem oferta).
 export async function readOffer(
   db: SupabaseClient,
   userId: string,
   o: { open: boolean; trigger?: string; now: Date },
 ): Promise<OfferAnswer> {
   if ((await accountSubscriptionCount(db, userId)) > 0) return { status: 'ineligible', expiresAt: null, month: null }
+  return readOfferWindow(db, userId, o)
+}
+
+// Só o registro da oferta, pra quem já conferiu que a conta nunca assinou (o checkout lê a
+// contagem uma vez e trata o erro dela à parte). Com `open` abre a janela do mês se ainda não
+// houver (o app só pede isso na tela de limite, com o limite em `trigger`); sem `open` só lê.
+export async function readOfferWindow(
+  db: SupabaseClient,
+  userId: string,
+  o: { open: boolean; trigger?: string; now: Date },
+): Promise<OfferAnswer> {
   const p_now = o.now.toISOString()
   let out: { data: unknown; error: { message: string } | null }
   if (o.open) {
