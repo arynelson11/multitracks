@@ -18,6 +18,7 @@ import { sanitizeTimeSignature } from '../lib/cloudBpm';
 import { barSeconds, gridFromBpm, gridFromClick, gridWarning, keepManualMeter, pulseSeconds, sanitizeGrid, sectionIndexAt, sectionSpans, withMeter } from '../lib/songGrid';
 import { isCompound, type ArmIntent, type GridWarning, type Plays, type SectionSpan, type SongGrid, type StageGates, type StageMode, type TimeSignature, type TransitionView } from '../lib/stageContracts';
 import { sanitizeSemitones } from '../lib/pitchRules';
+import { shouldAutoAdvance } from '../lib/autoAdvance';
 import { getCachedStem, getCachedStemNames, isSongCached } from '../lib/offlineCache';
 import { applyChannelMetaToList, autoPanFor, channelGain, findClickChannel, isPitchExempt, pickMainChannel, pitchChangeAction, wantsFormantCompensation, type ChannelMetaPatch } from '../lib/channelRoles';
 import { arrangeChannels, resolveChannelRole, type ChannelIdentity } from '../lib/channelNames';
@@ -697,7 +698,10 @@ const sameGrid = (a: SongGrid | null | undefined, b: SongGrid | null | undefined
 // `opts` (T27): `autoClick` = o plano pode gerar o click que falta (canUseBpmDetection); sem ele,
 // nunca gera. `sectionGates` e `stageMode` são da T28: sem `sectionGates`, tudo liberado; sem
 // `stageMode`, o palco antigo (o mecanismo da v1.4.16). O App passa os dois (R-25).
-export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; sectionGates?: StageGates; stageMode?: StageMode }) {
+// `autoNext` (Parte 3, T9) = o plano permite o AUTO entre músicas; sem a opção, permite (como até
+// a v1.4.22). Falso, o fim da música no modo 'continue' para como no 'stop' (shouldAutoAdvance).
+export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; sectionGates?: StageGates; stageMode?: StageMode; autoNext?: boolean }) {
+    const autoNext = opts?.autoNext ?? true;
     const DB_KEY_META = userId ? `mt_meta_playlist_${userId}` : 'mt_meta_playlist';
     const DB_KEY_FILES = userId ? `mt_files_${userId}` : 'mt_files';
     // Marca "os pans antigos desta conta já voltaram ao centro" (Ruling T25-legacy).
@@ -2566,11 +2570,10 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         setIsPlaying(false);
         stopAllNodes();
 
-        // Playback Mode logic: 'stop' e 'fade-out' param aqui, sem passar pra próxima.
-        if (playbackMode !== 'continue') return true;
-
-        // playbackMode === 'continue' (default)
-        if (activeSongIndex < playlist.length - 1) {
+        // Modo de fim: 'stop' e 'fade-out' param aqui, sem passar pra próxima. O 'continue' (padrão)
+        // arma a próxima só com uma música depois desta e com o AUTO permitido pelo plano
+        // (`autoNext`); sem ele, para como no 'stop' e nenhum timer nasce.
+        if (shouldAutoAdvance({ mode: playbackMode, activeIndex: activeSongIndex, length: playlist.length, allowed: autoNext })) {
             if (autoNextTimeoutRef.current) clearTimeout(autoNextTimeoutRef.current);
             autoNextTimeoutRef.current = window.setTimeout(() => {
                 executeNextSong();
@@ -2578,7 +2581,8 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         }
         return true;
     };
-    // A versão da renderização mais nova (duração, modo de fim e repertório), pro tique do Worker.
+    // A versão da renderização mais nova (duração, modo de fim, repertório e o autoNext do plano),
+    // pro tique do Worker e pro rAF.
     const songEndRef = useRef<() => boolean>(() => false);
     useLayoutEffect(() => { songEndRef.current = checkSongEnd; });
 
