@@ -11,6 +11,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.22',
+    date: '2026-11-19',
+    title: 'Seu plano continua sem internet',
+    items: [
+      'Quem assina continua com o plano no app de computador mesmo sem internet.',
+      'Vale até o fim do período pago ou até 30 dias sem conectar, o que vier antes.',
+      'Pra renovar esse prazo, é só abrir o app com internet de vez em quando.',
+      'O painel da equipe agora mostra os números de cadastros e assinaturas.',
+    ],
+  },
+  {
     version: '1.4.21',
     date: '2026-11-19',
     title: 'Cores no mixer, agulha e onda no palco novo',
