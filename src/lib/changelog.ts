@@ -11,6 +11,23 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.20',
+    date: '2026-11-19',
+    title: 'Palco novo como padrão e ajustes do palco',
+    items: [
+      'O palco novo agora é o padrão. Quem prefere o de sempre escolhe Antigo em Configurações > Geral > Palco, e a escolha fica guardada.',
+      'Em telas menores que 1024 x 740, o app continua no palco de sempre.',
+      'O click que o app gera sozinho nunca sai no PA. Ele só aparece no palco novo, com as saídas separadas.',
+      'Quem mandava o click pro fone girando o pan agora vai direto pra saída Click e Guia separados.',
+      'Abriu a v1.4.19 usando esse truque do pan? Escolha Click e Guia separados em Configurações > Geral > Saídas de áudio.',
+      'Passar pra próxima com FADE, buscar outro ponto e voltar no LOOP agora sai limpo, sem estouro e sem som sobreposto.',
+      'Com a música tocando, a régua da onda só muda de lugar se você arrastar. E o COMEÇO arma o pulo, com a contagem no click, como uma seção.',
+      'Renomear a música e criar metrônomo infinito agora funcionam no app de computador.',
+      'No palco novo, o TOM também define o tom original da música, como no palco de sempre.',
+      'Marcadores e letra agora são gravados sempre na música certa.',
+    ],
+  },
+  {
     version: '1.4.19',
     date: '2026-11-18',
     title: 'Palco novo como opção e saídas separadas',
