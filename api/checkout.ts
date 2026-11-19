@@ -5,13 +5,20 @@ import { applyCors } from './_lib/cors.js';
 import { BLOCKED_MESSAGE, verifyUser } from './_lib/auth.js';
 import { PLAN_PRICING, isPlanKey } from './_lib/pricing.js';
 import { asaasBaseUrl, asaasFromEnv } from './_lib/asaas.js';
-import { BillingError, brtToday, cancelSubscriptionForUser, previewCancellation, runPendingActions } from './_lib/billing.js';
+import { BillingError, accountSubscriptionCount, brtToday, cancelSubscriptionForUser, previewCancellation, runPendingActions } from './_lib/billing.js';
+import {
+  OFFER_PRICING, isAdKind, isAdPlacement, isOfferPlan, isOfferTrigger, readOffer, recordAdEvent,
+  type OfferPlanKey, type OfferStatus,
+} from './_lib/offer.js';
 
 // Ações de cobrança do usuário logado:
 //   POST /api/checkout                 cria o checkout hospedado do Asaas (padrão)
 //   POST /api/checkout?action=cancel   cancela a assinatura de quem está logado
 //   POST /api/checkout?action=cancel-preview  diz o que o cancelamento faria (sem mudar nada)
 //   POST /api/checkout?action=sync     no login: tenta de novo as pendências do usuário com o Asaas
+//   POST /api/checkout?action=offer    estado da oferta do primeiro mês (com open, a tela de limite abre a janela)
+//   POST /api/checkout?action=track    anúncio da casa visto ou clicado (funil do admin)
+// Criar checkout com offer: true cobra o primeiro mês com desconto, conferido aqui (api/_lib/offer.ts).
 // O cancelamento mora aqui porque a Vercel do plano atual aceita no máximo 12
 // funções em api/ e já são 12. Preços: api/_lib/pricing.ts (fonte única).
 
@@ -43,18 +50,32 @@ export default async function handler(req: any, res: any) {
     if (action === 'cancel') return cancelForUser(userId, res);
     if (action === 'cancel-preview') return previewForUser(userId, res);
     if (action === 'sync') return syncForUser(userId, res);
-    if (action) return res.status(400).json({ error: 'Invalid action' });
 
-    // Conta bloqueada pelo admin não assina; cancelar, prévia e sync seguem acima (D10).
+    // Conta bloqueada pelo admin não assina nem vê oferta; cancelar, prévia e sync seguem acima (D10).
     if (auth.blocked) return res.status(403).json({ error: BLOCKED_MESSAGE });
 
     const body = parseBody(req);
+    if (action === 'offer') return offerForUser(userId, body, res);
+    if (action === 'track') return trackForUser(userId, body, res);
+    if (action) return res.status(400).json({ error: 'Invalid action' });
+
     const planKey = typeof body.planKey === 'string' ? body.planKey : '';
 
     if (!isPlanKey(planKey)) {
       return res.status(400).json({ error: 'Invalid planKey' });
     }
     const plan = PLAN_PRICING[planKey];
+    // Oferta do primeiro mês: só com offer === true. App antigo não manda o campo (preço cheio).
+    if (body.offer != null && typeof body.offer !== 'boolean') {
+      return res.status(400).json({ error: MSG_BAD_REQUEST });
+    }
+    let offerPlan: OfferPlanKey | null = null;
+    if (body.offer === true) {
+      if (!isOfferPlan(planKey)) {
+        return res.status(400).json({ error: 'A oferta do primeiro mês vale só no Pro Mensal e no Studio Mensal.' });
+      }
+      offerPlan = planKey;
+    }
 
     // Compra duplicada (duas abas, app antigo): já tem este plano ativo.
     const db = serviceDb();
@@ -70,6 +91,16 @@ export default async function handler(req: any, res: any) {
       return res.status(409).json({
         error: `Você já tem o ${plan.label} ativo. Não precisa assinar de novo; para mudar, escolha outro plano.`,
       });
+    }
+
+    // Com a oferta, o servidor confere tudo antes de abrir o pagamento. Sem direito ou sem
+    // janela: 409 com offerEnded e nada no Asaas (o app mostra o preço cheio e a pessoa
+    // decide). Nunca cobra o preço cheio por baixo.
+    let offer: { month: string; value: number } | null = null;
+    if (offerPlan) {
+      const checked = await checkOfferForCheckout(db, userId, new Date());
+      if (checked.kind === 'error') return res.status(checked.status).json(checked.body);
+      offer = { month: checked.month, value: OFFER_PRICING[offerPlan] };
     }
 
     const apiKey = process.env.ASAAS_API_KEY;
@@ -104,7 +135,9 @@ export default async function handler(req: any, res: any) {
         cancelUrl: `${baseUrl}/?payment=cancelled`,
         expiredUrl: `${baseUrl}/?payment=expired`,
       },
-      items: [{ name: plan.description, description: plan.description, quantity: 1, value: plan.value }],
+      // Com a oferta, o item (e a assinatura que o Asaas cria dele) sai com o valor do primeiro
+      // mês; depois do primeiro pagamento o servidor troca a assinatura pro preço cheio.
+      items: [{ name: plan.description, description: plan.description, quantity: 1, value: offer ? offer.value : plan.value }],
       subscription: { cycle: plan.cycle, nextDueDate: today },
       // Sem customerData: o checkout hospedado do Asaas coleta nome, CPF,
       // telefone e endereço do pagador na própria página (mais simples e seguro).
@@ -123,9 +156,12 @@ export default async function handler(req: any, res: any) {
         // pro pagamento/assinatura, então guardamos do nosso lado).
         // Sem o vínculo o pagamento não liga ao usuário: não entrega o link.
         // switch_confirmed: a pessoa confirmou "Trocar de plano?" (sem proporcional).
+        // Com a oferta: o mês da janela e o valor cobrado (o webhook marca a oferta como usada
+        // e agenda a volta ao preço cheio). Sem a oferta, as duas colunas nem vão.
         const { error: linkErr } = await db.from('pending_checkouts').insert({
           id: checkoutId, user_id: userId, plan_key: planKey, switch_confirmed: body.confirmedSwitch === true,
           created_at: new Date().toISOString(), // decide entre planos diferentes pagos juntos
+          ...(offer ? { offer_month: offer.month, offer_value: offer.value } : {}),
         });
         if (linkErr) {
           console.error('[checkout] failed to save pending_checkout:', linkErr.message);
@@ -148,6 +184,68 @@ export default async function handler(req: any, res: any) {
 }
 
 const MSG_CHECKOUT_DOWN = 'Não deu para abrir o pagamento agora. Tente de novo em alguns minutos.';
+const MSG_BAD_REQUEST = 'Pedido inválido.';
+const MSG_OFFER_FIRST_ONLY = 'A oferta do primeiro mês vale só na primeira assinatura da conta.';
+const MSG_OFFER_ENDED = 'A oferta do primeiro mês terminou. O preço agora é o cheio.';
+
+type OfferCheck =
+  | { kind: 'ok'; month: string }
+  | { kind: 'error'; status: number; body: { error: string; offerEnded?: true } };
+
+// A conta tem direito ao desconto agora? Primeira assinatura da conta (mesma regra do
+// arrependimento) e janela aberta no registro, lida sem abrir janela nova. Erro ao ler as
+// assinaturas: 500 (nada mudou, tenta de novo). Erro ou resposta estranha do registro da
+// oferta (inclusive o SQL ainda não rodado): 409 de oferta terminada.
+async function checkOfferForCheckout(db: SupabaseClient, userId: string, now: Date): Promise<OfferCheck> {
+  let count: number;
+  try {
+    count = await accountSubscriptionCount(db, userId);
+  } catch (e) {
+    console.error('[checkout] nao deu pra conferir a primeira assinatura:', e instanceof Error ? e.message : 'erro');
+    return { kind: 'error', status: 500, body: { error: MSG_CHECKOUT_DOWN } };
+  }
+  const firstOnly = { kind: 'error', status: 409, body: { error: MSG_OFFER_FIRST_ONLY, offerEnded: true } } as const;
+  const ended = { kind: 'error', status: 409, body: { error: MSG_OFFER_ENDED, offerEnded: true } } as const;
+  if (count > 0) return firstOnly;
+  try {
+    // readOffer confere as assinaturas de novo (leitura pequena) antes de ler a janela
+    const answer = await readOffer(db, userId, { open: false, now });
+    if (answer.status === 'ineligible') return firstOnly;
+    if (answer.status !== 'active' || !answer.month || !(Date.parse(answer.expiresAt ?? '') > now.getTime())) return ended;
+    return { kind: 'ok', month: answer.month };
+  } catch (e) {
+    console.warn('[checkout] oferta nao conferida, checkout recusado (409):', e instanceof Error ? e.message.slice(0, 200) : 'erro');
+    return ended;
+  }
+}
+
+// Estado da oferta de QUEM ESTÁ LOGADO. Com open: true (só a tela de limite), abre a janela
+// do mês se ainda não houver, com o limite que a abriu em trigger. Qualquer erro de banco:
+// 200 sem oferta (status none), pra tela abrir com o preço cheio.
+async function offerForUser(userId: string, body: Record<string, any>, res: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const open = body.open === true;
+  if (open && !isOfferTrigger(body.trigger)) return res.status(400).json({ error: MSG_BAD_REQUEST });
+  let answer: { status: OfferStatus; expiresAt: string | null } = { status: 'none', expiresAt: null };
+  const db = serviceDb();
+  if (db) {
+    try {
+      const read = await readOffer(db, userId, { open, trigger: open ? body.trigger : undefined, now: new Date() });
+      answer = { status: read.status, expiresAt: read.expiresAt };
+    } catch (e) {
+      console.warn('[checkout:offer] sem oferta:', e instanceof Error ? e.message.slice(0, 200) : 'erro');
+    }
+  }
+  return res.status(200).json({ ...answer, prices: OFFER_PRICING });
+}
+
+// Anúncio da casa visto ou clicado por QUEM ESTÁ LOGADO (a conta vem só do login, nunca do
+// corpo). ok falso: já tinha o mesmo no dia ou o banco falhou.
+async function trackForUser(userId: string, body: Record<string, any>, res: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (!isAdKind(body.kind) || !isAdPlacement(body.placement)) return res.status(400).json({ error: MSG_BAD_REQUEST });
+  const db = serviceDb();
+  if (!db) return res.status(200).json({ ok: false });
+  return res.status(200).json({ ok: await recordAdEvent(db, userId, body.kind, body.placement, new Date()) });
+}
 
 // Já existe assinatura ativa deste plano? (linha nova ou, pra quem assinou antes
 // desta versão, o plano do perfil sem data de fim). Cancelada ainda no período

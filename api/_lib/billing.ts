@@ -504,8 +504,11 @@ async function adoptLegacySubscriptions(db: SupabaseClient, asaas: AsaasApi, use
   }
 }
 
-// Primeira assinatura da conta? (contrato anterior em billing_subscriptions ou payments)
-async function isFirstSubscription(db: SupabaseClient, userId: string): Promise<boolean> {
+// Quantas assinaturas pagas a conta já teve (contratos em billing_subscriptions do Asaas ou
+// checkouts do Asaas na tabela antiga payments, cada um contado uma vez). Compra repetida e
+// cortesia não contam. 0 = conta que nunca assinou (direito à oferta do primeiro mês,
+// api/_lib/offer.ts). Erro de banco lança, nunca vira 0.
+export async function accountSubscriptionCount(db: SupabaseClient, userId: string): Promise<number> {
   const ids = new Set<string>()
   // Compra repetida (cancel_source 'duplicate') não conta: ela não tira o
   // arrependimento da compra que ficou (Q8).
@@ -522,7 +525,12 @@ async function isFirstSubscription(db: SupabaseClient, userId: string): Promise<
     const c = str(r.asaas_checkout_id)
     if (c && !dupes.has(c)) ids.add(c)
   }
-  return ids.size <= 1
+  return ids.size
+}
+
+// Primeira assinatura da conta? (a que está sendo avaliada é a única que conta)
+async function isFirstSubscription(db: SupabaseClient, userId: string): Promise<boolean> {
+  return (await accountSubscriptionCount(db, userId)) <= 1
 }
 
 // ── Ativação (CHECKOUT_PAID) ──
