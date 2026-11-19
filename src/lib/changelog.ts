@@ -11,6 +11,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.23',
+    date: '2026-11-19',
+    title: 'Pagamento do Studio Mensal',
+    items: [
+      'A página de pagamento agora mostra o nome do plano de um jeito mais curto, como Pro Mensal ou Studio Anual.',
+      'A assinatura do Studio Mensal agora abre a página de pagamento sem erro.',
+    ],
+  },
+  {
     version: '1.4.22',
     date: '2026-11-19',
     title: 'Seu plano continua sem internet',
