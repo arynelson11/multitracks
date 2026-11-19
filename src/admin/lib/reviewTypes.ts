@@ -3,7 +3,7 @@
 
 export type ReviewAction = {
   id: number
-  action: 'delete_subscription' | 'inactivate_subscription' | 'delete_future_payments' | 'refund_payment' | 'admin_review'
+  action: 'delete_subscription' | 'inactivate_subscription' | 'delete_future_payments' | 'refund_payment' | 'admin_review' | 'restore_full_price'
   reason: string
   autoRetry: boolean
   attempts: number

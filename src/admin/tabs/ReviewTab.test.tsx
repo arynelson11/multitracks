@@ -392,6 +392,40 @@ describe('ReviewTab', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
+  // Parte 3 (T13, R6): a volta pro preço cheio depois do primeiro mês com desconto tem as
+  // duas saídas: o servidor confere o preço no Asaas antes do "Marcar como feito".
+  it('Voltar pro preço cheio: Já troquei no Asaas manda close-action done e Tentar agora manda retry-action', async () => {
+    const RESTORE: ReviewAction = { ...INACTIVATE, id: 11, action: 'restore_full_price', reason: 'oferta_primeiro_mes', amount: 49.9 }
+    setup(queue({ actions: [RESTORE] }))
+    const card = item('Voltar pro preço cheio no Asaas')
+    const names = within(card)
+      .getAllByRole('button')
+      .map((b) => b.textContent)
+      .filter((t) => !t?.includes('@'))
+    expect(names).toEqual(['Já troquei no Asaas', 'Tentar agora'])
+    expect(card.textContent).toContain('Primeiro mês com desconto: a renovação volta pro preço cheio')
+
+    h.adminPost.mockResolvedValue({ status: 'pending', attempts: 4, lastError: 'O Asaas não respondeu.' })
+    fireEvent.click(button(card, 'Tentar agora'))
+    expect(h.adminPost).toHaveBeenCalledWith('retry-action', { actionId: 11 })
+    await waitFor(() => expect(item('Voltar pro preço cheio no Asaas').textContent).toContain('O Asaas ainda não confirmou. O Asaas não respondeu.'))
+
+    const msg = 'No Asaas a assinatura ainda está em R$ 24,90. Use Tentar agora ou troque no painel do Asaas antes de marcar como feito.'
+    h.adminPost.mockReset()
+    h.adminPost.mockRejectedValueOnce(new AdminApiError(msg, 409)).mockResolvedValueOnce({ result: 'closed' })
+    fireEvent.click(button(item('Voltar pro preço cheio no Asaas'), 'Já troquei no Asaas'))
+    const d = dialog('Já troquei no Asaas')
+    expect(d.textContent).toContain('Antes de fechar, o servidor confere no Asaas se a assinatura já está no preço cheio do plano.')
+    typeNote(d, 'troquei no painel')
+    fireEvent.click(button(d, 'Marcar como feito'))
+    expect(h.adminPost).toHaveBeenCalledWith('close-action', { actionId: 11, outcome: 'done', note: 'troquei no painel' })
+    // o 409 da conferência aparece dentro do diálogo; trocado no Asaas, a segunda tentativa fecha
+    await waitFor(() => expect(within(d).getByRole('alert').textContent).toBe(msg))
+    fireEvent.click(button(d, 'Marcar como feito'))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(h.adminPost).toHaveBeenCalledTimes(2)
+  })
+
   it('nota com menos de 3 caracteres não libera o Confirmar', () => {
     setup(queue({ actions: [REFUND] }))
     fireEvent.click(button(item('Estornar à mão'), 'Já estornei no Asaas'))

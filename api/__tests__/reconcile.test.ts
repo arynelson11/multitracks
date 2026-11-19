@@ -111,6 +111,26 @@ describe('conferência diária com o Asaas (COB-RECONCILE)', () => {
     expect(db.rpcCalls).toEqual([])
   })
 
+  // Parte 3 (T13): a primeira cobrança com desconto e a renovação já no preço cheio (depois
+  // da troca) são o caso normal da oferta, não divergência.
+  it('primeira cobrança de 24,90 numa assinatura de 49,90 não vira marcação', async () => {
+    db.tables.billing_subscriptions.push(row({ id: 'chk_1', user_id: USER_A, asaas_subscription_id: 'sub_1', first_paid_at: '2026-11-14T15:00:00.000Z' }))
+    const asaasSub = { id: 'sub_1', status: 'ACTIVE', customer: 'cus_1', checkoutSession: 'chk_1', value: 49.9, cycle: 'MONTHLY' }
+    asaas = fakeAsaas({
+      subs: { sub_1: asaasSub },
+      payments: { sub_1: [
+        payment({ id: 'p1', value: 24.9, dueDate: '2026-11-14', originalDueDate: '2026-11-14', confirmedDate: '2026-11-14' }),
+        payment({ id: 'p2', value: 49.9, dueDate: '2026-12-14', originalDueDate: '2026-12-14', confirmedDate: null, status: 'PENDING' }),
+      ] },
+      byCustomer: { cus_1: [asaasSub] },
+    })
+    const res = await reconcile()
+    expect(res.body).toMatchObject({ ok: true, reconcile: { checked: 1, flagged: 0, reviews: 0, partial: false } })
+    const flags = db.rpcCalls.filter((c) => c.name === 'billing_flag_review')
+    expect(flags).toHaveLength(0)
+    expect(note('chk_1')).toBe('')
+  })
+
   it('(a)(b) ativa no app e parada no Asaas: marca que a renovação não vai ser cobrada', async () => {
     db.tables.billing_subscriptions.push(row({ id: 'chk_1', user_id: USER_A, asaas_subscription_id: 'sub_1' }))
     asaas = fakeAsaas({ subs: { sub_1: { id: 'sub_1', status: 'INACTIVE', customer: 'cus_1' } }, byCustomer: { cus_1: [] } })

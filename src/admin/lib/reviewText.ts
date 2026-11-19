@@ -10,6 +10,7 @@ const ACTION_TITLES: Record<string, string> = {
   delete_future_payments: 'Remover cobrança futura',
   inactivate_subscription: 'Inativar assinatura no Asaas',
   delete_subscription: 'Remover assinatura no Asaas',
+  restore_full_price: 'Voltar pro preço cheio no Asaas',
 }
 
 // Motivos que a cobrança grava. `compra_duplicada` fica só como legado: desde a COB-I7-v2 a
@@ -21,6 +22,7 @@ const REASONS: Record<string, string> = {
   vencida: 'Renovação vencida',
   estorno: 'Estorno feito no painel',
   compra_duplicada: 'Compra repetida do mesmo plano',
+  oferta_primeiro_mes: 'Primeiro mês com desconto: a renovação volta pro preço cheio',
 }
 
 // Valores de cancel_source: a parada da assinatura no Asaas guarda por que ela foi cancelada.
@@ -137,6 +139,13 @@ export function closeDialogText(t: CloseTarget): DialogText {
       title: 'Já removi no Asaas',
       confirmLabel: 'Marcar como feito',
       body: [...who, 'Antes de fechar, o servidor confere no Asaas se não sobrou cobrança futura em aberto.'],
+    }
+  }
+  if (a.action === 'restore_full_price') {
+    return {
+      title: 'Já troquei no Asaas',
+      confirmLabel: 'Marcar como feito',
+      body: [...who, 'Antes de fechar, o servidor confere no Asaas se a assinatura já está no preço cheio do plano.'],
     }
   }
   return { title: actionTitle(a.action), confirmLabel: 'Marcar como feito', body: who }

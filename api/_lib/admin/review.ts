@@ -1,5 +1,6 @@
-import { AsaasError, getPayment, getSubscription, listSubscriptionPayments, type AsaasApi, type AsaasPayment } from '../asaas.js'
+import { AsaasError, findSubscriptionIdByCheckout, getPayment, getSubscription, listSubscriptionPayments, type AsaasApi, type AsaasPayment } from '../asaas.js'
 import { BillingError, brtToday, processStoredEvent, runPendingActions, type BillingDeps } from '../billing.js'
+import { PLAN_PRICING, isPlanKey } from '../pricing.js'
 import { withAudit } from './audit.js'
 import { AdminError, int, oneOf, str, type AdminCtx, type AdminHandlers } from './http.js'
 
@@ -11,8 +12,9 @@ import { AdminError, int, oneOf, str, type AdminCtx, type AdminHandlers } from '
 //   marcação que o admin viu (Ruling ADM-T5-visto), com a hora obrigatória e
 //   a nota que pode vir nula (Ruling ADM-T5T6-nulo): se chegou marcação nova
 //   enquanto a lista estava aberta, responde { result: 'changed' } e nada muda.
-// * close-action: "marcar como feito" à mão só pra estorno, caso pra olhar e
-//   remoção de cobrança futura, e o servidor confere no Asaas antes (D8).
+// * close-action: "marcar como feito" à mão só pra estorno, caso pra olhar,
+//   remoção de cobrança futura e volta pro preço cheio depois do primeiro mês
+//   com desconto (Parte 3, D10), e o servidor confere no Asaas antes (D8).
 //   Inativar ou remover assinatura só fecha quando o Asaas confirma (Tentar
 //   agora). Descartar só pra estorno e caso pra olhar. A consulta ao Asaas é só
 //   leitura; o registro sai da função SQL, na mesma transação do fechamento.
@@ -42,8 +44,16 @@ const MSG_ASAAS_CASE_NO_ID = 'Esta pendência não guarda a assinatura do Asaas,
 const MSG_ASAAS_DOUBT = 'Não deu pra confirmar no Asaas que esta assinatura parou de cobrar. Confira no painel do Asaas antes de fechar.'
 const MSG_ACTION_ID_BAD = 'A pendência está em formato inválido.'
 const MSG_UNEXPECTED = 'Erro inesperado no servidor.'
+const MSG_RESTORE_NO_PLAN = 'Não achamos o plano desta assinatura no app, então não dá pra conferir o preço. Nada foi marcado.'
+const MSG_RESTORE_NO_SUB = 'Não achamos esta assinatura no Asaas, então não dá pra conferir o preço. Nada foi marcado.'
+const MSG_PRICE_DOUBT = 'Não deu pra confirmar no Asaas o preço desta assinatura. Confira no painel do Asaas antes de marcar como feito.'
 
 const paymentNotFound = (id: string): string => `O Asaas não achou a cobrança ${id}.`
+const subscriptionNotFound = (id: string): string => `O Asaas não achou a assinatura ${id}. Nada foi marcado.`
+// 'R$ 24,90' (vírgula nos centavos, como o resto do admin)
+const reais = (v: number): string => `R$ ${v.toFixed(2).replace('.', ',')}`
+const stillDiscounted = (v: number): string =>
+  `No Asaas a assinatura ainda está em ${reais(v)}. Use Tentar agora ou troque no painel do Asaas antes de marcar como feito.`
 
 // Ações que só o Asaas fecha (a parada vale quando o Asaas aceita).
 const STOP_ACTIONS = new Set(['delete_subscription', 'inactivate_subscription'])
@@ -259,11 +269,31 @@ async function stillChargingRefusal(asaas: AsaasApi, a: ActionRow): Promise<stri
   return status === 'ACTIVE' ? MSG_STILL_CHARGING : MSG_ASAAS_DOUBT
 }
 
+// Volta pro preço cheio (oferta do primeiro mês, D10): só fecha à mão com o Asaas mostrando o
+// preço cheio do plano ATUAL da assinatura (o mesmo que a nova tentativa mandaria). Sem o id
+// guardado, procura pelo checkout. Só leitura no Asaas.
+async function restoreRefusal(ctx: AdminCtx, asaas: AsaasApi, a: ActionRow): Promise<string | null> {
+  const { data, error } = await ctx.db.from('billing_subscriptions').select('plan_key, asaas_subscription_id').eq('id', a.subscription_ref).maybeSingle()
+  if (error) throw dbError('billing_subscriptions', error.message)
+  const row = data as { plan_key?: unknown; asaas_subscription_id?: unknown } | null
+  if (!row || !isPlanKey(row.plan_key)) return MSG_RESTORE_NO_PLAN
+  const kept = a.asaas_subscription_id ?? (typeof row.asaas_subscription_id === 'string' && row.asaas_subscription_id ? row.asaas_subscription_id : null)
+  const subId = kept ?? await findSubscriptionIdByCheckout(asaas, a.subscription_ref)
+  if (!subId) return MSG_RESTORE_NO_SUB
+  const s: unknown = await getSubscription(asaas, subId)
+  if (s === null) return subscriptionNotFound(subId)
+  const value = typeof s === 'object' && !Array.isArray(s) ? (s as { value?: unknown }).value : undefined
+  if (typeof value !== 'number' || !Number.isFinite(value)) return MSG_PRICE_DOUBT
+  const full = PLAN_PRICING[row.plan_key].value
+  return Math.round(value * 100) === Math.round(full * 100) ? null : stillDiscounted(value)
+}
+
 async function checkBeforeClosing(ctx: AdminCtx, a: ActionRow, outcome: 'done' | 'canceled'): Promise<void> {
   const asaasCase = a.action === 'admin_review' && a.subscription_ref.startsWith(ASAAS_CASE_PREFIX)
   const check = asaasCase ? stillChargingRefusal
     : outcome === 'done' && a.action === 'refund_payment' ? refundRefusal
     : outcome === 'done' && a.action === 'delete_future_payments' ? (api: AsaasApi, x: ActionRow) => removalRefusal(ctx, api, x)
+    : outcome === 'done' && a.action === 'restore_full_price' ? (api: AsaasApi, x: ActionRow) => restoreRefusal(ctx, api, x)
     : null
   if (!check) return
   const asaas = needAsaas(ctx)

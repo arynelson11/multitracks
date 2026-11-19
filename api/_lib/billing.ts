@@ -12,6 +12,7 @@ import {
   type AsaasApi,
   type AsaasPayment,
 } from './asaas.js'
+import { checkOfferCpf } from './offerCpf.js'
 import { PLAN_PRICING, isPlanKey, type BillingCycle, type PlanKey } from './pricing.js'
 
 // Regras de cobrança do Playback Studio (dono e coordenador, 2026-11-16).
@@ -36,6 +37,10 @@ import { PLAN_PRICING, isPlanKey, type BillingCycle, type PlanKey } from './pric
 // * Tudo que precisa ser feito no Asaas e falha vira pendência persistida
 //   (billing_pending_actions), tentada de novo no próximo webhook, no próximo
 //   login do usuário e no job diário, até dar certo.
+// * Oferta do primeiro mês (Parte 3, D9 e D10): o CHECKOUT_PAID de um checkout com
+//   desconto marca a oferta como usada, confere o CPF por hash e cria a pendência
+//   restore_full_price, que devolve a assinatura do Asaas ao preço cheio do plano
+//   atual (tentada na hora e de novo até dar certo).
 //
 // Funções exportadas pra reuso pelo admin: activateFromCheckout,
 // cancelSubscriptionForUser, previewCancellation, changePlan, grantCourtesy,
@@ -208,22 +213,56 @@ async function activeRowsForUser(db: SupabaseClient, userId: string): Promise<Su
   return ((data as SubRow[] | null) ?? []).sort((a, b) => (a.started_at < b.started_at ? 1 : -1))
 }
 
-type Owner = { userId: string; planKey: PlanKey; startedAt: string | null; legacy: boolean; switchConfirmed: boolean; checkoutCreatedAt: string | null }
+// Primeiro mês com desconto gravado no checkout (api/checkout.ts): o mês da janela da oferta
+// e o valor cobrado.
+type FirstMonthOffer = { month: string; value: number }
+
+type Owner = {
+  userId: string; planKey: PlanKey; startedAt: string | null; legacy: boolean; switchConfirmed: boolean; checkoutCreatedAt: string | null
+  offer: FirstMonthOffer | null
+}
+
+const PENDING_COLS = 'user_id, plan_key, switch_confirmed, created_at'
+// Sem as colunas da oferta (o código novo no ar antes do db/supabase_oferta.sql), o
+// PostgREST responde 42703 (coluna que não existe) ou PGRST204 (coluna fora do cache do
+// esquema): a leitura repete sem elas e o checkout vale sem oferta.
+const MISSING_COLUMN = new Set(['42703', 'PGRST204'])
+const OFFER_MONTH_RE = /^\d{4}-\d{2}$/
+
+type PendingRead = { data: unknown; error: { message: string; code?: string } | null }
+
+async function readPendingCheckout(db: SupabaseClient, checkoutId: string): Promise<PendingRead> {
+  const withOffer: PendingRead = await db.from('pending_checkouts').select(`${PENDING_COLS}, offer_month, offer_value`).eq('id', checkoutId).maybeSingle()
+  if (!withOffer.error || !MISSING_COLUMN.has(String(withOffer.error.code ?? ''))) return withOffer
+  return db.from('pending_checkouts').select(PENDING_COLS).eq('id', checkoutId).maybeSingle()
+}
+
+// offer_month e offer_value vêm juntos (CHECK pending_checkouts_offer_check); o numeric pode
+// chegar como número ou texto.
+function offerOf(p: { offer_month?: unknown; offer_value?: unknown }): FirstMonthOffer | null {
+  const raw = p.offer_value
+  const value = typeof raw === 'number' ? raw : typeof raw === 'string' && /^\d+(\.\d+)?$/.test(raw.trim()) ? Number(raw) : Number.NaN
+  if (typeof p.offer_month !== 'string' || !OFFER_MONTH_RE.test(p.offer_month) || !Number.isFinite(value) || value <= 0) return null
+  return { month: p.offer_month, value }
+}
 
 // Dono de um checkout: o vínculo gravado pelo api/checkout.ts e, pra quem
 // assinou antes desta versão (vínculo já apagado), a tabela payments.
 async function checkoutOwner(db: SupabaseClient, checkoutId: string): Promise<Owner | null> {
-  const pending = await db.from('pending_checkouts').select('user_id, plan_key, switch_confirmed, created_at').eq('id', checkoutId).maybeSingle()
+  const pending = await readPendingCheckout(db, checkoutId)
   if (pending.error) throw new BillingError('db_error', `Falha no banco (pending_checkouts): ${pending.error.message}`, 500)
-  const p = pending.data as { user_id?: unknown; plan_key?: unknown; switch_confirmed?: unknown; created_at?: unknown } | null
+  const p = pending.data as { user_id?: unknown; plan_key?: unknown; switch_confirmed?: unknown; created_at?: unknown; offer_month?: unknown; offer_value?: unknown } | null
   if (p && typeof p.user_id === 'string' && UUID_RE.test(p.user_id) && isPlanKey(p.plan_key)) {
-    return { userId: p.user_id, planKey: p.plan_key, startedAt: null, legacy: false, switchConfirmed: p.switch_confirmed === true, checkoutCreatedAt: str(p.created_at) }
+    return {
+      userId: p.user_id, planKey: p.plan_key, startedAt: null, legacy: false, switchConfirmed: p.switch_confirmed === true, checkoutCreatedAt: str(p.created_at),
+      offer: offerOf(p),
+    }
   }
   const paid = await db.from('payments').select('user_id, plan_key, paid_at').eq('asaas_checkout_id', checkoutId).maybeSingle()
   if (paid.error) throw new BillingError('db_error', `Falha no banco (payments): ${paid.error.message}`, 500)
   const q = paid.data as { user_id?: unknown; plan_key?: unknown; paid_at?: unknown } | null
   if (q && typeof q.user_id === 'string' && UUID_RE.test(q.user_id) && isPlanKey(q.plan_key)) {
-    return { userId: q.user_id, planKey: q.plan_key, startedAt: str(q.paid_at), legacy: true, switchConfirmed: false, checkoutCreatedAt: str(q.paid_at) }
+    return { userId: q.user_id, planKey: q.plan_key, startedAt: str(q.paid_at), legacy: true, switchConfirmed: false, checkoutCreatedAt: str(q.paid_at), offer: null }
   }
   return null
 }
@@ -293,7 +332,7 @@ export async function resolveSubscription(
 type PendingAction = {
   id: number
   subscription_ref: string
-  action: 'delete_subscription' | 'inactivate_subscription' | 'delete_future_payments' | 'refund_payment'
+  action: 'delete_subscription' | 'inactivate_subscription' | 'delete_future_payments' | 'refund_payment' | 'restore_full_price'
   reason: string
   asaas_subscription_id: string | null
   asaas_payment_id: string | null   // na inativação: a vencida da decisão, que nunca é removida
@@ -324,10 +363,31 @@ export async function runPendingActions(
     const a = queue.shift()!
     try {
       const row = await getSubBy(deps.db, 'id', a.subscription_ref)
+      // Volta pro preço cheio com a assinatura encerrada (ou sem linha no app): não há
+      // renovação a trocar. Fecha antes de procurar o id no Asaas (não chama o Asaas à toa).
+      if (a.action === 'restore_full_price' && (!row || row.status === 'canceled')) {
+        await rpc<number | null>(deps.db, 'billing_action_done', { p_action_id: a.id, p_subscription_id: null, p_note: 'assinatura encerrada, nada a trocar' })
+        out.done++
+        continue
+      }
       const subId = a.asaas_subscription_id ?? row?.asaas_subscription_id ?? await findSubscriptionIdByCheckout(asaas, a.subscription_ref)
       if (!subId) {
+        // Inclusive a assinatura que o Asaas ainda não mostra: tenta de novo depois.
         await rpc<null>(deps.db, 'billing_action_failed', { p_action_id: a.id, p_error: 'assinatura nao achada no Asaas', p_permanent: true })
         out.failed++
+        continue
+      }
+      if (a.action === 'restore_full_price') {
+        // Preço cheio do plano ATUAL da assinatura: se o admin trocou o plano antes, vale o novo.
+        const planKey = row?.plan_key
+        if (!isPlanKey(planKey)) {
+          await rpc<null>(deps.db, 'billing_action_failed', { p_action_id: a.id, p_error: 'plano da assinatura desconhecido', p_permanent: true })
+          out.failed++
+          continue
+        }
+        await putSubscriptionPrice(asaas, subId, planKey)
+        await rpc<number | null>(deps.db, 'billing_action_done', { p_action_id: a.id, p_subscription_id: subId, p_note: `preco cheio: ${brl(PLAN_PRICING[planKey].value)}` })
+        out.done++
         continue
       }
       if (a.action === 'inactivate_subscription') {
@@ -456,6 +516,17 @@ export async function runPendingActions(
   return out
 }
 
+// Preço da assinatura no Asaas igual ao cheio do plano (R14: o mesmo PUT na troca de plano do
+// admin e na volta da oferta do primeiro mês). Manda sempre a descrição normal do plano, que
+// tira da assinatura o texto do item com a oferta. updatePendingPayments leva o valor também
+// pras cobranças já geradas e ainda em aberto (a renovação); a primeira, já paga, não muda.
+async function putSubscriptionPrice(asaas: AsaasApi, subId: string, planKey: PlanKey): Promise<void> {
+  const price = PLAN_PRICING[planKey]
+  await asaas.put(`/subscriptions/${encodeURIComponent(subId)}`, {
+    value: price.value, cycle: price.cycle, description: price.description, updatePendingPayments: true,
+  })
+}
+
 // Pra caminhos em que a pendência não pode derrubar nada (webhook, ativação).
 async function tryPending(deps: BillingDeps, ids: (number | null | undefined)[]): Promise<void> {
   const clean = ids.filter((x): x is number => typeof x === 'number')
@@ -542,6 +613,7 @@ export async function activateFromCheckout(
     startedAt?: string | null      // hora do pagamento (dateCreated do CHECKOUT_PAID)
     switchConfirmed?: boolean      // a pessoa confirmou "Trocar de plano?" na tela
     checkoutCreatedAt?: string | null  // quando o checkout foi aberto (intenção, decide entre planos)
+    offer?: FirstMonthOffer | null // checkout com o primeiro mês com desconto (pending_checkouts)
   },
 ): Promise<{ result: 'activated' | 'owner_mismatch' | 'duplicate'; superseded: number }> {
   const { db } = deps
@@ -563,10 +635,11 @@ export async function activateFromCheckout(
     return { result: 'owner_mismatch', superseded: 0 }
   }
 
-  // Registro antigo (o painel admin atual lê esta tabela). Idempotente pelo id.
+  // Registro antigo (o painel admin atual lê esta tabela). Idempotente pelo id. Com a
+  // oferta, o valor cobrado no primeiro mês.
   const { error: payErr } = await db.from('payments').upsert({
     id: input.checkoutId, user_id: input.userId, plan_key: input.planKey,
-    value: price.value, cycle: price.cycle, asaas_checkout_id: input.checkoutId,
+    value: input.offer ? input.offer.value : price.value, cycle: price.cycle, asaas_checkout_id: input.checkoutId,
   }, { onConflict: 'id' })
   if (payErr) console.error('[billing] payments upsert falhou:', payErr.message)
 
@@ -585,6 +658,10 @@ export async function activateFromCheckout(
   const duplicate = enforced.duplicates.includes(input.checkoutId) || current?.cancel_source === 'duplicate'
   const superseded = enforced.superseded.length
 
+  // Depois da regra de uma assinatura por conta: a compra repetida já encerrada fecha a
+  // pendência de preço dela sem chamar o Asaas.
+  if (input.offer) await afterFirstMonthOffer(deps, input, input.offer)
+
   // Avisos do próprio Asaas ao cliente só por e-mail. Nunca derruba a ativação.
   if (deps.asaas && input.customerId) {
     try { await ensureEmailOnlyNotifications(deps.asaas, input.customerId) } catch (e) {
@@ -592,6 +669,32 @@ export async function activateFromCheckout(
     }
   }
   return { result: duplicate ? 'duplicate' : 'activated', superseded }
+}
+
+// Primeiro pagamento com desconto confirmado (D9 e D10). A oferta vira usada (offer_mark_used:
+// 'already' quando a conta já usou, inclusive num aviso repetido, e aí o CPF não é lido de
+// novo); o CPF é conferido por hash só quando a oferta foi marcada agora. A pendência de voltar
+// pro preço cheio nasce SEMPRE (mesmo com 'already' ou 'no_offer': o desconto foi cobrado) e é
+// tentada na hora; uma aberta não se repete (índice único das pendências abertas). Erro do banco
+// lança (o aviso fica pra nova tentativa); erro do Asaas fica na pendência.
+async function afterFirstMonthOffer(
+  deps: BillingDeps,
+  input: { checkoutId: string; userId: string; planKey: PlanKey; customerId?: string | null; startedAt?: string | null },
+  offer: FirstMonthOffer,
+): Promise<void> {
+  const { db } = deps
+  const marked = await rpc<string>(db, 'offer_mark_used', {
+    // a hora do pagamento: o funil conta o offer_used pelo mês do evento
+    p_user_id: input.userId, p_month: offer.month, p_checkout_id: input.checkoutId, p_now: input.startedAt ?? nowOf(deps).toISOString(),
+  })
+  if (marked === 'marked') {
+    await checkOfferCpf(deps, { userId: input.userId, checkoutId: input.checkoutId, customerId: input.customerId ?? null, month: offer.month })
+  }
+  const actionId = await rpc<number | null>(db, 'billing_enqueue_action', {
+    p_ref: input.checkoutId, p_action: 'restore_full_price', p_reason: 'oferta_primeiro_mes',
+    p_amount: PLAN_PRICING[input.planKey].value, p_user_id: input.userId,
+  })
+  await tryPending(deps, [actionId])
 }
 
 // Garante no máximo UMA assinatura paga ativa por conta, venham os avisos na
@@ -923,9 +1026,7 @@ export async function changePlan(deps: BillingDeps, input: { userId: string; new
   try {
     const subId = row.asaas_subscription_id ?? await findSubscriptionIdByCheckout(deps.asaas, row.id)
     if (!subId) throw new BillingError('not_found', 'Assinatura não encontrada no Asaas.', 404)
-    await deps.asaas.put(`/subscriptions/${encodeURIComponent(subId)}`, {
-      value: price.value, cycle: price.cycle, description: price.description, updatePendingPayments: true,
-    })
+    await putSubscriptionPrice(deps.asaas, subId, input.newPlanKey)
   } catch (e) {
     if (e instanceof AsaasError) {
       throw new BillingError(e.kind === 'rejected' ? 'asaas_rejected' : 'asaas_unavailable', `O Asaas não trocou o plano: ${e.message}. Nada mudou.`, 502)
@@ -999,7 +1100,8 @@ async function onCheckoutPaid(deps: BillingDeps, checkout: Record<string, unknow
   // Bônus: se o Asaas tiver propagado nosso externalReference ("<user>::<plano>").
   if (!owner && typeof checkout.externalReference === 'string' && checkout.externalReference.includes('::')) {
     const [u, p] = checkout.externalReference.split('::')
-    if (UUID_RE.test(u) && isPlanKey(p)) owner = { userId: u, planKey: p, startedAt: null, legacy: false, switchConfirmed: false, checkoutCreatedAt: null }
+    // Sem o vínculo não há como saber da oferta: vale sem ela (o externalReference não a leva).
+    if (UUID_RE.test(u) && isPlanKey(p)) owner = { userId: u, planKey: p, startedAt: null, legacy: false, switchConfirmed: false, checkoutCreatedAt: null, offer: null }
   }
   if (!owner || !checkoutId) {
     console.warn('[asaas-webhook] could not resolve user/plan', { checkoutId })
@@ -1010,6 +1112,7 @@ async function onCheckoutPaid(deps: BillingDeps, checkout: Record<string, unknow
     checkoutId, userId: owner.userId, planKey: owner.planKey,
     customerId: str(checkout.customer), firstDueDate: toBrtDate(sub.nextDueDate),
     startedAt: paidAt, switchConfirmed: owner.switchConfirmed, checkoutCreatedAt: owner.checkoutCreatedAt,
+    offer: owner.offer,
   })
   return { result: out.result }
 }

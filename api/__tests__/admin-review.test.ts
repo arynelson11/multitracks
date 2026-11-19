@@ -678,6 +678,100 @@ describe('fechar pendência à mão (close-action)', () => {
   })
 })
 
+// Parte 3 (T13, D10): a pendência de voltar pro preço cheio depois do primeiro mês com
+// desconto. "Marcar como feito" à mão só com o Asaas mostrando o preço cheio do plano atual
+// da assinatura; descartar continua recusado. A conferência é só leitura no Asaas.
+describe('voltar pro preço cheio (restore_full_price)', () => {
+  const close = (outcome: string, note = 'troquei no painel') => post('close-action', { actionId: 11, outcome, note })
+  const stillAt = (v: string) => `No Asaas a assinatura ainda está em R$ ${v}. Use Tentar agora ou troque no painel do Asaas antes de marcar como feito.`
+  const subWith = (value: unknown) => (path: string) => (path === '/subscriptions/sub_2' ? { id: 'sub_2', status: 'ACTIVE', value } : { data: [], hasMore: false })
+
+  beforeEach(() => {
+    // chk_2 (USER_B) é a assinatura ativa do Pro Mensal com o id do Asaas sub_2; a pendência
+    // nasceu no CHECKOUT_PAID, antes de o app saber o id da assinatura
+    db.tables.billing_pending_actions.push(pendingAction({
+      id: 11, action: 'restore_full_price', subscription_ref: 'chk_2', user_id: USER_B, asaas_subscription_id: null, reason: 'oferta_primeiro_mes', amount: 49.9,
+    }))
+  })
+
+  it('marcar como feito com o Asaas ainda em 24,90 é recusado', async () => {
+    setAsaas({ get: subWith(24.9) })
+    const res = await close('done')
+    expect(res.statusCode).toBe(409)
+    expect(res.body).toEqual({ error: stillAt('24,90') })
+    expect(asaas!.get).toHaveBeenCalledWith('/subscriptions/sub_2')
+    expect(rpcNames()).not.toContain('admin_close_action')
+    expect(actionRow(11).status).toBe('pending')
+  })
+
+  it('marcar como feito com o Asaas em 49,90 fecha', async () => {
+    setAsaas({ get: subWith(49.9) })
+    const res = await close('done')
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toEqual({ result: 'closed' })
+    expect(db.rpcCalls.find((c) => c.name === 'admin_close_action')?.args).toEqual({ p_admin: ADMIN_ID, p_action_id: 11, p_outcome: 'done', p_note: 'troquei no painel' })
+    expect(actionRow(11)).toMatchObject({ status: 'done', done_note: 'admin: troquei no painel' })
+  })
+
+  it('vale o preço do plano atual da assinatura: trocada pro Studio, 49,90 é recusado e 119,90 fecha', async () => {
+    db.tables.billing_subscriptions.find((r) => r.id === 'chk_2')!.plan_key = 'pro_mensal'
+    setAsaas({ get: subWith(49.9) })
+    expect((await close('done')).body).toEqual({ error: stillAt('49,90') })
+    setAsaas({ get: subWith(119.9) })
+    expect((await close('done')).body).toEqual({ result: 'closed' })
+  })
+
+  it('sem o id da assinatura guardado: procura pelo checkout no Asaas (só leitura); sem achar, não fecha', async () => {
+    db.tables.billing_subscriptions.find((r) => r.id === 'chk_2')!.asaas_subscription_id = null
+    setAsaas({ get: (path) => (path === '/payments' ? { data: [] } : subWith(49.9)(path)) })
+    const res = await close('done')
+    expect(res.statusCode).toBe(409)
+    expect(res.body).toEqual({ error: 'Não achamos esta assinatura no Asaas, então não dá pra conferir o preço. Nada foi marcado.' })
+    expect(asaas!.get).toHaveBeenCalledWith('/payments', { checkoutSession: 'chk_2', limit: 10 })
+    expect(actionRow(11).status).toBe('pending')
+    // achando pelo checkout, confere o preço da assinatura achada
+    setAsaas({ get: (path) => (path === '/payments' ? { data: [payment({ id: 'pay_2', subscription: 'sub_2', checkoutSession: 'chk_2' })] } : subWith(49.9)(path)) })
+    expect((await close('done')).body).toEqual({ result: 'closed' })
+  })
+
+  it('assinatura que o Asaas não acha ou resposta sem o valor: não fecha', async () => {
+    setAsaas({ get: () => { throw new AsaasError('not_found', 'não encontrado no Asaas', 404) } })
+    expect((await close('done')).body).toEqual({ error: 'O Asaas não achou a assinatura sub_2. Nada foi marcado.' })
+    for (const value of [undefined, '49.90', null]) {
+      setAsaas({ get: subWith(value) })
+      const res = await close('done')
+      expect(res.statusCode, String(value)).toBe(409)
+      expect(res.body, String(value)).toEqual({ error: 'Não deu pra confirmar no Asaas o preço desta assinatura. Confira no painel do Asaas antes de marcar como feito.' })
+    }
+    expect(actionRow(11).status).toBe('pending')
+  })
+
+  it('Asaas fora na conferência: 502 e nada marcado', async () => {
+    setAsaas({ get: () => { throw asaasDown() } })
+    const res = await close('done')
+    expect(res.statusCode).toBe(502)
+    expect(res.body).toEqual({ error: MSG.checkDown })
+    expect(actionRow(11).status).toBe('pending')
+  })
+
+  it('descartar a volta pro preço cheio é recusado sem consultar o Asaas', async () => {
+    const res = await close('canceled', 'nao quero trocar')
+    expect(res.statusCode).toBe(409)
+    expect(res.body).toEqual({ error: MSG.notDiscardable })
+    expect(asaasCalls()).toEqual([])
+    expect(actionRow(11).status).toBe('pending')
+  })
+
+  it('Tentar agora troca o preço no Asaas e fecha a pendência', async () => {
+    setAsaas({ put: () => ({}) })
+    const res = await post('retry-action', { actionId: 11 })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toEqual({ status: 'done', attempts: 0, lastError: null })
+    expect(asaas!.put).toHaveBeenCalledWith('/subscriptions/sub_2', { value: 49.9, cycle: 'MONTHLY', description: 'Playback Studio Pro (mensal)', updatePendingPayments: true })
+    expect(actionRow(11)).toMatchObject({ status: 'done', done_note: 'preco cheio: R$ 49,90' })
+  })
+})
+
 describe('tentar agora (retry-action)', () => {
   it('tentar agora chama runPendingActions com ids [7] e devolve o novo estado', async () => {
     setAsaas({ put: () => ({}), get: () => ({ data: [], hasMore: false }) })

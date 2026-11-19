@@ -204,6 +204,26 @@ describe('reviewText', () => {
     }
   })
 
+  // Parte 3 (T13): a pendência de voltar pro preço cheio depois do primeiro mês com desconto.
+  it('restore_full_price tem título e motivo em português, sem travessão', () => {
+    const target: Target = { action: 'restore_full_price', paymentId: null, subscriptionRef: 'chk_1' }
+    const texts = [
+      actionTitle('restore_full_price'),
+      reasonText('oferta_primeiro_mes'),
+      ...Object.values(closeDialogText({ kind: 'action', email: 'ana@exemplo.com', outcome: 'done', action: target })).flat(),
+      closedText({ kind: 'action', email: null, outcome: 'done', action: target }),
+    ]
+    expect(texts.slice(0, 2)).toEqual(['Voltar pro preço cheio no Asaas', 'Primeiro mês com desconto: a renovação volta pro preço cheio'])
+    expect(closeDialogText({ kind: 'action', email: 'ana@exemplo.com', outcome: 'done', action: target })).toEqual({
+      title: 'Já troquei no Asaas',
+      confirmLabel: 'Marcar como feito',
+      body: ['Conta: ana@exemplo.com.', 'Antes de fechar, o servidor confere no Asaas se a assinatura já está no preço cheio do plano.'],
+    })
+    expect(closedText({ kind: 'action', email: null, outcome: 'done', action: target })).toBe('Marcado como feito.')
+    // nada técnico na tela: nem o código da ação nem o do motivo
+    expect(texts.filter((t) => t.includes(TRAVESSAO) || t.includes('_'))).toEqual([])
+  })
+
   it('nenhum texto tem travessão', () => {
     const all = [
       ...['refund_payment', 'admin_review', 'delete_future_payments', 'inactivate_subscription', 'delete_subscription'].map(actionTitle),

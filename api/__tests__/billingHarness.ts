@@ -92,6 +92,9 @@ export function createBillingDb(tables: Record<string, Row[]> = {}, now: () => D
     else if (mine.length) { prof.plan = 'free'; prof.plan_expires_at = null }
   }
   const STOP_ACTIONS = ['delete_subscription', 'inactivate_subscription']
+  // CHECK de billing_pending_actions.action (db/supabase_oferta.sql troca pelo de 6 valores)
+  const ACTIONS = new Set([...STOP_ACTIONS, 'delete_future_payments', 'refund_payment', 'admin_review', 'restore_full_price'])
+  const offers = () => db.tables.first_month_offers
   const openStop = (ref: unknown) => db.tables.billing_pending_actions.find((x) => x.subscription_ref === ref && x.status === 'pending' && STOP_ACTIONS.includes(String(x.action)))
   // billing_flag_review: acumula as notas (não repete a mesma), como o SQL
   const flag = (ref: unknown, note: unknown) => {
@@ -102,6 +105,7 @@ export function createBillingDb(tables: Record<string, Row[]> = {}, now: () => D
     r.admin_note = prev && prev.includes(String(note)) ? prev : [prev, note].filter((x) => x != null).join(' | ')
   }
   const enqueue = (ref: unknown, action: string, reason: string, extra: Partial<Row> = {}) => {
+    if (!ACTIONS.has(action)) throw new Error(`new row for relation "billing_pending_actions" violates check constraint (action ${action})`)
     const open = db.tables.billing_pending_actions.find((a) => a.subscription_ref === ref && a.action === action && a.status === 'pending')
     if (open) return open.id as number
     const r = sub(ref)
@@ -125,7 +129,10 @@ export function createBillingDb(tables: Record<string, Row[]> = {}, now: () => D
     }
   }
   const db: FakeDb = createFakeDb({
-    tables: { profiles: [], billing_subscriptions: [], pending_checkouts: [], payments: [], billing_payments: [], asaas_webhook_events: [], billing_pending_actions: [], ...tables },
+    tables: {
+      profiles: [], billing_subscriptions: [], pending_checkouts: [], payments: [], billing_payments: [], asaas_webhook_events: [], billing_pending_actions: [],
+      first_month_offers: [], product_events: [], ...tables,
+    },
     primaryKeys: { billing_pending_actions: 'id' },
     defaults: { asaas_webhook_events: () => ({ received_at: iso(), attempts: 0 }) },
     rpc: {
@@ -288,7 +295,7 @@ export function createBillingDb(tables: Record<string, Row[]> = {}, now: () => D
       },
       billing_action_done: (a) => {
         let x = db.tables.billing_pending_actions.find((y) => y.id === a.p_action_id && y.status === 'pending')
-        if (x) x.status = 'done'
+        if (x) Object.assign(x, { status: 'done', done_at: iso(), done_note: a.p_note ?? null })
         else x = db.tables.billing_pending_actions.find((y) => y.id === a.p_action_id && y.status === 'done' && y.action === 'inactivate_subscription')
         if (!x) return null
         if (STOP_ACTIONS.includes(String(x.action))) markStopped(x.subscription_ref, x.action === 'delete_subscription' ? 'deleted' : 'inactivated', a.p_subscription_id)
@@ -340,6 +347,29 @@ export function createBillingDb(tables: Record<string, Row[]> = {}, now: () => D
         return id
       },
       billing_daily_job: () => ({ cortadas_sem_pagamento: 0, planos_expirados: 0 }),
+      // Oferta do primeiro mês (db/supabase_oferta.sql): as mesmas respostas, sem a trava
+      // entre sessões (as corridas são testadas no Postgres de verdade).
+      offer_mark_used: (a) => {
+        if (a.p_user_id == null) throw new Error('oferta sem conta')
+        const mine = offers().filter((o) => o.user_id === a.p_user_id)
+        if (mine.some((o) => o.used_at != null)) return 'already'
+        const row = mine.find((o) => o.month === a.p_month && o.used_at == null)
+        if (!row) return 'no_offer'
+        const at = (a.p_now as string | null) ?? iso()
+        Object.assign(row, { used_at: at, checkout_id: a.p_checkout_id ?? null })
+        db.tables.product_events.push({ user_id: a.p_user_id, kind: 'offer_used', placement: null, detail: null, created_at: at })
+        return 'marked'
+      },
+      offer_record_cpf: (a) => {
+        if (a.p_user_id == null) throw new Error('oferta sem conta')
+        if (typeof a.p_cpf_hash !== 'string' || !/^[0-9a-f]{64}$/.test(a.p_cpf_hash)) throw new Error('hash do CPF fora do formato (64 letras de 0-9 e a-f)')
+        const rows = offers().filter((o) => o.user_id === a.p_user_id && o.month === a.p_month)
+        // P0002 no SQL: nada gravado
+        if (rows.length === 0) throw new Error('sem registro da oferta dessa conta nesse mes')
+        for (const r of rows) r.cpf_hash = a.p_cpf_hash
+        // "is distinct from": conta excluída (user_id nulo) conta como outra conta
+        return offers().some((o) => o.cpf_hash === a.p_cpf_hash && o.used_at != null && o.user_id !== a.p_user_id)
+      },
     },
   })
   return db

@@ -139,13 +139,30 @@ export async function listCustomerSubscriptions(api: AsaasApi, customerId: strin
   return all
 }
 
-export async function getSubscription(api: AsaasApi, subscriptionId: string): Promise<{ id: string; checkoutSession?: string | null; customer?: string | null; status?: string; deleted?: boolean } | null> {
+export async function getSubscription(api: AsaasApi, subscriptionId: string): Promise<{ id: string; checkoutSession?: string | null; customer?: string | null; status?: string; deleted?: boolean; value?: number } | null> {
   try {
     return await api.get(`/subscriptions/${encodeURIComponent(subscriptionId)}`)
   } catch (e) {
     if (e instanceof AsaasError && e.kind === 'not_found') return null
     throw e
   }
+}
+
+// CPF (ou CNPJ) do cliente (GET /customers/{id}, docs "Recuperar um único cliente"), só os
+// dígitos de cpfCnpj. 404, campo ausente ou sem dígito dá null; outro erro lança AsaasError.
+// Usado só pra conferir a oferta do primeiro mês por hash (api/_lib/offerCpf.ts): o número
+// nunca é guardado nem registrado em log, e o resto do cadastro do cliente é descartado aqui.
+export async function getCustomerCpf(api: AsaasApi, customerId: string): Promise<string | null> {
+  let customer: { cpfCnpj?: unknown } | null
+  try {
+    customer = await api.get<{ cpfCnpj?: unknown }>(`/customers/${encodeURIComponent(customerId)}`)
+  } catch (e) {
+    if (e instanceof AsaasError && e.kind === 'not_found') return null
+    throw e
+  }
+  const raw = customer?.cpfCnpj
+  const digits = typeof raw === 'string' ? raw.replace(/\D/g, '') : ''
+  return digits || null
 }
 
 // Remove a assinatura (para a recorrência; o Asaas apaga as cobranças pendentes

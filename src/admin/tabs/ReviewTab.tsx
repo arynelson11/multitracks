@@ -385,11 +385,14 @@ export function ReviewTab({ onNavigate, review }: TabProps & { review: AdminQuer
         </Button>
       )
     }
-    if (a.action === 'delete_future_payments') {
+    // Feito à mão no painel do Asaas (o servidor confere antes de fechar) ou de novo sozinho.
+    const doneByHand =
+      a.action === 'delete_future_payments' ? 'Já removi no Asaas' : a.action === 'restore_full_price' ? 'Já troquei no Asaas' : null
+    if (doneByHand) {
       return (
         <>
           <Button tone={main ? 'primary' : 'default'} onClick={() => openDialog({ item, outcome: 'done' })}>
-            Já removi no Asaas
+            {doneByHand}
           </Button>
           {tryNow}
         </>
