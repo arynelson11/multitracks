@@ -369,11 +369,12 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
 
   if (!isOpen) return null;
 
-  // Enquanto o click é gerado a janela não fecha (o X já era desligado nessa hora).
+  // Enquanto o click é gerado a janela não fecha: o X fica desligado (como era antes), e nem o Esc
+  // nem o toque fora fecham. A amostra do click tem prazo (AudioAnalyzer), então isso não prende.
   const close = () => { if (!isSynthesizing) onClose(); };
 
   return (
-    <StageDialog open title="Metrônomo" size="sm" onClose={close}>
+    <StageDialog open title="Metrônomo" size="sm" onClose={close} closeDisabled={isSynthesizing}>
       <div className="flex flex-col gap-4">
         {/* Andamento: nome, BPM com − e +, TAP TEMPO e 2× */}
         <section aria-labelledby={`${uid}-bpm`} className="flex flex-col gap-2">

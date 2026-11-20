@@ -116,6 +116,10 @@ describe('Metrônomo: nada some', () => {
     await act(async () => { fireEvent.click(botao('GERAR CLICK MANUAL')) })
     await vi.waitFor(() => expect(generate).toHaveBeenCalled())
     expect(screen.getByRole('status').textContent).toContain('Gerando click')
+    // O X fica desligado com a dica (revisão macro BC, BC2-M5), como era antes da janela do palco.
+    const x = screen.getByRole('button', { name: 'Fechar' }) as HTMLButtonElement
+    expect(x.disabled).toBe(true)
+    expect(x.title).toBe('Espere terminar pra fechar')
     fireEvent.click(screen.getByRole('button', { name: 'Fechar' }))
     fireEvent.keyDown(window, { key: 'Escape' })
     const camada = screen.getByRole('dialog').parentElement as HTMLElement
@@ -124,5 +128,6 @@ describe('Metrônomo: nada some', () => {
     await act(async () => { soltar({ clickTrackUrl: 'blob:click' }) })
     await vi.waitFor(() => expect(onAddClick).toHaveBeenCalledTimes(1))
     expect(onClose).toHaveBeenCalledTimes(1)
+    expect((screen.getByRole('button', { name: 'Fechar' }) as HTMLButtonElement).disabled).toBe(false)
   })
 })

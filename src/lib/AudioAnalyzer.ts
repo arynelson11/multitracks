@@ -649,6 +649,35 @@ async function float32MonoToWavBlobInSlices(data: Float32Array, sampleRate: numb
   return new Blob([buf], { type: 'audio/wav' });
 }
 
+/**
+ * Prazo pra amostra do click chegar (revisão macro BC, BC2-I3). Na web, um pacote perdido sem queda
+ * da conexão deixava o pedido esperando por minutos, e a janela do Metrônomo (que não fecha
+ * enquanto gera) ficava presa por cima do palco. Passado o prazo, o pedido é cancelado e a geração
+ * falha com a frase abaixo, pelo caminho de erro de sempre.
+ */
+export const CLICK_SAMPLE_TIMEOUT_MS = 15_000;
+export const CLICK_SAMPLE_TIMEOUT_MESSAGE = 'A amostra do click não chegou em 15 segundos. Confira a conexão e tente de novo.';
+
+/** Baixa a amostra do click com prazo (o pedido e o corpo da resposta). */
+async function fetchClickSample(url: string): Promise<ArrayBuffer> {
+  const ctrl = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  // A corrida segura também o que não respeita o cancelamento.
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      ctrl.abort();
+      reject(new Error(CLICK_SAMPLE_TIMEOUT_MESSAGE));
+    }, CLICK_SAMPLE_TIMEOUT_MS);
+  });
+  try {
+    const res = await Promise.race([fetch(url, { signal: ctrl.signal }), deadline]);
+    if (!res.ok) throw new Error(`Click sample not found: ${url}`);
+    return await Promise.race([res.arrayBuffer(), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Onde a grade do click cai na música (vem de detectBeatGrid em lib/beatGrid). */
 export interface ClickGridAlignment {
   /** Segundos do primeiro tempo (pode ser negativo/maior que um tempo: é normalizado). */
@@ -672,9 +701,14 @@ export async function generateManualClickTrackFromSample(
 
   // Decode sample at target rate
   const tmpCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate });
-  const res = await fetch(sampleUrl);
-  if (!res.ok) throw new Error(`Click sample not found: ${sampleUrl}`);
-  const sampleBuffer = await tmpCtx.decodeAudioData(await res.arrayBuffer());
+  let sampleBytes: ArrayBuffer;
+  try {
+    sampleBytes = await fetchClickSample(sampleUrl);
+  } catch (e) {
+    await tmpCtx.close().catch(() => {});
+    throw e;
+  }
+  const sampleBuffer = await tmpCtx.decodeAudioData(sampleBytes);
   await tmpCtx.close().catch(() => {});
   // A montagem (ticks e WAV) cede a vez a cada ~8 ms: nenhuma tarefa longa na thread principal.
   const yieldIfDue = makeSliceYield();
