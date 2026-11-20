@@ -55,6 +55,14 @@ describe('Teleprompter: nada some', () => {
     expect(texto()).toContain('Nenhuma música aberta')
   })
 
+  // Revisão macro BC (BC2-M7): a barra anda contínua, sem arredondar pro porcento inteiro (numa
+  // música de 4 min, o arredondado pulava a cada 2,4 s).
+  it('a barra anda sem arredondar: 10 s de 240 s é 4,17%', () => {
+    abrir({ currentTime: 10, duration: 240 })
+    const fill = screen.getByRole('progressbar').firstElementChild as HTMLElement
+    expect(fill.style.width).toBe('4.17%')
+  })
+
   it('o X fecha; nenhuma tecla é tratada aqui (Espaço e Esc continuam com o palco)', () => {
     const { onClose } = abrir()
     fireEvent.keyDown(window, { key: 'Escape' })

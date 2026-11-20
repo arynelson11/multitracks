@@ -53,7 +53,7 @@ export function Teleprompter({ songName, hasMarkers, marker, currentTime, durati
       </div>
 
       <div className="flex shrink-0 flex-col items-center gap-2 px-ps-gutter pb-8 pt-2">
-<ProgressBar label="Posição na música" hideLabel value={Math.round(progress)} className="w-full max-w-md" />
+        <ProgressBar label="Posição na música" hideLabel value={progress} className="w-full max-w-md" />
         <p className="text-center text-ps-label font-bold uppercase tracking-[0.14em] text-ps-mut break-words">{songName || 'Nenhuma música aberta'}</p>
       </div>
     </div>
