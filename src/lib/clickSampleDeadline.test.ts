@@ -1,6 +1,8 @@
 // Revisão macro BC (BC2-I3): o pedido da amostra do click tem prazo. Sem ele, um pacote perdido
 // na rede (sem queda da conexão) deixava a geração esperando por minutos.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { CLICK_SAMPLE_TIMEOUT_MESSAGE, CLICK_SAMPLE_TIMEOUT_MS, generateManualClickTrackFromSample } from './AudioAnalyzer'
 import { FakeClickAudioContext } from '../test/clickShims'
 
@@ -40,5 +42,24 @@ describe('gerador do click: prazo da amostra', () => {
     const falha = expect(gerando).rejects.toThrow(CLICK_SAMPLE_TIMEOUT_MESSAGE)
     await vi.advanceTimersByTimeAsync(CLICK_SAMPLE_TIMEOUT_MS)
     await falha
+  })
+})
+
+// Junção da 1b com as faixas B e C (FATOS, prazo da amostra): o click gerado no Separador também
+// sai do gerador com prazo, com a grade da música. A prévia do som ao trocar o click não prende nada.
+describe('click gerado no Separador: o mesmo prazo da amostra', () => {
+  const separador = readFileSync(fileURLToPath(new URL('../components/SeparatorStudio.tsx', import.meta.url)), 'utf8')
+
+  it('o metrônomo do Separador gera pelo gerador com prazo (generateManualClickTrackFromSample)', () => {
+    expect(separador).toMatch(/import \{[^}]*\bgenerateManualClickTrackFromSample\b[^}]*\} from '\.\.\/lib\/AudioAnalyzer'/)
+    expect(separador).toMatch(/await generateManualClickTrackFromSample\(\s*clickSel\.type, clickSel\.subdivision,[^)]*\{ firstBeat, downbeat \}\s*\)/)
+  })
+
+  it('com a grade (como o Separador chama), a amostra que não chega também cai no prazo', async () => {
+    const gerando = generateManualClickTrackFromSample('Classic', 'quarter', 120, 60, true, '4/4', { firstBeat: 0.5, downbeat: 0 })
+    const falha = expect(gerando).rejects.toThrow(CLICK_SAMPLE_TIMEOUT_MESSAGE)
+    await vi.advanceTimersByTimeAsync(CLICK_SAMPLE_TIMEOUT_MS)
+    await falha
+    expect(signals[0]?.aborted).toBe(true)
   })
 })
