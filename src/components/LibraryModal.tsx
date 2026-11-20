@@ -13,11 +13,13 @@ interface LibraryModalProps {
     isOpen: boolean;
     onClose: () => void;
     onDownload: (files: File[], songName: string, coverUrl: string | null, markers?: Marker[], originalKey?: string | null, artist?: string, bpm?: number, extra?: { lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null; timeSignature?: TimeSignatureType | null }, songId?: string) => void;
+    // Pergunta antes de baixar (Parte 3, Livre): falso não baixa nada. Sem ela, baixa como sempre.
+    onBeforeDownload?: (songId: string) => boolean;
     // Reflete a edição (nome/tom/bpm/capa) na música já baixada/no ao vivo.
     onSongEdited?: (e: { songId: string; prevName: string; prevBpm?: number; prevOriginalKey?: string | null; name: string; artist?: string; originalKey?: string | null; bpm?: number; coverImage?: string }) => void;
 }
 
-export function LibraryModal({ isOpen, onClose, onDownload, onSongEdited }: LibraryModalProps) {
+export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, onSongEdited }: LibraryModalProps) {
     const {
         songs,
         searchQuery,
@@ -114,6 +116,8 @@ export function LibraryModal({ isOpen, onClose, onDownload, onSongEdited }: Libr
     if (!isOpen) return null;
 
     const handleDownload = async (songId: string, songName: string) => {
+        // No Livre a música conta nas do mês: sem vaga, o App mostra a tela de limite e nada baixa.
+        if (onBeforeDownload && !onBeforeDownload(songId)) return;
         const result = await downloadSong(songId);
         // files vazio + cachedSourceId = música no cache: o engine carrega lendo do
         // cache 1 stem por vez (sem segurar todos os blobs na memória = OOM mobile).
