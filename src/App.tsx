@@ -23,7 +23,7 @@ import { DownloadPage } from './components/DownloadPage'
 import { GuidedTour, type TourStep } from './components/GuidedTour'
 import { WhatsNewModal } from './components/WhatsNewModal'
 import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/SectionBar'
-import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections, canUseBpmDetection } from './lib/plans'
+import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections, canUseGeneratedClick, canChangeKey, canUsePlatformCatalog, canUseCloudPads } from './lib/plans'
 import { AdminEntryButton, InAppAdmin } from './components/AdminEntryButton'
 import { BlockedScreen } from './components/BlockedScreen'
 import { shouldShowBlocked } from './lib/profileFlags'
@@ -386,7 +386,7 @@ export default function App() {
     sectionIntent, transitionView, landed, sectionSpansView, armSection, stepSection, armRepeat, toggleSectionLoop, cancelArm,
     heardNow, heardPosition, precountTimes,
     songGrid, gridWarning, setSongMeter, redetectSongGrid, isReadingGrid,
-  } = useAudioEngine(user?.id, { autoClick: canUseBpmDetection(userPlan), sectionGates, stageMode: useNewStage ? 'novo' : 'antigo' })
+  } = useAudioEngine(user?.id, { autoClick: canUseGeneratedClick(userPlan), sectionGates, stageMode: useNewStage ? 'novo' : 'antigo' })
   // A trava da R-25: a escolha nova só entra com a VS parada (nem tocando nem na pré-contagem).
   if (wantNewStage !== useNewStage && !isPlaying && !isCountingIn) setUseNewStage(wantNewStage)
 
@@ -615,11 +615,11 @@ export default function App() {
     toggleLoop: () => upgradeIf(toggleSectionLoop()),
     seek: (t: number) => seekTo(clampToSong(t)),
     seekBy: (dt: number) => seekTo(clampToSong(heardPosition() + dt)),
-    // Trocar o tom é dos planos pagos, como o TOM do palco antigo.
-    changePitch: (semitones: number) => handlePremiumFeature(() => changePitch(semitones)),
+    // Trocar o tom segue o portão do plano (canChangeKey), como o TOM do palco antigo.
+    changePitch: (semitones: number) => withPlan(canChangeKey(userPlan), () => changePitch(semitones)),
     // Tom original com a mesma ação do TOM do palco antigo: definir grava o original e volta o tom
-    // pro 0; "Redefinir detecção de tom" (nulo) apaga o original e volta pro 0. Dos planos pagos.
-    setOriginalKey: (key: string | null) => handlePremiumFeature(() => { setOriginalKey(key); changePitch(0) }),
+    // pro 0; "Redefinir detecção de tom" (nulo) apaga o original e volta pro 0. Mesmo portão do tom.
+    setOriginalKey: (key: string | null) => withPlan(canChangeKey(userPlan), () => { setOriginalKey(key); changePitch(0) }),
     prevSong: () => prevSong(),
     nextSong: () => nextSong(),
     setVolume: (id: string, gain: number) => updateVolume(id, gain),
@@ -632,7 +632,7 @@ export default function App() {
     openLyrics: () => setIsTeleprompterMode(true),
     openRepertoires: () => setIsRepertoireOpen((open) => !open),
     openTracks: () => setIsTracksMenuOpen((open) => !open),
-    openLibrary: () => handlePremiumFeature(() => setIsLibraryOpen(true)),
+    openLibrary: () => withPlan(canUsePlatformCatalog(userPlan), () => setIsLibraryOpen(true)),
     toggleEditMode: () => setIsEditMode((on) => !on),
     toggleChannelEditMode: () => { setIsChannelEditMode((on) => !on); channelTrash.disarm() },
     openHost: () => { void handleStartLiveMode() },
@@ -685,7 +685,7 @@ export default function App() {
     padView: (v: PadPanelProps['view']) => { if (v === 'pads') stopPlayback(); setPadActiveView(v); setActiveFolder(null) },
     padNote: (note: string) => playPad(note),
     padVolume: (v: number) => updatePadVolume(v),
-    padSets: () => handlePremiumFeature(() => setIsPadSetsModalOpen(true)),
+    padSets: () => withPlan(canUseCloudPads(userPlan), () => setIsPadSetsModalOpen(true)),
     padEdit: () => setIsPadSoundsOpen(true),
     padLoad: (note: string, file: File) => loadCustomPad(note, file),
     padClear: (note: string) => clearCustomPad(note),
@@ -917,7 +917,7 @@ export default function App() {
   }, [blocked, isCountingIn, cancelCountIn, isPlaying, pause, activeNote, stopPad, playingUrl, stopPlayback])
 
   const handleStartLiveMode = async () => {
-    // Modo Ao Vivo é exclusivo dos planos pagos.
+    // Modo Ao Vivo pelo portão do plano (canUseLiveMode). Aparelhos por plano: maxLiveDevices.
     if (!canUseLiveMode(userPlan)) {
       setIsPricingOpen(true)
       return
@@ -997,9 +997,9 @@ export default function App() {
     localStorage.setItem('last_seen_version', CURRENT_VERSION)
   }
 
-  // Helper for Premium Features
-  const handlePremiumFeature = (action: () => void) => {
-    if (userPlan === 'free') {
+  // Recurso preso a um portão do plano (src/lib/plans.ts): liberado, roda a ação; senão abre os Planos.
+  const withPlan = (allowed: boolean, action: () => void) => {
+    if (!allowed) {
       setIsPricingOpen(true)
       return
     }
@@ -1566,7 +1566,7 @@ export default function App() {
               )}
             </div>
 
-            <button data-tour="biblioteca" title="Biblioteca" aria-label="Biblioteca" onClick={() => handlePremiumFeature(() => setIsLibraryOpen(true))}
+            <button data-tour="biblioteca" title="Biblioteca" aria-label="Biblioteca" onClick={() => withPlan(canUsePlatformCatalog(userPlan), () => setIsLibraryOpen(true))}
               className="transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer text-text-muted hover:text-white">
               <Cloud size={14} /> <span className="hidden xl:inline">BIBLIOTECA</span>
             </button>
@@ -1600,7 +1600,7 @@ export default function App() {
 
             {/* Key Selector */}
             <div className="relative">
-              <button data-tour="tom" onClick={() => handlePremiumFeature(() => setIsKeyPickerOpen(!isKeyPickerOpen))}
+              <button data-tour="tom" onClick={() => withPlan(canChangeKey(userPlan), () => setIsKeyPickerOpen(!isKeyPickerOpen))}
                 className={`transport-btn flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold cursor-pointer ${isKeyPickerOpen ? 'text-primary' : 'text-text-muted hover:text-white'}`}>
                 <span>TOM</span>
                 {currentKeyName && <span className="text-primary font-mono">{currentKeyName}</span>}
@@ -2170,7 +2170,7 @@ export default function App() {
             className={`flex-1 py-2 short:py-1 text-[10px] font-bold uppercase tracking-[0.15em] transition-colors cursor-pointer font-mono ${mobileView === 'mixer' ? 'text-primary border-b-2 border-primary' : 'text-text-muted'}`}>
             MIXER
           </button>
-          <button onClick={() => handlePremiumFeature(() => setMobileView('pads'))}
+          <button onClick={() => setMobileView('pads')}
             className={`flex-1 py-2 short:py-1 text-[10px] font-bold uppercase tracking-[0.15em] transition-colors cursor-pointer font-mono ${mobileView === 'pads' ? 'text-secondary border-b-2 border-secondary' : 'text-text-muted'}`}>
             PADS
           </button>
@@ -2392,7 +2392,7 @@ export default function App() {
             {padActiveView === 'pads' && (
               <div className="flex gap-1 mb-2 short:mb-1">
                 <button
-                  onClick={() => handlePremiumFeature(() => setIsPadSetsModalOpen(true))}
+                  onClick={() => withPlan(canUseCloudPads(userPlan), () => setIsPadSetsModalOpen(true))}
                   className={`flex-1 py-1.5 text-[9px] font-bold rounded flex items-center justify-center gap-1.5 font-mono tracking-wider border transition-all active:scale-95 cursor-pointer
                     ${padMode === 'system'
                       ? 'bg-secondary/15 text-secondary border-secondary/30'
@@ -2569,7 +2569,7 @@ export default function App() {
         approvedIps={approvedIps}
         onToggleDevice={(ip) => setApprovedIps(prev => {
           if (prev.includes(ip)) return prev.filter(x => x !== ip)
-          // Limite de aparelhos por plano (Pro = 4, Studio = ilimitado).
+          // Limite de aparelhos por plano (Livre = 1, Pro = 4, Studio = ilimitado).
           if (prev.length >= maxLiveDevices(userPlan)) { setIsPricingOpen(true); return prev }
           return [...prev, ip]
         })}
@@ -2750,7 +2750,7 @@ export default function App() {
                   </button>
 
                   {/* BIBLIOTECA */}
-                  <button onClick={() => { handlePremiumFeature(() => setIsLibraryOpen(true)); setIsMobileDrawerOpen(false); }}
+                  <button onClick={() => { withPlan(canUsePlatformCatalog(userPlan), () => setIsLibraryOpen(true)); setIsMobileDrawerOpen(false); }}
                     className="w-full text-left px-3 py-3 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors border border-transparent hover:border-border">
                     <span className="text-white text-sm font-bold flex items-center gap-3">
                       <Cloud size={16} className="text-primary" />

@@ -108,6 +108,8 @@ describe('textos de cancelamento e exclusão (I8, I9)', () => {
     expect(req).toContain('não é automático')
     const end = cancelOutcomeLine({ outcome: 'until_period_end', plan: 'essencial_mensal', accessUntil: '2026-12-17T03:00:00Z', amount: 49.9 }, 'Pro Mensal')
     expect(end).toContain('até 16/12/2026')
+    // O Livre de volta com os números de hoje (Parte 3): 3 separações em 4 ou 6 faixas.
+    expect(end).toContain('a conta volta para o Livre (3 separações por mês, em 4 ou 6 faixas).')
   })
 })
 

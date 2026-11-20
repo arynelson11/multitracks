@@ -128,7 +128,7 @@ export function SubscriptionPanel({ plan, onChanged, onOpenPricing }: Props) {
                   <li>{cancelOutcomeLine(preview, activeName)}</li>
                 ) : (
                   <>
-                    <li>Você continua com o {activeName} até o fim do período que já pagou{paidUntilLabel}. Depois disso a conta volta para o Livre (5 separações por mês, em 2 faixas).</li>
+                    <li>Você continua com o {activeName} até o fim do período que já pagou{paidUntilLabel}. Depois disso a conta volta para o Livre (3 separações por mês, em 4 ou 6 faixas).</li>
                     <li>Se esta é sua primeira assinatura e faz até 7 dias da compra, devolvemos o valor integral no cartão e a conta volta para o Livre na hora. Nas assinaturas seguintes, o pedido de estorno vai para a nossa equipe.</li>
                   </>
                 )}

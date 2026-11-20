@@ -41,12 +41,13 @@ export interface StageUiState {
 export const STAGE_MAX_REPEATS = 9
 
 /**
- * Portões do plano (plans.ts), os mesmos pro palco e pro motor: seções e loop infinito são dos
- * pagos (`canUseSections`); a banda controlar seções é do Studio (`canBandControlSections`).
+ * Portões do plano (plans.ts), os mesmos pro palco e pro motor: seções e loop infinito seguem
+ * `canUseSections` (todos os planos desde a Parte 3, o Livre inclusive); a banda controlar
+ * seções é do Studio (`canBandControlSections`).
  */
 export function stageGatesFor(plan: string | null | undefined): StageGates {
-  const paid = canUseSections(plan)
-  return { sections: paid, infinite: paid, maxRepeats: STAGE_MAX_REPEATS, bandSections: canBandControlSections(plan) }
+  const sections = canUseSections(plan)
+  return { sections, infinite: sections, maxRepeats: STAGE_MAX_REPEATS, bandSections: canBandControlSections(plan) }
 }
 
 /** Cor de reserva de uma seção sem tipo e sem cor (a do Refrão, como o `colorForSection`). */

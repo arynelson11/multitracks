@@ -19,7 +19,7 @@ interface SectionBarProps {
   activeLoop: { index: number; remaining: number | 'infinite' } | null;
   pendingJump: number | null;
   canEdit: boolean;
-  infiniteAllowed: boolean; // loop infinito é exclusivo de plano pago
+  infiniteAllowed: boolean; // loop infinito liberado pelo plano (canUseSections)
   maxRepeats: number;       // teto de repetições do seletor (grátis = 4)
   onUpgrade: () => void;    // abre o pricing quando esbarra num limite de plano
   onSeek: (time: number) => void;

@@ -48,9 +48,9 @@ const AUDIENCE = [
  * `pro`: só nos planos pagos (Pro e Studio), conforme src/lib/plans.ts e o FATOS.
  */
 const FEATURES = [
-  { icon: Gauge,      pro: true,  title: 'BPM detectado pela IA',      desc: 'Ao separar, a IA já estima o andamento da música. O click entra na velocidade certa, sem você contar nada.' },
+  { icon: Gauge,      pro: false, title: 'BPM detectado pela IA',      desc: 'Ao separar, a IA já estima o andamento da música. O click entra na velocidade certa, sem você contar nada.' },
   { icon: ScrollText, pro: true,  title: 'Teleprompter de letras',     desc: 'Suba a letra da música e a equipe acompanha na tela, sincronizada com as seções, no palco ou pelo celular.' },
-  { icon: Sparkles,   pro: true,  title: 'Voz guia automática',        desc: 'O Playback Studio marca sozinho os pontos de entrada e monta a voz guia, falada em português, pra orientar quem canta.' },
+  { icon: Sparkles,   pro: false, title: 'Voz guia automática',        desc: 'O Playback Studio marca sozinho os pontos de entrada e monta a voz guia, falada em português, pra orientar quem canta.' },
   { icon: Archive,    pro: true,  title: 'Repertório com backup .zip', desc: 'Monte seus repertórios e salve tudo num arquivo .zip. Carregue de volta em qualquer aparelho, quando quiser.' },
   { icon: FileAudio,  pro: true,  title: 'Download em WAV ou MP3',     desc: 'Baixe cada faixa separada no formato que precisar. WAV pra produzir, MP3 pra mandar rápido pra equipe.' },
   { icon: QrCode,     pro: true,  title: 'Banda conecta por QR Code',  desc: 'No Modo Ao Vivo, aberto pelo app de computador, cada músico aponta o celular pro QR Code e entra na sessão. Música, tom e letra em tempo real.' },
@@ -68,12 +68,15 @@ const PLANS = [
     badge: null as string | null,
     highlight: false,
     features: [
-      '5 separações de faixas por mês',
-      'Separação em 2 faixas (voz e instrumental)',
+      '3 separações de faixas por mês',
+      'Separação em 4 ou 6 faixas',
+      'Até 3 músicas diferentes por mês no palco',
+      'Seções, troca de tom, BPM pela IA, click e voz guia',
+      'Modo Ao Vivo com 1 celular, até 10 minutos por dia',
       'Ouça cada faixa isolada no mixer',
       'Biblioteca de separações local, salva no navegador',
     ],
-    note: 'Download, BPM, voz guia, seções, troca de tom e Modo Ao Vivo ficam nos planos Pro e Studio.' as string | null,
+    note: 'Download das faixas, repertório com várias músicas, pads e biblioteca na nuvem e Modo Ao Vivo com mais celulares e sem limite de tempo ficam nos planos Pro e Studio.' as string | null,
     cta: 'Começar grátis',
   },
   {
@@ -204,7 +207,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <p className="text-[clamp(.95rem,2vw,1.2rem)] text-warm-200 max-w-2xl mx-auto mb-10 leading-relaxed">
             Sábado 23h alguém manda mudando o setlist, e a música não está em catálogo nenhum.
             O Playback Studio separa qualquer música, do worship ao sertanejo,
-            em faixas prontas pra banda da igreja. No Pro, você marca as seções e repete o refrão
+            em faixas prontas pra banda da igreja. Você marca as seções e repete o refrão
             ao vivo sem cortar a música.
           </p>
 
@@ -273,7 +276,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <div className="grid sm:grid-cols-3 gap-6">
             {[
               { title: 'Qualquer música, não só o catálogo', desc: 'A música que o ministro escolheu não está em catálogo nenhum? Sobe ela aqui. Qualquer música vira multitracks em alguns minutos.' },
-              { title: 'O tom no alcance de quem canta', desc: 'Nos planos Pro e Studio, mude o tom da música sem perder o tempo: o click e a voz guia ficam fora da troca de tom e a banda segue junto.' },
+              { title: 'O tom no alcance de quem canta', desc: 'Mude o tom da música sem perder o tempo, em qualquer plano: o click e a voz guia ficam fora da troca de tom e a banda segue junto.' },
               { title: 'Você cria, não espera release', desc: 'No catálogo você recebe o que já existe. Aqui você prepara o que a sua equipe precisa, sem esperar lançamento nem licença gringa.' },
             ].map((item, i) => (
               <div key={i} className="bg-tinta-raised border border-tinta-border rounded-2xl p-7 hover:border-laranja/40 transition-colors">
@@ -299,8 +302,8 @@ export function LandingPage({ onEnter }: LandingPageProps) {
           <div className="space-y-5">
             {[
               { n: '1', title: 'Sobe a música', desc: 'Em MP3, WAV ou AAC.' },
-              { n: '2', title: 'O Playback Studio separa tudo', desc: 'Voz, bateria, baixo, guitarra, piano e os outros instrumentos, em até 6 faixas (2 no Livre). Em alguns minutos.' },
-              { n: '3', title: 'Sua banda chega pronta no domingo', desc: 'Faixas separadas no mixer, com click e voz guia. No Pro, você marca as seções (intro, verso, refrão) pra repetir trechos ao vivo, e a banda acompanha pelo celular no Modo Ao Vivo.' },
+              { n: '2', title: 'O Playback Studio separa tudo', desc: 'Voz, bateria, baixo, guitarra, piano e os outros instrumentos, em até 6 faixas (4 ou 6 no Livre). Em alguns minutos.' },
+              { n: '3', title: 'Sua banda chega pronta no domingo', desc: 'Faixas separadas no mixer, com click e voz guia. Você marca as seções (intro, verso, refrão) pra repetir trechos ao vivo, e a banda acompanha pelo celular no Modo Ao Vivo.' },
             ].map(step => (
               <div key={step.n} className="bg-tinta-raised border border-tinta-border rounded-2xl p-6 sm:p-8 flex items-start gap-6">
                 <div className="w-14 h-14 rounded-full bg-laranja text-ps-on-or flex items-center justify-center font-display font-semibold text-[24px] shrink-0">
@@ -357,7 +360,7 @@ export function LandingPage({ onEnter }: LandingPageProps) {
             A separação é só o começo. O Playback Studio leva a música do upload até o palco, com tudo que a banda precisa no caminho.
           </p>
           <p className="text-warm-200 text-[14px] max-w-2xl mx-auto mb-16 text-center leading-relaxed">
-            No Livre você separa 5 músicas por mês em 2 faixas (voz e instrumental) e ouve cada uma no mixer.
+            No Livre você separa 3 músicas por mês em 4 ou 6 faixas e toca até 3 músicas diferentes por mês no palco, com seções, tom, BPM e voz guia.
             Os recursos com o selo <span className="font-semibold text-bone">Pro</span> vêm nos planos Pro e Studio.
           </p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">

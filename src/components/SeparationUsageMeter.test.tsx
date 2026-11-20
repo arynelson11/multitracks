@@ -29,7 +29,7 @@ describe('SeparationUsageMeter (aba Assinatura)', () => {
 
     render(<SeparationUsageMeter plan="free" />)
 
-    expect(await screen.findByText('2 / 5 usadas')).toBeTruthy()
+    expect(await screen.findByText('2 / 3 usadas')).toBeTruthy()
     expect(screen.getByText(/volta a zero em 01\/12\/2026/)).toBeTruthy()
     expect(screen.queryByText(/99/)).toBeNull()
   })
@@ -46,28 +46,28 @@ describe('SeparationUsageMeter (aba Assinatura)', () => {
     expect(await screen.findByText(/Não deu para carregar o contador agora/)).toBeTruthy()
   })
 
-  it('medidor com bônus mostra 4 / 15 usadas e a frase dos extras', async () => {
+  it('medidor com bônus mostra 4 / 13 usadas e a frase dos extras', async () => {
     fetchUsage.mockResolvedValue({ used: 4, periodStart: '2026-11-01T03:00:00Z', resetsAt: '2026-12-01T03:00:00Z' })
     fetchBonus.mockResolvedValue(10)
     const { container } = render(<SeparationUsageMeter plan="free" />)
-    expect(await screen.findByText('4 / 15 usadas')).toBeTruthy()
-    expect(screen.getByText('5 separações por mês + 10 extras neste mês. O contador volta a zero em 01/12/2026.')).toBeTruthy()
+    expect(await screen.findByText('4 / 13 usadas')).toBeTruthy()
+    expect(screen.getByText('3 separações por mês + 10 extras neste mês. O contador volta a zero em 01/12/2026.')).toBeTruthy()
     expect(container.textContent).not.toContain(TRAVESSAO)
   })
 
   it('um extra só fica no singular', async () => {
-    fetchUsage.mockResolvedValue({ used: 5, periodStart: '2026-11-01T03:00:00Z', resetsAt: '2026-12-01T03:00:00Z' })
+    fetchUsage.mockResolvedValue({ used: 3, periodStart: '2026-11-01T03:00:00Z', resetsAt: '2026-12-01T03:00:00Z' })
     fetchBonus.mockResolvedValue(1)
     render(<SeparationUsageMeter plan="free" />)
-    expect(await screen.findByText('5 / 6 usadas')).toBeTruthy()
-    expect(screen.getByText('5 separações por mês + 1 extra neste mês. O contador volta a zero em 01/12/2026.')).toBeTruthy()
+    expect(await screen.findByText('3 / 4 usadas')).toBeTruthy()
+    expect(screen.getByText('3 separações por mês + 1 extra neste mês. O contador volta a zero em 01/12/2026.')).toBeTruthy()
   })
 
   it('sem bônus a frase de hoje não muda', async () => {
     fetchUsage.mockResolvedValue({ used: 2, periodStart: '2026-11-01T03:00:00Z', resetsAt: '2026-12-01T03:00:00Z' })
     const { container } = render(<SeparationUsageMeter plan="free" />)
-    expect(await screen.findByText('2 / 5 usadas')).toBeTruthy()
-    expect(screen.getByText('5 separações por mês. O contador volta a zero em 01/12/2026.')).toBeTruthy()
+    expect(await screen.findByText('2 / 3 usadas')).toBeTruthy()
+    expect(screen.getByText('3 separações por mês. O contador volta a zero em 01/12/2026.')).toBeTruthy()
     expect(container.textContent).not.toMatch(/extra/)
     expect(container.textContent).not.toContain(TRAVESSAO)
   })

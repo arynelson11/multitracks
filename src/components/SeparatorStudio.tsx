@@ -7,7 +7,7 @@ import { AUDIO_FILE_ACCEPT } from '../lib/uploadContentType';
 import { getAuthHeaders } from '../lib/supabase';
 import { fetchMonthlyQuota, formatDateBR } from '../lib/separationUsage';
 import { useAuth } from '../hooks/useAuth';
-import { canDownloadStems, canUseVoiceGuide, canUseBpmDetection, planTier } from '../lib/plans';
+import { canDownloadStems, canUseVoiceGuide, canUseBpmDetection, planTier, separationStemOptions, ALL_STEM_COUNTS, type StemCount } from '../lib/plans';
 import { PricingModal } from './PricingModal';
 import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { detectBeatGrid, formatBpm, type BeatGrid } from '../lib/beatGrid';
@@ -93,6 +93,13 @@ const GUIDE_SECTIONS: { label: string; file: string }[] = [
   { label: '5', file: 'Song Sections/Portugese - 5.wav' },
   { label: '6', file: 'Song Sections/Portugese - 6.wav' },
 ];
+
+// Cartões da tela de opções: o que sai em cada número de faixas.
+const STEM_OPTION_LABELS: Record<StemCount, string> = {
+  2: 'Vocais, Instrumental',
+  4: 'Vocais, Bateria, Baixo, Outros',
+  6: 'Vocais, Bateria, Baixo, Guitarra, Piano, Outros',
+};
 
 const GUIDE_DYNAMICS: { label: string; file: string }[] = [
   { label: 'All In', file: 'Dynamic Cues/Portugese - All In.wav' },
@@ -1489,20 +1496,13 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   };
 
   if (separationStep === 'options' && pendingFile) {
-    const tier = planTier(userPlan);
-    const canUsePro = isAdmin || tier !== 'free';
-    const canUseStudio = isAdmin || tier === 'studio';
+    // As opções vêm do plano (plans.ts): o Livre separa em 4 ou 6 faixas, quem paga em 2, 4 ou 6.
+    // Admin nunca tem a trava do Livre.
+    const stemOptions = isAdmin ? ALL_STEM_COUNTS : separationStemOptions(userPlan);
+    const basicOptions = stemOptions.filter(n => n === 2);
+    const advancedOptions = stemOptions.filter(n => n !== 2);
 
-    const handleSelectOption = (stemsCount: number, requirePro: boolean, requireStudio: boolean) => {
-      if (requireStudio && !canUseStudio) {
-        setIsPricingOpen(true);
-        return;
-      }
-      if (requirePro && !canUsePro) {
-        setIsPricingOpen(true);
-        return;
-      }
-      
+    const handleSelectOption = (stemsCount: StemCount) => {
       setFile(pendingFile);
       setSongName(pendingFile.name.replace(/\.[^/.]+$/, ""));
       setSeparationStep('upload'); // Reseta o step, pois o `file` que controla a tela de processamento.
@@ -1522,48 +1522,46 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
             <div className="space-y-12">
               {/* Separação Básica */}
-              <div>
-                <h2 className="text-white font-bold text-sm mb-4">Separação Básica</h2>
-                <div className="grid grid-cols-1 gap-4">
-                  <div
-                    onClick={() => handleSelectOption(2, false, false)}
-                    className="hw-btn flex flex-col p-6 rounded-xl cursor-pointer hover:bg-white/5 transition-colors border border-border/50 hover:border-primary/50 group"
-                  >
-                    <div className="text-white font-bold text-base mb-2 group-hover:text-primary transition-colors">Vocais, Instrumental</div>
-                    <div className="text-text-muted text-xs">2 faixas</div>
+              {basicOptions.length > 0 && (
+                <div>
+                  <h2 className="text-white font-bold text-sm mb-4">Separação Básica</h2>
+                  <div className="grid grid-cols-1 gap-4">
+                    {basicOptions.map(n => (
+                      <div
+                        key={n}
+                        onClick={() => handleSelectOption(n)}
+                        className="hw-btn flex flex-col p-6 rounded-xl cursor-pointer hover:bg-white/5 transition-colors border border-border/50 hover:border-primary/50 group"
+                      >
+                        <div className="text-white font-bold text-base mb-2 group-hover:text-primary transition-colors">{STEM_OPTION_LABELS[n]}</div>
+                        <div className="text-text-muted text-xs">{n} faixas</div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              </div>
+              )}
 
-              {/* Separação Avançada (Pro) */}
-              <div>
-                <h2 className="text-white font-bold text-sm mb-4 flex items-center gap-2">
-                  Separação Avançada
-                  {!canUsePro && <span className="bg-yellow-500/20 text-yellow-500 text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-wider ml-2">PRO</span>}
-                </h2>
-                <div className="grid grid-cols-1 gap-4">
-                  <div
-                    onClick={() => handleSelectOption(4, true, false)}
-                    className={`hw-btn flex items-center p-6 rounded-xl border transition-colors group ${canUsePro ? 'cursor-pointer hover:bg-white/5 border-border/50 hover:border-primary/50' : 'cursor-not-allowed opacity-50 border-border/20 bg-black/20'}`}
-                  >
-                    <div className="flex-1">
-                      <div className="text-white font-bold text-base mb-2">Vocais, Bateria, Baixo, Outros</div>
-                      <div className="text-text-muted text-xs">4 faixas</div>
-                    </div>
-                    {!canUsePro && <Lock size={20} className="text-text-muted/50" />}
-                  </div>
-                  <div
-                    onClick={() => handleSelectOption(6, true, false)}
-                    className={`hw-btn flex items-center p-6 rounded-xl border transition-colors group ${canUsePro ? 'cursor-pointer hover:bg-white/5 border-border/50 hover:border-primary/50' : 'cursor-not-allowed opacity-50 border-border/20 bg-black/20'}`}
-                  >
-                    <div className="flex-1">
-                      <div className="text-white font-bold text-base mb-2">Vocais, Bateria, Baixo, Guitarra, Piano, Outros</div>
-                      <div className="text-text-muted text-xs">6 faixas</div>
-                    </div>
-                    {!canUsePro && <Lock size={20} className="text-text-muted/50" />}
+              {/* Separação Avançada */}
+              {advancedOptions.length > 0 && (
+                <div>
+                  <h2 className="text-white font-bold text-sm mb-4 flex items-center gap-2">
+                    Separação Avançada
+                  </h2>
+                  <div className="grid grid-cols-1 gap-4">
+                    {advancedOptions.map(n => (
+                      <div
+                        key={n}
+                        onClick={() => handleSelectOption(n)}
+                        className="hw-btn flex items-center p-6 rounded-xl border transition-colors group cursor-pointer hover:bg-white/5 border-border/50 hover:border-primary/50"
+                      >
+                        <div className="flex-1">
+                          <div className="text-white font-bold text-base mb-2">{STEM_OPTION_LABELS[n]}</div>
+                          <div className="text-text-muted text-xs">{n} faixas</div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              </div>
+              )}
 
             </div>
           </div>

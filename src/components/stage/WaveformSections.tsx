@@ -21,7 +21,7 @@ const RULER = 22
  * Faixa da régua: 44 px a partir do fundo (alvo de toque). Os blocos terminam onde ela começa e
  * ela inteira tem a cara da régua, com a fronteira em cima: cada pixel com um sentido só
  * (tocar num bloco arma; a régua e a agulha buscam). Mesmo valor de `h-ps-touch`/`bottom-ps-touch`.
- * Sem blocos (música sem seções ou Livre), a faixa de toque cobre a onda inteira (Ruling AGULHA).
+ * Sem blocos (música sem seções), a faixa de toque cobre a onda inteira (Ruling AGULHA).
  */
 const ZONE = 44
 /** Rótulo da régua a cada 30 s. */

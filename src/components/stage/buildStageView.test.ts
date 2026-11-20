@@ -103,8 +103,9 @@ describe('buildStageView', () => {
   })
 
   it('portões do plano Livre e do Studio', () => {
-    expect(buildStageView(engine(), { ...UI, plan: 'free' }).gates).toEqual({ sections: false, infinite: false, maxRepeats: 9, bandSections: false })
-    expect(buildStageView(engine(), { ...UI, plan: null }).gates).toEqual({ sections: false, infinite: false, maxRepeats: 9, bandSections: false })
+    // Parte 3 (Livre como amostra): o Livre tem seções e o loop infinito como os pagos; a banda nas seções segue do Studio.
+    expect(buildStageView(engine(), { ...UI, plan: 'free' }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: false })
+    expect(buildStageView(engine(), { ...UI, plan: null }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: false })
     expect(buildStageView(engine(), { ...UI, plan: 'essencial_anual' }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: false })
     expect(buildStageView(engine(), { ...UI, plan: 'pro_mensal' }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: true })
     // O motor recebe os mesmos portões que a tela.

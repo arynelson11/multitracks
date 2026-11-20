@@ -527,7 +527,7 @@ const withGeneratedClickMuted = (song: SavedSong): SavedSong =>
 // === Grade da música (Parte 2, T27; Arquitetura B) ===
 // A grade do palco vem só da faixa de click (sinal limpo, é o que a banda ouve): BPM, fase e
 // compasso lidos nela pelo analyzeClickTrack (T3) e montados pelo gridFromClick (T2). Sem click,
-// a grade sai do BPM salvo (sem fase) e, nos planos pagos, o motor gera o click que falta pelo
+// a grade sai do BPM salvo (sem fase) e, com o `autoClick` do plano, o motor gera o click que falta pelo
 // mesmo fluxo do Metrônomo (planAutoClick e renderAutoClick, M7).
 
 /** Nome do canal do click que o motor gera pra música sem click (o papel Click vem do nome). */
@@ -576,7 +576,7 @@ const AUTO_CLICK_BLOCKERS: ReadonlySet<AutoClickCheck> = new Set<AutoClickCheck>
 /** Grade e se o "1" dela é assumido (o click não provou onde ele cai e as seções não decidiram). */
 interface ReadGrid { grid: SongGrid; oneAssumed: boolean }
 /**
- * Pedido na fila da grade: ler o click e, nos planos pagos, gerar o que falta. `plan` guarda o
+ * Pedido na fila da grade: ler o click e, com o `autoClick`, gerar o que falta. `plan` guarda o
  * plano que o Worker devolveu com a VS já tocando: o WAV do click só é feito na próxima parada.
  */
 interface GridJob { read: boolean; generate: boolean; plan?: AutoClickOkPlan; done: (() => void)[] }
@@ -695,7 +695,7 @@ const sameGrid = (a: SongGrid | null | undefined, b: SongGrid | null | undefined
     (a ?? null) === (b ?? null) || (!!a && !!b && a.bpm === b.bpm && a.firstDownbeat === b.firstDownbeat && a.signature === b.signature
         && a.countEvery === b.countEvery && a.source === b.source && a.meterSource === b.meterSource);
 
-// `opts` (T27): `autoClick` = o plano pode gerar o click que falta (canUseBpmDetection); sem ele,
+// `opts` (T27): `autoClick` = o plano pode gerar o click que falta (canUseGeneratedClick); sem ele,
 // nunca gera. `sectionGates` e `stageMode` são da T28: sem `sectionGates`, tudo liberado; sem
 // `stageMode`, o palco antigo (o mecanismo da v1.4.16). O App passa os dois (R-25).
 // `autoNext` (Parte 3, T9) = o plano permite o AUTO entre músicas; sem a opção, permite (como até

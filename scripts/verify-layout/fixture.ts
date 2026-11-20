@@ -86,6 +86,9 @@ export const CHANNELS: StageChannel[] = [
 const SPLIT: OutputPlan = { mode: 'split2', channels: 2, vs: [1], click: [0], guide: [0], panByRole: true, fellBackFrom: null }
 
 const PAGO: StageGates = { sections: true, infinite: true, maxRepeats: 8, bandSections: true }
+// Portões sem seções: o convite das seções ("Conhecer os planos") e o REPETIR sem ∞. Nenhum plano
+// usa mais desde a Parte 3 (o Livre tem seções como os pagos), mas o convite continua no código e
+// fica medido aqui; o estado `selo` também usa, só pela barra com o selo do Livre.
 const LIVRE: StageGates = { sections: false, infinite: false, maxRepeats: 4, bandSections: false }
 
 // ---------- Relógio parado na contagem ----------

@@ -34,7 +34,7 @@ describe('ligações do palco novo', () => {
   })
 
   it('o palco novo define e redefine o tom original com a ação do palco antigo (setOriginalKey e tom de volta pro 0)', () => {
-    expect(app).toMatch(/setOriginalKey:\s*\(key: string \| null\)\s*=>\s*handlePremiumFeature\(\(\)\s*=>\s*\{\s*setOriginalKey\(key\);\s*changePitch\(0\)\s*\}\)/)
+    expect(app).toMatch(/setOriginalKey:\s*\(key: string \| null\)\s*=>\s*\w+\(\s*canChangeKey\(\s*userPlan\s*\)\s*,\s*\(\)\s*=>\s*\{\s*setOriginalKey\(key\);\s*changePitch\(0\)\s*\}\s*\)/)
   })
 
   it('marcadores e letra acham a música da nuvem pela id (sourceId), nunca pelo nome com "contém"', () => {
@@ -43,9 +43,28 @@ describe('ligações do palco novo', () => {
     expect(app).toContain('os marcadores ficam só neste aparelho')
   })
 
-  it('o motor recebe o click gerado pelo plano e os portões das seções', () => {
-    expect(app).toMatch(/autoClick\s*:\s*canUseBpmDetection\(\s*userPlan\s*\)/)
+  it('o motor recebe autoClick: canUseGeneratedClick(userPlan) e os portões das seções', () => {
+    expect(app).toMatch(/autoClick:\s*canUseGeneratedClick\(userPlan\)/)
+    expect(app).not.toMatch(/autoClick\s*:\s*canUseBpmDetection/)
     expect(app).toMatch(/sectionGates/)
+  })
+
+  it('handlePremiumFeature sumiu: tom por canChangeKey, biblioteca por canUsePlatformCatalog e pads da nuvem por canUseCloudPads', () => {
+    expect(app).not.toMatch(/handlePremiumFeature/)
+    // Tom: o palco novo (trocar o tom e o tom original) e o TOM do palco antigo.
+    expect(app).toMatch(/changePitch:\s*\(semitones: number\)\s*=>\s*\w+\(\s*canChangeKey\(\s*userPlan\s*\)\s*,\s*\(\)\s*=>\s*changePitch\(semitones\)\s*\)/)
+    expect(app).toMatch(/data-tour="tom" onClick=\{\(\) => \w+\(\s*canChangeKey\(\s*userPlan\s*\)\s*,\s*\(\)\s*=>\s*setIsKeyPickerOpen\(/)
+    expect(app.match(/canChangeKey\(userPlan\)/g)).toHaveLength(3)
+    // Biblioteca da plataforma: o palco novo, o botão do palco antigo e a gaveta do celular.
+    expect(app).toMatch(/openLibrary:\s*\(\)\s*=>\s*\w+\(\s*canUsePlatformCatalog\(\s*userPlan\s*\)\s*,\s*\(\)\s*=>\s*setIsLibraryOpen\(true\)\s*\)/)
+    expect(app.match(/\w+\(canUsePlatformCatalog\(userPlan\), \(\) => setIsLibraryOpen\(true\)\)/g)).toHaveLength(3)
+    // Conjuntos de pads da nuvem, nos dois palcos.
+    expect(app).toMatch(/padSets:\s*\(\)\s*=>\s*\w+\(\s*canUseCloudPads\(\s*userPlan\s*\)\s*,\s*\(\)\s*=>\s*setIsPadSetsModalOpen\(true\)\s*\)/)
+    expect(app.match(/\w+\(canUseCloudPads\(userPlan\), \(\) => setIsPadSetsModalOpen\(true\)\)/g)).toHaveLength(2)
+  })
+
+  it('o painel de pads do celular abre pra todos (os pads rodam no aparelho)', () => {
+    expect(app).toMatch(/<button onClick=\{\(\) => setMobileView\('pads'\)\}/)
   })
 
   it('o compasso salvo da biblioteca chega no loadFiles (sem ele o click que falta nunca é gerado)', () => {

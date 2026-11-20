@@ -96,7 +96,7 @@ export function cancelOutcomeLine(p: CancelPreview, planName: string): string {
     return `Você assinou há até 7 dias, mas esta não é sua primeira assinatura, então o estorno não é automático: o pedido vai para a nossa equipe, que te responde pelo e-mail da conta. Enquanto isso você continua com o ${planName}${until}.`
   }
   const until = p.accessUntil ? `até ${accessDateLabel(p.accessUntil)}` : 'até o fim do período que já pagou'
-  return `Você continua com o ${planName} ${until}. Depois disso a conta volta para o Livre (5 separações por mês, em 2 faixas).`
+  return `Você continua com o ${planName} ${until}. Depois disso a conta volta para o Livre (3 separações por mês, em 4 ou 6 faixas).`
 }
 
 // Aviso de "Excluir minha conta" pra quem tem plano pago.

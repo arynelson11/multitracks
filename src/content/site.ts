@@ -64,7 +64,7 @@ export const PRICES = {
 
 // Resumo de cada plano (vai pro <noscript>). Segue a seção 2 do FATOS.
 export const PLAN_SUMMARIES = {
-  livre: '5 separações por mês em 2 faixas (voz e instrumental), pra ouvir no mixer. A biblioteca de separações fica no navegador.',
+  livre: '3 separações por mês em 4 ou 6 faixas, até 3 músicas diferentes por mês no palco com seções, troca de tom, BPM pela IA, click e voz guia, e Modo Ao Vivo com 1 celular por até 10 minutos por dia. A biblioteca de separações fica no navegador.',
   pro: '50 separações por mês em 2, 4 ou 6 faixas, download em WAV e MP3, BPM pela IA, voz guia, pads, seções com loop, troca de tom, teleprompter, biblioteca na nuvem com repertório e Modo Ao Vivo com até 4 aparelhos.',
   studio: '150 separações por mês, tudo do Pro, Modo Ao Vivo sem limite de aparelhos e a banda controla loop e seções pelo celular.',
 } as const
@@ -83,19 +83,19 @@ export const PAGE_HEADS: Record<'home' | 'download' | 'admin', PageHead> = {
     path: '/',
     title: 'Playback Studio: multitracks de qualquer música pra igreja',
     description:
-      'Separação de faixas com IA pra banda da igreja: qualquer música vira multitracks pro VS. Grátis no Livre; troca de tom, BPM e voz guia no Pro e no Studio.',
+      'Separação de faixas com IA pra banda da igreja: qualquer música vira multitracks pro VS. Grátis no Livre, com troca de tom, BPM e voz guia.',
     ogTitle: 'Playback Studio: multitracks de qualquer música pra igreja',
     ogDescription:
-      'Separe qualquer música em multitracks pro VS da igreja. Grátis no Livre; troca de tom, BPM e voz guia no Pro e no Studio.',
+      'Separe qualquer música em multitracks pro VS da igreja. Grátis no Livre, com troca de tom, BPM e voz guia.',
   },
   download: {
     path: '/download',
     title: 'Baixar o Playback Studio pra Mac, Windows e celular',
     description:
-      'App de multitracks pra Mac (Apple Silicon e Intel) e Windows, com uso sem internet e Modo Ao Vivo no Pro e no Studio. No celular, instale na tela de início.',
+      'App de multitracks pra Mac (Apple Silicon e Intel) e Windows, com uso sem internet e Modo Ao Vivo em todos os planos. No celular, instale na tela de início.',
     ogTitle: 'Baixar o Playback Studio pra Mac, Windows e celular',
     ogDescription:
-      'App de multitracks pra Mac e Windows, com uso sem internet e Modo Ao Vivo no Pro e no Studio. No celular e no tablet, instale na tela de início.',
+      'App de multitracks pra Mac e Windows, com uso sem internet e Modo Ao Vivo em todos os planos. No celular e no tablet, instale na tela de início.',
   },
   admin: {
     path: '/admin',
@@ -120,19 +120,19 @@ export const FAQS: Faq[] = [
   },
   {
     q: 'Dá pra montar o VS da igreja com o Playback Studio?',
-    a: 'Dá. VS é como muita igreja chama o playback com as faixas separadas, o click e a guia. No Livre você separa em 2 faixas (voz e instrumental) pra experimentar. Nos planos Pro e Studio você separa em até 6 faixas, a IA detecta o BPM pro click, a voz guia sai falada em português e dá pra mudar o tom pro alcance de quem canta.',
+    a: 'Dá. VS é como muita igreja chama o playback com as faixas separadas, o click e a guia. Você separa em até 6 faixas, a IA detecta o BPM pro click, a voz guia sai falada em português e dá pra mudar o tom pro alcance de quem canta. No Livre você experimenta tudo isso com 3 separações por mês, em 4 ou 6 faixas, e até 3 músicas diferentes por mês no palco. Nos planos Pro e Studio são 50 ou 150 separações por mês, músicas sem limite no palco, download das faixas e repertório com várias músicas.',
   },
   {
     q: 'Dá pra repetir uma parte da música ao vivo?',
-    a: 'Dá, nos planos Pro e Studio. Você marca as seções (intro, verso, refrão, ponte) e, na hora do louvor, repete um trecho quantas vezes quiser ou deixa em loop até decidir seguir. A volta acontece no fim da parte, sem cortar a música no meio.',
+    a: 'Dá, em todos os planos, inclusive no Livre. Você marca as seções (intro, verso, refrão, ponte) e, na hora do louvor, repete um trecho quantas vezes quiser ou deixa em loop até decidir seguir. A volta acontece no fim da parte, sem cortar a música no meio.',
   },
   {
     q: 'A banda consegue acompanhar pelo celular?',
-    a: 'Sim, no Modo Ao Vivo, que abre pelo app de computador (Mac ou Windows). Cada músico aponta o celular pro QR Code e acompanha a música, o tom e a letra em tempo real, sem instalar nada. No Pro entram até 4 aparelhos. No Studio não tem limite, e a banda ainda controla as repetições e as seções pelo celular.',
+    a: 'Sim, no Modo Ao Vivo, que abre pelo app de computador (Mac ou Windows). Cada músico aponta o celular pro QR Code e acompanha a música, o tom e a letra em tempo real, sem instalar nada. No Livre entra 1 celular, por até 10 minutos por dia. No Pro entram até 4 aparelhos. No Studio não tem limite, e a banda ainda controla as repetições e as seções pelo celular.',
   },
   {
     q: 'Como funciona a separação?',
-    a: 'Você sobe a música em MP3, WAV ou AAC. A IA do Playback Studio separa em até 6 faixas (voz, bateria, baixo, guitarra, piano e os outros instrumentos) em alguns minutos. No Livre a separação é em 2 faixas, voz e instrumental. As faixas abrem no mixer, e o download em WAV ou MP3 vem nos planos Pro e Studio.',
+    a: 'Você sobe a música em MP3, WAV ou AAC. A IA do Playback Studio separa em até 6 faixas (voz, bateria, baixo, guitarra, piano e os outros instrumentos) em alguns minutos. No Livre são 3 separações por mês, em 4 ou 6 faixas. As faixas abrem no mixer, e o download em WAV ou MP3 vem nos planos Pro e Studio.',
   },
   {
     q: 'Qual a diferença pra um catálogo de multitracks?',

@@ -41,9 +41,25 @@ describe('LandingPage: textos', () => {
 
   it('diz o que é do Livre e o que é do Pro', () => {
     renderLanding()
-    expect(text()).toContain('No Livre você separa 5 músicas por mês em 2 faixas')
-    expect(text()).toContain('Download, BPM, voz guia, seções, troca de tom e Modo Ao Vivo ficam nos planos Pro e Studio.')
-    expect(screen.getAllByText('Pro', { selector: 'span' }).length).toBeGreaterThanOrEqual(6)
+    // Parte 3 (Livre como amostra): 3 separações em 4 ou 6 faixas, 3 músicas no palco e Ao Vivo com 1 celular.
+    expect(text()).toContain('No Livre você separa 3 músicas por mês em 4 ou 6 faixas e toca até 3 músicas diferentes por mês no palco, com seções, tom, BPM e voz guia.')
+    for (const item of [
+      '3 separações de faixas por mês',
+      'Separação em 4 ou 6 faixas',
+      'Até 3 músicas diferentes por mês no palco',
+      'Seções, troca de tom, BPM pela IA, click e voz guia',
+      'Modo Ao Vivo com 1 celular, até 10 minutos por dia',
+    ]) expect(text()).toContain(item)
+    expect(text()).toContain('Download das faixas, repertório com várias músicas, pads e biblioteca na nuvem e Modo Ao Vivo com mais celulares e sem limite de tempo ficam nos planos Pro e Studio.')
+    for (const velho of ['5 separações', '5 músicas', '2 faixas (voz e instrumental)', '(2 no Livre)', 'Nos planos Pro e Studio, mude o tom', 'No Pro, você marca as seções']) {
+      expect(text()).not.toContain(velho)
+    }
+    // Selo Pro só no que continua pago: BPM e voz guia agora são de todos.
+    const selo = (titulo: string) => screen.getByRole('heading', { name: new RegExp(`^${titulo}`) }).querySelector('span')?.textContent ?? null
+    expect(selo('BPM detectado pela IA')).toBeNull()
+    expect(selo('Voz guia automática')).toBeNull()
+    for (const pago of ['Repertório com backup .zip', 'Download em WAV ou MP3', 'Banda conecta por QR Code']) expect(selo(pago)).toBe('Pro')
+    expect(selo('App desktop que toca offline')).toBeNull()
   })
 
   it('o selo do anual vale o desconto de verdade de cada plano', () => {

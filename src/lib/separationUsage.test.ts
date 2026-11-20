@@ -80,19 +80,19 @@ describe('brtMonth', () => {
 })
 
 describe('monthlyLimit', () => {
-  it("monthlyLimit('free', 10) dá 15", () => {
-    expect(monthlyLimit('free', 10)).toBe(15)
+  it("monthlyLimit('free', 10) dá 13 (Livre de 3, Parte 3)", () => {
+    expect(monthlyLimit('free', 10)).toBe(13)
   })
 
   it('sem extra é o limite do plano de hoje', () => {
-    expect(monthlyLimit('free', 0)).toBe(5)
+    expect(monthlyLimit('free', 0)).toBe(3)
     expect(monthlyLimit('essencial_mensal', 0)).toBe(50)
     expect(monthlyLimit('pro_anual', 0)).toBe(150)
   })
 
   it('extra estranho nunca deixa o limite menor que o do plano', () => {
-    expect(monthlyLimit('free', -3)).toBe(5)
-    expect(monthlyLimit('free', Number.NaN)).toBe(5)
+    expect(monthlyLimit('free', -3)).toBe(3)
+    expect(monthlyLimit('free', Number.NaN)).toBe(3)
   })
 
   it('o Separador barra pelo limite com o bônus', () => {
@@ -216,7 +216,7 @@ describe('teto da cota extra (Ruling ADM-T27-bonus)', () => {
     await vi.advanceTimersByTimeAsync(1)
     expect(ready).toEqual({
       usage: { used: 5, periodStart: NOV, resetsAt: '2026-12-01T03:00:00+00:00' },
-      limit: 5,
+      limit: 3,
     })
   })
 
@@ -224,7 +224,7 @@ describe('teto da cota extra (Ruling ADM-T27-bonus)', () => {
     profileRead.mockResolvedValue({ data: { quota_bonus: 10, quota_bonus_period: NOV }, error: null })
     await expect(fetchMonthlyQuota('free')).resolves.toEqual({
       usage: { used: 5, periodStart: NOV, resetsAt: '2026-12-01T03:00:00+00:00' },
-      limit: 15,
+      limit: 13,
     })
   })
 

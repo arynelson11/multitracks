@@ -48,16 +48,17 @@ describe('index.html', () => {
     expect(description.length).toBeLessThanOrEqual(160)
   })
 
-  it('a descrição não dá a entender que tom e voz guia vêm no Livre', () => {
+  it('a descrição diz o que o Livre tem (tom, BPM e voz guia, Parte 3) sem prometer o que segue pago', () => {
     for (const d of [PAGE_HEADS.home.description, PAGE_HEADS.home.ogDescription]) {
-      expect(d).toMatch(/Livre; troca de tom, BPM e voz guia no Pro e no Studio/)
-      expect(d).not.toMatch(/click/i)
+      expect(d).toMatch(/Grátis no Livre, com troca de tom, BPM e voz guia\./)
+      expect(d).not.toMatch(/download|baixar/i)
     }
   })
 
-  it('o head do /download diz que o Modo Ao Vivo é do Pro e do Studio', () => {
+  it('o head do /download diz que o Modo Ao Vivo vem em todos os planos (o Livre com 1 celular, Parte 3)', () => {
     for (const d of [PAGE_HEADS.download.description, PAGE_HEADS.download.ogDescription]) {
-      expect(d).toContain('Modo Ao Vivo no Pro e no Studio')
+      expect(d).toContain('Modo Ao Vivo em todos os planos')
+      expect(d).not.toContain('Modo Ao Vivo no Pro e no Studio')
     }
     expect(PAGE_HEADS.download.description.length).toBeLessThanOrEqual(160)
   })

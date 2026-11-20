@@ -79,9 +79,11 @@ describe('noscript', () => {
 })
 
 describe('noscript e os planos', () => {
-  it('diz que o Modo Ao Vivo, no app de computador, é dos planos Pro e Studio', () => {
+  it('diz que o Modo Ao Vivo, no app de computador, vem em todos os planos, com o limite do Livre (Parte 3)', () => {
     const html = buildNoscript()
-    expect(html).toContain('O Modo Ao Vivo, aberto pelo app de computador, é dos planos Pro e Studio.')
+    expect(html).toContain('O Modo Ao Vivo, aberto pelo app de computador, vem em todos os planos: no Livre com 1 celular por até 10 minutos por dia, no Pro com até 4 e no Studio sem limite.')
+    expect(html).not.toContain('nos planos Pro e Studio, troca de tom')
+    expect(html).toContain('3 separações por mês em 4 ou 6 faixas')
     expect(html).not.toContain('tem app pra Mac e Windows com Modo Ao Vivo')
   })
 })
