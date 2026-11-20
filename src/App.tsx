@@ -23,7 +23,11 @@ import { DownloadPage } from './components/DownloadPage'
 import { GuidedTour, type TourStep } from './components/GuidedTour'
 import { WhatsNewModal } from './components/WhatsNewModal'
 import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/SectionBar'
-import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections, canUseGeneratedClick, canChangeKey, canUsePlatformCatalog, canUseCloudPads } from './lib/plans'
+import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections, canUseGeneratedClick, canChangeKey, canUsePlatformCatalog, canUseCloudPads, canUseRepertoire } from './lib/plans'
+import { useLivre } from './hooks/useLivre'
+import { stageSongKey } from './lib/livreRules'
+import { trackAd } from './lib/productEvents'
+import { LimitGate } from './components/livre/LimitGate'
 import { AdminEntryButton, InAppAdmin } from './components/AdminEntryButton'
 import { BlockedScreen } from './components/BlockedScreen'
 import { shouldShowBlocked } from './lib/profileFlags'
@@ -386,7 +390,11 @@ export default function App() {
     sectionIntent, transitionView, landed, sectionSpansView, armSection, stepSection, armRepeat, toggleSectionLoop, cancelArm,
     heardNow, heardPosition, precountTimes,
     songGrid, gridWarning, setSongMeter, redetectSongGrid, isReadingGrid,
-  } = useAudioEngine(user?.id, { autoClick: canUseGeneratedClick(userPlan), sectionGates, stageMode: useNewStage ? 'novo' : 'antigo' })
+  } = useAudioEngine(user?.id, {
+    autoClick: canUseGeneratedClick(userPlan), sectionGates, stageMode: useNewStage ? 'novo' : 'antigo',
+    // AUTO entre músicas é do repertório, que é do pago (Parte 3, D4); o admin nunca tem limite do Livre.
+    autoNext: isAdmin || canUseRepertoire(userPlan),
+  })
   // A trava da R-25: a escolha nova só entra com a VS parada (nem tocando nem na pré-contagem).
   if (wantNewStage !== useNewStage && !isPlaying && !isCountingIn) setUseNewStage(wantNewStage)
 
@@ -556,6 +564,11 @@ export default function App() {
   const stageSection = useNewStage ? sectionIndexAt(sectionSpansView, isPlaying ? heardPosition() : currentTime) : -1
   const userName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || null
   const hostActive = liveServerUrl !== null || remoteSessionCode !== null
+  // Livre (Parte 3): uma instância só do hook, a do palco (as 3 músicas do mês, o repertório pago e
+  // a tela de limite, que só aparece com a VS parada). O Ao Vivo do Livre liga depois (os 10
+  // minutos ainda não correm): por isso liveActive falso e nada a fazer quando acabam.
+  const onLiveExpired = () => {}
+  const livre = useLivre({ userId: user?.id ?? null, plan: userPlan, isAdmin, busy: { isPlaying, isCountingIn }, liveActive: false, onLiveExpired })
   const isDesktopApp = !!window.playbackDesktop?.isElectron
   const stageView = useMemo(() => (useNewStage ? buildStageView({
     song: activeSong, playlist, activeIndex: activeSongIndex, duration, spans: sectionSpansView, currentSection: stageSection,
@@ -563,12 +576,14 @@ export default function App() {
     landed, songGrid: stageGrid, gridWarning, isReadingGrid, outputPlan, masterVolume, masterMuted,
   }, {
     plan: userPlan, isAdmin, online: isOnline, isDesktop: isDesktopApp, userName, hostActive, editMode: isEditMode,
-    channelEditMode: isChannelEditMode, padPanelOpen: isPadPanelOpen, activePad: activeNote, repertoireName: null, livre: null, autoPan: settings.autoPan,
+    channelEditMode: isChannelEditMode, padPanelOpen: isPadPanelOpen, activePad: activeNote, repertoireName: null,
+    // Selo do Livre na barra ("LIVRE · 2 de 3 músicas este mês"); a vista tira ele tocando.
+    livre: livre.isLivre ? livre.stage : null, autoPan: settings.autoPan,
   }) : null), [
     useNewStage, activeSong, playlist, activeSongIndex, duration, sectionSpansView, stageSection, isPlaying, isCountingIn, precountEnabled,
     precountBeats, precountTimes, playbackMode, sectionIntent, transitionView, landed, stageGrid, gridWarning, isReadingGrid, outputPlan,
     masterVolume, masterMuted, userPlan, isAdmin, isOnline, isDesktopApp, userName, hostActive, isEditMode, isChannelEditMode,
-    isPadPanelOpen, activeNote, settings.autoPan,
+    isPadPanelOpen, activeNote, settings.autoPan, livre.isLivre, livre.stage,
   ])
 
   // Grava o compasso na nuvem quem pode editar BPM e tom daquela música (R-30): o admin nas músicas
@@ -591,6 +606,68 @@ export default function App() {
   const upgradeIf = (r: { upgrade: boolean }) => { if (r.upgrade) setIsPricingOpen(true) }
   const clampToSong = (t: number) => Math.max(0, Math.min(duration || 0, Number.isFinite(t) ? t : 0))
   const promptEndlessMetronome = () => setTextPrompt({ kind: 'metronome' })
+
+  // ── Livre no palco e no repertório (Parte 3, D4 com a Ruling R10) ──
+  // Os dois palcos, os menus e a banda trocam de música, importam e mexem no .zip só por estas
+  // versões. No Livre: abrir outra música (do repertório, do aparelho ou da biblioteca) conta nas 3
+  // do mês e, sem vaga, pede a tela das músicas do mês; próxima, anterior e .zip são do pago e
+  // pedem a tela do repertório. Nenhuma delas mexe no som: a tela espera a VS parar (useLivre).
+  // Quem paga e o admin passam direto, como antes.
+  const jumpToSongGated = useCallback((i: number) => {
+    const song = playlist[i]
+    if (livre.isLivre && song && !livre.canOpenSong(stageSongKey(song))) { livre.requestLimit('stage-songs'); return }
+    jumpToSong(i)
+  }, [livre, playlist, jumpToSong])
+  // Sem próxima música não há o que pedir: o motor também não faz nada.
+  const nextSongGated = useCallback(() => {
+    if (livre.isLivre && activeSongIndex < playlist.length - 1) { livre.requestLimit('repertoire'); return }
+    nextSong()
+  }, [livre, activeSongIndex, playlist.length, nextSong])
+  // Na primeira música o anterior volta pro começo dela, como sempre (não troca de música).
+  const prevSongGated = useCallback(() => {
+    if (livre.isLivre && activeSongIndex > 0) { livre.requestLimit('repertoire'); return }
+    prevSong()
+  }, [livre, activeSongIndex, prevSong])
+  const exportZipGated = () => {
+    if (livre.isLivre) { setIsSetlistMenuOpen(false); livre.requestLimit('repertoire'); return }
+    void handleExport()
+  }
+  const importZipGated = (file: File) => {
+    if (livre.isLivre) { livre.requestLimit('repertoire'); return }
+    void importPlaylist(file)
+  }
+
+  // "Uma música por vez" (D4): no Livre, a música importada ou baixada vira a atual com a VS parada.
+  // O pedido guarda as músicas de antes; quando o carregamento termina, o efeito abaixo vê o
+  // repertório crescer e abre a nova (o motor acrescenta no fim). Carregamento que falha não abre
+  // nada. Tocando, a música nova só entra no repertório.
+  const [livreLoaded, setLivreLoaded] = useState<{ before: ReadonlySet<string> } | null>(null)
+  const livreLoadedSeen = useRef<{ before: ReadonlySet<string> } | null>(null)
+  const loadAsCurrent = async (load: () => Promise<void>) => {
+    if (!livre.isLivre) return load()
+    const before = new Set(playlist.map((s) => s.id))
+    await load()
+    setLivreLoaded({ before })
+  }
+  const importFilesGated = (files: FileList) => {
+    if (livre.isLivre && !livre.canOpenNewSong()) { livre.requestLimit('stage-songs'); return }
+    void loadAsCurrent(() => loadFiles(files))
+  }
+  useEffect(() => {
+    if (livreLoaded === null || livreLoadedSeen.current === livreLoaded) return
+    livreLoadedSeen.current = livreLoaded
+    const last = playlist.length - 1
+    if (last < 0 || livreLoaded.before.has(playlist[last].id) || isPlaying || isCountingIn) return
+    jumpToSongGated(last)
+  }, [livreLoaded, playlist, isPlaying, isCountingIn, jumpToSongGated])
+
+  // A música que vira a atual conta nas do mês no Livre (D3), por qualquer caminho, inclusive a
+  // restaurada ao abrir o app (essa nunca é barrada). A mesma música de novo no mês não conta outra
+  // vez. Quem barra é quem troca de música (as versões acima); aqui só se grava.
+  const { noteSongOpened } = livre
+  useEffect(() => {
+    if (activeSong) noteSongOpened(stageSongKey(activeSong))
+  }, [activeSong, noteSongOpened])
 
   // Ações do palco (StageActions + a da casca) e o que os painéis do App chamam. A casca recebe
   // um objeto estável (delegateTo) que chama a versão da renderização mais nova.
@@ -620,8 +697,8 @@ export default function App() {
     // Tom original com a mesma ação do TOM do palco antigo: definir grava o original e volta o tom
     // pro 0; "Redefinir detecção de tom" (nulo) apaga o original e volta pro 0. Mesmo portão do tom.
     setOriginalKey: (key: string | null) => withPlan(canChangeKey(userPlan), () => { setOriginalKey(key); changePitch(0) }),
-    prevSong: () => prevSong(),
-    nextSong: () => nextSong(),
+    prevSong: () => prevSongGated(),
+    nextSong: () => nextSongGated(),
     setVolume: (id: string, gain: number) => updateVolume(id, gain),
     toggleMute: (id: string) => toggleMute(id),
     toggleSolo: (id: string) => toggleSolo(id),
@@ -640,7 +717,7 @@ export default function App() {
     goHome: () => setForceShowSplash(true),
     signOut: () => { void signOut() },
     openUpgrade: () => setIsPricingOpen(true),
-    openLivreBadge: () => setIsPricingOpen(true),
+    openLivreBadge: () => { trackAd('ad_clicked', 'badge'); setIsPricingOpen(true) },
     openChannelEdit: (id: string) => setEditing({ channelId: id, songIndex: activeSongIndex }),
     reorderChannel: (from: number, to: number) => {
       const arr = [...channels]
@@ -693,7 +770,7 @@ export default function App() {
     sampleFolder: (folder: string | null) => setActiveFolder(folder),
     samplePlay: (url: string) => playSample(url),
     // Painel REPERTÓRIOS.
-    repSelect: (i: number) => jumpToSong(i),
+    repSelect: (i: number) => jumpToSongGated(i),
     repReorder: (from: number, to: number) => {
       const list = [...playlist]
       const [moved] = list.splice(from, 1)
@@ -703,13 +780,13 @@ export default function App() {
     },
     repRemove: (id: string) => removeSongFromPlaylist(id),
     repNew: () => clearSession(),
-    repExport: () => { void handleExport() },
-    repImport: (file: File) => importPlaylist(file),
+    repExport: () => exportZipGated(),
+    repImport: (file: File) => importZipGated(file),
     repClose: () => setIsRepertoireOpen(false),
     notesChange: (v: string) => setRepertoireNotes(v),
     // Menu FAIXAS.
     tracksClose: () => setIsTracksMenuOpen(false),
-    tracksImport: (files: FileList) => { void loadFiles(files) },
+    tracksImport: (files: FileList) => importFilesGated(files),
     tracksMetronome: () => promptEndlessMetronome(),
     tracksRename: () => {
       if (activeSong) setTextPrompt({ kind: 'rename', songId: activeSong.id, name: activeSong.name })
@@ -829,9 +906,11 @@ export default function App() {
       if (blocked) return
       switch (cmd.action) {
         case 'toggle-play': isPlaying ? pause() : playWithPrecount(); break
-        case 'next': nextSong(); break
-        case 'prev': prevSong(); break
-        case 'select-song': if (typeof cmd.index === 'number') jumpToSong(cmd.index); break
+        // Livre (Ruling R10): próxima e anterior da banda são do repertório (pago); escolher música
+        // pela banda conta nas 3 do mês, como abrir do repertório. Tocando, a tela espera parar.
+        case 'next': nextSongGated(); break
+        case 'prev': prevSongGated(); break
+        case 'select-song': if (typeof cmd.index === 'number') jumpToSongGated(cmd.index); break
         // Volume pela banda no mesmo teto do fader do palco (+6 dB, FADER_MAX_GAIN), nunca negativo.
         case 'set-volume': if (cmd.id && typeof cmd.value === 'number' && Number.isFinite(cmd.value)) updateVolume(cmd.id, Math.min(FADER_MAX_GAIN, Math.max(0, cmd.value))); break
         case 'toggle-mute': if (cmd.id) toggleMute(cmd.id); break
@@ -846,7 +925,7 @@ export default function App() {
       }
     })
     return cleanup
-  }, [approvedIps, userPlan, isPlaying, pause, playWithPrecount, nextSong, prevSong, jumpToSong, updateVolume, toggleMute, toggleSolo, changePitch, playPad, updatePadVolume, armLoop, cancelLoop, armJump, blocked])
+  }, [approvedIps, userPlan, isPlaying, pause, playWithPrecount, nextSongGated, prevSongGated, jumpToSongGated, updateVolume, toggleMute, toggleSolo, changePitch, playPad, updatePadVolume, armLoop, cancelLoop, armJump, blocked])
 
   // Cria uma seção no ponto atual com o nome dado. Usado pelo menu "Marcar" e
   // pelos atalhos de teclado (V, R, ...).
@@ -876,6 +955,8 @@ export default function App() {
       // Diálogo do app aberto (renomear, metrônomo infinito; Ruling B-dialogo): com o foco fora do
       // campo (no Cancelar, no painel), o Espaço não toca e as letras não marcam seção por baixo dele.
       if (textPrompt !== null) return
+      // Tela de limite do Livre aberta: mesma coisa (Ruling R9).
+      if (livre.limit !== null) return
       const el = e.target as HTMLElement | null
       const tag = el?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return
@@ -903,7 +984,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker, isSeparatorOpen, useNewStage, adminPanelShown, blocked, textPrompt])
+  }, [playlist.length, isPlaying, pause, playWithPrecount, seekTo, currentTime, duration, addSectionMarker, isSeparatorOpen, useNewStage, adminPanelShown, blocked, textPrompt, livre.limit])
 
   // Bloqueio que chega com o app aberto (o perfil é relido ao voltar pra janela): a tela de
   // bloqueio tira o player da tela, então nada fica tocando sem controle. Para a música, a
@@ -1191,12 +1272,6 @@ export default function App() {
     }
   }
 
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; if (!file) return
-    setIsSetlistMenuOpen(false)
-    importPlaylist(file)
-  }
-
   // ───────────────── PAINEL ADMIN (/admin) ─────────────────
   if (typeof window !== 'undefined' && window.location.pathname === '/admin') {
     return (
@@ -1426,9 +1501,10 @@ export default function App() {
       {isMarkerEditorOpen && markerEditorPanel()}
     </div>
   ) : null
-  // Modais do App abertos: o teclado do palco fica desligado (Espaço não toca por baixo deles).
+  // Modais do App abertos (e a tela de limite do Livre): o teclado do palco fica desligado (Espaço não toca por baixo deles).
   const stageKeyboard = !isSettingsOpen && !isLibraryOpen && !isAdminOpen && !isMetronomeModalOpen && !isLyricsEditorOpen
     && !isPadSetsModalOpen && !isPricingOpen && !isLiveModeOpen && !showTour && !showWhatsNew && !isPadSoundsOpen && textPrompt === null
+    && livre.limit === null
 
   // ───────────────── MAIN APP ─────────────────
   return (
@@ -1495,11 +1571,11 @@ export default function App() {
                         <span className="text-white text-sm font-medium flex items-center gap-3"><FolderOpen size={16} className="text-primary" />Importar Stems</span>
                         <ChevronRight size={14} className="text-text-muted" />
                         <input type="file" multiple accept={AUDIO_FILE_ACCEPT} className="hidden"
-                          onChange={(e) => { if (e.target.files) { loadFiles(e.target.files); setIsSetlistMenuOpen(false) } }} />
+                          onChange={(e) => { if (e.target.files) { importFilesGated(e.target.files); setIsSetlistMenuOpen(false) } }} />
                       </label>
                       <hr className="border-border my-1" />
                       {playlist.length > 0 && (
-                        <button onClick={handleExport} disabled={isSaving}
+                        <button onClick={exportZipGated} disabled={isSaving}
                           className="w-full text-left px-4 py-2.5 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors">
                           <span className="text-white text-sm font-medium flex items-center gap-3">
                             {isSaving ? <Loader2 size={16} className="text-primary animate-spin" /> : <Download size={16} className="text-accent-green" />}
@@ -1512,7 +1588,7 @@ export default function App() {
                         className="w-full text-left px-4 py-2.5 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors">
                         <span className="text-white text-sm font-medium flex items-center gap-3"><Upload size={16} className="text-secondary" />Carregar (.zip)</span>
                         <ChevronRight size={14} className="text-text-muted" />
-                        <input type="file" accept=".zip" className="hidden" onChange={handleImport} />
+                        <input type="file" accept=".zip" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { setIsSetlistMenuOpen(false); importZipGated(f) } }} />
                       </label>
                     </div>
                     {playlist.length > 0 && (
@@ -1551,7 +1627,7 @@ export default function App() {
                         <input type="file" multiple accept={AUDIO_FILE_ACCEPT} className="hidden"
                           onChange={(e) => { 
                             setIsTracksMenuOpen(false); 
-                            if (e.target.files) loadFiles(e.target.files) 
+                            if (e.target.files) importFilesGated(e.target.files) 
                           }} />
                     </label>
                     <button onClick={() => {
@@ -1585,13 +1661,13 @@ export default function App() {
               className={`transport-btn h-8 px-2 rounded-md text-[9px] font-bold uppercase tracking-wider font-mono cursor-pointer whitespace-nowrap ${playbackMode === 'continue' ? 'text-primary' : playbackMode === 'stop' ? 'text-accent-red' : 'text-purple-400'}`}>
               {playbackMode === 'continue' ? '▶ Auto' : playbackMode === 'stop' ? '■ Parar' : 'Fade'}
             </button>
-            <button onClick={prevSong} title="Música anterior" aria-label="Música anterior"
+            <button onClick={prevSongGated} title="Música anterior" aria-label="Música anterior"
               className="transport-btn w-8 h-8 flex items-center justify-center rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipBack size={15} /></button>
             <button onClick={isCountingIn ? cancelCountIn : isPlaying ? pause : playWithPrecount} title={isPlaying ? 'Pausar' : 'Tocar'} aria-label={isPlaying ? 'Pausar' : 'Tocar'}
               className={`transport-btn w-11 h-8 flex items-center justify-center rounded-md active:scale-90 cursor-pointer ${isPlaying || isCountingIn ? 'active text-primary' : 'text-white'}`}>
               {isPlaying ? <Pause size={17} fill="currentColor" /> : isCountingIn ? <Loader2 size={17} className="animate-spin" /> : <Play size={17} fill="currentColor" className="ml-0.5" />}
             </button>
-            <button onClick={nextSong} title="Próxima música" aria-label="Próxima música"
+            <button onClick={nextSongGated} title="Próxima música" aria-label="Próxima música"
               className="transport-btn w-8 h-8 flex items-center justify-center rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipForward size={15} /></button>
           </div>
 
@@ -1797,11 +1873,11 @@ export default function App() {
                       <span className="text-white text-sm font-medium flex items-center gap-3"><FolderOpen size={16} className="text-primary" />Importar Stems</span>
                       <ChevronRight size={14} className="text-text-muted" />
                       <input type="file" multiple accept={AUDIO_FILE_ACCEPT} className="hidden"
-                        onChange={(e) => { if (e.target.files) { loadFiles(e.target.files); setIsSetlistMenuOpen(false) } }} />
+                        onChange={(e) => { if (e.target.files) { importFilesGated(e.target.files); setIsSetlistMenuOpen(false) } }} />
                     </label>
                     <hr className="border-border my-1" />
                     {playlist.length > 0 && (
-                      <button onClick={handleExport} disabled={isSaving}
+                      <button onClick={exportZipGated} disabled={isSaving}
                         className="w-full text-left px-4 py-2.5 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer">
                         <span className="text-white text-sm font-medium flex items-center gap-3">
                           {isSaving ? <Loader2 size={16} className="text-primary animate-spin" /> : <Download size={16} className="text-accent-green" />}
@@ -1813,7 +1889,7 @@ export default function App() {
                     <label className="w-full text-left px-4 py-2.5 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer">
                       <span className="text-white text-sm font-medium flex items-center gap-3"><Upload size={16} className="text-secondary" />Carregar (.zip)</span>
                       <ChevronRight size={14} className="text-text-muted" />
-                      <input type="file" accept=".zip" className="hidden" onChange={handleImport} />
+                      <input type="file" accept=".zip" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { setIsSetlistMenuOpen(false); importZipGated(f) } }} />
                     </label>
                   </div>
                 </div>
@@ -1902,12 +1978,12 @@ export default function App() {
 
           {/* Play controls — centralizados abaixo */}
           <div className="flex items-center gap-1.5">
-            <button onClick={prevSong} className="transport-btn p-2 rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipBack size={18} /></button>
+            <button onClick={prevSongGated} className="transport-btn p-2 rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipBack size={18} /></button>
             <button data-tour="play" onClick={isCountingIn ? cancelCountIn : isPlaying ? pause : playWithPrecount}
               className={`transport-btn p-3 short:p-2 rounded-lg active:scale-90 cursor-pointer ${isPlaying || isCountingIn ? 'active text-primary' : 'text-white'}`}>
               {isPlaying ? <Pause size={24} fill="currentColor" /> : isCountingIn ? <Loader2 size={24} className="animate-spin" /> : <Play size={24} fill="currentColor" className="ml-0.5" />}
             </button>
-            <button onClick={nextSong} className="transport-btn p-2 rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipForward size={18} /></button>
+            <button onClick={nextSongGated} className="transport-btn p-2 rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipForward size={18} /></button>
             {/* Mobile edit toggle (landscape only — portrait has it in the buttons grid) */}
             <button onClick={() => setIsEditMode(!isEditMode)}
               className={`hidden ml-2 items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-colors border cursor-pointer ${isEditMode ? 'bg-primary/15 text-primary border-primary/30' : 'bg-transparent text-text-muted border-border'}`}>
@@ -1950,7 +2026,7 @@ export default function App() {
                 onDragOver={(e) => handleDragOver(e, i)}
                 onDrop={() => handleDrop(i)}
                 onDragEnd={handleDragEnd}
-                onClick={() => !isEditMode && jumpToSong(i)}
+                onClick={() => !isEditMode && jumpToSongGated(i)}
                 className={`
                   flex-none w-48 sm:w-72 tight:w-60 short:w-52 h-full rounded-md flex flex-col p-3 short:p-1.5 gap-2 short:gap-0 border transition-all overflow-hidden relative justify-center
                   ${isEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer hover:border-border-light'}
@@ -2525,11 +2601,18 @@ export default function App() {
       <LibraryModal
         isOpen={isLibraryOpen}
         onClose={() => setIsLibraryOpen(false)}
+        onBeforeDownload={(songId) => {
+          if (livre.canOpenSong(`cloud:${songId}`)) return true
+          // Livre sem vaga no mês (a música já aberta no mês sempre passa): nada baixa e a tela de limite aparece.
+          livre.requestLimit('stage-songs')
+          return false
+        }}
         onDownload={async (files, songName, coverUrl, markers, originalKey, artist, bpm, extra, songId) => {
           const dt = new DataTransfer();
           files.forEach(f => dt.items.add(f));
           const fullName = artist ? `${artist} - ${songName}` : songName;
-          await loadFiles(dt.files, fullName, coverUrl || undefined, markers, originalKey ?? null, bpm, {
+          // No Livre, a música baixada vira a atual com a VS parada (como a importada do aparelho).
+          await loadAsCurrent(() => loadFiles(dt.files, fullName, coverUrl || undefined, markers, originalKey ?? null, bpm, {
             artist,
             lyrics: extra?.lyrics ?? null,
             lyricsSynced: extra?.lyricsSynced ?? null,
@@ -2537,7 +2620,7 @@ export default function App() {
             sourceId: songId,
             // Compasso salvo na nuvem (songs.time_signature): sem ele o click que falta nunca é gerado.
             timeSignature: extra?.timeSignature,
-          });
+          }));
         }}
         onSongEdited={({ songId, prevName, prevBpm, prevOriginalKey, name, artist, originalKey, bpm, coverImage }) => {
           // Reflete a edição da biblioteca no repertório já carregado (e no ao vivo).
@@ -2704,6 +2787,12 @@ export default function App() {
 
       <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
 
+      {/* Tela de limite do Livre (Parte 3): só com a VS parada (o useLivre segura o pedido até parar).
+          Ela fica por cima dos Planos, então "Ver todos os planos" fecha ela antes de abrir os Planos. */}
+      {livre.limit !== null && (
+        <LimitGate key={livre.limit} kind={livre.limit} onClose={livre.closeLimit} onSeePlans={() => { livre.closeLimit(); setIsPricingOpen(true) }} />
+      )}
+
       {/* ═══ MOBILE PORTRAIT DRAWER ═══ */}
       {isMobileDrawerOpen && (
         <div className="hidden compact:block fixed inset-0 z-[60]">
@@ -2840,7 +2929,7 @@ export default function App() {
                     <input type="file" multiple accept={AUDIO_FILE_ACCEPT} className="hidden"
                       onChange={(e) => {
                         if (e.target.files) {
-                          loadFiles(e.target.files)
+                          importFilesGated(e.target.files)
                           setIsMobileDrawerOpen(false)
                         }
                       }} />

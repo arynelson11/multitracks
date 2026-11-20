@@ -107,6 +107,91 @@ describe('ligações do palco novo', () => {
     expect(Math.abs(outputs - device)).toBeLessThan(1500)
   })
 
+  it('a biblioteca pergunta ao Livre com cloud:<id> antes de baixar', () => {
+    expect(app).toMatch(/onBeforeDownload=\{\(songId\)\s*=>[\s\S]{0,200}cloud:\$\{songId\}/)
+  })
+
+  it('importar, repertório, próxima, anterior e .zip passam pelas versões com o Livre nos dois palcos', () => {
+    for (const n of ['importFilesGated', 'jumpToSongGated', 'nextSongGated', 'prevSongGated', 'exportZipGated', 'importZipGated']) {
+      expect(app).toMatch(new RegExp(`\\b${n}\\(`))
+    }
+    expect(app).not.toMatch(/onClick=\{nextSong\}|onClick=\{prevSong\}|onChange=\{handleImport\}/)
+  })
+
+  it('nenhum caminho antigo troca de música, importa ou mexe no .zip por fora das versões com o Livre (Ruling R9)', () => {
+    // jumpToSong( só dentro do jumpToSongGated (o destructure do motor não tem parêntese).
+    expect(app.match(/\bjumpToSong\(/g)).toHaveLength(1)
+    expect(app).toMatch(/const jumpToSongGated = (?:useCallback\()?\(i: number\) => \{[^}]*\}\s*jumpToSong\(i\)/)
+    // Próxima e anterior do motor só dentro das versões com o Livre.
+    expect(app.match(/\bnextSong\(\)/g)).toHaveLength(1)
+    expect(app).toMatch(/const nextSongGated = (?:useCallback\()?\(\) => \{[\s\S]{0,200}\bnextSong\(\)/)
+    expect(app.match(/\bprevSong\(\)/g)).toHaveLength(1)
+    expect(app).toMatch(/const prevSongGated = (?:useCallback\()?\(\) => \{[\s\S]{0,300}\bprevSong\(\)/)
+    // Arquivos do aparelho e da biblioteca: todo loadFiles( passa pelo carregamento que abre a música no Livre.
+    const loads = app.match(/\bloadFiles\(/g) ?? []
+    expect(loads.length).toBeGreaterThan(0)
+    expect(app.match(/loadAsCurrent\(\(\) => loadFiles\(/g)).toHaveLength(loads.length)
+    expect(app).not.toMatch(/loadFiles\(e\.target\.files\)/)
+    // Salvar e Carregar .zip.
+    expect(app).not.toMatch(/onClick=\{handleExport\}/)
+    expect(app.match(/\bhandleExport\(/g)).toHaveLength(1)
+    expect(app).toMatch(/const exportZipGated = \(\) => \{[\s\S]{0,200}\bhandleExport\(\)/)
+    expect(app.match(/\bimportPlaylist\(/g)).toHaveLength(1)
+    expect(app).toMatch(/const importZipGated = \(file: File\) => \{[\s\S]{0,200}\bimportPlaylist\(file\)/)
+  })
+
+  it('no Livre, próxima, anterior e .zip pedem a tela do repertório; abrir outra música pede a das músicas do mês', () => {
+    expect(app).toMatch(/const nextSongGated = (?:useCallback\()?\(\) => \{[\s\S]{0,200}livre\.requestLimit\('repertoire'\)/)
+    expect(app).toMatch(/const prevSongGated = (?:useCallback\()?\(\) => \{[\s\S]{0,300}livre\.requestLimit\('repertoire'\)/)
+    expect(app).toMatch(/const exportZipGated = \(\) => \{[\s\S]{0,200}livre\.requestLimit\('repertoire'\)/)
+    expect(app).toMatch(/const importZipGated = \(file: File\) => \{[\s\S]{0,200}livre\.requestLimit\('repertoire'\)/)
+    expect(app).toMatch(/const jumpToSongGated = (?:useCallback\()?\(i: number\) => \{[^}]*canOpenSong\(stageSongKey\([^}]*livre\.requestLimit\('stage-songs'\)/)
+    expect(app).toMatch(/const importFilesGated = \(files: FileList\) => \{[^}]*canOpenNewSong\(\)[^}]*livre\.requestLimit\('stage-songs'\)/)
+  })
+
+  it('comandos next, prev e select-song da banda passam pelas versões com o Livre', () => {
+    expect(app).toMatch(/case 'next':\s*nextSongGated\(\)/)
+    expect(app).toMatch(/case 'prev':\s*prevSongGated\(\)/)
+    expect(app).toMatch(/case 'select-song':[^\n]*jumpToSongGated\(/)
+  })
+
+  it('o motor recebe autoNext pelo plano', () => { expect(app).toMatch(/autoNext:\s*isAdmin\s*\|\|\s*canUseRepertoire\(userPlan\)/) })
+
+  it('a música atual conta pelo stageSongKey', () => { expect(app).toMatch(/noteSongOpened\(stageSongKey\(/) })
+
+  it('um useLivre só no App, depois do hostActive e antes da entrada do buildStageView, com o Ao Vivo ainda desligado', () => {
+    expect(app.match(/\buseLivre\(/g)).toHaveLength(1)
+    const host = app.indexOf('const hostActive =')
+    const expired = app.indexOf('const onLiveExpired =')
+    const hook = app.indexOf('const livre = useLivre(')
+    const view = app.indexOf('const stageView =')
+    expect(host).toBeGreaterThan(0)
+    expect(expired).toBeGreaterThan(host)
+    expect(hook).toBeGreaterThan(expired)
+    expect(view).toBeGreaterThan(hook)
+    expect(app).toMatch(/useLivre\(\{\s*userId: user\?\.id \?\? null,\s*plan: userPlan,\s*isAdmin,\s*busy: \{ isPlaying, isCountingIn \},\s*liveActive: false,/)
+    expect(app).toMatch(/livre:\s*livre\.isLivre\s*\?\s*livre\.stage\s*:\s*null/)
+  })
+
+  it('a tela de limite está no App e desliga os atalhos', () => {
+    expect(app).toMatch(/<LimitGate[\s\S]*?kind=\{livre\.limit\}/)
+    expect(app).toMatch(/stageKeyboard\s*=[\s\S]{0,400}livre\.limit\s*===\s*null/)
+    // Palco antigo: como o diálogo do app (textPrompt), o teclado não age por baixo da tela de limite.
+    expect(app).toMatch(/if \(textPrompt !== null\) return[\s\S]{0,300}if \(livre\.limit !== null\) return/)
+  })
+
+  it('"Ver todos os planos" fecha a tela de limite antes de abrir os Planos (a tela fica por cima deles)', () => {
+    expect(app).toMatch(/<LimitGate[^>]*onSeePlans=\{\(\)\s*=>\s*\{\s*livre\.closeLimit\(\);\s*setIsPricingOpen\(true\)\s*\}\}/)
+  })
+
+  it('o selo grava o clique e abre os Planos', () => { expect(app).toMatch(/openLivreBadge:\s*\(\)\s*=>\s*\{\s*trackAd\('ad_clicked',\s*'badge'\)/) })
+
+  it('nenhum alert, confirm ou prompt novo no App', () => {
+    // Os 4 de hoje: o editor de marcadores do admin.
+    expect(app.match(/\balert\s*\(/g)).toHaveLength(4)
+    expect(app).not.toMatch(/\b(confirm|prompt)\s*\(/)
+  })
+
   it('nenhum travessão nas linhas novas do App, das Configurações e do Electron', () => {
     for (const text of [app, settingsModal, main]) {
       for (const line of text.split('\n')) if (/StageShell|useNewStage|stageMode|StageVersionSetting|AudioOutputsSection|backgroundThrottling/.test(line)) expect(line).not.toContain(TRAVESSAO)
