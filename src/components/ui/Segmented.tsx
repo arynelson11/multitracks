@@ -20,10 +20,13 @@ const GROUP = 'inline-flex p-[3px] gap-0.5 rounded-ps-lg bg-ps-s1 inset-ring ins
 
 // A cor do texto sai do estado (selecionada x não), pra não disputar com a base.
 // shrink-0: o min-w-[62px] troca o piso automático do item flex e, sem ele, o texto vaza num grupo apertado.
+// Anel de foco laranja por dentro (o grupo é colado); desligada e não marcada fica a 35% (Parte 3).
 const OPTION =
-  'shrink-0 min-w-[62px] min-h-ps-touch px-3 rounded-[9px] text-ps-sm font-extrabold tracking-[0.1em] whitespace-nowrap'
+  'shrink-0 min-w-[62px] min-h-ps-touch px-3 rounded-[9px] text-ps-sm font-extrabold tracking-[0.1em] whitespace-nowrap focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ps-or disabled:cursor-not-allowed'
 const OPTION_IDLE = 'text-ps-mut hover:text-ps-bone'
 const OPTION_SELECTED = 'bg-ps-s3 text-ps-bone inset-ring inset-ring-ps-line-2'
+// A marcada continua com cara de escolhida mesmo desligada (só leitura).
+const OPTION_DISABLED = 'opacity-35'
 
 /** Próxima opção habilitada a partir de `from`, andando `step` (1 ou -1) com volta. -1 se nenhuma. */
 function nextEnabled<T extends string>(options: SegmentedOption<T>[], from: number, step: 1 | -1): number {
@@ -96,7 +99,7 @@ export function Segmented<T extends string>({
             disabled={o.disabled}
             onClick={() => onChange(o.value)}
             onKeyDown={(e) => onKeyDown(e, i)}
-            className={cx(OPTION, isSelected ? OPTION_SELECTED : OPTION_IDLE)}
+            className={cx(OPTION, isSelected ? OPTION_SELECTED : OPTION_IDLE, o.disabled && !isSelected && OPTION_DISABLED)}
           >
             {o.label}
           </button>

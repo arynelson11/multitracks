@@ -35,11 +35,9 @@ const MODE_LABEL: Record<OutputMode, string> = {
   multi: '4 ou mais saídas',
 }
 
-// O Segmented base não apaga a opção desligada; aqui ela fica clara de que não dá pra tocar.
-// A marcada continua com cara de escolhida mesmo desligada (1 canal: só leitura).
+// O Segmented já apaga a opção desligada e mantém a marcada com cara de escolhida (1 canal: só leitura).
 // flex-wrap: em tela estreita as opções descem de linha em vez de vazar ou cortar texto.
-const SEGMENTED =
-  'self-start max-w-full flex-wrap [&>button:disabled]:cursor-not-allowed [&>button:disabled:not([aria-checked=true])]:opacity-35'
+const SEGMENTED = 'self-start max-w-full flex-wrap'
 // text-pretty: o navegador evita deixar uma palavra sozinha na última linha.
 const NOTE = 'text-ps-base leading-snug text-pretty text-ps-mut'
 const ALERT = 'rounded-ps-md bg-ps-alert-soft px-3 py-2 text-ps-base leading-snug text-pretty font-semibold text-ps-alert inset-ring inset-ring-ps-alert-line'

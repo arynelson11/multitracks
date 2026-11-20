@@ -14,11 +14,29 @@ export interface StageDialogProps {
   children: React.ReactNode
   /** Ações no pé da janela, fora da rolagem (Button de `src/components/ui`). */
   footer?: React.ReactNode
-  /** `md` (padrão, até 512 px) ou `sm` (até 384 px). */
-  size?: 'sm' | 'md'
+  /** `md` (padrão, até 512 px), `sm` (até 384 px) ou `lg` (até 672 px, letra e cifra). */
+  size?: 'sm' | 'md' | 'lg'
 }
 
-const SIZES: Record<NonNullable<StageDialogProps['size']>, string> = { sm: 'max-w-sm', md: 'max-w-lg' }
+const SIZES: Record<NonNullable<StageDialogProps['size']>, string> = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl' }
+
+/**
+ * Pilha das janelas abertas: só a de cima reage ao Esc e ao toque fora. A de cima é a aberta por
+ * último; uma janela aberta dentro de outra fica por cima dela (mesmo abrindo juntas). Cada janela
+ * que abre com outra já aberta sobe um degrau acima da mais alta (a primeira fica no z-[120] da
+ * classe), então a de cima é também a que aparece por cima, venha antes ou depois no código.
+ */
+const BASE_Z = 120
+const openDialogs: Array<{ el: HTMLElement; z: number }> = []
+
+function isTopDialog(el: HTMLElement): boolean {
+  let top: { el: HTMLElement; z: number } | undefined
+  for (const d of openDialogs) {
+    if (openDialogs.some((o) => o !== d && d.el.contains(o.el))) continue
+    if (!top || d.z > top.z) top = d
+  }
+  return top?.el === el
+}
 
 // O que pode receber foco dentro da janela, inclusive o que quem chama põe no conteúdo.
 const FOCUSABLE = 'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -35,7 +53,8 @@ function focusables(root: HTMLElement): HTMLElement[] {
  * Shift+Tab giram dentro; ao fechar (ou sair do ar aberta), o foco volta pra quem abriu.
  * Esc fecha e é tratado na captura da `window`, antes da pilha dos painéis do palco (um
  * REPERTÓRIOS aberto por baixo continua aberto) e dos atalhos. Toque fora fecha; toque dentro,
- * ou apertar dentro e soltar fora, não. Fechada não renderiza nada.
+ * ou apertar dentro e soltar fora, não. Com duas janelas abertas, Esc e toque fora valem só pra
+ * de cima (Parte 3). Fechada não renderiza nada.
  */
 export function StageDialog({ open, title, onClose, children, footer, size = 'md' }: StageDialogProps) {
   const titleId = useId()
@@ -54,8 +73,14 @@ export function StageDialog({ open, title, onClose, children, footer, size = 'md
     const opener = active instanceof HTMLElement && !overlay.contains(active) ? active : null
     focusables(overlay)[0]?.focus({ preventScroll: true })
 
+    const entry = { el: overlay, z: openDialogs.reduce((m, d) => Math.max(m, d.z + 1), BASE_Z) }
+    if (entry.z !== BASE_Z) overlay.style.zIndex = String(entry.z)
+    openDialogs.push(entry)
+
     const onEscape = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.isComposing) return
+      // Outra janela por cima: o Esc é dela (o ouvinte dela também está na window).
+      if (!isTopDialog(overlay)) return
       e.preventDefault()
       e.stopPropagation()
       closeRef.current()
@@ -63,6 +88,7 @@ export function StageDialog({ open, title, onClose, children, footer, size = 'md
     window.addEventListener('keydown', onEscape, true)
     return () => {
       window.removeEventListener('keydown', onEscape, true)
+      openDialogs.splice(openDialogs.indexOf(entry), 1)
       // Fechada pelo `open`, a caixa já saiu da página (foco perdido); desmontada aberta, o foco
       // ainda está nela. Nos dois casos volta pra quem abriu; foco que já foi pra outro lugar fica.
       const now = document.activeElement
@@ -97,7 +123,7 @@ export function StageDialog({ open, title, onClose, children, footer, size = 'md
       onClick={(e) => {
         const inside = pressedInside.current
         pressedInside.current = false
-        if (e.target === e.currentTarget && !inside) onClose()
+        if (e.target === e.currentTarget && !inside && isTopDialog(e.currentTarget)) onClose()
       }}
       className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-ps-gutter"
     >
