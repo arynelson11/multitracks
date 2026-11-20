@@ -19,6 +19,7 @@ import { barSeconds, gridFromBpm, gridFromClick, gridWarning, keepManualMeter, p
 import { isCompound, type ArmIntent, type GridWarning, type Plays, type SectionSpan, type SongGrid, type StageGates, type StageMode, type TimeSignature, type TransitionView } from '../lib/stageContracts';
 import { sanitizeSemitones } from '../lib/pitchRules';
 import { shouldAutoAdvance } from '../lib/autoAdvance';
+import { NO_CURRENT_SONG, songOpenedByRemoval } from '../lib/songRemoval';
 import { getCachedStem, getCachedStemNames, isSongCached } from '../lib/offlineCache';
 import { applyChannelMetaToList, autoPanFor, channelGain, findClickChannel, isPitchExempt, pickMainChannel, pitchChangeAction, wantsFormantCompensation, type ChannelMetaPatch } from '../lib/channelRoles';
 import { arrangeChannels, resolveChannelRole, type ChannelIdentity } from '../lib/channelNames';
@@ -3591,9 +3592,11 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         await play(precountEnabled ? { precount: true } : undefined);
     }, [precountEnabled, play]);
 
-    const removeSongFromPlaylist = (songId: string) => {
+    // `opts.openNext` (Parte 3, T17): falso, tirar a música atual não abre outra e não sobra música
+    // atual (NO_CURRENT_SONG: a VS parada sem música, como o repertório vazio). Quem decide é o App,
+    // pelo portão das músicas do mês do Livre. Sem a opção, a seguinte vira a atual como sempre.
+    const removeSongFromPlaylist = (songId: string, opts?: { openNext?: boolean }) => {
         const currentActiveId = playlist[activeSongIndex]?.id;
-        const removedIndex = playlist.findIndex(s => s.id === songId);
         // Para e devolve pra reserva os worklets de tom da música removida
         // (close() não existe no pacote; sem isso eles seguiam rodando).
         playlist.find(s => s.id === songId)?.channels.forEach(ch => releasePitchNode(ch.id));
@@ -3619,9 +3622,14 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             dropSectionIntent();
             pausedAtRef.current = 0;
             setCurrentTime(0);
-            const newIndex = Math.min(removedIndex, newPlaylist.length - 1);
-            setActiveSongIndex(newIndex);
-            setDuration(newPlaylist[newIndex].duration);
+            const opened = songOpenedByRemoval(playlist, activeSongIndex, songId);
+            if (!opened || opts?.openNext === false) {
+                setActiveSongIndex(NO_CURRENT_SONG);
+                setDuration(0);
+                return;
+            }
+            setActiveSongIndex(opened.index);
+            setDuration(opened.song.duration);
         } else {
             const newIndex = newPlaylist.findIndex(s => s.id === currentActiveId);
             if (newIndex !== -1 && newIndex !== activeSongIndex) {

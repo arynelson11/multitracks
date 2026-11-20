@@ -3,6 +3,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { act, cleanup, renderHook } from '@testing-library/react'
 import JSZip from 'jszip'
 import { REPERTOIRE_SCHEMA_VERSION, type SavedSong } from '../lib/repertoireSchema'
+import { NO_CURRENT_SONG } from '../lib/songRemoval'
 import { useAudioEngine } from './useAudioEngine'
 // Código do motor como texto, pra guarda de forma no fim do arquivo. Pelo ?raw do Vite
 // porque no ambiente jsdom o import.meta.url deixa de ser file://.
@@ -612,6 +613,41 @@ describe('remover a música ativa', () => {
     expect(result.current.isPlaying).toBe(false)
     // Os worklets que nasceram depois foram pra reserva, parados.
     expect(mem.pitchNodes.every((n) => !n.active && n.connectedTo === null)).toBe(true)
+  })
+
+  // Parte 3, T17 (ajuste do coordenador): no Livre com o mês cheio, o App pede pra a seguinte não
+  // virar a atual (openNext falso): não sobra música atual e a VS fica parada sem música.
+  it('openNext falso: a música ativa sai, a outra fica no repertório e nenhuma vira a atual', async () => {
+    seed(v1, v1Local)
+    const { result } = await openApp()
+    expect(result.current.playlist[result.current.activeSongIndex]?.id).toBe('s1')
+
+    await act(async () => { result.current.removeSongFromPlaylist('s1', { openNext: false }) })
+
+    expect(result.current.playlist.map((s) => s.id)).toEqual(['s3'])
+    expect(result.current.activeSongIndex).toBe(NO_CURRENT_SONG)
+    expect(result.current.playlist[result.current.activeSongIndex]).toBeUndefined()
+    expect(result.current.channels).toEqual([])
+    expect(result.current.duration).toBe(0)
+    expect(result.current.isPlaying).toBe(false)
+    // Sem música atual o play não toca nada.
+    mem.sources.length = 0
+    await act(async () => { await result.current.play() })
+    expect(mem.sources).toHaveLength(0)
+    expect(result.current.isPlaying).toBe(false)
+    // Abrir a que ficou (pelo repertório, que passa pelo portão no App) volta ao normal.
+    await act(async () => { result.current.jumpToSong(0) })
+    expect(result.current.playlist[result.current.activeSongIndex]?.id).toBe('s3')
+    expect(result.current.duration).toBe(200)
+  })
+
+  it('sem a opção (quem paga e o admin), a seguinte vira a atual como sempre', async () => {
+    seed(v1, v1Local)
+    const { result } = await openApp()
+    await act(async () => { result.current.removeSongFromPlaylist('s1') })
+    expect(result.current.playlist.map((s) => s.id)).toEqual(['s3'])
+    expect(result.current.playlist[result.current.activeSongIndex]?.id).toBe('s3')
+    expect(result.current.duration).toBe(200)
   })
 })
 

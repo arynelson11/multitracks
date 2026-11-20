@@ -26,6 +26,7 @@ import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/Sec
 import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections, canUseGeneratedClick, canChangeKey, canUsePlatformCatalog, canUseCloudPads, canUseRepertoire } from './lib/plans'
 import { useLivre } from './hooks/useLivre'
 import { stageSongKey } from './lib/livreRules'
+import { removalOpensRefusedSong } from './lib/songRemoval'
 import { trackAd } from './lib/productEvents'
 import { LimitGate } from './components/livre/LimitGate'
 import { AdminEntryButton, InAppAdmin } from './components/AdminEntryButton'
@@ -636,6 +637,18 @@ export default function App() {
     if (livre.isLivre) { livre.requestLimit('repertoire'); return }
     void importPlaylist(file)
   }
+  // Tirar música vale pra todos (D4). Tirando a atual, a seguinte viraria a atual: no Livre essa
+  // troca passa pelo mesmo portão (ajuste do coordenador). Recusada (mês cheio e ela ainda não
+  // contada), não sobra música atual: a VS fica parada sem música e a tela das músicas do mês é
+  // pedida (aparece só parada). Aceita, ela vira a atual e conta pelo efeito da contagem.
+  const removeSongGated = (id: string) => {
+    if (livre.isLivre && removalOpensRefusedSong(playlist, activeSongIndex, id, (s) => livre.canOpenSong(stageSongKey(s)))) {
+      removeSongFromPlaylist(id, { openNext: false })
+      livre.requestLimit('stage-songs')
+      return
+    }
+    removeSongFromPlaylist(id)
+  }
 
   // "Uma música por vez" (D4): no Livre, a música importada ou baixada vira a atual com a VS parada.
   // O pedido guarda as músicas de antes; quando o carregamento termina, o efeito abaixo vê o
@@ -778,7 +791,7 @@ export default function App() {
       list.splice(to, 0, moved)
       setPlaylistOrder(list)
     },
-    repRemove: (id: string) => removeSongFromPlaylist(id),
+    repRemove: (id: string) => removeSongGated(id),
     repNew: () => clearSession(),
     repExport: () => exportZipGated(),
     repImport: (file: File) => importZipGated(file),
@@ -2070,7 +2083,7 @@ export default function App() {
                             <GripVertical size={12} /><span className="text-[10px] font-mono">ARRASTAR</span>
                           </div>
                           <button
-                            onClick={(e) => { e.stopPropagation(); removeSongFromPlaylist(song.id); }}
+                            onClick={(e) => { e.stopPropagation(); removeSongGated(song.id); }}
                             onMouseDown={(e) => e.stopPropagation()}
                             draggable={false}
                             className="p-1 rounded text-accent-red/60 hover:text-accent-red hover:bg-accent-red/10 transition-all cursor-pointer"

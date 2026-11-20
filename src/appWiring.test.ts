@@ -149,6 +149,15 @@ describe('ligações do palco novo', () => {
     expect(app).toMatch(/const importFilesGated = \(files: FileList\) => \{[^}]*canOpenNewSong\(\)[^}]*livre\.requestLimit\('stage-songs'\)/)
   })
 
+  it('tirar a música atual no Livre: a seguinte só vira a atual pelo portão; recusada, não sobra música atual e a tela é pedida', () => {
+    // Os dois palcos tiram música só pela versão com o Livre (o painel REPERTÓRIOS e a lixeira do cartão do palco antigo).
+    expect(app).toMatch(/repRemove:\s*\(id: string\)\s*=>\s*removeSongGated\(id\)/)
+    expect(app).toMatch(/removeSongGated\(song\.id\)/)
+    // removeSongFromPlaylist( só dentro do removeSongGated: a troca recusada e a normal.
+    expect(app.match(/\bremoveSongFromPlaylist\(/g)).toHaveLength(2)
+    expect(app).toMatch(/const removeSongGated = \(id: string\) => \{[\s\S]{0,300}livre\.isLivre && removalOpensRefusedSong\(playlist, activeSongIndex, id, \(s\) => livre\.canOpenSong\(stageSongKey\(s\)\)\)[\s\S]{0,100}removeSongFromPlaylist\(id, \{ openNext: false \}\)[\s\S]{0,60}livre\.requestLimit\('stage-songs'\)[\s\S]{0,60}\}\s*removeSongFromPlaylist\(id\)/)
+  })
+
   it('comandos next, prev e select-song da banda passam pelas versões com o Livre', () => {
     expect(app).toMatch(/case 'next':\s*nextSongGated\(\)/)
     expect(app).toMatch(/case 'prev':\s*prevSongGated\(\)/)
