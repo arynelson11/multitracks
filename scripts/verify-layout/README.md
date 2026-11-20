@@ -8,17 +8,33 @@ nova: usa o Vite, o React e o Tailwind do repo e o Google Chrome da máquina.
 
 ```bash
 source ~/.nvm/nvm.sh && nvm use 24
-node scripts/verify-layout/run.mjs                                    # 11 estados x 8 tamanhos (88 combinações)
+node scripts/verify-layout/run.mjs                                    # rodada inteira (270 combinações, abaixo)
 node scripts/verify-layout/run.mjs --only 1280x800 --estado quebrado  # prova: tem de sair com 1
 node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
 ```
 
 | Opção | O que faz |
 |---|---|
-| `--only 1280x800[,1440x900]` | só esses tamanhos (padrão: os 8) |
-| `--estado normal[,tom]` | só esses estados (padrão: os 11 normais; `quebrado` é a prova) |
+| `--only 1280x800[,1440x900]` | só esses tamanhos, pra todos os estados pedidos (padrão: os de cada estado, abaixo) |
+| `--estado normal[,tom]` | só esses estados (padrão: todos os normais; `quebrado` é a prova) |
 | `--jobs N` | quantos Chrome ao mesmo tempo (padrão 3) |
 | `--no-build` | usa a página já montada em `.build/` |
+
+Sem opção, a rodada mede os 11 estados do palco e as 16 telas da faixa C nos 8
+tamanhos (216), as 14 telas da faixa C que abrem no celular também em 390x844
+(14; o Modo Ao Vivo do host só existe no computador) e as 10 telas da faixa B em
+4 tamanhos (40): 270 combinações.
+
+Demais telas da Parte 3 (faixa C): cada uma tem um estado (lista em
+`telasEstados.ts`, telas montadas em `telas.tsx`), medido como o palco, sem a
+regra de estrutura.
+
+Largura de celular (as duas faixas, um jeito só): o Chrome headless não abre
+janela abaixo de 500 px, então qualquer tamanho mais estreito que isso roda na
+rota `/moldura` do `run.mjs`, uma página mínima com a página do verificador num
+iframe do tamanho pedido. O iframe vira a janela dela (`innerWidth`, media
+queries e a medida) e é ela quem manda o resultado; a página do verificador não
+sabe da moldura.
 
 Sai com `0` quando todas as combinações passam, `1` com qualquer falha (ou
 página que não respondeu) e `2` com opção errada. O JSON de cada combinação fica
@@ -38,8 +54,7 @@ não publicado) em 1024x740, 1280x800, 1920x1080 e 390x844 (celular): 40 combina
 A conta e as configurações saem de `fakes/` (o `vite.config.ts` troca o `src/hooks/useAuth.ts` e o
 `src/contexts/SettingsContext.tsx` do app por elas só neste build; o palco não usa nenhum dos dois).
 O contador de separações e o painel da assinatura são os de verdade, sem servidor (mostram o que
-mostram sem rede). Abaixo de 500 px (a janela mínima do Chrome headless) a página roda num iframe do
-tamanho pedido (`/moldura`), que vira a janela dela. `--only` vale também pra essas telas.
+mostram sem rede). O 390x844 roda na moldura de celular (acima). `--only` vale também pra essas telas.
 
 ```bash
 node scripts/verify-layout/run.mjs --estado login,config-geral --only 390x844
@@ -66,6 +81,22 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `tom` | grade de tons aberta (toque no botão do tom), com "Redefinir detecção de tom" |
 | `semtom` | grade aberta sem tom original: semitons em 3 linhas, com "Definir o tom original" ao lado do 0 |
 | `compasso` | diálogo do compasso aberto no EDITAR |
+| `metronomo` | Metrônomo (Parte 3, faixa C) numa página própria, com uma música que já tem click |
+| `padsnuvem` | Pads da nuvem (faixa C) como admin, 3 conjuntos com nome e descrição longos, um em uso |
+| `padsnuvem-editar` | o mesmo, renomeando o primeiro conjunto |
+| `letra` | Letra e cifra (faixa C), aba Letra com a versão sincronizada, artista longo |
+| `cifra` | o mesmo, na aba Cifra (linhas longas rolando de lado dentro da área) |
+| `teleprompter` | Teleprompter (faixa C) no "Refrão Final Estendido" com 4 linhas longas de letra |
+| `teleprompter-vazio` | Teleprompter sem música e sem seções |
+| `novidades` | Novidades (faixa C) com a entrada mais nova do changelog de verdade |
+| `atualizacao` | Aviso de atualização (faixa C) do app de computador no Mac ("Versão 1.4.30 já saiu") |
+| `tour` | Tour (faixa C) no passo do Modo Ao Vivo, com o spotlight num botão no meio da página |
+| `tour-centro` | Tour no primeiro passo, sem alvo (balão no meio) |
+| `download` | Página de download (faixa C) inteira, no computador Mac (os dois instaladores do Mac em destaque) |
+| `download-ajuda` | o mesmo, com a ajuda do Mac aberta (os 4 passos e o comando do Terminal) |
+| `aovivo` | Modo Ao Vivo do host (faixa C) ligado, endereço longo e três aparelhos (um sem IP, um IPv6, um liberado); só existe no computador, então sem 390 |
+| `aovivo-erro` | o mesmo, com o erro de abrir o servidor |
+| `adminlogin` | Login do /admin na web (faixa C) |
 | `config` | as duas seções da T19 numa página própria: placa de 2 canais (caindo de 4 ou mais, com avisos) e de 8 canais |
 | `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso pra cada ramo das regras (15 falhas, uma por ramo) |
 

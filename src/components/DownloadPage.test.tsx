@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { DownloadPage } from './DownloadPage'
+import { oldLanguageClasses } from '../test/psLanguage'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 beforeAll(() => {
   // jsdom não tem matchMedia (o guia de instalação pergunta se o app já está instalado).
   window.matchMedia ??= ((query: string) => ({
@@ -51,5 +55,48 @@ describe('DownloadPage: textos atualizados', () => {
     expect(text()).toContain('No macOS 15 (Sequoia) ou mais novo')
     expect(text()).toContain('Abrir Mesmo Assim')
     expect(text()).not.toContain('geralmente resolve já no passo 2')
+  })
+})
+
+// Parte 3, faixa C: a página no layout do palco, sem mudar o que ela oferece.
+describe('DownloadPage: nada some no layout do palco', () => {
+  const GH = 'https://github.com/arynelson11/multitracks/releases/latest/download'
+
+  it('os três instaladores com os mesmos endereços', () => {
+    render(<DownloadPage />)
+    expect(screen.getByRole('link', { name: 'Baixar (Apple Silicon)' }).getAttribute('href')).toBe(`${GH}/Playback-Studio-mac-arm64.dmg`)
+    expect(screen.getByRole('link', { name: 'Baixar (Intel)' }).getAttribute('href')).toBe(`${GH}/Playback-Studio-mac-x64.dmg`)
+    expect(screen.getByRole('link', { name: 'Baixar (.exe)' }).getAttribute('href')).toBe(`${GH}/Playback-Studio-win.exe`)
+  })
+
+  it('no Mac os dois instaladores do Mac ficam em destaque e aparece a dica de qual Mac', () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15')
+    render(<DownloadPage />)
+    const destaques = [...document.querySelectorAll('[data-highlighted="true"]')].map(el => el.textContent ?? '')
+    expect(destaques).toHaveLength(2)
+    expect(destaques.every(t => t.includes('Mac'))).toBe(true)
+    expect(text()).toContain('Não sabe qual Mac você tem?')
+  })
+
+  it('Como instalar no Windows abre a ajuda do SmartScreen', () => {
+    render(<DownloadPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Como instalar no Windows' }))
+    expect(text()).toContain('Windows Defender SmartScreen')
+    expect(text()).toContain('Executar assim mesmo')
+  })
+
+  it('as 8 funções, os requisitos e o plano', () => {
+    render(<DownloadPage />)
+    expect(screen.getByRole('heading', { name: 'Tudo o que o app faz' })).toBeTruthy()
+    expect(document.querySelectorAll('[data-feature]')).toHaveLength(8)
+    expect(text()).toContain('10 ou 11 (64 bits)')
+    expect(text()).toContain('Grátis pra instalar. As funções seguem o seu plano (Livre, Pro ou Studio).')
+  })
+
+  it('só classes da linguagem nova, sem texto cortado com reticências', () => {
+    render(<DownloadPage />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Como instalar no Mac' })[0])
+    expect(oldLanguageClasses(document.body)).toEqual([])
+    expect(document.querySelector('.truncate')).toBeNull()
   })
 })

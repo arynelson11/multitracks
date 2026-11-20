@@ -20,9 +20,6 @@ type AdminShellProps = {
   children?: React.ReactNode
 }
 
-// O Chip ainda não tem anel de foco (DESIGN_SYSTEM 2.6): a aba leva o do Button.
-const TAB_FOCUS = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
-
 export function AdminShell({ email, tabs, active, onSelect, onClose, onSignOut, reviewCount, children }: AdminShellProps) {
   const baseId = useId()
   const listRef = useRef<HTMLDivElement>(null)
@@ -81,7 +78,6 @@ export function AdminShell({ email, tabs, active, onSelect, onClose, onSignOut, 
                   on={selected}
                   onClick={() => onSelect(t.id)}
                   onKeyDown={(e) => onTabKeyDown(e, i)}
-                  className={TAB_FOCUS}
                 >
                   {t.label}
                   {isReview && reviewCount && reviewCount.total > 0 && <span className="ps-num">{reviewCount.total}</span>}

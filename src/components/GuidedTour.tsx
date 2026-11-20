@@ -1,5 +1,6 @@
-import { useState, useEffect, useLayoutEffect, useCallback } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useId } from 'react'
 import { X, ArrowRight, ArrowLeft } from 'lucide-react'
+import { Button, IconButton, Panel, cx } from './ui'
 
 export interface TourStep {
   target?: string // data-tour do elemento alvo; ausente = passo centralizado
@@ -19,6 +20,7 @@ const PAD = 8 // respiro do spotlight ao redor do alvo
 export function GuidedTour({ steps, onClose }: GuidedTourProps) {
   const [index, setIndex] = useState(0)
   const [rect, setRect] = useState<Rect | null>(null)
+  const titleId = useId()
 
   // Resolve o elemento alvo do passo atual (ou null se for passo centralizado / alvo ausente).
   const findTarget = useCallback((i: number): HTMLElement | null => {
@@ -99,53 +101,50 @@ export function GuidedTour({ steps, onClose }: GuidedTourProps) {
   })()
 
   return (
-    <div className="fixed inset-0 z-[200]">
-      {/* Overlay com spotlight (buraco no alvo) ou escurecimento total */}
+    <div className="fixed inset-0 z-[200] font-ps-sans">
+      {/* Spotlight com contorno laranja (buraco no alvo) ou escurecimento total, que fecha ao tocar */}
       {rect ? (
         <div
-          className="absolute rounded-xl transition-all duration-150 pointer-events-none"
+          data-tour-spotlight=""
+          className="pointer-events-none absolute rounded-ps-lg transition-all duration-150 motion-reduce:transition-none"
           style={{
             top: rect.top - PAD,
             left: rect.left - PAD,
             width: rect.width + PAD * 2,
             height: rect.height + PAD * 2,
             boxShadow: '0 0 0 9999px rgba(0,0,0,0.72)',
-            border: '2px solid rgba(249,115,22,0.9)',
+            border: '2px solid var(--color-ps-or)',
           }}
         />
       ) : (
-        <div className="absolute inset-0 bg-black/72" onClick={onClose} />
+        <div data-tour-backdrop="" className="absolute inset-0 bg-black/70" onClick={onClose} />
       )}
 
       {/* Balão */}
-      <div
-        className={`absolute w-[300px] max-w-[90vw] bg-zinc-900 border border-orange-500/30 rounded-2xl shadow-2xl p-5 ${bubble.centered ? 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2' : ''}`}
+      <Panel
+        variant="pop"
+        role="dialog"
+        aria-labelledby={titleId}
+        className={cx('absolute w-[300px] max-w-[calc(100vw-32px)] p-5 text-ps-bone', bubble.centered && 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2')}
         style={bubble.style}
       >
-        <button onClick={onClose} className="absolute top-3 right-3 text-zinc-500 hover:text-white cursor-pointer">
-          <X className="w-4 h-4" />
-        </button>
+        <IconButton tone="ghost" aria-label="Fechar o tutorial" icon={<X size={18} />} onClick={onClose} className="absolute right-2 top-2" />
 
-        <p className="text-orange-400 text-[11px] font-bold uppercase tracking-widest mb-1.5">Tutorial</p>
-        <h3 className="text-white font-bold text-lg mb-2 pr-5">{step.title}</h3>
-        <p className="text-zinc-300 text-sm leading-relaxed mb-4">{step.body}</p>
+        <p className="ps-label mb-1.5">Tutorial</p>
+        <h2 id={titleId} className="mb-2 pr-10 text-ps-md font-bold break-words">{step.title}</h2>
+        <p className="mb-4 leading-relaxed text-ps-mut break-words">{step.body}</p>
 
-        <div className="flex items-center justify-between gap-2">
-          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 text-xs cursor-pointer">
-            Pular
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Button tone="ghost" onClick={onClose}>Pular</Button>
           <div className="flex items-center gap-2">
-            {!isFirst && (
-              <button onClick={() => go(-1)} className="p-2 rounded-lg bg-white/5 border border-white/10 text-zinc-300 hover:bg-white/10 cursor-pointer">
-                <ArrowLeft className="w-4 h-4" />
-              </button>
-            )}
-            <button onClick={() => go(1)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-orange-500 text-black font-bold text-sm hover:bg-orange-400 active:scale-95 transition-all cursor-pointer">
-              {isLast ? 'Concluir' : 'Próximo'} {!isLast && <ArrowRight className="w-4 h-4" />}
-            </button>
+            {!isFirst && <IconButton aria-label="Passo anterior" icon={<ArrowLeft size={16} />} onClick={() => go(-1)} />}
+            <Button tone="primary" onClick={() => go(1)}>
+              {isLast ? 'Concluir' : 'Próximo'}
+              {!isLast && <ArrowRight size={16} aria-hidden="true" />}
+            </Button>
           </div>
         </div>
-      </div>
+      </Panel>
     </div>
   )
 }

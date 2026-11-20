@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback, useLayoutEffect } from 'react';
-import { Play, Loader2, X, Minus, Plus, Wand2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState, useRef, useCallback, useId, useLayoutEffect } from 'react';
+import { Play, Loader2, Minus, Plus, Wand2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { formatBpm } from '../lib/beatGrid';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
@@ -10,7 +10,8 @@ import {
 } from '../lib/autoClick';
 import { TIME_SIGNATURES, pulsesPerBar, type TimeSignature } from '../lib/stageContracts';
 import type { Song } from '../types';
-import { Button, Chip } from './ui';
+import { Button, Chip, IconButton, Led, Notice, Switch, TextField } from './ui';
+import { StageDialog } from './stage/StageDialog';
 
 interface MetronomeModalProps {
   isOpen: boolean;
@@ -137,9 +138,9 @@ function AutoClickResult({ sectionRef, plan, moveOne, halfBeat, songBpm, busy, c
       <div className="flex items-center justify-between gap-2 px-1">
         <span className="ps-label">Mover o 1</span>
         <div className="flex items-center gap-1.5">
-          <Button aria-label="Mover o 1 pra trás" icon={<ChevronLeft size={16} />} disabled={busy} onClick={() => onAdjust({ moveOne: moveOne - 1 })} />
+          <IconButton aria-label="Mover o 1 pra trás" icon={<ChevronLeft size={16} />} disabled={busy} onClick={() => onAdjust({ moveOne: moveOne - 1 })} />
           <span className="ps-num text-ps-bone text-ps-base font-bold min-w-8 text-center">{shownMove > 0 ? '+' : ''}{shownMove}</span>
-          <Button aria-label="Mover o 1 pra frente" icon={<ChevronRight size={16} />} disabled={busy} onClick={() => onAdjust({ moveOne: moveOne + 1 })} />
+          <IconButton aria-label="Mover o 1 pra frente" icon={<ChevronRight size={16} />} disabled={busy} onClick={() => onAdjust({ moveOne: moveOne + 1 })} />
         </div>
       </div>
       {d.offbeatRisk && (
@@ -156,6 +157,7 @@ function AutoClickResult({ sectionRef, plan, moveOne, halfBeat, songBpm, busy, c
 }
 
 export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClick, initialSignature, isPlaying = false }: MetronomeModalProps) {
+  const uid = useId();
   const [activeTab, setActiveTab] = useState<'manual' | 'ai'>('manual');
   const [bpm, setBpm] = useState<number>(120);
   const [bpmInput, setBpmInput] = useState<string>('120');
@@ -367,178 +369,94 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
 
   if (!isOpen) return null;
 
+  // Enquanto o click é gerado a janela não fecha (o X já era desligado nessa hora).
+  const close = () => { if (!isSynthesizing) onClose(); };
+
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div 
-        className="bg-[#1c1c1e] w-full max-w-[380px] rounded-2xl p-5 shadow-2xl border border-white/5 flex flex-col max-h-[90vh] overflow-y-auto scrollbar-hide"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-white text-sm font-bold tracking-wide">BPM</span>
-          <button onClick={onClose} disabled={isSynthesizing} className="text-white/40 hover:text-white transition-colors cursor-pointer p-1">
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* Tempo Name */}
-        <div className="text-white/60 text-sm font-medium mb-3">{getTempoName(bpm)}</div>
-
-        {/* Big BPM Row */}
-        <div className="flex items-center justify-between bg-[#141415] border border-white/5 rounded-xl p-2 mb-3">
-          <button 
-            onClick={() => handleBpmChange(bpm - 1)}
-            disabled={isSynthesizing}
-            className="w-12 h-12 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg active:scale-95 transition-all text-white/80 cursor-pointer disabled:opacity-50"
-          >
-            <Minus size={20} />
-          </button>
-          
-          <input 
-            type="number"
-            value={bpmInput}
-            onChange={(e) => setBpmInput(e.target.value)}
-            onBlur={handleBpmInputBlur}
-            disabled={isSynthesizing}
-            className="text-white font-black text-4xl w-24 text-center bg-transparent focus:outline-none"
-          />
-          
-          <button 
-            onClick={() => handleBpmChange(bpm + 1)}
-            disabled={isSynthesizing}
-            className="w-12 h-12 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg active:scale-95 transition-all text-white/80 cursor-pointer disabled:opacity-50"
-          >
-            <Plus size={20} />
-          </button>
-        </div>
-
-        {/* Tap Tempo + 2x Row */}
-        <div className="flex gap-2 mb-4">
-          <button
-            onClick={handleTapTempo}
-            disabled={isSynthesizing}
-            className="flex-1 bg-[#2a2a2d] hover:bg-[#3a3a3e] border border-white/5 text-white py-3 rounded-xl font-bold transition-all text-xs tracking-wider cursor-pointer active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            <span className="relative flex h-2.5 w-2.5">
-              {tapCount > 0 && (
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-              )}
-              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${tapCount > 0 ? 'bg-primary' : 'bg-white/30'}`}></span>
-            </span>
-            TAP TEMPO
-          </button>
-          <button
-            onClick={handleDoubleTempo}
-            disabled={isSynthesizing || bpm * 2 > 300}
-            className="w-[72px] bg-[#2a2a2d] hover:bg-[#3a3a3e] border border-white/5 text-white py-3 rounded-xl font-black transition-all text-sm tracking-wider cursor-pointer active:scale-95 disabled:opacity-50"
-          >
-            2×
-          </button>
-        </div>
-
-        {/* ─── Click Sound Library ─── */}
-        <div className="mb-3">
-          <div className="text-white/40 text-[10px] font-bold uppercase tracking-widest mb-2">Som do Click</div>
-          <div className="grid grid-cols-4 gap-1.5">
-            {CLICK_TYPES.map(t => (
-              <button
-                key={t.id}
-                onClick={() => updateClickSel({ type: t.id })}
-                disabled={isSynthesizing}
-                className={`py-2 rounded-lg text-[10px] font-bold tracking-wide transition-all cursor-pointer active:scale-95 border disabled:opacity-50 ${
-                  clickSel.type === t.id
-                    ? 'bg-primary/15 border-primary text-primary'
-                    : 'bg-[#2a2a2d] border-white/5 text-white/60 hover:bg-[#343438] hover:text-white/80'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
+    <StageDialog open title="Metrônomo" size="sm" onClose={close}>
+      <div className="flex flex-col gap-4">
+        {/* Andamento: nome, BPM com − e +, TAP TEMPO e 2× */}
+        <section aria-labelledby={`${uid}-bpm`} className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+            <h3 id={`${uid}-bpm`} className="ps-label">Andamento</h3>
+            <span className="text-ps-sm font-bold text-ps-mut">{getTempoName(bpm)}</span>
           </div>
-        </div>
-
-        {/* ─── Subdivision ─── */}
-        <div className="mb-4">
-          <div className="text-white/40 text-[10px] font-bold uppercase tracking-widest mb-2">Subdivisão</div>
-          <div className="grid grid-cols-4 gap-1.5">
-            {CLICK_SUBDIVISIONS.map(s => (
-              <button
-                key={s.id}
-                onClick={() => updateClickSel({ subdivision: s.id })}
-                disabled={isSynthesizing}
-                className={`py-2.5 rounded-lg text-[11px] font-bold tracking-wide transition-all cursor-pointer active:scale-95 border disabled:opacity-50 ${
-                  clickSel.subdivision === s.id
-                    ? 'bg-primary/15 border-primary text-primary'
-                    : 'bg-[#2a2a2d] border-white/5 text-white/60 hover:bg-[#343438] hover:text-white/80'
-                }`}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* ─── Time Signature ─── */}
-        <div className="mb-4">
-          <div className="text-white/40 text-[10px] font-bold uppercase tracking-widest mb-2">Compasso</div>
-          <div className="grid grid-cols-6 gap-1.5">
-            {TIME_SIGNATURES.map(ts => (
-              <button
-                key={ts}
-                onClick={() => changeMeter(ts)}
-                disabled={isSynthesizing}
-                aria-pressed={timeSignature === ts}
-                className={`py-2.5 rounded-lg text-[11px] font-bold tracking-wide transition-all cursor-pointer active:scale-95 border disabled:opacity-50 ${
-                  timeSignature === ts
-                    ? 'bg-primary/15 border-primary text-primary shadow-[0_0_12px_rgba(212,168,67,0.15)]'
-                    : 'bg-[#2a2a2d] border-white/5 text-white/60 hover:bg-[#343438] hover:text-white/80'
-                }`}
-              >
-                {ts}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* ─── Accent Toggle ─── */}
-        <div className="mb-5 flex items-center justify-between bg-[#141415] border border-white/5 rounded-xl px-4 py-3">
-          <span className="text-white/70 text-xs font-bold tracking-wide">Acentuar beat 1</span>
-          <button
-            onClick={() => setAccentBeat1(!accentBeat1)}
-            disabled={isSynthesizing}
-            className={`relative w-11 h-6 rounded-full transition-all cursor-pointer disabled:opacity-50 ${
-              accentBeat1 ? 'bg-primary' : 'bg-[#3a3a3e]'
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-md transition-transform ${
-                accentBeat1 ? 'translate-x-5' : 'translate-x-0'
-              }`}
+          <div className="flex items-center gap-2">
+            <IconButton aria-label="Diminuir o BPM" icon={<Minus size={18} />} disabled={isSynthesizing} onClick={() => handleBpmChange(bpm - 1)} />
+            <TextField
+              label="BPM" hideLabel type="number" inputMode="numeric" min={40} max={300}
+              value={bpmInput} onChange={(e) => setBpmInput(e.target.value)} onBlur={handleBpmInputBlur}
+              disabled={isSynthesizing} trailing="BPM" className="flex-1" inputClassName="text-center ps-num font-bold"
             />
-          </button>
-        </div>
-
-        {/* Status Loading/Text */}
-        {isSynthesizing && statusMsg && (
-          <div className="text-center text-[10px] font-bold text-primary animate-pulse uppercase tracking-wider mb-4">
-            {statusMsg}
+            <IconButton aria-label="Aumentar o BPM" icon={<Plus size={18} />} disabled={isSynthesizing} onClick={() => handleBpmChange(bpm + 1)} />
           </div>
+          <div className="flex flex-wrap gap-2">
+            <Button className="grow" icon={<Led state={tapCount > 0 ? 'on' : 'off'} />} disabled={isSynthesizing} onClick={handleTapTempo}>
+              TAP TEMPO
+            </Button>
+            <Chip title="Dobrar o BPM" disabled={isSynthesizing || bpm * 2 > 300} onClick={handleDoubleTempo}>2×</Chip>
+          </div>
+        </section>
+
+        {/* Som do click, subdivisão e compasso: a escolha acesa em laranja (ligado) */}
+        <section aria-labelledby={`${uid}-som`} className="flex flex-col gap-2">
+          <h3 id={`${uid}-som`} className="ps-label">Som do click</h3>
+          <div className="flex flex-wrap gap-1.5">
+            {CLICK_TYPES.map(t => (
+              <Chip key={t.id} small on={clickSel.type === t.id} aria-pressed={clickSel.type === t.id} disabled={isSynthesizing} onClick={() => updateClickSel({ type: t.id })}>
+                {t.label}
+              </Chip>
+            ))}
+          </div>
+        </section>
+
+        <section aria-labelledby={`${uid}-sub`} className="flex flex-col gap-2">
+          <h3 id={`${uid}-sub`} className="ps-label">Subdivisão</h3>
+          <div className="flex flex-wrap gap-1.5">
+            {CLICK_SUBDIVISIONS.map(s => (
+              <Chip key={s.id} small on={clickSel.subdivision === s.id} aria-pressed={clickSel.subdivision === s.id} disabled={isSynthesizing} onClick={() => updateClickSel({ subdivision: s.id })}>
+                {s.label}
+              </Chip>
+            ))}
+          </div>
+        </section>
+
+        <section aria-labelledby={`${uid}-compasso`} className="flex flex-col gap-2">
+          <h3 id={`${uid}-compasso`} className="ps-label">Compasso</h3>
+          <div className="flex flex-wrap gap-1.5">
+            {TIME_SIGNATURES.map(ts => (
+              <Chip key={ts} small on={timeSignature === ts} aria-pressed={timeSignature === ts} disabled={isSynthesizing} onClick={() => changeMeter(ts)}>
+                {ts}
+              </Chip>
+            ))}
+          </div>
+        </section>
+
+        <Switch
+          label="Acentuar o 1" description="O primeiro tempo do compasso soa mais forte."
+          checked={accentBeat1} onChange={setAccentBeat1} disabled={isSynthesizing}
+          className="rounded-ps-lg bg-ps-s1 py-2 pl-3 pr-2 inset-ring inset-ring-ps-line"
+        />
+
+        {isSynthesizing && statusMsg && (
+          <Notice role="status" className="flex items-center gap-2">
+            <Loader2 size={14} aria-hidden="true" className="shrink-0 animate-spin motion-reduce:animate-none" />
+            <span>{statusMsg}</span>
+          </Notice>
         )}
         {discarded && !isSynthesizing && (
-          <p role="status" className="text-ps-alert text-ps-sm font-bold text-center px-2 mb-4">{DISCARDED_TEXT}</p>
+          <Notice tone="alert" role="status">{DISCARDED_TEXT}</Notice>
         )}
 
-
-        {/* Actions */}
-        <div className="flex flex-col gap-3 mt-auto">
-          <button 
-            onClick={() => { setActiveTab('manual'); handleManualGenerate(); }}
+        {/* Ações: o click manual e o click IA (a ação principal, em laranja) */}
+        <div className="flex flex-col gap-2">
+          <Button
+            icon={isSynthesizing && activeTab === 'manual' ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : <Play fill="currentColor" size={14} />}
             disabled={isSynthesizing || !playlistCurrentSong}
-            className="w-full bg-[#2a2a2d] hover:bg-[#343438] text-white py-3.5 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-xs tracking-wider cursor-pointer border border-white/5 active:scale-95"
+            onClick={() => { setActiveTab('manual'); handleManualGenerate(); }}
           >
-            {isSynthesizing && activeTab === 'manual' ? <Loader2 size={16} className="animate-spin" /> : <Play fill="currentColor" size={14} />}
             GERAR CLICK MANUAL
-          </button>
+          </Button>
 
           {existingClick !== null && (
             <p className="text-ps-mut text-ps-sm font-bold text-center px-2">Esta música já tem click ({existingClick}).</p>
@@ -546,18 +464,19 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
           {isPlaying && (
             <p className="text-ps-alert text-ps-sm font-bold text-center px-2">Pare a música pra analisar o tempo.</p>
           )}
-          <button 
-            onClick={() => analyze()}
+          <Button
+            tone="primary"
+            className="uppercase"
+            icon={isSynthesizing && activeTab === 'ai' ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : <Wand2 size={16} />}
             disabled={isSynthesizing || !playlistCurrentSong || isPlaying}
-            className="w-full bg-primary hover:bg-primary-dim text-black py-3.5 rounded-xl font-black transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-xs tracking-wider uppercase cursor-pointer shadow-[0_4px_15px_rgba(212,168,67,0.2)] active:scale-95"
+            onClick={() => analyze()}
           >
-            {isSynthesizing && activeTab === 'ai' ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
             {existingClick !== null ? 'Gerar outro click' : 'Gerar click IA'}
-          </button>
+          </Button>
         </div>
 
         {shownAuto.step === 'falhou' && (
-          <p ref={revealResult} className="mt-3 text-ps-alert text-ps-base font-bold text-center px-2">{FAIL_TEXT[shownAuto.reason]}</p>
+          <p ref={revealResult} className="text-ps-alert text-ps-base font-bold text-center px-2">{FAIL_TEXT[shownAuto.reason]}</p>
         )}
 
         {shownAuto.step === 'pronto' && (
@@ -567,6 +486,6 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
           />
         )}
       </div>
-    </div>
+    </StageDialog>
   );
 }
