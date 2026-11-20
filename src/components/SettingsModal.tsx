@@ -20,6 +20,7 @@ import type { OutputSettings } from '../lib/stageContracts';
 import { Button, IconButton, Panel, Select, Switch, TabPanel, Tabs } from './ui';
 import { SettingRow } from './settings/SettingRow';
 import { Icon } from './stage/icons';
+import { hasOpenStageDialog } from './stage/stageDialogStack';
 import { trapTab } from './ui/focusables';
 
 /** Campo de texto ou de senha, ou área de texto, com alguma coisa digitada. */
@@ -99,7 +100,8 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
     }, [isOpen, channels]);
 
     // Foco e Esc no jeito das janelas do palco (revisão macro BC, BC1-I4): ao abrir, o foco vai pra
-    // aba atual; ao fechar, volta pra quem abriu. O Esc fecha, menos com os Planos abertos por cima.
+    // aba atual; ao fechar, volta pra quem abriu. O Esc fecha, menos com os Planos ou uma janela do
+    // palco abertos por cima.
     const layerRef = useRef<HTMLDivElement>(null);
     const closeRef = useRef(onClose);
     const pricingOpenRef = useRef(isPricingOpen);
@@ -119,6 +121,9 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
         // Na captura da window, como a janela do palco: um painel do palco aberto por baixo fica aberto.
         const onEscape = (e: KeyboardEvent) => {
             if (e.key !== 'Escape' || e.isComposing || e.defaultPrevented || pricingOpenRef.current) return;
+            // Janela do palco aberta por cima (a tela de limite do Livre): o Esc é da pilha dela, que
+            // fecha só a de cima. Senão um Esc fecharia as Configurações e a janela juntas.
+            if (hasOpenStageDialog()) return;
             e.preventDefault();
             // Esc num campo de texto, de senha ou numa área de texto preenchidos não fecha: o nome ou
             // a senha digitados no Perfil não se perdem. Tratado (o palco não usa), segue pro campo.

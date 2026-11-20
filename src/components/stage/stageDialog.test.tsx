@@ -5,6 +5,7 @@ import { flushSync } from 'react-dom'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { StageDialog } from './StageDialog'
 import type { StageDialogProps } from './StageDialog'
+import { hasOpenStageDialog } from './stageDialogStack'
 import { usePanelDismiss } from './panelDismiss'
 
 afterEach(cleanup)
@@ -336,6 +337,24 @@ describe('StageDialog: duas janelas abertas (pilha) e tamanho lg', () => {
     esc()
     expect(screen.queryByRole('dialog', { name: 'Segunda' })).toBeNull()
     expect(screen.queryByRole('dialog', { name: 'Primeira' })).not.toBeNull()
+  })
+
+  // Junção da 1b com as faixas B e C: quem tem Esc próprio (as Configurações) pergunta à pilha.
+  it('hasOpenStageDialog diz se há janela do palco aberta (uma, duas, nenhuma)', () => {
+    expect(hasOpenStageDialog()).toBe(false)
+    const a = props({ title: 'Metrônomo' })
+    const b = props({ title: 'Limite', open: false })
+    const { rerender, unmount } = render(two(a, b))
+    expect(hasOpenStageDialog()).toBe(true)
+    rerender(two(a, { ...b, open: true }))
+    expect(hasOpenStageDialog()).toBe(true)
+    rerender(two({ ...a, open: false }, { ...b, open: true }))
+    expect(hasOpenStageDialog()).toBe(true)
+    rerender(two({ ...a, open: false }, b))
+    expect(hasOpenStageDialog()).toBe(false)
+    rerender(two(a, b))
+    unmount()
+    expect(hasOpenStageDialog()).toBe(false)
   })
 
     it('lg é a larga (max-w-2xl, até 672 px), pra letra e cifra', () => {

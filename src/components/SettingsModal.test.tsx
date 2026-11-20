@@ -51,6 +51,8 @@ vi.mock('./SubscriptionPanel', () => ({
 vi.mock('./PricingModal', () => ({
   PricingModal: ({ isOpen, onClose }: { isOpen: boolean; onClose(): void }) => (isOpen ? <div data-testid="pricing"><button type="button" onClick={onClose}>fechar planos</button></div> : null),
 }))
+// A tela de limite do Livre (por cima das Configurações) puxa o livreRules, que importa o cliente do Supabase.
+vi.mock('../lib/supabase', () => ({ supabase: null }))
 vi.mock('./ProfileTab', () => ({
   ProfileTab: (p: { userPlan: string; onUpgrade(): void; onClose(): void }) => (
     <div data-testid="profile">
@@ -68,6 +70,8 @@ vi.mock('./ProfileTab', () => ({
 
 import { SettingsModal } from './SettingsModal'
 import { CHANGELOG } from '../lib/changelog'
+import { LimitScreen } from './livre/LimitScreen'
+import { StageDialog } from './stage/StageDialog'
 
 type Props = Parameters<typeof SettingsModal>[0]
 const STEREO: OutputSettings = { mode: 'stereo', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } }
@@ -636,6 +640,40 @@ describe('SettingsModal: Esc num campo preenchido', () => {
     const field = screen.getByLabelText('nome digitado')
     fireEvent.change(field, { target: { value: ' ' } })
     esc(field)
+    expect(p.onClose).not.toHaveBeenCalled()
+  })
+})
+
+// Junção da 1b com as faixas B e C (decisão do coordenador): a tela de limite do Livre pode abrir
+// por cima das Configurações (o Ao Vivo do Livre acaba com elas abertas). Um Esc fecha só a de cima.
+describe('SettingsModal: Esc com uma janela do palco aberta por cima', () => {
+  const esc = () => fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape', code: 'Escape' })
+  const limitScreen = (onClose: () => void) => (
+    <LimitScreen kind="live" offer={{ status: 'none' }} busyPlan={null} error={null} onChoose={vi.fn()} onSeePlans={vi.fn()} onClose={onClose} />
+  )
+
+  it('a tela de limite aberta por cima: um Esc fecha só ela; o seguinte fecha as Configurações', () => {
+    const p = props()
+    const limitClose = vi.fn()
+    const { rerender } = render(<SettingsModal {...p} />)
+    rerender(<><SettingsModal {...p} />{limitScreen(limitClose)}</>)
+    expect(document.activeElement?.closest('[role="dialog"]')?.getAttribute('aria-labelledby')).toBeTruthy()
+    esc()
+    expect(limitClose).toHaveBeenCalledTimes(1)
+    expect(p.onClose).not.toHaveBeenCalled()
+    rerender(<SettingsModal {...p} />)
+    esc()
+    expect(p.onClose).toHaveBeenCalledTimes(1)
+    expect(limitClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('janela do palco por cima que não fecha no Esc: as Configurações também não fecham', () => {
+    const p = props()
+    const dialogClose = vi.fn()
+    const { rerender } = render(<SettingsModal {...p} />)
+    rerender(<><SettingsModal {...p} /><StageDialog open title="Gerando o click" onClose={dialogClose} closeDisabled><p>Espere.</p></StageDialog></>)
+    esc()
+    expect(dialogClose).not.toHaveBeenCalled()
     expect(p.onClose).not.toHaveBeenCalled()
   })
 })
