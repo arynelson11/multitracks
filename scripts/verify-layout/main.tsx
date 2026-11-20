@@ -13,6 +13,8 @@ import { describe, reportFatal, verifyPage } from './check'
 import type { Failure } from './check'
 import type { Estado } from './fixture'
 import { ACTIONS, CLOCK, OUTPUT_CASES, PADS, makePeaks, outputWarningFor, parseEstado, repertoireProps, viewFor } from './fixture'
+import { expectB, parseEstadoB, prepareB } from './telasB'
+import { TelasBPage } from './TelasBPage'
 
 const noop = () => {}
 const peaks = makePeaks()
@@ -221,8 +223,14 @@ const params = new URLSearchParams(location.search)
 const name = params.get('name') ?? 'resultado'
 const raw = params.get('estado')
 const estado = parseEstado(raw)
+// Telas da faixa B da Parte 3 (login e Configurações): página própria, sem as regras do palco.
+const estadoB = parseEstadoB(raw)
 
-if (!estado) {
+if (estadoB) {
+  window.addEventListener('error', (e) => reportFatal(name, estadoB, `erro na página: ${e.message}`))
+  createRoot(document.getElementById('root')!).render(<StrictMode><TelasBPage estado={estadoB} /></StrictMode>)
+  void verifyPage(name, estadoB, { prepare: prepareB(estadoB), expect: () => expectB(estadoB) })
+} else if (!estado) {
   reportFatal(name, String(raw), `estado desconhecido: ${String(raw)}`)
 } else {
   window.addEventListener('error', (e) => reportFatal(name, estado, `erro na página: ${e.message}`))

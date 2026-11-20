@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Verificador de texto cortado e de alvos de toque do palco novo (T20), no Chrome headless.
 // Uso: node scripts/verify-layout/run.mjs [--only 1280x800[,1440x900]] [--estado normal[,tom]] [--jobs 3] [--no-build]
-//   sem --estado: os 11 estados normais nos 8 tamanhos (88 combinações);
+//   sem --estado: os 11 estados normais nos 8 tamanhos (88 combinações) e as 10 telas da faixa B
+//   (login e Configurações) em 1024x740, 1280x800, 1920x1080 e 390x844 (40 combinações);
 //   --estado quebrado: só a prova (um botão de largura fixa com texto longo), que tem de falhar.
 // Sai com código 1 se alguma combinação falhar (ou não responder). Resultados em scripts/verify-layout/results/.
 import http from 'node:http'
@@ -25,6 +26,12 @@ const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/M
 const SIZES = ['1024x740', '1024x768', '1280x760', '1280x800', '1440x900', '1920x1080', '900x740', '810x1080']
 /** Estados da rodada normal: a mesma lista de ESTADOS em fixture.ts. */
 const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config']
+/**
+ * Telas da faixa B da Parte 3 (login e Configurações, telasB.tsx), fora do palco: sem --estado
+ * entram na rodada normal, nos tamanhos de TELAS_B_SIZES (abrem no celular, então 390x844 entra).
+ */
+const ESTADOS_B = ['login', 'criarconta', 'recuperar', 'novasenha', 'config-perfil', 'config-geral', 'config-buses', 'config-novidades', 'config-assinatura', 'config-sobre']
+const TELAS_B_SIZES = ['1024x740', '1280x800', '1920x1080', '390x844']
 const PROVA = 'quebrado'
 const TIMEOUT_S = 40
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -49,11 +56,12 @@ const opt = (name) => {
   return v
 }
 const list = (v) => (v ? v.split(',').map((s) => s.trim()).filter(Boolean) : null)
-const sizes = list(opt('--only')) ?? SIZES
-const estados = list(opt('--estado')) ?? ESTADOS
+const onlySizes = list(opt('--only'))
+const sizes = onlySizes ?? SIZES
+const estados = list(opt('--estado')) ?? [...ESTADOS, ...ESTADOS_B]
 const jobs = Math.max(1, Number(opt('--jobs') ?? 3) || 3)
 for (const s of sizes) if (!/^\d{3,4}x\d{3,4}$/.test(s)) usage(`tamanho inválido: ${s}`)
-for (const e of estados) if (e !== PROVA && !ESTADOS.includes(e)) usage(`estado desconhecido: ${e}`)
+for (const e of estados) if (e !== PROVA && !ESTADOS.includes(e) && !ESTADOS_B.includes(e)) usage(`estado desconhecido: ${e}`)
 
 function serve() {
   const server = http.createServer((req, res) => {
@@ -67,6 +75,16 @@ function serve() {
         fs.writeFileSync(path.join(RES, `${name}.json`), Buffer.concat(chunks))
         res.end('ok')
       })
+      return
+    }
+    if (u.pathname === '/moldura') {
+      // Celular (abaixo da largura mínima da janela do Chrome headless, 500 px): a página roda num
+      // iframe do tamanho pedido, que vira a janela dela (innerWidth, media queries e a medida).
+      const w = Number(u.searchParams.get('w')) || 390
+      const h = Number(u.searchParams.get('h')) || 844
+      const q = (u.searchParams.get('q') || '').replace(/[^\w=&%.-]/g, '')
+      res.setHeader('Content-Type', MIME['.html'])
+      res.end(`<!doctype html><style>html,body{margin:0;background:#000;overflow:hidden}iframe{border:0;display:block}</style><iframe src="index.html?${q}" width="${w}" height="${h}"></iframe>`)
       return
     }
     if (u.pathname === '/janela') {
@@ -122,11 +140,18 @@ async function calibrate(port) {
   return { dw: 1280 - got.w, dh: 800 - got.h }
 }
 
+/** Largura mínima da janela do Chrome headless: abaixo dela a página roda num iframe (/moldura). */
+const MIN_WINDOW_W = 500
+
 async function runOne(port, frame, estado, size) {
   const [w, h] = size.split('x').map(Number)
   const name = `${estado}_${size}`
   const t0 = Date.now()
-  const data = await chromeRun(`http://127.0.0.1:${port}/index.html?estado=${estado}&name=${name}`, name, w + frame.dw, h + frame.dh)
+  const query = `estado=${estado}&name=${name}`
+  const url = w < MIN_WINDOW_W
+    ? `http://127.0.0.1:${port}/moldura?w=${w}&h=${h}&q=${encodeURIComponent(query)}`
+    : `http://127.0.0.1:${port}/index.html?${query}`
+  const data = await chromeRun(url, name, Math.max(w, MIN_WINDOW_W) + frame.dw, h + frame.dh)
   if (!data) return { name, estado, size, fatal: `sem resposta em ${TIMEOUT_S}s` }
   if (data.fatal) return { name, estado, size, fatal: data.fatal }
   // A janela tem de ser do tamanho pedido: senão a medida não vale pra esse tamanho.
@@ -144,7 +169,9 @@ if (!fs.existsSync(path.join(OUT, 'index.html'))) usage('sem build em scripts/ve
 const server = await serve()
 const port = server.address().port
 const frame = await calibrate(port)
-const combos = estados.flatMap((estado) => sizes.map((size) => ({ estado, size })))
+// As telas da faixa B usam os tamanhos delas (com o celular), salvo quando --only diz outros.
+const sizesFor = (estado) => (ESTADOS_B.includes(estado) && !onlySizes ? TELAS_B_SIZES : sizes)
+const combos = estados.flatMap((estado) => sizesFor(estado).map((size) => ({ estado, size })))
 const results = []
 let next = 0
 await Promise.all(Array.from({ length: Math.min(jobs, combos.length) }, async () => {

@@ -752,6 +752,7 @@ Seções completas — múltiplas moléculas trabalhando juntas.
 - **Novidades:** o aviso de atualização do computador numa caixa `s1` com anel `or-line` e "Baixar" (`Button primary`); cada versão com o título em 13px bold, a versão em `ps-num` à direita e os itens em 13px `mut`; a mais nova numa caixa `s1` com o brilho (`Sparkles`) em laranja.
 - **Assinatura:** só a moldura é nova: `Panel` (até 448px) com "Seu Plano Atual" em `ps-label`, o nome do plano em 28px extrabold, a frase e o botão "Ver Planos & Assinar" ou "Alterar Plano" (`Button primary lg`). O medidor de separações (`SeparationUsageMeter`) e o painel da assinatura (`SubscriptionPanel`) ficam como estão (são de outra frente).
 - **Sobre:** Wordmark, "A plataforma do domingo" com a versão em `ps-num` e a frase em 13px `mut`.
+- **Verificador:** `scripts/verify-layout/` mede o login, Criar nova senha e as Configurações em cada aba (estados `login`, `criarconta`, `recuperar`, `novasenha` e `config-*`) em 1024x740, 1280x800, 1920x1080 e 390x844.
 - **Buses** (só em "Tudo junto"): uma linha por canal com o nome organizado (o nome do arquivo no `title`) e um `Select` do kit (rótulo escondido "Bus de <canal>"); sem canais, a frase "Carregue uma música primeiro para ver os canais."
 
 ---

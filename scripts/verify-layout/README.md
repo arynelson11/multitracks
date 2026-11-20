@@ -24,6 +24,27 @@ Sai com `0` quando todas as combinações passam, `1` com qualquer falha (ou
 página que não respondeu) e `2` com opção errada. O JSON de cada combinação fica
 em `results/<estado>_<LxA>.json`. Outro Chrome: `CHROME=/caminho/do/chrome`.
 
+## Telas da faixa B da Parte 3 (login e Configurações)
+
+Sem `--estado`, a rodada normal também mede 10 telas fora do palco (`telasB.ts` e `TelasBPage.tsx`, Parte 3, faixa B,
+não publicado) em 1024x740, 1280x800, 1920x1080 e 390x844 (celular): 40 combinações a mais.
+
+| Estado | O que mostra |
+|---|---|
+| `login`, `criarconta`, `recuperar` | a tela de entrar nos três modos (`AuthPage`) |
+| `novasenha` | Criar nova senha (`NewPasswordPage`) |
+| `config-perfil`, `config-geral`, `config-buses`, `config-novidades`, `config-assinatura`, `config-sobre` | as Configurações abertas em cada aba, logadas como admin em "Tudo junto", com nome, e-mail, aparelho de saída e canais compridos e o aviso de atualização |
+
+A conta e as configurações saem de `fakes/` (o `vite.config.ts` troca o `src/hooks/useAuth.ts` e o
+`src/contexts/SettingsContext.tsx` do app por elas só neste build; o palco não usa nenhum dos dois).
+O contador de separações e o painel da assinatura são os de verdade, sem servidor (mostram o que
+mostram sem rede). Abaixo de 500 px (a janela mínima do Chrome headless) a página roda num iframe do
+tamanho pedido (`/moldura`), que vira a janela dela. `--only` vale também pra essas telas.
+
+```bash
+node scripts/verify-layout/run.mjs --estado login,config-geral --only 390x844
+```
+
 ## Tamanhos e estados
 
 Tamanhos: `1024x740` (a menor tela do palco novo, Ruling T18-altura), `1024x768`,

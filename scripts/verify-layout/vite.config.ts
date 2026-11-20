@@ -26,11 +26,31 @@ function appClasses(): Plugin {
   }
 }
 
+/**
+ * Simulações das telas da faixa B (Parte 3): a conta (useAuth) e as configurações (SettingsContext)
+ * do app saem daqui só neste build, pra as Configurações abrirem logadas e com dados fixos, sem
+ * Supabase nem pedido de microfone. O palco não usa nenhum dos dois.
+ */
+const FAKES = new Map([
+  [path.resolve(HERE, '../../src/hooks/useAuth.ts'), path.resolve(HERE, 'fakes/useAuth.ts')],
+  [path.resolve(HERE, '../../src/contexts/SettingsContext.tsx'), path.resolve(HERE, 'fakes/SettingsContext.tsx')],
+])
+function fakes(): Plugin {
+  return {
+    name: 'verify-layout:fakes',
+    enforce: 'pre',
+    async resolveId(source, importer, options) {
+      const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
+      return resolved ? (FAKES.get(path.resolve(resolved.id.split('?')[0])) ?? null) : null
+    },
+  }
+}
+
 export default defineConfig({
   root: HERE,
   // Caminhos relativos: a página e os assets saem de qualquer pasta servida.
   base: './',
-  plugins: [appClasses(), react(), tailwindcss()],
+  plugins: [appClasses(), fakes(), react(), tailwindcss()],
   logLevel: 'warn',
   build: { outDir: '.build', emptyOutDir: true, sourcemap: false, reportCompressedSize: false, chunkSizeWarningLimit: 8192 },
 })
