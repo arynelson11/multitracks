@@ -3,7 +3,7 @@
 // quem grava em settings.outputs e religa o roteador é o App/motor (T25, T29). Não pede
 // microfone nem lista aparelhos: o seletor do aparelho continua no AudioOutputSelect.
 import { useId } from 'react'
-import { Segmented } from '../ui'
+import { Segmented, Select } from '../ui'
 import type { SegmentedOption } from '../ui'
 import { OUTPUT_WARNING_TEXT, multiChoices, outputSummary, planOutputs } from '../../lib/outputPlan'
 import type { OutputWarning, PlannedOutputs } from '../../lib/outputPlan'
@@ -41,8 +41,6 @@ const SEGMENTED = 'self-start max-w-full flex-wrap'
 // text-pretty: o navegador evita deixar uma palavra sozinha na última linha.
 const NOTE = 'text-ps-base leading-snug text-pretty text-ps-mut'
 const ALERT = 'rounded-ps-md bg-ps-alert-soft px-3 py-2 text-ps-base leading-snug text-pretty font-semibold text-ps-alert inset-ring inset-ring-ps-alert-line'
-const SELECT = 'min-h-ps-touch rounded-ps-md bg-ps-s2 px-3 text-ps-md text-ps-bone inset-ring inset-ring-ps-line cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
-const OPTION = 'bg-ps-s2 text-ps-bone'
 
 /** Canais pra mostrar ao operador: valor estranho conta como 2, igual ao `planOutputs`. */
 function shownChannels(maxChannels: number): number {
@@ -164,22 +162,13 @@ export function AudioOutputsSection({ outputs, maxChannels, supportsDevicePick, 
 
 interface MapSelectProps { label: string; value: number; choices: number[]; text(o: number): string; onPick(v: number): void }
 
-/** Seletor de uma saída do mapa: grava número (nunca o texto do select), fonte de 16 px e alvo de 44 px. */
+/** Seletor de uma saída do mapa (o Select do kit): grava número (nunca o texto do select), fonte de 16 px e alvo de 44 px. */
 function MapSelect({ label, value, choices, text, onPick }: MapSelectProps) {
-  const id = useId()
   return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="ps-label">{label}</label>
-      <select
-        id={id}
-        value={String(value)}
-        onChange={(e) => onPick(Number(e.target.value))}
-        className={SELECT}
-      >
-        {choices.map((o) => (
-          <option key={o} value={String(o)} className={OPTION}>{text(o)}</option>
-        ))}
-      </select>
-    </div>
+    <Select label={label} value={String(value)} onChange={(e) => onPick(Number(e.target.value))}>
+      {choices.map((o) => (
+        <option key={o} value={String(o)}>{text(o)}</option>
+      ))}
+    </Select>
   )
 }

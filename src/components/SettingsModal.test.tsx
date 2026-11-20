@@ -409,4 +409,45 @@ describe('SettingsModal: casca do palco', () => {
   })
 })
 
-void windowClasses
+
+describe('SettingsModal: aba Geral e Buses no visual do palco', () => {
+  const panel = () => screen.getByRole('tabpanel')
+  it('Geral: interruptores do kit, seletor do aparelho do kit, botões de 44 px e só tokens ps-*', () => {
+    authState.isAdmin = true
+    render(<SettingsModal {...props()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Geral' }))
+    const autoPan = screen.getByRole('switch', { name: 'Pan Estéreo Automático' })
+    expect(autoPan.getAttribute('aria-checked')).toBe('false')
+    const grade = screen.getByRole('switch', { name: 'Grade de Compasso' }) as HTMLButtonElement
+    expect(grade.getAttribute('aria-checked')).toBe('true')
+    expect(grade.disabled).toBe(true)
+    const device = screen.getByRole('combobox', { name: 'Dispositivo de Áudio' })
+    expect(device.parentElement!.className).toContain('focus-within:outline-ps-or')
+    for (const name of ['Ver tutorial', 'Abrir Painel', 'Atualizar a lista de dispositivos']) expect(screen.getByRole('button', { name }).className).toContain('min-h-ps-touch')
+    expect(windowClasses(panel()).filter((c) => OLD.test(c))).toEqual([])
+  })
+
+  it('Geral sem escolha de saída: o aviso em texto do palco', () => {
+    settingsState.canPickOutput = false
+    render(<SettingsModal {...props()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Geral' }))
+    expect(windowClasses(panel()).filter((c) => OLD.test(c))).toEqual([])
+  })
+
+  it('Buses: um seletor do kit por canal com o nome do canal e só tokens ps-*', () => {
+    render(<SettingsModal {...props({ channels: CHANNELS })} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Buses' }))
+    const selects = screen.getAllByRole('combobox')
+    expect(selects.map((el) => el.getAttribute('id'))).toHaveLength(2)
+    for (const el of selects) {
+      const label = document.querySelector(`label[for="${el.id}"]`)!
+      expect(label.textContent).toMatch(/^Bus de /)
+      expect(el.parentElement!.className).toContain('min-h-ps-touch')
+    }
+    expect(windowClasses(panel()).filter((c) => OLD.test(c))).toEqual([])
+    cleanup()
+    render(<SettingsModal {...props()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Buses' }))
+    expect(windowClasses(panel()).filter((c) => OLD.test(c))).toEqual([])
+  })
+})

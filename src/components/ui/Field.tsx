@@ -40,7 +40,8 @@ const BOX_IDLE = 'inset-ring-ps-line hover:inset-ring-ps-line-2'
 const BOX_ERROR = 'inset-ring-ps-alert-line'
 const BOX_DISABLED = 'opacity-35 cursor-not-allowed'
 
-// Fonte de 16 px: no iPhone, campo com fonte menor dá zoom na página ao tocar.
+// Fonte de 16 px: no iPhone, campo com fonte menor dá zoom na página ao tocar. O input e o select
+// também levam o alvo de 44 px (min-h-ps-touch), além da caixa, pra medida do toque valer neles.
 const CONTROL =
   'min-w-0 flex-1 self-stretch bg-transparent font-ps-sans text-ps-md text-ps-bone placeholder:text-ps-mut outline-none disabled:cursor-not-allowed'
 
@@ -70,7 +71,7 @@ export function TextField({ label, hideLabel, help, error, className, icon, trai
   return wrap(
     <div className={cx(BOX, 'items-center', hasError ? BOX_ERROR : BOX_IDLE, rest.disabled && BOX_DISABLED)}>
       {icon != null && <span aria-hidden="true" className="flex shrink-0 items-center pl-3 text-ps-mut">{icon}</span>}
-      <input {...rest} {...control} className={cx(CONTROL, 'py-2.5', icon != null ? 'pl-2' : 'pl-3', trailing != null ? 'pr-2' : 'pr-3', inputClassName)} />
+      <input {...rest} {...control} className={cx(CONTROL, 'min-h-ps-touch py-2.5', icon != null ? 'pl-2' : 'pl-3', trailing != null ? 'pr-2' : 'pr-3', inputClassName)} />
       {trailing != null && <span className="flex shrink-0 items-center pr-3 text-ps-sm text-ps-mut">{trailing}</span>}
     </div>,
   )
@@ -94,7 +95,7 @@ export function Select({ label, hideLabel, help, error, className, selectClassNa
       <select
         {...rest}
         {...control}
-        className={cx(CONTROL, 'cursor-pointer appearance-none scheme-dark py-2 pl-3 pr-9 [&_option]:bg-ps-s2 [&_option]:text-ps-bone', selectClassName)}
+        className={cx(CONTROL, 'min-h-ps-touch cursor-pointer appearance-none scheme-dark py-2 pl-3 pr-9 [&_option]:bg-ps-s2 [&_option]:text-ps-bone', selectClassName)}
       >
         {children}
       </select>

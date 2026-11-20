@@ -379,6 +379,7 @@ import { Button, Chip, Segmented, Panel, Led, TextField, TextArea, Select, Switc
 - **Foco:** anel laranja na caixa (`focus-within`), então ícone e `trailing` ficam dentro dele.
 - **Só do TextField:** `icon` (antes do texto, escondido do leitor de tela) e `trailing` (texto curto ou botão depois do texto, ex.: "mín 6"); `inputClassName` pro input.
 - **Só do TextArea:** `rows` (padrão 4), cresce na vertical (`resize-y`); `textareaClassName`.
+- **Alvo de 44px também no controle:** o `<input>` e o `<select>` levam `min-h-ps-touch` além da caixa (a área de texto não: a altura vem das linhas).
 - **Só do Select:** seta própria (o `appearance-none` tira a do sistema), lista no tema escuro (`scheme-dark`, opções em `s2`); `selectClassName`. As opções vêm como filhos.
 - Desligado: a caixa fica a 35% e o cursor vira "não pode".
 
@@ -671,6 +672,9 @@ Seções completas — múltiplas moléculas trabalhando juntas.
 **Casca:** camada própria (`fixed inset-0 z-[100]`, fundo `bg-black/60`, 16px de folga), não o `StageDialog`: os Planos (`PricingModal`, `z-[110]`) abrem por dentro das Configurações e ficam por cima, e o Esc continua sem fechar a janela (como antes). Caixa no `Panel variant="pop"` (até 672px, `max-h-full`), com `role="dialog"`, `aria-modal` e o nome "Configurações". Toque fora fecha, toque dentro não.
 - **Cabeçalho:** as abas do kit (`Tabs`, "Abas das Configurações": Perfil, Geral, Buses só em "Tudo junto", Novidades, Assinatura, Sobre), que descem de linha numa tela estreita, e o X do palco (`Button` com `Icon name="x"`, `aria-label="Fechar"`, 44px) à direita.
 - **Conteúdo:** um `TabPanel` ligado à aba aberta, que rola por dentro (altura de 400px até 70% da tela), fundo `ps-ink-0` e 24px de folga.
+- **Linha de opção** (`src/components/settings/SettingRow.tsx`): nome (13px bold, `bone`) e frase (13px, `mut`) à esquerda, controle à direita; com menos de 224px pro texto o controle desce pra linha de baixo. Separadores `border-ps-line`.
+- **Geral:** chave do Palco (`Segmented`, seção 1.7), Tutorial com "Ver tutorial" (`Button`), o aparelho de saída (`AudioOutputSelect.tsx`: título, "atualizar a lista" como `Button ghost` só de ícone com 44px, `Select` do kit até 448px com o aviso do microfone como ajuda) junto das Saídas de áudio (os seletores do mapa de 4 ou mais também são o `Select` do kit), o Pan Estéreo Automático (`Switch`, só em "Tudo junto"), a Grade de Compasso (`Switch` desligado e ligado, "Em breve") e, pra admin, o Painel de Upload numa caixa `s1` com "Abrir Painel" (`Button`).
+- **Buses** (só em "Tudo junto"): uma linha por canal com o nome organizado (o nome do arquivo no `title`) e um `Select` do kit (rótulo escondido "Bus de <canal>"); sem canais, a frase "Carregue uma música primeiro para ver os canais."
 
 ---
 

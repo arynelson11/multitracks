@@ -17,7 +17,8 @@ import { StageVersionSetting } from './settings/StageVersionSetting';
 import { AudioOutputsSection } from './settings/AudioOutputsSection';
 import { CUE_TO_PA_CONFIRM_TEXT, needsCueToPaConfirm, type OutputWarning } from '../lib/outputPlan';
 import type { OutputSettings } from '../lib/stageContracts';
-import { Button, Panel, TabPanel, Tabs } from './ui';
+import { Button, Panel, Select, Switch, TabPanel, Tabs } from './ui';
+import { SettingRow } from './settings/SettingRow';
 import { Icon } from './stage/icons';
 
 interface SettingsModalProps {
@@ -139,23 +140,16 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                             {/* Chave do palco (R-25), a primeira opção: vale na próxima vez que a música parar. */}
                             <StageVersionSetting value={settings.stageVersion} onChange={(v) => updateSetting('stageVersion', v)} />
 
-                            <hr className="border-border" />
+                            <hr className="border-ps-line" />
 
                             {/* Rever tutorial */}
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h3 className="text-white text-sm font-bold">Tutorial</h3>
-                                    <p className="text-text-muted text-[10px] font-mono">Rever o guia de uso do app</p>
-                                </div>
-                                <button
-                                    onClick={() => { onClose(); onReplayTour(); }}
-                                    className="ml-4 shrink-0 px-3 py-1.5 rounded-lg bg-primary/15 text-primary border border-primary/30 text-xs font-bold hover:bg-primary/25 active:scale-95 transition-all cursor-pointer"
-                                >
+                            <SettingRow title="Tutorial" description="Rever o guia de uso do app">
+                                <Button onClick={() => { onClose(); onReplayTour(); }}>
                                     Ver tutorial
-                                </button>
-                            </div>
+                                </Button>
+                            </SettingRow>
 
-                            <hr className="border-border" />
+                            <hr className="border-ps-line" />
 
                             {/* Audio Device (lista e pedido de microfone só aqui, com a aba Geral aberta) e,
                                 junto dele, as saídas por papel: Tudo junto, Click e Guia separados ou 4 ou mais. */}
@@ -173,49 +167,40 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                             {/* Auto Pan: só em "Tudo junto" (R-23; fora dele o papel decide a saída), desligado por padrão. */}
                             {stereoMode && (
                                 <>
-                                    <hr className="border-border" />
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <h3 className="text-white text-sm font-bold">Pan Estéreo Automático</h3>
-                                            <p className="text-text-muted text-[10px] font-mono">Click e Guia no canal L, faixas no canal R</p>
-                                        </div>
-                                        <label className="relative inline-flex items-center cursor-pointer ml-4 shrink-0">
-                                            <input type="checkbox" className="sr-only peer" checked={settings.autoPan} onChange={(e) => changeAutoPan(e.target.checked)} />
-                                            <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                                        </label>
-                                    </div>
+                                    <hr className="border-ps-line" />
+                                    <Switch
+                                        label="Pan Estéreo Automático"
+                                        description="Click e Guia no canal L, faixas no canal R"
+                                        checked={settings.autoPan}
+                                        onChange={changeAutoPan}
+                                    />
                                 </>
                             )}
 
-                            <hr className="border-border" />
+                            <hr className="border-ps-line" />
 
-                            <div className="flex items-center justify-between opacity-50 pointer-events-none">
-                                <div>
-                                    <h3 className="text-white text-sm font-bold">Grade de Compasso</h3>
-                                    <p className="text-text-muted text-[10px] font-mono">Grade de beats na forma de onda (Em breve)</p>
-                                </div>
-                                <label className="relative inline-flex items-center ml-4 shrink-0">
-                                    <input type="checkbox" className="sr-only peer" checked readOnly />
-                                    <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                                </label>
-                            </div>
+                            {/* Em breve: ligada e sem ação, como antes. */}
+                            <Switch
+                                label="Grade de Compasso"
+                                description="Grade de beats na forma de onda (Em breve)"
+                                checked
+                                disabled
+                                onChange={() => {}}
+                            />
 
-                            <hr className="border-border" />
+                            <hr className="border-ps-line" />
 
                             {/* Cloud Admin Access */}
                             {isAdmin && (
-                                <div className="flex items-center justify-between p-3 bg-secondary/5 rounded-md border border-secondary/15 mt-4">
-                                    <div>
-                                        <h3 className="text-secondary text-sm font-bold uppercase tracking-wider">Painel de Upload</h3>
-                                        <p className="text-text-muted text-[10px] font-mono">Publicar músicas na biblioteca da nuvem</p>
-                                    </div>
-                                    <button
-                                        onClick={() => { onClose(); onOpenAdmin(); }}
-                                        className="px-3 py-1.5 bg-secondary text-black text-[10px] font-bold rounded-md hover:scale-105 active:scale-95 transition-all cursor-pointer uppercase tracking-wider"
-                                    >
+                                <SettingRow
+                                    title="Painel de Upload"
+                                    description="Publicar músicas na biblioteca da nuvem"
+                                    className="mt-4 rounded-ps-lg bg-ps-s1 p-3 inset-ring inset-ring-ps-line"
+                                >
+                                    <Button onClick={() => { onClose(); onOpenAdmin(); }}>
                                         Abrir Painel
-                                    </button>
-                                </div>
+                                    </Button>
+                                </SettingRow>
                             )}
                         </div>
                     )}
@@ -223,26 +208,31 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                     {activeTab === 'Buses' && stereoMode && (
                         <div className="flex flex-col gap-1">
                             {channels.length === 0 ? (
-                                <div className="flex items-center justify-center h-40 text-text-muted/50">
+                                <div className="flex items-center justify-center h-40 px-4 text-center text-ps-base text-ps-mut">
                                     Carregue uma música primeiro para ver os canais.
                                 </div>
                             ) : (
                                 <>
-                            <p className="text-text-muted text-[10px] mb-4 font-mono">Define para qual bus estéreo cada canal é roteado. Bus 1 = L, Bus 2 = R, 1/2 = Estéreo.</p>
-                                    {channels.map(ch => (
-                                        <div key={ch.id} className="flex items-center justify-between gap-3 py-2.5 border-b border-border last:border-b-0">
-                                            <span title={ch.name} className="min-w-0 break-words text-white font-bold text-xs font-mono uppercase tracking-wider">{labelById.get(ch.id) ?? ch.name}</span>
-                                            <select
-                                                className="daw-input shrink-0 text-white text-[10px] font-bold py-1 px-2 rounded-md cursor-pointer font-mono"
-                                                value={ch.bus}
-                                                onChange={(e) => onSetChannelBus(ch.id, e.target.value as '1' | '2' | '1/2')}
-                                            >
-                                                <option value="1" className="bg-[#1c1c1e] text-white">1 (L)</option>
-                                                <option value="2" className="bg-[#1c1c1e] text-white">2 (R)</option>
-                                                <option value="1/2" className="bg-[#1c1c1e] text-white">1/2 (Stereo)</option>
-                                            </select>
-                                        </div>
-                                    ))}
+                                    <p className="mb-4 text-ps-base leading-snug text-pretty text-ps-mut">Define para qual bus estéreo cada canal é roteado. Bus 1 = L, Bus 2 = R, 1/2 = Estéreo.</p>
+                                    {channels.map(ch => {
+                                        const label = labelById.get(ch.id) ?? ch.name;
+                                        return (
+                                            <div key={ch.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-ps-line py-2.5 last:border-b-0">
+                                                <span title={ch.name} className="min-w-0 break-words text-ps-base font-bold text-ps-bone">{label}</span>
+                                                <Select
+                                                    label={`Bus de ${label}`}
+                                                    hideLabel
+                                                    value={ch.bus}
+                                                    onChange={(e) => onSetChannelBus(ch.id, e.target.value as '1' | '2' | '1/2')}
+                                                    className="shrink-0"
+                                                >
+                                                    <option value="1">1 (L)</option>
+                                                    <option value="2">2 (R)</option>
+                                                    <option value="1/2">1/2 (Stereo)</option>
+                                                </Select>
+                                            </div>
+                                        );
+                                    })}
                                 </>
                             )}
                         </div>
