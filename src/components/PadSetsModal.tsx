@@ -102,9 +102,16 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
 
     const cancelEdit = () => setEditingId(null);
     const cancelDelete = () => setDeletingId(null);
+    // Renomeando ou confirmando o apagar, o Esc cancela só isso (a janela não fecha, nem no toque
+    // fora) e o foco fica na janela, porque a linha some.
+    const cancelOnEscape = (cancel: () => void) => (e: React.KeyboardEvent<HTMLLIElement>) => {
+        if (e.key !== 'Escape') return;
+        e.currentTarget.closest<HTMLElement>('[role="dialog"]')?.focus({ preventScroll: true });
+        cancel();
+    };
 
     return (
-        <StageDialog open title="Pads da nuvem" size="sm" onClose={onClose}>
+        <StageDialog open title="Pads da nuvem" size="sm" onClose={onClose} dismissible={!editingId && !deletingId}>
             <div className="flex flex-col gap-3">
                 <p className="text-ps-mut">Escolha um conjunto de pads.</p>
 
@@ -136,7 +143,7 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
 
                             if (editingId === padSet.id) {
                                 return (
-                                    <li key={padSet.id} className="flex flex-col gap-3 rounded-ps-lg bg-ps-s1 p-3 inset-ring inset-ring-ps-line-2">
+                                    <li key={padSet.id} onKeyDown={cancelOnEscape(cancelEdit)} className="flex flex-col gap-3 rounded-ps-lg bg-ps-s1 p-3 inset-ring inset-ring-ps-line-2">
                                         <TextField label="Nome do conjunto" autoFocus value={editName} onChange={e => setEditName(e.target.value)} placeholder="Nome do conjunto" />
                                         <TextField label="Descrição (opcional)" value={editDesc} onChange={e => setEditDesc(e.target.value)} placeholder="Descrição (opcional)" />
                                         <div className="flex flex-wrap justify-end gap-2">
@@ -149,11 +156,12 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
 
                             if (deletingId === padSet.id) {
                                 return (
-                                    <li key={padSet.id} className="flex flex-col gap-2 rounded-ps-lg bg-ps-alert-soft p-3 inset-ring inset-ring-ps-alert-line">
+                                    <li key={padSet.id} onKeyDown={cancelOnEscape(cancelDelete)} className="flex flex-col gap-2 rounded-ps-lg bg-ps-alert-soft p-3 inset-ring inset-ring-ps-alert-line">
                                         <p className="font-bold text-ps-alert break-words">Apagar "{padSet.name}"?</p>
                                         <p className="text-ps-sm text-ps-mut">Esta ação não pode ser desfeita.</p>
                                         <div className="flex flex-wrap justify-end gap-2">
-                                            <Button tone="ghost" onClick={cancelDelete}>Cancelar</Button>
+                                            {/* A lixeira some com a confirmação: o foco vem pro Cancelar, dentro da janela. */}
+                                            <Button tone="ghost" autoFocus onClick={cancelDelete}>Cancelar</Button>
                                             <Button tone="alert" onClick={executeDelete}>Apagar</Button>
                                         </div>
                                     </li>

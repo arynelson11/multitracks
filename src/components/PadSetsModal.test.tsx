@@ -122,6 +122,54 @@ describe('Pads da nuvem: nada some', () => {
   })
 })
 
+// Revisão macro BC (BC2-M4, BC2-M8): o Esc e o toque fora novos dos pads, e o Esc na edição só cancela a edição.
+describe('Pads da nuvem: Esc e toque fora', () => {
+  const esc = () => fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape', code: 'Escape' })
+  const toqueFora = () => {
+    const camada = screen.getByRole('dialog').parentElement as HTMLElement
+    fireEvent.pointerDown(camada)
+    fireEvent.click(camada)
+  }
+
+  it('sem edição, Esc fecha e o toque fora também', async () => {
+    const { onClose } = abrir(true)
+    await escolha('Pads Domingo')
+    esc()
+    expect(onClose).toHaveBeenCalledTimes(1)
+    toqueFora()
+    expect(onClose).toHaveBeenCalledTimes(2)
+  })
+
+  it('renomeando, o Esc no campo cancela só a edição (a janela fica) e o toque fora não fecha', async () => {
+    const { onClose } = abrir(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Renomear Pads Domingo' }))
+    const nome = screen.getByLabelText('Nome do conjunto') as HTMLInputElement
+    fireEvent.change(nome, { target: { value: 'Pads de Domingo à Noite' } })
+    toqueFora()
+    expect(onClose).not.toHaveBeenCalled()
+    expect((screen.getByLabelText('Nome do conjunto') as HTMLInputElement).value).toBe('Pads de Domingo à Noite')
+    nome.focus()
+    esc()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.queryByLabelText('Nome do conjunto')).toBeNull()
+    expect(pedidos('PATCH')).toHaveLength(0)
+    esc()
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('confirmando o apagar, o Esc cancela só a confirmação, com o foco no Cancelar dela', async () => {
+    const { onClose } = abrir(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Apagar Pads Domingo' }))
+    expect(document.activeElement?.textContent).toBe('Cancelar')
+    toqueFora()
+    expect(onClose).not.toHaveBeenCalled()
+    esc()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.queryByText('Apagar "Pads Domingo"?')).toBeNull()
+    expect(pedidos('DELETE')).toHaveLength(0)
+  })
+})
+
 describe('Pads da nuvem: linguagem do palco', () => {
   it('só classes da linguagem nova, com o admin aberto', async () => {
     abrir(true)
