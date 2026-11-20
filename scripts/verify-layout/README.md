@@ -60,6 +60,7 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `teleprompter` | Teleprompter (faixa C) no "Refrão Final Estendido" com 4 linhas longas de letra |
 | `teleprompter-vazio` | Teleprompter sem música e sem seções |
 | `novidades` | Novidades (faixa C) com a entrada mais nova do changelog de verdade |
+| `atualizacao` | Aviso de atualização (faixa C) do app de computador no Mac ("Versão 1.4.30 já saiu") |
 | `config` | as duas seções da T19 numa página própria: placa de 2 canais (caindo de 4 ou mais, com avisos) e de 8 canais |
 | `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso pra cada ramo das regras (15 falhas, uma por ramo) |
 

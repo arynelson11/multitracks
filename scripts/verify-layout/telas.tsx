@@ -5,6 +5,7 @@ import { MetronomeModal } from '../../src/components/MetronomeModal'
 import { LyricsEditor } from '../../src/components/LyricsEditor'
 import { PadSetsModal } from '../../src/components/PadSetsModal'
 import { Teleprompter } from '../../src/components/Teleprompter'
+import { UpdateBanner } from '../../src/components/UpdateBanner'
 import { WhatsNewModal } from '../../src/components/WhatsNewModal'
 import type { Channel, Song } from '../../src/types'
 import type { TelaEstado } from './telasEstados'
@@ -45,6 +46,16 @@ const LYRIC_SONG = {
   chords: 'E              B              C#m        A\nGrande é o Senhor e mui digno de louvor na cidade do nosso Deus, seu santo monte',
 } as unknown as Song
 
+// Aviso de atualização: o app de computador avisa na hora que existe a versão nova (caso do Mac,
+// o texto mais longo). Só no estado dele, pra nenhum outro estado ganhar o aviso por cima.
+if (new URLSearchParams(location.search).get('estado') === 'atualizacao') {
+  window.playbackDesktop = {
+    onUpdateReady: () => noop,
+    onUpdateAvailable: (cb: (info: { version: string }) => void) => { cb({ version: '1.4.30' }); return noop },
+    installUpdate: noop,
+  } as unknown as Window['playbackDesktop']
+}
+
 // As peças da página são exportadas só pela regra do react-refresh (arquivo com componente exporta componente).
 
 export function TelaPage({ estado }: { estado: TelaEstado }) {
@@ -60,6 +71,7 @@ export function TelaPage({ estado }: { estado: TelaEstado }) {
       )}
       {estado === 'teleprompter-vazio' && <Teleprompter songName={null} hasMarkers={false} marker={null} currentTime={0} duration={0} onClose={noop} />}
       {estado === 'novidades' && <WhatsNewModal onClose={noop} />}
+      {estado === 'atualizacao' && <UpdateBanner />}
       {(estado === 'padsnuvem' || estado === 'padsnuvem-editar') && (
         <PadSetsModal isOpen onClose={noop} onSelect={noop} selectedPadSet={{ id: 'p2', name: 'Ambiente Suave', base_path: 'p2' }} isAdmin />
       )}

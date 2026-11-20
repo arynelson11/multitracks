@@ -1,6 +1,6 @@
 // Estados das demais telas da Parte 3 (faixa C) no verificador: uma janela ou página por estado,
 // montada em telas.tsx, com o que conferir e o que abrir antes de medir. O run.mjs tem a mesma lista.
-export const TELA_ESTADOS = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades'] as const
+export const TELA_ESTADOS = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao'] as const
 export type TelaEstado = (typeof TELA_ESTADOS)[number]
 
 export function isTela(value: string): value is TelaEstado {
@@ -17,6 +17,7 @@ export const TELA_EXPECT: Record<TelaEstado, { sel: string; text?: string }> = {
   teleprompter: { sel: 'h1' },
   'teleprompter-vazio': { sel: '[role="progressbar"]' },
   novidades: { sel: '[role="dialog"] li' },
+  atualizacao: { sel: '[role="status"] button' },
 }
 
 /** Toque de ponteiro (click com detail 1), como o dedo. */
