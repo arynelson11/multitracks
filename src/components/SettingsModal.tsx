@@ -241,33 +241,30 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                     {activeTab === 'Novidades' && (
                         <div className="flex flex-col gap-5 max-w-lg mx-auto">
                             {desktopUpdate && (
-                                <div className="bg-primary/10 border border-primary/30 rounded-xl p-4 flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center shrink-0">
-                                        <Download size={18} className="text-primary" />
+                                <div className="flex flex-wrap items-center gap-3 rounded-ps-xl bg-ps-s1 p-4 inset-ring inset-ring-ps-or-line">
+                                    <div className="grid size-10 shrink-0 place-items-center rounded-ps-md bg-ps-or-soft text-ps-or inset-ring inset-ring-ps-or-line">
+                                        <Download size={18} aria-hidden="true" />
                                     </div>
-                                    <div className="min-w-0 flex-1">
-                                        <p className="text-white font-bold text-sm leading-tight">Atualização disponível</p>
-                                        <p className="text-text-muted text-[12px]">A versão {desktopUpdate.latestVersion} já saiu. Baixe para atualizar o app.</p>
+                                    <div className="min-w-0 flex-1 basis-48">
+                                        <p className="text-ps-base font-bold leading-tight text-ps-bone">Atualização disponível</p>
+                                        <p className="text-ps-base leading-snug text-pretty text-ps-mut">A versão <span className="ps-num">{desktopUpdate.latestVersion}</span> já saiu. Baixe para atualizar o app.</p>
                                     </div>
-                                    <button
-                                        onClick={() => onInstallUpdate?.()}
-                                        className="shrink-0 px-4 py-2 rounded-lg bg-primary text-black text-xs font-bold hover:bg-primary/90 active:scale-95 transition-all cursor-pointer"
-                                    >
+                                    <Button tone="primary" onClick={() => onInstallUpdate?.()}>
                                         Baixar
-                                    </button>
+                                    </Button>
                                 </div>
                             )}
                             {CHANGELOG.map((entry, idx) => (
-                                <div key={entry.version} className={idx === 0 ? 'bg-primary/[0.06] border border-primary/20 rounded-xl p-4' : 'border-b border-white/5 pb-5'}>
-                                    <div className="flex items-center gap-2 mb-2">
-                                        {idx === 0 && <Sparkles size={14} className="text-primary" />}
-                                        <span className={`font-bold ${idx === 0 ? 'text-white' : 'text-zinc-300'}`}>{entry.title}</span>
-                                        <span className="text-[10px] font-mono text-text-muted ml-auto">v{entry.version}</span>
+                                <div key={entry.version} className={idx === 0 ? 'rounded-ps-xl bg-ps-s1 p-4 inset-ring inset-ring-ps-line' : 'border-b border-ps-line pb-5'}>
+                                    <div className="mb-2 flex items-start gap-2">
+                                        {idx === 0 && <Sparkles size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-ps-or" />}
+                                        <span className="min-w-0 text-ps-base font-bold text-ps-bone">{entry.title}</span>
+                                        <span className="ps-num ml-auto shrink-0 text-ps-sm text-ps-mut">v{entry.version}</span>
                                     </div>
                                     <ul className="space-y-1.5">
                                         {entry.items.map((item, i) => (
-                                            <li key={i} className="flex items-start gap-2 text-[13px] text-zinc-400 leading-relaxed">
-                                                <span className="mt-1.5 w-1 h-1 rounded-full bg-text-muted shrink-0" />
+                                            <li key={i} className="flex items-start gap-2 text-ps-base leading-relaxed text-ps-mut">
+                                                <span aria-hidden="true" className="mt-2 size-1 shrink-0 rounded-full bg-ps-dim" />
                                                 {item}
                                             </li>
                                         ))}
@@ -278,15 +275,16 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                     )}
 
                     {activeTab === 'Assinatura' && (
-                        <div className="flex flex-col items-center justify-center p-6 gap-6">
-                            <div className="w-full max-w-md bg-[#1c1c1e] rounded-xl p-6 border border-border flex flex-col items-center text-center shadow-lg">
-                                <h3 className="text-white text-lg font-bold uppercase tracking-wider mb-2">Seu Plano Atual</h3>
-                                
-                                <div className="text-3xl font-black text-laranja uppercase mb-4 tracking-widest">
+                        <div className="flex flex-col items-center justify-center gap-6 py-2 sm:p-6">
+                            {/* Só a moldura é nova: o medidor (SeparationUsageMeter) e o painel da assinatura ficam como estão. */}
+                            <Panel className="flex w-full max-w-md flex-col items-center gap-4 p-6 text-center">
+                                <h3 className="ps-label">Seu Plano Atual</h3>
+
+                                <div className="text-[28px] font-extrabold uppercase leading-tight tracking-[0.12em] text-ps-bone break-words">
                                     {planDisplayName(userPlan)}
                                 </div>
 
-                                <p className="text-text-muted text-xs font-mono mb-6">
+                                <p className="text-ps-base leading-snug text-pretty text-ps-mut">
                                     {!isPaidPlan(userPlan)
                                         ? 'Você está no plano Livre. Faça upgrade para liberar todas as funcionalidades.'
                                         : 'Obrigado por apoiar o Playback Studio. Aproveite tudo do seu plano.'}
@@ -300,21 +298,18 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                                     onOpenPricing={() => setIsPricingOpen(true)}
                                 />
 
-                                <button
-                                    onClick={() => setIsPricingOpen(true)}
-                                    className="px-6 py-3 bg-laranja text-bone text-xs font-bold uppercase tracking-wider rounded-lg transition-transform hover:scale-105 active:scale-95 shadow-lg shadow-laranja/25 mb-2"
-                                >
+                                <Button tone="primary" size="lg" onClick={() => setIsPricingOpen(true)}>
                                     {!isPaidPlan(userPlan) ? 'Ver Planos & Assinar' : 'Alterar Plano'}
-                                </button>
-                            </div>
+                                </Button>
+                            </Panel>
                         </div>
                     )}
 
                     {activeTab === 'Sobre' && (
                         <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-8">
                             <PlaybackStudioWordmark size="lg" tone="light" />
-                            <div className="text-text-muted text-[10px] font-mono tracking-wider mt-2">A plataforma do domingo · v{CHANGELOG[0]?.version}</div>
-                            <div className="text-text-muted/40 text-[9px] max-w-sm font-mono">Multitracks pra qualquer música. Pra sua banda chegar pronta no domingo. Feito por quem toca.</div>
+                            <p className="mt-2 text-ps-sm text-ps-mut">A plataforma do domingo · <span className="ps-num">v{CHANGELOG[0]?.version}</span></p>
+                            <p className="max-w-sm text-ps-base leading-snug text-pretty text-ps-mut">Multitracks pra qualquer música. Pra sua banda chegar pronta no domingo. Feito por quem toca.</p>
                         </div>
                     )}
                 </TabPanel>

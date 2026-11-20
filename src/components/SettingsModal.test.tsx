@@ -451,3 +451,32 @@ describe('SettingsModal: aba Geral e Buses no visual do palco', () => {
     expect(windowClasses(panel()).filter((c) => OLD.test(c))).toEqual([])
   })
 })
+
+describe('SettingsModal: Novidades, Assinatura e Sobre no visual do palco', () => {
+  const panel = () => screen.getByRole('tabpanel')
+  it('Novidades: Baixar laranja, versões em ps-num e só tokens ps-*', () => {
+    render(<SettingsModal {...props({ desktopUpdate: { latestVersion: '9.9.9', url: 'https://exemplo/app' }, onInstallUpdate: vi.fn() })} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Novidades' }))
+    expect(screen.getByRole('button', { name: /Baixar/ }).className).toContain('bg-ps-or')
+    const versions = Array.from(panel().querySelectorAll('.ps-num')).map((el) => el.textContent)
+    expect(versions).toContain(`v${CHANGELOG[0].version}`)
+    expect(windowClasses(panel()).filter((c) => OLD.test(c))).toEqual([])
+  })
+
+  it('Assinatura: moldura no Panel, botão principal laranja e só tokens ps-* (o medidor e o painel ficam como estão)', () => {
+    render(<SettingsModal {...props()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Assinatura' }))
+    const frame = screen.getByTestId('usage').parentElement!
+    expect(frame.className).toContain('bg-ps-s1')
+    expect(screen.getByRole('button', { name: /Ver Planos & Assinar/i }).className).toContain('bg-ps-or')
+    expect(windowClasses(panel()).filter((c) => OLD.test(c))).toEqual([])
+  })
+
+  it('Sobre: versão em ps-num e só tokens ps-*', () => {
+    render(<SettingsModal {...props()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Sobre' }))
+    expect(panel().querySelector('.ps-num')!.textContent).toBe(`v${CHANGELOG[0].version}`)
+    expect(windowClasses(panel()).filter((c) => OLD.test(c))).toEqual([])
+    expect(document.body.innerHTML).not.toContain(String.fromCharCode(0x2014))
+  })
+})
