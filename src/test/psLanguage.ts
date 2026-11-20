@@ -2,7 +2,8 @@
 // tela montada. O que conta como antigo: o dourado `primary` e o ciano `secondary` do DAW, as
 // classes `daw-*`, cor em hex solto na classe, texto de 8 e 9 px, as cores prontas do Tailwind
 // (zinc, orange, red...), o branco solto, os tokens do DAW (`text-muted`, `border`, `card`...),
-// as fontes antigas (`font-mono`, `font-sans`, `font-display`) e as peças do palco antigo.
+// as fontes antigas (`font-mono`, `font-sans`) e as peças do palco antigo. O `font-display` (Fraunces)
+// não entra: é a fonte da marca, que o `PlaybackStudioWordmark` usa em qualquer tela.
 const OLD: RegExp[] = [
   /(^|:)(bg|text|border|shadow|ring|from|to|via|outline|fill|stroke|accent)-(primary|secondary)(-dim)?(\/\d+)?$/,
   /^daw-/,
@@ -14,7 +15,7 @@ const OLD: RegExp[] = [
   /(^|:)text-black$/,
   /(^|:)(text|bg|border)-(text-muted|text-main|card|border|border-light|surface|surface-raised|background)(\/\d+)?$/,
   /(^|:)(text|bg|border)-accent-[a-z]+(\/\d+)?$/,
-  /^font-(mono|sans|display)$/,
+  /^font-(mono|sans)$/,
   /^(lcd-display|hw-btn)$/,
 ]
 

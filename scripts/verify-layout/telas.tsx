@@ -2,6 +2,7 @@
 // com o pior caso de texto, por cima do fundo do palco, e o check.ts mede como no palco (texto
 // cortado, encostando, alvo de toque e rolagem de lado). Nada daqui entra no app.
 import { MetronomeModal } from '../../src/components/MetronomeModal'
+import { DownloadPage } from '../../src/components/DownloadPage'
 import { GuidedTour } from '../../src/components/GuidedTour'
 import { LyricsEditor } from '../../src/components/LyricsEditor'
 import { PadSetsModal } from '../../src/components/PadSetsModal'
@@ -87,6 +88,7 @@ export function TelaPage({ estado }: { estado: TelaEstado }) {
         </>
       )}
       {estado === 'tour-centro' && <GuidedTour steps={TOUR_CENTRO} onClose={noop} />}
+      {(estado === 'download' || estado === 'download-ajuda') && <DownloadPage />}
       {(estado === 'padsnuvem' || estado === 'padsnuvem-editar') && (
         <PadSetsModal isOpen onClose={noop} onSelect={noop} selectedPadSet={{ id: 'p2', name: 'Ambiente Suave', base_path: 'p2' }} isAdmin />
       )}
