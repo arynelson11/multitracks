@@ -1058,20 +1058,20 @@ export default function App() {
   // Celulares da banda com controle no Ao Vivo, até o teto do plano (maxLiveDevices: Livre 1, Pro 4,
   // Studio sem limite). O admin nunca tem o limite do Livre: no plano Livre ele fica sem teto.
   const liveDeviceCap = isAdmin && planTier(userPlan) === 'free' ? Infinity : maxLiveDevices(userPlan)
-  // Liberar um celular. Passou do teto: no Livre a tela de limite do Ao Vivo, nos pagos os Planos.
+  // Liberar um celular. Passou do teto: no Livre a tela do celular a mais, nos pagos os Planos.
   const approveLiveDevice = (ip: string) => {
     if (approvedIps.includes(ip)) {
       setApprovedIps(prev => prev.filter(x => x !== ip))
       return
     }
     if (approvedIps.length >= liveDeviceCap) {
-      if (livre.isLivre) livre.requestLimit('live')
+      if (livre.isLivre) livre.requestLimit('live-devices')
       else setIsPricingOpen(true)
       return
     }
     setApprovedIps(prev => (prev.includes(ip) ? prev : [...prev, ip]))
   }
-  // Liberar todos respeita o teto; no Livre, sobrando celular, a tela de limite do Ao Vivo explica.
+  // Liberar todos respeita o teto; no Livre, sobrando celular, a tela do celular a mais explica.
   const approveAllLiveDevices = () => {
     const allApproved = connectedIps.length > 0 && connectedIps.every(ip => approvedIps.includes(ip))
     if (allApproved) {
@@ -1079,7 +1079,7 @@ export default function App() {
       return
     }
     setApprovedIps(connectedIps.slice(0, liveDeviceCap))
-    if (connectedIps.length > liveDeviceCap && livre.isLivre) livre.requestLimit('live')
+    if (connectedIps.length > liveDeviceCap && livre.isLivre) livre.requestLimit('live-devices')
   }
 
   useEffect(() => {

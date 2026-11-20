@@ -12,6 +12,18 @@ import { brtMonth } from './separationUsage'
 export type LimitKind = 'separations' | 'stage-songs' | 'live' | 'repertoire' | 'download'
 export const LIMIT_KINDS: readonly LimitKind[] = ['separations', 'stage-songs', 'live', 'repertoire', 'download']
 
+// As telas de limite: os 5 limites acima e o celular a mais no Ao Vivo do Livre, que tem texto
+// próprio (a tela `live` fala dos minutos, que ainda sobram). No servidor ele conta como o Ao Vivo
+// (`offerTriggerFor`): OFFER_TRIGGERS e o CHECK do SQL da oferta só aceitam os 5, e os eventos da
+// tela de limite usam o lugar `limit` pra todas.
+export type LimitScreenKind = LimitKind | 'live-devices'
+export const LIMIT_SCREEN_KINDS: readonly LimitScreenKind[] = [...LIMIT_KINDS, 'live-devices']
+
+// O limite que abre a janela da oferta pra cada tela.
+export function offerTriggerFor(kind: LimitScreenKind): LimitKind {
+  return kind === 'live-devices' ? 'live' : kind
+}
+
 // Os lugares do anúncio da casa (AD_PLACEMENTS no servidor, mesma lista).
 export type AdPlacement = 'home' | 'separation-done' | 'limit' | 'badge'
 

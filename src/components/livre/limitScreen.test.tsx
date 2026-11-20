@@ -7,8 +7,8 @@ import { LimitScreen } from './LimitScreen'
 import type { LimitScreenProps } from './LimitScreen'
 import { LIMIT_COPY, OFFER_COPY, formatCountdown, offerRemainingMs } from './limitCopy'
 import type { OfferView } from './limitCopy'
-import { LIMIT_KINDS, isQuiet, queueRequest, queueSettle } from '../../lib/livreRules'
-import type { EngineBusy, LimitKind, QuietQueue } from '../../lib/livreRules'
+import { LIMIT_SCREEN_KINDS, isQuiet, queueRequest, queueSettle } from '../../lib/livreRules'
+import type { EngineBusy, LimitScreenKind, QuietQueue } from '../../lib/livreRules'
 import { PRICES } from '../../content/site'
 import { formatReais } from '../../lib/prices'
 
@@ -43,7 +43,7 @@ function props(patch: Partial<LimitScreenProps> = {}): LimitScreenProps {
   }
 }
 
-const screenFor = (kind: LimitKind) => render(<LimitScreen {...props({ kind })} />)
+const screenFor = (kind: LimitScreenKind) => render(<LimitScreen {...props({ kind })} />)
 const dialog = () => screen.getByRole('dialog')
 // Os botões da tela, sem o X do canto (que é da janela).
 const actionNames = () =>
@@ -55,13 +55,25 @@ const timer = () => screen.queryByRole('timer')
 
 describe('textos da tela de limite', () => {
   it('cada tipo de limite mostra o próprio título e o próprio texto', () => {
-    for (const k of LIMIT_KINDS) {
+    for (const k of LIMIT_SCREEN_KINDS) {
       const r = screenFor(k)
       expect(r.getByRole('heading').textContent).toBe(LIMIT_COPY[k].title)
       expect(r.getByRole('dialog', { name: LIMIT_COPY[k].title })).toBeTruthy()
       expect(r.getByText(LIMIT_COPY[k].body)).toBeTruthy()
       r.unmount()
     }
+  })
+
+  it('o celular a mais no Livre tem título e texto próprios, verdadeiros com minutos sobrando', () => {
+    expect(LIMIT_COPY['live-devices']).toEqual({
+      title: 'No Livre, só 1 celular da banda controla o palco',
+      body: 'No Pro e no Studio o culto segue sem ninguém correr até o computador: mais celulares da banda controlam junto com você.',
+    })
+    // Não fala dos minutos (ainda sobram) e não repete o título de outra tela.
+    expect(LIMIT_COPY['live-devices'].title).not.toMatch(/minutos|acabaram/)
+    expect(LIMIT_COPY['live-devices'].body).not.toMatch(/minutos|acabaram/)
+    const titles = LIMIT_SCREEN_KINDS.map((k) => LIMIT_COPY[k].title)
+    expect(new Set(titles).size).toBe(titles.length)
   })
 
   it('o título das separações não leva número, porque o admin pode dar separações a mais (R11)', () => {
@@ -98,7 +110,7 @@ describe('textos da tela de limite', () => {
 
   it('nenhum travessão e nenhum stems nos textos', () => {
     const texts = [
-      ...LIMIT_KINDS.flatMap((k) => [LIMIT_COPY[k].title, LIMIT_COPY[k].body]),
+      ...LIMIT_SCREEN_KINDS.flatMap((k) => [LIMIT_COPY[k].title, LIMIT_COPY[k].body]),
       OFFER_COPY.heading, OFFER_COPY.pro('24,90'), OFFER_COPY.studio('59,90'), OFFER_COPY.after,
       OFFER_COPY.clock('47:59:59'), OFFER_COPY.seePlans, OFFER_COPY.plans, OFFER_COPY.later,
     ]
@@ -107,7 +119,7 @@ describe('textos da tela de limite', () => {
       expect(t).not.toMatch(/stems?/i)
     }
     for (const offer of [active(T0 + 48 * HOUR), { status: 'none' } as const, { status: 'loading' } as const]) {
-      for (const k of LIMIT_KINDS) {
+      for (const k of LIMIT_SCREEN_KINDS) {
         const r = render(<LimitScreen {...props({ kind: k, offer, error: 'Não deu pra abrir o pagamento.' })} />)
         expect(r.baseElement.innerHTML).not.toContain(TRAVESSAO)
         expect(r.baseElement.textContent).not.toMatch(/stems?/i)
@@ -282,11 +294,11 @@ describe('a tela de limite só aparece com a música parada (fila da T6)', () =>
   const playing: EngineBusy = { isPlaying: true, isCountingIn: false }
   const countIn: EngineBusy = { isPlaying: false, isCountingIn: true }
   const stopped: EngineBusy = { isPlaying: false, isCountingIn: false }
-  const view = (q: QuietQueue<LimitKind>) =>
+  const view = (q: QuietQueue<LimitScreenKind>) =>
     q.shown ? <LimitScreen {...props({ kind: q.shown, offer: active(T0 + 48 * HOUR) })} /> : <p>palco</p>
 
   it('pedida tocando ou na pré-contagem, só aparece quando a música para, e sai se ela volta a tocar', () => {
-    let q: QuietQueue<LimitKind> = { pending: null, shown: null }
+    let q: QuietQueue<LimitScreenKind> = { pending: null, shown: null }
     q = queueRequest(q, 'stage-songs', isQuiet(playing))
     const r = render(view(q))
     expect(screen.queryByRole('dialog')).toBeNull()

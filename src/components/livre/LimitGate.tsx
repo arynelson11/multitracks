@@ -12,7 +12,8 @@ import { Button } from '../ui'
 import { StageDialog } from '../stage/StageDialog'
 import { LimitScreen } from './LimitScreen'
 import type { OfferView } from './limitCopy'
-import type { LimitKind } from '../../lib/livreRules'
+import { offerTriggerFor } from '../../lib/livreRules'
+import type { LimitScreenKind } from '../../lib/livreRules'
 import { fetchOffer, toOfferView } from '../../lib/offer'
 import type { OfferResponse } from '../../lib/offer'
 import { startCheckout } from '../../lib/checkout'
@@ -21,7 +22,7 @@ import { trackAd } from '../../lib/productEvents'
 type OfferPlanKey = 'essencial_mensal' | 'pro_mensal'
 
 export interface LimitGateProps {
-  kind: LimitKind
+  kind: LimitScreenKind
   onClose(): void
   onSeePlans(): void
 }
@@ -34,8 +35,9 @@ const OPENED = {
 } as const
 
 export function LimitGate({ kind, onClose, onSeePlans }: LimitGateProps) {
-  // A janela abre com o limite que fez a tela aparecer (o primeiro, se outro vier por cima).
-  const [trigger] = useState(kind)
+  // A janela abre com o limite que fez a tela aparecer (o primeiro, se outro vier por cima). O
+  // celular a mais abre como o Ao Vivo (o servidor só aceita os 5 limites).
+  const [trigger] = useState(() => offerTriggerFor(kind))
   const [offer, setOffer] = useState<OfferView>({ status: 'loading' })
   const [busyPlan, setBusyPlan] = useState<OfferPlanKey | null>(null)
   const [error, setError] = useState<string | null>(null)

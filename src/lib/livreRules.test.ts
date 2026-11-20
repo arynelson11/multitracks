@@ -7,12 +7,14 @@ vi.mock('./supabase', () => ({ supabase: null }))
 
 import {
   LIMIT_KINDS,
+  LIMIT_SCREEN_KINDS,
   LIVE_TICK_CAP_MS,
   addLiveTime,
   decideOpen,
   isQuiet,
   liveLedgerFor,
   liveRemainingMs,
+  offerTriggerFor,
   queueDismiss,
   queueRequest,
   queueSettle,
@@ -51,6 +53,13 @@ describe('livreRules: o motor parado', () => {
   it('LIMIT_KINDS tem os 5 limites do contrato, sem repetir', () => {
     expect([...LIMIT_KINDS]).toEqual(['separations', 'stage-songs', 'live', 'repertoire', 'download'])
     expect(new Set(LIMIT_KINDS).size).toBe(LIMIT_KINDS.length)
+  })
+
+  it('o celular a mais no Ao Vivo do Livre é uma tela própria e abre a oferta como o Ao Vivo (o servidor só aceita os 5)', () => {
+    expect([...LIMIT_SCREEN_KINDS]).toEqual([...LIMIT_KINDS, 'live-devices'])
+    expect(new Set(LIMIT_SCREEN_KINDS).size).toBe(LIMIT_SCREEN_KINDS.length)
+    expect(offerTriggerFor('live-devices')).toBe('live')
+    for (const k of LIMIT_KINDS) expect(offerTriggerFor(k)).toBe(k)
   })
 })
 

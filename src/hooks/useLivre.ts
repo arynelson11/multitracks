@@ -9,7 +9,7 @@ import {
   queueSettle,
   stageUsed,
   type EngineBusy,
-  type LimitKind,
+  type LimitScreenKind,
   type QuietQueue,
 } from '../lib/livreRules'
 import { livreVersion, readLiveLedger, readStageLedger, recordStageSong, subscribeLivre, writeLiveLedger } from '../lib/livreStore'
@@ -41,9 +41,9 @@ export type LivreState = {
   /** Ainda há minutos do Ao Vivo hoje? Fora do Livre, sempre. */
   canStartLive(): boolean
   /** A tela de limite a mostrar agora; nula com a música tocando ou na pré-contagem. */
-  limit: LimitKind | null
+  limit: LimitScreenKind | null
   /** Pede a tela. Parado aparece na hora; tocando espera a música parar. Fora do Livre não faz nada. */
-  requestLimit(kind: LimitKind): void
+  requestLimit(kind: LimitScreenKind): void
   closeLimit(): void
 }
 
@@ -70,7 +70,7 @@ export type UseLivreInput = {
 }
 
 const LIVE_TICK_MS = 1000
-const NO_QUEUE: QuietQueue<LimitKind> = { pending: null, shown: null }
+const NO_QUEUE: QuietQueue<LimitScreenKind> = { pending: null, shown: null }
 const deviceNow = () => new Date()
 
 // A fila da tela de limite (D6) e de que conta ela é. O estado do motor chega por props, então
@@ -78,7 +78,7 @@ const deviceNow = () => new Date()
 // pendente e a renderização, que vê o motor de agora, mostra se estiver parado; motor que
 // começa tira a tela aberta, que não volta sozinha. Assim um pedido que chega junto com o play
 // espera em vez de se perder. Trocar de conta ou de plano esvazia a fila.
-type LimitQueue = { queue: QuietQueue<LimitKind>; isLivre: boolean; userId: string | null }
+type LimitQueue = { queue: QuietQueue<LimitScreenKind>; isLivre: boolean; userId: string | null }
 
 export function useLivre(i: UseLivreInput): LivreState {
   const { userId, plan, isAdmin, liveActive, onLiveExpired } = i
@@ -121,7 +121,7 @@ export function useLivre(i: UseLivreInput): LivreState {
 
   // O `setQ` é estável; vai nas dependências porque o compilador do React (lint
   // preserve-manual-memoization) não o reconhece assim com o setState na renderização.
-  const requestLimit = useCallback((kind: LimitKind) => {
+  const requestLimit = useCallback((kind: LimitScreenKind) => {
     setQ((prev) => {
       if (!prev.isLivre) return prev
       const next = queueRequest(prev.queue, kind, false)

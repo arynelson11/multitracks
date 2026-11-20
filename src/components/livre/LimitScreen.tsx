@@ -5,7 +5,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Button } from '../ui'
 import { StageDialog } from '../stage/StageDialog'
-import type { LimitKind } from '../../lib/livreRules'
+import type { LimitScreenKind } from '../../lib/livreRules'
 import { formatReais } from '../../lib/prices'
 import { LIMIT_COPY, OFFER_COPY, formatCountdown, offerRemainingMs } from './limitCopy'
 import type { OfferView } from './limitCopy'
@@ -13,7 +13,7 @@ import type { OfferView } from './limitCopy'
 type OfferPlanKey = 'essencial_mensal' | 'pro_mensal'
 
 export interface LimitScreenProps {
-  kind: LimitKind
+  kind: LimitScreenKind
   offer: OfferView
   /** O plano cujo pagamento está abrindo: os dois botões da oferta ficam desligados. */
   busyPlan: OfferPlanKey | null

@@ -221,14 +221,17 @@ describe('ligações do palco novo', () => {
     expect(app).not.toMatch(/\bcanUseLiveMode\b/)
   })
 
-  it('o 2º celular no Livre pede a tela live; no pago passa do teto e abre os Planos', () => {
+  it('o 2º celular no Livre pede a tela do celular a mais; no pago passa do teto e abre os Planos', () => {
     // Teto pelo plano; o admin nunca tem o limite do Livre (no plano Livre fica sem teto).
     expect(app).toMatch(/const liveDeviceCap = isAdmin && planTier\(userPlan\) === 'free' \? Infinity : maxLiveDevices\(userPlan\)/)
     const one = app.match(/const approveLiveDevice = \(ip: string\) => \{[\s\S]*?\n {2}\}/)![0]
-    expect(one).toMatch(/approvedIps\.length >= liveDeviceCap\)\s*\{\s*if \(livre\.isLivre\) livre\.requestLimit\('live'\)\s*else setIsPricingOpen\(true\)\s*return\s*\}/)
+    expect(one).toMatch(/approvedIps\.length >= liveDeviceCap\)\s*\{\s*if \(livre\.isLivre\) livre\.requestLimit\('live-devices'\)\s*else setIsPricingOpen\(true\)\s*return\s*\}/)
     const all = app.match(/const approveAllLiveDevices = \(\) => \{[\s\S]*?\n {2}\}/)![0]
     expect(all).toMatch(/connectedIps\.slice\(0, liveDeviceCap\)/)
-    expect(all).toMatch(/connectedIps\.length > liveDeviceCap && livre\.isLivre\) livre\.requestLimit\('live'\)/)
+    expect(all).toMatch(/connectedIps\.length > liveDeviceCap && livre\.isLivre\) livre\.requestLimit\('live-devices'\)/)
+    // A tela dos minutos ("Os 10 minutos de hoje com a banda acabaram") fica só pro começo sem minutos.
+    expect(one).not.toMatch(/requestLimit\('live'\)/)
+    expect(all).not.toMatch(/requestLimit\('live'\)/)
     // Nenhum efeito escondido dentro da função que atualiza o estado (o React pede que ela seja pura).
     expect(app).not.toMatch(/setApprovedIps\(prev => \{[\s\S]{0,300}?(setIsPricingOpen|requestLimit)\(/)
     expect(app).toMatch(/onToggleDevice=\{approveLiveDevice\}/)

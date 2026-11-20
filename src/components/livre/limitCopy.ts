@@ -1,12 +1,14 @@
 // Textos e contas da tela de limite do Livre (LimitScreen.tsx). Regra de copy do produto:
 // o resultado antes do recurso, sem prometer número de vendas, nada técnico, nenhum travessão.
-import type { LimitKind } from '../../lib/livreRules'
+import type { LimitScreenKind } from '../../lib/livreRules'
 import { PRICES } from '../../content/site'
 import { formatReais } from '../../lib/prices'
 
-// Um título e um texto por limite. O das separações não leva o número: o admin pode dar
-// separações a mais pra conta, e "as 3" ficaria falso (Ruling R11).
-export const LIMIT_COPY: Record<LimitKind, { title: string; body: string }> = {
+// Um título e um texto por tela de limite. O das separações não leva o número: o admin pode dar
+// separações a mais pra conta, e "as 3" ficaria falso (Ruling R11). O do celular a mais não fala
+// dos minutos (ainda sobram): no Livre os outros celulares continuam acompanhando ("Só segue"),
+// só 1 controla.
+export const LIMIT_COPY: Record<LimitScreenKind, { title: string; body: string }> = {
   separations: {
     title: 'As separações deste mês acabaram',
     body: 'No Pro são 50 separações por mês, e cada instrumento chega pronto pro ensaio.',
@@ -18,6 +20,10 @@ export const LIMIT_COPY: Record<LimitKind, { title: string; body: string }> = {
   live: {
     title: 'Os 10 minutos de hoje com a banda acabaram',
     body: 'No Pro até 4 celulares da banda acompanham o culto do começo ao fim.',
+  },
+  'live-devices': {
+    title: 'No Livre, só 1 celular da banda controla o palco',
+    body: 'No Pro e no Studio o culto segue sem ninguém correr até o computador: mais celulares da banda controlam junto com você.',
   },
   repertoire: {
     title: 'Montar o repertório é do Pro',

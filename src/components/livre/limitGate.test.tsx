@@ -95,6 +95,20 @@ describe('LimitGate', () => {
     expect(trackCalls()).toEqual([{ kind: 'ad_shown', placement: 'limit' }])
   })
 
+  it('o celular a mais mostra o texto dele e abre a janela da oferta como o Ao Vivo (o servidor só aceita os 5 limites)', async () => {
+    renderGate('live-devices')
+    expect(screen.getByRole('dialog', { name: LIMIT_COPY['live-devices'].title })).toBeTruthy()
+    expect(screen.getByText(LIMIT_COPY['live-devices'].body)).toBeTruthy()
+    await screen.findByRole('timer')
+    expect(offerCalls()).toEqual([{ open: true, trigger: 'live' }])
+    expect(trackCalls()).toEqual([{ kind: 'ad_shown', placement: 'limit' }])
+    // Assinar daqui é igual aos outros limites: o desconto e o anúncio clicado no lugar `limit`.
+    fireEvent.click(await screen.findByRole('button', { name: 'Assinar o Pro por R$ 24,90' }))
+    await screen.findByRole('dialog', { name: 'Pagamento aberto no navegador' })
+    expect(checkoutCalls()).toEqual([{ planKey: 'essencial_mensal', confirmedSwitch: false, offer: true }])
+    expect(trackCalls()).toEqual([{ kind: 'ad_shown', placement: 'limit' }, { kind: 'ad_clicked', placement: 'limit' }])
+  })
+
   it('LimitGate: escolher o Pro chama startCheckout com offer true e grava ad_clicked limit', async () => {
     const { onClose } = renderGate('separations')
     fireEvent.click(await screen.findByRole('button', { name: 'Assinar o Pro por R$ 24,90' }))

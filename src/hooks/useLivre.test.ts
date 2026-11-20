@@ -182,6 +182,14 @@ describe('tela de limite só com o motor parado', () => {
     expect(h.r().limit).toBeNull()
   })
 
+  it('a tela do celular a mais (live-devices) passa pela mesma fila', () => {
+    const h = setup({ busy: TOCANDO })
+    act(() => h.r().requestLimit('live-devices'))
+    expect(h.r().limit).toBeNull()
+    h.set({ busy: PARADO })
+    expect(h.r().limit).toBe('live-devices')
+  })
+
   it('na pré-contagem também espera', () => {
     const h = setup({ busy: CONTANDO })
     act(() => h.r().requestLimit('repertoire'))
