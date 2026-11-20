@@ -4,6 +4,7 @@
 import { MetronomeModal } from '../../src/components/MetronomeModal'
 import { LyricsEditor } from '../../src/components/LyricsEditor'
 import { PadSetsModal } from '../../src/components/PadSetsModal'
+import { Teleprompter } from '../../src/components/Teleprompter'
 import type { Channel, Song } from '../../src/types'
 import type { TelaEstado } from './telasEstados'
 
@@ -50,6 +51,13 @@ export function TelaPage({ estado }: { estado: TelaEstado }) {
     <div className="min-h-dvh bg-ps-ink font-ps-sans text-ps-bone">
       {estado === 'metronomo' && <MetronomeModal isOpen onClose={noop} playlistCurrentSong={SONG} onAddClick={noop} />}
       {(estado === 'letra' || estado === 'cifra') && <LyricsEditor song={LYRIC_SONG} onSave={async () => true} onClose={noop} />}
+      {estado === 'teleprompter' && (
+        <Teleprompter
+          songName={SONG.name} hasMarkers currentTime={95} duration={300} onClose={noop}
+          marker={{ label: 'Refrão Final Estendido', color: '#FF6B35', lyrics: 'Grande é o Senhor e mui digno de louvor\nNa cidade do nosso Deus, seu santo monte\nAlegria de toda a terra, grande é o Senhor\nEm quem nós temos a vitória' }}
+        />
+      )}
+      {estado === 'teleprompter-vazio' && <Teleprompter songName={null} hasMarkers={false} marker={null} currentTime={0} duration={0} onClose={noop} />}
       {(estado === 'padsnuvem' || estado === 'padsnuvem-editar') && (
         <PadSetsModal isOpen onClose={noop} onSelect={noop} selectedPadSet={{ id: 'p2', name: 'Ambiente Suave', base_path: 'p2' }} isAdmin />
       )}
