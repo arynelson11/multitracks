@@ -496,6 +496,44 @@ describe('rodada 2: adoção de assinatura antiga (N7) e perfil no extended (N3)
   })
 })
 
+// Parte 3 (T13, rodada 1): o plano também ativa pela cobrança confirmada, então a oferta do
+// primeiro mês não pode depender só do CHECKOUT_PAID.
+describe('oferta do primeiro mês no PAYMENT_CONFIRMED (Parte 3)', () => {
+  const restoreActions = () => db.tables.billing_pending_actions.filter((a) => a.action === 'restore_full_price')
+
+  it('checkout com oferta e PAYMENT_CONFIRMED sem CHECKOUT_PAID: a pendência de voltar pro preço cheio nasce e troca', async () => {
+    vi.stubEnv('OFFER_CPF_SECRET', '')
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    db.tables.pending_checkouts[0] = { id: 'chk_1', user_id: USER_A, plan_key: 'essencial_mensal', offer_month: '2026-11', offer_value: 24.9 }
+    db.tables.first_month_offers.push({ id: 1, user_id: USER_A, month: '2026-11', used_at: null, checkout_id: null, cpf_hash: null })
+    const first = { id: 'pay_1', subscription: 'sub_1', checkoutSession: 'chk_1', value: 24.9, dueDate: '2026-11-16', originalDueDate: '2026-11-16', confirmedDate: '2026-11-16' }
+    asaas!.get.mockImplementation(async (path: string, params?: Record<string, unknown>) =>
+      (path === '/payments' && params?.subscription === 'sub_1' ? { data: [payment(first)], hasMore: false } : { data: [], hasMore: false }))
+    const res = await post(payEvent('evt_pc', 'PAYMENT_CONFIRMED', first, '2026-11-16 12:00:05'))
+    expect(res.body).toMatchObject({ processed: true, result: 'extended' })
+    expect(db.tables.profiles[0].plan).toBe('essencial_mensal')
+    expect(stopCalls()).toEqual([['/subscriptions/sub_1', { value: 49.9, cycle: 'MONTHLY', description: 'Playback Studio Pro (mensal)', updatePendingPayments: true }]])
+    expect(restoreActions()).toEqual([expect.objectContaining({ subscription_ref: 'chk_1', status: 'done' })])
+    expect(db.tables.product_events.filter((e) => e.kind === 'offer_used')).toHaveLength(1)
+  })
+
+  it('checkout sem oferta: o PAYMENT_CONFIRMED depois do CHECKOUT_PAID não faz consulta a mais', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    await post(checkoutPaid())
+    const reads = db.reads.length
+    const rpcs = db.rpcCalls.length
+    await post(payEvent('evt_pc', 'PAYMENT_CONFIRMED', { id: 'pay_1', subscription: 'sub_1', checkoutSession: 'chk_1', dueDate: '2026-11-16', confirmedDate: '2026-11-16' }))
+    await post(payEvent('evt_ren', 'PAYMENT_CONFIRMED', { id: 'pay_2', subscription: 'sub_1', checkoutSession: 'chk_1', dueDate: '2026-12-16', originalDueDate: '2026-12-16', confirmedDate: '2026-12-16' }))
+    const after = db.reads.slice(reads)
+    expect(after.filter((r) => r.table === 'pending_checkouts')).toEqual([])
+    // as pendências que o webhook tenta no fim (por vencimento) não contam; a rede leria por checkout
+    expect(after.filter((r) => r.table === 'billing_pending_actions' && r.filters.some((f) => f.col === 'subscription_ref'))).toEqual([])
+    expect(db.rpcCalls.slice(rpcs).map((c) => c.name).filter((n) => n.startsWith('offer_') || n === 'billing_enqueue_action')).toEqual([])
+    expect(restoreActions()).toEqual([])
+  })
+})
+
 describe('rodada 3: rede de segurança por ciclo (Q2) e desfazer com conferência (Q3)', () => {
   beforeEach(() => {
     db.tables.profiles[0].plan = 'free'

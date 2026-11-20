@@ -1,5 +1,5 @@
 import { AsaasError, findSubscriptionIdByCheckout, getPayment, getSubscription, listSubscriptionPayments, type AsaasApi, type AsaasPayment } from '../asaas.js'
-import { BillingError, brtToday, processStoredEvent, runPendingActions, type BillingDeps } from '../billing.js'
+import { BillingError, FIRST_CHARGE_UNPAID, brtToday, processStoredEvent, runPendingActions, type BillingDeps } from '../billing.js'
 import { PLAN_PRICING, isPlanKey } from '../pricing.js'
 import { withAudit } from './audit.js'
 import { AdminError, int, oneOf, str, type AdminCtx, type AdminHandlers } from './http.js'
@@ -132,6 +132,8 @@ export function lastErrorLabel(raw: unknown): string | null {
   if (raw === null || raw === undefined) return null
   if (typeof raw !== 'string') return MSG_UNEXPECTED
   if (OWN_LABELS.some((re) => re.test(raw))) return raw
+  // frase pronta que a cobrança já grava em português (a volta pro preço cheio esperando a primeira cobrança)
+  if (raw === FIRST_CHARGE_UNPAID) return raw
   if (raw.startsWith('Asaas sem resposta')) return 'O Asaas não respondeu.'
   const down = ASAAS_DOWN_STATUS_RE.exec(raw)
   if (down) return `O Asaas não respondeu. Status do Asaas: ${down[1]}.`

@@ -32,6 +32,8 @@ let customerDown: boolean
 let cpfOf: Record<string, string | null | undefined>
 // assinatura criada por cada checkout (null: o Asaas ainda não mostra a assinatura)
 let subOf: Record<string, string | null>
+// status da primeira cobrança no Asaas (a do checkout, com o desconto)
+let firstStatus: string
 let logs: MockInstance[]
 
 function offerCheckout(id: string, over: Partial<Row> = {}): Row {
@@ -50,7 +52,8 @@ function offerRow(id: number, over: Partial<Row> = {}): Row {
 
 // A primeira cobrança da assinatura (com desconto e paga).
 function firstCharge(sub: string, chk: string, value = 24.9) {
-  return payment({ id: `pay_${sub}`, subscription: sub, checkoutSession: chk, value, dueDate: '2026-11-19', originalDueDate: '2026-11-19', confirmedDate: '2026-11-19', status: 'CONFIRMED' })
+  const paidNow = ['CONFIRMED', 'RECEIVED'].includes(firstStatus)
+  return payment({ id: `pay_${sub}`, subscription: sub, checkoutSession: chk, value, dueDate: '2026-11-19', originalDueDate: '2026-11-19', confirmedDate: paidNow ? '2026-11-19' : null, status: firstStatus })
 }
 
 function makeAsaas(): FakeAsaas {
@@ -103,6 +106,7 @@ beforeEach(() => {
   customerDown = false
   cpfOf = { cus_1: CPF, cus_2: '98765432100' }
   subOf = { chk_1: 'sub_1', chk_a: 'sub_a', chk_b: 'sub_b' }
+  firstStatus = 'CONFIRMED'
   vi.stubEnv('OFFER_CPF_SECRET', SECRET)
   logs = (['log', 'info', 'warn', 'error'] as const).map((m) => vi.spyOn(console, m).mockImplementation(() => {}))
   db = createBillingDb({
@@ -342,6 +346,148 @@ describe('CHECKOUT_PAID com a oferta do primeiro mês', () => {
   })
 })
 
+// Rodada 1 (I1): o plano também ativa pela cobrança confirmada, sem o CHECKOUT_PAID. A cobrança
+// confirmada de um checkout com desconto, antes do CHECKOUT_PAID, faz a mesma coisa que ele, e os
+// dois juntos (em qualquer ordem) dão uma pendência, uma oferta usada e um registro do CPF.
+const confirmedEvent = (chk = 'chk_1', sub = 'sub_1', at = '2026-11-19 12:10:05') =>
+  handleAsaasEvent(deps, { event: 'PAYMENT_CONFIRMED', dateCreated: at, payment: firstCharge(sub, chk) })
+// Leituras e RPCs de um trecho (pra provar que a rede não custa consulta no caminho normal)
+const readsSince = (n: number) => db.reads.slice(n).map((r) => r.table).filter((t) => t === 'pending_checkouts' || t === 'billing_pending_actions')
+const offerRpcsSince = (n: number) => db.rpcCalls.slice(n).map((c) => c.name).filter((x) => x.startsWith('offer_') || x === 'billing_enqueue_action')
+
+describe('rede da oferta: cobrança confirmada sem o CHECKOUT_PAID (rodada 1)', () => {
+  it('PAYMENT_CONFIRMED sem CHECKOUT_PAID, de checkout com oferta, cria a pendência e tenta o preço cheio', async () => {
+    expect(await confirmedEvent()).toEqual({ result: 'extended' })
+    expect(profile().plan).toBe('essencial_mensal')
+    expect(rpcArgs('offer_mark_used')).toEqual([{ p_user_id: USER_A, p_month: '2026-11', p_checkout_id: 'chk_1', p_now: '2026-11-19T15:10:05.000Z' }])
+    expect(offerUsedEvents()).toHaveLength(1)
+    expect(rpcArgs('offer_record_cpf')).toEqual([{ p_user_id: USER_A, p_month: '2026-11', p_cpf_hash: hashCpf(CPF, SECRET) }])
+    expect(priceCalls()).toEqual([['/subscriptions/sub_1', FULL_PRO]])
+    expect(restores()).toEqual([expect.objectContaining({ subscription_ref: 'chk_1', status: 'done', done_note: 'preco cheio: R$ 49,90', amount: 49.9 })])
+  })
+
+  it('PAYMENT_CONFIRMED e depois CHECKOUT_PAID não duplicam nada (troca já feita)', async () => {
+    await confirmedEvent()
+    expect(await paid()).toEqual({ result: 'activated' })
+    expect(restores()).toEqual([expect.objectContaining({ status: 'done' })])
+    expect(rpcArgs('offer_mark_used')).toHaveLength(1)
+    expect(offerUsedEvents()).toHaveLength(1)
+    expect(rpcArgs('offer_record_cpf')).toHaveLength(1)
+    expect(customerReads()).toHaveLength(1)
+    expect(priceCalls()).toHaveLength(1)
+    // o CHECKOUT_PAID ainda grava o valor do primeiro mês no registro antigo
+    expect(db.tables.payments.find((p) => p.id === 'chk_1')?.value).toBe(24.9)
+  })
+
+  it('PAYMENT_CONFIRMED e depois CHECKOUT_PAID com a troca ainda pendente: a mesma pendência, tentada de novo', async () => {
+    putDown = true
+    await confirmedEvent()
+    await paid()
+    expect(restores()).toEqual([expect.objectContaining({ status: 'pending', attempts: 2 })])
+    expect(rpcArgs('offer_mark_used')).toHaveLength(1)
+    expect(rpcArgs('offer_record_cpf')).toHaveLength(1)
+    putDown = false
+    asaas.put.mockClear()
+    later(25 * 60_000)
+    await runPendingActions(deps)
+    expect(priceCalls()).toEqual([['/subscriptions/sub_1', FULL_PRO]])
+    expect(restores()).toEqual([expect.objectContaining({ status: 'done' })])
+  })
+
+  it('CHECKOUT_PAID e depois PAYMENT_CONFIRMED também não duplicam (e o confirmado não lê nada a mais)', async () => {
+    await paid()
+    const reads = db.reads.length
+    const rpcs = db.rpcCalls.length
+    await confirmedEvent()
+    expect(readsSince(reads)).toEqual([])
+    expect(offerRpcsSince(rpcs)).toEqual([])
+    expect(restores()).toHaveLength(1)
+    expect(rpcArgs('offer_mark_used')).toHaveLength(1)
+    expect(rpcArgs('offer_record_cpf')).toHaveLength(1)
+    expect(priceCalls()).toHaveLength(1)
+  })
+
+  it('CHECKOUT_PAID repetido depois da troca feita: nada de segunda pendência nem segundo PUT', async () => {
+    await paid()
+    await paid()
+    expect(restores()).toEqual([expect.objectContaining({ status: 'done' })])
+    expect(priceCalls()).toHaveLength(1)
+  })
+
+  it('checkout sem oferta: o PAYMENT_CONFIRMED não faz consulta a mais', async () => {
+    db.tables.pending_checkouts[0] = { id: 'chk_1', user_id: USER_A, plan_key: 'essencial_mensal', switch_confirmed: false, created_at: '2026-11-19T15:00:00.000Z', offer_month: null, offer_value: null }
+    // caminho normal: CHECKOUT_PAID antes; a primeira cobrança e a renovação confirmadas não leem nada a mais
+    await paid()
+    const reads = db.reads.length
+    const rpcs = db.rpcCalls.length
+    await confirmedEvent()
+    await handleAsaasEvent(deps, {
+      event: 'PAYMENT_CONFIRMED', dateCreated: '2026-12-19 10:00:00',
+      payment: payment({ id: 'pay_ren', subscription: 'sub_1', checkoutSession: 'chk_1', value: 49.9, dueDate: '2026-12-19', originalDueDate: '2026-12-19', confirmedDate: '2026-12-19' }),
+    })
+    expect(readsSince(reads)).toEqual([])
+    expect(offerRpcsSince(rpcs)).toEqual([])
+    expect(restores()).toEqual([])
+  })
+
+  it('checkout sem oferta com o PAYMENT_CONFIRMED antes do CHECKOUT_PAID: só a leitura do checkout, sem pendência nem oferta', async () => {
+    db.tables.pending_checkouts[0] = { id: 'chk_1', user_id: USER_A, plan_key: 'essencial_mensal', switch_confirmed: false, created_at: '2026-11-19T15:00:00.000Z', offer_month: null, offer_value: null }
+    const rpcs = db.rpcCalls.length
+    await confirmedEvent()
+    // uma leitura pra criar a linha (resolveSubscription) e uma da rede; nenhuma das pendências
+    expect(readsSince(0)).toEqual(['pending_checkouts', 'pending_checkouts'])
+    expect(offerRpcsSince(rpcs)).toEqual([])
+    expect(restores()).toEqual([])
+  })
+
+  it('primeira cobrança em AWAITING_RISK_ANALYSIS: nada de PUT, falha não permanente e a pendência aberta; paga depois, a próxima tentativa troca o preço', async () => {
+    firstStatus = 'AWAITING_RISK_ANALYSIS'
+    expect(await paid()).toEqual({ result: 'activated' })
+    expect(priceCalls()).toEqual([])
+    expect(restores()).toEqual([expect.objectContaining({ status: 'pending', attempts: 1, last_error: 'A primeira cobrança da assinatura ainda não foi paga no Asaas.' })])
+    expect(rpcArgs('billing_action_failed').at(-1)).toMatchObject({ p_permanent: false })
+
+    firstStatus = 'CONFIRMED'
+    later(11 * 60_000)
+    await runPendingActions(deps)
+    expect(priceCalls()).toEqual([['/subscriptions/sub_1', FULL_PRO]])
+    expect(restores()[0]).toMatchObject({ status: 'done', done_note: 'preco cheio: R$ 49,90' })
+  })
+
+  it('com a renovação já gerada em aberto, a primeira paga libera a troca (a da renovação não conta como a primeira)', async () => {
+    const route = asaas.get.getMockImplementation() as (path: string, params?: Record<string, unknown>) => Promise<unknown>
+    asaas.get.mockImplementation(async (path: string, params?: Record<string, unknown>) => {
+      if (path === '/payments' && params?.subscription === 'sub_1') {
+        return { data: [
+          payment({ id: 'pay_ren', subscription: 'sub_1', checkoutSession: 'chk_1', value: 24.9, dueDate: '2026-12-19', originalDueDate: '2026-12-19', confirmedDate: null, status: 'PENDING' }),
+          firstCharge('sub_1', 'chk_1'),
+        ], hasMore: false }
+      }
+      return route(path, params)
+    })
+    await paid()
+    expect(priceCalls()).toEqual([['/subscriptions/sub_1', FULL_PRO]])
+    expect(restores()[0]).toMatchObject({ status: 'done' })
+  })
+
+  it('vale a primeira cobrança: em análise, outra cobrança paga do checkout não libera a troca', async () => {
+    firstStatus = 'AWAITING_RISK_ANALYSIS'
+    const route = asaas.get.getMockImplementation() as (path: string, params?: Record<string, unknown>) => Promise<unknown>
+    asaas.get.mockImplementation(async (path: string, params?: Record<string, unknown>) => {
+      if (path === '/payments' && params?.subscription === 'sub_1') {
+        return { data: [
+          payment({ id: 'pay_outra', subscription: 'sub_1', checkoutSession: 'chk_1', value: 24.9, dueDate: '2026-12-19', originalDueDate: '2026-12-19', confirmedDate: '2026-12-19', status: 'CONFIRMED' }),
+          firstCharge('sub_1', 'chk_1'),
+        ], hasMore: false }
+      }
+      return route(path, params)
+    })
+    await paid()
+    expect(priceCalls()).toEqual([])
+    expect(restores()[0]).toMatchObject({ status: 'pending', last_error: 'A primeira cobrança da assinatura ainda não foi paga no Asaas.' })
+  })
+})
+
 describe('CPF da oferta (HMAC, nunca o número)', () => {
   it('CPF já usado noutra conta marca a ficha', async () => {
     for (const other of [USER_B, null]) {
@@ -349,7 +495,9 @@ describe('CPF da oferta (HMAC, nunca o número)', () => {
         offerRow(1),
         offerRow(2, { user_id: other, month: '2026-10', used_at: '2026-10-05T12:00:00.000Z', checkout_id: 'chk_velho', cpf_hash: hashCpf(CPF, SECRET) }),
       ]
+      // cada volta é um checkout novo do zero (a pendência do mesmo checkout não se repete)
       db.tables.billing_subscriptions = []
+      db.tables.billing_pending_actions = []
       expect(await paid(), String(other)).toEqual({ result: 'activated' })
       expect(sub('chk_1').admin_note, String(other)).toContain(NOTE_REUSED)
       expect(sub('chk_1').needs_admin_review).toBe(true)

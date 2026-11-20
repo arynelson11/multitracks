@@ -385,6 +385,13 @@ export async function runPendingActions(
           out.failed++
           continue
         }
+        // O PUT com updatePendingPayments muda as cobranças em aberto: com a primeira (a do
+        // desconto) ainda em aberto, o primeiro mês subiria pro cheio. Espera ela ser paga.
+        if (!(await firstChargePaid(asaas, subId, a.subscription_ref))) {
+          await rpc<null>(deps.db, 'billing_action_failed', { p_action_id: a.id, p_error: FIRST_CHARGE_UNPAID, p_permanent: false })
+          out.failed++
+          continue
+        }
         await putSubscriptionPrice(asaas, subId, planKey)
         await rpc<number | null>(deps.db, 'billing_action_done', { p_action_id: a.id, p_subscription_id: subId, p_note: `preco cheio: ${brl(PLAN_PRICING[planKey].value)}` })
         out.done++
@@ -514,6 +521,23 @@ export async function runPendingActions(
     }
   }
   return out
+}
+
+// Último erro da volta pro preço cheio enquanto a primeira cobrança não foi paga. Já é a frase
+// que o admin vê em Pendências (lastErrorLabel, api/_lib/admin/review.ts, deixa passar).
+export const FIRST_CHARGE_UNPAID = 'A primeira cobrança da assinatura ainda não foi paga no Asaas.'
+
+// A primeira cobrança da assinatura (a do checkout, com o desconto) já está paga? É a de
+// vencimento mais antigo entre as do checkout (ou entre todas, se o Asaas não marcar o
+// checkout nelas); a renovação já gerada não conta. Em análise (AWAITING_RISK_ANALYSIS),
+// em aberto, estornada ou nenhuma cobrança: ainda não. Asaas fora lança (a pendência tenta de novo).
+async function firstChargePaid(asaas: AsaasApi, subId: string, checkoutId: string): Promise<boolean> {
+  const live = (await listSubscriptionPayments(asaas, subId)).filter((p) => !p.deleted)
+  const fromCheckout = live.filter((p) => p.checkoutSession === checkoutId)
+  const pool = fromCheckout.length > 0 ? fromCheckout : live
+  const due = (p: AsaasPayment) => toBrtDate(p.originalDueDate) ?? toBrtDate(p.dueDate) ?? '9999-12-31'
+  const first = pool.slice().sort((x, y) => (due(x) < due(y) ? -1 : due(x) > due(y) ? 1 : 0))[0]
+  return !!first && PAID_STATUSES.has(first.status ?? '')
 }
 
 // Preço da assinatura no Asaas igual ao cheio do plano (R14: o mesmo PUT na troca de plano do
@@ -671,18 +695,35 @@ export async function activateFromCheckout(
   return { result: duplicate ? 'duplicate' : 'activated', superseded }
 }
 
-// Primeiro pagamento com desconto confirmado (D9 e D10). A oferta vira usada (offer_mark_used:
-// 'already' quando a conta já usou, inclusive num aviso repetido, e aí o CPF não é lido de
-// novo); o CPF é conferido por hash só quando a oferta foi marcada agora. A pendência de voltar
-// pro preço cheio nasce SEMPRE (mesmo com 'already' ou 'no_offer': o desconto foi cobrado) e é
-// tentada na hora; uma aberta não se repete (índice único das pendências abertas). Erro do banco
-// lança (o aviso fica pra nova tentativa); erro do Asaas fica na pendência.
+// Pendências de voltar pro preço cheio de um checkout, em qualquer status.
+async function restoreActionsOf(db: SupabaseClient, checkoutId: string): Promise<{ id: number; status: string }[]> {
+  const { data, error } = await db.from('billing_pending_actions').select('id, status')
+    .eq('subscription_ref', checkoutId).eq('action', 'restore_full_price')
+  if (error) throw new BillingError('db_error', `Falha no banco (billing_pending_actions): ${error.message}`, 500)
+  return (data as { id: number; status: string }[] | null) ?? []
+}
+
+// Primeiro pagamento com desconto confirmado (D9 e D10), pelo CHECKOUT_PAID ou pela cobrança
+// confirmada que chega sem ele (offerSafetyNet). Uma vez por checkout: se já existe a pendência
+// de voltar pro preço cheio (em qualquer status), a oferta e o CPF já foram tratados (os dois
+// vêm antes dela) e só a aberta é tentada de novo. Assim o CHECKOUT_PAID e a cobrança
+// confirmada, em qualquer ordem ou repetidos, dão uma pendência, uma oferta usada e uma leitura
+// do CPF. Na primeira vez: a oferta vira usada (offer_mark_used: 'already' quando a conta já
+// usou noutro checkout, e aí o CPF não é lido); o CPF é conferido por hash só quando a oferta
+// foi marcada agora; a pendência nasce SEMPRE (mesmo com 'already' ou 'no_offer': o desconto foi
+// cobrado) e é tentada na hora. Erro do banco lança (o aviso fica pra nova tentativa); erro do
+// Asaas fica na pendência.
 async function afterFirstMonthOffer(
   deps: BillingDeps,
   input: { checkoutId: string; userId: string; planKey: PlanKey; customerId?: string | null; startedAt?: string | null },
   offer: FirstMonthOffer,
 ): Promise<void> {
   const { db } = deps
+  const prior = await restoreActionsOf(db, input.checkoutId)
+  if (prior.length > 0) {
+    await tryPending(deps, prior.filter((x) => x.status === 'pending').map((x) => x.id))
+    return
+  }
   const marked = await rpc<string>(db, 'offer_mark_used', {
     // a hora do pagamento: o funil conta o offer_used pelo mês do evento
     p_user_id: input.userId, p_month: offer.month, p_checkout_id: input.checkoutId, p_now: input.startedAt ?? nowOf(deps).toISOString(),
@@ -695,6 +736,25 @@ async function afterFirstMonthOffer(
     p_amount: PLAN_PRICING[input.planKey].value, p_user_id: input.userId,
   })
   await tryPending(deps, [actionId])
+}
+
+// Rede da oferta (revisão da T13, I1): o plano também ativa pela cobrança confirmada (a linha
+// nasce ativa no aviso de cobrança), então o desconto não pode depender só do CHECKOUT_PAID.
+// Enquanto ele não chegou (checkout_paid_at nulo: só o CHECKOUT_PAID grava; a linha de antes
+// desta versão já vem com ele), a cobrança confirmada de um checkout com desconto faz o que ele
+// faria com a oferta. No caminho normal (CHECKOUT_PAID antes) não lê nada a mais. Só aqui, nunca
+// no resolveSubscription: o PAYMENT_CREATED também passa por lá, com a primeira cobrança em aberto.
+async function offerSafetyNet(deps: BillingDeps, row: SubRow, p: Record<string, unknown>, eventAt: string | null): Promise<void> {
+  if (row.kind !== 'asaas' || row.checkout_paid_at || !row.user_id) return
+  const pending = await readPendingCheckout(deps.db, row.id)
+  if (pending.error) throw new BillingError('db_error', `Falha no banco (pending_checkouts): ${pending.error.message}`, 500)
+  const c = pending.data as { user_id?: unknown; plan_key?: unknown; offer_month?: unknown; offer_value?: unknown } | null
+  const offer = c ? offerOf(c) : null
+  if (!c || !offer || c.user_id !== row.user_id || !isPlanKey(c.plan_key)) return
+  await afterFirstMonthOffer(deps, {
+    checkoutId: row.id, userId: row.user_id, planKey: c.plan_key,
+    customerId: str(p.customer) ?? row.asaas_customer_id, startedAt: eventAt,
+  }, offer)
 }
 
 // Garante no máximo UMA assinatura paga ativa por conta, venham os avisos na
@@ -1202,6 +1262,8 @@ async function onPaymentEvent(deps: BillingDeps, event: string, p: Record<string
         console.warn('[asaas-webhook] pagamento marcado pro admin', { rowId: row.id, result: r.result })
       }
       await enforceSinglePaid(deps, row.user_id)
+      // depois da regra de uma por conta, como no CHECKOUT_PAID
+      await offerSafetyNet(deps, row, p, eventAt)
       return { result: r.result }
     }
     case 'PAYMENT_OVERDUE': {

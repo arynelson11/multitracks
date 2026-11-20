@@ -763,7 +763,8 @@ describe('voltar pro preço cheio (restore_full_price)', () => {
   })
 
   it('Tentar agora troca o preço no Asaas e fecha a pendência', async () => {
-    setAsaas({ put: () => ({}) })
+    // a primeira cobrança do checkout já paga (rodada 1: sem isso nada de PUT)
+    setAsaas({ put: () => ({}), get: (path) => (path === '/payments' ? { data: [payment({ id: 'pay_2', subscription: 'sub_2', checkoutSession: 'chk_2' })], hasMore: false } : {}) })
     const res = await post('retry-action', { actionId: 11 })
     expect(res.statusCode).toBe(200)
     expect(res.body).toEqual({ status: 'done', attempts: 0, lastError: null })
@@ -1088,6 +1089,15 @@ describe('nome do status da cobrança (paymentStatusName)', () => {
 })
 
 describe('último erro em frase pronta (lastErrorLabel)', () => {
+  // Parte 3 (T13, rodada 1): a volta pro preço cheio espera a primeira cobrança ser paga e
+  // grava a frase pronta; ela aparece como veio (e passa de novo sem mudar).
+  it('a primeira cobrança ainda não paga passa como frase pronta', () => {
+    const phrase = 'A primeira cobrança da assinatura ainda não foi paga no Asaas.'
+    expect(lastErrorLabel(phrase)).toBe(phrase)
+    expect(lastErrorLabel(lastErrorLabel(phrase))).toBe(phrase)
+    expect(lastErrorLabel(`${phrase} pay_1`)).toBe('Erro inesperado no servidor.')
+  })
+
   it('troca o texto do Asaas pela frase com o status, e nulo continua nulo', () => {
     expect(lastErrorLabel('Asaas sem resposta (ECONNRESET)')).toBe('O Asaas não respondeu.')
     expect(lastErrorLabel('Asaas sem resposta em 9000 ms')).toBe('O Asaas não respondeu.')
