@@ -23,12 +23,13 @@ import { DownloadPage } from './components/DownloadPage'
 import { GuidedTour, type TourStep } from './components/GuidedTour'
 import { WhatsNewModal } from './components/WhatsNewModal'
 import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/SectionBar'
-import { canUseSections, canUseLiveMode, maxLiveDevices, canBandControlSections, canUseGeneratedClick, canChangeKey, canUsePlatformCatalog, canUseCloudPads, canUseRepertoire } from './lib/plans'
+import { canUseSections, maxLiveDevices, planTier, canBandControlSections, canUseGeneratedClick, canChangeKey, canUsePlatformCatalog, canUseCloudPads, canUseRepertoire } from './lib/plans'
 import { useLivre } from './hooks/useLivre'
 import { stageSongKey } from './lib/livreRules'
 import { removalOpensRefusedSong } from './lib/songRemoval'
 import { trackAd } from './lib/productEvents'
 import { LimitGate } from './components/livre/LimitGate'
+import { AdSlot } from './components/livre/AdSlot'
 import { AdminEntryButton, InAppAdmin } from './components/AdminEntryButton'
 import { BlockedScreen } from './components/BlockedScreen'
 import { shouldShowBlocked } from './lib/profileFlags'
@@ -565,11 +566,17 @@ export default function App() {
   const stageSection = useNewStage ? sectionIndexAt(sectionSpansView, isPlaying ? heardPosition() : currentTime) : -1
   const userName = user?.user_metadata?.display_name || user?.email?.split('@')[0] || null
   const hostActive = liveServerUrl !== null || remoteSessionCode !== null
-  // Livre (Parte 3): uma instância só do hook, a do palco (as 3 músicas do mês, o repertório pago e
-  // a tela de limite, que só aparece com a VS parada). O Ao Vivo do Livre liga depois (os 10
-  // minutos ainda não correm): por isso liveActive falso e nada a fazer quando acabam.
-  const onLiveExpired = () => {}
-  const livre = useLivre({ userId: user?.id ?? null, plan: userPlan, isAdmin, busy: { isPlaying, isCountingIn }, liveActive: false, onLiveExpired })
+  // Música parada de verdade (nem tocando, nem na pré-contagem): só assim aparece o anúncio da casa
+  // ou janela que abre sozinha (as Novidades). O mesmo estado que o useLivre recebe em `busy`.
+  const engineQuiet = !isPlaying && !isCountingIn
+  // Livre (Parte 3): uma instância só do hook, a do palco (as 3 músicas do mês, o repertório pago,
+  // os 10 minutos do Ao Vivo e a tela de limite, que só aparece com a VS parada). Os minutos correm
+  // com a sessão ligada e alguém da banda nela (Ruling R16-mudada): na rede local, com pelo menos
+  // um celular conectado; na sessão pela nuvem, enquanto ela estiver ligada, porque o líder não vê
+  // quem entrou (Ruling T18-remoto). Quando acabam, a banda sai (servidor desligado, código da nuvem
+  // e liberações apagados) e o motor segue tocando: nada aqui mexe no som.
+  const onLiveExpired = () => { void handleStopLiveMode(); setRemoteSessionCode(null); setApprovedIps([]) }
+  const livre = useLivre({ userId: user?.id ?? null, plan: userPlan, isAdmin, busy: { isPlaying, isCountingIn }, liveActive: hostActive && (connectedIps.length > 0 || remoteSessionCode !== null), onLiveExpired })
   const isDesktopApp = !!window.playbackDesktop?.isElectron
   const stageView = useMemo(() => (useNewStage ? buildStageView({
     song: activeSong, playlist, activeIndex: activeSongIndex, duration, spans: sectionSpansView, currentSection: stageSection,
@@ -1011,9 +1018,10 @@ export default function App() {
   }, [blocked, isCountingIn, cancelCountIn, isPlaying, pause, activeNote, stopPad, playingUrl, stopPlayback])
 
   const handleStartLiveMode = async () => {
-    // Modo Ao Vivo pelo portão do plano (canUseLiveMode). Aparelhos por plano: maxLiveDevices.
-    if (!canUseLiveMode(userPlan)) {
-      setIsPricingOpen(true)
+    // Modo Ao Vivo pra todos os planos (Parte 3). O Livre tem 10 minutos por dia: sem minutos, a tela
+    // de limite do Ao Vivo (com a música tocando, ela espera parar). Aparelhos por plano: liveDeviceCap.
+    if (!livre.canStartLive()) {
+      livre.requestLimit('live')
       return
     }
     setIsLiveModeOpen(true)
@@ -1041,7 +1049,37 @@ export default function App() {
       await window.playbackDesktop.stopLocalServer()
     }
     setLiveServerUrl(null)
+    // Servidor desligado: ninguém conectado (o Electron não manda a lista vazia depois de fechar, e
+    // a lista velha faria os minutos do Livre correrem ao ligar o HOST de novo sem celular).
+    setConnectedDevices([])
     setIsLiveModeOpen(false)
+  }
+
+  // Celulares da banda com controle no Ao Vivo, até o teto do plano (maxLiveDevices: Livre 1, Pro 4,
+  // Studio sem limite). O admin nunca tem o limite do Livre: no plano Livre ele fica sem teto.
+  const liveDeviceCap = isAdmin && planTier(userPlan) === 'free' ? Infinity : maxLiveDevices(userPlan)
+  // Liberar um celular. Passou do teto: no Livre a tela de limite do Ao Vivo, nos pagos os Planos.
+  const approveLiveDevice = (ip: string) => {
+    if (approvedIps.includes(ip)) {
+      setApprovedIps(prev => prev.filter(x => x !== ip))
+      return
+    }
+    if (approvedIps.length >= liveDeviceCap) {
+      if (livre.isLivre) livre.requestLimit('live')
+      else setIsPricingOpen(true)
+      return
+    }
+    setApprovedIps(prev => (prev.includes(ip) ? prev : [...prev, ip]))
+  }
+  // Liberar todos respeita o teto; no Livre, sobrando celular, a tela de limite do Ao Vivo explica.
+  const approveAllLiveDevices = () => {
+    const allApproved = connectedIps.length > 0 && connectedIps.every(ip => approvedIps.includes(ip))
+    if (allApproved) {
+      setApprovedIps([])
+      return
+    }
+    setApprovedIps(connectedIps.slice(0, liveDeviceCap))
+    if (connectedIps.length > liveDeviceCap && livre.isLivre) livre.requestLimit('live')
   }
 
   useEffect(() => {
@@ -1077,14 +1115,16 @@ export default function App() {
   }
 
   // ── Popup de novidades: mostra quando há versão nova que o usuário não viu ──
-  // Só dispara depois do tutorial (pra não empilhar dois popups na 1ª vez).
+  // Só dispara depois do tutorial (pra não empilhar dois popups na 1ª vez) e com a música parada
+  // (nem tocando, nem na pré-contagem): tocando, espera ela parar; a música que começa nos 700 ms
+  // cancela a abertura.
   useEffect(() => {
-    if (!user || !isReady || forceShowSplash || showTour) return
+    if (!user || !isReady || forceShowSplash || showTour || !engineQuiet) return
     if (!localStorage.getItem('tour_seen')) return
     if (localStorage.getItem('last_seen_version') === CURRENT_VERSION) return
     const t = setTimeout(() => setShowWhatsNew(true), 700)
     return () => clearTimeout(t)
-  }, [user, isReady, forceShowSplash, showTour])
+  }, [user, isReady, forceShowSplash, showTour, engineQuiet])
 
   const closeWhatsNew = () => {
     setShowWhatsNew(false)
@@ -1395,6 +1435,12 @@ export default function App() {
             <span className="text-[10px] font-mono text-text-muted normal-case tracking-wide">Separar instrumentos com IA</span>
           </button>
         </div>
+        {/* Anúncio da casa (Parte 3): só no Livre, com a música parada, uma vez por dia e no máximo um
+            anúncio grande por sessão. "Conhecer o Pro" abre os Planos aqui mesmo. */}
+        <div className="mt-6 w-full max-w-md empty:hidden">
+          <AdSlot placement="home" userId={user.id} isLivre={livre.isLivre} quiet={engineQuiet} onCta={() => setIsPricingOpen(true)} />
+        </div>
+        <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
       </div>
     )
   }
@@ -2663,17 +2709,8 @@ export default function App() {
         onStopServer={handleStopLiveMode}
         devices={connectedIps}
         approvedIps={approvedIps}
-        onToggleDevice={(ip) => setApprovedIps(prev => {
-          if (prev.includes(ip)) return prev.filter(x => x !== ip)
-          // Limite de aparelhos por plano (Livre = 1, Pro = 4, Studio = ilimitado).
-          if (prev.length >= maxLiveDevices(userPlan)) { setIsPricingOpen(true); return prev }
-          return [...prev, ip]
-        })}
-        onToggleAll={() => {
-          const allApproved = connectedIps.length > 0 && connectedIps.every(ip => approvedIps.includes(ip))
-          // Aprovar todos respeita o teto do plano.
-          setApprovedIps(allApproved ? [] : connectedIps.slice(0, maxLiveDevices(userPlan)))
-        }}
+        onToggleDevice={approveLiveDevice}
+        onToggleAll={approveAllLiveDevices}
         remoteSessionCode={remoteSessionCode}
         onToggleRemote={() => setRemoteSessionCode(prev => prev ? null : Math.random().toString(36).slice(2, 8).toUpperCase())}
       />

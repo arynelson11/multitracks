@@ -168,7 +168,7 @@ describe('ligações do palco novo', () => {
 
   it('a música atual conta pelo stageSongKey', () => { expect(app).toMatch(/noteSongOpened\(stageSongKey\(/) })
 
-  it('um useLivre só no App, depois do hostActive e antes da entrada do buildStageView, com o Ao Vivo ainda desligado', () => {
+  it('um useLivre só no App, depois do hostActive e antes da entrada do buildStageView, com o Ao Vivo ligado nele (T18)', () => {
     expect(app.match(/\buseLivre\(/g)).toHaveLength(1)
     const host = app.indexOf('const hostActive =')
     const expired = app.indexOf('const onLiveExpired =')
@@ -178,7 +178,7 @@ describe('ligações do palco novo', () => {
     expect(expired).toBeGreaterThan(host)
     expect(hook).toBeGreaterThan(expired)
     expect(view).toBeGreaterThan(hook)
-    expect(app).toMatch(/useLivre\(\{\s*userId: user\?\.id \?\? null,\s*plan: userPlan,\s*isAdmin,\s*busy: \{ isPlaying, isCountingIn \},\s*liveActive: false,/)
+    expect(app).toMatch(/useLivre\(\{\s*userId: user\?\.id \?\? null,\s*plan: userPlan,\s*isAdmin,\s*busy: \{ isPlaying, isCountingIn \},\s*liveActive: hostActive\b/)
     expect(app).toMatch(/livre:\s*livre\.isLivre\s*\?\s*livre\.stage\s*:\s*null/)
   })
 
@@ -194,6 +194,71 @@ describe('ligações do palco novo', () => {
   })
 
   it('o selo grava o clique e abre os Planos', () => { expect(app).toMatch(/openLivreBadge:\s*\(\)\s*=>\s*\{\s*trackAd\('ad_clicked',\s*'badge'\)/) })
+
+  it('a sessão do Ao Vivo conta os minutos do Livre e, quando acabam, desliga a banda sem tocar no motor', () => {
+    const body = app.match(/const onLiveExpired = \(\) => \{[^}]*\}/)![0]
+    expect(body).toMatch(/handleStopLiveMode\(\)/)
+    expect(body).toMatch(/setRemoteSessionCode\(null\)/)
+    expect(body).toMatch(/setApprovedIps\(\[\]\)/)
+    expect(body).not.toMatch(/\b(pause|stopAll\w*|cancelCountIn)\(/)
+    expect(app).toMatch(/liveActive:\s*hostActive/)
+    // Ruling R16-mudada: na rede local o tempo só corre com um celular conectado; na sessão pela
+    // nuvem (o líder não vê quem entrou, Ruling T18-remoto) corre enquanto ela estiver ligada.
+    expect(app).toMatch(/liveActive:\s*hostActive\s*&&\s*\(\s*connectedIps\.length\s*>\s*0\s*\|\|\s*remoteSessionCode\s*!==\s*null\s*\)/)
+    // Desligar o servidor esvazia a lista de celulares (o Electron não manda a lista vazia depois de
+    // fechar): senão, ligar o HOST de novo contaria os minutos com celular que já saiu.
+    const stop = app.match(/const handleStopLiveMode = async \(\) => \{[\s\S]*?\n {2}\}/)![0]
+    expect(stop).toMatch(/setConnectedDevices\(\[\]\)/)
+    expect(stop).not.toMatch(/\b(pause|stopAll\w*|cancelCountIn)\(/)
+  })
+
+  it('começar o Ao Vivo no Livre sem minutos pede a tela live', () => {
+    expect(app).toMatch(/canStartLive\(\)[\s\S]{0,120}requestLimit\('live'\)/)
+    const start = app.match(/const handleStartLiveMode = async \(\) => \{[\s\S]*?\n {2}\}/)![0]
+    // O portão antigo (Ao Vivo só no pago) saiu: todos os planos abrem o HOST.
+    expect(start).not.toMatch(/canUseLiveMode|setIsPricingOpen/)
+    expect(start).toMatch(/^const handleStartLiveMode = async \(\) => \{[\s\S]{0,400}if \(!livre\.canStartLive\(\)\) \{\s*livre\.requestLimit\('live'\)\s*return\s*\}[\s\S]*?setIsLiveModeOpen\(true\)/)
+    expect(app).not.toMatch(/\bcanUseLiveMode\b/)
+  })
+
+  it('o 2º celular no Livre pede a tela live; no pago passa do teto e abre os Planos', () => {
+    // Teto pelo plano; o admin nunca tem o limite do Livre (no plano Livre fica sem teto).
+    expect(app).toMatch(/const liveDeviceCap = isAdmin && planTier\(userPlan\) === 'free' \? Infinity : maxLiveDevices\(userPlan\)/)
+    const one = app.match(/const approveLiveDevice = \(ip: string\) => \{[\s\S]*?\n {2}\}/)![0]
+    expect(one).toMatch(/approvedIps\.length >= liveDeviceCap\)\s*\{\s*if \(livre\.isLivre\) livre\.requestLimit\('live'\)\s*else setIsPricingOpen\(true\)\s*return\s*\}/)
+    const all = app.match(/const approveAllLiveDevices = \(\) => \{[\s\S]*?\n {2}\}/)![0]
+    expect(all).toMatch(/connectedIps\.slice\(0, liveDeviceCap\)/)
+    expect(all).toMatch(/connectedIps\.length > liveDeviceCap && livre\.isLivre\) livre\.requestLimit\('live'\)/)
+    // Nenhum efeito escondido dentro da função que atualiza o estado (o React pede que ela seja pura).
+    expect(app).not.toMatch(/setApprovedIps\(prev => \{[\s\S]{0,300}?(setIsPricingOpen|requestLimit)\(/)
+    expect(app).toMatch(/onToggleDevice=\{approveLiveDevice\}/)
+    expect(app).toMatch(/onToggleAll=\{approveAllLiveDevices\}/)
+  })
+
+  it('a tela inicial tem o AdSlot home e o PricingModal', () => {
+    const start = app.indexOf('// ───────────────── SPLASH')
+    const end = app.indexOf('// Editor de marcadores do admin', start)
+    expect(start).toBeGreaterThan(0)
+    expect(end).toBeGreaterThan(start)
+    const splash = app.slice(start, end)
+    expect(splash).toMatch(/<AdSlot[\s\S]*?placement="home"[\s\S]*?userId=\{user\.id\}[\s\S]*?isLivre=\{livre\.isLivre\}[\s\S]*?quiet=\{engineQuiet\}[\s\S]*?onCta=\{\(\) => setIsPricingOpen\(true\)\}/)
+    // Embaixo dos dois botões.
+    expect(splash.indexOf('<AdSlot')).toBeGreaterThan(splash.indexOf('Separação de Faixas'))
+    expect(splash).toMatch(/<PricingModal isOpen=\{isPricingOpen\} onClose=\{\(\) => setIsPricingOpen\(false\)\} \/>/)
+    // Música parada de verdade: nem tocando, nem na pré-contagem.
+    expect(app).toMatch(/const engineQuiet = !isPlaying && !isCountingIn\b/)
+  })
+
+  it('as Novidades esperam a música parar, com o mesmo engineQuiet do anúncio', () => {
+    const at = app.indexOf('setShowWhatsNew(true), 700)')
+    expect(at).toBeGreaterThan(0)
+    const effect = app.slice(app.lastIndexOf('useEffect(', at), app.indexOf('])', at) + 2)
+    expect(effect).toMatch(/if \(!user \|\| !isReady \|\| forceShowSplash \|\| showTour \|\| !engineQuiet\) return/)
+    // A música que começa nos 700 ms cancela a abertura (o efeito roda de novo e limpa o timer).
+    expect(effect).toMatch(/return \(\) => clearTimeout\(t\)\s*\}, \[[^\]]*\bengineQuiet\b[^\]]*\]\)$/)
+    // Só esse efeito abre as Novidades.
+    expect(app.match(/setShowWhatsNew\(true\)/g)).toHaveLength(1)
+  })
 
   it('nenhum alert, confirm ou prompt novo no App', () => {
     // Os 4 de hoje: o editor de marcadores do admin.
