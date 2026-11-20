@@ -1,7 +1,7 @@
-import { X, Download } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../hooks/useAuth';
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useId, useMemo, useRef } from 'react';
 import type { Channel } from '../types';
 import { buildChannelLabels } from '../lib/channelNames';
 import { PricingModal } from './PricingModal';
@@ -17,6 +17,8 @@ import { StageVersionSetting } from './settings/StageVersionSetting';
 import { AudioOutputsSection } from './settings/AudioOutputsSection';
 import { CUE_TO_PA_CONFIRM_TEXT, needsCueToPaConfirm, type OutputWarning } from '../lib/outputPlan';
 import type { OutputSettings } from '../lib/stageContracts';
+import { Button, Panel, TabPanel, Tabs } from './ui';
+import { Icon } from './stage/icons';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -43,6 +45,7 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
     // Plano efetivo (cancelado vale até a data de fim, depois é Livre).
     const { user, userPlan, isAdmin, refreshPlan, updateProfile, updatePassword, signOutEverywhere, deleteAccount } = useAuth();
     const [activeTab, setActiveTab] = useState<Tab>('Perfil');
+    const tabsId = useId();
     const [isPricingOpen, setIsPricingOpen] = useState(false);
 
     // Aberto pelo aviso SAÍDAS: vai pra aba Geral (ajuste no render, quando abre) e rola até as saídas.
@@ -92,32 +95,31 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
     const tabs: Tab[] = stereoMode ? ['Perfil', 'Geral', 'Buses', 'Novidades', 'Assinatura', 'Sobre'] : ['Perfil', 'Geral', 'Novidades', 'Assinatura', 'Sobre'];
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
-            <div className="daw-panel w-full max-w-2xl rounded-lg flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-ps-gutter" onClick={onClose}>
+            <Panel
+                variant="pop"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Configurações"
+                className="flex max-h-full w-full max-w-2xl flex-col overflow-hidden font-ps-sans text-ps-bone"
+                onClick={e => e.stopPropagation()}
+            >
 
-                {/* Header */}
-                <div className="flex items-center justify-between p-3 border-b border-border shrink-0">
-                    <div className="flex-1"></div>
-                    <div className="flex lcd-display rounded-md p-0.5 w-full max-w-md">
-                        {tabs.map(tab => (
-                            <button
-                                key={tab}
-                                onClick={() => setActiveTab(tab)}
-                                className={`flex-1 text-[10px] font-bold py-1.5 rounded transition-all active:scale-95 cursor-pointer uppercase tracking-wider font-mono ${activeTab === tab ? 'bg-primary/15 text-primary' : 'text-text-muted hover:bg-white/5 hover:text-white'}`}
-                            >
-                                {tab}
-                            </button>
-                        ))}
-                    </div>
-                    <div className="flex-1 flex justify-end">
-                        <button onClick={onClose} className="p-1.5 hover:bg-white/5 rounded-md text-text-muted transition-all active:scale-90 cursor-pointer">
-                            <X size={18} />
-                        </button>
-                    </div>
+                {/* Cabeçalho: abas (descem de linha quando não cabem) e o X do palco */}
+                <div className="flex shrink-0 items-start gap-3 border-b border-ps-line p-3">
+                    <Tabs
+                        id={tabsId}
+                        aria-label="Abas das Configurações"
+                        tabs={tabs.map(t => ({ value: t, label: t }))}
+                        value={activeTab}
+                        onChange={setActiveTab}
+                        className="min-w-0 flex-1"
+                    />
+                    <Button icon={<Icon name="x" />} aria-label="Fechar" title="Fechar" onClick={onClose} />
                 </div>
 
-                {/* Content */}
-                <div className="flex-1 overflow-y-auto min-h-[400px] max-h-[70vh] p-6 bg-[#0e0e10]">
+                {/* Conteúdo da aba aberta */}
+                <TabPanel tabsId={tabsId} value={activeTab} className="min-h-[400px] max-h-[70vh] overflow-y-auto bg-ps-ink-0 p-6">
 
                     {activeTab === 'Perfil' && user && (
                         <ProfileTab
@@ -325,9 +327,9 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                             <div className="text-text-muted/40 text-[9px] max-w-sm font-mono">Multitracks pra qualquer música. Pra sua banda chegar pronta no domingo. Feito por quem toca.</div>
                         </div>
                     )}
-                </div>
-            </div>
+                </TabPanel>
+            </Panel>
             <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
-        </div >
+        </div>
     );
 }

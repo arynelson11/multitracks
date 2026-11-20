@@ -666,6 +666,12 @@ Seções completas — múltiplas moléculas trabalhando juntas.
 - Centro: ícone Music animado boot-glow + H1 dual wordmark + tagline mono
 - Dois botões hardware lado a lado: Multitracks (primary gold) | Separação IA (purple)
 
+
+### 4.15 Configurações (`SettingsModal.tsx`, Parte 3, faixa B, 2026-11-20, [NÃO PUBLICADO])
+**Casca:** camada própria (`fixed inset-0 z-[100]`, fundo `bg-black/60`, 16px de folga), não o `StageDialog`: os Planos (`PricingModal`, `z-[110]`) abrem por dentro das Configurações e ficam por cima, e o Esc continua sem fechar a janela (como antes). Caixa no `Panel variant="pop"` (até 672px, `max-h-full`), com `role="dialog"`, `aria-modal` e o nome "Configurações". Toque fora fecha, toque dentro não.
+- **Cabeçalho:** as abas do kit (`Tabs`, "Abas das Configurações": Perfil, Geral, Buses só em "Tudo junto", Novidades, Assinatura, Sobre), que descem de linha numa tela estreita, e o X do palco (`Button` com `Icon name="x"`, `aria-label="Fechar"`, 44px) à direita.
+- **Conteúdo:** um `TabPanel` ligado à aba aberta, que rola por dentro (altura de 400px até 70% da tela), fundo `ps-ink-0` e 24px de folga.
+
 ---
 
 ## 5. Templates (páginas)
