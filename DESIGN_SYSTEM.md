@@ -295,8 +295,10 @@ Stack: [`lucide-react`](https://lucide.dev/) — line-art consistente com a marc
 Telas importam sempre do barril:
 
 ```tsx
-import { Button, Chip, Segmented, Panel, Led, cx } from './components/ui'
+import { Button, Chip, Segmented, Panel, Led, TextField, TextArea, Select, Switch, Tabs, TabPanel, Notice, cx } from './components/ui'
 ```
+
+> **Parte 3 (2026-11-20, [NÃO PUBLICADO]):** entram `TextField`, `TextArea`, `Select`, `Switch`, `Tabs` com `TabPanel` e `Notice` (login, Configurações e as telas da faixa C), e três limites conhecidos saem: Chip e opção do Segmented ganham o anel de foco laranja, o Chip desligado fica a 35% e a opção desligada do Segmented fica a 35% (a marcada desligada continua com cara de escolhida).
 
 #### `<Button>`
 
@@ -360,6 +362,61 @@ import { Button, Chip, Segmented, Panel, Led, cx } from './components/ui'
 - `size`: `sm` (6px) | `md` (8px). Default `md`.
 - `label`: sem ele o Led é só decoração (escondido do leitor de tela); com ele vira imagem com nome (`role="img"` e `aria-label`). O piscar para quando o sistema está com "reduzir movimento".
 
+#### `<TextField>`, `<TextArea>` e `<Select>` (`Field.tsx`, Parte 3)
+
+```tsx
+<TextField label="Email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="seu@email.com" icon={<Mail size={15} />} />
+<TextField label="Senha" type="password" minLength={6} trailing="mín 6" error={erro} />
+<TextArea label="Letra" rows={8} help="Uma linha por verso." value={letra} onChange={(e) => setLetra(e.target.value)} />
+<Select label="Saída" value={saida} onChange={(e) => setSaida(e.target.value)}>
+  <option value="default">Padrão do sistema</option>
+</Select>
+```
+
+- **Moldura comum:** rótulo em cima (10.5px, caixa alta, `mut`, quebra linha), caixa `s2` com anel `line` (`line-2` no hover), raio 10px, alvo de 44px e fonte de 16px (no iPhone, fonte menor dá zoom na página ao tocar). Ajuda (`help`) e erro (`error`) embaixo, em 13px.
+- **Props comuns:** `label` (obrigatório), `hideLabel` (some da vista, o leitor de tela continua lendo), `help`, `error` e `className` (vai no contêiner do campo inteiro; use pra `flex-1` numa linha). O resto vai pro `<input>`, `<textarea>` ou `<select>` (`value`, `onChange`, `type`, `required`, `minLength`, `placeholder`, `autoComplete`, `disabled`, `id`).
+- **Ligações:** `<label htmlFor>` com o id do controle (ou `useId`); `aria-describedby` junta o de quem chama, a ajuda e o erro; com erro, `aria-invalid="true"` e o anel troca o cinza pelo âmbar (`inset-ring-ps-alert-line`), texto do erro em `text-ps-alert`. O erro do campo não tem `role="alert"`: aviso do formulário inteiro é um `Notice` com o papel que a tela precisar.
+- **Foco:** anel laranja na caixa (`focus-within`), então ícone e `trailing` ficam dentro dele.
+- **Só do TextField:** `icon` (antes do texto, escondido do leitor de tela) e `trailing` (texto curto ou botão depois do texto, ex.: "mín 6"); `inputClassName` pro input.
+- **Só do TextArea:** `rows` (padrão 4), cresce na vertical (`resize-y`); `textareaClassName`.
+- **Só do Select:** seta própria (o `appearance-none` tira a do sistema), lista no tema escuro (`scheme-dark`, opções em `s2`); `selectClassName`. As opções vêm como filhos.
+- Desligado: a caixa fica a 35% e o cursor vira "não pode".
+
+#### `<Switch>` (Parte 3)
+
+```tsx
+<Switch label="Pan Estéreo Automático" description="Click e Guia no canal L, faixas no canal R" checked={autoPan} onChange={setAutoPan} />
+```
+
+- Linha inteira: nome (13px bold) e descrição à esquerda (quebram linha), interruptor à direita. Tocar no nome também alterna (`<label htmlFor>`).
+- É um `<button role="switch">` com `aria-checked`, `aria-labelledby` (o nome) e `aria-describedby` (a descrição). Clique, Espaço e Enter chamam `onChange(!checked)`.
+- Ligado: trilha `or-soft` com anel `or-line` e bolinha laranja; desligado: trilha `s3` com anel `line-2` e bolinha `mut`. A bolinha anda com transição, parada com "reduzir movimento".
+- Alvo de 44 x 44px (a trilha de 44 x 24 fica dentro), anel de foco laranja. `disabled` deixa a linha a 35% e não chama nada. `hideLabel`, `id`, `title` e `className` (da linha) opcionais.
+
+#### `<Tabs>` e `<TabPanel>` (Parte 3)
+
+```tsx
+const id = useId()
+<Tabs id={id} aria-label="Abas das Configurações" tabs={[{ value: 'Perfil', label: 'Perfil' }, { value: 'Geral', label: 'Geral' }]} value={aba} onChange={setAba} />
+<TabPanel tabsId={id} value={aba}>{conteudo}</TabPanel>
+```
+
+- Grupo do v5 (`.tabs`): fundo `s1` com anel `line`, 3px de folga; aba em caixa alta (10.5px, extrabold, espaçamento .12em), atual em laranja (`or-soft`, texto `or`, anel `or-line`), as outras em `mut`. Alvo de 44px.
+- **Nunca corta nem rola:** as abas descem de linha (`flex-wrap`); cada uma tem pelo menos a largura do texto (`shrink-0`, `basis-auto`) e as da mesma linha dividem a sobra (`grow`).
+- **Teclado (WAI-ARIA):** só a aba atual entra no Tab; setas esquerda e direita andam com volta pulando as desligadas, Home e End vão pra primeira e pra última; cada movimento já abre a aba. Clique na aba atual não chama `onChange`.
+- **Ids:** a aba é `${id}-tab-${value}`; o painel é `${id}-panel`. O `TabPanel` (um só, com o conteúdo da aba aberta) leva `role="tabpanel"`, o id do painel e `aria-labelledby` da aba aberta; `tabIndex` 0 por padrão (passe -1 quando o conteúdo já começa num campo).
+- Aba `disabled`: a 35% e fora do teclado.
+
+#### `<Notice>` (Parte 3)
+
+```tsx
+<Notice tone="alert" role="alert">{erro}</Notice>
+<Notice role="status">Cadastro feito. Verifica seu email pra confirmar.</Notice>
+```
+
+- `tone`: `info` (padrão, neutro: `s2`, texto `bone`, anel `line`) | `alert` (âmbar: `alert-soft`, texto `alert` em semibold, anel `alert-line`). Sem verde de sucesso: a linguagem não tem cor de "deu certo", então confirmação é `info`.
+- Raio 10px, 13px, quebra palavra longa. O papel (`role="alert"`, `role="status"`) e o `aria-live` são de quem usa. Repassa os atributos de `<div>`.
+
 #### `cx(...partes)`
 
 Junta as classes verdadeiras com espaço. Não resolve conflito entre utilidades: quem chama não passa utilidade oposta.
@@ -372,7 +429,7 @@ Junta as classes verdadeiras com espaço. Não resolve conflito entre utilidades
 - **Classes literais:** todas as classes das peças são strings inteiras no código, nunca montadas por interpolação.
 - Código de cores da seção 1.7: laranja pra ligado e ação principal, branco pra armado, âmbar pra alerta.
 
-**Limites conhecidos (resolver quando uma tela precisar):** Chip e Segmented ainda não têm o anel de foco laranja do Button; Chip não tem visual de desabilitado; a opção desabilitada do Segmented não tem estilo próprio; o Segmented chama `onChange` de novo quando se clica na opção já selecionada.
+**Limites conhecidos (resolver quando uma tela precisar):** o Segmented chama `onChange` de novo quando se clica na opção já selecionada (as telas conferem o valor antes de gravar). Resolvidos na Parte 3 (2026-11-20, não publicado): anel de foco laranja no Chip e na opção do Segmented (por dentro, `-outline-offset-2`, porque as opções são coladas), Chip desligado a 35% (`disabled:opacity-35`, cursor de "não pode") e opção desligada do Segmented a 35% quando não está marcada (a marcada desligada, só leitura, continua com cara de escolhida; antes as Saídas de áudio faziam isso por conta própria).
 
 ### 2.7 Palco novo (`src/components/stage/`)
 
@@ -426,10 +483,11 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 
 - **Quando usar:** janela que pede uma decisão antes de seguir, por cima do palco novo, do antigo e do Separador (primeiro uso: a tela de limite do Livre). Não é pra cartão que não bloqueia nada (o anúncio da casa é cartão no fluxo da tela), nem pra gaveta do palco (REPERTÓRIOS e pads usam `panelDismiss.ts`), nem pra pergunta de uma linha (`TextPromptDialog`). Uma janela dessas por vez. Quem abre garante a regra do Livre: nunca com a música tocando ou na pré-contagem.
 - **Props:** `open`, `title` (o `h2`, ligado por `aria-labelledby`), `onClose`, `children` (o conteúdo), `footer` (as ações, fora da rolagem, alinhadas à direita e quebrando linha quando não cabem) e `size`. Fechada não renderiza nada.
-- **Tamanhos:** `md` (padrão, `max-w-lg`, até 512px) e `sm` (`max-w-sm`, até 384px). A camada (`fixed inset-0 z-[120]`, fundo `bg-black/60`) deixa 16px de folga em volta (`p-ps-gutter`), então cabe em 360px de largura. A caixa é o `Panel variant="pop"` (seção 2.6) com padding de 20px, nunca mais alta que a tela: o conteúdo rola dentro e o título e o rodapé ficam parados.
+- **Tamanhos:** `md` (padrão, `max-w-lg`, até 512px), `sm` (`max-w-sm`, até 384px) e `lg` (`max-w-2xl`, até 672px, pra letra e cifra; Parte 3, 2026-11-20, não publicado). A camada (`fixed inset-0 z-[120]`, fundo `bg-black/60`) deixa 16px de folga em volta (`p-ps-gutter`), então cabe em 360px de largura. A caixa é o `Panel variant="pop"` (seção 2.6) com padding de 20px, nunca mais alta que a tela: o conteúdo rola dentro e o título e o rodapé ficam parados.
 - **Fechar:** X do palco (`Icon name="x"`) no canto, `aria-label="Fechar"`, 44 x 44px (`min-h-ps-touch` e `min-w-ps-touch`). O título quebra linha ao lado dele, nunca cortado.
 - **Foco:** abre no primeiro elemento focável, que é o Fechar (um Enter solto fecha, nunca compra). Tab e Shift+Tab giram dentro da janela, pulando o que está desligado; clique no texto deixa o foco na caixa (`tabIndex -1`). Ao fechar, ou quando quem chama tira a janela do ar aberta, o foco volta pra quem abriu; se nessa hora o foco já está em outro lugar fora dela, fica lá.
 - **Esc e teclas:** o Esc fecha e é tratado na captura da `window`, antes da pilha dos painéis do palco: um REPERTÓRIOS aberto por baixo continua aberto e o pulo armado não é cancelado. Nenhuma tecla de dentro chega aos atalhos do palco (Espaço não toca, 1 a 9 não armam, setas não pulam).
+- **Duas janelas abertas (pilha, Parte 3, 2026-11-20, não publicado):** Esc e toque fora valem só pra de cima, que é a aberta por último; uma janela aberta dentro de outra (no conteúdo dela) é sempre a de cima, mesmo abrindo juntas. Cada janela que abre com outra já aberta sobe um degrau acima da mais alta (`z-index` 121, 122...; sozinha fica no `z-[120]`), então a de cima também aparece por cima, venha antes ou depois no código. Fechada a de cima, o próximo Esc fecha a de baixo. Exemplo: a tela de limite do Livre por cima do Metrônomo fecha sozinha.
 - **Toque fora:** fecha. Toque dentro não fecha, e apertar dentro e soltar fora (arrastar pra selecionar o texto) também não.
 - Teste: `src/components/stage/stageDialog.test.tsx`.
 

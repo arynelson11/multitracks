@@ -252,3 +252,78 @@ describe('StageDialog (janela por cima no estilo do palco)', () => {
     expect(container.innerHTML).not.toContain(TRAVESSAO)
   })
 })
+
+describe('StageDialog: duas janelas abertas (pilha) e tamanho lg', () => {
+  const esc = () => fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape', code: 'Escape' })
+  const two = (a: StageDialogProps, b: StageDialogProps) => (
+    <>
+      <StageDialog {...a} />
+      <StageDialog {...b} />
+    </>
+  )
+
+  it('o Esc fecha só a janela aberta por último; fechada ela, o próximo Esc fecha a de baixo', () => {
+    const a = props({ title: 'Metrônomo', open: true })
+    const b = props({ title: 'Limite', open: false })
+    const { rerender } = render(two(a, b))
+    rerender(two(a, { ...b, open: true }))
+    esc()
+    expect(b.onClose).toHaveBeenCalledTimes(1)
+    expect(a.onClose).not.toHaveBeenCalled()
+    rerender(two(a, { ...b, open: false }))
+    esc()
+    expect(a.onClose).toHaveBeenCalledTimes(1)
+    expect(b.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('a aberta por último manda mesmo vindo antes no código (irmã de cima no DOM)', () => {
+    const a = props({ title: 'Limite', open: false })
+    const b = props({ title: 'Metrônomo', open: true })
+    const { rerender } = render(two(a, b))
+    rerender(two({ ...a, open: true }, b))
+    esc()
+    expect(a.onClose).toHaveBeenCalledTimes(1)
+    expect(b.onClose).not.toHaveBeenCalled()
+  })
+
+  it('janela aberta dentro de outra (mesmo abrindo juntas) é a de cima', () => {
+    const inner = props({ title: 'Limite' })
+    const outer = props({ title: 'Metrônomo', children: <StageDialog {...inner} /> })
+    render(<StrictMode><StageDialog {...outer} /></StrictMode>)
+    esc()
+    expect(inner.onClose).toHaveBeenCalledTimes(1)
+    expect(outer.onClose).not.toHaveBeenCalled()
+  })
+
+  it('toque fora só fecha a janela de cima', () => {
+    const a = props({ title: 'Metrônomo' })
+    const b = props({ title: 'Limite', open: false })
+    const { container, rerender } = render(two(a, b))
+    rerender(two(a, { ...b, open: true }))
+    const [overlayA, overlayB] = Array.from(container.children) as HTMLElement[]
+    fireEvent.pointerDown(overlayA)
+    fireEvent.click(overlayA)
+    expect(a.onClose).not.toHaveBeenCalled()
+    fireEvent.pointerDown(overlayB)
+    fireEvent.click(overlayB)
+    expect(b.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('uma janela só continua fechando no Esc depois de outra ter aberto e fechado', () => {
+    const a = props({ title: 'Primeira' })
+    const { unmount } = render(<StageDialog {...a} />)
+    unmount()
+    const b = props({ title: 'Segunda' })
+    render(<StageDialog {...b} />)
+    esc()
+    expect(b.onClose).toHaveBeenCalledTimes(1)
+    expect(a.onClose).not.toHaveBeenCalled()
+  })
+
+  it('lg é a larga (max-w-2xl, até 672 px), pra letra e cifra', () => {
+    render(<StageDialog {...props({ size: 'lg' })} />)
+    const box = screen.getByRole('dialog').className.split(' ')
+    expect(box).toContain('max-w-2xl')
+    for (const c of ['max-w-lg', 'max-w-sm']) expect(box).not.toContain(c)
+  })
+})
