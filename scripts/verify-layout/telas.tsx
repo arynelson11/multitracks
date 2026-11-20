@@ -1,6 +1,7 @@
 // Página das demais telas da Parte 3 (faixa C) no verificador: cada estado monta uma tela do app
 // com o pior caso de texto, por cima do fundo do palco, e o check.ts mede como no palco (texto
 // cortado, encostando, alvo de toque e rolagem de lado). Nada daqui entra no app.
+import { AdminLogin } from '../../src/admin/AdminLogin'
 import { MetronomeModal } from '../../src/components/MetronomeModal'
 import { DownloadPage } from '../../src/components/DownloadPage'
 import { GuidedTour } from '../../src/components/GuidedTour'
@@ -100,6 +101,7 @@ export function TelaPage({ estado }: { estado: TelaEstado }) {
       {(estado === 'download' || estado === 'download-ajuda') && <DownloadPage />}
       {estado === 'aovivo' && <LiveModeModal {...LIVE} serverError={null} />}
       {estado === 'aovivo-erro' && <LiveModeModal {...LIVE} serverUrl={null} serverError="Não deu pra abrir a porta 3000: outro programa está usando (EADDRINUSE)." />}
+      {estado === 'adminlogin' && <AdminLogin />}
       {(estado === 'padsnuvem' || estado === 'padsnuvem-editar') && (
         <PadSetsModal isOpen onClose={noop} onSelect={noop} selectedPadSet={{ id: 'p2', name: 'Ambiente Suave', base_path: 'p2' }} isAdmin />
       )}

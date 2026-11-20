@@ -6,7 +6,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type React from 'react'
 import { Loader2 } from 'lucide-react'
-import { Button, Panel } from '../../components/ui'
+import { Button, Panel, TextArea } from '../../components/ui'
 import { isUncertainError, type AdminApiError } from '../lib/adminApi'
 
 type ConfirmNote = {
@@ -37,10 +37,6 @@ type ConfirmDialogProps = {
   onConfirm: (note: string) => void
   onCancel: () => void
 }
-
-// 16px (text-ps-md): abaixo disso o Safari do iPhone e do iPad amplia a tela ao focar o campo.
-const FIELD =
-  'w-full min-h-[88px] px-3 py-2.5 rounded-ps-md bg-ps-s2 text-ps-bone text-ps-md inset-ring inset-ring-ps-line focus:inset-ring-ps-or-line outline-none resize-y placeholder:text-ps-mut'
 
 // O que pode receber foco dentro do diálogo, inclusive campos que quem chama põe no texto.
 const FOCUSABLE = 'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -84,10 +80,8 @@ function OpenDialog({
   }
   const errorText = typeof error === 'string' ? error : (error?.message ?? null)
   const overlayRef = useRef<HTMLDivElement>(null)
-  const fieldRef = useRef<HTMLTextAreaElement>(null)
   const titleId = useId()
   const fieldId = useId()
-  const hintId = useId()
 
   // A ação terminou (busy voltou a falso): libera Confirmar pra tentar de novo depois de um erro.
   useEffect(() => {
@@ -104,7 +98,9 @@ function OpenDialog({
   // e, ao fechar, devolve o foco a quem abriu.
   useEffect(() => {
     const opener = document.activeElement
-    ;(fieldRef.current ?? overlayRef.current?.querySelector<HTMLElement>('[role="dialog"]'))?.focus()
+    // A nota é o TextArea do kit (16 px, o Safari do iPhone não amplia ao focar).
+    const overlay = overlayRef.current
+    ;(overlay?.querySelector<HTMLElement>('textarea') ?? overlay?.querySelector<HTMLElement>('[role="dialog"]'))?.focus()
     return () => {
       if (opener instanceof HTMLElement) opener.focus()
     }
@@ -167,32 +163,25 @@ function OpenDialog({
         {children != null && <div className="flex flex-col gap-2 text-ps-base text-ps-bone break-words">{children}</div>}
 
         {note && (
-          <div className="flex flex-col gap-2">
-            <label htmlFor={fieldId} className="ps-label">
-              {note.label}
-            </label>
-            <textarea
-              ref={fieldRef}
-              id={fieldId}
-              value={text}
-              rows={3}
-              maxLength={note.maxLength ?? 500}
-              required={note.required}
-              disabled={busy}
-              aria-describedby={hints.length > 0 ? hintId : undefined}
-              onChange={(e) => setText(e.target.value)}
-              className={FIELD}
-            />
-            {hints.length > 0 && (
-              <div id={hintId} className="flex flex-col gap-1">
-                {hints.map((h) => (
-                  <p key={h} className="text-ps-sm text-ps-mut break-words">
-                    {h}
-                  </p>
-                ))}
-              </div>
-            )}
-          </div>
+          <TextArea
+            id={fieldId}
+            label={note.label}
+            value={text}
+            rows={3}
+            maxLength={note.maxLength ?? 500}
+            required={note.required}
+            disabled={busy}
+            onChange={(e) => setText(e.target.value)}
+            help={
+              hints.length > 0
+                ? hints.map((h) => (
+                    <span key={h} className="block text-ps-sm break-words">
+                      {h}
+                    </span>
+                  ))
+                : undefined
+            }
+          />
         )}
 
         {errorText && (

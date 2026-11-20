@@ -67,6 +67,7 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `download-ajuda` | o mesmo, com a ajuda do Mac aberta (os 4 passos e o comando do Terminal) |
 | `aovivo` | Modo Ao Vivo do host (faixa C) ligado, endereço longo e três aparelhos (um sem IP, um IPv6, um liberado); só existe no computador, então sem 390 |
 | `aovivo-erro` | o mesmo, com o erro de abrir o servidor |
+| `adminlogin` | Login do /admin na web (faixa C) |
 | `config` | as duas seções da T19 numa página própria: placa de 2 canais (caindo de 4 ou mais, com avisos) e de 8 canais |
 | `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso pra cada ramo das regras (15 falhas, uma por ramo) |
 

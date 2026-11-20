@@ -1,6 +1,10 @@
+// Login do /admin na web (quem abre /admin sem estar logado), na linguagem do palco como o resto do
+// admin: a marca com o selo Admin, os campos e o botão do kit, o erro em alerta.
 import { useState } from 'react';
-import { Shield, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { PlaybackStudioWordmark } from '../components/brand/PlaybackStudioWordmark';
+import { Button, Notice, Panel, TextField } from '../components/ui';
 
 export function AdminLogin() {
   const [email, setEmail] = useState('');
@@ -10,34 +14,36 @@ export function AdminLogin() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!supabase) { setError('Supabase não configurado'); return; }
+    if (!supabase) { setError('Supabase não configurado.'); return; }
     setLoading(true); setError(null);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setError('Email ou senha inválidos');
+    if (error) setError('E-mail ou senha inválidos.');
     setLoading(false);
     // Sucesso: onAuthStateChange do useAuth atualiza o guard automaticamente.
   };
 
   return (
-    <div className="min-h-screen bg-[#0e0e10] flex items-center justify-center p-6">
-      <form onSubmit={submit} className="daw-panel rounded-xl p-6 w-full max-w-sm space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-primary/10 rounded-lg border border-primary/20"><Shield size={20} className="text-primary" /></div>
-          <div>
-            <h1 className="text-white font-black text-sm uppercase tracking-wider">Painel Administrativo</h1>
-            <p className="text-[10px] text-text-muted font-mono">Playback Studio</p>
+    <div className="flex min-h-screen items-center justify-center bg-ps-ink p-ps-gutter font-ps-sans text-ps-bone">
+      <Panel variant="raised" className="w-full max-w-sm p-5">
+        <form onSubmit={submit} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <PlaybackStudioWordmark size="sm" />
+              <span className="ps-label">Admin</span>
+            </div>
+            <h1 className="text-ps-md font-bold">Painel do admin</h1>
           </div>
-        </div>
-        <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" autoComplete="email"
-          className="w-full daw-input text-white text-sm px-3 py-2.5 rounded-lg" />
-        <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Senha" autoComplete="current-password"
-          className="w-full daw-input text-white text-sm px-3 py-2.5 rounded-lg" />
-        {error && <p className="text-accent-red text-xs font-mono">{error}</p>}
-        <button type="submit" disabled={loading}
-          className="w-full bg-primary text-black font-bold text-sm py-2.5 rounded-lg flex items-center justify-center gap-2 disabled:opacity-50">
-          {loading ? <Loader2 size={16} className="animate-spin" /> : 'Entrar'}
-        </button>
-      </form>
+          <TextField label="E-mail" type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
+          <TextField label="Senha" type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" />
+          {error && <Notice tone="alert" role="alert">{error}</Notice>}
+          <Button
+            type="submit" tone="primary" disabled={loading} aria-busy={loading || undefined}
+            icon={loading ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : undefined}
+          >
+            Entrar
+          </Button>
+        </form>
+      </Panel>
     </div>
   );
 }
