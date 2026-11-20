@@ -71,3 +71,23 @@ Task 11: complete (commits 1c8aec0..1c8aec0, tests: node scripts/verify-layout/r
 - Ruling: o `report.md` não foi gravado (o ambiente recusou arquivo de relatório de subagente); o relatório vai inteiro na resposta ao coordenador, e este ledger guarda as decisões e os números. Custo se errado: o coordenador copia o texto da resposta.
 - Ruling: a pasta do ledger fica (o brief pede o ledger na worktree) e nada de "finishing-a-development-branch" (o brief proíbe merge, push e tag). Custo se errado: nenhum.
 Task 12: complete (commits 1c8aec0..4e6b16f, tests: npx vitest run src/components/LiveModeModal src/admin/components/ConfirmDialog src/lib/manualClickTrack.test.ts →    Duration  2.61s (transform 353ms, setup 0ms, import 834ms, tests 2.89s, environment 791ms))
+
+## Onda de correção da revisão macro BC (2026-11-20, a partir de 9788a32)
+
+Revisões: `parte3-faixas/review-bc-1.md`, `review-bc-2.md`, `review-bc-3.md`. Todos os achados pedidos entraram, com teste RED antes e GREEN depois onde há comportamento.
+- 87344b5 [BC1-I1] [BC1-I2] pilha do StageDialog com um ouvinte de Esc só; foco na janela de cima e volta pra de fora ao fechar a de dentro (teste com flushSync, a ordem do navegador).
+- a5796e4 [BC2-I1] [BC2-M8] StageDialog `dismissible` e `closeDisabled`; letra e cifra com texto não salvo só fecha no X.
+- ec58134 [BC2-M4] [BC2-M8] pads: Esc na edição ou no apagar cancela só a linha; foco no Cancelar da confirmação.
+- ece784b [BC2-I3] [BC2-M5] [BC2-M6] prazo de 15 s na amostra do click (AudioAnalyzer, corrida e AbortController); X do Metrônomo desligado gerando; FATOS:187 certo.
+- 9860fe7 [BC1-I3] [BC1-I4] [BC1-M2] [BC1-M6] [BC1-M7] Configurações: teclas presas na camada, foco na aba, Tab girando, Esc fora dos Planos, guarda do toque de dentro, cores neutras nas Novidades, piso min(400px,55dvh) e 844x390 no verificador.
+- 7fd09c4 [BC1-M1] [BC1-M8] regiões status sempre na página (`empty:absolute`) no login e no perfil; teste do divisor "ou" certo.
+- 8854362 [BC1-M3] [BC1-M4] [BC1-M5] doc da Tag (e o kit-novo.md, fora do git), ids das Tabs com encodeURIComponent, FilePicker desligado.
+- b24cab2 [BC2-I2] [BC2-M9] Ao Vivo com justify-center-safe e guarda do toque de dentro; regra nova do verificador (nada acima do topo da rolagem) e estado aovivo-cheio. RED medido: aovivo 1024x740 (11,1 px) e aovivo-cheio 1024x740 (86,1 px) e 1280x800 (56,1 px).
+- 7568f9b [BC2-M7] teleprompter sem Math.round.
+- 8c24f54 [BC3-2] [BC3-3] UpdateBanner com a região status sempre na página; cores neutras no aviso, no guia e no download (anel line-3 e Tag SEU SISTEMA).
+- e9605bb [BC3-7] alvos do tour por tour.
+- 49ee7ba [BC3-4] [BC3-5] [BC3-8] estados atualizacao-web e download-celular, o tour no passo mais longo, contas e a prova da moldura no README.
+- b081d8b [BC3-1] [BC3-6] DESIGN_SYSTEM.
+- Decisão: o clique que sobe dos Planos pra camada das Configurações continua fechando as duas (estrutura de antes, deixada de lado pela revisão); a guarda do BC1-M7 só olha o apertar dentro do Panel. Custo se errado: nenhum novo.
+- Decisão: o prazo do BC2-I3 fica no pedido da amostra (rede), não na geração inteira, pra não cortar uma geração lenta de música longa num computador fraco. O alert existente ("Erro ao gerar metrônomo.") não mudou; a frase em português do prazo vai no erro (console). Custo se errado: quem usa vê o aviso genérico de erro.
+- Portão (uma vez, `caffeinate -i`, HEAD b081d8b): vitest 4038 de 4038 (170 arquivos, sem "Errors", load 2,5 a 8,8); `tsc -b` limpo; `npm run typecheck` com os 7 antigos; ESLint nos 35 arquivos tocados: 8 erros, os mesmos 8 da base (linhas antigas); `DESKTOP=1 npx vite build` ok; verify-layout 298 de 298; prova `quebrado` em 390x844 e 1280x800 saindo com 1; travessão nas linhas acrescentadas desde 52eba03: 0.
