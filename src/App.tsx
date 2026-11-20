@@ -83,6 +83,7 @@ import { useAuth } from './hooks/useAuth'
 import { PricingModal } from './components/PricingModal'
 import { supabase, updateSongMarkers as saveMkToCloud, fetchSongs as fetchCloudSongs, updateSong } from './lib/supabase'
 import { LyricsEditor } from './components/LyricsEditor'
+import { Teleprompter } from './components/Teleprompter'
 import { useNetworkStatus } from './hooks/useNetworkStatus'
 import { useLiveSync } from './hooks/useLiveSync'
 import { buildChannelLabels, FAMILY_COLOR, type ChannelLabel } from './lib/channelNames'
@@ -2641,55 +2642,7 @@ export default function App() {
       )}
 
       {/* ═══ TELEPROMPTER OVERLAY ═══ */}
-      {isTeleprompterMode && (
-        <div className="fixed inset-0 z-50 bg-[#050505] flex flex-col">
-          {/* Header */}
-          <div className="flex justify-between items-center p-4 sm:p-6 border-b border-white/5">
-            <h2 className="text-lg sm:text-xl font-bold tracking-tight text-white/50">Teleprompter</h2>
-            <button onClick={() => setIsTeleprompterMode(false)} className="p-2 sm:p-3 hover:bg-white/10 rounded-full transition-colors cursor-pointer text-white/80 border border-white/10">
-              <X size={24} />
-            </button>
-          </div>
-          {/* Body */}
-          <div className="flex-1 flex flex-col items-center justify-center p-8 lg:p-16 relative">
-            {!playlist[activeSongIndex]?.markers || playlist[activeSongIndex].markers!.length === 0 ? (
-              <div className="text-text-muted/50 text-xl font-medium tracking-wide">
-                Nenhum marcador configurado para esta música.
-              </div>
-            ) : (
-              <div className="w-full max-w-5xl flex flex-col gap-6 lg:gap-8 items-center text-center">
-                {currentMarker ? (
-                  <>
-                    <span
-                      className="px-4 py-1.5 rounded-full text-base font-bold tracking-widest uppercase mb-4"
-                      style={{ backgroundColor: `${currentMarker.color || '#10b981'}20`, color: currentMarker.color || '#10b981' }}
-                    >
-                      {currentMarker.label}
-                    </span>
-                    <h1
-                      className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-black tracking-tight leading-tight text-white/95"
-                      style={{ whiteSpace: 'pre-wrap', textShadow: '0 4px 20px rgba(0,0,0,0.5)' }}
-                    >
-                      {currentMarker.lyrics || '…'}
-                    </h1>
-                  </>
-                ) : (
-                  <div className="text-text-muted/50 text-3xl font-bold tracking-wide animate-pulse">
-                    Aguardando Seção...
-                  </div>
-                )}
-              </div>
-            )}
-            {/* Mini progress bar */}
-            <div className="absolute bottom-8 left-8 right-8 text-center text-text-muted/30 font-mono tracking-widest uppercase text-sm font-bold flex flex-col items-center gap-2">
-              <div className="h-1 w-full max-w-md bg-white/5 rounded-full overflow-hidden">
-                <div className="h-full bg-white/20 transition-all duration-75" style={{ width: duration > 0 ? `${(currentTime / duration) * 100}%` : '0%' }}></div>
-              </div>
-              {playlist[activeSongIndex]?.name || 'Nenhuma Selecionada'}
-            </div>
-          </div>
-        </div>
-      )}
+      {isTeleprompterMode && <Teleprompter songName={playlist[activeSongIndex]?.name ?? null} hasMarkers={(playlist[activeSongIndex]?.markers?.length ?? 0) > 0} marker={currentMarker ?? null} currentTime={currentTime} duration={duration} onClose={() => setIsTeleprompterMode(false)} />}
 
       {isMetronomeModalOpen && playlist[activeSongIndex] && (
         <MetronomeModal 
