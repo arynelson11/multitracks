@@ -168,10 +168,15 @@ export function useSeparationLibrary() {
     refreshLibrary();
   }, [refreshLibrary]);
 
+  // A data da separação nunca muda ao gravar de novo: no Livre ela decide se a separação é do mês
+  // (abre de graça) ou de um mês anterior (conta nas 3). Quem grava passa a data que tem
+  // (`createdAt`); sem ela vale a da lista desta instância e, só pra separação que não está na
+  // lista, agora. A lista sozinha não basta: ela troca quando o plano muda (nuvem e aparelho).
   const saveSeparation = useCallback(async (
-    data: Omit<SavedSeparation, 'id' | 'createdAt'> & { id?: string }
+    data: Omit<SavedSeparation, 'id' | 'createdAt'> & { id?: string; createdAt?: number }
   ): Promise<string | null> => {
     const id = data.id || `sep_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const given = typeof data.createdAt === 'number' && Number.isFinite(data.createdAt) ? data.createdAt : undefined;
     const entry: SavedSeparation = {
       id,
       songName: data.songName,
@@ -180,9 +185,9 @@ export function useSeparationLibrary() {
       songKey: data.songKey,
       stems: data.stems,
       voiceCues: data.voiceCues,
-      createdAt: data.id
-        ? (separations.find(s => s.id === data.id)?.createdAt ?? Date.now())
-        : Date.now(),
+      createdAt: given
+        ?? (data.id ? separations.find(s => s.id === data.id)?.createdAt : undefined)
+        ?? Date.now(),
     };
 
     if (useCloud && userId && supabase) {
