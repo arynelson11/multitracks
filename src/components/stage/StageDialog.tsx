@@ -27,15 +27,59 @@ const SIZES: Record<NonNullable<StageDialogProps['size']>, string> = { sm: 'max-
  * classe), então a de cima é também a que aparece por cima, venha antes ou depois no código.
  */
 const BASE_Z = 120
-const openDialogs: Array<{ el: HTMLElement; z: number }> = []
 
-function isTopDialog(el: HTMLElement): boolean {
-  let top: { el: HTMLElement; z: number } | undefined
+interface OpenDialog {
+  el: HTMLElement
+  z: number
+  /** Quem tinha o foco quando a janela abriu (fora dela). */
+  opener: HTMLElement | null
+  /** O Esc e o toque fora fecham agora? (lido na hora, da prop mais nova) */
+  dismissible(): boolean
+  close(): void
+}
+
+const openDialogs: OpenDialog[] = []
+
+function topDialog(): OpenDialog | undefined {
+  let top: OpenDialog | undefined
   for (const d of openDialogs) {
     if (openDialogs.some((o) => o !== d && d.el.contains(o.el))) continue
     if (!top || d.z > top.z) top = d
   }
-  return top?.el === el
+  return top
+}
+
+function isTopDialog(el: HTMLElement): boolean {
+  return topDialog()?.el === el
+}
+
+/**
+ * Um ouvinte só pra pilha inteira, na captura da `window`. Com um ouvinte por janela, um Esc de
+ * verdade fechava duas: o navegador roda as microtarefas entre um ouvinte e outro, o React aplica o
+ * fechar da de cima nesse meio e a de baixo, já sozinha na pilha, recebia o mesmo Esc.
+ */
+function onStackEscape(e: KeyboardEvent): void {
+  if (e.key !== 'Escape' || e.isComposing) return
+  const top = topDialog()
+  if (!top) return
+  // Tratado aqui: os painéis do palco e o atalho da casca ignoram evento com defaultPrevented.
+  e.preventDefault()
+  // Janela que não fecha no Esc (texto digitado, gerando): o Esc segue pra dentro dela (cancelar
+  // uma edição na linha, por exemplo) e para na caixa, sem chegar ao palco.
+  if (!top.dismissible()) return
+  e.stopPropagation()
+  top.close()
+}
+
+function pushDialog(d: OpenDialog): void {
+  if (openDialogs.length === 0) window.addEventListener('keydown', onStackEscape, true)
+  openDialogs.push(d)
+}
+
+function removeDialog(d: OpenDialog): void {
+  const i = openDialogs.indexOf(d)
+  if (i >= 0) openDialogs.splice(i, 1)
+  if (openDialogs.length === 0) window.removeEventListener('keydown', onStackEscape, true)
 }
 
 // O que pode receber foco dentro da janela, inclusive o que quem chama põe no conteúdo.
@@ -69,31 +113,43 @@ export function StageDialog({ open, title, onClose, children, footer, size = 'md
     const overlay = overlayRef.current
     if (!overlay) return
     const active = document.activeElement
-    // Foco que já está dentro da janela não é de quem abriu.
-    const opener = active instanceof HTMLElement && !overlay.contains(active) ? active : null
-    focusables(overlay)[0]?.focus({ preventScroll: true })
-
-    const entry = { el: overlay, z: openDialogs.reduce((m, d) => Math.max(m, d.z + 1), BASE_Z) }
-    if (entry.z !== BASE_Z) overlay.style.zIndex = String(entry.z)
-    openDialogs.push(entry)
-
-    const onEscape = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.isComposing) return
-      // Outra janela por cima: o Esc é dela (o ouvinte dela também está na window).
-      if (!isTopDialog(overlay)) return
-      e.preventDefault()
-      e.stopPropagation()
-      closeRef.current()
+    // Quem abriu: o foco de agora, se está fora. Foco já dentro é de uma janela de dentro que abriu
+    // junto (o efeito dela roda antes): quem abriu as duas é quem abriu aquela.
+    let opener: HTMLElement | null = null
+    if (active instanceof HTMLElement) {
+      opener = overlay.contains(active)
+        ? (openDialogs.find((d) => overlay.contains(d.el) && d.el.contains(active))?.opener ?? null)
+        : active
     }
-    window.addEventListener('keydown', onEscape, true)
+
+    // Empilha antes de focar: só a de cima pega o foco (abrindo junto com uma de dentro, ele fica na de dentro).
+    const entry: OpenDialog = {
+      el: overlay,
+      z: openDialogs.reduce((m, d) => Math.max(m, d.z + 1), BASE_Z),
+      opener,
+      dismissible: () => true,
+      close: () => closeRef.current(),
+    }
+    if (entry.z !== BASE_Z) overlay.style.zIndex = String(entry.z)
+    pushDialog(entry)
+    if (topDialog() === entry) focusables(overlay)[0]?.focus({ preventScroll: true })
+
     return () => {
-      window.removeEventListener('keydown', onEscape, true)
-      openDialogs.splice(openDialogs.indexOf(entry), 1)
+      removeDialog(entry)
       // Fechada pelo `open`, a caixa já saiu da página (foco perdido); desmontada aberta, o foco
-      // ainda está nela. Nos dois casos volta pra quem abriu; foco que já foi pra outro lugar fica.
+      // ainda está nela. Foco que já foi pra outro lugar fica.
       const now = document.activeElement
       const lost = !now || now === document.body || !now.isConnected || overlay.contains(now)
-      if (lost && opener?.isConnected) opener.focus({ preventScroll: true })
+      if (!lost) return
+      // Outra janela continua aberta (a de fora, ou a de baixo): o foco vai pra ela, em quem abriu
+      // esta se estiver nela, senão no primeiro focável dela. Senão, volta pra quem abriu.
+      const top = topDialog()
+      if (top && !(opener?.isConnected && top.el.contains(opener))) {
+        const target = focusables(top.el)[0] ?? top.el.querySelector<HTMLElement>('[role="dialog"]')
+        target?.focus({ preventScroll: true })
+        return
+      }
+      if (opener?.isConnected) opener.focus({ preventScroll: true })
     }
   }, [open])
 

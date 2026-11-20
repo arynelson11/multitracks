@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { StrictMode, useRef } from 'react'
+import { StrictMode, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { StageDialog } from './StageDialog'
 import type { StageDialogProps } from './StageDialog'
@@ -320,10 +321,123 @@ describe('StageDialog: duas janelas abertas (pilha) e tamanho lg', () => {
     expect(a.onClose).not.toHaveBeenCalled()
   })
 
-  it('lg é a larga (max-w-2xl, até 672 px), pra letra e cifra', () => {
+  it('com o fechar de verdade, um Esc fecha só a de cima (irmãs)', () => {
+    function Duas() {
+      const [a, setA] = useState(true)
+      const [b, setB] = useState(true)
+      return (
+        <>
+          <StageDialog {...props({ title: 'Primeira', open: a, onClose: () => flushSync(() => setA(false)) })} />
+          <StageDialog {...props({ title: 'Segunda', open: b, onClose: () => flushSync(() => setB(false)) })} />
+        </>
+      )
+    }
+    render(<Duas />)
+    esc()
+    expect(screen.queryByRole('dialog', { name: 'Segunda' })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'Primeira' })).not.toBeNull()
+  })
+
+    it('lg é a larga (max-w-2xl, até 672 px), pra letra e cifra', () => {
     render(<StageDialog {...props({ size: 'lg' })} />)
     const box = screen.getByRole('dialog').className.split(' ')
     expect(box).toContain('max-w-2xl')
     for (const c of ['max-w-lg', 'max-w-sm']) expect(box).not.toContain(c)
+  })
+})
+
+// Revisão macro BC (BC1-I1 e BC1-I2): a janela de dentro abrindo junto com a de fora. O fechar
+// aplicado na hora (flushSync) faz o que o navegador faz com uma tecla de verdade: o React aplica
+// o setState numa microtarefa, que roda entre um ouvinte e o próximo (o fireEvent do jsdom não roda).
+describe('StageDialog: janela de dentro aberta junto com a de fora (ordem real do navegador)', () => {
+  function Nested({ syncClose = true }: { syncClose?: boolean }) {
+    const [outer, setOuter] = useState(true)
+    const [inner, setInner] = useState(true)
+    const close = (set: (v: boolean) => void) => () => (syncClose ? flushSync(() => set(false)) : set(false))
+    return (
+      <StageDialog open={outer} title="Fora" onClose={close(setOuter)}>
+        <p>conteúdo de fora</p>
+        <StageDialog open={inner} title="Dentro" onClose={close(setInner)}>
+          <p>conteúdo de dentro</p>
+        </StageDialog>
+      </StageDialog>
+    )
+  }
+  const esc = () => fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape', code: 'Escape' })
+  const fechar = (nome: string) => screen.getByRole('dialog', { name: nome }).querySelector<HTMLElement>('button[aria-label="Fechar"]')!
+
+  it('o foco fica na janela de cima (a de dentro)', () => {
+    render(<Nested syncClose={false} />)
+    expect(document.activeElement).toBe(fechar('Dentro'))
+  })
+
+  it('no StrictMode o foco também fica na de dentro', () => {
+    render(<StrictMode><Nested syncClose={false} /></StrictMode>)
+    expect(document.activeElement).toBe(fechar('Dentro'))
+  })
+
+  it('um Esc fecha só a de dentro; o próximo fecha a de fora', () => {
+    render(<Nested />)
+    esc()
+    expect(screen.queryByRole('dialog', { name: 'Dentro' })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'Fora' })).not.toBeNull()
+    esc()
+    expect(screen.queryByRole('dialog', { name: 'Fora' })).toBeNull()
+  })
+
+  it('fechada a de dentro, o foco vai pra de fora (não pro palco por trás); fechada a de fora, volta pra quem abriu', () => {
+    const opener = document.createElement('button')
+    opener.textContent = 'Abrir'
+    document.body.appendChild(opener)
+    opener.focus()
+    render(<Nested />)
+    esc()
+    expect(document.activeElement).toBe(fechar('Fora'))
+    esc()
+    expect(document.activeElement).toBe(opener)
+    opener.remove()
+  })
+
+  it('a de fora fechando com a de dentro aberta: o foco volta pra quem abriu', () => {
+    const opener = document.createElement('button')
+    document.body.appendChild(opener)
+    opener.focus()
+    function Pai() {
+      const [open, setOpen] = useState(true)
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(false)}>tirar</button>
+          <StageDialog open={open} title="Fora" onClose={() => setOpen(false)}>
+            <StageDialog open title="Dentro" onClose={() => {}}><p>x</p></StageDialog>
+          </StageDialog>
+        </>
+      )
+    }
+    render(<Pai />)
+    expect(document.activeElement).toBe(fechar('Dentro'))
+    fireEvent.click(screen.getByRole('button', { name: 'tirar' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(opener)
+    opener.remove()
+  })
+
+  it('abrindo uma janela de dentro depois, pelo botão de dentro, ao fechar ela o foco volta pro botão', () => {
+    function Abre() {
+      const [inner, setInner] = useState(false)
+      return (
+        <StageDialog open title="Fora" onClose={() => {}}>
+          <button type="button" onClick={() => setInner(true)}>Ver mais</button>
+          <StageDialog open={inner} title="Dentro" onClose={() => flushSync(() => setInner(false))}><p>x</p></StageDialog>
+        </StageDialog>
+      )
+    }
+    render(<Abre />)
+    const ver = screen.getByRole('button', { name: 'Ver mais' })
+    ver.focus()
+    fireEvent.click(ver)
+    expect(document.activeElement).toBe(fechar('Dentro'))
+    esc()
+    expect(screen.queryByRole('dialog', { name: 'Dentro' })).toBeNull()
+    expect(document.activeElement).toBe(ver)
   })
 })
