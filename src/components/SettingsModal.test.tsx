@@ -464,6 +464,25 @@ describe('SettingsModal: Novidades, Assinatura e Sobre no visual do palco', () =
     expect(windowClasses(panel()).filter((c) => OLD.test(c))).toEqual([])
   })
 
+  it('Novidades: laranja só no Baixar (o cartão da atualização, o ícone e a estrela ficam neutros)', () => {
+    render(<SettingsModal {...props({ desktopUpdate: { latestVersion: '9.9.9', url: 'https://exemplo/app' }, onInstallUpdate: vi.fn() })} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Novidades' }))
+    const baixar = screen.getByRole('button', { name: /Baixar/ })
+    const laranja = Array.from(panel().querySelectorAll('*'))
+      .filter((el) => !baixar.contains(el) && el !== baixar)
+      .flatMap((el) => el.getAttribute('class')?.split(/\s+/) ?? [])
+      .filter((c) => /ps-or/.test(c))
+    expect(laranja).toEqual([])
+  })
+
+  it('o painel da aba tem piso que cabe no celular deitado (844x390): rola em vez de cortar', () => {
+    render(<SettingsModal {...props()} />)
+    const classes = panel().className.split(' ')
+    expect(classes).toContain('min-h-[min(400px,55dvh)]')
+    expect(classes).not.toContain('min-h-[400px]')
+    expect(classes).toContain('overflow-y-auto')
+  })
+
   it('Assinatura: moldura no Panel, botão principal laranja e só tokens ps-* (o medidor e o painel ficam como estão)', () => {
     render(<SettingsModal {...props()} />)
     fireEvent.click(screen.getByRole('tab', { name: 'Assinatura' }))
@@ -479,5 +498,85 @@ describe('SettingsModal: Novidades, Assinatura e Sobre no visual do palco', () =
     expect(panel().querySelector('.ps-num')!.textContent).toBe(`v${CHANGELOG[0].version}`)
     expect(windowClasses(panel()).filter((c) => OLD.test(c))).toEqual([])
     expect(document.body.innerHTML).not.toContain(String.fromCharCode(0x2014))
+  })
+})
+
+// Revisão macro BC (BC1-I3, BC1-I4, BC1-M7): teclado, foco, Esc e o toque que começa dentro.
+describe('SettingsModal: teclado e foco', () => {
+  it('nenhuma tecla de dentro chega ao palco antigo: Espaço no interruptor e seta nas abas', () => {
+    const windowKeydown = vi.fn()
+    window.addEventListener('keydown', windowKeydown)
+    render(<SettingsModal {...props()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Geral' }))
+    const autoPan = screen.getByRole('switch', { name: 'Pan Estéreo Automático' })
+    fireEvent.keyDown(autoPan, { key: ' ', code: 'Space' })
+    const geral = screen.getByRole('tab', { name: 'Geral' })
+    fireEvent.keyDown(geral, { key: 'ArrowRight', code: 'ArrowRight' })
+    expect(screen.getByRole('tabpanel', { name: 'Buses' })).toBeTruthy()
+    fireEvent.keyDown(screen.getByRole('tabpanel'), { key: 'KeyV', code: 'KeyV' })
+    expect(windowKeydown).not.toHaveBeenCalled()
+    window.removeEventListener('keydown', windowKeydown)
+  })
+
+  it('abre com o foco na aba atual e, ao fechar, devolve o foco pra quem abriu', () => {
+    const opener = document.createElement('button')
+    document.body.appendChild(opener)
+    opener.focus()
+    const p = props()
+    const { rerender } = render(<SettingsModal {...p} />)
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Perfil' }))
+    rerender(<SettingsModal {...p} isOpen={false} />)
+    expect(document.activeElement).toBe(opener)
+    opener.remove()
+  })
+
+  it('aberta pelo aviso SAÍDAS, o foco vai pra aba Geral', () => {
+    render(<SettingsModal {...props({ focusSection: 'outputs' })} />)
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Geral' }))
+  })
+
+  it('Tab e Shift+Tab giram dentro da janela', () => {
+    render(<SettingsModal {...props()} />)
+    const layer = screen.getByRole('dialog').parentElement as HTMLElement
+    const items = Array.from(layer.querySelectorAll<HTMLElement>('button, [tabindex="0"]')).filter((el) => el.tabIndex >= 0 && !el.hasAttribute('disabled'))
+    const first = items[0]
+    const last = items[items.length - 1]
+    last.focus()
+    expect(fireEvent.keyDown(last, { key: 'Tab', code: 'Tab' })).toBe(false)
+    expect(document.activeElement).toBe(first)
+    expect(fireEvent.keyDown(first, { key: 'Tab', code: 'Tab', shiftKey: true })).toBe(false)
+    expect(document.activeElement).toBe(last)
+  })
+
+  it('clique no texto deixa o foco dentro da camada (o palco não recebe as teclas)', () => {
+    render(<SettingsModal {...props()} />)
+    const layer = screen.getByRole('dialog').parentElement as HTMLElement
+    expect(layer.getAttribute('tabindex')).toBe('-1')
+  })
+
+  it('Esc fecha com os Planos fechados; com os Planos abertos, não', () => {
+    const p = props()
+    render(<SettingsModal {...p} />)
+    fireEvent.click(screen.getByText('upgrade do perfil'))
+    expect(screen.getByTestId('pricing')).toBeTruthy()
+    fireEvent.keyDown(screen.getByText('fechar planos'), { key: 'Escape', code: 'Escape' })
+    expect(p.onClose).not.toHaveBeenCalled()
+    // O Planos de mentira não segura o clique: ele sobe pra camada, como o fundo dos Planos de verdade.
+    fireEvent.click(screen.getByText('fechar planos'))
+    const antes = vi.mocked(p.onClose).mock.calls.length
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape', code: 'Escape' })
+    expect(p.onClose).toHaveBeenCalledTimes(antes + 1)
+  })
+
+  it('apertar dentro e soltar fora (selecionar o texto do campo) não fecha', () => {
+    const p = props()
+    const { container } = render(<SettingsModal {...p} />)
+    const layer = container.firstElementChild as HTMLElement
+    fireEvent.pointerDown(screen.getByTestId('profile'))
+    fireEvent.click(layer)
+    expect(p.onClose).not.toHaveBeenCalled()
+    fireEvent.pointerDown(layer)
+    fireEvent.click(layer)
+    expect(p.onClose).toHaveBeenCalledTimes(1)
   })
 })

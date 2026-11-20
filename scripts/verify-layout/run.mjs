@@ -3,7 +3,7 @@
 // Uso: node scripts/verify-layout/run.mjs [--only 1280x800[,1440x900]] [--estado normal[,tom]] [--jobs 3] [--no-build]
 //   sem --estado: os 11 estados normais e as 16 telas da faixa C nos 8 tamanhos (216 combinações), as 14
 //   telas da faixa C que abrem no celular também em 390x844 (14) e as 10 telas da faixa B (login e
-//   Configurações) em 1024x740, 1280x800, 1920x1080 e 390x844 (40): 270 combinações;
+//   Configurações) em 1024x740, 1280x800, 1920x1080, 390x844 e 844x390 (50): 280 combinações;
 //   --estado quebrado: só a prova (um botão de largura fixa com texto longo), que tem de falhar.
 // Sai com código 1 se alguma combinação falhar (ou não responder). Resultados em scripts/verify-layout/results/.
 import http from 'node:http'
@@ -39,7 +39,8 @@ const TELAS_C_CELULAR = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 
  * entram na rodada normal, nos tamanhos de TELAS_B_SIZES (abrem no celular, então 390x844 entra).
  */
 const ESTADOS_B = ['login', 'criarconta', 'recuperar', 'novasenha', 'config-perfil', 'config-geral', 'config-buses', 'config-novidades', 'config-assinatura', 'config-sobre']
-const TELAS_B_SIZES = ['1024x740', '1280x800', '1920x1080', '390x844']
+// 844x390: celular deitado, onde as Configurações cortavam o fim de cada aba (revisão macro BC, BC1-M6).
+const TELAS_B_SIZES = ['1024x740', '1280x800', '1920x1080', '390x844', '844x390']
 /** Largura de celular: abaixo da janela mínima do Chrome headless, roda na moldura (/moldura). */
 const CELULAR = '390x844'
 const PROVA = 'quebrado'

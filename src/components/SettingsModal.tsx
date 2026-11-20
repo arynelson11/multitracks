@@ -1,7 +1,7 @@
 import { Download } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../hooks/useAuth';
-import { useState, useEffect, useId, useMemo, useRef } from 'react';
+import { useState, useEffect, useId, useLayoutEffect, useMemo, useRef } from 'react';
 import type { Channel } from '../types';
 import { buildChannelLabels } from '../lib/channelNames';
 import { PricingModal } from './PricingModal';
@@ -20,6 +20,7 @@ import type { OutputSettings } from '../lib/stageContracts';
 import { Button, IconButton, Panel, Select, Switch, TabPanel, Tabs } from './ui';
 import { SettingRow } from './settings/SettingRow';
 import { Icon } from './stage/icons';
+import { trapTab } from './ui/focusables';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -91,18 +92,66 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
         return map;
     }, [isOpen, channels]);
 
+    // Foco e Esc no jeito das janelas do palco (revisão macro BC, BC1-I4): ao abrir, o foco vai pra
+    // aba atual; ao fechar, volta pra quem abriu. O Esc fecha, menos com os Planos abertos por cima.
+    const layerRef = useRef<HTMLDivElement>(null);
+    const closeRef = useRef(onClose);
+    const pricingOpenRef = useRef(isPricingOpen);
+    // Apertou dentro da caixa: o clique que cai na camada de fora (ancestral comum) não fecha (BC1-M7).
+    const pressedInside = useRef(false);
+    useLayoutEffect(() => {
+        closeRef.current = onClose;
+        pricingOpenRef.current = isPricingOpen;
+    });
+    useLayoutEffect(() => {
+        if (!isOpen) return;
+        const layer = layerRef.current;
+        if (!layer) return;
+        const active = document.activeElement;
+        const opener = active instanceof HTMLElement && !layer.contains(active) ? active : null;
+        layer.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus({ preventScroll: true });
+        // Na captura da window, como a janela do palco: um painel do palco aberto por baixo fica aberto.
+        const onEscape = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape' || e.isComposing || e.defaultPrevented || pricingOpenRef.current) return;
+            e.preventDefault();
+            e.stopPropagation();
+            closeRef.current();
+        };
+        window.addEventListener('keydown', onEscape, true);
+        return () => {
+            window.removeEventListener('keydown', onEscape, true);
+            const now = document.activeElement;
+            const lost = !now || now === document.body || !now.isConnected || layer.contains(now);
+            if (lost && opener?.isConnected) opener.focus({ preventScroll: true });
+        };
+    }, [isOpen]);
+
     if (!isOpen) return null;
 
     const tabs: Tab[] = stereoMode ? ['Perfil', 'Geral', 'Buses', 'Novidades', 'Assinatura', 'Sobre'] : ['Perfil', 'Geral', 'Novidades', 'Assinatura', 'Sobre'];
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-ps-gutter" onClick={onClose}>
+        // tabIndex -1: um clique no texto (das Configurações ou dos Planos) deixa o foco na camada.
+        // onKeyDown: nenhuma tecla de dentro chega ao palco antigo (Espaço no interruptor tocava a
+        // música, setas nas abas andavam 5 s, BC1-I3), e o Tab gira dentro da camada (com os Planos).
+        <div
+            ref={layerRef}
+            tabIndex={-1}
+            onKeyDown={e => { e.stopPropagation(); trapTab(e, e.currentTarget); }}
+            onPointerDown={e => { pressedInside.current = !!e.currentTarget.firstElementChild?.contains(e.target as Node); }}
+            onClick={() => {
+                const inside = pressedInside.current;
+                pressedInside.current = false;
+                if (!inside) onClose();
+            }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-ps-gutter outline-none"
+        >
             <Panel
                 variant="pop"
                 role="dialog"
                 aria-label="Configurações"
                 className="flex max-h-full w-full max-w-2xl flex-col overflow-hidden font-ps-sans text-ps-bone"
-                onClick={e => e.stopPropagation()}
+                onClick={e => { pressedInside.current = false; e.stopPropagation(); }}
             >
 
                 {/* Cabeçalho: abas (descem de linha quando não cabem) e o X do palco */}
@@ -119,7 +168,8 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                 </div>
 
                 {/* Conteúdo da aba aberta */}
-                <TabPanel tabsId={tabsId} value={activeTab} className="min-h-[400px] max-h-[70vh] overflow-y-auto bg-ps-ink-0 p-6">
+                {/* Piso de 400 px, ou 55% da tela quando ela é baixa (celular deitado): o painel encolhe e rola, nada fica escondido embaixo (BC1-M6). */}
+                <TabPanel tabsId={tabsId} value={activeTab} className="min-h-[min(400px,55dvh)] max-h-[70vh] overflow-y-auto bg-ps-ink-0 p-6">
 
                     {activeTab === 'Perfil' && user && (
                         <ProfileTab
@@ -240,8 +290,9 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                     {activeTab === 'Novidades' && (
                         <div className="flex flex-col gap-5 max-w-lg mx-auto">
                             {desktopUpdate && (
-                                <div className="flex flex-wrap items-center gap-3 rounded-ps-xl bg-ps-s1 p-4 inset-ring inset-ring-ps-or-line">
-                                    <div className="grid size-10 shrink-0 place-items-center rounded-ps-md bg-ps-or-soft text-ps-or inset-ring inset-ring-ps-or-line">
+                                <div className="flex flex-wrap items-center gap-3 rounded-ps-xl bg-ps-s1 p-4 inset-ring inset-ring-ps-line">
+                                    {/* Neutro: laranja é ligado, e a ação principal (Baixar) já é laranja (BC1-M2). */}
+                                    <div className="grid size-10 shrink-0 place-items-center rounded-ps-md bg-ps-s2 text-ps-mut inset-ring inset-ring-ps-line">
                                         <Download size={18} aria-hidden="true" />
                                     </div>
                                     <div className="min-w-0 flex-1 basis-48">
@@ -256,7 +307,7 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                             {CHANGELOG.map((entry, idx) => (
                                 <div key={entry.version} className={idx === 0 ? 'rounded-ps-xl bg-ps-s1 p-4 inset-ring inset-ring-ps-line' : 'border-b border-ps-line pb-5'}>
                                     <div className="mb-2 flex items-start gap-2">
-                                        {idx === 0 && <Sparkles size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-ps-or" />}
+                                        {idx === 0 && <Sparkles size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-ps-mut" />}
                                         <span className="min-w-0 text-ps-base font-bold text-ps-bone">{entry.title}</span>
                                         <span className="ps-num ml-auto shrink-0 text-ps-sm text-ps-mut">v{entry.version}</span>
                                     </div>

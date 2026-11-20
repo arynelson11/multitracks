@@ -5,6 +5,7 @@
 import { useId, useLayoutEffect, useRef } from 'react'
 import type React from 'react'
 import { Panel, cx } from '../ui'
+import { focusables, trapTab } from '../ui/focusables'
 import { Icon } from './icons'
 
 export interface StageDialogProps {
@@ -89,15 +90,8 @@ function removeDialog(d: OpenDialog): void {
   if (openDialogs.length === 0) window.removeEventListener('keydown', onStackEscape, true)
 }
 
-// O que pode receber foco dentro da janela, inclusive o que quem chama põe no conteúdo.
-const FOCUSABLE = 'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
-
 const CLOSE_BTN =
   'inline-flex shrink-0 items-center justify-center min-h-ps-touch min-w-ps-touch rounded-ps-md bg-ps-s2 text-ps-mut hover:text-ps-bone select-none transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or disabled:opacity-35 disabled:pointer-events-none'
-
-function focusables(root: HTMLElement): HTMLElement[] {
-  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.tabIndex >= 0 && !el.hasAttribute('disabled'))
-}
 
 /**
  * Janela do palco. Abre com o foco no primeiro elemento focável (o Fechar, no canto); Tab e
@@ -171,17 +165,7 @@ export function StageDialog({ open, title, onClose, children, footer, size = 'md
   // Modal: o Tab não sai da janela e nenhuma tecla chega aos atalhos do palco (Espaço toca, setas pulam).
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     e.stopPropagation()
-    if (e.key !== 'Tab') return
-    const items = focusables(e.currentTarget)
-    if (items.length === 0) return
-    const first = items[0]
-    const last = items[items.length - 1]
-    const now = document.activeElement
-    const outside = !(now instanceof HTMLElement) || !items.includes(now)
-    if (e.shiftKey ? now === first || outside : now === last || outside) {
-      e.preventDefault()
-      ;(e.shiftKey ? last : first).focus()
-    }
+    trapTab(e, e.currentTarget)
   }
 
   return (

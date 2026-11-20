@@ -23,7 +23,7 @@ node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
 Sem opção, a rodada mede os 11 estados do palco e as 16 telas da faixa C nos 8
 tamanhos (216), as 14 telas da faixa C que abrem no celular também em 390x844
 (14; o Modo Ao Vivo do host só existe no computador) e as 10 telas da faixa B em
-4 tamanhos (40): 270 combinações.
+5 tamanhos (50): 280 combinações.
 
 Demais telas da Parte 3 (faixa C): cada uma tem um estado (lista em
 `telasEstados.ts`, telas montadas em `telas.tsx`), medido como o palco, sem a
@@ -43,7 +43,7 @@ em `results/<estado>_<LxA>.json`. Outro Chrome: `CHROME=/caminho/do/chrome`.
 ## Telas da faixa B da Parte 3 (login e Configurações)
 
 Sem `--estado`, a rodada normal também mede 10 telas fora do palco (`telasB.ts` e `TelasBPage.tsx`, Parte 3, faixa B,
-não publicado) em 1024x740, 1280x800, 1920x1080 e 390x844 (celular): 40 combinações a mais.
+não publicado) em 1024x740, 1280x800, 1920x1080, 390x844 (celular) e 844x390 (celular deitado, onde as Configurações cortavam o fim da aba): 50 combinações a mais.
 
 | Estado | O que mostra |
 |---|---|
