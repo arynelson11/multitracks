@@ -441,3 +441,70 @@ describe('StageDialog: janela de dentro aberta junto com a de fora (ordem real d
     expect(document.activeElement).toBe(ver)
   })
 })
+
+// Revisão macro BC (BC2-I1, BC2-M5): janela que não fecha no Esc nem no toque fora, e a que não fecha por nada.
+describe('StageDialog: dismissible e closeDisabled', () => {
+  const esc = () => fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape', code: 'Escape' })
+
+  it('dismissible={false}: Esc e toque fora não fecham, o X fecha', () => {
+    const p = props({ dismissible: false })
+    const { container } = render(<StageDialog {...p} />)
+    esc()
+    fireEvent.pointerDown(overlayOf(container))
+    fireEvent.click(overlayOf(container))
+    expect(p.onClose).not.toHaveBeenCalled()
+    expect(closeButton().getAttribute('title')).toBe('Fechar')
+    fireEvent.click(closeButton())
+    expect(p.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('dismissible={false}: o Esc segue pra dentro da janela e não chega ao palco nem aos painéis por baixo', () => {
+    const inner = vi.fn()
+    const windowKeydown = vi.fn()
+    const panelClose = vi.fn()
+    window.addEventListener('keydown', windowKeydown)
+    const p = props({ dismissible: false, children: <input aria-label="campo" onKeyDown={(e) => inner(e.key)} /> })
+    render(<><PanelBelow onClose={panelClose} /><StageDialog {...p} /></>)
+    const campo = screen.getByRole('textbox', { name: 'campo' })
+    campo.focus()
+    fireEvent.keyDown(campo, { key: 'Escape', code: 'Escape' })
+    expect(inner).toHaveBeenCalledWith('Escape')
+    expect(windowKeydown).not.toHaveBeenCalled()
+    expect(panelClose).not.toHaveBeenCalled()
+    expect(p.onClose).not.toHaveBeenCalled()
+    window.removeEventListener('keydown', windowKeydown)
+  })
+
+  it('voltando a dismissible, o Esc fecha de novo', () => {
+    const p = props({ dismissible: false })
+    const { rerender } = render(<StageDialog {...p} />)
+    esc()
+    expect(p.onClose).not.toHaveBeenCalled()
+    rerender(<StageDialog {...p} dismissible />)
+    esc()
+    expect(p.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('closeDisabled: X desligado com a dica, e nem Esc nem toque fora fecham', () => {
+    const p = props({ closeDisabled: true })
+    const { container } = render(<StageDialog {...p} />)
+    const x = closeButton() as HTMLButtonElement
+    expect(x.disabled).toBe(true)
+    expect(x.getAttribute('title')).toBe('Espere terminar pra fechar')
+    fireEvent.click(x)
+    esc()
+    fireEvent.pointerDown(overlayOf(container))
+    fireEvent.click(overlayOf(container))
+    expect(p.onClose).not.toHaveBeenCalled()
+  })
+
+  it('com a janela de cima sem dismissible, o Esc não fecha a de baixo', () => {
+    const a = props({ title: 'Metrônomo' })
+    const b = props({ title: 'Letra', open: false, dismissible: false })
+    const { rerender } = render(<><StageDialog {...a} /><StageDialog {...b} /></>)
+    rerender(<><StageDialog {...a} /><StageDialog {...b} open /></>)
+    esc()
+    expect(a.onClose).not.toHaveBeenCalled()
+    expect(b.onClose).not.toHaveBeenCalled()
+  })
+})

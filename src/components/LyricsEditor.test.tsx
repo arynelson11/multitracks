@@ -91,6 +91,66 @@ describe('Letra e cifra: nada some', () => {
   })
 })
 
+// Revisão macro BC (BC2-I1, BC2-M8): o Esc e o toque fora não jogam fora o que foi digitado e não salvo.
+describe('Letra e cifra: Esc e toque fora com texto não salvo', () => {
+  const esc = () => fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape', code: 'Escape' })
+  const toqueFora = () => {
+    const camada = screen.getByRole('dialog').parentElement as HTMLElement
+    fireEvent.pointerDown(camada)
+    fireEvent.click(camada)
+  }
+
+  it('sem mudança, Esc fecha e o toque fora também', () => {
+    const { onClose } = abrir()
+    esc()
+    expect(onClose).toHaveBeenCalledTimes(1)
+    toqueFora()
+    expect(onClose).toHaveBeenCalledTimes(2)
+  })
+
+  it('com a letra digitada, Esc e toque fora não fecham; o X fecha', () => {
+    const { onClose } = abrir()
+    fireEvent.change(area('Letra'), { target: { value: 'Grande é o Senhor' } })
+    area('Letra').focus()
+    esc()
+    toqueFora()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(area('Letra').value).toBe('Grande é o Senhor')
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('com a cifra mudada, ou a letra achada na busca, Esc não fecha', async () => {
+    search.mockResolvedValue({ plain: 'achou', synced: null, source: 'LRCLIB' })
+    const { onClose } = abrir()
+    fireEvent.click(screen.getByRole('tab', { name: 'Cifra' }))
+    fireEvent.change(area('Cifra'), { target: { value: 'A  E' } })
+    esc()
+    expect(onClose).not.toHaveBeenCalled()
+    fireEvent.change(area('Cifra'), { target: { value: 'E  B\nGrande é o Senhor' } })
+    esc()
+    expect(onClose).toHaveBeenCalledTimes(1)
+    cleanup()
+    const outro = abrir()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Buscar letra' })) })
+    esc()
+    expect(outro.onClose).not.toHaveBeenCalled()
+  })
+
+  it('depois de salvar, Esc fecha de novo; se o salvar falhou, não', async () => {
+    const onSave = vi.fn(async () => true)
+    const { onClose } = abrir(onSave)
+    fireEvent.change(area('Letra'), { target: { value: 'nova' } })
+    onSave.mockRejectedValueOnce(new Error('x'))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Salvar' })) })
+    esc()
+    expect(onClose).not.toHaveBeenCalled()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Salvar' })) })
+    esc()
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('Letra e cifra: linguagem do palco', () => {
   it('só classes da linguagem nova, sem travessão nem emoji', async () => {
     search.mockResolvedValue({ plain: 'x', synced: '[00:01.00]x', source: 'LRCLIB' })

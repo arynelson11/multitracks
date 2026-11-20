@@ -16,6 +16,13 @@ export interface StageDialogProps {
   footer?: React.ReactNode
   /** `md` (padrão, até 512 px), `sm` (até 384 px) ou `lg` (até 672 px, letra e cifra). */
   size?: 'sm' | 'md' | 'lg'
+  /**
+   * Esc e toque fora fecham (padrão). `false`: só o X fecha, pra não jogar fora o que foi digitado
+   * (letra e cifra com alteração não salva, edição na linha). O Esc segue pra dentro da janela.
+   */
+  dismissible?: boolean
+  /** Nada fecha agora: X desligado, Esc e toque fora também não (ex.: o Metrônomo gerando o click). */
+  closeDisabled?: boolean
 }
 
 const SIZES: Record<NonNullable<StageDialogProps['size']>, string> = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl' }
@@ -86,7 +93,7 @@ function removeDialog(d: OpenDialog): void {
 const FOCUSABLE = 'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
 
 const CLOSE_BTN =
-  'inline-flex shrink-0 items-center justify-center min-h-ps-touch min-w-ps-touch rounded-ps-md bg-ps-s2 text-ps-mut hover:text-ps-bone select-none transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or'
+  'inline-flex shrink-0 items-center justify-center min-h-ps-touch min-w-ps-touch rounded-ps-md bg-ps-s2 text-ps-mut hover:text-ps-bone select-none transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or disabled:opacity-35 disabled:pointer-events-none'
 
 function focusables(root: HTMLElement): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.tabIndex >= 0 && !el.hasAttribute('disabled'))
@@ -98,15 +105,21 @@ function focusables(root: HTMLElement): HTMLElement[] {
  * Esc fecha e é tratado na captura da `window`, antes da pilha dos painéis do palco (um
  * REPERTÓRIOS aberto por baixo continua aberto) e dos atalhos. Toque fora fecha; toque dentro,
  * ou apertar dentro e soltar fora, não. Com duas janelas abertas, Esc e toque fora valem só pra
- * de cima (Parte 3). Fechada não renderiza nada.
+ * de cima (Parte 3). Com `dismissible={false}` só o X fecha; com `closeDisabled`, nada fecha.
+ * Fechada não renderiza nada.
  */
-export function StageDialog({ open, title, onClose, children, footer, size = 'md' }: StageDialogProps) {
+export function StageDialog({ open, title, onClose, children, footer, size = 'md', dismissible = true, closeDisabled = false }: StageDialogProps) {
   const titleId = useId()
   const overlayRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef(onClose)
   // Apertou dentro da caixa: o clique que cai na camada de fora (ancestral comum) não fecha.
   const pressedInside = useRef(false)
-  useLayoutEffect(() => { closeRef.current = onClose })
+  const canDismiss = dismissible && !closeDisabled
+  const dismissRef = useRef(canDismiss)
+  useLayoutEffect(() => {
+    closeRef.current = onClose
+    dismissRef.current = canDismiss
+  })
 
   useLayoutEffect(() => {
     if (!open) return
@@ -127,7 +140,7 @@ export function StageDialog({ open, title, onClose, children, footer, size = 'md
       el: overlay,
       z: openDialogs.reduce((m, d) => Math.max(m, d.z + 1), BASE_Z),
       opener,
-      dismissible: () => true,
+      dismissible: () => dismissRef.current,
       close: () => closeRef.current(),
     }
     if (entry.z !== BASE_Z) overlay.style.zIndex = String(entry.z)
@@ -179,7 +192,7 @@ export function StageDialog({ open, title, onClose, children, footer, size = 'md
       onClick={(e) => {
         const inside = pressedInside.current
         pressedInside.current = false
-        if (e.target === e.currentTarget && !inside && isTopDialog(e.currentTarget)) onClose()
+        if (e.target === e.currentTarget && !inside && canDismiss && isTopDialog(e.currentTarget)) onClose()
       }}
       className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-ps-gutter"
     >
@@ -194,7 +207,14 @@ export function StageDialog({ open, title, onClose, children, footer, size = 'md
       >
         <div className="flex shrink-0 items-center gap-3">
           <h2 id={titleId} className="min-w-0 flex-1 break-words text-ps-md font-bold">{title}</h2>
-          <button type="button" aria-label="Fechar" title="Fechar (Esc)" onClick={onClose} className={CLOSE_BTN}>
+          <button
+            type="button"
+            aria-label="Fechar"
+            title={closeDisabled ? 'Espere terminar pra fechar' : canDismiss ? 'Fechar (Esc)' : 'Fechar'}
+            disabled={closeDisabled}
+            onClick={onClose}
+            className={CLOSE_BTN}
+          >
             <Icon name="x" />
           </button>
         </div>

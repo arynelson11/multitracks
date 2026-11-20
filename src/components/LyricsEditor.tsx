@@ -28,6 +28,10 @@ export function LyricsEditor({ song, onSave, onClose }: LyricsEditorProps) {
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  // O último texto salvo (o da música, até o primeiro Salvar que deu certo). Com alteração, o Esc e
+  // o toque fora não fecham (só o X), pra não jogar fora a letra e a cifra digitadas.
+  const [saved, setSaved] = useState({ lyrics: song.lyrics || '', lyricsSynced: song.lyricsSynced || null, chords: song.chords || '' });
+  const dirty = lyrics !== saved.lyrics || chords !== saved.chords || lyricsSynced !== saved.lyricsSynced;
 
   const handleSearch = async () => {
     setSearching(true);
@@ -57,6 +61,7 @@ export function LyricsEditor({ song, onSave, onClose }: LyricsEditorProps) {
         lyricsSynced: lyricsSynced,
         chords: chords.trim() || null,
       });
+      setSaved({ lyrics, lyricsSynced, chords });
       setSaveMsg(cloud ? 'Salvo na nuvem e no aparelho.' : 'Salvo só no aparelho (a música não está na biblioteca da nuvem).');
     } catch {
       setSaveMsg('Erro ao salvar.');
@@ -71,6 +76,7 @@ export function LyricsEditor({ song, onSave, onClose }: LyricsEditorProps) {
       title="Letra e cifra"
       size="lg"
       onClose={onClose}
+      dismissible={!dirty}
       footer={
         <>
           {saveMsg && <p role="status" className="mr-auto self-center text-ps-sm text-ps-mut break-words">{saveMsg}</p>}
