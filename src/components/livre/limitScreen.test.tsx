@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { LimitScreen } from './LimitScreen'
+import { StageDialog } from '../stage/StageDialog'
 import type { LimitScreenProps } from './LimitScreen'
 import { LIMIT_COPY, OFFER_COPY, formatCountdown, offerRemainingMs } from './limitCopy'
 import type { OfferView } from './limitCopy'
@@ -338,5 +339,66 @@ describe('a tela de limite só aparece com a música parada (fila da T6)', () =>
     } finally {
       window.removeEventListener('keydown', onStageKey)
     }
+  })
+})
+
+// Junção da 1b com as faixas B e C: a janela do palco ganhou a pilha (Esc e toque fora só na de
+// cima, foco na de cima). A tela de limite aberta por cima de outra janela (o Metrônomo) segue.
+describe('tela de limite por cima de outra janela do palco', () => {
+  const esc = () => fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape', code: 'Escape' })
+  const metronome = (onClose: () => void, patch: { closeDisabled?: boolean } = {}) => (
+    <StageDialog open title="Metrônomo" onClose={onClose} {...patch}><button type="button">TAP TEMPO</button></StageDialog>
+  )
+  const withLimit = (metroClose: () => void, limitProps: LimitScreenProps | null, patch: { closeDisabled?: boolean } = {}) => (
+    <>
+      {metronome(metroClose, patch)}
+      {limitProps ? <LimitScreen {...limitProps} /> : null}
+    </>
+  )
+
+  it('aparece por cima, pega o foco e um Esc fecha só ela; o seguinte fecha a de baixo', () => {
+    const metroClose = vi.fn()
+    const p = props({ kind: 'live', offer: active(T0 + 48 * HOUR) })
+    const { container, rerender } = render(withLimit(metroClose, null))
+    rerender(withLimit(metroClose, p))
+    const [below, above] = Array.from(container.children) as HTMLElement[]
+    expect(Number(above.style.zIndex)).toBeGreaterThan(120)
+    expect(below.style.zIndex).toBe('')
+    expect(above.contains(document.activeElement)).toBe(true)
+    esc()
+    expect(p.onClose).toHaveBeenCalledTimes(1)
+    expect(metroClose).not.toHaveBeenCalled()
+    rerender(withLimit(metroClose, null))
+    expect(below.contains(document.activeElement)).toBe(true)
+    esc()
+    expect(metroClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('toque fora fecha só a tela de limite, e os botões dela continuam funcionando', () => {
+    const metroClose = vi.fn()
+    const p = props({ kind: 'stage-songs', offer: active(T0 + 48 * HOUR) })
+    const { container, rerender } = render(withLimit(metroClose, null))
+    rerender(withLimit(metroClose, p))
+    fireEvent.click(proButton())
+    expect(p.onChoose).toHaveBeenCalledWith('essencial_mensal')
+    fireEvent.click(button('Ver todos os planos'))
+    expect(p.onSeePlans).toHaveBeenCalledTimes(1)
+    const above = container.children[1] as HTMLElement
+    fireEvent.pointerDown(above)
+    fireEvent.click(above)
+    expect(p.onClose).toHaveBeenCalledTimes(1)
+    expect(metroClose).not.toHaveBeenCalled()
+  })
+
+  it('por cima do Metrônomo gerando o click (que não fecha), o Esc ainda fecha a tela de limite', () => {
+    const metroClose = vi.fn()
+    const p = props({ kind: 'separations' })
+    const { rerender } = render(withLimit(metroClose, null, { closeDisabled: true }))
+    rerender(withLimit(metroClose, p, { closeDisabled: true }))
+    esc()
+    expect(p.onClose).toHaveBeenCalledTimes(1)
+    rerender(withLimit(metroClose, null, { closeDisabled: true }))
+    esc()
+    expect(metroClose).not.toHaveBeenCalled()
   })
 })
