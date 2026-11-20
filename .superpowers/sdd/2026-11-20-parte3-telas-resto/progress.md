@@ -31,3 +31,5 @@ Task 1: complete (commits 6a0111a..74dcacc, tests: npx vitest run src/components
 - Task 2: Ruling: o texto passa de "banco de pads" pra "conjunto de pads" (vazio, frase de cima) e "Falha ao carregar catálogo." vira "Falha ao carregar o catálogo.". Por quê: o spec chama de "conjuntos de pads"; uma palavra só na tela. Custo se errado: só texto.
 - Task 2: Ruling: Salvar e Cancelar da edição e Apagar e Cancelar da confirmação viram botões com texto (antes ícones de ✓ e X sem nome). Por quê: alvo de 44 px e clareza; a ação de cada um não muda. Custo se errado: linha da edição mais alta.
 - Task 2: nota: `react-hooks/set-state-in-effect` no efeito da busca (linha 35) já existia antes; o efeito não mudou.
+Task 2: complete (commits 74dcacc..9014cfd, tests: npx vitest run src/components/PadSetsModal →    Duration  4.59s (transform 449ms, setup 0ms, import 1.25s, tests 1.14s, environment 1.69s))
+- Task 3: Ruling: o aviso "Versão sincronizada disponível" fica em `mut` (antes verde). Por quê: o musgo claro é "ao vivo" e o verde não é token; aviso informativo é neutro. Custo se errado: só cor.

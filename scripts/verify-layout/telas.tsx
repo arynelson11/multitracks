@@ -2,8 +2,9 @@
 // com o pior caso de texto, por cima do fundo do palco, e o check.ts mede como no palco (texto
 // cortado, encostando, alvo de toque e rolagem de lado). Nada daqui entra no app.
 import { MetronomeModal } from '../../src/components/MetronomeModal'
+import { LyricsEditor } from '../../src/components/LyricsEditor'
 import { PadSetsModal } from '../../src/components/PadSetsModal'
-import type { Channel } from '../../src/types'
+import type { Channel, Song } from '../../src/types'
 import type { TelaEstado } from './telasEstados'
 
 const noop = () => {}
@@ -33,12 +34,22 @@ window.fetch = (input: RequestInfo | URL, init?: RequestInit) =>
     ? Promise.resolve(new Response(JSON.stringify({ sets: PAD_SETS }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     : realFetch(input, init)
 
+/** Música com letra sincronizada, artista e cifra longos (o pior caso do editor de letra). */
+const LYRIC_SONG = {
+  ...SONG,
+  artist: 'Ministério de Louvor Diante do Trono e Convidados Especiais',
+  lyrics: 'Grande é o Senhor e mui digno de louvor\nNa cidade do nosso Deus, seu santo monte\nAlegria de toda a terra',
+  lyricsSynced: '[00:01.00]Grande é o Senhor',
+  chords: 'E              B              C#m        A\nGrande é o Senhor e mui digno de louvor na cidade do nosso Deus, seu santo monte',
+} as unknown as Song
+
 // As peças da página são exportadas só pela regra do react-refresh (arquivo com componente exporta componente).
 
 export function TelaPage({ estado }: { estado: TelaEstado }) {
   return (
     <div className="min-h-dvh bg-ps-ink font-ps-sans text-ps-bone">
       {estado === 'metronomo' && <MetronomeModal isOpen onClose={noop} playlistCurrentSong={SONG} onAddClick={noop} />}
+      {(estado === 'letra' || estado === 'cifra') && <LyricsEditor song={LYRIC_SONG} onSave={async () => true} onClose={noop} />}
       {(estado === 'padsnuvem' || estado === 'padsnuvem-editar') && (
         <PadSetsModal isOpen onClose={noop} onSelect={noop} selectedPadSet={{ id: 'p2', name: 'Ambiente Suave', base_path: 'p2' }} isAdmin />
       )}

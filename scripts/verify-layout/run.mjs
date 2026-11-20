@@ -26,7 +26,7 @@ const SIZES = ['1024x740', '1024x768', '1280x760', '1280x800', '1440x900', '1920
 /** Estados da rodada normal: a mesma lista de ESTADOS em fixture.ts. */
 const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config',
   // Demais telas da Parte 3 (faixa C), a mesma lista de telasEstados.ts.
-  'metronomo', 'padsnuvem', 'padsnuvem-editar']
+  'metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra']
 const PROVA = 'quebrado'
 const TIMEOUT_S = 40
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))

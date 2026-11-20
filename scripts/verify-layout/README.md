@@ -55,6 +55,8 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `metronomo` | Metrônomo (Parte 3, faixa C) numa página própria, com uma música que já tem click |
 | `padsnuvem` | Pads da nuvem (faixa C) como admin, 3 conjuntos com nome e descrição longos, um em uso |
 | `padsnuvem-editar` | o mesmo, renomeando o primeiro conjunto |
+| `letra` | Letra e cifra (faixa C), aba Letra com a versão sincronizada, artista longo |
+| `cifra` | o mesmo, na aba Cifra (linhas longas rolando de lado dentro da área) |
 | `config` | as duas seções da T19 numa página própria: placa de 2 canais (caindo de 4 ou mais, com avisos) e de 8 canais |
 | `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso pra cada ramo das regras (15 falhas, uma por ramo) |
 

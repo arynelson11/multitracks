@@ -1,6 +1,6 @@
 // Estados das demais telas da Parte 3 (faixa C) no verificador: uma janela ou página por estado,
 // montada em telas.tsx, com o que conferir e o que abrir antes de medir. O run.mjs tem a mesma lista.
-export const TELA_ESTADOS = ['metronomo', 'padsnuvem', 'padsnuvem-editar'] as const
+export const TELA_ESTADOS = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra'] as const
 export type TelaEstado = (typeof TELA_ESTADOS)[number]
 
 export function isTela(value: string): value is TelaEstado {
@@ -12,6 +12,8 @@ export const TELA_EXPECT: Record<TelaEstado, { sel: string; text?: string }> = {
   metronomo: { sel: '[role="dialog"] [role="switch"]' },
   padsnuvem: { sel: '[role="dialog"] [aria-current="true"]' },
   'padsnuvem-editar': { sel: '[role="dialog"] input[placeholder="Nome do conjunto"]' },
+  letra: { sel: '[role="dialog"] [role="tab"][aria-selected="true"]', text: 'Letra' },
+  cifra: { sel: '[role="dialog"] [role="tab"][aria-selected="true"]', text: 'Cifra' },
 }
 
 /** Toque de ponteiro (click com detail 1), como o dedo. */
@@ -28,4 +30,5 @@ export const TELA_PREPARE: Partial<Record<TelaEstado, () => void | Promise<void>
     for (let i = 0; i < 50 && !document.querySelector('button[aria-label^="Renomear"]'); i++) await new Promise((r) => setTimeout(r, 50))
     tapTela('button[aria-label^="Renomear"]')
   },
+  cifra: () => tapTela('[role="dialog"] [role="tab"]:nth-child(2)'),
 }
