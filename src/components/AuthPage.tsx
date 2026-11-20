@@ -211,7 +211,10 @@ export function AuthPage({ }: AuthPageProps) {
                     )}
 
                     {error && <Notice tone="alert" role="alert">{error}</Notice>}
-                    {message && <Notice role="status">{message}</Notice>}
+                    {/* A região status fica sempre na página (vazia, fora do fluxo pelo empty:absolute, sem
+                        sobrar espaço) e só o texto entra nela: região que nasce já com o texto muitas
+                        vezes não é lida pelo leitor de tela. */}
+                    <div role="status" className="empty:absolute">{message ? <Notice>{message}</Notice> : null}</div>
 
                     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                         <TextField

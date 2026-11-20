@@ -157,7 +157,8 @@ export function ProfileTab({ user, userPlan, updateProfile, updatePassword, sign
             Salvar
           </Button>
         </div>
-        {nameMsg && <p role="status" className="text-ps-base text-ps-mut">{nameMsg}</p>}
+        {/* Região status sempre na página (vazia, fora do fluxo): só o texto entra, pra ser lido. */}
+        <p role="status" className="text-ps-base text-ps-mut empty:absolute">{nameMsg}</p>
       </section>
 
       {/* Senha */}
@@ -177,7 +178,7 @@ export function ProfileTab({ user, userPlan, updateProfile, updatePassword, sign
             Atualizar
           </Button>
         </div>
-        {pwMsg && <p role="status" className="text-ps-base text-ps-mut">{pwMsg}</p>}
+        <p role="status" className="text-ps-base text-ps-mut empty:absolute">{pwMsg}</p>
       </section>
 
       {/* Plano */}

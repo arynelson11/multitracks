@@ -412,11 +412,12 @@ const id = useId()
 
 ```tsx
 <Notice tone="alert" role="alert">{erro}</Notice>
-<Notice role="status">Cadastro feito. Verifica seu email pra confirmar.</Notice>
+<div role="status" className="empty:absolute">{mensagem ? <Notice>{mensagem}</Notice> : null}</div>
 ```
 
 - `tone`: `info` (padrão, neutro: `s2`, texto `bone`, anel `line`) | `alert` (âmbar: `alert-soft`, texto `alert` em semibold, anel `alert-line`). Sem verde de sucesso: a linguagem não tem cor de "deu certo", então confirmação é `info`.
 - Raio 10px, 13px, quebra palavra longa. O papel (`role="alert"`, `role="status"`) e o `aria-live` são de quem usa. Repassa os atributos de `<div>`.
+- **Mensagem que aparece depois (status):** a região `role="status"` fica sempre na página e só o texto entra nela, como no `Toast` (região que nasce já com o texto muitas vezes não é lida pelo NVDA e pelo JAWS). Vazia, `empty:absolute` tira ela do fluxo, sem sobrar o espaço do `gap` (revisão macro BC, 2026-11-20, [NÃO PUBLICADO]). O erro com `role="alert"` pode nascer junto com o texto.
 
 #### `<IconButton>` (Parte 3, pedido da faixa D)
 
@@ -756,7 +757,7 @@ Seções completas — múltiplas moléculas trabalhando juntas.
 - Atmosphere blur circles
 - Google OAuth + email/senha form
 - Modo login | register | forgot
-- **Parte 3 (2026-11-20, [NÃO PUBLICADO]):** fundo `ps-ink`, formulário num `Panel` (`flat`, até 448px, padding 24px e 32px a partir de `sm`), título 28px bold, "Continuar com Google" e o enviar em `Button size="lg"` (o enviar no `primary` laranja, com o texto mantido e o ícone girando enquanto carrega), erro num `Notice` âmbar (`role="alert"`), mensagem num `Notice` neutro (`role="status"`), "Esqueceu sua senha?" em `Button ghost` e a troca de modo ("Criar conta", "Entrar") em `Button` padrão. Fora do `lg` a Wordmark fica no topo, no fluxo da página (antes ficava por cima, em posição absoluta).
+- **Parte 3 (2026-11-20, [NÃO PUBLICADO]):** fundo `ps-ink`, formulário num `Panel` (`flat`, até 448px, padding 24px e 32px a partir de `sm`), título 28px bold, "Continuar com Google" e o enviar em `Button size="lg"` (o enviar no `primary` laranja, com o texto mantido e o ícone girando enquanto carrega), erro num `Notice` âmbar (`role="alert"`), mensagem num `Notice` neutro dentro da região `role="status"` que fica sempre na página, "Esqueceu sua senha?" em `Button ghost` e a troca de modo ("Criar conta", "Entrar") em `Button` padrão. Fora do `lg` a Wordmark fica no topo, no fluxo da página (antes ficava por cima, em posição absoluta).
 - **Criar nova senha** (`NewPasswordPage.tsx`, volta do link de recuperar senha), Parte 3 (2026-11-20, [NÃO PUBLICADO]): mesma linguagem numa coluna só (até 384px): Wordmark em cima, `Panel` com o título, os dois `TextField` de senha, o erro num `Notice` âmbar (`role="alert"`), "Salvar nova senha" em `Button primary` (`lg`, o cadeado vira o ícone girando enquanto salva) e "Cancelar e voltar pra tela de entrar" em `Button ghost`. Depois de salvar: a confirmação num `Notice` neutro (`role="status"`) e "Continuar" em `Button primary`.
 
 ### 4.14 Splash screen produto

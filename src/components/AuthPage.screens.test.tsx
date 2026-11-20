@@ -93,7 +93,8 @@ describe('AuthPage: nada some no restyle', () => {
     expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Recuperar senha')
     expect(text()).toContain('A gente envia instruções pro seu email.')
     expect(screen.queryByRole('button', { name: /Continuar com Google/ })).toBeNull()
-    expect(text()).not.toContain('ou')
+    // O divisor "ou" entre o Google e o formulário (o texto exato, não a sílaba na página).
+    expect(screen.queryByText('ou', { exact: true })).toBeNull()
     expect(senha()).toBeNull()
     expect(screen.getByRole('button', { name: /Enviar instruções/ })).toBeTruthy()
     fireEvent.change(email(), { target: { value: 'pessoa@exemplo.com' } })
@@ -162,6 +163,29 @@ describe('AuthPage: visual do palco', () => {
     fireEvent.change(senha()!, { target: { value: 'segredo1' } })
     await submit()
     expect(screen.getByRole('status').textContent).toBe('Cadastro feito. Verifica seu email pra confirmar.')
+  })
+
+  it('o divisor "ou" aparece entre o Google e o formulário fora do recuperar senha', () => {
+    render(<AuthPage />)
+    const ou = screen.getByText('ou', { exact: true })
+    const divisor = ou.parentElement!
+    expect(divisor.children).toHaveLength(3)
+    expect(divisor.firstElementChild!.className).toContain('bg-ps-line')
+    expect(divisor.lastElementChild!.className).toContain('bg-ps-line')
+  })
+
+  // Revisão macro BC (BC1-M1): a região status fica sempre na página e só o texto entra nela
+  // (região que nasce já com o texto muitas vezes não é lida pelo leitor de tela).
+  it('a região status existe antes da mensagem e é a mesma que recebe o texto', async () => {
+    render(<AuthPage />)
+    fireEvent.click(screen.getByRole('button', { name: 'Criar conta' }))
+    const antes = screen.getByRole('status')
+    expect(antes.textContent).toBe('')
+    fireEvent.change(email(), { target: { value: 'a@b.com' } })
+    fireEvent.change(senha()!, { target: { value: 'segredo1' } })
+    await submit()
+    expect(screen.getByRole('status')).toBe(antes)
+    expect(antes.textContent).toBe('Cadastro feito. Verifica seu email pra confirmar.')
   })
 
   it('o botão de enviar é o principal (laranja) e continua com nome enquanto carrega', async () => {

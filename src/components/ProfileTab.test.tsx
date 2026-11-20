@@ -110,6 +110,22 @@ describe('ProfileTab: nada some no restyle', () => {
     expect(text()).toContain('Erro ao salvar o nome.')
   })
 
+  // Revisão macro BC (BC1-M1): as regiões status do nome e da senha ficam sempre na página.
+  it('as mensagens do nome e da senha entram em regiões status que já estavam na página', async () => {
+    setup()
+    const [nome, senha] = screen.getAllByRole('status')
+    expect(nome.textContent).toBe('')
+    expect(senha.textContent).toBe('')
+    await act(async () => { fireEvent.click(btn(/Salvar/)) })
+    expect(screen.getAllByRole('status')[0]).toBe(nome)
+    expect(nome.textContent).toBe('Nome salvo!')
+    fireEvent.change(pw1(), { target: { value: 'abc' } })
+    fireEvent.change(pw2(), { target: { value: 'abc' } })
+    await act(async () => { fireEvent.click(btn(/Atualizar/)) })
+    expect(screen.getAllByRole('status')[1]).toBe(senha)
+    expect(senha.textContent).toBe('A senha precisa de ao menos 6 caracteres.')
+  })
+
   it('salvando o nome, o botão fica desligado', async () => {
     let done: () => void = () => {}
     const { p } = setup({ updateProfile: vi.fn(() => new Promise<unknown>((r) => { done = () => r({}) })) })
