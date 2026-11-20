@@ -1,9 +1,10 @@
 import { useState, useRef } from 'react';
-import { Camera, Loader2, Check, LogOut, Crown, Calendar, Mail, User as UserIcon, KeyRound, Trash2 } from 'lucide-react';
+import { Camera, Loader2, Check, LogOut, Crown, Calendar, Mail, Trash2 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import { uploadToR2 } from '../lib/r2';
 import { planDisplayName, isPaidPlan } from '../lib/plans';
 import { deleteAccountNotice, fetchCancelPreview } from '../lib/subscription';
+import { Button, Panel, TextField } from './ui';
 
 interface ProfileTabProps {
   user: User;
@@ -16,13 +17,12 @@ interface ProfileTabProps {
   onClose: () => void;
 }
 
-function formatMemberSince(iso?: string): string {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-  } catch {
-    return '—';
-  }
+/** "julho de 2026", ou null sem data de criação (ou com data que não dá pra ler). */
+function formatMemberSince(iso?: string): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 }
 
 export function ProfileTab({ user, userPlan, updateProfile, updatePassword, signOutEverywhere, deleteAccount, onUpgrade, onClose }: ProfileTabProps) {
@@ -40,6 +40,7 @@ export function ProfileTab({ user, userPlan, updateProfile, updatePassword, sign
   const [pwMsg, setPwMsg] = useState<string | null>(null);
 
   const initial = (name || user.email || '?').trim().charAt(0).toUpperCase();
+  const memberSince = formatMemberSince(user.created_at);
 
   const handleAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -112,98 +113,101 @@ export function ProfileTab({ user, userPlan, updateProfile, updatePassword, sign
     }
   };
 
+  const spinner = (size: number) => <Loader2 size={size} className="animate-spin motion-reduce:animate-none" />;
+
   return (
     <div className="flex flex-col gap-7 max-w-lg mx-auto">
-      {/* Avatar + nome */}
+      {/* Foto + nome: o avatar do palco (degradê laranja e musgo) em 80 px */}
       <div className="flex items-center gap-4">
         <button
+          type="button"
           onClick={() => fileRef.current?.click()}
-          className="relative w-20 h-20 rounded-full overflow-hidden bg-primary/15 border border-primary/30 flex items-center justify-center shrink-0 cursor-pointer group"
+          aria-label="Trocar foto"
           title="Trocar foto"
+          className="group relative grid size-20 min-h-ps-touch min-w-ps-touch shrink-0 cursor-pointer place-items-center overflow-hidden rounded-full bg-linear-135 from-ps-or to-ps-moss text-ps-bone shadow-[0_0_0_2px_var(--color-ps-ink-0),0_0_0_3px_var(--color-ps-line-2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or"
         >
           {avatar ? (
-            <img src={avatar} alt="" className="w-full h-full object-cover" />
+            <img src={avatar} alt="" className="size-full object-cover" />
           ) : (
-            <span className="text-primary font-black text-2xl">{initial}</span>
+            <span className="text-[28px] font-extrabold leading-none">{initial}</span>
           )}
-          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-            {uploading ? <Loader2 className="w-5 h-5 text-white animate-spin" /> : <Camera className="w-5 h-5 text-white" />}
+          {/* Enviando, a camada fica à vista com o ícone girando; senão aparece no hover e no foco. */}
+          <div aria-hidden="true" className={`absolute inset-0 flex items-center justify-center bg-black/50 transition-opacity ${uploading ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'}`}>
+            {uploading ? <Loader2 className="size-5 text-ps-bone animate-spin motion-reduce:animate-none" /> : <Camera className="size-5 text-ps-bone" />}
           </div>
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatar} />
         </button>
         <div className="min-w-0">
-          <p className="text-white font-bold text-lg truncate">{name || user.email?.split('@')[0]}</p>
-          <p className="text-text-muted text-xs flex items-center gap-1.5"><Mail size={11} /> {user.email}</p>
+          <p className="text-ps-md font-bold text-ps-bone break-words">{name || user.email?.split('@')[0]}</p>
+          <p className="flex items-center gap-1.5 text-ps-base text-ps-mut break-all"><Mail size={12} aria-hidden="true" className="shrink-0" /> {user.email}</p>
         </div>
       </div>
 
       {/* Nome de exibição */}
-      <div>
-        <label className="text-[11px] uppercase tracking-widest font-semibold text-text-muted flex items-center gap-1.5 mb-2"><UserIcon size={12} /> Nome de exibição</label>
-        <div className="flex gap-2">
-          <input
+      <section className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <TextField
+            label="Nome de exibição"
             value={name}
             onChange={(e) => { setName(e.target.value); setNameMsg(null); }}
             placeholder="Como você quer ser chamado"
-            className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-text-muted focus:border-primary/50 outline-none"
+            className="flex-1 basis-56"
           />
-          <button
-            onClick={handleSaveName}
-            disabled={savingName}
-            className="shrink-0 px-4 py-2 rounded-lg bg-primary text-black text-xs font-bold hover:bg-primary/90 active:scale-95 transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-          >
-            {savingName ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Salvar
-          </button>
+          <Button tone="primary" onClick={handleSaveName} disabled={savingName} icon={savingName ? spinner(14) : <Check size={14} />}>
+            Salvar
+          </Button>
         </div>
-        {nameMsg && <p className="text-[11px] text-text-muted mt-1.5">{nameMsg}</p>}
-      </div>
+        {/* Região status sempre na página (vazia, fora do fluxo): só o texto entra, pra ser lido. */}
+        <p role="status" className="text-ps-base text-ps-mut empty:absolute">{nameMsg}</p>
+      </section>
 
       {/* Senha */}
-      <div>
-        <label className="text-[11px] uppercase tracking-widest font-semibold text-text-muted flex items-center gap-1.5 mb-2"><KeyRound size={12} /> Senha</label>
-        <div className="flex flex-col gap-2">
-          <input type="password" value={pw1} onChange={(e) => { setPw1(e.target.value); setPwMsg(null); }} placeholder="Nova senha"
-            className="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-text-muted focus:border-primary/50 outline-none" />
-          <div className="flex gap-2">
-            <input type="password" value={pw2} onChange={(e) => { setPw2(e.target.value); setPwMsg(null); }} placeholder="Confirmar nova senha"
-              className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-text-muted focus:border-primary/50 outline-none" />
-            <button onClick={handleSavePassword} disabled={savingPw || !pw1}
-              className="shrink-0 px-4 py-2 rounded-lg bg-white/10 border border-white/15 text-white text-xs font-bold hover:bg-white/15 active:scale-95 transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5">
-              {savingPw ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Atualizar
-            </button>
-          </div>
+      <section className="flex flex-col gap-2">
+        <h3 className="text-ps-base font-bold text-ps-bone">Senha</h3>
+        <TextField label="Nova senha" type="password" value={pw1} onChange={(e) => { setPw1(e.target.value); setPwMsg(null); }} placeholder="Nova senha" />
+        <div className="flex flex-wrap items-end gap-2">
+          <TextField
+            label="Confirmar nova senha"
+            type="password"
+            value={pw2}
+            onChange={(e) => { setPw2(e.target.value); setPwMsg(null); }}
+            placeholder="Confirmar nova senha"
+            className="flex-1 basis-56"
+          />
+          <Button onClick={handleSavePassword} disabled={savingPw || !pw1} icon={savingPw ? spinner(14) : <Check size={14} />}>
+            Atualizar
+          </Button>
         </div>
-        {pwMsg && <p className="text-[11px] text-text-muted mt-1.5">{pwMsg}</p>}
-      </div>
+        <p role="status" className="text-ps-base text-ps-mut empty:absolute">{pwMsg}</p>
+      </section>
 
       {/* Plano */}
-      <div className="flex items-center justify-between gap-3 bg-white/[0.03] border border-white/10 rounded-xl p-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
-            <Crown size={18} className="text-primary" />
+      <Panel className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="grid size-10 shrink-0 place-items-center rounded-ps-md bg-ps-s2 text-ps-mut inset-ring inset-ring-ps-line">
+            <Crown size={18} aria-hidden="true" />
           </div>
           <div className="min-w-0">
-            <p className="text-white font-bold text-sm">Plano {planDisplayName(userPlan)}</p>
-            <p className="text-text-muted text-[11px] flex items-center gap-1.5"><Calendar size={10} /> Membro desde {formatMemberSince(user.created_at)}</p>
+            <p className="text-ps-base font-bold text-ps-bone">Plano {planDisplayName(userPlan)}</p>
+            <p className="flex items-center gap-1.5 text-ps-sm text-ps-mut"><Calendar size={11} aria-hidden="true" className="shrink-0" /> {memberSince ? `Membro desde ${memberSince}` : 'Sem data de cadastro'}</p>
           </div>
         </div>
         {!isPaidPlan(userPlan) && (
-          <button onClick={onUpgrade} className="shrink-0 px-4 py-2 rounded-lg bg-primary text-black text-xs font-bold hover:bg-primary/90 active:scale-95 transition-all cursor-pointer">
+          <Button tone="primary" onClick={onUpgrade}>
             Fazer upgrade
-          </button>
+          </Button>
         )}
-      </div>
+      </Panel>
 
       {/* Segurança */}
-      <div className="border-t border-white/10 pt-4 flex flex-col gap-2">
-        <button onClick={handleSignOutAll}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-white/5 border border-white/10 text-text-muted hover:text-white hover:bg-white/10 text-xs font-bold transition-all active:scale-95 cursor-pointer">
-          <LogOut size={14} /> Sair de todos os dispositivos
-        </button>
-        <button onClick={handleDelete} disabled={deleting}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-red-500/5 border border-red-500/20 text-red-400/80 hover:text-red-400 hover:bg-red-500/10 text-xs font-bold transition-all active:scale-95 cursor-pointer disabled:opacity-50">
-          {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Excluir minha conta
-        </button>
+      <div className="flex flex-col gap-2 border-t border-ps-line pt-4">
+        <Button onClick={handleSignOutAll} icon={<LogOut size={14} />}>
+          Sair de todos os dispositivos
+        </Button>
+        {/* Excluir: o fluxo de hoje (prompt EXCLUIR), decisão do dono; só a cara é nova (âmbar de alerta). */}
+        <Button tone="alert" onClick={handleDelete} disabled={deleting} icon={deleting ? spinner(14) : <Trash2 size={14} />}>
+          Excluir minha conta
+        </Button>
       </div>
     </div>
   );

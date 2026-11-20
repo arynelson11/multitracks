@@ -3,6 +3,7 @@
 // Estendido", música e artista longos, 6 no repertório). Uma vista por estado (`?estado=`).
 // Nada daqui entra no app.
 import type { PadPanelProps } from '../../src/components/stage/PadPanel'
+import { TELA_ESTADOS } from './telasEstados'
 import type { RepertoirePanelProps, RepertoireSongItem } from '../../src/components/stage/RepertoirePanel'
 import type { StageShellActions } from '../../src/components/stage/StageShell'
 import type { OutputWarning } from '../../src/lib/outputPlan'
@@ -10,8 +11,8 @@ import type {
   OutputPlan, OutputSettings, SongGrid, StageChannel, StageClock, StageGates, StageSection, StageSong, StageView, TransitionView,
 } from '../../src/lib/stageContracts'
 
-/** Estados da rodada normal, nessa ordem (o run.mjs tem a mesma lista). */
-export const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config', 'inicio'] as const
+/** Estados da rodada normal, nessa ordem (o run.mjs tem a mesma lista); os das demais telas vêm de telasEstados.ts. */
+export const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config', 'inicio', ...TELA_ESTADOS] as const
 /** Estado de prova: um botão de largura fixa com texto longo, que o verificador tem de acusar. */
 export const ESTADO_PROVA = 'quebrado'
 export type Estado = (typeof ESTADOS)[number] | typeof ESTADO_PROVA

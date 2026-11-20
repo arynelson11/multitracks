@@ -8,21 +8,62 @@ nova: usa o Vite, o React e o Tailwind do repo e o Google Chrome da máquina.
 
 ```bash
 source ~/.nvm/nvm.sh && nvm use 24
-node scripts/verify-layout/run.mjs                                    # 12 estados x 8 tamanhos (96 combinações)
+node scripts/verify-layout/run.mjs                                    # rodada inteira (307 combinações, abaixo)
 node scripts/verify-layout/run.mjs --only 1280x800 --estado quebrado  # prova: tem de sair com 1
+node scripts/verify-layout/run.mjs --only 390x844 --estado quebrado   # prova da moldura do celular: tem de sair com 1
 node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
 ```
 
 | Opção | O que faz |
 |---|---|
-| `--only 1280x800[,1440x900]` | só esses tamanhos (padrão: os 8) |
-| `--estado normal[,tom]` | só esses estados (padrão: os 12 normais; `quebrado` é a prova) |
+| `--only 1280x800[,1440x900]` | só esses tamanhos, pra todos os estados pedidos (padrão: os de cada estado, abaixo) |
+| `--estado normal[,tom]` | só esses estados (padrão: todos os normais; `quebrado` é a prova) |
 | `--jobs N` | quantos Chrome ao mesmo tempo (padrão 3) |
 | `--no-build` | usa a página já montada em `.build/` |
+
+Sem opção, a rodada mede os 12 estados do palco e da tela inicial e 18 dos 19
+estados das 10 telas da faixa C nos 8 tamanhos (240), 17 estados em 390x844 (o
+`inicio` da frente 1b, os 15 da faixa C que abrem no celular, sem os três do
+Modo Ao Vivo do host, que só existe no computador, mais o `download-celular`,
+que só existe no celular) e os 10 estados das 3 telas da faixa B em 5 tamanhos
+(50): 307 combinações. A prova da moldura
+(`--only 390x844 --estado quebrado`) tem de sair com 1: mostra que a página no
+iframe do celular também acusa falha.
+
+Demais telas da Parte 3 (faixa C): cada uma tem um estado (lista em
+`telasEstados.ts`, telas montadas em `telas.tsx`), medido como o palco, sem a
+regra de estrutura.
+
+Largura de celular (as faixas B e C e a frente 1b, um jeito só): o Chrome headless não abre
+janela abaixo de 500 px, então qualquer tamanho mais estreito que isso roda na
+rota `/moldura` do `run.mjs`, uma página mínima com a página do verificador num
+iframe do tamanho pedido. O iframe vira a janela dela (`innerWidth`, media
+queries e a medida) e é ela quem manda o resultado; a página do verificador não
+sabe da moldura.
 
 Sai com `0` quando todas as combinações passam, `1` com qualquer falha (ou
 página que não respondeu) e `2` com opção errada. O JSON de cada combinação fica
 em `results/<estado>_<LxA>.json`. Outro Chrome: `CHROME=/caminho/do/chrome`.
+
+## Telas da faixa B da Parte 3 (login e Configurações)
+
+Sem `--estado`, a rodada normal também mede 10 estados de 3 telas fora do palco (`telasB.ts` e `TelasBPage.tsx`, Parte 3, faixa B,
+não publicado) em 1024x740, 1280x800, 1920x1080, 390x844 (celular) e 844x390 (celular deitado, onde as Configurações cortavam o fim da aba): 50 combinações a mais.
+
+| Estado | O que mostra |
+|---|---|
+| `login`, `criarconta`, `recuperar` | a tela de entrar nos três modos (`AuthPage`) |
+| `novasenha` | Criar nova senha (`NewPasswordPage`) |
+| `config-perfil`, `config-geral`, `config-buses`, `config-novidades`, `config-assinatura`, `config-sobre` | as Configurações abertas em cada aba, logadas como admin em "Tudo junto", com nome, e-mail, aparelho de saída e canais compridos e o aviso de atualização |
+
+A conta e as configurações saem de `fakes/` (o `vite.config.ts` troca o `src/hooks/useAuth.ts` e o
+`src/contexts/SettingsContext.tsx` do app por elas só neste build; o palco não usa nenhum dos dois).
+O contador de separações e o painel da assinatura são os de verdade, sem servidor (mostram o que
+mostram sem rede). O 390x844 roda na moldura de celular (acima). `--only` vale também pra essas telas.
+
+```bash
+node scripts/verify-layout/run.mjs --estado login,config-geral --only 390x844
+```
 
 ## Tamanhos e estados
 
@@ -45,8 +86,27 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `tom` | grade de tons aberta (toque no botão do tom), com "Redefinir detecção de tom" |
 | `semtom` | grade aberta sem tom original: semitons em 3 linhas, com "Definir o tom original" ao lado do 0 |
 | `compasso` | diálogo do compasso aberto no EDITAR |
+| `metronomo` | Metrônomo (Parte 3, faixa C) numa página própria, com uma música que já tem click |
+| `padsnuvem` | Pads da nuvem (faixa C) como admin, 3 conjuntos com nome e descrição longos, um em uso |
+| `padsnuvem-editar` | o mesmo, renomeando o primeiro conjunto |
+| `letra` | Letra e cifra (faixa C), aba Letra com a versão sincronizada, artista longo |
+| `cifra` | o mesmo, na aba Cifra (linhas longas rolando de lado dentro da área) |
+| `teleprompter` | Teleprompter (faixa C) no "Refrão Final Estendido" com 4 linhas longas de letra |
+| `teleprompter-vazio` | Teleprompter sem música e sem seções |
+| `novidades` | Novidades (faixa C) com a entrada mais nova do changelog de verdade |
+| `atualizacao` | Aviso de atualização (faixa C) do app de computador no Mac ("Versão 1.4.30 já saiu", Baixar) |
+| `atualizacao-web` | o aviso do site (service worker com a versão nova esperando, simulado): o texto mais longo (66 caracteres) e o botão Atualizar; é o único que aparece no celular (revisão macro BC, BC3-4) |
+| `tour` | Tour (faixa C) no passo com o texto mais longo do app (Atalhos de teclado do palco antigo; revisão macro BC, BC3-4: antes era o do Modo Ao Vivo), com o spotlight num botão no meio da página |
+| `tour-centro` | Tour no primeiro passo, sem alvo (balão no meio) |
+| `download` | Página de download (faixa C) inteira, no computador Mac (os dois instaladores do Mac em destaque) |
+| `download-ajuda` | o mesmo, com a ajuda do Mac aberta (os 4 passos e o comando do Terminal) |
+| `download-celular` | a página aberta num iPhone (navegador simulado), o ramo do celular: o guia de instalar no topo, sem o QR code; só em 390x844 (revisão macro BC, BC3-4: o `download` em 390 mede o ramo do computador) |
+| `aovivo` | Modo Ao Vivo do host (faixa C) ligado, endereço longo e três aparelhos (um sem IP, um IPv6, um liberado); só existe no computador, então sem 390 |
+| `aovivo-cheio` | o mesmo, com a banda inteira conectada (6 aparelhos, 2 liberados): o conteúdo passa da altura e a área rola (revisão macro BC, BC2-I2: com o `justify-center`, o topo do QR ficava acima do começo da rolagem) |
+| `aovivo-erro` | o mesmo, com o erro de abrir o servidor |
+| `adminlogin` | Login do /admin na web (faixa C) |
 | `config` | as duas seções da T19 numa página própria: placa de 2 canais (caindo de 4 ou mais, com avisos) e de 8 canais |
-| `inicio` | a tela inicial com o cartão "O que o Pro faz por você" do `AdSlot` (o de verdade, no Livre e parado), embaixo do lugar dos dois botões, no mesmo `div` do App (`mt-6 w-full max-w-md` numa coluna `px-6`): uma vez na largura da janela e outra numa moldura de 390 px (celular em pé, cartão com 342 px). O Chrome headless não abre janela com menos de 500 px de largura (`--only 390x844` sai com "janela de 500x844"), por isso a moldura |
+| `inicio` | a tela inicial (frente 1b) com o cartão "O que o Pro faz por você" do `AdSlot` (o de verdade, no Livre e parado), embaixo do lugar dos dois botões, no mesmo `div` do App (`mt-6 w-full max-w-md` numa coluna `px-6`), na largura da janela; nos 8 tamanhos e em 390x844 (celular em pé, cartão com 342 px), este pela moldura do celular (acima) |
 | `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso pra cada ramo das regras (15 falhas, uma por ramo) |
 
 O fixture é o pior caso de texto: 14 canais com os nomes organizados mais

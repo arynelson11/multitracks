@@ -2,7 +2,8 @@
 // POST pro run.mjs, como o verify-pitch. Quatro regras (regra do dono: nenhum texto encostando na
 // borda ou cortado):
 //   (a) cortado: texto que não cabe na própria caixa (overflow diferente de visible) ou que passa
-//       de um contêiner que corta (overflow hidden ou clip, ou antes do começo de uma rolagem); numa
+//       de um contêiner que corta (overflow hidden ou clip, ou antes do começo de uma rolagem); e
+//       nada (texto, desenho, quadro) começando acima do topo de uma área que rola; numa
 //       fileira que rola de lado, nada pela metade na borda (Ruling T10-rolagem: parado, nenhum botão
 //       aparece pela metade), fora a casca inteira que rola de lado abaixo de 1024 px
 //       (`data-scroll-reach`, Ruling I2-estreito: o que fica na borda chega rolando). Vale também pra
@@ -380,6 +381,27 @@ function checkTargets(add: (f: Failure) => void, counts: CheckReport['counts']) 
   }
 }
 
+/**
+ * (a) Nada acima do topo de uma área que rola (revisão macro BC, BC2-I2): com a rolagem no começo,
+ * o que começa antes do topo nunca chega rolando (numa coluna que rola, o `justify-center` joga
+ * metade do excesso pra cima). Vale pra qualquer filho, não só texto: o QR code é um desenho.
+ */
+function checkScrollTops(add: (f: Failure) => void): void {
+  for (const c of document.body.querySelectorAll('*')) {
+    const s = getComputedStyle(c)
+    if ((s.overflowY !== 'auto' && s.overflowY !== 'scroll') || c.scrollTop > 0 || !isShown(c)) continue
+    const top = clipBox(c).top
+    for (const child of c.children) {
+      const cs = getComputedStyle(child)
+      if (cs.position === 'absolute' || cs.position === 'fixed' || !isShown(child)) continue
+      const r = child.getBoundingClientRect()
+      if (r.height > 0 && r.top < top - EPS) {
+        add({ kind: 'cortado', selector: describe(child), text: '', detail: `começa ${px(top - r.top)} acima do topo de ${describe(c)}, que rola (com a rolagem no começo, não chega rolando)` })
+      }
+    }
+  }
+}
+
 /** Mede a página inteira agora. */
 function runChecks(): Pick<CheckReport, 'failures' | 'counts'> {
   const failures: Failure[] = []
@@ -409,6 +431,7 @@ function runChecks(): Pick<CheckReport, 'failures' | 'counts'> {
   }
   checkIconButtons(add, frames, counts)
   checkTargets(add, counts)
+  checkScrollTops(add)
 
   const page = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth)
   if (page > window.innerWidth) add({ kind: 'rolagem', selector: 'html', text: '', detail: `a página rola de lado: ${page}px numa janela de ${window.innerWidth}px` })

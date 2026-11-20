@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Loader2, Lock } from 'lucide-react'
 import { PlaybackStudioWordmark } from './brand/PlaybackStudioWordmark'
 import type { RecoveryAuthClient } from '../lib/passwordRecovery'
+import { Button, Notice, Panel, TextField } from './ui'
 
 // Tela "Criar nova senha", depois do link de recuperação do email (web e desktop).
 // A pessoa já está com a sessão de recuperação; aqui só troca a senha com updateUser.
@@ -47,54 +48,44 @@ export function NewPasswordPage({ client, onDone, onCancel }: {
     }
   }
 
-  const input = 'w-full rounded-xl bg-tinta-raised border border-tinta-border px-4 py-3 text-[16px] text-bone placeholder:text-ps-mut focus:outline-none focus:border-laranja'
-
   return (
-    <div className="min-h-screen bg-tinta text-bone flex items-center justify-center px-5 py-10">
-      <main className="w-full max-w-sm">
+    <div className="min-h-dvh bg-ps-ink font-ps-sans text-ps-bone flex items-center justify-center px-ps-gutter py-10">
+      <main className="w-full max-w-sm flex flex-col">
         <div className="mb-8 flex justify-center"><PlaybackStudioWordmark size="md" tone="light" /></div>
-        <h1 className="font-display font-semibold text-[28px] leading-tight mb-2 text-center">Criar nova senha</h1>
-        {saved ? (
-          <div className="text-center">
-            <p role="status" className="text-warm-200 text-[15px] mb-6">Senha nova salva. Você já está conectado.</p>
-            <button
-              onClick={onDone}
-              className="w-full rounded-xl bg-laranja hover:bg-laranja-light text-ps-on-or font-semibold py-3 text-[15px] transition-colors cursor-pointer"
-            >
-              Continuar
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={submit} noValidate className="space-y-4">
-            <p className="text-warm-200 text-[14px] text-center mb-2">Use pelo menos {MIN_LENGTH} caracteres. Digite duas vezes pra conferir.</p>
-            <div>
-              <label htmlFor="nova-senha" className="block text-[13px] text-warm-200 mb-1.5">Nova senha</label>
-              <input id="nova-senha" type="password" autoComplete="new-password" value={password}
-                onChange={e => setPassword(e.target.value)} className={input} />
+        <Panel className="flex flex-col gap-5 p-6">
+          <h1 className="font-bold text-[28px] leading-tight text-center">Criar nova senha</h1>
+          {saved ? (
+            <div className="flex flex-col gap-5">
+              <Notice role="status" className="text-center">Senha nova salva. Você já está conectado.</Notice>
+              <Button tone="primary" size="lg" onClick={onDone}>
+                Continuar
+              </Button>
             </div>
-            <div>
-              <label htmlFor="repita-senha" className="block text-[13px] text-warm-200 mb-1.5">Repita a nova senha</label>
-              <input id="repita-senha" type="password" autoComplete="new-password" value={confirm}
-                onChange={e => setConfirm(e.target.value)} className={input} />
-            </div>
-            {error && <p role="alert" className="text-[13px] text-red-400">{error}</p>}
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-laranja hover:bg-laranja-light text-ps-on-or font-semibold py-3 text-[15px] transition-colors cursor-pointer disabled:opacity-60"
-            >
-              {saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Lock size={16} aria-hidden="true" />}
-              Salvar nova senha
-            </button>
-            <button
-              type="button"
-              onClick={onCancel}
-              className="w-full py-3 text-[14px] text-warm-200 hover:text-bone transition-colors cursor-pointer"
-            >
-              Cancelar e voltar pra tela de entrar
-            </button>
-          </form>
-        )}
+          ) : (
+            <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+              <p className="text-ps-mut text-ps-base leading-snug text-center text-pretty">Use pelo menos {MIN_LENGTH} caracteres. Digite duas vezes pra conferir.</p>
+              <TextField id="nova-senha" label="Nova senha" type="password" autoComplete="new-password" value={password}
+                onChange={e => setPassword(e.target.value)} />
+              <TextField id="repita-senha" label="Repita a nova senha" type="password" autoComplete="new-password" value={confirm}
+                onChange={e => setConfirm(e.target.value)} />
+              {error && <Notice tone="alert" role="alert">{error}</Notice>}
+              {/* Salvando: o texto fica e o ícone gira. */}
+              <Button
+                type="submit"
+                tone="primary"
+                size="lg"
+                disabled={saving}
+                icon={saving ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : <Lock size={16} />}
+                className="mt-1"
+              >
+                Salvar nova senha
+              </Button>
+              <Button tone="ghost" onClick={onCancel}>
+                Cancelar e voltar pra tela de entrar
+              </Button>
+            </form>
+          )}
+        </Panel>
       </main>
     </div>
   )

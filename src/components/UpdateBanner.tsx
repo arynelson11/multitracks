@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Download, RefreshCw, X } from 'lucide-react';
+import { Button, IconButton, Panel } from './ui';
 
 // Barra fixa no rodapé que aparece quando há uma nova versão disponível.
 //
@@ -87,8 +88,7 @@ export function UpdateBanner() {
     };
   }, []);
 
-  if (state.kind === 'none' || dismissed) return null;
-
+  const show = state.kind !== 'none' && !dismissed;
   const isReady = state.kind === 'ready';       // desktop win
   const isWeb = state.kind === 'web';
   const usesRefreshIcon = isReady || isWeb;
@@ -109,38 +109,36 @@ export function UpdateBanner() {
     window.playbackDesktop?.installUpdate();
   };
 
+  const version = state.kind === 'ready' || state.kind === 'available' ? state.version : '';
   const title = isReady ? 'Atualização pronta' : 'Nova versão disponível';
   const description = isWeb
     ? 'Uma versão nova do Playback Studio está pronta. Atualize para usar.'
     : isReady
-      ? `Versão ${state.version} baixada. Reinicie para aplicar.`
-      : `Versão ${state.version} já saiu. Baixe a nova versão.`;
+      ? `Versão ${version} baixada. Reinicie para aplicar.`
+      : `Versão ${version} já saiu. Baixe a nova versão.`;
   const buttonLabel = isReady ? 'Reiniciar' : isWeb ? 'Atualizar' : 'Baixar';
 
+  // Aviso no rodapé, por cima de tudo e sem bloquear o app: não é janela e não puxa o foco.
+  // A região status fica sempre na página (vazia sem aviso, sem pegar toque) e o aviso entra
+  // nela: região que nasce já com o texto muitas vezes não é lida (revisão macro BC, BC3-2).
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999] w-[min(92vw,440px)]">
-      <div className="flex items-center gap-3 bg-card border border-primary/30 rounded-xl shadow-2xl shadow-black/40 px-4 py-3">
-        <div className="w-9 h-9 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center shrink-0">
-          {usesRefreshIcon ? <RefreshCw size={16} className="text-primary" /> : <Download size={16} className="text-primary" />}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-white font-bold text-sm leading-tight">{title}</p>
-          <p className="text-text-muted text-[11px] truncate">{description}</p>
-        </div>
-        <button
-          onClick={handleAction}
-          className="shrink-0 px-3.5 py-2 rounded-lg bg-primary text-black text-xs font-bold hover:bg-primary/90 active:scale-95 transition-all cursor-pointer"
-        >
-          {buttonLabel}
-        </button>
-        <button
-          onClick={() => setDismissed(true)}
-          className="shrink-0 text-text-muted hover:text-white transition-colors cursor-pointer"
-          title="Agora não"
-        >
-          <X size={16} />
-        </button>
-      </div>
+    <div role="status" className="pointer-events-none fixed bottom-4 left-1/2 z-[9999] w-[min(92vw,440px)] -translate-x-1/2 font-ps-sans">
+      {show && (
+        <Panel variant="pop" className="pointer-events-auto flex flex-wrap items-center gap-3 px-4 py-3">
+          {/* Quadrado neutro: laranja é ligado e a ação principal, que já é o botão (BC3-3). */}
+          <div aria-hidden="true" className="flex size-9 shrink-0 items-center justify-center rounded-ps-md bg-ps-s2 text-ps-bone inset-ring inset-ring-ps-line">
+            {usesRefreshIcon ? <RefreshCw size={16} /> : <Download size={16} />}
+          </div>
+          <div className="min-w-0 flex-1 basis-40">
+            <p className="text-ps-base font-bold leading-tight text-ps-bone">{title}</p>
+            <p className="text-ps-sm text-ps-mut break-words">{description}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button tone="primary" onClick={handleAction}>{buttonLabel}</Button>
+            <IconButton tone="ghost" aria-label="Agora não" icon={<X size={16} />} onClick={() => setDismissed(true)} />
+          </div>
+        </Panel>
+      )}
     </div>
   );
 }

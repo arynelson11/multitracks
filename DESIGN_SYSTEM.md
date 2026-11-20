@@ -2,7 +2,7 @@
 
 > **Versão:** 1.0
 > **Data:** 2026-05-20
-> **Atualizado:** 2026-11-19 (seção 2.8: `<HouseAdCard>`, o cartão do anúncio da casa, e `<LivreBadge>`, o selo do Livre na barra do palco novo, Parte 3, não publicado; seção 2.8: `<LimitScreen>`, a tela de limite do Livre com a oferta do primeiro mês, Parte 3, não publicado; seção 2.7: `<StageDialog>`, a janela por cima da Parte 3, não publicado; seções 1.7 e 2.7: palco novo da Parte 2, publicado na v1.4.19 atrás da chave que nascia em Antigo; as correções da revisão macro e a chave nascendo em Novo saíram na v1.4.20, publicada em 2026-11-19; seções 1.7 e 2.6: linguagem nova da Parte 1, publicada na v1.4.15)
+> **Atualizado:** 2026-11-20 (seções 2.6 e 2.7: peças novas do kit e a pilha e o tamanho `lg` do `<StageDialog>`; seções 3.5, 3.6, 4.13 e 4.15: login, Criar nova senha e Configurações; seção 2.9: demais telas; Parte 3, faixas B e C, não publicado); 2026-11-19 (seção 2.8: `<HouseAdCard>`, o cartão do anúncio da casa, e `<LivreBadge>`, o selo do Livre na barra do palco novo, Parte 3, não publicado; seção 2.8: `<LimitScreen>`, a tela de limite do Livre com a oferta do primeiro mês, Parte 3, não publicado; seção 2.7: `<StageDialog>`, a janela por cima da Parte 3, não publicado; seções 1.7 e 2.7: palco novo da Parte 2, publicado na v1.4.19 atrás da chave que nascia em Antigo; as correções da revisão macro e a chave nascendo em Novo saíram na v1.4.20, publicada em 2026-11-19; seções 1.7 e 2.6: linguagem nova da Parte 1, publicada na v1.4.15)
 > **Pareado com:** `PLAYBACK_STUDIO_BRAND_BOOK.md` (estratégia + briefing pros designers)
 > **Este documento:** referência operacional pareando código existente com vocabulário atomic design (Brad Frost). Lê este se você vai TOCAR o código.
 
@@ -99,7 +99,7 @@ Definidos em `src/index.css` no bloco `@theme` — consumidos via Tailwind v4 (`
 
 > Entrou na Parte 1 do palco novo (2026-11-15, publicada na v1.4.15). No app publicado, por enquanto só o painel "Editar canal", o lápis e a lixeira do EDITAR CANAIS usam; as Partes 2 e 3 migram o palco e as outras telas.
 >
-> O admin (`src/admin/`) usa só a linguagem nova: tokens `ps-*` e as peças de `src/components/ui/`, sem o dourado `primary` (admin central, 2026-11-17, publicado na v1.4.18 em 2026-11-17). Falta uma tela: o login da web em `/admin` (`src/admin/AdminLogin.tsx`), que ainda está no estilo antigo e só aparece pra quem abre `/admin` sem estar logado.
+> O admin (`src/admin/`) usa só a linguagem nova: tokens `ps-*` e as peças de `src/components/ui/`, sem o dourado `primary` (admin central, 2026-11-17, publicado na v1.4.18 em 2026-11-17). O login da web em `/admin` (`src/admin/AdminLogin.tsx`), que era a última tela no estilo antigo, passou pra linguagem nova na Parte 3 (faixa C, 2026-11-20, não publicado; seção 2.9).
 
 **Onde:** `src/styles/ps-tokens.css`, num bloco `@theme static` (o `static` faz o Tailwind emitir todas as variáveis, mesmo as que só aparecem via `var()` em style inline). O `src/index.css` importa esse arquivo logo depois de `@import "tailwindcss";`. Valores tirados do mockup v5 (`.superpowers/brainstorm/14859-1794743390/content/palco-desktop-v5.html`). Teste: `src/styles/ps-tokens.test.ts`.
 
@@ -295,8 +295,10 @@ Stack: [`lucide-react`](https://lucide.dev/) — line-art consistente com a marc
 Telas importam sempre do barril:
 
 ```tsx
-import { Button, Chip, Segmented, Panel, Led, cx } from './components/ui'
+import { Button, IconButton, Chip, Segmented, Panel, Led, Tag, TextField, TextArea, Select, SearchField, Switch, Slider, Tabs, TabPanel, Notice, Toast, ProgressBar, FilePicker, cx } from './components/ui'
 ```
+
+> **Parte 3 (2026-11-20, [NÃO PUBLICADO]):** entram `TextField`, `TextArea`, `Select`, `Switch`, `Tabs` com `TabPanel` e `Notice` (login, Configurações e as telas da faixa C), e, a pedido da faixa D, `IconButton`, `Tag`, `ProgressBar`, `Slider`, `FilePicker`, `Toast` e `SearchField`; três limites conhecidos saem: Chip e opção do Segmented ganham o anel de foco laranja, o Chip desligado fica a 35% e a opção desligada do Segmented fica a 35% (a marcada desligada continua com cara de escolhida).
 
 #### `<Button>`
 
@@ -360,6 +362,139 @@ import { Button, Chip, Segmented, Panel, Led, cx } from './components/ui'
 - `size`: `sm` (6px) | `md` (8px). Default `md`.
 - `label`: sem ele o Led é só decoração (escondido do leitor de tela); com ele vira imagem com nome (`role="img"` e `aria-label`). O piscar para quando o sistema está com "reduzir movimento".
 
+#### `<TextField>`, `<TextArea>` e `<Select>` (`Field.tsx`, Parte 3)
+
+```tsx
+<TextField label="Email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="seu@email.com" icon={<Mail size={15} />} />
+<TextField label="Senha" type="password" minLength={6} trailing="mín 6" error={erro} />
+<TextArea label="Letra" rows={8} help="Uma linha por verso." value={letra} onChange={(e) => setLetra(e.target.value)} />
+<Select label="Saída" value={saida} onChange={(e) => setSaida(e.target.value)}>
+  <option value="default">Padrão do sistema</option>
+</Select>
+```
+
+- **Moldura comum:** rótulo em cima (10.5px, caixa alta, `mut`, quebra linha), caixa `s2` com anel `line` (`line-2` no hover), raio 10px, alvo de 44px e fonte de 16px (no iPhone, fonte menor dá zoom na página ao tocar). Ajuda (`help`) e erro (`error`) embaixo, em 13px.
+- **Props comuns:** `label` (obrigatório), `hideLabel` (some da vista, o leitor de tela continua lendo), `help`, `error` e `className` (vai no contêiner do campo inteiro; use pra `flex-1` numa linha). O resto vai pro `<input>`, `<textarea>` ou `<select>` (`value`, `onChange`, `type`, `required`, `minLength`, `placeholder`, `autoComplete`, `disabled`, `id`).
+- **Ligações:** `<label htmlFor>` com o id do controle (ou `useId`); `aria-describedby` junta o de quem chama, a ajuda e o erro; com erro, `aria-invalid="true"` e o anel troca o cinza pelo âmbar (`inset-ring-ps-alert-line`), texto do erro em `text-ps-alert`. O erro do campo não tem `role="alert"`: aviso do formulário inteiro é um `Notice` com o papel que a tela precisar.
+- **Foco:** anel laranja na caixa (`focus-within`), então ícone e `trailing` ficam dentro dele.
+- **Só do TextField:** `icon` (antes do texto, escondido do leitor de tela) e `trailing` (texto curto ou botão depois do texto, ex.: "mín 6"); `inputClassName` pro input.
+- **Só do TextArea:** `rows` (padrão 4), cresce na vertical (`resize-y`); `textareaClassName`.
+- **Alvo de 44px também no controle:** o `<input>` e o `<select>` levam `min-h-ps-touch` além da caixa (a área de texto não: a altura vem das linhas).
+- **Só do Select:** seta própria (o `appearance-none` tira a do sistema), lista no tema escuro (`scheme-dark`, opções em `s2`); `selectClassName`. As opções vêm como filhos.
+- Desligado: a caixa fica a 35% e o cursor vira "não pode".
+
+#### `<Switch>` (Parte 3)
+
+```tsx
+<Switch label="Pan Estéreo Automático" description="Click e Guia no canal L, faixas no canal R" checked={autoPan} onChange={setAutoPan} />
+```
+
+- Linha inteira: nome (13px bold) e descrição à esquerda (quebram linha), interruptor à direita. Tocar no nome também alterna (`<label htmlFor>`).
+- É um `<button role="switch">` com `aria-checked`, `aria-labelledby` (o nome) e `aria-describedby` (a descrição). Clique, Espaço e Enter chamam `onChange(!checked)`.
+- Ligado: trilha `or-soft` com anel `or-line` e bolinha laranja; desligado: trilha `s3` com anel `line-2` e bolinha `mut`. A bolinha anda com transição, parada com "reduzir movimento".
+- Alvo de 44 x 44px (a trilha de 44 x 24 fica dentro), anel de foco laranja. `disabled` deixa a linha a 35% e não chama nada. `hideLabel`, `id`, `title` e `className` (da linha) opcionais.
+
+#### `<Tabs>` e `<TabPanel>` (Parte 3)
+
+```tsx
+const id = useId()
+<Tabs id={id} aria-label="Abas das Configurações" tabs={[{ value: 'Perfil', label: 'Perfil' }, { value: 'Geral', label: 'Geral' }]} value={aba} onChange={setAba} />
+<TabPanel tabsId={id} value={aba}>{conteudo}</TabPanel>
+```
+
+- Grupo do v5 (`.tabs`): fundo `s1` com anel `line`, 3px de folga; aba em caixa alta (10.5px, extrabold, espaçamento .12em), atual em laranja (`or-soft`, texto `or`, anel `or-line`), as outras em `mut`. Alvo de 44px.
+- **Nunca corta nem rola:** as abas descem de linha (`flex-wrap`); cada uma tem pelo menos a largura do texto (`shrink-0`, `basis-auto`) e as da mesma linha dividem a sobra (`grow`).
+- **Teclado (WAI-ARIA):** só a aba atual entra no Tab; setas esquerda e direita andam com volta pulando as desligadas, Home e End vão pra primeira e pra última; cada movimento já abre a aba. Clique na aba atual não chama `onChange`.
+- **Ids:** a aba é `${id}-tab-` mais o `value` codificado (`encodeURIComponent`: um `value` com espaço, como "minhas músicas", não quebra o `aria-controls` nem o `aria-labelledby`, que são listas de ids separadas por espaço; revisão macro BC, não publicado); o painel é `${id}-panel`. O `TabPanel` (um só, com o conteúdo da aba aberta) leva `role="tabpanel"`, o id do painel e `aria-labelledby` da aba aberta; `tabIndex` 0 por padrão (passe -1 quando o conteúdo já começa num campo).
+- Aba `disabled`: a 35% e fora do teclado.
+
+#### `<Notice>` (Parte 3)
+
+```tsx
+<Notice tone="alert" role="alert">{erro}</Notice>
+<div role="status" className="empty:absolute">{mensagem ? <Notice>{mensagem}</Notice> : null}</div>
+```
+
+- `tone`: `info` (padrão, neutro: `s2`, texto `bone`, anel `line`) | `alert` (âmbar: `alert-soft`, texto `alert` em semibold, anel `alert-line`). Sem verde de sucesso: a linguagem não tem cor de "deu certo", então confirmação é `info`.
+- Raio 10px, 13px, quebra palavra longa. O papel (`role="alert"`, `role="status"`) e o `aria-live` são de quem usa. Repassa os atributos de `<div>`.
+- **Mensagem que aparece depois (status):** a região `role="status"` fica sempre na página e só o texto entra nela, como no `Toast` (região que nasce já com o texto muitas vezes não é lida pelo NVDA e pelo JAWS). Vazia, `empty:absolute` tira ela do fluxo, sem sobrar o espaço do `gap` (revisão macro BC, 2026-11-20, [NÃO PUBLICADO]). O erro com `role="alert"` pode nascer junto com o texto.
+
+#### `<IconButton>` (Parte 3, pedido da faixa D)
+
+```tsx
+<IconButton icon={<Icon name="edit" />} aria-label="Editar a música" onClick={editar} />
+<IconButton tone="alert" icon={<Trash2 size={16} />} aria-label="Excluir a música" onClick={excluir} />
+```
+
+- O `Button` só com ícone, com `aria-label` **obrigatório no tipo** (TypeScript recusa sem ele). O `title` (dica do mouse) é o mesmo nome quando não vem outro. 44 x 44px, ícone escondido do leitor de tela, `type="button"`.
+- Aceita as props do `Button` (menos `icon` como opcional e `children`): `tone` (`default`, `ghost`, `alert` e os outros do Button), `pressed`, `disabled`, `size`.
+- Na Parte 3 usam ele: o X das Configurações (`SettingsModal`), o "atualizar a lista" do aparelho de saída (`AudioOutputSelect`), o fechar e o voltar do tour (`GuidedTour`), o "Agora não" do aviso de atualização (`UpdateBanner`), o − e o + do BPM no Metrônomo (`MetronomeModal`), o lápis e a lixeira dos pads da nuvem (`PadSetsModal`), o X do Modo Ao Vivo (`LiveModeModal`) e o X do teleprompter (`Teleprompter`); no kit, o limpar do `SearchField`.
+
+#### `<Tag>` (Parte 3, pedido da faixa D)
+
+```tsx
+<Tag>OFFLINE</Tag>
+<Tag num>128 BPM</Tag>
+<Tag>Mais Popular</Tag>
+<Tag>Adicionada</Tag>
+<Tag tone="live">AO VIVO</Tag>
+```
+
+- Selo estático de metadado (não é botão), na cara do selo ONLINE/OFFLINE da barra do palco: 22px de altura, pílula, 10px extrabold com espaçamento .14em, sem quebra.
+- `tone`: `neutral` (padrão: `s2`, texto `mut`, anel `line-2`) | `on` (laranja suave) | `live` (musgo, com a luz acesa) | `alert` (âmbar). `num`: fonte mono de largura fixa (BPM, contagem). `dot`: luz antes do texto (padrão: só no `live`).
+- Não muda a caixa do texto: escreva como deve aparecer (OFFLINE em caixa alta, tom como `C#m`).
+- O tom segue o código de cores da linguagem, um significado só: `on` (laranja) só pra estado ligado ("EM USO", a opção escolhida), `live` (musgo, com a luz) só pra ao vivo ("AO VIVO", "CONECTADO"), `alert` (âmbar) pra alerta ("SEM CLICK") e o resto `neutral` (metadado, destaque de oferta, "Adicionada", "Mais Popular"). (Revisão macro BC, 2026-11-20, [NÃO PUBLICADO]: os exemplos de antes ensinavam "Mais Popular" no laranja e "Adicionada" no musgo.)
+
+#### `<ProgressBar>` (Parte 3, pedido da faixa D)
+
+```tsx
+<ProgressBar label="Separando" value={progresso} max={100} valueText={`${progresso}%`} />
+<ProgressBar label="Abrindo no palco" hideLabel value={null} />
+```
+
+- `role="progressbar"` com `aria-valuemin` 0, `aria-valuemax` (`max`, padrão 100), `aria-valuenow` e `aria-valuetext` (`valueText`). Nome: o rótulo visível (`ps-label`) ou, com `hideLabel`, o `aria-label`.
+- Trilha `s3` de 6px, preenchimento laranja na proporção (valor fora do intervalo fica no limite), com transição. `value={null}` (não dá pra saber quanto falta): um terço da barra piscando, sem `aria-valuenow`; parado com "reduzir movimento".
+
+#### `<Slider>` (Parte 3, pedido da faixa D)
+
+```tsx
+<Slider label="Volume geral" value={volume} min={0} max={1} step={0.01} valueText={`${Math.round(volume * 100)}%`} onChange={setVolume} />
+```
+
+- `input type="range"` no tema: alvo de 44px de altura, trilha `s3` de 6px preenchida em laranja até o valor (variável `--ps-fill` no WebKit, `-moz-range-progress` no Firefox), polegar `bone` de 20px, anel de foco laranja.
+- Props: `label`, `hideLabel`, `value`, `onChange(valor: number)`, `min` (0), `max` (100), `step` (1), `valueText` (mostrado ao lado do nome e lido como `aria-valuetext`), `className` (contêiner), `inputClassName`, e o resto do `<input>` (`disabled`, `aria-*`).
+
+#### `<FilePicker>` (Parte 3, pedido da faixa D)
+
+```tsx
+<FilePicker label="Carregar áudio" accept="audio/*,.mp3,.wav" fileName={arquivo?.name} onFiles={([f]) => setArquivo(f)} onClear={() => setArquivo(null)} />
+<FilePicker label="Imagem de capa" accept="image/*" droppable={false} onFiles={([f]) => setCapa(f)} />
+```
+
+- Um `Button` do kit (`tone` e `icon` opcionais) que abre o seletor do sistema (Enter e Espaço são do próprio botão), o nome escolhido ao lado (`fileName`, de quem chama) e o "Tirar" (`Button ghost`, com `onClear`; texto em `clearLabel`).
+- **Arrastar e soltar** (`droppable`, padrão ligado): a área tem borda tracejada `line-2`; arrastando por cima, borda `or-line` e fundo `or-soft`. Sem nome escolhido, a dica "ou arraste o arquivo aqui" (ou "os arquivos"), que some em tela de toque.
+- **Filtro:** `onFiles` recebe só o que o `accept` aceita (extensão como `.mp3`, sem diferença de maiúscula; tipo como `audio/*` ou `image/png`), e só o primeiro sem `multiple`. O que o `accept` recusou vai pro `onReject` (pra tela avisar). O seletor é limpo depois de cada escolha (o mesmo arquivo pode ser escolhido de novo).
+- `help` (frase embaixo, ligada ao botão), `disabled` (não abre nem aceita soltar), `id` (do input de arquivo). Desligado, a área perde o tracejado (a borda fica transparente, sem mudar o tamanho) e a dica de arrastar, e continua segurando o arrastar e o soltar (`preventDefault`) sem pegar o arquivo: sem isso, no app de computador o arquivo solto ali fazia a janela abrir o arquivo e sair do app (revisão macro BC, não publicado).
+
+#### `<Toast>` (Parte 3, pedido da faixa D)
+
+```tsx
+<Toast open={salvo} onClose={() => setSalvo(false)} playing={isPlaying || isCountingIn}>Tudo salvo na biblioteca</Toast>
+```
+
+- Aviso curto no topo da tela (centralizado, 16px da borda, `z-[130]`), num `Notice` (`tone` `info` ou `alert`) com sombra `ps-pop`. Some sozinho depois de `duration` (padrão 2,5 s) chamando `onClose`.
+- **Nunca por cima da música:** com `playing` (música tocando ou na pré-contagem) não aparece e é descartado (`onClose` na hora); se a música começa com ele na tela, some na hora.
+- Não puxa o foco e não bloqueia o toque no que está embaixo (`pointer-events-none`). A região `role="status"` (`aria-live="polite"`) fica sempre na página, vazia quando fechado, pra o leitor de tela anunciar quando o texto entra.
+
+#### `<SearchField>` (Parte 3, pedido da faixa D)
+
+```tsx
+<SearchField label="Buscar músicas" placeholder="Buscar por nome ou artista" value={busca} onChange={setBusca} />
+```
+
+- O `TextField` com `type="search"` (papel `searchbox`), a lupa no começo e, com texto, o limpar (`IconButton ghost` de 44px, `clearLabel`, padrão "Limpar a busca") no fim, que devolve o foco ao campo. O X do próprio navegador some.
+- `onChange(texto)` recebe o texto (não o evento). `onClear` opcional (sem ele, limpar chama `onChange('')`). O rótulo nasce escondido (`hideLabel` padrão `true`): o leitor de tela lê, a lupa e o placeholder dizem o que é.
+
 #### `cx(...partes)`
 
 Junta as classes verdadeiras com espaço. Não resolve conflito entre utilidades: quem chama não passa utilidade oposta.
@@ -372,7 +507,7 @@ Junta as classes verdadeiras com espaço. Não resolve conflito entre utilidades
 - **Classes literais:** todas as classes das peças são strings inteiras no código, nunca montadas por interpolação.
 - Código de cores da seção 1.7: laranja pra ligado e ação principal, branco pra armado, âmbar pra alerta.
 
-**Limites conhecidos (resolver quando uma tela precisar):** Chip e Segmented ainda não têm o anel de foco laranja do Button; Chip não tem visual de desabilitado; a opção desabilitada do Segmented não tem estilo próprio; o Segmented chama `onChange` de novo quando se clica na opção já selecionada.
+**Limites conhecidos (resolver quando uma tela precisar):** o Segmented chama `onChange` de novo quando se clica na opção já selecionada (as telas conferem o valor antes de gravar). Resolvidos na Parte 3 (2026-11-20, não publicado): anel de foco laranja no Chip e na opção do Segmented (por dentro, `-outline-offset-2`, porque as opções são coladas), Chip desligado a 35% (`disabled:opacity-35`, cursor de "não pode") e opção desligada do Segmented a 35% quando não está marcada (a marcada desligada, só leitura, continua com cara de escolhida; antes as Saídas de áudio faziam isso por conta própria).
 
 ### 2.7 Palco novo (`src/components/stage/`)
 
@@ -424,12 +559,13 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 </StageDialog>
 ```
 
-- **Quando usar:** janela que pede uma decisão antes de seguir, por cima do palco novo, do antigo e do Separador (primeiro uso: a tela de limite do Livre). Não é pra cartão que não bloqueia nada (o anúncio da casa é cartão no fluxo da tela), nem pra gaveta do palco (REPERTÓRIOS e pads usam `panelDismiss.ts`), nem pra pergunta de uma linha (`TextPromptDialog`). Uma janela dessas por vez. Quem abre garante a regra do Livre: nunca com a música tocando ou na pré-contagem.
-- **Props:** `open`, `title` (o `h2`, ligado por `aria-labelledby`), `onClose`, `children` (o conteúdo), `footer` (as ações, fora da rolagem, alinhadas à direita e quebrando linha quando não cabem) e `size`. Fechada não renderiza nada.
-- **Tamanhos:** `md` (padrão, `max-w-lg`, até 512px) e `sm` (`max-w-sm`, até 384px). A camada (`fixed inset-0 z-[120]`, fundo `bg-black/60`) deixa 16px de folga em volta (`p-ps-gutter`), então cabe em 360px de largura. A caixa é o `Panel variant="pop"` (seção 2.6) com padding de 20px, nunca mais alta que a tela: o conteúdo rola dentro e o título e o rodapé ficam parados.
+- **Quando usar:** janela que pede uma decisão antes de seguir, por cima do palco novo, do antigo e do Separador (primeiro uso: a tela de limite do Livre). Não é pra cartão que não bloqueia nada (o anúncio da casa é cartão no fluxo da tela), nem pra gaveta do palco (REPERTÓRIOS e pads usam `panelDismiss.ts`), nem pra pergunta de uma linha (`TextPromptDialog`). Em geral uma janela dessas por vez; com duas abertas (a tela de limite do Livre por cima do Metrônomo), vale a pilha (abaixo). Quem abre garante a regra do Livre: nunca com a música tocando ou na pré-contagem.
+- **Props:** `open`, `title` (o `h2`, ligado por `aria-labelledby`), `onClose`, `children` (o conteúdo), `footer` (as ações, fora da rolagem, alinhadas à direita e quebrando linha quando não cabem) e `size`. Fechada não renderiza nada. Revisão macro BC (2026-11-20, [NÃO PUBLICADO]): `dismissible` (padrão `true`; com `false` só o X fecha, o Esc e o toque fora não, e o Esc segue pra dentro da janela, pra cancelar uma edição na linha; o X ganha a dica "Fechar" sem o "(Esc)"), pra tela com texto digitado e não salvo; `closeDisabled` (nada fecha: X desligado a 35% com a dica "Espere terminar pra fechar", e nem Esc nem toque fora), pra quando fechar estragaria o que está em andamento.
+- **Tamanhos:** `md` (padrão, `max-w-lg`, até 512px), `sm` (`max-w-sm`, até 384px) e `lg` (`max-w-2xl`, até 672px, pra letra e cifra; Parte 3, 2026-11-20, não publicado). A camada (`fixed inset-0 z-[120]`, fundo `bg-black/60`) deixa 16px de folga em volta (`p-ps-gutter`), então cabe em 360px de largura. A caixa é o `Panel variant="pop"` (seção 2.6) com padding de 20px, nunca mais alta que a tela: o conteúdo rola dentro e o título e o rodapé ficam parados.
 - **Fechar:** X do palco (`Icon name="x"`) no canto, `aria-label="Fechar"`, 44 x 44px (`min-h-ps-touch` e `min-w-ps-touch`). O título quebra linha ao lado dele, nunca cortado.
-- **Foco:** abre no primeiro elemento focável, que é o Fechar (um Enter solto fecha, nunca compra). Tab e Shift+Tab giram dentro da janela, pulando o que está desligado; clique no texto deixa o foco na caixa (`tabIndex -1`). Ao fechar, ou quando quem chama tira a janela do ar aberta, o foco volta pra quem abriu; se nessa hora o foco já está em outro lugar fora dela, fica lá.
+- **Foco:** abre no primeiro elemento focável, que é o Fechar (um Enter solto fecha, nunca compra). Tab e Shift+Tab giram dentro da janela, pulando o que está desligado; clique no texto deixa o foco na caixa (`tabIndex -1`). Ao fechar, ou quando quem chama tira a janela do ar aberta, o foco volta pra quem abriu; se nessa hora o foco já está em outro lugar fora dela, fica lá. Com duas janelas (pilha, abaixo), só a de cima pega o foco ao abrir; fechada a de cima com outra ainda aberta, o foco vai pra que ficou (no botão que abriu a de cima, se ele estiver nela, senão no primeiro focável dela).
 - **Esc e teclas:** o Esc fecha e é tratado na captura da `window`, antes da pilha dos painéis do palco: um REPERTÓRIOS aberto por baixo continua aberto e o pulo armado não é cancelado. Nenhuma tecla de dentro chega aos atalhos do palco (Espaço não toca, 1 a 9 não armam, setas não pulam).
+- **Duas janelas abertas (pilha, Parte 3, 2026-11-20, não publicado):** Esc e toque fora valem só pra de cima, que é a aberta por último; uma janela aberta dentro de outra (no conteúdo dela) é sempre a de cima, mesmo abrindo juntas. Cada janela que abre com outra já aberta sobe um degrau acima da mais alta (`z-index` 121, 122...; sozinha fica no `z-[120]`), então a de cima também aparece por cima, venha antes ou depois no código. Fechada a de cima, o próximo Esc fecha a de baixo. Um ouvinte só, da pilha inteira, trata o Esc (com um por janela, uma tecla de verdade fechava duas: o navegador roda o fechar da de cima entre um ouvinte e outro). Exemplo: a tela de limite do Livre por cima do Metrônomo fecha sozinha.
 - **Toque fora:** fecha. Toque dentro não fecha, e apertar dentro e soltar fora (arrastar pra selecionar o texto) também não.
 - Teste: `src/components/stage/stageDialog.test.tsx`.
 
@@ -472,7 +608,7 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 - **Textos** (`HOME_AD` e `SEPARATION_AD`): "O que o Pro faz por você" com "Seu culto inteiro no palco, a banda acompanhando no celular e cada faixa pronta pra levar pro ensaio." e "No Pro você baixa essas faixas e salva na nuvem". Resultado antes de recurso, sem número de vendas, nenhum travessão.
 - **É cartão, não janela:** fica no fluxo da tela, sem som, sem vídeo, sem camada por cima, sem posição fixa e sem puxar o foco; nada em volta fica bloqueado. "Agora não" chama `onDismiss` (quem monta esconde de vez).
 - Teste: `src/components/livre/houseAd.test.tsx` (e o `AdSlot` em `adSlot.test.tsx`).
-- **Na tela inicial** (T18, não publicado): embaixo dos dois botões, num `div` `mt-6 w-full max-w-md` da coluna `px-6` do App (no celular de 390px, o cartão fica com 342px). Verificador: estado `inicio` em `scripts/verify-layout/` (o `AdSlot` de verdade na largura da janela, nos 8 tamanhos, e numa moldura de 390px).
+- **Na tela inicial** (T18, não publicado): embaixo dos dois botões, num `div` `mt-6 w-full max-w-md` da coluna `px-6` do App (no celular de 390px, o cartão fica com 342px). Verificador: estado `inicio` em `scripts/verify-layout/` (o `AdSlot` de verdade na largura da janela, nos 8 tamanhos e em 390x844, este pela rota `/moldura` do verificador, a mesma das faixas B e C).
 
 #### `<LivreBadge>`: selo do Livre (`src/components/livre/LivreBadge.tsx`, texto em `adCopy.ts`)
 
@@ -486,6 +622,29 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 - **Aviso SAÍDAS:** a casca põe o aviso depois do selo do Livre quando ele está na barra (senão depois do ONLINE) e acerta a posição quando o selo aparece e some com o Play.
 - **Verificador:** estado `selo` em `scripts/verify-layout/` (OFFLINE, HOST, SAÍDAS e "3 de 3", palco parado), com duas regras novas da casca: a partir de 1024px nada rola de lado, e o aviso SAÍDAS não cobre o ONLINE, o selo nem o menu.
 - Teste: `src/components/livre/houseAd.test.tsx` (peça e texto), `src/components/stage/panels.test.tsx` (barra), `src/components/stage/buildStageView.test.ts` (some tocando) e `src/components/stage/stageShell.test.tsx` (posição do SAÍDAS).
+
+
+### 2.9 Demais telas (Parte 3, faixa C, 2026-11-20, não publicado)
+
+> As telas que sobravam no visual antigo (spec da Parte 3, seção 9, a parte 6) passam pra linguagem do palco: tokens `ps-*` (seção 1.7), as peças de `src/components/ui/` (seção 2.6) e a janela do palco (`StageDialog`, seção 2.7). Muda a cara, não o que as telas fazem. Fatos na entrada de 2026-11-20 (faixa C) do `PLAYBACK_STUDIO_FATOS.md`.
+
+**Regras da faixa:**
+- **Janela por cima é o `StageDialog`** (X de 44 px, Esc, toque fora, foco preso e devolvido, pilha). A exceção é o Modo Ao Vivo do host, que abre os Planos por cima de si (ver o item dele).
+- **Nenhuma classe do visual antigo:** nada do dourado `primary` nem do ciano `secondary`, nada de `daw-*`, hex solto na classe, texto de 8 ou 9 px, cores prontas do Tailwind (`zinc`, `orange`...), branco solto ou as fontes antigas. O teste de cada tela confere com `oldLanguageClasses` (`src/test/psLanguage.ts`).
+- **Verificador:** cada tela tem um estado em `scripts/verify-layout/` (página `telas.tsx`, lista em `telasEstados.ts`), medido nos 8 tamanhos do palco e, onde a tela abre no celular, em 390x844. Abaixo de 500 px o Chrome headless não abre a janela: a página mede dentro de um iframe do tamanho pedido (rota `/moldura` do `run.mjs`, a mesma das telas da faixa B).
+
+| Tela | Arquivo | Como ficou |
+|---|---|---|
+| Metrônomo | `src/components/MetronomeModal.tsx` | `StageDialog size="sm"` "Metrônomo". Andamento (`ps-label` e o nome do andamento em `mut`), BPM em `TextField` numérico com "BPM" no fim e `IconButton` − e + dos lados; TAP TEMPO (`Button` com `Led` aceso enquanto conta) e 2× (`Chip`); Som do click, Subdivisão e Compasso em `Chip small` com `on` e `aria-pressed`, quebrando linha; "Acentuar o 1" em `Switch`; "gerando" em `Notice role="status"` e o click descartado em `Notice tone="alert"`; GERAR CLICK MANUAL (`Button`) e Gerar click IA (`Button tone="primary"`, a ação principal), um embaixo do outro na largura da janela. Enquanto o click é gerado, `closeDisabled` (X desligado a 35% com a dica, nem Esc nem toque fora fecham); a amostra do click tem prazo de 15 s, então a janela não fica presa (revisão macro BC, não publicado). Teste: `MetronomeModal.look.test.tsx`, `MetronomeModal.auto.test.tsx` e `MetronomeModal.deadline.test.tsx`. |
+| Pads da nuvem | `src/components/PadSetsModal.tsx` | `StageDialog size="sm"` "Pads da nuvem". Lista de linhas (`bg-ps-s1`, raio 12px): a escolha é um `<button>` com o ícone, o nome (`bold`) e a descrição (`mut`), os dois com `break-words`; em uso, a linha fica em `ps-or-soft` com anel `or-line`, nome em `ps-or`, `aria-current` e `Led on` ("Em uso"). Admin: lápis e lixeira em `IconButton ghost` ("Renomear <nome>", "Apagar <nome>"); renomear abre dois `TextField` com Cancelar (`ghost`) e Salvar (`primary`); apagar troca a linha pela confirmação em `ps-alert-soft` com Cancelar (com o foco) e Apagar (`alert`). Renomeando ou apagando, `dismissible={false}` e o Esc na linha cancela só ela (revisão macro BC, não publicado). Carregando em `role="status"`, erro em `Notice tone="alert"`, vazio em `Notice`. Teste: `PadSetsModal.test.tsx`. |
+| Letra e cifra | `src/components/LyricsEditor.tsx` | `StageDialog size="lg"` "Letra e cifra". Nome da música em `mut`; `TextField` "Artista (para a busca)" e Buscar letra (`Button`) na mesma linha, quebrando no celular; resposta da busca em `Notice role="status"`; `Tabs` LETRA e CIFRA com um `TabPanel`; `TextArea` de 12 linhas nas duas (rótulo escondido, a aba nomeia), a da cifra com `wrap="off"`, `whitespace-pre` e a fonte mono por `style` (o campo traz `font-ps-sans`, e duas utilidades de fonte brigariam). Salvar (`primary`) no pé, com a mensagem de onde salvou à esquerda. Com letra, cifra ou letra sincronizada diferentes do último salvo, `dismissible={false}`: Esc e toque fora não fecham, só o X (revisão macro BC, não publicado). Teste: `LyricsEditor.test.tsx`. |
+| Teleprompter | `src/components/Teleprompter.tsx` (novo; o `App.tsx` usa desde a junção das faixas B e C) | Tela cheia `bg-ps-ink-0` (z-50, como antes). Barra de cima com `ps-label` TELEPROMPTER e `IconButton ghost` "Fechar o teleprompter"; selo da seção em pílula com a cor da seção (do dado, fundo dela a 12%; sem cor, o verde `#10b981` de antes); letra em `h1` `font-black` de 36 a 96 px (`text-4xl` a `text-8xl`), `whitespace-pre-wrap` e `break-words`; espera em `ps-dim` piscando (`animate-ps-blink`, parado com reduzir movimento). A área da letra rola quando ela não cabe, centralizada por `my-auto` (com `justify-center` o começo ficaria antes da rolagem). Embaixo, `ProgressBar` "Posição na música" (rótulo escondido; o valor vai sem arredondar, pra barra andar contínua) e o nome da música. Teste: `Teleprompter.test.tsx`. |
+| Novidades | `src/components/WhatsNewModal.tsx` | `StageDialog` (`md`) com o título da entrada mais nova do changelog; `Tag` neutra "Novidades · v<versão>" (informação, não é ligado); itens em lista com ponto `ps-mut`, texto `bone` com `break-words`; Entendi (`primary`) no `footer`. Teste: `WhatsNewModal.test.tsx`. |
+| Aviso de atualização | `src/components/UpdateBanner.tsx` | Não é janela: `role="status"` fixo no rodapé (`z-[9999]`, até 440 px), sem puxar o foco; a região fica sempre na página (vazia sem aviso, `pointer-events-none`) e o aviso entra nela (revisão macro BC). `Panel variant="pop"` com quadrado do ícone neutro (`ps-s2`, ícone `bone`, anel `line`; antes `ps-or-soft`, mas laranja é ligado), título `bone` em negrito, frase `mut` com `break-words` (nunca `truncate`), ação em `Button primary` (Reiniciar, Baixar ou Atualizar) e `IconButton ghost` "Agora não"; a linha quebra (`flex-wrap`) quando não cabe. Teste: `UpdateBanner.test.tsx`. |
+| Tour | `src/components/GuidedTour.tsx` | Spotlight (`data-tour-spotlight`) com 8 px de folga, contorno de 2 px em `var(--color-ps-or)` e o resto escurecido; passo sem alvo com fundo `bg-black/70` (`data-tour-backdrop`, toque fecha). Balão `Panel variant="pop"` de 300 px (`max-w-[calc(100vw-32px)]`), `role="dialog"` com o título (`h2`) como nome: `ps-label` TUTORIAL, título `bone`, texto `mut`, `IconButton ghost` "Fechar o tutorial" no canto, Pular (`ghost`), `IconButton` "Passo anterior" e Próximo ou Concluir (`primary`). A conta da posição não mudou. Teste: `GuidedTour.test.tsx` (inclui a conferência dos alvos dos tours do `App.tsx` e do `SeparatorStudio.tsx`). |
+| Página de download | `src/components/DownloadPage.tsx`, `src/components/InstallAppGuide.tsx` | Página do app (`bg-ps-ink`, `font-ps-sans`; continua `site-public`, que dá o foco laranja e o "reduzir movimento"). Selo `Tag` no topo, título em Inter extranegrito com "Playback Studio" em `ps-or` itálico, blocos em `Panel` (celular, ajuda, funções com `data-feature`, requisitos). Cartão do instalador: `rounded-ps-2xl` em `ps-s1` (anel `line`), o do sistema de quem abre com anel `line-3` e o `Tag` neutro "SEU SISTEMA" no alto (`data-highlighted`; revisão macro BC, decisão do coordenador: antes `ps-or-soft` com anel `or-line`); o link Baixar tem a cara do `Button primary` (o kit não tem link com cara de botão: candidato a `ButtonLink`), e "Como instalar?" é `Button ghost`. Guia de instalar: passo numerado num círculo `ps-s2`, texto `mut` com o destaque em `bone`, "Você já está usando o app instalado." em `mut` (antes no musgo do ao vivo), Instalar app em `Button primary`, QR code em quadro branco (o QR precisa de fundo claro). Teste: `DownloadPage.test.tsx`, `InstallAppGuide.test.tsx`. |
+| Modo Ao Vivo do host | `src/components/LiveModeModal.tsx` | **Exceção ao `StageDialog`:** camada própria `fixed inset-0 z-[100] bg-black/60` (toque fora fecha), porque os Planos (`PricingModal`, z-[110]) abrem por cima quando passa do limite de aparelhos e o `StageDialog` (z-[120], foco preso) os taparia. Caixa `Panel variant="pop"` (`role="dialog"`, até 448 px, rola dentro; a área que rola usa `justify-center-safe`, que centraliza só quando cabe: com `justify-center`, a banda inteira conectada jogava o topo do QR acima do começo da rolagem; apertar dentro e soltar fora não fecha; revisão macro BC, não publicado). Cabeçalho com `Led live` "Ao vivo" (só com o servidor ligado), título e `IconButton ghost` "Fechar"; iniciando em `role="status"` com o ícone piscando; erro em `Notice tone="alert"`; QR code em quadro branco; endereço em `font-ps-mono` com `break-all`; "Quem controla" com Liberar todos ou Bloquear todos (`Button`) e um `Chip small` por aparelho (`on` e `aria-pressed` = Controla); Desativar em `Button tone="alert"`. Teste: `LiveModeModal.test.tsx`. |
+| Casca do /admin | `src/admin/AdminLogin.tsx`, `src/admin/AdminShell.tsx`, `src/admin/components/ConfirmDialog.tsx` | Login: fundo `ps-ink`, `Panel variant="raised"` de até 384 px, a marca com o `ps-label` Admin (igual à casca), `h1` "Painel do admin", `TextField` E-mail e Senha, erro em `Notice tone="alert"` e Entrar em `Button primary` na largura do painel (ocupado com `aria-busy` e o ícone girando). Casca: as abas continuam `Chip` (o `Tabs` do kit só tem rótulo de texto, e a aba Pendências mostra contador e LED), sem o anel de foco por fora, que o `Chip` agora já tem. `ConfirmDialog`: a nota passa a ser o `TextArea` do kit, com as linhas de ajuda no `help`. O `AdminErrorBoundary` já estava na linguagem nova. Teste: `AdminLogin.test.tsx` e os de `src/admin` que já existiam. |
 
 ---
 
@@ -517,14 +676,13 @@ Combinações pequenas de átomos com propósito específico.
 - Stars laranja (5x), texto warm-200, nome+role bottom
 
 ### 3.5 Auth column header
-**Localização:** `AuthPage.tsx:67-99`
-- Wordmark + "pronto pro" + DomingoMark + H1 + Sub + Stepper (3 passos)
+**Localização:** `AuthPage.tsx` (coluna `aside`, só a partir de `lg`)
+- Wordmark + "pronto pro" (`ps-label`) + DomingoMark + H1 (Inter bold, 40px, 48px a partir de `xl`) + Sub (`ps-md`, `mut`) + Stepper (3 passos: o primeiro em `or-soft` com o número em `ps-or`, os outros em `s1`)
+- **Parte 3 (2026-11-20, [NÃO PUBLICADO]):** na linguagem nova (fundo `ps-ink-0` com linha `ps-line` à direita, brilhos `ps-or` e `ps-moss` decorativos). As marcas (Wordmark e Domingo) mantêm a identidade própria.
 
 ### 3.6 Form input field
-**Localização:** `AuthPage.tsx:155-188`
-- Label uppercase tracking-wider warm-400
-- Input com icon esquerdo, focus ring laranja
-- Padding pl-11 pr-4 py-3
+**Localização:** `src/components/ui/Field.tsx` (`TextField`, seção 2.6)
+- **Parte 3 (2026-11-20, [NÃO PUBLICADO]):** o login e a tela Criar nova senha usam o `TextField` do kit (rótulo em `ps-label` ligado ao campo, ícone à esquerda, "mín 6" como `trailing`, anel de foco laranja na caixa). Antes: label uppercase warm-400, input `pl-11 pr-4 py-3` com o anel laranja no input.
 
 ### 3.7 Audience card
 **Localização:** `LandingPage.tsx:333-343`
@@ -597,16 +755,32 @@ Seções completas — múltiplas moléculas trabalhando juntas.
 - Wordmark + tagline + nav links + copyright
 
 ### 4.13 Auth split
-**Localização:** `AuthPage.tsx:58-220`
+**Localização:** `AuthPage.tsx`
 - Dual column: branding esquerda + formulário direita
 - Atmosphere blur circles
 - Google OAuth + email/senha form
 - Modo login | register | forgot
+- **Parte 3 (2026-11-20, [NÃO PUBLICADO]):** fundo `ps-ink`, formulário num `Panel` (`flat`, até 448px, padding 24px e 32px a partir de `sm`), título 28px bold, "Continuar com Google" e o enviar em `Button size="lg"` (o enviar no `primary` laranja, com o texto mantido e o ícone girando enquanto carrega), erro num `Notice` âmbar (`role="alert"`), mensagem num `Notice` neutro dentro da região `role="status"` que fica sempre na página, "Esqueceu sua senha?" em `Button ghost` e a troca de modo ("Criar conta", "Entrar") em `Button` padrão. Fora do `lg` a Wordmark fica no topo, no fluxo da página (antes ficava por cima, em posição absoluta).
+- **Criar nova senha** (`NewPasswordPage.tsx`, volta do link de recuperar senha), Parte 3 (2026-11-20, [NÃO PUBLICADO]): mesma linguagem numa coluna só (até 384px): Wordmark em cima, `Panel` com o título, os dois `TextField` de senha, o erro num `Notice` âmbar (`role="alert"`), "Salvar nova senha" em `Button primary` (`lg`, o cadeado vira o ícone girando enquanto salva) e "Cancelar e voltar pra tela de entrar" em `Button ghost`. Depois de salvar: a confirmação num `Notice` neutro (`role="status"`) e "Continuar" em `Button primary`.
 
 ### 4.14 Splash screen produto
 **Localização:** `App.tsx:336-363`
 - Centro: ícone Music animado boot-glow + H1 dual wordmark + tagline mono
 - Dois botões hardware lado a lado: Multitracks (primary gold) | Separação IA (purple)
+
+
+### 4.15 Configurações (`SettingsModal.tsx`, Parte 3, faixa B, 2026-11-20, [NÃO PUBLICADO])
+**Casca:** camada própria (`fixed inset-0 z-[100]`, fundo `bg-black/60`, 16px de folga), não o `StageDialog`: os Planos (`PricingModal`, `z-[110]`) abrem por dentro das Configurações e ficam por cima. Caixa no `Panel variant="pop"` (até 672px, `max-h-full`), com `role="dialog"` e o nome "Configurações" (sem `aria-modal`: os Planos abrem por cima, fora da caixa). Toque fora fecha, toque dentro não, e apertar dentro e soltar fora também não. Revisão macro BC (2026-11-20, [NÃO PUBLICADO]), no jeito das janelas do palco: ao abrir, o foco vai pra aba atual; Tab e Shift+Tab giram dentro da camada (Configurações e Planos); ao fechar, o foco volta pra quem abriu; o Esc fecha (na captura da `window`), menos com os Planos abertos; nenhuma tecla de dentro chega ao palco antigo (a camada para a propagação e tem `tabIndex -1`, então um clique no texto deixa o foco nela).
+- **Cabeçalho:** as abas do kit (`Tabs`, "Abas das Configurações": Perfil, Geral, Buses só em "Tudo junto", Novidades, Assinatura, Sobre), que descem de linha numa tela estreita, e o X do palco (`IconButton` com `Icon name="x"`, `aria-label="Fechar"`, 44px) à direita.
+- **Conteúdo:** um `TabPanel` ligado à aba aberta, que rola por dentro (altura de 400px até 70% da tela; em tela baixa, como o celular deitado em 844x390, o piso cai pra 55% da tela e o painel encolhe e rola, nada escondido embaixo), fundo `ps-ink-0` e 24px de folga.
+- **Linha de opção** (`src/components/settings/SettingRow.tsx`): nome (13px bold, `bone`) e frase (13px, `mut`) à esquerda, controle à direita; com menos de 224px pro texto o controle desce pra linha de baixo. Separadores `border-ps-line`.
+- **Geral:** chave do Palco (`Segmented`, seção 1.7), Tutorial com "Ver tutorial" (`Button`), o aparelho de saída (`AudioOutputSelect.tsx`: título, "atualizar a lista" como `IconButton ghost` com 44px, `Select` do kit até 448px com o aviso do microfone como ajuda) junto das Saídas de áudio (os seletores do mapa de 4 ou mais também são o `Select` do kit), o Pan Estéreo Automático (`Switch`, só em "Tudo junto"), a Grade de Compasso (`Switch` desligado e ligado, "Em breve") e, pra admin, o Painel de Upload numa caixa `s1` com "Abrir Painel" (`Button`).
+- **Perfil** (`ProfileTab.tsx`): o avatar do palco em 80px (degradê `ps-or` a `ps-moss`, anel `line-2`, a inicial ou a foto; "Trocar foto" com a câmera no hover e no foco, e o ícone girando à vista enquanto envia), nome (16px bold, quebra em vez de cortar) e e-mail; Nome de exibição (`TextField`) com Salvar (`Button primary`); Senha com "Nova senha" e "Confirmar nova senha" (`TextField`) e Atualizar (`Button`); as mensagens em 13px `mut` (`role="status"`); o plano num `Panel` com "Fazer upgrade" (`Button primary`, só no Livre); "Sair de todos os dispositivos" (`Button`) e "Excluir minha conta" (`Button alert`, no âmbar de alerta; o fluxo continua o `prompt` EXCLUIR, decisão do dono).
+- **Novidades:** o aviso de atualização do computador numa caixa `s1` com anel `line`, o ícone num quadrado neutro (`s2`, `mut`) e "Baixar" (`Button primary`, o único laranja: laranja é ligado e a ação principal); cada versão com o título em 13px bold, a versão em `ps-num` à direita e os itens em 13px `mut`; a mais nova numa caixa `s1` com o brilho (`Sparkles`) em `mut`.
+- **Assinatura:** só a moldura é nova: `Panel` (até 448px) com "Seu Plano Atual" em `ps-label`, o nome do plano em 28px extrabold, a frase e o botão "Ver Planos & Assinar" ou "Alterar Plano" (`Button primary lg`). O medidor de separações (`SeparationUsageMeter`) e o painel da assinatura (`SubscriptionPanel`) ficam como estão (são de outra frente).
+- **Sobre:** Wordmark, "A plataforma do domingo" com a versão em `ps-num` e a frase em 13px `mut`.
+- **Verificador:** `scripts/verify-layout/` mede o login, Criar nova senha e as Configurações em cada aba (estados `login`, `criarconta`, `recuperar`, `novasenha` e `config-*`) em 1024x740, 1280x800, 1920x1080, 390x844 e 844x390 (celular deitado).
+- **Buses** (só em "Tudo junto"): uma linha por canal com o nome organizado (o nome do arquivo no `title`) e um `Select` do kit (rótulo escondido "Bus de <canal>"); sem canais, a frase "Carregue uma música primeiro para ver os canais."
 
 ---
 

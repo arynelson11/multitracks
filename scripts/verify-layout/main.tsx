@@ -11,9 +11,13 @@ import { StageVersionSetting } from '../../src/components/settings/StageVersionS
 import { RepertoirePanel } from '../../src/components/stage/RepertoirePanel'
 import { StageShell } from '../../src/components/stage/StageShell'
 import { describe, reportFatal, verifyPage } from './check'
+import { TelaPage } from './telas'
+import { isTela, TELA_EXPECT, TELA_PREPARE } from './telasEstados'
 import type { Failure } from './check'
 import type { Estado } from './fixture'
 import { ACTIONS, CLOCK, OUTPUT_CASES, PADS, makePeaks, outputWarningFor, parseEstado, repertoireProps, viewFor } from './fixture'
+import { expectB, parseEstadoB, prepareB } from './telasB'
+import { TelasBPage } from './TelasBPage'
 
 const noop = () => {}
 const peaks = makePeaks()
@@ -37,35 +41,25 @@ export function ConfigPage() {
 }
 
 /**
- * Uma coluna da tela inicial do App (o retorno do splash em src/App.tsx), com o que mede o anúncio
- * da casa: a coluna centrada com `px-6`, os dois botões (aqui duas caixas sem texto, no mesmo
- * lugar) e, embaixo, o cartão do AdSlot no mesmo `div` do App (`mt-6 w-full max-w-md`). O AdSlot é
- * o de verdade, no Livre e parado; sem Supabase no build, o evento do funil não sai.
- */
-function InicioColumn({ frame }: { frame: 'janela' | '390' }) {
-  return (
-    <div data-inicio={frame} className={frame === 'janela' ? 'flex min-h-dvh w-full flex-col items-center justify-center px-6' : 'mx-auto flex w-[390px] flex-col items-center px-6 py-10 inset-ring inset-ring-ps-line'}>
-      <div aria-hidden="true" className="flex w-full max-w-md flex-col gap-4 sm:flex-row">
-        <div className="h-[118px] flex-1 rounded-xl bg-tinta-raised" />
-        <div className="h-[118px] flex-1 rounded-xl bg-tinta-raised" />
-      </div>
-      <div className="mt-6 w-full max-w-md empty:hidden">
-        <AdSlot placement="home" userId="verificador" isLivre quiet onCta={noop} />
-      </div>
-    </div>
-  )
-}
-
-/**
- * A tela inicial com o cartão do anúncio, duas vezes: na largura da janela e numa moldura de 390 px
- * (celular em pé, onde a tela inicial também abre), em que o cartão fica com 342 px. Os dois AdSlot
- * decidem na mesma renderização, antes de o primeiro gravar o anúncio grande da sessão.
+ * A tela inicial do App (o retorno do splash em src/App.tsx), com o que mede o anúncio da casa: a
+ * coluna centrada com `px-6`, os dois botões (aqui duas caixas sem texto, no mesmo lugar) e,
+ * embaixo, o cartão do AdSlot no mesmo `div` do App (`mt-6 w-full max-w-md`). O AdSlot é o de
+ * verdade, no Livre e parado; sem Supabase no build, o evento do funil não sai. No celular (390x844)
+ * a página roda na moldura do run.mjs (`/moldura`), como as telas das faixas B e C, e o cartão fica
+ * com 342 px.
  */
 export function InicioPage() {
   return (
     <div className="bg-[#0a0a0c] font-ps-sans text-ps-bone">
-      <InicioColumn frame="janela" />
-      <InicioColumn frame="390" />
+      <div data-inicio className="flex min-h-dvh w-full flex-col items-center justify-center px-6">
+        <div aria-hidden="true" className="flex w-full max-w-md flex-col gap-4 sm:flex-row">
+          <div className="h-[118px] flex-1 rounded-xl bg-tinta-raised" />
+          <div className="h-[118px] flex-1 rounded-xl bg-tinta-raised" />
+        </div>
+        <div className="mt-6 w-full max-w-md empty:hidden">
+          <AdSlot placement="home" userId="verificador" isLivre quiet onCta={noop} />
+        </div>
+      </div>
     </div>
   )
 }
@@ -154,6 +148,7 @@ function tap(selector: string): void {
 
 /** O que abrir depois de montar: a grade de tons e o diálogo do compasso são estado da casca. */
 const PREPARE: Partial<Record<Estado, () => void>> = {
+  ...TELA_PREPARE,
   tom: () => tap('[data-cell="tom"] button[aria-haspopup="dialog"]'),
   semtom: () => tap('[data-cell="tom"] button[aria-haspopup="dialog"]'),
   compasso: () => tap('[data-cell="tempo"] button[title="Escolher o compasso da música"]'),
@@ -161,6 +156,7 @@ const PREPARE: Partial<Record<Estado, () => void>> = {
 
 /** O que tem de estar na tela em cada estado (o texto ou quantos, quando importa). Sem isso a medida passaria sem medir o estado. */
 const EXPECT: Record<Estado, { sel: string; text?: string; count?: number }> = {
+  ...TELA_EXPECT,
   normal: { sel: '[data-stage-shell] [data-waveform] [data-block]' },
   contando: { sel: '[data-channel-strip] [data-count][data-on="true"]', text: '2' },
   pads: { sel: '[role="dialog"][aria-label="Pads"]' },
@@ -172,7 +168,7 @@ const EXPECT: Record<Estado, { sel: string; text?: string; count?: number }> = {
   semtom: { sel: '[data-cell="tom"] [data-define-original]' },
   compasso: { sel: '[data-stage-meter]' },
   config: { sel: '[data-placa="8 canais"] select' },
-  inicio: { sel: '[data-inicio] [data-house-ad="home"]', count: 2 },
+  inicio: { sel: '[data-inicio] [data-house-ad="home"]', count: 1 },
   quebrado: { sel: '[data-prova]' },
 }
 
@@ -259,14 +255,20 @@ const params = new URLSearchParams(location.search)
 const name = params.get('name') ?? 'resultado'
 const raw = params.get('estado')
 const estado = parseEstado(raw)
+// Telas da faixa B da Parte 3 (login e Configurações): página própria, sem as regras do palco.
+const estadoB = parseEstadoB(raw)
 
-if (!estado) {
+if (estadoB) {
+  window.addEventListener('error', (e) => reportFatal(name, estadoB, `erro na página: ${e.message}`))
+  createRoot(document.getElementById('root')!).render(<StrictMode><TelasBPage estado={estadoB} /></StrictMode>)
+  void verifyPage(name, estadoB, { prepare: prepareB(estadoB), expect: () => expectB(estadoB) })
+} else if (!estado) {
   reportFatal(name, String(raw), `estado desconhecido: ${String(raw)}`)
 } else {
   window.addEventListener('error', (e) => reportFatal(name, estado, `erro na página: ${e.message}`))
   createRoot(document.getElementById('root')!).render(
-    <StrictMode>{estado === 'config' ? <ConfigPage /> : estado === 'inicio' ? <InicioPage /> : <Stage estado={estado} />}</StrictMode>,
+    <StrictMode>{isTela(estado) ? <TelaPage estado={estado} /> : estado === 'config' ? <ConfigPage /> : estado === 'inicio' ? <InicioPage /> : <Stage estado={estado} />}</StrictMode>,
   )
-  const pageOnly = estado === 'config' || estado === 'inicio'
-  void verifyPage(name, estado, { prepare: PREPARE[estado], expect: () => expectState(estado), checks: pageOnly ? undefined : () => stageStructure(estado) })
+  const semPalco = estado === 'config' || estado === 'inicio' || isTela(estado)
+  void verifyPage(name, estado, { prepare: PREPARE[estado], expect: () => expectState(estado), checks: semPalco ? undefined : () => stageStructure(estado) })
 }

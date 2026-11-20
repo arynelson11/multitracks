@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 // Verificador de texto cortado e de alvos de toque do palco novo (T20), no Chrome headless.
 // Uso: node scripts/verify-layout/run.mjs [--only 1280x800[,1440x900]] [--estado normal[,tom]] [--jobs 3] [--no-build]
-//   sem --estado: os 12 estados normais nos 8 tamanhos (96 combinações);
-//   --estado quebrado: só a prova (um botão de largura fixa com texto longo), que tem de falhar.
+//   sem --estado: os 12 estados normais e 18 dos 19 estados da faixa C nos 8 tamanhos (240 combinações),
+//   17 estados em 390x844 (o inicio da frente 1b, os 15 da faixa C que abrem no celular e o
+//   download-celular, só de celular) e os 10 estados da faixa B (login e Configurações) em 1024x740,
+//   1280x800, 1920x1080, 390x844 e 844x390 (50): 307 combinações;
+//   --estado quebrado: só a prova (um botão de largura fixa com texto longo), que tem de falhar
+//   (com --only 390x844, a prova da moldura do celular).
 // Sai com código 1 se alguma combinação falhar (ou não responder). Resultados em scripts/verify-layout/results/.
 import http from 'node:http'
 import fs from 'node:fs'
@@ -24,7 +28,30 @@ const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/M
  */
 const SIZES = ['1024x740', '1024x768', '1280x760', '1280x800', '1440x900', '1920x1080', '900x740', '810x1080']
 /** Estados da rodada normal: a mesma lista de ESTADOS em fixture.ts. */
-const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config', 'inicio']
+const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config', 'inicio',
+  // Demais telas da Parte 3 (faixa C), a mesma lista de telasEstados.ts.
+  'metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'download-celular', 'aovivo', 'aovivo-cheio', 'aovivo-erro', 'adminlogin']
+/**
+ * Telas da faixa C que abrem no celular: sem --only, medem também em 390x844. O Modo Ao Vivo do host
+ * só existe no computador, então fica de fora.
+ */
+const TELAS_C_CELULAR = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'adminlogin']
+/**
+ * Estados do palco e da frente 1b que abrem no celular: a tela inicial com o cartão do anúncio da
+ * casa (`inicio`). Sem --only, medem também em 390x844, pela mesma moldura das faixas B e C.
+ */
+const ESTADOS_CELULAR = ['inicio']
+/** Telas da faixa C que só existem no celular (navegador de celular simulado): só em 390x844. */
+const TELAS_C_SO_CELULAR = ['download-celular']
+/**
+ * Telas da faixa B da Parte 3 (login e Configurações, telasB.ts), fora do palco: sem --estado
+ * entram na rodada normal, nos tamanhos de TELAS_B_SIZES (abrem no celular, então 390x844 entra).
+ */
+const ESTADOS_B = ['login', 'criarconta', 'recuperar', 'novasenha', 'config-perfil', 'config-geral', 'config-buses', 'config-novidades', 'config-assinatura', 'config-sobre']
+// 844x390: celular deitado, onde as Configurações cortavam o fim de cada aba (revisão macro BC, BC1-M6).
+const TELAS_B_SIZES = ['1024x740', '1280x800', '1920x1080', '390x844', '844x390']
+/** Largura de celular: abaixo da janela mínima do Chrome headless, roda na moldura (/moldura). */
+const CELULAR = '390x844'
 const PROVA = 'quebrado'
 const TIMEOUT_S = 40
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -49,11 +76,12 @@ const opt = (name) => {
   return v
 }
 const list = (v) => (v ? v.split(',').map((s) => s.trim()).filter(Boolean) : null)
-const sizes = list(opt('--only')) ?? SIZES
-const estados = list(opt('--estado')) ?? ESTADOS
+const onlySizes = list(opt('--only'))
+const sizes = onlySizes ?? SIZES
+const estados = list(opt('--estado')) ?? [...ESTADOS, ...ESTADOS_B]
 const jobs = Math.max(1, Number(opt('--jobs') ?? 3) || 3)
 for (const s of sizes) if (!/^\d{3,4}x\d{3,4}$/.test(s)) usage(`tamanho inválido: ${s}`)
-for (const e of estados) if (e !== PROVA && !ESTADOS.includes(e)) usage(`estado desconhecido: ${e}`)
+for (const e of estados) if (e !== PROVA && !ESTADOS.includes(e) && !ESTADOS_B.includes(e)) usage(`estado desconhecido: ${e}`)
 
 function serve() {
   const server = http.createServer((req, res) => {
@@ -67,6 +95,16 @@ function serve() {
         fs.writeFileSync(path.join(RES, `${name}.json`), Buffer.concat(chunks))
         res.end('ok')
       })
+      return
+    }
+    if (u.pathname === '/moldura') {
+      // Celular (abaixo da largura mínima da janela do Chrome headless, 500 px): a página roda num
+      // iframe do tamanho pedido, que vira a janela dela (innerWidth, media queries e a medida).
+      const w = Number(u.searchParams.get('w')) || 390
+      const h = Number(u.searchParams.get('h')) || 844
+      const q = (u.searchParams.get('q') || '').replace(/[^\w=&%.-]/g, '')
+      res.setHeader('Content-Type', MIME['.html'])
+      res.end(`<!doctype html><style>html,body{margin:0;background:#000;overflow:hidden}iframe{border:0;display:block}</style><iframe src="index.html?${q}" width="${w}" height="${h}"></iframe>`)
       return
     }
     if (u.pathname === '/janela') {
@@ -122,11 +160,18 @@ async function calibrate(port) {
   return { dw: 1280 - got.w, dh: 800 - got.h }
 }
 
+/** Largura mínima da janela do Chrome headless: abaixo dela a página roda num iframe (/moldura). */
+const MIN_WINDOW_W = 500
+
 async function runOne(port, frame, estado, size) {
   const [w, h] = size.split('x').map(Number)
   const name = `${estado}_${size}`
   const t0 = Date.now()
-  const data = await chromeRun(`http://127.0.0.1:${port}/index.html?estado=${estado}&name=${name}`, name, w + frame.dw, h + frame.dh)
+  const query = `estado=${estado}&name=${name}`
+  const url = w < MIN_WINDOW_W
+    ? `http://127.0.0.1:${port}/moldura?w=${w}&h=${h}&q=${encodeURIComponent(query)}`
+    : `http://127.0.0.1:${port}/index.html?${query}`
+  const data = await chromeRun(url, name, Math.max(w, MIN_WINDOW_W) + frame.dw, h + frame.dh)
   if (!data) return { name, estado, size, fatal: `sem resposta em ${TIMEOUT_S}s` }
   if (data.fatal) return { name, estado, size, fatal: data.fatal }
   // A janela tem de ser do tamanho pedido: senão a medida não vale pra esse tamanho.
@@ -144,7 +189,16 @@ if (!fs.existsSync(path.join(OUT, 'index.html'))) usage('sem build em scripts/ve
 const server = await serve()
 const port = server.address().port
 const frame = await calibrate(port)
-const combos = estados.flatMap((estado) => sizes.map((size) => ({ estado, size })))
+// As telas da faixa B usam os tamanhos delas (com o celular) e as da faixa C e o inicio da 1b, que
+// abrem no celular, ganham o 390x844 além dos 8, salvo quando --only diz outros.
+const sizesFor = (estado) => {
+  if (onlySizes) return sizes
+  if (ESTADOS_B.includes(estado)) return TELAS_B_SIZES
+  if (TELAS_C_SO_CELULAR.includes(estado)) return [CELULAR]
+  if (TELAS_C_CELULAR.includes(estado) || ESTADOS_CELULAR.includes(estado)) return [...SIZES, CELULAR]
+  return SIZES
+}
+const combos = estados.flatMap((estado) => sizesFor(estado).map((size) => ({ estado, size })))
 const results = []
 let next = 0
 await Promise.all(Array.from({ length: Math.min(jobs, combos.length) }, async () => {

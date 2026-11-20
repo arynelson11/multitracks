@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { StrictMode, useRef } from 'react'
+import { StrictMode, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { StageDialog } from './StageDialog'
 import type { StageDialogProps } from './StageDialog'
@@ -250,5 +251,260 @@ describe('StageDialog (janela por cima no estilo do palco)', () => {
   it('nenhum travessão nos textos da janela', () => {
     const { container } = render(<StageDialog {...props()} />)
     expect(container.innerHTML).not.toContain(TRAVESSAO)
+  })
+})
+
+describe('StageDialog: duas janelas abertas (pilha) e tamanho lg', () => {
+  const esc = () => fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape', code: 'Escape' })
+  const two = (a: StageDialogProps, b: StageDialogProps) => (
+    <>
+      <StageDialog {...a} />
+      <StageDialog {...b} />
+    </>
+  )
+
+  it('o Esc fecha só a janela aberta por último; fechada ela, o próximo Esc fecha a de baixo', () => {
+    const a = props({ title: 'Metrônomo', open: true })
+    const b = props({ title: 'Limite', open: false })
+    const { rerender } = render(two(a, b))
+    rerender(two(a, { ...b, open: true }))
+    esc()
+    expect(b.onClose).toHaveBeenCalledTimes(1)
+    expect(a.onClose).not.toHaveBeenCalled()
+    rerender(two(a, { ...b, open: false }))
+    esc()
+    expect(a.onClose).toHaveBeenCalledTimes(1)
+    expect(b.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('a aberta por último manda mesmo vindo antes no código (irmã de cima no DOM)', () => {
+    const a = props({ title: 'Limite', open: false })
+    const b = props({ title: 'Metrônomo', open: true })
+    const { rerender } = render(two(a, b))
+    rerender(two({ ...a, open: true }, b))
+    esc()
+    expect(a.onClose).toHaveBeenCalledTimes(1)
+    expect(b.onClose).not.toHaveBeenCalled()
+  })
+
+  it('janela aberta dentro de outra (mesmo abrindo juntas) é a de cima', () => {
+    const inner = props({ title: 'Limite' })
+    const outer = props({ title: 'Metrônomo', children: <StageDialog {...inner} /> })
+    render(<StrictMode><StageDialog {...outer} /></StrictMode>)
+    esc()
+    expect(inner.onClose).toHaveBeenCalledTimes(1)
+    expect(outer.onClose).not.toHaveBeenCalled()
+  })
+
+  it('toque fora só fecha a janela de cima', () => {
+    const a = props({ title: 'Metrônomo' })
+    const b = props({ title: 'Limite', open: false })
+    const { container, rerender } = render(two(a, b))
+    rerender(two(a, { ...b, open: true }))
+    const [overlayA, overlayB] = Array.from(container.children) as HTMLElement[]
+    fireEvent.pointerDown(overlayA)
+    fireEvent.click(overlayA)
+    expect(a.onClose).not.toHaveBeenCalled()
+    fireEvent.pointerDown(overlayB)
+    fireEvent.click(overlayB)
+    expect(b.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('uma janela só continua fechando no Esc depois de outra ter aberto e fechado', () => {
+    const a = props({ title: 'Primeira' })
+    const { unmount } = render(<StageDialog {...a} />)
+    unmount()
+    const b = props({ title: 'Segunda' })
+    render(<StageDialog {...b} />)
+    esc()
+    expect(b.onClose).toHaveBeenCalledTimes(1)
+    expect(a.onClose).not.toHaveBeenCalled()
+  })
+
+  it('com o fechar de verdade, um Esc fecha só a de cima (irmãs)', () => {
+    function Duas() {
+      const [a, setA] = useState(true)
+      const [b, setB] = useState(true)
+      return (
+        <>
+          <StageDialog {...props({ title: 'Primeira', open: a, onClose: () => flushSync(() => setA(false)) })} />
+          <StageDialog {...props({ title: 'Segunda', open: b, onClose: () => flushSync(() => setB(false)) })} />
+        </>
+      )
+    }
+    render(<Duas />)
+    esc()
+    expect(screen.queryByRole('dialog', { name: 'Segunda' })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'Primeira' })).not.toBeNull()
+  })
+
+    it('lg é a larga (max-w-2xl, até 672 px), pra letra e cifra', () => {
+    render(<StageDialog {...props({ size: 'lg' })} />)
+    const box = screen.getByRole('dialog').className.split(' ')
+    expect(box).toContain('max-w-2xl')
+    for (const c of ['max-w-lg', 'max-w-sm']) expect(box).not.toContain(c)
+  })
+})
+
+// Revisão macro BC (BC1-I1 e BC1-I2): a janela de dentro abrindo junto com a de fora. O fechar
+// aplicado na hora (flushSync) faz o que o navegador faz com uma tecla de verdade: o React aplica
+// o setState numa microtarefa, que roda entre um ouvinte e o próximo (o fireEvent do jsdom não roda).
+describe('StageDialog: janela de dentro aberta junto com a de fora (ordem real do navegador)', () => {
+  function Nested({ syncClose = true }: { syncClose?: boolean }) {
+    const [outer, setOuter] = useState(true)
+    const [inner, setInner] = useState(true)
+    const close = (set: (v: boolean) => void) => () => (syncClose ? flushSync(() => set(false)) : set(false))
+    return (
+      <StageDialog open={outer} title="Fora" onClose={close(setOuter)}>
+        <p>conteúdo de fora</p>
+        <StageDialog open={inner} title="Dentro" onClose={close(setInner)}>
+          <p>conteúdo de dentro</p>
+        </StageDialog>
+      </StageDialog>
+    )
+  }
+  const esc = () => fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape', code: 'Escape' })
+  const fechar = (nome: string) => screen.getByRole('dialog', { name: nome }).querySelector<HTMLElement>('button[aria-label="Fechar"]')!
+
+  it('o foco fica na janela de cima (a de dentro)', () => {
+    render(<Nested syncClose={false} />)
+    expect(document.activeElement).toBe(fechar('Dentro'))
+  })
+
+  it('no StrictMode o foco também fica na de dentro', () => {
+    render(<StrictMode><Nested syncClose={false} /></StrictMode>)
+    expect(document.activeElement).toBe(fechar('Dentro'))
+  })
+
+  it('um Esc fecha só a de dentro; o próximo fecha a de fora', () => {
+    render(<Nested />)
+    esc()
+    expect(screen.queryByRole('dialog', { name: 'Dentro' })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'Fora' })).not.toBeNull()
+    esc()
+    expect(screen.queryByRole('dialog', { name: 'Fora' })).toBeNull()
+  })
+
+  it('fechada a de dentro, o foco vai pra de fora (não pro palco por trás); fechada a de fora, volta pra quem abriu', () => {
+    const opener = document.createElement('button')
+    opener.textContent = 'Abrir'
+    document.body.appendChild(opener)
+    opener.focus()
+    render(<Nested />)
+    esc()
+    expect(document.activeElement).toBe(fechar('Fora'))
+    esc()
+    expect(document.activeElement).toBe(opener)
+    opener.remove()
+  })
+
+  it('a de fora fechando com a de dentro aberta: o foco volta pra quem abriu', () => {
+    const opener = document.createElement('button')
+    document.body.appendChild(opener)
+    opener.focus()
+    function Pai() {
+      const [open, setOpen] = useState(true)
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(false)}>tirar</button>
+          <StageDialog open={open} title="Fora" onClose={() => setOpen(false)}>
+            <StageDialog open title="Dentro" onClose={() => {}}><p>x</p></StageDialog>
+          </StageDialog>
+        </>
+      )
+    }
+    render(<Pai />)
+    expect(document.activeElement).toBe(fechar('Dentro'))
+    fireEvent.click(screen.getByRole('button', { name: 'tirar' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(opener)
+    opener.remove()
+  })
+
+  it('abrindo uma janela de dentro depois, pelo botão de dentro, ao fechar ela o foco volta pro botão', () => {
+    function Abre() {
+      const [inner, setInner] = useState(false)
+      return (
+        <StageDialog open title="Fora" onClose={() => {}}>
+          <button type="button" onClick={() => setInner(true)}>Ver mais</button>
+          <StageDialog open={inner} title="Dentro" onClose={() => flushSync(() => setInner(false))}><p>x</p></StageDialog>
+        </StageDialog>
+      )
+    }
+    render(<Abre />)
+    const ver = screen.getByRole('button', { name: 'Ver mais' })
+    ver.focus()
+    fireEvent.click(ver)
+    expect(document.activeElement).toBe(fechar('Dentro'))
+    esc()
+    expect(screen.queryByRole('dialog', { name: 'Dentro' })).toBeNull()
+    expect(document.activeElement).toBe(ver)
+  })
+})
+
+// Revisão macro BC (BC2-I1, BC2-M5): janela que não fecha no Esc nem no toque fora, e a que não fecha por nada.
+describe('StageDialog: dismissible e closeDisabled', () => {
+  const esc = () => fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape', code: 'Escape' })
+
+  it('dismissible={false}: Esc e toque fora não fecham, o X fecha', () => {
+    const p = props({ dismissible: false })
+    const { container } = render(<StageDialog {...p} />)
+    esc()
+    fireEvent.pointerDown(overlayOf(container))
+    fireEvent.click(overlayOf(container))
+    expect(p.onClose).not.toHaveBeenCalled()
+    expect(closeButton().getAttribute('title')).toBe('Fechar')
+    fireEvent.click(closeButton())
+    expect(p.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('dismissible={false}: o Esc segue pra dentro da janela e não chega ao palco nem aos painéis por baixo', () => {
+    const inner = vi.fn()
+    const windowKeydown = vi.fn()
+    const panelClose = vi.fn()
+    window.addEventListener('keydown', windowKeydown)
+    const p = props({ dismissible: false, children: <input aria-label="campo" onKeyDown={(e) => inner(e.key)} /> })
+    render(<><PanelBelow onClose={panelClose} /><StageDialog {...p} /></>)
+    const campo = screen.getByRole('textbox', { name: 'campo' })
+    campo.focus()
+    fireEvent.keyDown(campo, { key: 'Escape', code: 'Escape' })
+    expect(inner).toHaveBeenCalledWith('Escape')
+    expect(windowKeydown).not.toHaveBeenCalled()
+    expect(panelClose).not.toHaveBeenCalled()
+    expect(p.onClose).not.toHaveBeenCalled()
+    window.removeEventListener('keydown', windowKeydown)
+  })
+
+  it('voltando a dismissible, o Esc fecha de novo', () => {
+    const p = props({ dismissible: false })
+    const { rerender } = render(<StageDialog {...p} />)
+    esc()
+    expect(p.onClose).not.toHaveBeenCalled()
+    rerender(<StageDialog {...p} dismissible />)
+    esc()
+    expect(p.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('closeDisabled: X desligado com a dica, e nem Esc nem toque fora fecham', () => {
+    const p = props({ closeDisabled: true })
+    const { container } = render(<StageDialog {...p} />)
+    const x = closeButton() as HTMLButtonElement
+    expect(x.disabled).toBe(true)
+    expect(x.getAttribute('title')).toBe('Espere terminar pra fechar')
+    fireEvent.click(x)
+    esc()
+    fireEvent.pointerDown(overlayOf(container))
+    fireEvent.click(overlayOf(container))
+    expect(p.onClose).not.toHaveBeenCalled()
+  })
+
+  it('com a janela de cima sem dismissible, o Esc não fecha a de baixo', () => {
+    const a = props({ title: 'Metrônomo' })
+    const b = props({ title: 'Letra', open: false, dismissible: false })
+    const { rerender } = render(<><StageDialog {...a} /><StageDialog {...b} /></>)
+    rerender(<><StageDialog {...a} /><StageDialog {...b} open /></>)
+    esc()
+    expect(a.onClose).not.toHaveBeenCalled()
+    expect(b.onClose).not.toHaveBeenCalled()
   })
 })

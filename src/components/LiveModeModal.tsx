@@ -1,5 +1,7 @@
-import { X, Server, Wifi, Gamepad2, Smartphone, Globe, Copy } from 'lucide-react';
+import { useId, useRef } from 'react';
+import { X, Server, Wifi, Gamepad2, Smartphone, Copy } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { Button, Chip, IconButton, Led, Notice, Panel, Switch } from './ui';
 
 interface LiveModeModalProps {
     isOpen: boolean;
@@ -30,153 +32,132 @@ export function LiveModeModal({
     remoteSessionCode,
     onToggleRemote
 }: LiveModeModalProps) {
+    const titleId = useId();
+    // Apertou dentro da caixa (ex.: arrastando pra selecionar o endereço): o clique que cai na
+    // camada de fora (ancestral comum) não fecha, como no StageDialog (revisão macro BC, BC2-M9).
+    const pressedInside = useRef(false);
     const allApproved = devices.length > 0 && devices.every(ip => approvedIps.includes(ip));
     const remoteLink = remoteSessionCode ? `https://playbackstudio.com.br/?s=${remoteSessionCode}` : '';
     if (!isOpen) return null;
 
+    const live = !isStarting && !serverError && !!serverUrl;
+
+    // Camada própria em z-[100], fora do StageDialog: passando do limite de aparelhos, o App abre os
+    // Planos (z-[110]) por cima desta janela. Toque fora fecha, como sempre.
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
-            <div className="daw-panel w-full max-w-md rounded-lg flex flex-col overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
-                {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b border-border shrink-0 bg-[#0e0e10]">
-                    <div className="flex items-center gap-2">
-                        <Server size={18} className="text-primary" />
-                        <h2 className="text-white text-sm font-bold uppercase tracking-wider font-mono">Modo Ao Vivo</h2>
-                    </div>
-                    <button onClick={onClose} className="p-1.5 hover:bg-white/5 rounded-md text-text-muted transition-all active:scale-90 cursor-pointer">
-                        <X size={18} />
-                    </button>
+        <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-ps-gutter"
+            onPointerDown={e => { pressedInside.current = e.target !== e.currentTarget; }}
+            onClick={() => {
+                const inside = pressedInside.current;
+                pressedInside.current = false;
+                if (!inside) onClose();
+            }}
+        >
+            <Panel
+                variant="pop"
+                role="dialog"
+                aria-labelledby={titleId}
+                onClick={e => { pressedInside.current = false; e.stopPropagation(); }}
+                className="flex max-h-full w-full max-w-md flex-col overflow-hidden font-ps-sans text-ps-bone"
+            >
+                <div className="flex shrink-0 items-center gap-3 border-b border-ps-line py-2 pl-5 pr-2">
+                    <Led state={live ? 'live' : 'off'} label={live ? 'Ao vivo' : undefined} />
+                    <h2 id={titleId} className="min-w-0 flex-1 text-ps-md font-bold">Modo Ao Vivo</h2>
+                    <IconButton tone="ghost" aria-label="Fechar" icon={<X size={18} />} onClick={onClose} />
                 </div>
 
-                {/* Content */}
-                <div className="flex-col p-6 bg-[#121214] flex items-center justify-center min-h-[300px]">
+                {/* justify-center-safe: centraliza só quando cabe. Com a banda inteira conectada, o
+                    justify-center jogava o topo do QR acima do começo da rolagem (BC2-I2). */}
+                <div className="flex min-h-[300px] flex-col items-center justify-center-safe overflow-y-auto p-5">
                     {isStarting ? (
-                        <div className="flex flex-col items-center gap-4 animate-pulse">
-                            <Server size={48} className="text-primary/50" />
-                            <p className="text-white text-xs font-mono uppercase tracking-wider">Iniciando Servidor...</p>
+                        <div role="status" className="flex flex-col items-center gap-4">
+                            <Server size={48} aria-hidden="true" className="animate-ps-blink text-ps-dim motion-reduce:animate-none" />
+                            <p className="ps-label">Iniciando o servidor...</p>
                         </div>
                     ) : serverError ? (
-                        <div className="flex flex-col items-center gap-4 text-center">
-                            <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center">
-                                <X size={32} className="text-red-500" />
-                            </div>
-                            <div>
-                                <p className="text-white font-bold mb-1">Erro ao iniciar servidor</p>
-                                <p className="text-text-muted text-xs font-mono">{serverError}</p>
-                            </div>
-                        </div>
+                        <Notice tone="alert" role="alert" className="w-full">
+                            <span className="block">Erro ao iniciar o servidor</span>
+                            <span className="block font-ps-mono text-ps-sm font-normal break-words">{serverError}</span>
+                        </Notice>
                     ) : serverUrl ? (
-                        <div className="flex flex-col items-center w-full animate-in fade-in zoom-in duration-300">
-                            <div className="bg-white p-4 rounded-xl mb-6 shadow-lg shadow-white/5">
-                                <QRCodeSVG 
-                                    value={serverUrl} 
-                                    size={200}
-                                    level="H"
-                                    includeMargin={false}
-                                />
-                            </div>
-                            
-                            <div className="w-full bg-[#1c1c1e] border border-border rounded-lg p-4 mb-6 flex flex-col items-center">
-                                <div className="flex items-center gap-2 mb-2 text-primary">
-                                    <Wifi size={14} />
-                                    <span className="text-[10px] font-bold uppercase tracking-wider">Conecte na mesma rede</span>
-                                </div>
-                                <div className="text-center">
-                                    <p className="text-text-muted text-xs mb-1">Acesse pelo navegador do celular:</p>
-                                    <p className="text-white font-mono font-bold text-sm bg-black/30 py-1.5 px-3 rounded-md select-all">
-                                        {serverUrl}
-                                    </p>
-                                </div>
+                        <div className="flex w-full flex-col items-center gap-4">
+                            {/* O QR code precisa de fundo claro pra câmera ler. */}
+                            <div className="rounded-ps-lg bg-white p-4">
+                                <QRCodeSVG data-qr="" value={serverUrl} size={200} level="H" includeMargin={false} />
                             </div>
 
-                            {/* Controle remoto — aprovação por dispositivo */}
-                            <div className="w-full mb-3 bg-[#1c1c1e] border border-border rounded-lg p-3">
-                                <div className="flex items-center justify-between gap-2 mb-2.5">
-                                    <span className="flex items-center gap-2 text-text-muted">
-                                        <Gamepad2 size={13} />
-                                        <span className="text-[10px] font-bold uppercase tracking-wider">Quem controla</span>
-                                    </span>
+                            <div className="flex w-full flex-col items-center gap-2 rounded-ps-lg bg-ps-s1 p-4 text-center inset-ring inset-ring-ps-line">
+                                <p className="flex items-center gap-2 text-ps-label font-bold uppercase tracking-[0.14em] text-ps-mut">
+                                    <Wifi size={14} aria-hidden="true" className="shrink-0" />
+                                    Conecte na mesma rede
+                                </p>
+                                <p className="text-ps-sm text-ps-mut">Acesse pelo navegador do celular:</p>
+                                <p className="max-w-full rounded-ps-md bg-ps-ink-0 px-3 py-1.5 font-ps-mono text-ps-sm font-bold text-ps-bone break-all select-all">
+                                    {serverUrl}
+                                </p>
+                            </div>
+
+                            {/* Quem controla: aprovação por aparelho */}
+                            <div className="flex w-full flex-col gap-2 rounded-ps-lg bg-ps-s1 p-3 inset-ring inset-ring-ps-line">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <p className="flex items-center gap-2 pl-1 text-ps-label font-bold uppercase tracking-[0.14em] text-ps-mut">
+                                        <Gamepad2 size={14} aria-hidden="true" className="shrink-0" />
+                                        Quem controla
+                                    </p>
                                     {devices.length > 0 && (
-                                        <button
-                                            onClick={onToggleAll}
-                                            className="shrink-0 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95 bg-white/5 text-text-muted border border-border hover:text-white"
-                                        >
-                                            {allApproved ? 'Bloquear todos' : 'Liberar todos'}
-                                        </button>
+                                        <Button onClick={onToggleAll}>{allApproved ? 'Bloquear todos' : 'Liberar todos'}</Button>
                                     )}
                                 </div>
 
                                 {devices.length === 0 ? (
-                                    <p className="text-[11px] text-text-muted text-center py-2 flex items-center justify-center gap-1.5">
-                                        <Smartphone size={12} /> Nenhum dispositivo conectado ainda.
+                                    <p className="flex items-center justify-center gap-1.5 py-2 text-center text-ps-sm text-ps-mut">
+                                        <Smartphone size={14} aria-hidden="true" className="shrink-0" /> Nenhum dispositivo conectado ainda.
                                     </p>
                                 ) : (
-                                    <div className="space-y-1.5">
+                                    <ul className="flex flex-col gap-1.5">
                                         {devices.map((ip, i) => {
                                             const approved = approvedIps.includes(ip);
                                             return (
-                                                <div key={ip} className="flex items-center justify-between gap-2">
-                                                    <span className="text-xs text-white font-mono truncate min-w-0 flex items-center gap-1.5">
-                                                        <Smartphone size={12} className="text-text-muted shrink-0" />
+                                                <li key={ip} className="flex items-center justify-between gap-2 pl-1">
+                                                    <span className="flex min-w-0 items-center gap-1.5 font-ps-mono text-ps-sm text-ps-bone break-all">
+                                                        <Smartphone size={14} aria-hidden="true" className="shrink-0 text-ps-mut" />
                                                         {ip || `Dispositivo ${i + 1}`}
                                                     </span>
-                                                    <button
-                                                        onClick={() => onToggleDevice(ip)}
-                                                        className={`shrink-0 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95 ${approved ? 'bg-primary/20 text-primary border border-primary/40' : 'bg-white/5 text-text-muted border border-border'}`}
-                                                    >
+                                                    <Chip small on={approved} aria-pressed={approved} onClick={() => onToggleDevice(ip)}>
                                                         {approved ? 'Controla' : 'Só segue'}
-                                                    </button>
-                                                </div>
+                                                    </Chip>
+                                                </li>
                                             );
                                         })}
-                                    </div>
+                                    </ul>
                                 )}
                             </div>
 
-                            {/* Músico remoto (internet) — oculto até a Fase 5 (controle pela nuvem) ficar pronta */}
+                            {/* Músico remoto (internet): oculto até a Fase 5 (controle pela nuvem) ficar pronta */}
                             {false && (
-                            <div className="w-full mb-3 bg-[#1c1c1e] border border-border rounded-lg p-3">
-                                <button
-                                    onClick={onToggleRemote}
-                                    className={`w-full py-2.5 px-3 rounded-lg border flex items-center justify-between gap-3 transition-all active:scale-95 ${remoteSessionCode ? 'bg-secondary/15 border-secondary/40 text-secondary' : 'bg-white/5 border-border text-text-muted hover:bg-white/10'}`}
-                                >
-                                    <span className="flex items-center gap-2">
-                                        <Globe size={15} />
-                                        <span className="text-xs font-bold uppercase tracking-wider">Músico remoto (internet)</span>
-                                    </span>
-                                    <span className={`relative w-9 h-5 rounded-full transition-colors ${remoteSessionCode ? 'bg-secondary' : 'bg-white/20'}`}>
-                                        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${remoteSessionCode ? 'left-[18px]' : 'left-0.5'}`} />
-                                    </span>
-                                </button>
+                            <div className="flex w-full flex-col gap-2 rounded-ps-lg bg-ps-s1 p-3 inset-ring inset-ring-ps-line">
+                                <Switch label="Músico remoto (internet)" checked={!!remoteSessionCode} onChange={onToggleRemote} />
                                 {remoteSessionCode && (
-                                    <div className="mt-2.5">
-                                        <p className="text-[10px] text-text-muted mb-1.5">Mande este link pro músico que está fora da rede:</p>
+                                    <div className="flex flex-col gap-1.5">
+                                        <p className="text-ps-sm text-ps-mut">Mande este link pro músico que está fora da rede:</p>
                                         <div className="flex items-center gap-2">
-                                            <span className="flex-1 text-[11px] text-white font-mono bg-black/30 py-1.5 px-2 rounded-md truncate select-all">{remoteLink}</span>
-                                            <button
-                                                onClick={() => navigator.clipboard?.writeText(remoteLink)}
-                                                className="shrink-0 p-2 rounded-md bg-secondary/15 text-secondary border border-secondary/30 active:scale-90 transition-all"
-                                                title="Copiar link"
-                                            >
-                                                <Copy size={14} />
-                                            </button>
+                                            <span className="min-w-0 flex-1 rounded-ps-md bg-ps-ink-0 px-2 py-1.5 font-ps-mono text-ps-sm text-ps-bone break-all select-all">{remoteLink}</span>
+                                            <IconButton aria-label="Copiar link" icon={<Copy size={14} />} onClick={() => navigator.clipboard?.writeText(remoteLink)} />
                                         </div>
-                                        <p className="text-[9px] text-text-muted mt-1.5">O remoto acompanha música, tom, seção e letra (não ouve o áudio).</p>
+                                        <p className="text-ps-sm text-ps-mut">O remoto acompanha música, tom, seção e letra (não ouve o áudio).</p>
                                     </div>
                                 )}
                             </div>
                             )}
 
-                            <button
-                                onClick={onStopServer}
-                                className="w-full py-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 text-xs font-bold uppercase tracking-wider rounded-lg transition-all active:scale-95"
-                            >
-                                Desativar Modo Ao Vivo
-                            </button>
+                            <div className="flex w-full flex-col">
+                                <Button tone="alert" onClick={onStopServer}>Desativar Modo Ao Vivo</Button>
+                            </div>
                         </div>
                     ) : null}
                 </div>
-            </div>
+            </Panel>
         </div>
     );
 }

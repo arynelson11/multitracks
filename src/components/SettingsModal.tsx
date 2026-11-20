@@ -1,7 +1,7 @@
-import { X, Download } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../hooks/useAuth';
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useId, useLayoutEffect, useMemo, useRef } from 'react';
 import type { Channel } from '../types';
 import { buildChannelLabels } from '../lib/channelNames';
 import { PricingModal } from './PricingModal';
@@ -17,6 +17,10 @@ import { StageVersionSetting } from './settings/StageVersionSetting';
 import { AudioOutputsSection } from './settings/AudioOutputsSection';
 import { CUE_TO_PA_CONFIRM_TEXT, needsCueToPaConfirm, type OutputWarning } from '../lib/outputPlan';
 import type { OutputSettings } from '../lib/stageContracts';
+import { Button, IconButton, Panel, Select, Switch, TabPanel, Tabs } from './ui';
+import { SettingRow } from './settings/SettingRow';
+import { Icon } from './stage/icons';
+import { trapTab } from './ui/focusables';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -43,6 +47,7 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
     // Plano efetivo (cancelado vale até a data de fim, depois é Livre).
     const { user, userPlan, isAdmin, refreshPlan, updateProfile, updatePassword, signOutEverywhere, deleteAccount } = useAuth();
     const [activeTab, setActiveTab] = useState<Tab>('Perfil');
+    const tabsId = useId();
     const [isPricingOpen, setIsPricingOpen] = useState(false);
 
     // Aberto pelo aviso SAÍDAS: vai pra aba Geral (ajuste no render, quando abre) e rola até as saídas.
@@ -87,37 +92,84 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
         return map;
     }, [isOpen, channels]);
 
+    // Foco e Esc no jeito das janelas do palco (revisão macro BC, BC1-I4): ao abrir, o foco vai pra
+    // aba atual; ao fechar, volta pra quem abriu. O Esc fecha, menos com os Planos abertos por cima.
+    const layerRef = useRef<HTMLDivElement>(null);
+    const closeRef = useRef(onClose);
+    const pricingOpenRef = useRef(isPricingOpen);
+    // Apertou dentro da caixa: o clique que cai na camada de fora (ancestral comum) não fecha (BC1-M7).
+    const pressedInside = useRef(false);
+    useLayoutEffect(() => {
+        closeRef.current = onClose;
+        pricingOpenRef.current = isPricingOpen;
+    });
+    useLayoutEffect(() => {
+        if (!isOpen) return;
+        const layer = layerRef.current;
+        if (!layer) return;
+        const active = document.activeElement;
+        const opener = active instanceof HTMLElement && !layer.contains(active) ? active : null;
+        layer.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus({ preventScroll: true });
+        // Na captura da window, como a janela do palco: um painel do palco aberto por baixo fica aberto.
+        const onEscape = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape' || e.isComposing || e.defaultPrevented || pricingOpenRef.current) return;
+            e.preventDefault();
+            e.stopPropagation();
+            closeRef.current();
+        };
+        window.addEventListener('keydown', onEscape, true);
+        return () => {
+            window.removeEventListener('keydown', onEscape, true);
+            const now = document.activeElement;
+            const lost = !now || now === document.body || !now.isConnected || layer.contains(now);
+            if (lost && opener?.isConnected) opener.focus({ preventScroll: true });
+        };
+    }, [isOpen]);
+
     if (!isOpen) return null;
 
     const tabs: Tab[] = stereoMode ? ['Perfil', 'Geral', 'Buses', 'Novidades', 'Assinatura', 'Sobre'] : ['Perfil', 'Geral', 'Novidades', 'Assinatura', 'Sobre'];
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
-            <div className="daw-panel w-full max-w-2xl rounded-lg flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        // tabIndex -1: um clique no texto (das Configurações ou dos Planos) deixa o foco na camada.
+        // onKeyDown: nenhuma tecla de dentro chega ao palco antigo (Espaço no interruptor tocava a
+        // música, setas nas abas andavam 5 s, BC1-I3), e o Tab gira dentro da camada (com os Planos).
+        <div
+            ref={layerRef}
+            tabIndex={-1}
+            onKeyDown={e => { e.stopPropagation(); trapTab(e, e.currentTarget); }}
+            onPointerDown={e => { pressedInside.current = !!e.currentTarget.firstElementChild?.contains(e.target as Node); }}
+            onClick={() => {
+                const inside = pressedInside.current;
+                pressedInside.current = false;
+                if (!inside) onClose();
+            }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-ps-gutter outline-none"
+        >
+            <Panel
+                variant="pop"
+                role="dialog"
+                aria-label="Configurações"
+                className="flex max-h-full w-full max-w-2xl flex-col overflow-hidden font-ps-sans text-ps-bone"
+                onClick={e => { pressedInside.current = false; e.stopPropagation(); }}
+            >
 
-                {/* Header */}
-                <div className="flex items-center justify-between p-3 border-b border-border shrink-0">
-                    <div className="flex-1"></div>
-                    <div className="flex lcd-display rounded-md p-0.5 w-full max-w-md">
-                        {tabs.map(tab => (
-                            <button
-                                key={tab}
-                                onClick={() => setActiveTab(tab)}
-                                className={`flex-1 text-[10px] font-bold py-1.5 rounded transition-all active:scale-95 cursor-pointer uppercase tracking-wider font-mono ${activeTab === tab ? 'bg-primary/15 text-primary' : 'text-text-muted hover:bg-white/5 hover:text-white'}`}
-                            >
-                                {tab}
-                            </button>
-                        ))}
-                    </div>
-                    <div className="flex-1 flex justify-end">
-                        <button onClick={onClose} className="p-1.5 hover:bg-white/5 rounded-md text-text-muted transition-all active:scale-90 cursor-pointer">
-                            <X size={18} />
-                        </button>
-                    </div>
+                {/* Cabeçalho: abas (descem de linha quando não cabem) e o X do palco */}
+                <div className="flex shrink-0 items-start gap-3 border-b border-ps-line p-3">
+                    <Tabs
+                        id={tabsId}
+                        aria-label="Abas das Configurações"
+                        tabs={tabs.map(t => ({ value: t, label: t }))}
+                        value={activeTab}
+                        onChange={setActiveTab}
+                        className="min-w-0 flex-1"
+                    />
+                    <IconButton icon={<Icon name="x" />} aria-label="Fechar" onClick={onClose} />
                 </div>
 
-                {/* Content */}
-                <div className="flex-1 overflow-y-auto min-h-[400px] max-h-[70vh] p-6 bg-[#0e0e10]">
+                {/* Conteúdo da aba aberta */}
+                {/* Piso de 400 px, ou 55% da tela quando ela é baixa (celular deitado): o painel encolhe e rola, nada fica escondido embaixo (BC1-M6). */}
+                <TabPanel tabsId={tabsId} value={activeTab} className="min-h-[min(400px,55dvh)] max-h-[70vh] overflow-y-auto bg-ps-ink-0 p-6">
 
                     {activeTab === 'Perfil' && user && (
                         <ProfileTab
@@ -137,23 +189,16 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                             {/* Chave do palco (R-25), a primeira opção: vale na próxima vez que a música parar. */}
                             <StageVersionSetting value={settings.stageVersion} onChange={(v) => updateSetting('stageVersion', v)} />
 
-                            <hr className="border-border" />
+                            <hr className="border-ps-line" />
 
                             {/* Rever tutorial */}
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h3 className="text-white text-sm font-bold">Tutorial</h3>
-                                    <p className="text-text-muted text-[10px] font-mono">Rever o guia de uso do app</p>
-                                </div>
-                                <button
-                                    onClick={() => { onClose(); onReplayTour(); }}
-                                    className="ml-4 shrink-0 px-3 py-1.5 rounded-lg bg-primary/15 text-primary border border-primary/30 text-xs font-bold hover:bg-primary/25 active:scale-95 transition-all cursor-pointer"
-                                >
+                            <SettingRow title="Tutorial" description="Rever o guia de uso do app">
+                                <Button onClick={() => { onClose(); onReplayTour(); }}>
                                     Ver tutorial
-                                </button>
-                            </div>
+                                </Button>
+                            </SettingRow>
 
-                            <hr className="border-border" />
+                            <hr className="border-ps-line" />
 
                             {/* Audio Device (lista e pedido de microfone só aqui, com a aba Geral aberta) e,
                                 junto dele, as saídas por papel: Tudo junto, Click e Guia separados ou 4 ou mais. */}
@@ -171,49 +216,40 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                             {/* Auto Pan: só em "Tudo junto" (R-23; fora dele o papel decide a saída), desligado por padrão. */}
                             {stereoMode && (
                                 <>
-                                    <hr className="border-border" />
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <h3 className="text-white text-sm font-bold">Pan Estéreo Automático</h3>
-                                            <p className="text-text-muted text-[10px] font-mono">Click e Guia no canal L, faixas no canal R</p>
-                                        </div>
-                                        <label className="relative inline-flex items-center cursor-pointer ml-4 shrink-0">
-                                            <input type="checkbox" className="sr-only peer" checked={settings.autoPan} onChange={(e) => changeAutoPan(e.target.checked)} />
-                                            <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                                        </label>
-                                    </div>
+                                    <hr className="border-ps-line" />
+                                    <Switch
+                                        label="Pan Estéreo Automático"
+                                        description="Click e Guia no canal L, faixas no canal R"
+                                        checked={settings.autoPan}
+                                        onChange={changeAutoPan}
+                                    />
                                 </>
                             )}
 
-                            <hr className="border-border" />
+                            <hr className="border-ps-line" />
 
-                            <div className="flex items-center justify-between opacity-50 pointer-events-none">
-                                <div>
-                                    <h3 className="text-white text-sm font-bold">Grade de Compasso</h3>
-                                    <p className="text-text-muted text-[10px] font-mono">Grade de beats na forma de onda (Em breve)</p>
-                                </div>
-                                <label className="relative inline-flex items-center ml-4 shrink-0">
-                                    <input type="checkbox" className="sr-only peer" checked readOnly />
-                                    <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                                </label>
-                            </div>
+                            {/* Em breve: ligada e sem ação, como antes. */}
+                            <Switch
+                                label="Grade de Compasso"
+                                description="Grade de beats na forma de onda (Em breve)"
+                                checked
+                                disabled
+                                onChange={() => {}}
+                            />
 
-                            <hr className="border-border" />
+                            <hr className="border-ps-line" />
 
                             {/* Cloud Admin Access */}
                             {isAdmin && (
-                                <div className="flex items-center justify-between p-3 bg-secondary/5 rounded-md border border-secondary/15 mt-4">
-                                    <div>
-                                        <h3 className="text-secondary text-sm font-bold uppercase tracking-wider">Painel de Upload</h3>
-                                        <p className="text-text-muted text-[10px] font-mono">Publicar músicas na biblioteca da nuvem</p>
-                                    </div>
-                                    <button
-                                        onClick={() => { onClose(); onOpenAdmin(); }}
-                                        className="px-3 py-1.5 bg-secondary text-black text-[10px] font-bold rounded-md hover:scale-105 active:scale-95 transition-all cursor-pointer uppercase tracking-wider"
-                                    >
+                                <SettingRow
+                                    title="Painel de Upload"
+                                    description="Publicar músicas na biblioteca da nuvem"
+                                    className="mt-4 rounded-ps-lg bg-ps-s1 p-3 inset-ring inset-ring-ps-line"
+                                >
+                                    <Button onClick={() => { onClose(); onOpenAdmin(); }}>
                                         Abrir Painel
-                                    </button>
-                                </div>
+                                    </Button>
+                                </SettingRow>
                             )}
                         </div>
                     )}
@@ -221,26 +257,31 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                     {activeTab === 'Buses' && stereoMode && (
                         <div className="flex flex-col gap-1">
                             {channels.length === 0 ? (
-                                <div className="flex items-center justify-center h-40 text-text-muted/50">
+                                <div className="flex items-center justify-center h-40 px-4 text-center text-ps-base text-ps-mut">
                                     Carregue uma música primeiro para ver os canais.
                                 </div>
                             ) : (
                                 <>
-                            <p className="text-text-muted text-[10px] mb-4 font-mono">Define para qual bus estéreo cada canal é roteado. Bus 1 = L, Bus 2 = R, 1/2 = Estéreo.</p>
-                                    {channels.map(ch => (
-                                        <div key={ch.id} className="flex items-center justify-between gap-3 py-2.5 border-b border-border last:border-b-0">
-                                            <span title={ch.name} className="min-w-0 break-words text-white font-bold text-xs font-mono uppercase tracking-wider">{labelById.get(ch.id) ?? ch.name}</span>
-                                            <select
-                                                className="daw-input shrink-0 text-white text-[10px] font-bold py-1 px-2 rounded-md cursor-pointer font-mono"
-                                                value={ch.bus}
-                                                onChange={(e) => onSetChannelBus(ch.id, e.target.value as '1' | '2' | '1/2')}
-                                            >
-                                                <option value="1" className="bg-[#1c1c1e] text-white">1 (L)</option>
-                                                <option value="2" className="bg-[#1c1c1e] text-white">2 (R)</option>
-                                                <option value="1/2" className="bg-[#1c1c1e] text-white">1/2 (Stereo)</option>
-                                            </select>
-                                        </div>
-                                    ))}
+                                    <p className="mb-4 text-ps-base leading-snug text-pretty text-ps-mut">Define para qual bus estéreo cada canal é roteado. Bus 1 = L, Bus 2 = R, 1/2 = Estéreo.</p>
+                                    {channels.map(ch => {
+                                        const label = labelById.get(ch.id) ?? ch.name;
+                                        return (
+                                            <div key={ch.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-ps-line py-2.5 last:border-b-0">
+                                                <span title={ch.name} className="min-w-0 break-words text-ps-base font-bold text-ps-bone">{label}</span>
+                                                <Select
+                                                    label={`Bus de ${label}`}
+                                                    hideLabel
+                                                    value={ch.bus}
+                                                    onChange={(e) => onSetChannelBus(ch.id, e.target.value as '1' | '2' | '1/2')}
+                                                    className="shrink-0"
+                                                >
+                                                    <option value="1">1 (L)</option>
+                                                    <option value="2">2 (R)</option>
+                                                    <option value="1/2">1/2 (Stereo)</option>
+                                                </Select>
+                                            </div>
+                                        );
+                                    })}
                                 </>
                             )}
                         </div>
@@ -249,33 +290,31 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                     {activeTab === 'Novidades' && (
                         <div className="flex flex-col gap-5 max-w-lg mx-auto">
                             {desktopUpdate && (
-                                <div className="bg-primary/10 border border-primary/30 rounded-xl p-4 flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center shrink-0">
-                                        <Download size={18} className="text-primary" />
+                                <div className="flex flex-wrap items-center gap-3 rounded-ps-xl bg-ps-s1 p-4 inset-ring inset-ring-ps-line">
+                                    {/* Neutro: laranja é ligado, e a ação principal (Baixar) já é laranja (BC1-M2). */}
+                                    <div className="grid size-10 shrink-0 place-items-center rounded-ps-md bg-ps-s2 text-ps-mut inset-ring inset-ring-ps-line">
+                                        <Download size={18} aria-hidden="true" />
                                     </div>
-                                    <div className="min-w-0 flex-1">
-                                        <p className="text-white font-bold text-sm leading-tight">Atualização disponível</p>
-                                        <p className="text-text-muted text-[12px]">A versão {desktopUpdate.latestVersion} já saiu. Baixe para atualizar o app.</p>
+                                    <div className="min-w-0 flex-1 basis-48">
+                                        <p className="text-ps-base font-bold leading-tight text-ps-bone">Atualização disponível</p>
+                                        <p className="text-ps-base leading-snug text-pretty text-ps-mut">A versão <span className="ps-num">{desktopUpdate.latestVersion}</span> já saiu. Baixe para atualizar o app.</p>
                                     </div>
-                                    <button
-                                        onClick={() => onInstallUpdate?.()}
-                                        className="shrink-0 px-4 py-2 rounded-lg bg-primary text-black text-xs font-bold hover:bg-primary/90 active:scale-95 transition-all cursor-pointer"
-                                    >
+                                    <Button tone="primary" onClick={() => onInstallUpdate?.()}>
                                         Baixar
-                                    </button>
+                                    </Button>
                                 </div>
                             )}
                             {CHANGELOG.map((entry, idx) => (
-                                <div key={entry.version} className={idx === 0 ? 'bg-primary/[0.06] border border-primary/20 rounded-xl p-4' : 'border-b border-white/5 pb-5'}>
-                                    <div className="flex items-center gap-2 mb-2">
-                                        {idx === 0 && <Sparkles size={14} className="text-primary" />}
-                                        <span className={`font-bold ${idx === 0 ? 'text-white' : 'text-zinc-300'}`}>{entry.title}</span>
-                                        <span className="text-[10px] font-mono text-text-muted ml-auto">v{entry.version}</span>
+                                <div key={entry.version} className={idx === 0 ? 'rounded-ps-xl bg-ps-s1 p-4 inset-ring inset-ring-ps-line' : 'border-b border-ps-line pb-5'}>
+                                    <div className="mb-2 flex items-start gap-2">
+                                        {idx === 0 && <Sparkles size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-ps-mut" />}
+                                        <span className="min-w-0 text-ps-base font-bold text-ps-bone">{entry.title}</span>
+                                        <span className="ps-num ml-auto shrink-0 text-ps-sm text-ps-mut">v{entry.version}</span>
                                     </div>
                                     <ul className="space-y-1.5">
                                         {entry.items.map((item, i) => (
-                                            <li key={i} className="flex items-start gap-2 text-[13px] text-zinc-400 leading-relaxed">
-                                                <span className="mt-1.5 w-1 h-1 rounded-full bg-text-muted shrink-0" />
+                                            <li key={i} className="flex items-start gap-2 text-ps-base leading-relaxed text-ps-mut">
+                                                <span aria-hidden="true" className="mt-2 size-1 shrink-0 rounded-full bg-ps-dim" />
                                                 {item}
                                             </li>
                                         ))}
@@ -286,15 +325,16 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                     )}
 
                     {activeTab === 'Assinatura' && (
-                        <div className="flex flex-col items-center justify-center p-6 gap-6">
-                            <div className="w-full max-w-md bg-[#1c1c1e] rounded-xl p-6 border border-border flex flex-col items-center text-center shadow-lg">
-                                <h3 className="text-white text-lg font-bold uppercase tracking-wider mb-2">Seu Plano Atual</h3>
-                                
-                                <div className="text-3xl font-black text-laranja uppercase mb-4 tracking-widest">
+                        <div className="flex flex-col items-center justify-center gap-6 py-2 sm:p-6">
+                            {/* Só a moldura é nova: o medidor (SeparationUsageMeter) e o painel da assinatura ficam como estão. */}
+                            <Panel className="flex w-full max-w-md flex-col items-center gap-4 p-6 text-center">
+                                <h3 className="ps-label">Seu Plano Atual</h3>
+
+                                <div className="text-[28px] font-extrabold uppercase leading-tight tracking-[0.12em] text-ps-bone break-words">
                                     {planDisplayName(userPlan)}
                                 </div>
 
-                                <p className="text-text-muted text-xs font-mono mb-6">
+                                <p className="text-ps-base leading-snug text-pretty text-ps-mut">
                                     {!isPaidPlan(userPlan)
                                         ? 'Você está no plano Livre. Faça upgrade para liberar todas as funcionalidades.'
                                         : 'Obrigado por apoiar o Playback Studio. Aproveite tudo do seu plano.'}
@@ -308,26 +348,23 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                                     onOpenPricing={() => setIsPricingOpen(true)}
                                 />
 
-                                <button
-                                    onClick={() => setIsPricingOpen(true)}
-                                    className="px-6 py-3 bg-laranja text-bone text-xs font-bold uppercase tracking-wider rounded-lg transition-transform hover:scale-105 active:scale-95 shadow-lg shadow-laranja/25 mb-2"
-                                >
+                                <Button tone="primary" size="lg" onClick={() => setIsPricingOpen(true)}>
                                     {!isPaidPlan(userPlan) ? 'Ver Planos & Assinar' : 'Alterar Plano'}
-                                </button>
-                            </div>
+                                </Button>
+                            </Panel>
                         </div>
                     )}
 
                     {activeTab === 'Sobre' && (
                         <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-8">
                             <PlaybackStudioWordmark size="lg" tone="light" />
-                            <div className="text-text-muted text-[10px] font-mono tracking-wider mt-2">A plataforma do domingo · v{CHANGELOG[0]?.version}</div>
-                            <div className="text-text-muted/40 text-[9px] max-w-sm font-mono">Multitracks pra qualquer música. Pra sua banda chegar pronta no domingo. Feito por quem toca.</div>
+                            <p className="mt-2 text-ps-sm text-ps-mut">A plataforma do domingo · <span className="ps-num">v{CHANGELOG[0]?.version}</span></p>
+                            <p className="max-w-sm text-ps-base leading-snug text-pretty text-ps-mut">Multitracks pra qualquer música. Pra sua banda chegar pronta no domingo. Feito por quem toca.</p>
                         </div>
                     )}
-                </div>
-            </div>
+                </TabPanel>
+            </Panel>
             <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
-        </div >
+        </div>
     );
 }
