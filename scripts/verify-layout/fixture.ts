@@ -11,7 +11,7 @@ import type {
 } from '../../src/lib/stageContracts'
 
 /** Estados da rodada normal, nessa ordem (o run.mjs tem a mesma lista). */
-export const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config'] as const
+export const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config', 'inicio'] as const
 /** Estado de prova: um botão de largura fixa com texto longo, que o verificador tem de acusar. */
 export const ESTADO_PROVA = 'quebrado'
 export type Estado = (typeof ESTADOS)[number] | typeof ESTADO_PROVA

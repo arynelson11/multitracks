@@ -1,14 +1,14 @@
 # verify-layout: texto cortado e alvos de toque do palco novo
 
-Verificador da T20 (Parte 2). Monta o palco novo (`StageShell`) e as duas seções
-das Configurações da T19 com os dados de `fixture.ts`, abre no Chrome headless
+Verificador da T20 (Parte 2). Monta o palco novo (`StageShell`), as duas seções
+das Configurações da T19 e o cartão do anúncio da tela inicial (Parte 3) com os dados de `fixture.ts`, abre no Chrome headless
 em 8 tamanhos de tela e mede o que está na tela. Regra do dono: nenhum texto
 encostando na borda ou cortado. Não entra no app e não precisa de dependência
 nova: usa o Vite, o React e o Tailwind do repo e o Google Chrome da máquina.
 
 ```bash
 source ~/.nvm/nvm.sh && nvm use 24
-node scripts/verify-layout/run.mjs                                    # 11 estados x 8 tamanhos (88 combinações)
+node scripts/verify-layout/run.mjs                                    # 12 estados x 8 tamanhos (96 combinações)
 node scripts/verify-layout/run.mjs --only 1280x800 --estado quebrado  # prova: tem de sair com 1
 node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
 ```
@@ -16,7 +16,7 @@ node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
 | Opção | O que faz |
 |---|---|
 | `--only 1280x800[,1440x900]` | só esses tamanhos (padrão: os 8) |
-| `--estado normal[,tom]` | só esses estados (padrão: os 11 normais; `quebrado` é a prova) |
+| `--estado normal[,tom]` | só esses estados (padrão: os 12 normais; `quebrado` é a prova) |
 | `--jobs N` | quantos Chrome ao mesmo tempo (padrão 3) |
 | `--no-build` | usa a página já montada em `.build/` |
 
@@ -46,6 +46,7 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `semtom` | grade aberta sem tom original: semitons em 3 linhas, com "Definir o tom original" ao lado do 0 |
 | `compasso` | diálogo do compasso aberto no EDITAR |
 | `config` | as duas seções da T19 numa página própria: placa de 2 canais (caindo de 4 ou mais, com avisos) e de 8 canais |
+| `inicio` | a tela inicial com o cartão "O que o Pro faz por você" do `AdSlot` (o de verdade, no Livre e parado), embaixo do lugar dos dois botões, no mesmo `div` do App (`mt-6 w-full max-w-md` numa coluna `px-6`): uma vez na largura da janela e outra numa moldura de 390 px (celular em pé, cartão com 342 px). O Chrome headless não abre janela com menos de 500 px de largura (`--only 390x844` sai com "janela de 500x844"), por isso a moldura |
 | `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso pra cada ramo das regras (15 falhas, uma por ramo) |
 
 O fixture é o pior caso de texto: 14 canais com os nomes organizados mais

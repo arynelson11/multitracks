@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/inter'
 import '@fontsource-variable/jetbrains-mono'
 import '../../src/index.css'
+import { AdSlot } from '../../src/components/livre/AdSlot'
 import { AudioOutputsSection } from '../../src/components/settings/AudioOutputsSection'
 import { StageVersionSetting } from '../../src/components/settings/StageVersionSetting'
 import { RepertoirePanel } from '../../src/components/stage/RepertoirePanel'
@@ -31,6 +32,40 @@ export function ConfigPage() {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Uma coluna da tela inicial do App (o retorno do splash em src/App.tsx), com o que mede o anúncio
+ * da casa: a coluna centrada com `px-6`, os dois botões (aqui duas caixas sem texto, no mesmo
+ * lugar) e, embaixo, o cartão do AdSlot no mesmo `div` do App (`mt-6 w-full max-w-md`). O AdSlot é
+ * o de verdade, no Livre e parado; sem Supabase no build, o evento do funil não sai.
+ */
+function InicioColumn({ frame }: { frame: 'janela' | '390' }) {
+  return (
+    <div data-inicio={frame} className={frame === 'janela' ? 'flex min-h-dvh w-full flex-col items-center justify-center px-6' : 'mx-auto flex w-[390px] flex-col items-center px-6 py-10 inset-ring inset-ring-ps-line'}>
+      <div aria-hidden="true" className="flex w-full max-w-md flex-col gap-4 sm:flex-row">
+        <div className="h-[118px] flex-1 rounded-xl bg-tinta-raised" />
+        <div className="h-[118px] flex-1 rounded-xl bg-tinta-raised" />
+      </div>
+      <div className="mt-6 w-full max-w-md empty:hidden">
+        <AdSlot placement="home" userId="verificador" isLivre quiet onCta={noop} />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * A tela inicial com o cartão do anúncio, duas vezes: na largura da janela e numa moldura de 390 px
+ * (celular em pé, onde a tela inicial também abre), em que o cartão fica com 342 px. Os dois AdSlot
+ * decidem na mesma renderização, antes de o primeiro gravar o anúncio grande da sessão.
+ */
+export function InicioPage() {
+  return (
+    <div className="bg-[#0a0a0c] font-ps-sans text-ps-bone">
+      <InicioColumn frame="janela" />
+      <InicioColumn frame="390" />
     </div>
   )
 }
@@ -124,8 +159,8 @@ const PREPARE: Partial<Record<Estado, () => void>> = {
   compasso: () => tap('[data-cell="tempo"] button[title="Escolher o compasso da música"]'),
 }
 
-/** O que tem de estar na tela em cada estado (e o texto, quando importa). Sem isso a medida passaria sem medir o estado. */
-const EXPECT: Record<Estado, { sel: string; text?: string }> = {
+/** O que tem de estar na tela em cada estado (o texto ou quantos, quando importa). Sem isso a medida passaria sem medir o estado. */
+const EXPECT: Record<Estado, { sel: string; text?: string; count?: number }> = {
   normal: { sel: '[data-stage-shell] [data-waveform] [data-block]' },
   contando: { sel: '[data-channel-strip] [data-count][data-on="true"]', text: '2' },
   pads: { sel: '[role="dialog"][aria-label="Pads"]' },
@@ -137,13 +172,16 @@ const EXPECT: Record<Estado, { sel: string; text?: string }> = {
   semtom: { sel: '[data-cell="tom"] [data-define-original]' },
   compasso: { sel: '[data-stage-meter]' },
   config: { sel: '[data-placa="8 canais"] select' },
+  inicio: { sel: '[data-inicio] [data-house-ad="home"]', count: 2 },
   quebrado: { sel: '[data-prova]' },
 }
 
 function expectState(estado: Estado): void {
-  const { sel, text } = EXPECT[estado]
+  const { sel, text, count } = EXPECT[estado]
   const el = document.querySelector(sel)
   if (!el) throw new Error(`estado ${estado} não montou: falta ${sel}`)
+  const found = document.querySelectorAll(sel).length
+  if (count !== undefined && found !== count) throw new Error(`estado ${estado}: ${found} de ${sel}, esperado ${count}`)
   if (text !== undefined && el.textContent?.trim() !== text) throw new Error(`estado ${estado}: ${sel} mostra "${el.textContent ?? ''}", esperado "${text}"`)
 }
 
@@ -227,7 +265,8 @@ if (!estado) {
 } else {
   window.addEventListener('error', (e) => reportFatal(name, estado, `erro na página: ${e.message}`))
   createRoot(document.getElementById('root')!).render(
-    <StrictMode>{estado === 'config' ? <ConfigPage /> : <Stage estado={estado} />}</StrictMode>,
+    <StrictMode>{estado === 'config' ? <ConfigPage /> : estado === 'inicio' ? <InicioPage /> : <Stage estado={estado} />}</StrictMode>,
   )
-  void verifyPage(name, estado, { prepare: PREPARE[estado], expect: () => expectState(estado), checks: estado === 'config' ? undefined : () => stageStructure(estado) })
+  const pageOnly = estado === 'config' || estado === 'inicio'
+  void verifyPage(name, estado, { prepare: PREPARE[estado], expect: () => expectState(estado), checks: pageOnly ? undefined : () => stageStructure(estado) })
 }
