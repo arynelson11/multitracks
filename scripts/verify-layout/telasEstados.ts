@@ -1,6 +1,6 @@
 // Estados das demais telas da Parte 3 (faixa C) no verificador: uma janela ou página por estado,
 // montada em telas.tsx, com o que conferir e o que abrir antes de medir. O run.mjs tem a mesma lista.
-export const TELA_ESTADOS = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'tour', 'tour-centro', 'download', 'download-ajuda', 'aovivo', 'aovivo-erro', 'adminlogin'] as const
+export const TELA_ESTADOS = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'tour', 'tour-centro', 'download', 'download-ajuda', 'aovivo', 'aovivo-cheio', 'aovivo-erro', 'adminlogin'] as const
 export type TelaEstado = (typeof TELA_ESTADOS)[number]
 
 export function isTela(value: string): value is TelaEstado {
@@ -23,6 +23,7 @@ export const TELA_EXPECT: Record<TelaEstado, { sel: string; text?: string }> = {
   download: { sel: 'main#conteudo [data-feature]' },
   'download-ajuda': { sel: 'main#conteudo code' },
   aovivo: { sel: '[role="dialog"] li [aria-pressed="true"]' },
+  'aovivo-cheio': { sel: '[role="dialog"] li:nth-child(6) [aria-pressed]' },
   'aovivo-erro': { sel: '[role="dialog"] [role="alert"]' },
   adminlogin: { sel: 'form input[type="password"]' },
 }

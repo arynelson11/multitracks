@@ -86,6 +86,29 @@ describe('Modo Ao Vivo: nada some', () => {
     fireEvent.click(screen.getByRole('dialog').parentElement as HTMLElement)
     expect(p.onClose).toHaveBeenCalledTimes(2)
   })
+
+  // Revisão macro BC (BC2-M9): arrastar pra selecionar o endereço comprido e soltar fora não fecha.
+  it('apertar dentro e soltar fora não fecha; apertar e soltar fora fecha', () => {
+    const p = abrir()
+    const camada = screen.getByRole('dialog').parentElement as HTMLElement
+    fireEvent.pointerDown(screen.getByText(URL_LOCAL))
+    fireEvent.click(camada)
+    expect(p.onClose).not.toHaveBeenCalled()
+    fireEvent.pointerDown(camada)
+    fireEvent.click(camada)
+    expect(p.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  // Revisão macro BC (BC2-I2): com a banda inteira conectada, o conteúdo passa da altura e o
+  // justify-center jogava o topo do QR pra fora do alcance da rolagem; o safe center não.
+  it('a área que rola centraliza só quando cabe (justify-center-safe)', () => {
+    abrir({ devices: ['1', '2', '3', '4', '5', '6'], approvedIps: [] })
+    const area = screen.getByRole('dialog').children[1] as HTMLElement
+    const classes = area.className.split(' ')
+    expect(classes).toContain('overflow-y-auto')
+    expect(classes).toContain('justify-center-safe')
+    expect(classes).not.toContain('justify-center')
+  })
 })
 
 describe('Modo Ao Vivo: linguagem do palco', () => {

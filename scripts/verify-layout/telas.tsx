@@ -75,6 +75,9 @@ const LIVE = {
   devices: ['192.168.100.201', '', 'fe80::1c2b:3a4d:5e6f:7a8b'], approvedIps: ['192.168.100.201'],
 }
 
+/** A banda inteira conectada (revisão macro BC, BC2-I2): com 4 ou mais, o topo do QR saía cortado. */
+const BANDA_CHEIA = ['192.168.100.201', '192.168.100.202', '192.168.100.203', '192.168.100.204', 'fe80::1c2b:3a4d:5e6f:7a8b', '192.168.100.206']
+
 // As peças da página são exportadas só pela regra do react-refresh (arquivo com componente exporta componente).
 
 export function TelaPage({ estado }: { estado: TelaEstado }) {
@@ -100,6 +103,7 @@ export function TelaPage({ estado }: { estado: TelaEstado }) {
       {estado === 'tour-centro' && <GuidedTour steps={TOUR_CENTRO} onClose={noop} />}
       {(estado === 'download' || estado === 'download-ajuda') && <DownloadPage />}
       {estado === 'aovivo' && <LiveModeModal {...LIVE} serverError={null} />}
+      {estado === 'aovivo-cheio' && <LiveModeModal {...LIVE} devices={BANDA_CHEIA} approvedIps={BANDA_CHEIA.slice(0, 2)} serverError={null} />}
       {estado === 'aovivo-erro' && <LiveModeModal {...LIVE} serverUrl={null} serverError="Não deu pra abrir a porta 3000: outro programa está usando (EADDRINUSE)." />}
       {estado === 'adminlogin' && <AdminLogin />}
       {(estado === 'padsnuvem' || estado === 'padsnuvem-editar') && (

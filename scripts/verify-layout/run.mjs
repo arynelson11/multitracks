@@ -28,7 +28,7 @@ const SIZES = ['1024x740', '1024x768', '1280x760', '1280x800', '1440x900', '1920
 /** Estados da rodada normal: a mesma lista de ESTADOS em fixture.ts. */
 const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config',
   // Demais telas da Parte 3 (faixa C), a mesma lista de telasEstados.ts.
-  'metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'tour', 'tour-centro', 'download', 'download-ajuda', 'aovivo', 'aovivo-erro', 'adminlogin']
+  'metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'tour', 'tour-centro', 'download', 'download-ajuda', 'aovivo', 'aovivo-cheio', 'aovivo-erro', 'adminlogin']
 /**
  * Telas da faixa C que abrem no celular: sem --only, medem também em 390x844. O Modo Ao Vivo do host
  * só existe no computador, então fica de fora.

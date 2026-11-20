@@ -95,6 +95,7 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `download` | Página de download (faixa C) inteira, no computador Mac (os dois instaladores do Mac em destaque) |
 | `download-ajuda` | o mesmo, com a ajuda do Mac aberta (os 4 passos e o comando do Terminal) |
 | `aovivo` | Modo Ao Vivo do host (faixa C) ligado, endereço longo e três aparelhos (um sem IP, um IPv6, um liberado); só existe no computador, então sem 390 |
+| `aovivo-cheio` | o mesmo, com a banda inteira conectada (6 aparelhos, 2 liberados): o conteúdo passa da altura e a área rola (revisão macro BC, BC2-I2: com o `justify-center`, o topo do QR ficava acima do começo da rolagem) |
 | `aovivo-erro` | o mesmo, com o erro de abrir o servidor |
 | `adminlogin` | Login do /admin na web (faixa C) |
 | `config` | as duas seções da T19 numa página própria: placa de 2 canais (caindo de 4 ou mais, com avisos) e de 8 canais |
