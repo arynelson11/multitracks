@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { RefreshCcw } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
-import { Button, Select } from './ui';
+import { IconButton, Select } from './ui';
 
 // Seletor da saída de áudio principal (aba Geral das Configurações). Ao aparecer, lista as
 // saídas; o pedido de microfone (só pra mostrar o nome delas) fica nas regras de
@@ -18,12 +18,11 @@ export function AudioOutputSelect() {
             <div className="flex items-center gap-1">
                 <h3 className="text-ps-base font-bold text-ps-bone">Dispositivo de Áudio</h3>
                 {canPickOutput && (
-                    <Button
+                    <IconButton
                         tone="ghost"
                         icon={<RefreshCcw size={14} />}
                         onClick={refreshAudioDevices}
                         aria-label="Atualizar a lista de dispositivos"
-                        title="Atualizar a lista de dispositivos"
                     />
                 )}
             </div>

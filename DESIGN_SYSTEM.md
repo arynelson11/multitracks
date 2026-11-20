@@ -295,10 +295,10 @@ Stack: [`lucide-react`](https://lucide.dev/) — line-art consistente com a marc
 Telas importam sempre do barril:
 
 ```tsx
-import { Button, Chip, Segmented, Panel, Led, TextField, TextArea, Select, Switch, Tabs, TabPanel, Notice, cx } from './components/ui'
+import { Button, IconButton, Chip, Segmented, Panel, Led, Tag, TextField, TextArea, Select, SearchField, Switch, Slider, Tabs, TabPanel, Notice, Toast, ProgressBar, FilePicker, cx } from './components/ui'
 ```
 
-> **Parte 3 (2026-11-20, [NÃO PUBLICADO]):** entram `TextField`, `TextArea`, `Select`, `Switch`, `Tabs` com `TabPanel` e `Notice` (login, Configurações e as telas da faixa C), e três limites conhecidos saem: Chip e opção do Segmented ganham o anel de foco laranja, o Chip desligado fica a 35% e a opção desligada do Segmented fica a 35% (a marcada desligada continua com cara de escolhida).
+> **Parte 3 (2026-11-20, [NÃO PUBLICADO]):** entram `TextField`, `TextArea`, `Select`, `Switch`, `Tabs` com `TabPanel` e `Notice` (login, Configurações e as telas da faixa C), e, a pedido da faixa D, `IconButton`, `Tag`, `ProgressBar`, `Slider`, `FilePicker`, `Toast` e `SearchField`; três limites conhecidos saem: Chip e opção do Segmented ganham o anel de foco laranja, o Chip desligado fica a 35% e a opção desligada do Segmented fica a 35% (a marcada desligada continua com cara de escolhida).
 
 #### `<Button>`
 
@@ -417,6 +417,80 @@ const id = useId()
 
 - `tone`: `info` (padrão, neutro: `s2`, texto `bone`, anel `line`) | `alert` (âmbar: `alert-soft`, texto `alert` em semibold, anel `alert-line`). Sem verde de sucesso: a linguagem não tem cor de "deu certo", então confirmação é `info`.
 - Raio 10px, 13px, quebra palavra longa. O papel (`role="alert"`, `role="status"`) e o `aria-live` são de quem usa. Repassa os atributos de `<div>`.
+
+#### `<IconButton>` (Parte 3, pedido da faixa D)
+
+```tsx
+<IconButton icon={<Icon name="edit" />} aria-label="Editar a música" onClick={editar} />
+<IconButton tone="alert" icon={<Trash2 size={16} />} aria-label="Excluir a música" onClick={excluir} />
+```
+
+- O `Button` só com ícone, com `aria-label` **obrigatório no tipo** (TypeScript recusa sem ele). O `title` (dica do mouse) é o mesmo nome quando não vem outro. 44 x 44px, ícone escondido do leitor de tela, `type="button"`.
+- Aceita as props do `Button` (menos `icon` como opcional e `children`): `tone` (`default`, `ghost`, `alert` e os outros do Button), `pressed`, `disabled`, `size`.
+- Na Parte 3, o X das Configurações e o "atualizar a lista" do aparelho de saída usam ele.
+
+#### `<Tag>` (Parte 3, pedido da faixa D)
+
+```tsx
+<Tag>OFFLINE</Tag>
+<Tag num>128 BPM</Tag>
+<Tag tone="on">Mais Popular</Tag>
+<Tag tone="live">Adicionada</Tag>
+```
+
+- Selo estático de metadado (não é botão), na cara do selo ONLINE/OFFLINE da barra do palco: 22px de altura, pílula, 10px extrabold com espaçamento .14em, sem quebra.
+- `tone`: `neutral` (padrão: `s2`, texto `mut`, anel `line-2`) | `on` (laranja suave) | `live` (musgo, com a luz acesa) | `alert` (âmbar). `num`: fonte mono de largura fixa (BPM, contagem). `dot`: luz antes do texto (padrão: só no `live`).
+- Não muda a caixa do texto: escreva como deve aparecer (OFFLINE em caixa alta, tom como `C#m`).
+
+#### `<ProgressBar>` (Parte 3, pedido da faixa D)
+
+```tsx
+<ProgressBar label="Separando" value={progresso} max={100} valueText={`${progresso}%`} />
+<ProgressBar label="Abrindo no palco" hideLabel value={null} />
+```
+
+- `role="progressbar"` com `aria-valuemin` 0, `aria-valuemax` (`max`, padrão 100), `aria-valuenow` e `aria-valuetext` (`valueText`). Nome: o rótulo visível (`ps-label`) ou, com `hideLabel`, o `aria-label`.
+- Trilha `s3` de 6px, preenchimento laranja na proporção (valor fora do intervalo fica no limite), com transição. `value={null}` (não dá pra saber quanto falta): um terço da barra piscando, sem `aria-valuenow`; parado com "reduzir movimento".
+
+#### `<Slider>` (Parte 3, pedido da faixa D)
+
+```tsx
+<Slider label="Volume geral" value={volume} min={0} max={1} step={0.01} valueText={`${Math.round(volume * 100)}%`} onChange={setVolume} />
+```
+
+- `input type="range"` no tema: alvo de 44px de altura, trilha `s3` de 6px preenchida em laranja até o valor (variável `--ps-fill` no WebKit, `-moz-range-progress` no Firefox), polegar `bone` de 20px, anel de foco laranja.
+- Props: `label`, `hideLabel`, `value`, `onChange(valor: number)`, `min` (0), `max` (100), `step` (1), `valueText` (mostrado ao lado do nome e lido como `aria-valuetext`), `className` (contêiner), `inputClassName`, e o resto do `<input>` (`disabled`, `aria-*`).
+
+#### `<FilePicker>` (Parte 3, pedido da faixa D)
+
+```tsx
+<FilePicker label="Carregar áudio" accept="audio/*,.mp3,.wav" fileName={arquivo?.name} onFiles={([f]) => setArquivo(f)} onClear={() => setArquivo(null)} />
+<FilePicker label="Imagem de capa" accept="image/*" droppable={false} onFiles={([f]) => setCapa(f)} />
+```
+
+- Um `Button` do kit (`tone` e `icon` opcionais) que abre o seletor do sistema (Enter e Espaço são do próprio botão), o nome escolhido ao lado (`fileName`, de quem chama) e o "Tirar" (`Button ghost`, com `onClear`; texto em `clearLabel`).
+- **Arrastar e soltar** (`droppable`, padrão ligado): a área tem borda tracejada `line-2`; arrastando por cima, borda `or-line` e fundo `or-soft`. Sem nome escolhido, a dica "ou arraste o arquivo aqui" (ou "os arquivos"), que some em tela de toque.
+- **Filtro:** `onFiles` recebe só o que o `accept` aceita (extensão como `.mp3`, sem diferença de maiúscula; tipo como `audio/*` ou `image/png`), e só o primeiro sem `multiple`. O que o `accept` recusou vai pro `onReject` (pra tela avisar). O seletor é limpo depois de cada escolha (o mesmo arquivo pode ser escolhido de novo).
+- `help` (frase embaixo, ligada ao botão), `disabled` (não abre nem aceita soltar), `id` (do input de arquivo).
+
+#### `<Toast>` (Parte 3, pedido da faixa D)
+
+```tsx
+<Toast open={salvo} onClose={() => setSalvo(false)} playing={isPlaying || isCountingIn}>Tudo salvo na biblioteca</Toast>
+```
+
+- Aviso curto no topo da tela (centralizado, 16px da borda, `z-[130]`), num `Notice` (`tone` `info` ou `alert`) com sombra `ps-pop`. Some sozinho depois de `duration` (padrão 2,5 s) chamando `onClose`.
+- **Nunca por cima da música:** com `playing` (música tocando ou na pré-contagem) não aparece e é descartado (`onClose` na hora); se a música começa com ele na tela, some na hora.
+- Não puxa o foco e não bloqueia o toque no que está embaixo (`pointer-events-none`). A região `role="status"` (`aria-live="polite"`) fica sempre na página, vazia quando fechado, pra o leitor de tela anunciar quando o texto entra.
+
+#### `<SearchField>` (Parte 3, pedido da faixa D)
+
+```tsx
+<SearchField label="Buscar músicas" placeholder="Buscar por nome ou artista" value={busca} onChange={setBusca} />
+```
+
+- O `TextField` com `type="search"` (papel `searchbox`), a lupa no começo e, com texto, o limpar (`IconButton ghost` de 44px, `clearLabel`, padrão "Limpar a busca") no fim, que devolve o foco ao campo. O X do próprio navegador some.
+- `onChange(texto)` recebe o texto (não o evento). `onClear` opcional (sem ele, limpar chama `onChange('')`). O rótulo nasce escondido (`hideLabel` padrão `true`): o leitor de tela lê, a lupa e o placeholder dizem o que é.
 
 #### `cx(...partes)`
 

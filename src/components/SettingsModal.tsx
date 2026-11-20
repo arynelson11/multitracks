@@ -17,7 +17,7 @@ import { StageVersionSetting } from './settings/StageVersionSetting';
 import { AudioOutputsSection } from './settings/AudioOutputsSection';
 import { CUE_TO_PA_CONFIRM_TEXT, needsCueToPaConfirm, type OutputWarning } from '../lib/outputPlan';
 import type { OutputSettings } from '../lib/stageContracts';
-import { Button, Panel, Select, Switch, TabPanel, Tabs } from './ui';
+import { Button, IconButton, Panel, Select, Switch, TabPanel, Tabs } from './ui';
 import { SettingRow } from './settings/SettingRow';
 import { Icon } from './stage/icons';
 
@@ -116,7 +116,7 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                         onChange={setActiveTab}
                         className="min-w-0 flex-1"
                     />
-                    <Button icon={<Icon name="x" />} aria-label="Fechar" title="Fechar" onClick={onClose} />
+                    <IconButton icon={<Icon name="x" />} aria-label="Fechar" onClick={onClose} />
                 </div>
 
                 {/* Conteúdo da aba aberta */}
