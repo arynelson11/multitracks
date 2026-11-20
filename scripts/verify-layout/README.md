@@ -8,8 +8,9 @@ nova: usa o Vite, o React e o Tailwind do repo e o Google Chrome da máquina.
 
 ```bash
 source ~/.nvm/nvm.sh && nvm use 24
-node scripts/verify-layout/run.mjs                                    # rodada inteira (270 combinações, abaixo)
+node scripts/verify-layout/run.mjs                                    # rodada inteira (298 combinações, abaixo)
 node scripts/verify-layout/run.mjs --only 1280x800 --estado quebrado  # prova: tem de sair com 1
+node scripts/verify-layout/run.mjs --only 390x844 --estado quebrado   # prova da moldura do celular: tem de sair com 1
 node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
 ```
 
@@ -20,10 +21,13 @@ node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
 | `--jobs N` | quantos Chrome ao mesmo tempo (padrão 3) |
 | `--no-build` | usa a página já montada em `.build/` |
 
-Sem opção, a rodada mede os 11 estados do palco e as 16 telas da faixa C nos 8
-tamanhos (216), as 14 telas da faixa C que abrem no celular também em 390x844
-(14; o Modo Ao Vivo do host só existe no computador) e as 10 telas da faixa B em
-5 tamanhos (50): 280 combinações.
+Sem opção, a rodada mede os 11 estados do palco e 18 dos 19 estados das 10 telas
+da faixa C nos 8 tamanhos (232), 16 estados da faixa C em 390x844 (os 15 que
+abrem no celular, sem os três do Modo Ao Vivo do host, que só existe no
+computador, mais o `download-celular`, que só existe no celular) e os 10 estados
+das 3 telas da faixa B em 5 tamanhos (50): 298 combinações. A prova da moldura
+(`--only 390x844 --estado quebrado`) tem de sair com 1: mostra que a página no
+iframe do celular também acusa falha.
 
 Demais telas da Parte 3 (faixa C): cada uma tem um estado (lista em
 `telasEstados.ts`, telas montadas em `telas.tsx`), medido como o palco, sem a
@@ -42,7 +46,7 @@ em `results/<estado>_<LxA>.json`. Outro Chrome: `CHROME=/caminho/do/chrome`.
 
 ## Telas da faixa B da Parte 3 (login e Configurações)
 
-Sem `--estado`, a rodada normal também mede 10 telas fora do palco (`telasB.ts` e `TelasBPage.tsx`, Parte 3, faixa B,
+Sem `--estado`, a rodada normal também mede 10 estados de 3 telas fora do palco (`telasB.ts` e `TelasBPage.tsx`, Parte 3, faixa B,
 não publicado) em 1024x740, 1280x800, 1920x1080, 390x844 (celular) e 844x390 (celular deitado, onde as Configurações cortavam o fim da aba): 50 combinações a mais.
 
 | Estado | O que mostra |
@@ -89,11 +93,13 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `teleprompter` | Teleprompter (faixa C) no "Refrão Final Estendido" com 4 linhas longas de letra |
 | `teleprompter-vazio` | Teleprompter sem música e sem seções |
 | `novidades` | Novidades (faixa C) com a entrada mais nova do changelog de verdade |
-| `atualizacao` | Aviso de atualização (faixa C) do app de computador no Mac ("Versão 1.4.30 já saiu") |
-| `tour` | Tour (faixa C) no passo do Modo Ao Vivo, com o spotlight num botão no meio da página |
+| `atualizacao` | Aviso de atualização (faixa C) do app de computador no Mac ("Versão 1.4.30 já saiu", Baixar) |
+| `atualizacao-web` | o aviso do site (service worker com a versão nova esperando, simulado): o texto mais longo (66 caracteres) e o botão Atualizar; é o único que aparece no celular (revisão macro BC, BC3-4) |
+| `tour` | Tour (faixa C) no passo com o texto mais longo do app (Atalhos de teclado do palco antigo; revisão macro BC, BC3-4: antes era o do Modo Ao Vivo), com o spotlight num botão no meio da página |
 | `tour-centro` | Tour no primeiro passo, sem alvo (balão no meio) |
 | `download` | Página de download (faixa C) inteira, no computador Mac (os dois instaladores do Mac em destaque) |
 | `download-ajuda` | o mesmo, com a ajuda do Mac aberta (os 4 passos e o comando do Terminal) |
+| `download-celular` | a página aberta num iPhone (navegador simulado), o ramo do celular: o guia de instalar no topo, sem o QR code; só em 390x844 (revisão macro BC, BC3-4: o `download` em 390 mede o ramo do computador) |
 | `aovivo` | Modo Ao Vivo do host (faixa C) ligado, endereço longo e três aparelhos (um sem IP, um IPv6, um liberado); só existe no computador, então sem 390 |
 | `aovivo-cheio` | o mesmo, com a banda inteira conectada (6 aparelhos, 2 liberados): o conteúdo passa da altura e a área rola (revisão macro BC, BC2-I2: com o `justify-center`, o topo do QR ficava acima do começo da rolagem) |
 | `aovivo-erro` | o mesmo, com o erro de abrir o servidor |

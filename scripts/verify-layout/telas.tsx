@@ -50,9 +50,11 @@ const LYRIC_SONG = {
   chords: 'E              B              C#m        A\nGrande é o Senhor e mui digno de louvor na cidade do nosso Deus, seu santo monte',
 } as unknown as Song
 
-// Aviso de atualização: o app de computador avisa na hora que existe a versão nova (caso do Mac,
-// o texto mais longo). Só no estado dele, pra nenhum outro estado ganhar o aviso por cima.
-if (new URLSearchParams(location.search).get('estado') === 'atualizacao') {
+const ESTADO = new URLSearchParams(location.search).get('estado')
+
+// Aviso de atualização no app de computador: avisa na hora que existe a versão nova (caso do Mac,
+// "Baixar"). Só no estado dele, pra nenhum outro estado ganhar o aviso por cima.
+if (ESTADO === 'atualizacao') {
   window.playbackDesktop = {
     onUpdateReady: () => noop,
     onUpdateAvailable: (cb: (info: { version: string }) => void) => { cb({ version: '1.4.30' }); return noop },
@@ -60,8 +62,34 @@ if (new URLSearchParams(location.search).get('estado') === 'atualizacao') {
   } as unknown as Window['playbackDesktop']
 }
 
-/** Passos do tour com o texto mais longo do app (o passo das seções e o do Modo Ao Vivo). */
+// Aviso de atualização no site (revisão macro BC, BC3-4): o caso do texto mais longo (66
+// caracteres, "Atualizar") e o único que aparece no celular. Simula a versão nova do service worker
+// já esperando, com a página controlada por ele.
+if (ESTADO === 'atualizacao-web') {
+  const registro = { waiting: { postMessage: noop }, addEventListener: noop, update: () => Promise.resolve() }
+  Object.defineProperty(navigator, 'serviceWorker', {
+    configurable: true,
+    value: { controller: {}, addEventListener: noop, removeEventListener: noop, getRegistration: () => Promise.resolve(registro) },
+  })
+}
+
+// Página de download aberta no celular (revisão macro BC, BC3-4): o ramo do celular (guia de
+// instalar no topo, sem o QR code), que o estado download em 390 nunca mede (lá o navegador é o do
+// computador).
+if (ESTADO === 'download-celular') {
+  Object.defineProperty(navigator, 'userAgent', {
+    configurable: true,
+    get: () => 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1',
+  })
+}
+
+/**
+ * Passos do tour com alvo: o primeiro (o medido no estado tour) é o de texto mais longo do app, o
+ * Atalhos de teclado do palco antigo (revisão macro BC, BC3-4: antes era o do Modo Ao Vivo), e o
+ * Modo Ao Vivo vem depois.
+ */
 const TOUR_ALVO = [
+  { target: 'alvo', title: 'Atalhos de teclado', body: 'Espaço toca/pausa. Setas ← → andam 5s na música (com Shift, 1s, pra ajuste fino). Pra marcar uma parte na hora certa, tecle a inicial: I Intro, V Verso, P Pré, R Refrão, B Ponte, F Final.' },
   { target: 'alvo', title: 'Modo Ao Vivo (Host)', body: 'A banda conecta pelo celular (QR Code) e acompanha música, tom, parte e letra. Quem você liberar também repete e volta seções pelo próprio celular. Você decide quem controla.' },
   { title: 'Tudo pronto!', body: 'Agora é com você.' },
 ]
@@ -93,7 +121,7 @@ export function TelaPage({ estado }: { estado: TelaEstado }) {
       )}
       {estado === 'teleprompter-vazio' && <Teleprompter songName={null} hasMarkers={false} marker={null} currentTime={0} duration={0} onClose={noop} />}
       {estado === 'novidades' && <WhatsNewModal onClose={noop} />}
-      {estado === 'atualizacao' && <UpdateBanner />}
+      {(estado === 'atualizacao' || estado === 'atualizacao-web') && <UpdateBanner />}
       {estado === 'tour' && (
         <>
           <button type="button" data-tour="alvo" className="absolute left-1/2 top-[30%] min-h-ps-touch -translate-x-1/2 rounded-ps-lg bg-ps-s1 px-ps-pad-x text-ps-sm font-bold text-ps-bone">HOST</button>
@@ -101,7 +129,7 @@ export function TelaPage({ estado }: { estado: TelaEstado }) {
         </>
       )}
       {estado === 'tour-centro' && <GuidedTour steps={TOUR_CENTRO} onClose={noop} />}
-      {(estado === 'download' || estado === 'download-ajuda') && <DownloadPage />}
+      {(estado === 'download' || estado === 'download-ajuda' || estado === 'download-celular') && <DownloadPage />}
       {estado === 'aovivo' && <LiveModeModal {...LIVE} serverError={null} />}
       {estado === 'aovivo-cheio' && <LiveModeModal {...LIVE} devices={BANDA_CHEIA} approvedIps={BANDA_CHEIA.slice(0, 2)} serverError={null} />}
       {estado === 'aovivo-erro' && <LiveModeModal {...LIVE} serverUrl={null} serverError="Não deu pra abrir a porta 3000: outro programa está usando (EADDRINUSE)." />}

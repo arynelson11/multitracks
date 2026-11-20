@@ -1,6 +1,6 @@
 // Estados das demais telas da Parte 3 (faixa C) no verificador: uma janela ou página por estado,
 // montada em telas.tsx, com o que conferir e o que abrir antes de medir. O run.mjs tem a mesma lista.
-export const TELA_ESTADOS = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'tour', 'tour-centro', 'download', 'download-ajuda', 'aovivo', 'aovivo-cheio', 'aovivo-erro', 'adminlogin'] as const
+export const TELA_ESTADOS = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'download-celular', 'aovivo', 'aovivo-cheio', 'aovivo-erro', 'adminlogin'] as const
 export type TelaEstado = (typeof TELA_ESTADOS)[number]
 
 export function isTela(value: string): value is TelaEstado {
@@ -18,10 +18,14 @@ export const TELA_EXPECT: Record<TelaEstado, { sel: string; text?: string }> = {
   'teleprompter-vazio': { sel: '[role="progressbar"]' },
   novidades: { sel: '[role="dialog"] li' },
   atualizacao: { sel: '[role="status"] button' },
+  'atualizacao-web': { sel: '[role="status"] button', text: 'Atualizar' },
   tour: { sel: '[data-tour-spotlight]' },
   'tour-centro': { sel: '[data-tour-backdrop]' },
   download: { sel: 'main#conteudo [data-feature]' },
   'download-ajuda': { sel: 'main#conteudo code' },
+  // O ramo do celular: o guia de instalar do iPhone (o primeiro passo é o Compartilhar; no
+  // computador o primeiro passo é o da câmera, sem negrito).
+  'download-celular': { sel: 'main#conteudo ol li:first-child strong', text: 'Compartilhar' },
   aovivo: { sel: '[role="dialog"] li [aria-pressed="true"]' },
   'aovivo-cheio': { sel: '[role="dialog"] li:nth-child(6) [aria-pressed]' },
   'aovivo-erro': { sel: '[role="dialog"] [role="alert"]' },
