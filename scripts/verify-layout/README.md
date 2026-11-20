@@ -20,6 +20,13 @@ node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
 | `--jobs N` | quantos Chrome ao mesmo tempo (padrão 3) |
 | `--no-build` | usa a página já montada em `.build/` |
 
+Demais telas da Parte 3 (faixa C): cada uma tem um estado (lista em
+`telasEstados.ts`, telas montadas em `telas.tsx`), medido como o palco, sem a
+regra de estrutura. Pra largura de celular, peça o tamanho direto
+(`--only 390x844`): o Chrome headless não abre janela abaixo de 500 px, então a
+página de fora põe a mesma página num iframe do tamanho pedido
+(`?celular=390x844`) e quem mede é a de dentro.
+
 Sai com `0` quando todas as combinações passam, `1` com qualquer falha (ou
 página que não respondeu) e `2` com opção errada. O JSON de cada combinação fica
 em `results/<estado>_<LxA>.json`. Outro Chrome: `CHROME=/caminho/do/chrome`.
@@ -45,6 +52,7 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `tom` | grade de tons aberta (toque no botão do tom), com "Redefinir detecção de tom" |
 | `semtom` | grade aberta sem tom original: semitons em 3 linhas, com "Definir o tom original" ao lado do 0 |
 | `compasso` | diálogo do compasso aberto no EDITAR |
+| `metronomo` | Metrônomo (Parte 3, faixa C) numa página própria, com uma música que já tem click |
 | `config` | as duas seções da T19 numa página própria: placa de 2 canais (caindo de 4 ou mais, com avisos) e de 8 canais |
 | `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso pra cada ramo das regras (15 falhas, uma por ramo) |
 

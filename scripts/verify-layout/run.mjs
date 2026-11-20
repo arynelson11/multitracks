@@ -24,7 +24,9 @@ const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/M
  */
 const SIZES = ['1024x740', '1024x768', '1280x760', '1280x800', '1440x900', '1920x1080', '900x740', '810x1080']
 /** Estados da rodada normal: a mesma lista de ESTADOS em fixture.ts. */
-const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config']
+const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config',
+  // Demais telas da Parte 3 (faixa C), a mesma lista de telasEstados.ts.
+  'metronomo']
 const PROVA = 'quebrado'
 const TIMEOUT_S = 40
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -122,11 +124,15 @@ async function calibrate(port) {
   return { dw: 1280 - got.w, dh: 800 - got.h }
 }
 
+/** O Chrome headless não abre janela mais estreita que isto: abaixo, a página mede dentro de um iframe (main.tsx). */
+const MIN_WINDOW_W = 500
+
 async function runOne(port, frame, estado, size) {
   const [w, h] = size.split('x').map(Number)
   const name = `${estado}_${size}`
   const t0 = Date.now()
-  const data = await chromeRun(`http://127.0.0.1:${port}/index.html?estado=${estado}&name=${name}`, name, w + frame.dw, h + frame.dh)
+  const celular = w < MIN_WINDOW_W ? `&celular=${size}` : ''
+  const data = await chromeRun(`http://127.0.0.1:${port}/index.html?estado=${estado}&name=${name}${celular}`, name, Math.max(w, MIN_WINDOW_W) + frame.dw, h + frame.dh)
   if (!data) return { name, estado, size, fatal: `sem resposta em ${TIMEOUT_S}s` }
   if (data.fatal) return { name, estado, size, fatal: data.fatal }
   // A janela tem de ser do tamanho pedido: senão a medida não vale pra esse tamanho.

@@ -10,6 +10,8 @@ import { StageVersionSetting } from '../../src/components/settings/StageVersionS
 import { RepertoirePanel } from '../../src/components/stage/RepertoirePanel'
 import { StageShell } from '../../src/components/stage/StageShell'
 import { describe, reportFatal, verifyPage } from './check'
+import { TelaPage } from './telas'
+import { isTela, TELA_EXPECT, TELA_PREPARE } from './telasEstados'
 import type { Failure } from './check'
 import type { Estado } from './fixture'
 import { ACTIONS, CLOCK, OUTPUT_CASES, PADS, makePeaks, outputWarningFor, parseEstado, repertoireProps, viewFor } from './fixture'
@@ -119,6 +121,7 @@ function tap(selector: string): void {
 
 /** O que abrir depois de montar: a grade de tons e o diálogo do compasso são estado da casca. */
 const PREPARE: Partial<Record<Estado, () => void>> = {
+  ...TELA_PREPARE,
   tom: () => tap('[data-cell="tom"] button[aria-haspopup="dialog"]'),
   semtom: () => tap('[data-cell="tom"] button[aria-haspopup="dialog"]'),
   compasso: () => tap('[data-cell="tempo"] button[title="Escolher o compasso da música"]'),
@@ -126,6 +129,7 @@ const PREPARE: Partial<Record<Estado, () => void>> = {
 
 /** O que tem de estar na tela em cada estado (e o texto, quando importa). Sem isso a medida passaria sem medir o estado. */
 const EXPECT: Record<Estado, { sel: string; text?: string }> = {
+  ...TELA_EXPECT,
   normal: { sel: '[data-stage-shell] [data-waveform] [data-block]' },
   contando: { sel: '[data-channel-strip] [data-count][data-on="true"]', text: '2' },
   pads: { sel: '[role="dialog"][aria-label="Pads"]' },
@@ -222,12 +226,29 @@ const name = params.get('name') ?? 'resultado'
 const raw = params.get('estado')
 const estado = parseEstado(raw)
 
-if (!estado) {
+/**
+ * Celular (largura abaixo de 500 px): o Chrome headless não abre janela mais estreita que 500 px,
+ * então a página de fora só põe a mesma página num iframe do tamanho pedido (`?celular=390x844`),
+ * e quem mede e manda o resultado é a de dentro, com a janela do tamanho do celular.
+ */
+const celular = params.get('celular')
+if (celular && window.self === window.top) {
+  const [w, h] = celular.split('x').map(Number)
+  const inner = new URLSearchParams(location.search)
+  inner.delete('celular')
+  const frame = document.createElement('iframe')
+  frame.src = `${location.pathname}?${inner.toString()}`
+  frame.title = 'Tela do celular'
+  frame.style.cssText = `display:block;border:0;width:${w}px;height:${h}px`
+  document.body.style.margin = '0'
+  document.body.replaceChildren(frame)
+} else if (!estado) {
   reportFatal(name, String(raw), `estado desconhecido: ${String(raw)}`)
 } else {
   window.addEventListener('error', (e) => reportFatal(name, estado, `erro na página: ${e.message}`))
   createRoot(document.getElementById('root')!).render(
-    <StrictMode>{estado === 'config' ? <ConfigPage /> : <Stage estado={estado} />}</StrictMode>,
+    <StrictMode>{isTela(estado) ? <TelaPage estado={estado} /> : estado === 'config' ? <ConfigPage /> : <Stage estado={estado} />}</StrictMode>,
   )
-  void verifyPage(name, estado, { prepare: PREPARE[estado], expect: () => expectState(estado), checks: estado === 'config' ? undefined : () => stageStructure(estado) })
+  const semPalco = estado === 'config' || isTela(estado)
+  void verifyPage(name, estado, { prepare: PREPARE[estado], expect: () => expectState(estado), checks: semPalco ? undefined : () => stageStructure(estado) })
 }

@@ -544,6 +544,20 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 - **Verificador:** estado `selo` em `scripts/verify-layout/` (OFFLINE, HOST, SAÍDAS e "3 de 3", palco parado), com duas regras novas da casca: a partir de 1024px nada rola de lado, e o aviso SAÍDAS não cobre o ONLINE, o selo nem o menu.
 - Teste: `src/components/livre/houseAd.test.tsx` (peça e texto), `src/components/stage/panels.test.tsx` (barra), `src/components/stage/buildStageView.test.ts` (some tocando) e `src/components/stage/stageShell.test.tsx` (posição do SAÍDAS).
 
+
+### 2.9 Demais telas (Parte 3, faixa C, 2026-11-20, não publicado)
+
+> As telas que sobravam no visual antigo (spec da Parte 3, seção 9, a parte 6) passam pra linguagem do palco: tokens `ps-*` (seção 1.7), as peças de `src/components/ui/` (seção 2.6) e a janela do palco (`StageDialog`, seção 2.7). Muda a cara, não o que as telas fazem. Fatos na entrada de 2026-11-20 (faixa C) do `PLAYBACK_STUDIO_FATOS.md`.
+
+**Regras da faixa:**
+- **Janela por cima é o `StageDialog`** (X de 44 px, Esc, toque fora, foco preso e devolvido, pilha). A exceção é o Modo Ao Vivo do host, que abre os Planos por cima de si (ver o item dele).
+- **Nenhuma classe do visual antigo:** nada do dourado `primary` nem do ciano `secondary`, nada de `daw-*`, hex solto na classe, texto de 8 ou 9 px, cores prontas do Tailwind (`zinc`, `orange`...), branco solto ou as fontes antigas. O teste de cada tela confere com `oldLanguageClasses` (`src/test/psLanguage.ts`).
+- **Verificador:** cada tela tem um estado em `scripts/verify-layout/` (página `telas.tsx`, lista em `telasEstados.ts`), medido em 1024x740, 1280x800, 1920x1080 e, onde a tela abre no celular, 390x844. Abaixo de 500 px o Chrome headless não abre a janela: a página mede dentro de um iframe do tamanho pedido (`?celular=390x844`, que o `run.mjs` põe sozinho).
+
+| Tela | Arquivo | Como ficou |
+|---|---|---|
+| Metrônomo | `src/components/MetronomeModal.tsx` | `StageDialog size="sm"` "Metrônomo". Andamento (`ps-label` e o nome do andamento em `mut`), BPM em `TextField` numérico com "BPM" no fim e `Button` só de ícone − e + dos lados; TAP TEMPO (`Button` com `Led` aceso enquanto conta) e 2× (`Chip`); Som do click, Subdivisão e Compasso em `Chip small` com `on` e `aria-pressed`, quebrando linha; "Acentuar o 1" em `Switch`; "gerando" em `Notice role="status"` e o click descartado em `Notice tone="alert"`; GERAR CLICK MANUAL (`Button`) e Gerar click IA (`Button tone="primary"`, a ação principal), um embaixo do outro na largura da janela. Fechar não faz nada enquanto o click é gerado. Teste: `MetronomeModal.look.test.tsx` e `MetronomeModal.auto.test.tsx`. |
+
 ---
 
 ## 3. Moléculas

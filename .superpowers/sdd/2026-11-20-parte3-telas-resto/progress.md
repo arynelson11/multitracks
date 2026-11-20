@@ -23,3 +23,7 @@ Worktree: `~/playback-studio-work/parte3-telas-c`. Uma linha por tarefa: commit 
 
 ## Tarefas
 
+- Task 1: Ruling: a data do cabeçalho do DESIGN_SYSTEM (linha "Atualizado") não muda nesta faixa; a data fica no título da seção 2.9. Por quê: a faixa B mexe na mesma linha e a junção brigaria. Custo se errado: o coordenador acerta a linha na junção.
+- Task 1: Ruling: o verificador ganhou o modo celular (`?celular=390x844`, iframe) no `run.mjs` e no `main.tsx`. Por quê: o Chrome headless não abre janela abaixo de 500 px (a 390x844 voltava 500x844 e dava ERRO). Custo se errado: a faixa B pode precisar do mesmo e juntar o mesmo trecho.
+- Task 1: Ruling: o ajuste do campo do kit (e66a3eb, 2 linhas em `src/components/ui/Field.tsx`) entrou como commit próprio `9c42b95`, idêntico ao da faixa B, a pedido do coordenador. Custo se errado: nenhum (mesma mudança dos dois lados, a junção não briga).
+- Task 1: Ruling: GERAR CLICK MANUAL e Gerar click IA aparecem os dois em caixa alta (`uppercase` no IA, texto igual). Por quê: os dois botões lado a lado com caixas diferentes ficavam desencontrados. Custo se errado: nenhum (o nome acessível não muda).

@@ -174,6 +174,11 @@ Confirmado por prints do produto em produção (2026-07-08):
 
 ## 6. Histórico de mudanças (para saber o que foi feito sem rodar tudo)
 
+### 2026-11-20: Demais telas no layout do palco (Parte 3, faixa C) [NÃO PUBLICADO]
+**Não publicado.** Branch `feat/parte3-telas-c` (a partir de `52eba03`, com o kit da faixa B juntado no merge `5161167`), plano `docs/superpowers/plans/2026-11-20-parte3-telas-resto.md`, spec `docs/superpowers/specs/2026-11-19-parte3-telas-e-livre-design.md` (seção 9, a parte 6, "o resto"). Muda a cara, não o que as telas fazem. O visual de cada tela fica no DESIGN_SYSTEM 2.9.
+
+- **Metrônomo (`MetronomeModal.tsx`):** vira a janela do palco (`StageDialog`, título "Metrônomo"). O BPM fica num campo com − e + dos lados; som do click, subdivisão e compasso em chips, com a escolha em laranja; "Acentuar o 1" virou interruptor. Nada sumiu: TAP TEMPO, 2×, a prévia do som, o compasso guardado por música, o click manual, o click IA com o resultado e os avisos. Novo: o Esc e o toque fora fecham, como em toda janela do palco, e enquanto o click é gerado a janela não fecha por nenhum caminho (antes só o X ficava desligado).
+
 ### 2026-11-20: Login e Configurações no layout do palco (Parte 3, faixa B) [NÃO PUBLICADO]
 **Não publicado.** Branch `feat/parte3-telas-b` (a partir de `52eba03`, a `feat/parte3-telas-livre`), plano `docs/superpowers/plans/2026-11-20-parte3-telas-login-config.md`, spec `docs/superpowers/specs/2026-11-19-parte3-telas-e-livre-design.md` (seção 9). Muda a cara, não o que as telas fazem.
 
