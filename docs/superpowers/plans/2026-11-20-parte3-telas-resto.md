@@ -25,9 +25,24 @@
 - Um commit por tarefa, `git commit -m "..." -- <arquivos>`, mensagem em português sem travessão, terminando com `[Parte 3] [faixa C] [Tn]`. Nada de push, tag, rebase, reset ou merge (a única junção é o commit do kit, uma vez).
 - Durante as tarefas, só os testes dos arquivos tocados. Portão completo só na T12.
 
+## Ajuste depois do kit (commit `6a18d4a`, juntado no merge `5161167`)
+
+Peças novas de `src/components/ui/` (API em `~/playback-studio-work/parte3-faixas/kit-novo.md`, DESIGN_SYSTEM 2.6): `TextField`, `TextArea`, `Select`, `Switch`, `Tabs` + `TabPanel`, `Notice`. Onde o plano diz "campo do kit", "interruptor do kit", "abas do kit":
+
+| Tela | Peça |
+|---|---|
+| Metrônomo (T1) | BPM: `TextField` `type="number"` `label="BPM"` `hideLabel` `trailing="BPM"`, `inputClassName="text-center ps-num font-bold"` (sem trocar o tamanho da fonte: o campo já tem 16 px e duas utilidades de fonte no mesmo elemento brigam). Acentuar o 1: `Switch` (`getByRole('switch', { name: 'Acentuar o 1' })`). "Gerando" em `Notice role="status"`; click descartado em `Notice tone="alert" role="status"`. |
+| Pads (T2) | `TextField` "Nome do conjunto" e "Descrição (opcional)"; erro de carregar em `Notice tone="alert" role="alert"`. |
+| Letra (T3) | `StageDialog size="lg"` (672 px, decisão do coordenador). `TextField` "Artista (para a busca)"; `Tabs` + `TabPanel` (Letra, Cifra; `role="tab"`); `TextArea` `rows={12}` nas duas, a da cifra com `whitespace-pre` e a fonte mono por `style={{ fontFamily: 'var(--font-ps-mono)' }}` (o campo já traz `font-ps-sans`). Mensagens em `Notice role="status"`. |
+| Ao Vivo (T9) | erro em `Notice tone="alert" role="alert"`; Controla/Só segue em `Chip on` com `aria-pressed`. |
+| Admin (T10) | `AdminLogin`: `TextField` "E-mail" e "Senha", erro em `Notice tone="alert" role="alert"`. `AdminShell`: as abas mostram contador e LED dentro da aba, o que as `Tabs` do kit (rótulo só texto) não fazem: ficam como estão; só sai o `TAB_FOCUS`, que o `Chip` agora já tem. `ConfirmDialog`: o campo da nota vira `TextArea` só se os testes dele passarem sem mudança (a nota tem duas linhas de ajuda e foco no abrir); senão fica, com o motivo no relatório. |
+| Download (T8) | o kit não tem link com cara de botão: o `<a>` de download leva classes `ps-*` próprias e o relatório pede um `ButtonLink` pro kit. |
+
+Decisões do coordenador: o `StageDialog` agora tem pilha (Esc e toque fora só na de cima, a aberta por último sobe um degrau de z) e `size="lg"`; Teleprompter em componente com a troca no App descrita no relatório (o coordenador faz na junção); Ao Vivo com camada própria em z-[100] aprovado; entrada única no FATOS, seção 2.9 e página própria no verificador aprovadas. `Chip` e `Segmented` ganharam anel de foco laranja; `Chip` desligado e opção desligada não marcada do `Segmented` ficam a 35%: conferir no verificador e no olho os chips desligados do Metrônomo (2× acima de 150, chips do resultado tocando).
+
 ## Review Focus
 
-1. **Duas janelas do palco ao mesmo tempo.** O `StageDialog` trata o Esc na captura da `window`: duas abertas fecham juntas. Metrônomo, pads, letra e novidades viram `StageDialog`; o Modo Ao Vivo não, porque abre os Planos (`PricingModal`, z-[110]) por cima de si quando passa do limite de aparelhos (T9 tem o teste da camada). A tela de limite da frente 1b também é `StageDialog`: anotar no relatório.
+1. **Duas janelas do palco ao mesmo tempo.** Resolvido no kit: o `StageDialog` tem pilha (Esc e toque fora só na de cima). Metrônomo, pads, letra e novidades viram `StageDialog`; o Modo Ao Vivo não, porque abre os Planos (`PricingModal`, z-[110]) por cima de si quando passa do limite de aparelhos (T9 tem o teste da camada).
 2. **Fechar no meio de uma geração.** O X do Metrônomo era desligado enquanto gerava o click; o `StageDialog` não tem X desligado. Fechar (X, Esc, toque fora) não faz nada enquanto gera (T1 tem o teste).
 3. **Texto comprido.** Nome de conjunto de pads, descrição, nome de música, e-mail e IP longos quebram linha, nunca cortam (fixtures do verificador com nomes longos em T1 a T10).
 4. **Celular (390 px).** Toda janela cabe em 390 x 844 sem rolar de lado e com o conteúdo rolando dentro (verificador com `--only 390x844` em cada estado que abre no celular; o Modo Ao Vivo só existe no computador).
@@ -121,7 +136,7 @@ Fechar e foco: o `StageDialog` já dá X de 44 px com `aria-label="Fechar"`, Esc
   - `Salvar manda o que está nas áreas e diz onde salvou`: `onSave` com `{ lyrics: null, lyricsSynced: null, chords: 'E B' }` para letra só com espaços; mensagens de nuvem, local e erro.
   - `linguagem`: dialog `Letra e cifra`; `oldLanguageClasses` vazio; nenhum travessão no texto da tela (o aviso e a dica da cifra hoje têm travessão).
 - [ ] **Step 2:** ver falhar.
-- [ ] **Step 3: Implementar.** `StageDialog size="md" title="Letra e cifra"` com o nome da música em `text-ps-mut` no começo do conteúdo e o Salvar no `footer` (mensagem do salvar ao lado, quebrando linha). Campo de texto do kit no Artista; Buscar letra `Button` com `Sparkles`/`Loader2`; abas do kit (ou `Segmented` com Letra/Cifra); áreas de texto do kit (ou `textarea` com o visual do campo do kit), cifra em `font-ps-mono` com `whitespace-pre` e rolagem de lado dentro da área. Textos sem travessão: "Versão sincronizada disponível: a letra rola sozinha no palco." e "Cole a cifra (acordes sobre a letra). Dica: copie do Cifra Club e cole aqui, os espaços ficam como estão." Sem emoji (`☁️`, `✓`): "Salvo na nuvem e no aparelho." / "Salvo só no aparelho (a música não está na biblioteca da nuvem)."
+- [ ] **Step 3: Implementar.** `StageDialog size="lg" title="Letra e cifra"` com o nome da música em `text-ps-mut` no começo do conteúdo e o Salvar no `footer` (mensagem do salvar ao lado, quebrando linha). Campo de texto do kit no Artista; Buscar letra `Button` com `Sparkles`/`Loader2`; abas do kit (ou `Segmented` com Letra/Cifra); áreas de texto do kit (ou `textarea` com o visual do campo do kit), cifra em `font-ps-mono` com `whitespace-pre` e rolagem de lado dentro da área. Textos sem travessão: "Versão sincronizada disponível: a letra rola sozinha no palco." e "Cole a cifra (acordes sobre a letra). Dica: copie do Cifra Club e cole aqui, os espaços ficam como estão." Sem emoji (`☁️`, `✓`): "Salvo na nuvem e no aparelho." / "Salvo só no aparelho (a música não está na biblioteca da nuvem)."
 - [ ] **Step 4: Verificador:** estados `letra` (artista e letra longos, mensagem de busca) e `cifra` (prepare toca na aba Cifra).
 - [ ] **Step 5:** verde nos dois. **Step 6:** docs. **Step 7: Commit** `feat(telas): letra e cifra no layout do palco [Parte 3] [faixa C] [T3]`.
 

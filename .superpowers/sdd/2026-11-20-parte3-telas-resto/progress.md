@@ -13,6 +13,13 @@ Worktree: `~/playback-studio-work/parte3-telas-c`. Uma linha por tarefa: commit 
 - Decisão: fechar o Metrônomo (X, Esc, toque fora) não faz nada enquanto o click é gerado. Por quê: o X já era desligado nessa hora e o `StageDialog` não tem X desligado. Custo se errado: antes o toque fora fechava mesmo gerando (o click entrava igual).
 - Decisão: entrada única no FATOS e seção única (2.9) no DESIGN_SYSTEM pra faixa C. Por quê: a faixa B mexe nos mesmos arquivos ao mesmo tempo; uma entrada e uma seção próprias deixam a junção sem briga linha a linha. Custo se errado: o coordenador junta as entradas depois.
 
-## Esperando
+## Kit
 
-- Kit novo da faixa B (`~/playback-studio-work/parte3-faixas/kit-novo.md`): ainda não saiu quando o plano ficou pronto.
+- Kit novo da faixa B juntado: `git merge 6a18d4a` (merge `5161167`), a única junção desta faixa. Plano ajustado (seção "Ajuste depois do kit").
+
+## Pre-flight
+
+- T1 produz `oldLanguageClasses` e `TelaPage`/`TELA_*`; T2 a T10 consomem. Sem conflito.
+
+## Tarefas
+
