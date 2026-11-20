@@ -70,3 +70,4 @@ Task 11: complete (commits 1c8aec0..1c8aec0, tests: node scripts/verify-layout/r
 - verify-layout: 216 de 216 (11 estados do palco + 16 da faixa C, 8 tamanhos); 390x844: 14 de 14.
 - Ruling: o `report.md` não foi gravado (o ambiente recusou arquivo de relatório de subagente); o relatório vai inteiro na resposta ao coordenador, e este ledger guarda as decisões e os números. Custo se errado: o coordenador copia o texto da resposta.
 - Ruling: a pasta do ledger fica (o brief pede o ledger na worktree) e nada de "finishing-a-development-branch" (o brief proíbe merge, push e tag). Custo se errado: nenhum.
+Task 12: complete (commits 1c8aec0..4e6b16f, tests: npx vitest run src/components/LiveModeModal src/admin/components/ConfirmDialog src/lib/manualClickTrack.test.ts →    Duration  2.61s (transform 353ms, setup 0ms, import 834ms, tests 2.89s, environment 791ms))
