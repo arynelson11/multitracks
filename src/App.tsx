@@ -1399,8 +1399,10 @@ export default function App() {
   if (blocked) return <BlockedScreen plan={userPlan} onSignOut={signOut} onDeleteAccount={deleteAccount} />
 
   // ───────────────── SEPARATOR (acessível da tela inicial) ─────────────────
+  // O motor do palco segue tocando com o Separador aberto: ele recebe o estado pra a tela de limite
+  // e o anúncio do Livre esperarem a música parar (Ruling R12).
   if (isSeparatorOpen) {
-    return <SeparatorStudio onClose={() => setIsSeparatorOpen(false)} />
+    return <SeparatorStudio onClose={() => setIsSeparatorOpen(false)} stageBusy={{ isPlaying, isCountingIn }} />
   }
 
   // ───────────────── ADMIN (dentro do app, só pra quem tem o papel) ─────────────────

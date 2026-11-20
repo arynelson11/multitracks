@@ -7,8 +7,12 @@ import { AUDIO_FILE_ACCEPT } from '../lib/uploadContentType';
 import { getAuthHeaders } from '../lib/supabase';
 import { fetchMonthlyQuota, formatDateBR } from '../lib/separationUsage';
 import { useAuth } from '../hooks/useAuth';
+import { useLivre } from '../hooks/useLivre';
 import { canDownloadStems, canUseVoiceGuide, canUseBpmDetection, planTier, separationStemOptions, ALL_STEM_COUNTS, type StemCount } from '../lib/plans';
+import { isQuiet, separationIsThisMonth, separationKey, type EngineBusy } from '../lib/livreRules';
 import { PricingModal } from './PricingModal';
+import { LimitGate } from './livre/LimitGate';
+import { AdSlot } from './livre/AdSlot';
 import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { detectBeatGrid, formatBpm, type BeatGrid } from '../lib/beatGrid';
 import { separatorGridUsable } from '../lib/autoClick';
@@ -155,6 +159,9 @@ function float32ToWav(samples: Float32Array, sampleRate: number): Blob {
 
 interface SeparatorStudioProps {
   onClose: () => void;
+  // O motor do palco (App), que continua tocando com o Separador aberto. A tela de limite e o
+  // anúncio do Livre só aparecem com ele parado também (Ruling R12).
+  stageBusy: EngineBusy;
 }
 
 let globalAudioCtx: AudioContext | null = null;
@@ -165,8 +172,8 @@ function getAudioContext() {
   return globalAudioCtx;
 }
 
-export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => {
-  const { user, userPlan, isAdmin } = useAuth();
+export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stageBusy }) => {
+  const { user, userPlan, isAdmin, loading: authLoading } = useAuth();
   const canDownload = isAdmin || canDownloadStems(userPlan);
   const canVoiceGuide = isAdmin || canUseVoiceGuide(userPlan);
   const canBpm = isAdmin || canUseBpmDetection(userPlan);
@@ -174,6 +181,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   const canCloudSave = isAdmin || planTier(userPlan) !== 'free';
   const { separations, saveSeparation, deleteSeparation, isLoading: isLibLoading } = useSeparationLibrary();
   const [activeSepId, setActiveSepId] = useState<string | null>(null);
+  // Data da separação aberta: toda gravação leva ela, pra a de outro mês nunca virar "deste mês"
+  // (sem ela o saveSeparation usa a da lista, que troca quando o plano muda).
+  const [activeSepCreatedAt, setActiveSepCreatedAt] = useState<number | null>(null);
   const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>(() => {
     if (typeof window === 'undefined') return 'wav';
     const stored = window.localStorage.getItem(DOWNLOAD_FORMAT_KEY);
@@ -208,6 +218,18 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
   
   // Áudio Core
   const [isPlaying, setIsPlaying] = useState(false);
+
+  // Livre (Parte 3): a instância do Separador (a tela de limite do App não aparece com ele aberto).
+  // O motor que conta é o player daqui junto com o do palco atrás, que segue tocando (Ruling R12).
+  // Os minutos do Ao Vivo correm só na instância do App.
+  const busy: EngineBusy = { isPlaying: isPlaying || stageBusy.isPlaying, isCountingIn: stageBusy.isCountingIn };
+  const quiet = isQuiet(busy);
+  const livre = useLivre({ userId: user?.id ?? null, plan: userPlan, isAdmin, busy, liveActive: false, onLiveExpired: () => {} });
+  // O useAuth desta tela começa em Livre até ler o perfil: quem paga e o admin nunca veem regra do
+  // Livre nesse meio tempo.
+  const isLivre = livre.isLivre && !authLoading;
+  // A separação acabou de terminar (até abrir outra ou voltar): só ela chama o anúncio do fim.
+  const [justSeparated, setJustSeparated] = useState(false);
   const [isLooping, setIsLooping] = useState(false);
   const isLoopingRef = useRef(false);
   const wavesurfers = useRef<Record<string, WaveSurfer>>({});
@@ -266,8 +288,15 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     })();
   };
 
+  // Baixar sem o download no plano: no Livre a tela de limite (aparece com a música parada); quem
+  // paga abre os Planos como sempre.
+  const blockDownload = () => {
+    if (isLivre) livre.requestLimit('download');
+    else setIsPricingOpen(true);
+  };
+
   const downloadStem = async (stem: StemData) => {
-    if (!canDownload) { setIsPricingOpen(true); return; }
+    if (!canDownload) { blockDownload(); return; }
     try {
       setEncodingStemId(stem.id);
       const res = await fetch(stem.url);
@@ -753,6 +782,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     if (!activeSepId) return Promise.resolve();
     return saveSeparation({
       id: activeSepId,
+      createdAt: activeSepCreatedAt ?? undefined,
       songName, artist, bpm, songKey,
       // Persiste todo stem com URL remota (IA + canais já subidos pro R2), levando
       // junto o estado do mixer (mute/solo/volume/pan) de cada faixa.
@@ -761,7 +791,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         .map(s => ({ id: s.id, name: s.name, url: s.url, color: s.color, state: stemStates[s.id] })),
       voiceCues,
     }).catch(() => {});
-  }, [activeSepId, songName, artist, bpm, songKey, stems, stemStates, voiceCues, saveSeparation]);
+  }, [activeSepId, activeSepCreatedAt, songName, artist, bpm, songKey, stems, stemStates, voiceCues, saveSeparation]);
 
   // Mantém uma ref pra versão mais recente — usada no flush ao desmontar.
   const persistRef = useRef(persistSeparation);
@@ -791,6 +821,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     voiceCuesRef.current = [];
     setFile(null);
     setActiveSepId(null);
+    setActiveSepCreatedAt(null);
+    setJustSeparated(false);
     setSeparationStep('upload');
     resetClickSync();
   };
@@ -873,6 +905,15 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     }
   };
 
+  // Livre sem separação no mês (pelo contador lido antes ou pelo 402 do servidor): a tela de limite
+  // no lugar do alert, que aparece com a música parada (a daqui e a do palco atrás), e a tela de
+  // envio volta. Quem paga segue com o aviso da data e os Planos (Ruling R11).
+  const showLivreSeparationLimit = () => {
+    livre.requestLimit('separations');
+    setIsProcessing(false);
+    setFile(null);
+  };
+
   const processAudio = async (audioFile: File, stemCount: number) => {
     // ── Cota do mês (lida do banco, a mesma que o servidor usa) ──
     // Só evita subir o arquivo à toa: quem decide de verdade é o servidor (402).
@@ -883,6 +924,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     if (!isAdmin) {
       const { usage, limit: maxLimit } = await fetchMonthlyQuota(userPlan);
       if (usage && usage.used >= maxLimit) {
+        if (isLivre) { showLivreSeparationLimit(); return; }
         alert(`Você já usou as ${maxLimit} separações deste mês. O contador volta a zero em ${formatDateBR(usage.resetsAt)}.`);
         setIsPricingOpen(true);
         return;
@@ -912,6 +954,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
         if (res.status === 402) {
+          if (isLivre) { showLivreSeparationLimit(); return; }
           setIsPricingOpen(true);
           throw new Error(errBody.error || 'Você chegou no limite de separações deste mês.');
         }
@@ -1005,19 +1048,24 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       setStems(persistedStems);
       setProgress(100);
       setIsProcessing(false);
+      // Acabou de separar: é do mês, então abre sem contar nas 3 do Livre, e chama o anúncio do fim.
+      setJustSeparated(true);
 
       // ── Auto-save to local library ──
       try {
+        const createdAt = Date.now();
         const sepId = await saveSeparation({
           songName: audioFile.name.replace(/\.[^/.]+$/, ''),
           artist: '',
           bpm: bpm,
           songKey: songKey,
+          createdAt,
           stems: persistedStems.map(s => ({ id: s.id, name: s.name, url: s.url, color: s.color })),
           voiceCues: [],
         });
         if (sepId) {
           setActiveSepId(sepId);
+          setActiveSepCreatedAt(createdAt);
           setLibSaveToast(true);
           setTimeout(() => setLibSaveToast(false), 2500);
         }
@@ -1305,6 +1353,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       if (activeSepId) {
         await saveSeparation({
           id: activeSepId,
+          createdAt: activeSepCreatedAt ?? undefined,
           songName,
           artist,
           bpm,
@@ -1477,6 +1526,13 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
 
   // ── Load a saved separation ──
   const handleOpenSavedSeparation = (sep: SavedSeparation) => {
+    // Livre: a separação do mês sempre abre, sem contar. A de um mês anterior conta nas 3 músicas
+    // do mês; com o mês cheio ela não abre e a tela de limite aparece (com a música parada).
+    if (isLivre) {
+      const freeThisMonth = separationIsThisMonth(sep.createdAt, new Date());
+      if (!livre.canOpenSong(separationKey(sep.id), { freeThisMonth })) { livre.requestLimit('stage-songs'); return; }
+      livre.noteSongOpened(separationKey(sep.id), { freeThisMonth });
+    }
     const stemsArray: StemData[] = sep.stems.map(s => ({ id: s.id, name: s.name, url: s.url, color: s.color }));
     const initialStates: Record<string, { muted: boolean; soloed: boolean; volume: number; pan: number }> = {};
     sep.stems.forEach(s => {
@@ -1491,9 +1547,18 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
     setSongKey(sep.songKey || 'C');
     setVoiceCues(sep.voiceCues || []);
     setActiveSepId(sep.id);
+    setActiveSepCreatedAt(sep.createdAt);
+    setJustSeparated(false);
     setFile(null); // signal we're in "loaded" mode, stems drive the UI
     resetClickSync();
   };
+
+  // Tela de limite do Livre, por cima de qualquer tela do Separador: só com a música parada (a daqui
+  // e a do palco atrás; o useLivre segura o pedido até parar). Uma por tipo de limite. Ela fica por
+  // cima dos Planos, então "Ver os planos" fecha ela antes de abrir os Planos.
+  const limitGate = livre.limit !== null && (
+    <LimitGate key={livre.limit} kind={livre.limit} onClose={livre.closeLimit} onSeePlans={() => { livre.closeLimit(); setIsPricingOpen(true) }} />
+  );
 
   if (separationStep === 'options' && pendingFile) {
     // As opções vêm do plano (plans.ts): o Livre separa em 4 ou 6 faixas, quem paga em 2, 4 ou 6.
@@ -1568,6 +1633,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         </div>
 
         {isPricingOpen && <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />}
+        {limitGate}
       </div>
     );
   }
@@ -1680,6 +1746,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
             )}
           </div>
         </div>
+
+        {/* "Ver os planos" da tela de limite também abre os Planos aqui. */}
+        <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
+        {limitGate}
       </div>
     );
   }
@@ -1699,6 +1769,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
         </div>
         <div className="text-[9px] text-text-muted font-mono h-8 text-center max-w-md">{progressMsg}</div>
         <p className="text-primary/60 text-[9px] mt-2 font-mono font-black tracking-[0.2em]">{progress}% CONCLUÍDO</p>
+        {limitGate}
       </div>
     );
   }
@@ -1902,7 +1973,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
                         className={`w-6 h-5 rounded text-[8px] font-black transition-all active:scale-90 cursor-pointer border border-[#222] ${state.muted ? 'bg-[#ff3b30] text-white shadow-[0_0_8px_rgba(255,59,48,0.5)]' : 'bg-[#333] text-[#666] hover:bg-[#444]'}`}>M</button>
                       <button onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], soloed: !p[stem.id].soloed } }))}
                         className={`w-6 h-5 rounded text-[8px] font-black transition-all active:scale-90 cursor-pointer border border-[#222] ${state.soloed ? 'bg-[#ffcc00] text-black shadow-[0_0_8px_rgba(255,204,0,0.5)]' : 'bg-[#333] text-[#666] hover:bg-[#444]'}`}>S</button>
-                      <button onClick={() => canDownload ? downloadStem(stem) : setIsPricingOpen(true)} disabled={encodingStemId === stem.id}
+                      <button onClick={() => canDownload ? downloadStem(stem) : blockDownload()} disabled={encodingStemId === stem.id}
                         title={canDownload ? `Baixar ${stem.name} (${downloadFormat.toUpperCase()})` : 'Download disponível nos planos pagos'}
                         className="w-6 h-5 rounded cursor-pointer border border-[#222] bg-[#333] text-[#666] hover:bg-[#444] hover:text-primary flex items-center justify-center transition-all active:scale-90 disabled:opacity-60 disabled:cursor-wait">
                         {encodingStemId === stem.id ? <Loader2 size={9} className="animate-spin" /> : canDownload ? <Download size={9} /> : <Lock size={9} />}
@@ -1997,6 +2068,13 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Anúncio da casa no fim da separação (Parte 3): só no Livre, logo depois de separar e com a
+          música parada (a daqui e a do palco). No fluxo, embaixo das faixas, sem cobrir nada.
+          "Conhecer o Pro" abre os Planos aqui mesmo. */}
+      <div className="shrink-0 grid grid-cols-[minmax(0,28rem)] justify-center border-t border-[#222] bg-[#111113] px-3 py-3 empty:hidden">
+        <AdSlot placement="separation-done" userId={user?.id ?? null} isLivre={isLivre} quiet={quiet} justSeparated={justSeparated} onCta={() => setIsPricingOpen(true)} />
       </div>
 
       {/* SAVE MODAL */}
@@ -2364,6 +2442,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose }) => 
       )}
 
       <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
+      {limitGate}
     </div>
   );
 };

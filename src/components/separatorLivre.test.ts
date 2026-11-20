@@ -34,3 +34,121 @@ describe('Separador no Livre', () => {
     expect(optionsScreen).toMatch(/isAdmin\s*\?\s*ALL_STEM_COUNTS\s*:\s*separationStemOptions\(userPlan\)/)
   })
 })
+
+// T19: o resto do Separador no Livre. Ruling R11: quem paga mantém o alert com a data de volta do
+// contador e os Planos; o alert sai só do ramo do Livre. Ruling R12: o palco atrás continua
+// tocando com o Separador aberto, então a tela de limite e o anúncio olham o motor do App também.
+const app = read('../App.tsx')
+
+// Corpo de `const nome = ...` até o `};` que fecha no recuo de 2 espaços.
+const body = (name: string) => {
+  const i = sep.indexOf(`const ${name} = `)
+  const j = sep.indexOf('\n  };', i)
+  return i < 0 || j < 0 ? '' : sep.slice(i, j)
+}
+
+// As telas do Separador, cada uma um retorno do componente.
+const screenFrom = (startMark: string, endMark: string) => {
+  const i = sep.indexOf(startMark)
+  const j = endMark ? sep.indexOf(endMark, i) : sep.length
+  return i < 0 || j < 0 ? '' : sep.slice(i, j)
+}
+const homeScreen = screenFrom("if (separationStep === 'upload' && !file && stems.length === 0)", 'if (isProcessing) {')
+const processingScreen = screenFrom('if (isProcessing) {', '{/* ═══ HEADER')
+const studioScreen = screenFrom('{/* ═══ HEADER', '')
+
+describe('Separador no Livre: limites, tela de limite e anúncio (T19)', () => {
+  it('o motor que conta é o player daqui junto com o do palco atrás (stageBusy, R12)', () => {
+    expect(sep).toMatch(/stageBusy: EngineBusy;/)
+    expect(sep).toMatch(/const busy: EngineBusy = \{ isPlaying: isPlaying \|\| stageBusy\.isPlaying, isCountingIn: stageBusy\.isCountingIn \};/)
+    expect(sep).toMatch(/const quiet = isQuiet\(busy\);/)
+    // Os minutos do Ao Vivo só correm na instância do App.
+    expect(sep).toMatch(/useLivre\(\{ userId: user\?\.id \?\? null, plan: userPlan, isAdmin, busy, liveActive: false, onLiveExpired: \(\) => \{\} \}\)/)
+    expect(app).toMatch(/<SeparatorStudio onClose=\{\(\) => setIsSeparatorOpen\(false\)\} stageBusy=\{\{ isPlaying, isCountingIn \}\} \/>/)
+  })
+
+  it('regra do Livre só com o plano lido: o useAuth desta tela começa em Livre até ler o perfil', () => {
+    expect(sep).toMatch(/const \{ user, userPlan, isAdmin, loading: authLoading \} = useAuth\(\);/)
+    expect(sep).toMatch(/const isLivre = livre\.isLivre && !authLoading;/)
+  })
+
+  it('limite de separações (contador lido antes e o 402): o Livre pede a tela separations sem alert; quem paga mantém o aviso e os Planos', () => {
+    const p = body('processAudio')
+    expect(p).not.toBe('')
+    expect(p).toMatch(/if \(usage && usage\.used >= maxLimit\) \{\s*if \(isLivre\) \{ showLivreSeparationLimit\(\); return; \}\s*alert\(`Você já usou/)
+    expect(p).toMatch(/res\.status === 402\) \{\s*if \(isLivre\) \{ showLivreSeparationLimit\(\); return; \}\s*setIsPricingOpen\(true\);/)
+    const h = body('showLivreSeparationLimit')
+    expect(h).toMatch(/livre\.requestLimit\('separations'\)/)
+    expect(h).toMatch(/setIsProcessing\(false\)/)
+    expect(h).toMatch(/setFile\(null\)/)
+    expect(h).not.toMatch(/alert\(|setIsPricingOpen/)
+  })
+
+  it('baixar sem o download no plano: o Livre pede a tela download, quem paga abre os Planos como hoje', () => {
+    expect(sep).toMatch(/requestLimit\('download'\)/)
+    expect(body('blockDownload')).toMatch(/if \(isLivre\) livre\.requestLimit\('download'\);\s*else setIsPricingOpen\(true\);/)
+    expect(body('downloadStem')).toMatch(/if \(!canDownload\) \{ blockDownload\(\); return; \}/)
+    expect(sep).toMatch(/canDownload \? downloadStem\(stem\) : blockDownload\(\)/)
+    expect(sep).not.toMatch(/canDownload \? downloadStem\(stem\) : setIsPricingOpen/)
+  })
+
+  it('abrir separação salva passa por canOpenSong com separationKey e freeThisMonth antes de abrir e conta com as mesmas opções', () => {
+    const o = body('handleOpenSavedSeparation')
+    expect(o).toMatch(/if \(isLivre\) \{/)
+    expect(o).toMatch(/const freeThisMonth = separationIsThisMonth\(sep\.createdAt, new Date\(\)\);/)
+    expect(o).toMatch(/canOpenSong\(separationKey\(sep\.id\),\s*\{\s*freeThisMonth/)
+    expect(o).toMatch(/\{ livre\.requestLimit\('stage-songs'\); return; \}/)
+    expect(o).toMatch(/noteSongOpened\(separationKey\(sep\.id\),\s*\{\s*freeThisMonth\s*\}\)/)
+    // A conta vem antes de qualquer troca de tela; abrir outra desliga o anúncio do fim.
+    expect(o.indexOf('canOpenSong(')).toBeGreaterThan(0)
+    expect(o.indexOf('canOpenSong(')).toBeLessThan(o.indexOf('noteSongOpened('))
+    expect(o.indexOf('noteSongOpened(')).toBeLessThan(o.indexOf('setStems('))
+    expect(o).toMatch(/setJustSeparated\(false\)/)
+  })
+
+  it('a separação que acabou de terminar abre sem contar nas 3 e liga o anúncio do fim', () => {
+    const p = body('processAudio')
+    expect(p).toMatch(/setStems\(persistedStems\);[\s\S]*?setJustSeparated\(true\);/)
+    expect(p).not.toMatch(/noteSongOpened|canOpenSong/)
+  })
+
+  it('o anúncio do fim da separação fica ao lado do resultado e só com a música parada (a daqui e a do palco)', () => {
+    expect(sep).toMatch(/<AdSlot[\s\S]*?placement="separation-done"[\s\S]*?quiet=\{quiet\}/)
+    const at = sep.indexOf('<AdSlot')
+    const ad = sep.slice(at, sep.indexOf('/>', at))
+    expect(ad).toMatch(/userId=\{user\?\.id \?\? null\}/)
+    expect(ad).toMatch(/isLivre=\{isLivre\}/)
+    expect(ad).toMatch(/justSeparated=\{justSeparated\}/)
+    expect(ad).toMatch(/onCta=\{\(\) => setIsPricingOpen\(true\)\}/)
+    // Na tela do resultado, embaixo da área das faixas, no fluxo (sem cobrir nada).
+    expect(studioScreen).toContain('<AdSlot')
+    expect(at).toBeGreaterThan(sep.indexOf('{/* ═══ WORKSPACE ═══ */}'))
+    expect(sep.indexOf('<AdSlot', at + 1)).toBe(-1)
+  })
+
+  it('a tela de limite é renderizada pelo Separador, uma por tipo, e fecha antes de abrir os Planos', () => {
+    expect(sep).toMatch(/<LimitGate[\s\S]*?kind=\{livre\.limit\}/)
+    const at = sep.indexOf('<LimitGate')
+    const gate = sep.slice(at, sep.indexOf('/>', at))
+    expect(gate).toMatch(/key=\{livre\.limit\}/)
+    expect(gate).toMatch(/onClose=\{livre\.closeLimit\}/)
+    expect(gate).toMatch(/onSeePlans=\{\(\) => \{ livre\.closeLimit\(\); setIsPricingOpen\(true\) \}\}/)
+    expect(sep).toMatch(/const limitGate = livre\.limit !== null && \(/)
+  })
+
+  it('a tela de limite vale em todas as telas do Separador, e a tela de envio também abre os Planos', () => {
+    expect(optionsScreen).toContain('{limitGate}')
+    expect(homeScreen).toContain('{limitGate}')
+    expect(homeScreen).toMatch(/<PricingModal isOpen=\{isPricingOpen\} onClose=\{\(\) => setIsPricingOpen\(false\)\} \/>/)
+    expect(processingScreen).toContain('{limitGate}')
+    expect(studioScreen).toContain('{limitGate}')
+  })
+
+  it('toda gravação da separação leva a data dela: reabrir uma de outubro nunca vira deste mês', () => {
+    const calls = sep.split('saveSeparation({').slice(1)
+    expect(calls).toHaveLength(3)
+    for (const c of calls) expect(c.slice(0, c.indexOf('stems:'))).toMatch(/createdAt/)
+    expect(body('handleOpenSavedSeparation')).toMatch(/setActiveSepCreatedAt\(sep\.createdAt\)/)
+    expect(body('goToSeparatorHome')).toMatch(/setActiveSepCreatedAt\(null\)/)
+  })
+})
