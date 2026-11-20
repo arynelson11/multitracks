@@ -380,7 +380,8 @@ describe('SettingsModal: casca do palco', () => {
     const overlay = container.firstElementChild as HTMLElement
     for (const c of ['fixed', 'inset-0', 'z-[100]', 'bg-black/60', 'p-ps-gutter']) expect(overlay.className.split(' ')).toContain(c)
     const dialog = screen.getByRole('dialog', { name: 'Configurações' })
-    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    // Sem aria-modal: os Planos abrem por cima, fora desta caixa, e o leitor de tela não pode tratá-los como fora da janela.
+    expect(dialog.getAttribute('aria-modal')).toBeNull()
     for (const c of ['bg-ps-pop', 'shadow-ps-pop', 'max-w-2xl']) expect(dialog.className.split(' ')).toContain(c)
     const close = screen.getByRole('button', { name: 'Fechar' })
     expect(close.className).toContain('min-h-ps-touch')

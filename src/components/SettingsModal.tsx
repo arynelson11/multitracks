@@ -100,7 +100,6 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
             <Panel
                 variant="pop"
                 role="dialog"
-                aria-modal="true"
                 aria-label="Configurações"
                 className="flex max-h-full w-full max-w-2xl flex-col overflow-hidden font-ps-sans text-ps-bone"
                 onClick={e => e.stopPropagation()}
