@@ -2,6 +2,7 @@
 // com o pior caso de texto, por cima do fundo do palco, e o check.ts mede como no palco (texto
 // cortado, encostando, alvo de toque e rolagem de lado). Nada daqui entra no app.
 import { MetronomeModal } from '../../src/components/MetronomeModal'
+import { PadSetsModal } from '../../src/components/PadSetsModal'
 import type { Channel } from '../../src/types'
 import type { TelaEstado } from './telasEstados'
 
@@ -18,12 +19,29 @@ const SONG = {
   channels: [fakeChannel('c', 'Click'), fakeChannel('d', 'Bateria'), fakeChannel('b', 'Baixo')],
 }
 
+/** Conjuntos de pads com nome e descrição longos (o pior caso da lista). */
+const PAD_SETS = [
+  { id: 'p1', name: 'Pads de Ministração Profunda Domingo à Noite', description: 'Pads quentes pra ministração, gravados em estúdio com reverb longo e camadas de cordas', base_path: 'p1', created_at: '2026-11-01' },
+  { id: 'p2', name: 'Ambiente Suave', description: null, base_path: 'p2', created_at: '2026-11-02' },
+  { id: 'p3', name: 'Shimmer Atmosférico com Guitarra Ambiente e Teclado', description: 'Camadas de shimmer', base_path: 'p3', created_at: '2026-11-03' },
+]
+
+// O catálogo de pads vem da API: aqui a página responde sozinha (o resto passa direto).
+const realFetch = window.fetch.bind(window)
+window.fetch = (input: RequestInfo | URL, init?: RequestInit) =>
+  String(input).includes('/api/pad-catalog')
+    ? Promise.resolve(new Response(JSON.stringify({ sets: PAD_SETS }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    : realFetch(input, init)
+
 // As peças da página são exportadas só pela regra do react-refresh (arquivo com componente exporta componente).
 
 export function TelaPage({ estado }: { estado: TelaEstado }) {
   return (
     <div className="min-h-dvh bg-ps-ink font-ps-sans text-ps-bone">
       {estado === 'metronomo' && <MetronomeModal isOpen onClose={noop} playlistCurrentSong={SONG} onAddClick={noop} />}
+      {(estado === 'padsnuvem' || estado === 'padsnuvem-editar') && (
+        <PadSetsModal isOpen onClose={noop} onSelect={noop} selectedPadSet={{ id: 'p2', name: 'Ambiente Suave', base_path: 'p2' }} isAdmin />
+      )}
     </div>
   )
 }

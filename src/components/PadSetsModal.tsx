@@ -1,8 +1,10 @@
 import { apiUrl } from '../lib/api';
 import { useEffect, useState } from 'react';
-import { X, Cloud, Loader2, Layers, CheckCircle2, Pencil, Trash2, Check } from 'lucide-react';
+import { Loader2, Layers, Pencil, Trash2 } from 'lucide-react';
 import type { SelectedPadSet } from '../hooks/usePadSynth';
 import { getAuthHeaders } from '../lib/supabase';
+import { Button, Led, Notice, TextField, cx } from './ui';
+import { StageDialog } from './stage/StageDialog';
 
 interface CatalogEntry {
     id: string;
@@ -98,145 +100,99 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
         setDeletingId(null);
     };
 
+    const cancelEdit = () => setEditingId(null);
+    const cancelDelete = () => setDeletingId(null);
+
     return (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
-            <div className="daw-panel w-full max-w-sm rounded-lg flex flex-col">
-                {/* Header */}
-                <div className="flex items-center justify-between p-3 border-b border-border">
-                    <div className="flex items-center gap-2">
-                        <div className="p-1.5 bg-secondary/10 rounded-md border border-secondary/15">
-                            <Cloud size={14} className="text-secondary" />
-                        </div>
-                        <div>
-                            <h2 className="text-white font-black text-xs uppercase tracking-wider">Pads da Nuvem</h2>
-                            <p className="text-[9px] text-text-muted font-mono">Selecione um banco de pads</p>
-                        </div>
-                    </div>
-                    <button onClick={onClose} className="p-1.5 text-text-muted hover:text-white hover:bg-white/5 rounded-md transition-all active:scale-90 cursor-pointer">
-                        <X size={16} />
-                    </button>
-                </div>
+        <StageDialog open title="Pads da nuvem" size="sm" onClose={onClose}>
+            <div className="flex flex-col gap-3">
+                <p className="text-ps-mut">Escolha um conjunto de pads.</p>
 
-                {/* Content */}
-                <div className="p-3 space-y-2 max-h-80 overflow-y-auto">
-                    {loading && (
-                        <div className="flex items-center justify-center py-4 gap-2 text-text-muted">
-                            <Loader2 size={14} className="animate-spin" />
-                            <span className="text-[9px] font-mono uppercase tracking-wider">Carregando...</span>
-                        </div>
-                    )}
+                {loading && (
+                    <p role="status" className="flex items-center gap-2 text-ps-mut">
+                        <Loader2 size={16} aria-hidden="true" className="shrink-0 animate-spin motion-reduce:animate-none" />
+                        Carregando...
+                    </p>
+                )}
 
-                    {!loading && loadError && (
-                        <div className="flex flex-col items-center justify-center py-6 gap-2 text-accent-red">
-                            <Layers size={24} className="opacity-50" />
-                            <p className="text-[10px] font-mono uppercase tracking-wider text-center">
-                                Falha ao carregar catálogo.<br />
-                                <span className="opacity-70 normal-case">{loadError}</span>
-                            </p>
-                        </div>
-                    )}
+                {!loading && loadError && (
+                    <Notice tone="alert" role="alert">
+                        <span className="block">Falha ao carregar o catálogo.</span>
+                        <span className="block ps-num text-ps-sm font-normal">{loadError}</span>
+                    </Notice>
+                )}
 
-                    {!loading && !loadError && sets.length === 0 && (
-                        <div className="flex flex-col items-center justify-center py-8 gap-2 text-text-muted">
-                            <Layers size={24} className="opacity-30" />
-                            <p className="text-[10px] font-mono uppercase tracking-wider text-center">
-                                Nenhum banco de pads disponível.<br />
-                                <span className="opacity-60">Envie pads pelo painel Admin.</span>
-                            </p>
-                        </div>
-                    )}
+                {!loading && !loadError && sets.length === 0 && (
+                    <Notice role="status">
+                        <span className="block font-bold">Nenhum conjunto de pads disponível.</span>
+                        <span className="block text-ps-mut">Envie pads pelo painel Admin.</span>
+                    </Notice>
+                )}
 
-                    {sets.map(padSet => {
-                        const isActive = selectedPadSet?.id === padSet.id;
-                        const isEditing = editingId === padSet.id;
-                        const isDeleting = deletingId === padSet.id;
+                {sets.length > 0 && (
+                    <ul className="flex flex-col gap-2">
+                        {sets.map(padSet => {
+                            const isActive = selectedPadSet?.id === padSet.id;
 
-                        return (
-                            <div
-                                key={padSet.id}
-                                onClick={() => !isEditing && !isDeleting && handleSelect(padSet)}
-                                className={`w-full flex items-center gap-3 p-3 rounded-md border text-left transition-all cursor-pointer
-                                    ${isActive
-                                        ? 'bg-secondary/10 border-secondary/30 text-secondary'
-                                        : 'bg-white/3 border-border text-text-main hover:bg-white/5 hover:border-border-light'
-                                    }`}
-                            >
-                                <div className={`p-1.5 rounded-md border shrink-0 ${isActive ? 'bg-secondary/15 border-secondary/25' : 'bg-white/5 border-border'}`}>
-                                    <Layers size={14} className={isActive ? 'text-secondary' : 'text-text-muted'} />
-                                </div>
+                            if (editingId === padSet.id) {
+                                return (
+                                    <li key={padSet.id} className="flex flex-col gap-3 rounded-ps-lg bg-ps-s1 p-3 inset-ring inset-ring-ps-line-2">
+                                        <TextField label="Nome do conjunto" autoFocus value={editName} onChange={e => setEditName(e.target.value)} placeholder="Nome do conjunto" />
+                                        <TextField label="Descrição (opcional)" value={editDesc} onChange={e => setEditDesc(e.target.value)} placeholder="Descrição (opcional)" />
+                                        <div className="flex flex-wrap justify-end gap-2">
+                                            <Button tone="ghost" onClick={cancelEdit}>Cancelar</Button>
+                                            <Button tone="primary" onClick={saveEdit}>Salvar</Button>
+                                        </div>
+                                    </li>
+                                );
+                            }
 
-                                {isEditing ? (
-                                    <div className="flex-1 flex flex-col gap-1" onClick={e => e.stopPropagation()}>
-                                        <input
-                                            autoFocus
-                                            value={editName}
-                                            onChange={e => setEditName(e.target.value)}
-                                            placeholder="Nome do banco"
-                                            className="w-full bg-white/10 border border-border rounded px-2 py-0.5 text-[10px] font-mono text-white focus:outline-none focus:border-secondary"
-                                        />
-                                        <input
-                                            value={editDesc}
-                                            onChange={e => setEditDesc(e.target.value)}
-                                            placeholder="Descrição (opcional)"
-                                            className="w-full bg-white/10 border border-border rounded px-2 py-0.5 text-[9px] font-mono text-text-muted focus:outline-none focus:border-secondary"
-                                        />
-                                    </div>
-                                ) : isDeleting ? (
-                                    <div className="flex-1">
-                                        <p className="text-[10px] font-bold text-accent-red font-mono uppercase tracking-wider">Apagar "{padSet.name}"?</p>
-                                        <p className="text-[8px] text-text-muted font-mono">Esta ação não pode ser desfeita.</p>
-                                    </div>
-                                ) : (
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-[11px] font-bold uppercase tracking-wider font-mono truncate">{padSet.name}</p>
-                                        {padSet.description && (
-                                            <p className="text-[9px] text-text-muted font-mono truncate mt-0.5">{padSet.description}</p>
-                                        )}
-                                    </div>
-                                )}
+                            if (deletingId === padSet.id) {
+                                return (
+                                    <li key={padSet.id} className="flex flex-col gap-2 rounded-ps-lg bg-ps-alert-soft p-3 inset-ring inset-ring-ps-alert-line">
+                                        <p className="font-bold text-ps-alert break-words">Apagar "{padSet.name}"?</p>
+                                        <p className="text-ps-sm text-ps-mut">Esta ação não pode ser desfeita.</p>
+                                        <div className="flex flex-wrap justify-end gap-2">
+                                            <Button tone="ghost" onClick={cancelDelete}>Cancelar</Button>
+                                            <Button tone="alert" onClick={executeDelete}>Apagar</Button>
+                                        </div>
+                                    </li>
+                                );
+                            }
 
-                                <div className="flex items-center gap-1 shrink-0">
-                                    {isEditing && (
-                                        <>
-                                            <button onClick={saveEdit} className="p-1 rounded text-secondary hover:bg-secondary/10 transition-all cursor-pointer">
-                                                <Check size={13} />
-                                            </button>
-                                            <button onClick={e => { e.stopPropagation(); setEditingId(null); }} className="p-1 rounded text-text-muted hover:bg-white/5 transition-all cursor-pointer">
-                                                <X size={13} />
-                                            </button>
-                                        </>
-                                    )}
-                                    {isDeleting && (
-                                        <>
-                                            <button onClick={executeDelete} className="p-1 rounded text-accent-red hover:bg-red-500/10 transition-all cursor-pointer">
-                                                <Trash2 size={13} />
-                                            </button>
-                                            <button onClick={e => { e.stopPropagation(); setDeletingId(null); }} className="p-1 rounded text-text-muted hover:bg-white/5 transition-all cursor-pointer">
-                                                <X size={13} />
-                                            </button>
-                                        </>
-                                    )}
-                                    {!isEditing && !isDeleting && (
-                                        <>
-                                            {isActive && <CheckCircle2 size={14} className="text-secondary" />}
-                                            {isAdmin && (
-                                                <>
-                                                    <button onClick={e => startEdit(padSet, e)} className="p-1 rounded text-text-muted hover:text-white hover:bg-white/5 transition-all cursor-pointer opacity-50 hover:opacity-100">
-                                                        <Pencil size={12} />
-                                                    </button>
-                                                    <button onClick={e => confirmDelete(padSet.id, e)} className="p-1 rounded text-text-muted hover:text-accent-red hover:bg-red-500/5 transition-all cursor-pointer opacity-50 hover:opacity-100">
-                                                        <Trash2 size={12} />
-                                                    </button>
-                                                </>
+                            return (
+                                <li
+                                    key={padSet.id}
+                                    className={cx('flex items-center gap-1 rounded-ps-lg p-1 inset-ring', isActive ? 'bg-ps-or-soft inset-ring-ps-or-line' : 'bg-ps-s1 inset-ring-ps-line')}
+                                >
+                                    {/* Escolher é tocar no conjunto: em uso fica laranja (ligado). */}
+                                    <button
+                                        type="button"
+                                        aria-current={isActive ? 'true' : undefined}
+                                        onClick={() => handleSelect(padSet)}
+                                        className="flex min-h-ps-touch min-w-0 flex-1 items-center gap-3 rounded-ps-md px-2 py-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or"
+                                    >
+                                        <Layers size={18} aria-hidden="true" className={cx('shrink-0', isActive ? 'text-ps-or' : 'text-ps-mut')} />
+                                        <span className="min-w-0 flex-1">
+                                            <span className={cx('block break-words text-ps-base font-bold', isActive ? 'text-ps-or' : 'text-ps-bone')}>{padSet.name}</span>
+                                            {padSet.description && (
+                                                <span className="block break-words text-ps-sm text-ps-mut">{padSet.description}</span>
                                             )}
+                                        </span>
+                                        {isActive && <Led state="on" label="Em uso" />}
+                                    </button>
+                                    {isAdmin && (
+                                        <>
+                                            <Button tone="ghost" aria-label={`Renomear ${padSet.name}`} title="Renomear" icon={<Pencil size={16} />} onClick={e => startEdit(padSet, e)} />
+                                            <Button tone="ghost" aria-label={`Apagar ${padSet.name}`} title="Apagar" icon={<Trash2 size={16} />} onClick={e => confirmDelete(padSet.id, e)} />
                                         </>
                                     )}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                )}
             </div>
-        </div>
+        </StageDialog>
     );
 }
