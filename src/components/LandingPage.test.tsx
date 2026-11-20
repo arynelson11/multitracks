@@ -54,10 +54,12 @@ describe('LandingPage: textos', () => {
     for (const velho of ['5 separações', '5 músicas', '2 faixas (voz e instrumental)', '(2 no Livre)', 'Nos planos Pro e Studio, mude o tom', 'No Pro, você marca as seções']) {
       expect(text()).not.toContain(velho)
     }
-    // Selo Pro só no que continua pago: BPM e voz guia agora são de todos.
+    // Selo Pro só no que continua pago: BPM e voz guia agora são de todos. O teleprompter nunca
+    // teve trava de plano no código (o LETRA do palco abre pra todos), então também fica sem selo.
     const selo = (titulo: string) => screen.getByRole('heading', { name: new RegExp(`^${titulo}`) }).querySelector('span')?.textContent ?? null
     expect(selo('BPM detectado pela IA')).toBeNull()
     expect(selo('Voz guia automática')).toBeNull()
+    expect(selo('Teleprompter de letras')).toBeNull()
     for (const pago of ['Repertório com backup .zip', 'Download em WAV ou MP3', 'Banda conecta por QR Code']) expect(selo(pago)).toBe('Pro')
     expect(selo('App desktop que toca offline')).toBeNull()
   })
