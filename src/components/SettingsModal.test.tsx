@@ -55,6 +55,11 @@ vi.mock('./ProfileTab', () => ({
   ProfileTab: (p: { userPlan: string; onUpgrade(): void; onClose(): void }) => (
     <div data-testid="profile">
       {`perfil ${p.userPlan}`}
+      {/* Campos como os do Perfil de verdade (nome, senha), antes dos botões: o último focável continua sendo um botão. */}
+      <input aria-label="nome digitado" type="text" defaultValue="" />
+      <input aria-label="senha digitada" type="password" defaultValue="" />
+      <textarea aria-label="nota digitada" defaultValue="" />
+      <input aria-label="marcar" type="checkbox" />
       <button type="button" onClick={p.onUpgrade}>upgrade do perfil</button>
       <button type="button" onClick={p.onClose}>fechar do perfil</button>
     </div>
@@ -578,5 +583,59 @@ describe('SettingsModal: teclado e foco', () => {
     fireEvent.pointerDown(layer)
     fireEvent.click(layer)
     expect(p.onClose).toHaveBeenCalledTimes(1)
+  })
+})
+
+// Junção da 1b com as faixas B e C (decisão do coordenador): o Esc não joga fora o que foi digitado.
+describe('SettingsModal: Esc num campo preenchido', () => {
+  const esc = (el: Element) => fireEvent.keyDown(el, { key: 'Escape', code: 'Escape' })
+
+  it('Esc num campo de texto, de senha ou numa área de texto preenchidos não fecha, e o texto fica', () => {
+    const p = props()
+    render(<SettingsModal {...p} />)
+    for (const name of ['nome digitado', 'senha digitada', 'nota digitada']) {
+      const field = screen.getByLabelText(name) as HTMLInputElement | HTMLTextAreaElement
+      fireEvent.change(field, { target: { value: 'Ana Souza' } })
+      field.focus()
+      esc(field)
+      expect(p.onClose).not.toHaveBeenCalled()
+      expect(field.value).toBe('Ana Souza')
+    }
+  })
+
+  it('o Esc que não fecha também não chega ao palco (um painel do palco por baixo fica aberto)', () => {
+    const panelClosed = vi.fn()
+    const panelEscape = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) panelClosed() }
+    // Os painéis do palco (panelDismiss.ts) ouvem na captura do document e ignoram o Esc já tratado.
+    document.addEventListener('keydown', panelEscape, true)
+    const p = props()
+    render(<SettingsModal {...p} />)
+    const field = screen.getByLabelText('nome digitado')
+    fireEvent.change(field, { target: { value: 'Ana' } })
+    esc(field)
+    expect(p.onClose).not.toHaveBeenCalled()
+    expect(panelClosed).not.toHaveBeenCalled()
+    document.removeEventListener('keydown', panelEscape, true)
+  })
+
+  it('Esc num campo vazio, num interruptor ou numa aba fecha como antes', () => {
+    const p = props()
+    render(<SettingsModal {...p} />)
+    esc(screen.getByLabelText('nome digitado'))
+    expect(p.onClose).toHaveBeenCalledTimes(1)
+    esc(screen.getByLabelText('senha digitada'))
+    esc(screen.getByLabelText('nota digitada'))
+    esc(screen.getByLabelText('marcar'))
+    esc(screen.getByRole('tab', { name: 'Perfil' }))
+    expect(p.onClose).toHaveBeenCalledTimes(5)
+  })
+
+  it('campo com só espaço conta como preenchido (o nome digitado pode começar com espaço)', () => {
+    const p = props()
+    render(<SettingsModal {...p} />)
+    const field = screen.getByLabelText('nome digitado')
+    fireEvent.change(field, { target: { value: ' ' } })
+    esc(field)
+    expect(p.onClose).not.toHaveBeenCalled()
   })
 })

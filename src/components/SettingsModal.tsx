@@ -22,6 +22,12 @@ import { SettingRow } from './settings/SettingRow';
 import { Icon } from './stage/icons';
 import { trapTab } from './ui/focusables';
 
+/** Campo de texto ou de senha, ou área de texto, com alguma coisa digitada. */
+function isFilledTextField(target: EventTarget | null): boolean {
+    if (target instanceof HTMLTextAreaElement) return target.value !== '';
+    return target instanceof HTMLInputElement && (target.type === 'text' || target.type === 'password') && target.value !== '';
+}
+
 interface SettingsModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -114,6 +120,9 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
         const onEscape = (e: KeyboardEvent) => {
             if (e.key !== 'Escape' || e.isComposing || e.defaultPrevented || pricingOpenRef.current) return;
             e.preventDefault();
+            // Esc num campo de texto, de senha ou numa área de texto preenchidos não fecha: o nome ou
+            // a senha digitados no Perfil não se perdem. Tratado (o palco não usa), segue pro campo.
+            if (isFilledTextField(e.target)) return;
             e.stopPropagation();
             closeRef.current();
         };
