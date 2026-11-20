@@ -59,6 +59,7 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `cifra` | o mesmo, na aba Cifra (linhas longas rolando de lado dentro da área) |
 | `teleprompter` | Teleprompter (faixa C) no "Refrão Final Estendido" com 4 linhas longas de letra |
 | `teleprompter-vazio` | Teleprompter sem música e sem seções |
+| `novidades` | Novidades (faixa C) com a entrada mais nova do changelog de verdade |
 | `config` | as duas seções da T19 numa página própria: placa de 2 canais (caindo de 4 ou mais, com avisos) e de 8 canais |
 | `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso pra cada ramo das regras (15 falhas, uma por ramo) |
 

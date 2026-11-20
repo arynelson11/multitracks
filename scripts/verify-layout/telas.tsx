@@ -5,6 +5,7 @@ import { MetronomeModal } from '../../src/components/MetronomeModal'
 import { LyricsEditor } from '../../src/components/LyricsEditor'
 import { PadSetsModal } from '../../src/components/PadSetsModal'
 import { Teleprompter } from '../../src/components/Teleprompter'
+import { WhatsNewModal } from '../../src/components/WhatsNewModal'
 import type { Channel, Song } from '../../src/types'
 import type { TelaEstado } from './telasEstados'
 
@@ -58,6 +59,7 @@ export function TelaPage({ estado }: { estado: TelaEstado }) {
         />
       )}
       {estado === 'teleprompter-vazio' && <Teleprompter songName={null} hasMarkers={false} marker={null} currentTime={0} duration={0} onClose={noop} />}
+      {estado === 'novidades' && <WhatsNewModal onClose={noop} />}
       {(estado === 'padsnuvem' || estado === 'padsnuvem-editar') && (
         <PadSetsModal isOpen onClose={noop} onSelect={noop} selectedPadSet={{ id: 'p2', name: 'Ambiente Suave', base_path: 'p2' }} isAdmin />
       )}
