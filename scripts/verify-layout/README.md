@@ -61,6 +61,8 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `teleprompter-vazio` | Teleprompter sem música e sem seções |
 | `novidades` | Novidades (faixa C) com a entrada mais nova do changelog de verdade |
 | `atualizacao` | Aviso de atualização (faixa C) do app de computador no Mac ("Versão 1.4.30 já saiu") |
+| `tour` | Tour (faixa C) no passo do Modo Ao Vivo, com o spotlight num botão no meio da página |
+| `tour-centro` | Tour no primeiro passo, sem alvo (balão no meio) |
 | `config` | as duas seções da T19 numa página própria: placa de 2 canais (caindo de 4 ou mais, com avisos) e de 8 canais |
 | `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso pra cada ramo das regras (15 falhas, uma por ramo) |
 

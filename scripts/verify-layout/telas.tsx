@@ -2,6 +2,7 @@
 // com o pior caso de texto, por cima do fundo do palco, e o check.ts mede como no palco (texto
 // cortado, encostando, alvo de toque e rolagem de lado). Nada daqui entra no app.
 import { MetronomeModal } from '../../src/components/MetronomeModal'
+import { GuidedTour } from '../../src/components/GuidedTour'
 import { LyricsEditor } from '../../src/components/LyricsEditor'
 import { PadSetsModal } from '../../src/components/PadSetsModal'
 import { Teleprompter } from '../../src/components/Teleprompter'
@@ -56,6 +57,13 @@ if (new URLSearchParams(location.search).get('estado') === 'atualizacao') {
   } as unknown as Window['playbackDesktop']
 }
 
+/** Passos do tour com o texto mais longo do app (o passo das seções e o do Modo Ao Vivo). */
+const TOUR_ALVO = [
+  { target: 'alvo', title: 'Modo Ao Vivo (Host)', body: 'A banda conecta pelo celular (QR Code) e acompanha música, tom, parte e letra. Quem você liberar também repete e volta seções pelo próprio celular. Você decide quem controla.' },
+  { title: 'Tudo pronto!', body: 'Agora é com você.' },
+]
+const TOUR_CENTRO = [{ title: 'Bem-vindo ao Playback Studio', body: 'Vou te mostrar tudo rapidinho. Pode pular quando quiser e rever depois pelo Config.' }, ...TOUR_ALVO]
+
 // As peças da página são exportadas só pela regra do react-refresh (arquivo com componente exporta componente).
 
 export function TelaPage({ estado }: { estado: TelaEstado }) {
@@ -72,6 +80,13 @@ export function TelaPage({ estado }: { estado: TelaEstado }) {
       {estado === 'teleprompter-vazio' && <Teleprompter songName={null} hasMarkers={false} marker={null} currentTime={0} duration={0} onClose={noop} />}
       {estado === 'novidades' && <WhatsNewModal onClose={noop} />}
       {estado === 'atualizacao' && <UpdateBanner />}
+      {estado === 'tour' && (
+        <>
+          <button type="button" data-tour="alvo" className="absolute left-1/2 top-[30%] min-h-ps-touch -translate-x-1/2 rounded-ps-lg bg-ps-s1 px-ps-pad-x text-ps-sm font-bold text-ps-bone">HOST</button>
+          <GuidedTour steps={TOUR_ALVO} onClose={noop} />
+        </>
+      )}
+      {estado === 'tour-centro' && <GuidedTour steps={TOUR_CENTRO} onClose={noop} />}
       {(estado === 'padsnuvem' || estado === 'padsnuvem-editar') && (
         <PadSetsModal isOpen onClose={noop} onSelect={noop} selectedPadSet={{ id: 'p2', name: 'Ambiente Suave', base_path: 'p2' }} isAdmin />
       )}
