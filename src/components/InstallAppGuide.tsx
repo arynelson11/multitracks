@@ -23,7 +23,8 @@ export function InstallAppGuide({ onInstalled }: { onInstalled?: () => void }) {
 
   if (isInstalled) {
     return (
-      <p className="flex items-center gap-2 text-ps-base text-ps-moss-hi">
+      // Texto neutro: o musgo é "ao vivo" na linguagem do palco (revisão macro BC, BC3-3).
+      <p className="flex items-center gap-2 text-ps-base text-ps-mut">
         <CheckCircle2 aria-hidden="true" className="size-4 shrink-0" /> Você já está usando o app instalado.
       </p>
     )

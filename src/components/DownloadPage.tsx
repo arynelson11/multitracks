@@ -207,13 +207,15 @@ export function DownloadPage() {
 function DownloadButton({ href, icon, platform, label, sub, highlighted, onHelp }: {
   href: string; icon: React.ReactNode; platform: string; label: string; sub: string; highlighted: boolean; onHelp: () => void
 }) {
-  // Cartão do instalador: o do sistema de quem abre fica em destaque (laranja suave). O link de
-  // baixar tem a cara do Button primary do kit (o kit ainda não tem link com cara de botão).
+  // Cartão do instalador: o do sistema de quem abre fica em destaque pelo anel line-3 e o selo
+  // neutro SEU SISTEMA (laranja é ligado; revisão macro BC, BC3-3, decisão do coordenador). O link
+  // de baixar tem a cara do Button primary do kit (o kit ainda não tem link com cara de botão).
   return (
     <div
       data-highlighted={highlighted ? 'true' : undefined}
-      className={cx('flex flex-col rounded-ps-2xl p-5 inset-ring', highlighted ? 'bg-ps-or-soft inset-ring-ps-or-line' : 'bg-ps-s1 inset-ring-ps-line')}
+      className={cx('flex flex-col rounded-ps-2xl bg-ps-s1 p-5 inset-ring', highlighted ? 'inset-ring-ps-line-3' : 'inset-ring-ps-line')}
     >
+      {highlighted && <Tag className="mb-3 self-start">SEU SISTEMA</Tag>}
       <div className="mb-4 flex items-center gap-3">
         <div aria-hidden="true" className="shrink-0 text-ps-bone">{icon}</div>
         <div className="min-w-0">

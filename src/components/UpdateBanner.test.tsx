@@ -28,10 +28,11 @@ afterEach(() => {
 const texto = () => document.body.textContent ?? ''
 
 describe('Aviso de atualização: nada some', () => {
-  it('sem atualização não mostra nada', () => {
+  it('sem atualização não mostra nada (só a região status, vazia)', () => {
     desktopFalso()
-    const { container } = render(<UpdateBanner />)
-    expect(container.innerHTML).toBe('')
+    render(<UpdateBanner />)
+    expect(screen.getByRole('status').textContent).toBe('')
+    expect(screen.queryByRole('button')).toBeNull()
   })
 
   it('Windows: atualização baixada, Reiniciar instala', () => {
@@ -88,5 +89,34 @@ describe('Aviso de atualização: linguagem do palco', () => {
     expect(document.activeElement).toBe(document.body)
     expect(aviso.innerHTML).not.toContain('truncate')
     expect(oldLanguageClasses(document.body)).toEqual([])
+  })
+
+  // Revisão macro BC (BC3-2): a região status fica sempre na página e o aviso entra nela (região
+  // que nasce já com o texto muitas vezes não é lida); dispensado, ela fica vazia de novo.
+  it('o aviso entra na região status que já estava na página; Agora não a deixa vazia', () => {
+    const { ouvintes } = desktopFalso()
+    render(<UpdateBanner />)
+    const regiao = screen.getByRole('status')
+    expect(regiao.textContent).toBe('')
+    act(() => ouvintes.avail?.({ version: '1.4.31' }))
+    expect(screen.getByRole('status')).toBe(regiao)
+    expect(regiao.textContent).toContain('Nova versão disponível')
+    fireEvent.click(screen.getByRole('button', { name: 'Agora não' }))
+    expect(screen.getByRole('status')).toBe(regiao)
+    expect(regiao.textContent).toBe('')
+  })
+
+  // Revisão macro BC (BC3-3): laranja é ligado e a ação principal; o quadrado do ícone fica neutro.
+  it('laranja só no botão da ação', () => {
+    const { ouvintes } = desktopFalso()
+    render(<UpdateBanner />)
+    act(() => ouvintes.avail?.({ version: '1.4.31' }))
+    const baixar = screen.getByRole('button', { name: 'Baixar' })
+    const laranja = Array.from(screen.getByRole('status').querySelectorAll('[class]'))
+      .filter((el) => el !== baixar && !baixar.contains(el))
+      .flatMap((el) => el.getAttribute('class')!.split(/\s+/))
+      // O anel de foco (focus-visible) é laranja em todo botão do kit: não conta.
+      .filter((c) => /ps-or/.test(c) && !c.startsWith('focus-visible:'))
+    expect(laranja).toEqual([])
   })
 })

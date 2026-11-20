@@ -24,6 +24,10 @@ describe('Guia de instalar: nada some', () => {
     como({ isInstalled: true })
     render(<InstallAppGuide />)
     expect(texto()).toContain('Você já está usando o app instalado.')
+    // Revisão macro BC (BC3-3): musgo é "ao vivo"; o instalado fica no texto neutro.
+    const frase = screen.getByText('Você já está usando o app instalado.')
+    expect(frase.className).not.toMatch(/moss/)
+    expect(frase.className).toContain('text-ps-mut')
   })
 
   it('Android com o botão do navegador: Instalar app chama a instalação e avisa quem pediu', async () => {

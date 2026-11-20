@@ -78,6 +78,23 @@ describe('DownloadPage: nada some no layout do palco', () => {
     expect(text()).toContain('Não sabe qual Mac você tem?')
   })
 
+  // Revisão macro BC (BC3-3, decisão do coordenador): o cartão do sistema de quem abre fica em
+  // destaque com o anel line-3 e o selo neutro SEU SISTEMA, sem o laranja (laranja é ligado).
+  it('o destaque do sistema é o anel line-3 com o selo SEU SISTEMA, sem laranja no cartão', () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+    render(<DownloadPage />)
+    const cartoes = [...document.querySelectorAll<HTMLElement>('[data-highlighted]')]
+    expect(cartoes).toHaveLength(1)
+    const [win] = cartoes
+    expect(win.textContent).toContain('Windows')
+    expect(win.className).toContain('inset-ring-ps-line-3')
+    expect(win.className).not.toMatch(/ps-or/)
+    expect(win.textContent).toContain('SEU SISTEMA')
+    const outros = [...document.querySelectorAll<HTMLElement>('.rounded-ps-2xl')].filter((el) => el !== win && el.querySelector('a[href]'))
+    expect(outros.length).toBe(2)
+    for (const c of outros) expect(c.textContent).not.toContain('SEU SISTEMA')
+  })
+
   it('Como instalar no Windows abre a ajuda do SmartScreen', () => {
     render(<DownloadPage />)
     fireEvent.click(screen.getByRole('button', { name: 'Como instalar no Windows' }))
