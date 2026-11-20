@@ -574,14 +574,13 @@ Combinações pequenas de átomos com propósito específico.
 - Stars laranja (5x), texto warm-200, nome+role bottom
 
 ### 3.5 Auth column header
-**Localização:** `AuthPage.tsx:67-99`
-- Wordmark + "pronto pro" + DomingoMark + H1 + Sub + Stepper (3 passos)
+**Localização:** `AuthPage.tsx` (coluna `aside`, só a partir de `lg`)
+- Wordmark + "pronto pro" (`ps-label`) + DomingoMark + H1 (Inter bold, 40px, 48px a partir de `xl`) + Sub (`ps-md`, `mut`) + Stepper (3 passos: o primeiro em `or-soft` com o número em `ps-or`, os outros em `s1`)
+- **Parte 3 (2026-11-20, [NÃO PUBLICADO]):** na linguagem nova (fundo `ps-ink-0` com linha `ps-line` à direita, brilhos `ps-or` e `ps-moss` decorativos). As marcas (Wordmark e Domingo) mantêm a identidade própria.
 
 ### 3.6 Form input field
-**Localização:** `AuthPage.tsx:155-188`
-- Label uppercase tracking-wider warm-400
-- Input com icon esquerdo, focus ring laranja
-- Padding pl-11 pr-4 py-3
+**Localização:** `src/components/ui/Field.tsx` (`TextField`, seção 2.6)
+- **Parte 3 (2026-11-20, [NÃO PUBLICADO]):** o login e a tela Criar nova senha usam o `TextField` do kit (rótulo em `ps-label` ligado ao campo, ícone à esquerda, "mín 6" como `trailing`, anel de foco laranja na caixa). Antes: label uppercase warm-400, input `pl-11 pr-4 py-3` com o anel laranja no input.
 
 ### 3.7 Audience card
 **Localização:** `LandingPage.tsx:333-343`
@@ -654,11 +653,12 @@ Seções completas — múltiplas moléculas trabalhando juntas.
 - Wordmark + tagline + nav links + copyright
 
 ### 4.13 Auth split
-**Localização:** `AuthPage.tsx:58-220`
+**Localização:** `AuthPage.tsx`
 - Dual column: branding esquerda + formulário direita
 - Atmosphere blur circles
 - Google OAuth + email/senha form
 - Modo login | register | forgot
+- **Parte 3 (2026-11-20, [NÃO PUBLICADO]):** fundo `ps-ink`, formulário num `Panel` (`flat`, até 448px, padding 24px e 32px a partir de `sm`), título 28px bold, "Continuar com Google" e o enviar em `Button size="lg"` (o enviar no `primary` laranja, com o texto mantido e o ícone girando enquanto carrega), erro num `Notice` âmbar (`role="alert"`), mensagem num `Notice` neutro (`role="status"`), "Esqueceu sua senha?" em `Button ghost` e a troca de modo ("Criar conta", "Entrar") em `Button` padrão. Fora do `lg` a Wordmark fica no topo, no fluxo da página (antes ficava por cima, em posição absoluta).
 
 ### 4.14 Splash screen produto
 **Localização:** `App.tsx:336-363`
