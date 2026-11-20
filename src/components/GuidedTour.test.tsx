@@ -86,23 +86,77 @@ describe('Tour: nada some', () => {
   })
 })
 
+// Revisão macro BC (BC3-7): cada tour acha o alvo no palco em que roda. O tour do palco antigo
+// (TOUR_STEPS) usa os data-tour do App.tsx; o do palco novo (TOUR_STEPS_NEW_STAGE, feito do antigo
+// pelas regras do flatMap) usa os das peças em stage/; o do Separador, os do SeparatorStudio.
 describe('Tour: os alvos', () => {
   const ROOT = resolve(process.cwd(), 'src')
   const ler = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
-  const stage = readdirSync(join(ROOT, 'components/stage')).filter((f) => f.endsWith('.tsx') && !f.includes('.test.'))
-  const fontes = [ler('App.tsx'), ler('components/SeparatorStudio.tsx'), ...stage.map((f) => ler(`components/stage/${f}`))].join('\n')
+  const stageFiles = readdirSync(join(ROOT, 'components/stage')).filter((f) => f.endsWith('.tsx') && !f.includes('.test.'))
+  const APP = ler('App.tsx')
 
   /** Todo nome que aparece num data-tour: data-tour="x" ou data-tour={... 'x' ...}. */
-  const donos = new Set<string>()
-  for (const m of fontes.matchAll(/data-tour=(?:"([\w-]+)"|\{([^}]*)\})/g)) {
-    if (m[1]) donos.add(m[1])
-    for (const q of (m[2] ?? '').matchAll(/'([\w-]+)'/g)) donos.add(q[1])
+  function donos(fonte: string): Set<string> {
+    const out = new Set<string>()
+    for (const m of fonte.matchAll(/data-tour=(?:"([\w-]+)"|\{([^}]*)\})/g)) {
+      if (m[1]) out.add(m[1])
+      for (const q of (m[2] ?? '').matchAll(/'([\w-]+)'/g)) out.add(q[1])
+    }
+    return out
+  }
+  /** Os alvos de um array de passos escrito no código (`const NOME: TourStep[] = [ ... ]`). */
+  function alvosDe(fonte: string, nome: string): string[] {
+    const inicio = fonte.indexOf(`const ${nome}: TourStep[] = [`)
+    expect(inicio, `achei o ${nome}`).toBeGreaterThanOrEqual(0)
+    const fim = fonte.indexOf('\n]', inicio)
+    return [...fonte.slice(inicio, fim).matchAll(/\btarget: '([\w-]+)'/g)].map((m) => m[1])
   }
 
-  it.each(['App.tsx', 'components/SeparatorStudio.tsx'])('todo alvo do tour em %s tem um data-tour com o nome dele', (arquivo) => {
-    const alvos = [...ler(arquivo).matchAll(/\btarget: '([\w-]+)'/g)].map((m) => m[1])
+  const antigo = alvosDe(APP, 'TOUR_STEPS')
+  const secoesNovo = alvosDe(APP, 'NEW_STAGE_SECTION_STEPS')
+  /** O tour do palco novo, aplicando as regras do flatMap do App.tsx (`if (step.target === 'x') return ...`). */
+  function alvosDoNovo(): string[] {
+    const inicio = APP.indexOf('const TOUR_STEPS_NEW_STAGE: TourStep[] = TOUR_STEPS.flatMap(')
+    expect(inicio, 'achei o TOUR_STEPS_NEW_STAGE').toBeGreaterThanOrEqual(0)
+    const bloco = APP.slice(inicio, APP.indexOf('\n})', inicio))
+    const regras = new Map<string, string[]>()
+    for (const m of bloco.matchAll(/if \(step\.target === '([\w-]+)'\) return (.*)$/gm)) {
+      const [, alvo, volta] = m
+      if (volta.includes('NEW_STAGE_SECTION_STEPS')) regras.set(alvo, secoesNovo)
+      else if (volta.trim() === '[]') regras.set(alvo, [])
+      else if (/\[\{ \.\.\.step\b/.test(volta)) regras.set(alvo, [alvo])
+      else {
+        const troca = /\btarget: '([\w-]+)'/.exec(volta)
+        expect(troca, `regra de ${alvo} sem alvo conhecido`).not.toBeNull()
+        regras.set(alvo, [troca![1]])
+      }
+    }
+    // Se o flatMap mudar de forma, o teste avisa em vez de passar sem conferir.
+    expect([...regras.keys()].sort()).toEqual(['anotacoes', 'config', 'editar', 'secoes', 'setlist-area'])
+    return antigo.flatMap((a) => regras.get(a) ?? [a])
+  }
+
+  it('o tour do palco antigo acha cada alvo no App.tsx', () => {
+    expect(antigo.length).toBeGreaterThan(0)
+    const app = donos(APP)
+    expect(antigo.filter((a) => !app.has(a))).toEqual([])
+  })
+
+  it('o tour do palco novo acha cada alvo nas peças do palco (stage/*.tsx)', () => {
+    const novo = alvosDoNovo()
+    expect(novo).toContain('repertorios')
+    expect(novo).not.toContain('setlist-area')
+    expect(novo).not.toContain('anotacoes')
+    const stage = donos(stageFiles.map((f) => ler(`components/stage/${f}`)).join('\n'))
+    expect(novo.filter((a) => !stage.has(a))).toEqual([])
+  })
+
+  it('o tour do Separador acha cada alvo no SeparatorStudio', () => {
+    const sep = ler('components/SeparatorStudio.tsx')
+    const alvos = alvosDe(sep, 'SEP_TOUR_STEPS')
     expect(alvos.length).toBeGreaterThan(0)
-    expect(alvos.filter((a) => !donos.has(a))).toEqual([])
+    const d = donos(sep)
+    expect(alvos.filter((a) => !d.has(a))).toEqual([])
   })
 })
 
