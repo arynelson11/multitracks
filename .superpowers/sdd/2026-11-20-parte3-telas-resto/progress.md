@@ -62,3 +62,11 @@ Task 11: complete (commits 1c8aec0..1c8aec0, tests: node scripts/verify-layout/r
 - Final: fixed o Modo Ao Vivo marcava `aria-modal` sem prender o foco, e os Planos que abrem por cima (fora da janela) ficariam escondidos do leitor de tela; tirado o `aria-modal`. Teste "camada própria abaixo dos Planos..." RED e depois GREEN; `LiveModeModal` + `ConfirmDialog` 30 de 30.
 - Final: fixed o foco de abrir do `ConfirmDialog` procurava o primeiro `textarea` da janela (um `textarea` no texto de quem chama roubaria o foco da nota); volta a achar a nota pelo id, com o id nas dependências do efeito (o `useId` não muda, roda uma vez). Coberto pelos testes de foco que já existiam no `ConfirmDialog.test.tsx` (sem RED novo: comportamento igual ao de antes da T10).
 - Task 12: as duas correções acima entraram enquanto o portão rodava (`vitest` já tinha começado); os testes delas rodaram de novo à parte (30 de 30) e o `tsc -b`, o `typecheck` e o build do portão rodaram depois delas.
+
+## Portão (T12, uma vez, `caffeinate -i`, HEAD `1c8aec0`; o `c1332dc` entrou durante)
+
+- vitest: 3924 de 3925 (163 arquivos, sem "Errors"); a de tempo `src/lib/manualClickTrack.test.ts` (62,2 ms contra 50) com load 11 a 23; sozinha 6 de 6 (load 15,47). Testes do `c1332dc` de novo: 30 de 30.
+- `tsc -b` limpo; `npm run typecheck` com os 7 erros antigos; ESLint nos 30 arquivos tocados: 3 erros antigos em linhas não mexidas, 0 novos; `DESKTOP=1 npx vite build` ok.
+- verify-layout: 216 de 216 (11 estados do palco + 16 da faixa C, 8 tamanhos); 390x844: 14 de 14.
+- Ruling: o `report.md` não foi gravado (o ambiente recusou arquivo de relatório de subagente); o relatório vai inteiro na resposta ao coordenador, e este ledger guarda as decisões e os números. Custo se errado: o coordenador copia o texto da resposta.
+- Ruling: a pasta do ledger fica (o brief pede o ledger na worktree) e nada de "finishing-a-development-branch" (o brief proíbe merge, push e tag). Custo se errado: nenhum.
