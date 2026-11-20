@@ -308,6 +308,18 @@ describe('Tabs e TabPanel', () => {
     expect(on.join(' ')).not.toMatch(FIXED_WIDTH)
     expect(classes(screen.getByRole('tab', { name: 'Buses' }))).toContain('opacity-35')
   })
+  // Revisão macro BC (BC1-M4): aria-controls e aria-labelledby são listas de ids separadas por espaço.
+  it('value com espaço não quebra os ids: a aba e o painel continuam ligados', () => {
+    const com = [{ value: 'minhas músicas', label: 'Minhas músicas' }, { value: 'da nuvem', label: 'Da nuvem' }]
+    render(<><Tabs id="lib" aria-label="Abas" tabs={com} value="minhas músicas" onChange={() => {}} /><TabPanel tabsId="lib" value="minhas músicas">lista</TabPanel></>)
+    const aba = screen.getByRole('tab', { name: 'Minhas músicas' })
+    expect(aba.id).not.toMatch(/\s/)
+    expect(screen.getByRole('tab', { name: 'Da nuvem' }).id).not.toBe(aba.id)
+    const panel = screen.getByRole('tabpanel', { name: 'Minhas músicas' })
+    expect(aba.getAttribute('aria-controls')).toBe(panel.id)
+    expect(panel.getAttribute('aria-labelledby')).toBe(aba.id)
+    expect(document.getElementById(aba.id)).toBe(aba)
+  })
 })
 
 describe('Notice', () => {
@@ -478,6 +490,19 @@ describe('FilePicker', () => {
     rerender(<FilePicker label="Carregar faixas" multiple accept=".wav,.mp3" onFiles={onFiles} disabled />)
     expect((screen.getByRole('button', { name: 'Carregar faixas' }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.drop(container.firstElementChild!, { dataTransfer: { files: [a] } })
+    expect(onFiles).not.toHaveBeenCalled()
+  })
+  // Revisão macro BC (BC1-M5): desligado, a área não convida a soltar e segura o soltar (no app de
+  // computador, o arquivo solto sem preventDefault fazia a janela abrir o arquivo e sair do app).
+  it('desligado: segura o arrastar e o soltar sem pegar o arquivo, sem a dica e sem o tracejado', () => {
+    const onFiles = vi.fn()
+    const { container } = render(<FilePicker label="Carregar faixas" accept=".wav" onFiles={onFiles} disabled />)
+    const zone = container.firstElementChild as HTMLElement
+    expect(zone.textContent).not.toContain('arraste')
+    expect(classes(zone)).not.toContain('border-dashed')
+    expect(fireEvent.dragOver(zone, { dataTransfer: { files: [], types: ['Files'] } })).toBe(false)
+    expect(classes(zone)).not.toContain('bg-ps-or-soft')
+    expect(fireEvent.drop(zone, { dataTransfer: { files: [new File(['x'], 'a.wav')] } })).toBe(false)
     expect(onFiles).not.toHaveBeenCalled()
   })
 })

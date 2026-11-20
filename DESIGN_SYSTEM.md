@@ -405,7 +405,7 @@ const id = useId()
 - Grupo do v5 (`.tabs`): fundo `s1` com anel `line`, 3px de folga; aba em caixa alta (10.5px, extrabold, espaçamento .12em), atual em laranja (`or-soft`, texto `or`, anel `or-line`), as outras em `mut`. Alvo de 44px.
 - **Nunca corta nem rola:** as abas descem de linha (`flex-wrap`); cada uma tem pelo menos a largura do texto (`shrink-0`, `basis-auto`) e as da mesma linha dividem a sobra (`grow`).
 - **Teclado (WAI-ARIA):** só a aba atual entra no Tab; setas esquerda e direita andam com volta pulando as desligadas, Home e End vão pra primeira e pra última; cada movimento já abre a aba. Clique na aba atual não chama `onChange`.
-- **Ids:** a aba é `${id}-tab-${value}`; o painel é `${id}-panel`. O `TabPanel` (um só, com o conteúdo da aba aberta) leva `role="tabpanel"`, o id do painel e `aria-labelledby` da aba aberta; `tabIndex` 0 por padrão (passe -1 quando o conteúdo já começa num campo).
+- **Ids:** a aba é `${id}-tab-` mais o `value` codificado (`encodeURIComponent`: um `value` com espaço, como "minhas músicas", não quebra o `aria-controls` nem o `aria-labelledby`, que são listas de ids separadas por espaço; revisão macro BC, não publicado); o painel é `${id}-panel`. O `TabPanel` (um só, com o conteúdo da aba aberta) leva `role="tabpanel"`, o id do painel e `aria-labelledby` da aba aberta; `tabIndex` 0 por padrão (passe -1 quando o conteúdo já começa num campo).
 - Aba `disabled`: a 35% e fora do teclado.
 
 #### `<Notice>` (Parte 3)
@@ -435,13 +435,15 @@ const id = useId()
 ```tsx
 <Tag>OFFLINE</Tag>
 <Tag num>128 BPM</Tag>
-<Tag tone="on">Mais Popular</Tag>
-<Tag tone="live">Adicionada</Tag>
+<Tag>Mais Popular</Tag>
+<Tag>Adicionada</Tag>
+<Tag tone="live">AO VIVO</Tag>
 ```
 
 - Selo estático de metadado (não é botão), na cara do selo ONLINE/OFFLINE da barra do palco: 22px de altura, pílula, 10px extrabold com espaçamento .14em, sem quebra.
 - `tone`: `neutral` (padrão: `s2`, texto `mut`, anel `line-2`) | `on` (laranja suave) | `live` (musgo, com a luz acesa) | `alert` (âmbar). `num`: fonte mono de largura fixa (BPM, contagem). `dot`: luz antes do texto (padrão: só no `live`).
 - Não muda a caixa do texto: escreva como deve aparecer (OFFLINE em caixa alta, tom como `C#m`).
+- O tom segue o código de cores da linguagem, um significado só: `on` (laranja) só pra estado ligado ("EM USO", a opção escolhida), `live` (musgo, com a luz) só pra ao vivo ("AO VIVO", "CONECTADO"), `alert` (âmbar) pra alerta ("SEM CLICK") e o resto `neutral` (metadado, destaque de oferta, "Adicionada", "Mais Popular"). (Revisão macro BC, 2026-11-20, [NÃO PUBLICADO]: os exemplos de antes ensinavam "Mais Popular" no laranja e "Adicionada" no musgo.)
 
 #### `<ProgressBar>` (Parte 3, pedido da faixa D)
 
@@ -472,7 +474,7 @@ const id = useId()
 - Um `Button` do kit (`tone` e `icon` opcionais) que abre o seletor do sistema (Enter e Espaço são do próprio botão), o nome escolhido ao lado (`fileName`, de quem chama) e o "Tirar" (`Button ghost`, com `onClear`; texto em `clearLabel`).
 - **Arrastar e soltar** (`droppable`, padrão ligado): a área tem borda tracejada `line-2`; arrastando por cima, borda `or-line` e fundo `or-soft`. Sem nome escolhido, a dica "ou arraste o arquivo aqui" (ou "os arquivos"), que some em tela de toque.
 - **Filtro:** `onFiles` recebe só o que o `accept` aceita (extensão como `.mp3`, sem diferença de maiúscula; tipo como `audio/*` ou `image/png`), e só o primeiro sem `multiple`. O que o `accept` recusou vai pro `onReject` (pra tela avisar). O seletor é limpo depois de cada escolha (o mesmo arquivo pode ser escolhido de novo).
-- `help` (frase embaixo, ligada ao botão), `disabled` (não abre nem aceita soltar), `id` (do input de arquivo).
+- `help` (frase embaixo, ligada ao botão), `disabled` (não abre nem aceita soltar), `id` (do input de arquivo). Desligado, a área perde o tracejado (a borda fica transparente, sem mudar o tamanho) e a dica de arrastar, e continua segurando o arrastar e o soltar (`preventDefault`) sem pegar o arquivo: sem isso, no app de computador o arquivo solto ali fazia a janela abrir o arquivo e sair do app (revisão macro BC, não publicado).
 
 #### `<Toast>` (Parte 3, pedido da faixa D)
 

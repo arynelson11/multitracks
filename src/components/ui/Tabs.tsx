@@ -9,7 +9,7 @@ export interface TabItem<T extends string> {
 }
 
 export interface TabsProps<T extends string> {
-  /** Base dos ids: a aba é `${id}-tab-${value}` e o painel (TabPanel) é `${id}-panel`. */
+  /** Base dos ids: a aba é `${id}-tab-<value codificado>` e o painel (TabPanel) é `${id}-panel`. */
   id: string
   tabs: TabItem<T>[]
   value: T
@@ -29,7 +29,9 @@ const TAB_IDLE = 'text-ps-mut hover:text-ps-bone'
 const TAB_ON = 'bg-ps-or-soft text-ps-or inset-ring inset-ring-ps-or-line'
 const TAB_DISABLED = 'opacity-35'
 
-const tabIdOf = (id: string, value: string) => `${id}-tab-${value}`
+// O value entra codificado: aria-controls e aria-labelledby são listas de ids separadas por espaço,
+// e um value com espaço ("minhas músicas") quebraria a ligação.
+const tabIdOf = (id: string, value: string) => `${id}-tab-${encodeURIComponent(value)}`
 const panelIdOf = (id: string) => `${id}-panel`
 
 /** Próxima aba habilitada a partir de `from`, andando `step` com volta. -1 se nenhuma. */

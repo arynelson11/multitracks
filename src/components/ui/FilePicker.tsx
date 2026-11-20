@@ -41,6 +41,8 @@ function accepts(accept: string | undefined, file: File): boolean {
 const ZONE = 'flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-ps-lg transition-colors duration-150 motion-reduce:transition-none'
 const ZONE_IDLE = 'border border-dashed border-ps-line-2 p-3'
 const ZONE_OVER = 'border border-dashed border-ps-or-line bg-ps-or-soft p-3'
+// Desligado não convida a soltar: sem o tracejado (a borda fica, transparente, pra não mexer no tamanho).
+const ZONE_OFF = 'border border-transparent p-3'
 
 /** Escolher arquivo: botão do kit que abre o seletor do sistema, o nome escolhido ao lado, Tirar e arrastar e soltar. */
 export function FilePicker({
@@ -61,10 +63,11 @@ export function FilePicker({
 
   const zoneEvents = droppable
     ? {
+        // Sempre segura o arrastar e o soltar: sem o preventDefault, no app de computador o arquivo
+        // solto aqui faz a janela abrir o arquivo (e sair do app). Desligado, só ignora o arquivo.
         onDragOver: (e: React.DragEvent<HTMLDivElement>) => {
-          if (disabled) return
           e.preventDefault()
-          if (!over) setOver(true)
+          if (!disabled && !over) setOver(true)
         },
         onDragLeave: (e: React.DragEvent<HTMLDivElement>) => {
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false)
@@ -79,7 +82,7 @@ export function FilePicker({
     : {}
 
   return (
-    <div {...zoneEvents} className={cx(ZONE, droppable && (over ? ZONE_OVER : ZONE_IDLE), className)}>
+    <div {...zoneEvents} className={cx(ZONE, droppable && (disabled ? ZONE_OFF : over ? ZONE_OVER : ZONE_IDLE), className)}>
       <Button tone={tone} icon={icon} disabled={disabled} onClick={() => inputRef.current?.click()} aria-describedby={help != null ? helpId : undefined}>
         {label}
       </Button>
@@ -102,7 +105,7 @@ export function FilePicker({
       <span aria-live="polite" className="min-w-0 flex-1 basis-40 break-all text-ps-base leading-snug">
         {fileName ? (
           <span className="font-semibold text-ps-bone">{fileName}</span>
-        ) : droppable ? (
+        ) : droppable && !disabled ? (
           <span className="text-ps-mut pointer-coarse:hidden">{multiple ? 'ou arraste os arquivos aqui' : 'ou arraste o arquivo aqui'}</span>
         ) : null}
       </span>
