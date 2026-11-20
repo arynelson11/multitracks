@@ -4,6 +4,7 @@
 import { MetronomeModal } from '../../src/components/MetronomeModal'
 import { DownloadPage } from '../../src/components/DownloadPage'
 import { GuidedTour } from '../../src/components/GuidedTour'
+import { LiveModeModal } from '../../src/components/LiveModeModal'
 import { LyricsEditor } from '../../src/components/LyricsEditor'
 import { PadSetsModal } from '../../src/components/PadSetsModal'
 import { Teleprompter } from '../../src/components/Teleprompter'
@@ -65,6 +66,14 @@ const TOUR_ALVO = [
 ]
 const TOUR_CENTRO = [{ title: 'Bem-vindo ao Playback Studio', body: 'Vou te mostrar tudo rapidinho. Pode pular quando quiser e rever depois pelo Config.' }, ...TOUR_ALVO]
 
+/** Modo Ao Vivo ligado com endereço longo e três aparelhos (um sem IP, um liberado). */
+const LIVE = {
+  isOpen: true, onClose: noop, isStarting: false, onStopServer: noop, onToggleDevice: noop, onToggleAll: noop,
+  remoteSessionCode: null, onToggleRemote: noop,
+  serverUrl: 'http://192.168.100.200:3000/?sessao=palco-principal-da-igreja-batista-central',
+  devices: ['192.168.100.201', '', 'fe80::1c2b:3a4d:5e6f:7a8b'], approvedIps: ['192.168.100.201'],
+}
+
 // As peças da página são exportadas só pela regra do react-refresh (arquivo com componente exporta componente).
 
 export function TelaPage({ estado }: { estado: TelaEstado }) {
@@ -89,6 +98,8 @@ export function TelaPage({ estado }: { estado: TelaEstado }) {
       )}
       {estado === 'tour-centro' && <GuidedTour steps={TOUR_CENTRO} onClose={noop} />}
       {(estado === 'download' || estado === 'download-ajuda') && <DownloadPage />}
+      {estado === 'aovivo' && <LiveModeModal {...LIVE} serverError={null} />}
+      {estado === 'aovivo-erro' && <LiveModeModal {...LIVE} serverUrl={null} serverError="Não deu pra abrir a porta 3000: outro programa está usando (EADDRINUSE)." />}
       {(estado === 'padsnuvem' || estado === 'padsnuvem-editar') && (
         <PadSetsModal isOpen onClose={noop} onSelect={noop} selectedPadSet={{ id: 'p2', name: 'Ambiente Suave', base_path: 'p2' }} isAdmin />
       )}
