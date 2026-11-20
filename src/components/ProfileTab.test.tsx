@@ -62,6 +62,18 @@ describe('ProfileTab: nada some no restyle', () => {
     expect(text()).toContain('pessoa')
   })
 
+  it('conta sem data de criação (ou com data inválida): "Sem data de cadastro", nunca travessão nem "Invalid Date"', () => {
+    for (const created_at of [undefined, '', 'data-quebrada']) {
+      const semData = { ...USER, created_at } as unknown as User
+      const { container } = setup({ user: semData })
+      expect(container.textContent).toContain('Sem data de cadastro')
+      expect(container.textContent).not.toContain('Membro desde')
+      expect(container.textContent).not.toContain('Invalid Date')
+      expect(container.innerHTML).not.toContain(String.fromCharCode(0x2014))
+      cleanup()
+    }
+  })
+
   it('trocar foto: abre o seletor, envia pro R2, grava no perfil e mostra a foto nova', async () => {
     const click = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {})
     const { container, p } = setup()

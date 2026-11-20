@@ -17,13 +17,12 @@ interface ProfileTabProps {
   onClose: () => void;
 }
 
-function formatMemberSince(iso?: string): string {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-  } catch {
-    return '—';
-  }
+/** "julho de 2026", ou null sem data de criação (ou com data que não dá pra ler). */
+function formatMemberSince(iso?: string): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 }
 
 export function ProfileTab({ user, userPlan, updateProfile, updatePassword, signOutEverywhere, deleteAccount, onUpgrade, onClose }: ProfileTabProps) {
@@ -41,6 +40,7 @@ export function ProfileTab({ user, userPlan, updateProfile, updatePassword, sign
   const [pwMsg, setPwMsg] = useState<string | null>(null);
 
   const initial = (name || user.email || '?').trim().charAt(0).toUpperCase();
+  const memberSince = formatMemberSince(user.created_at);
 
   const handleAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -188,7 +188,7 @@ export function ProfileTab({ user, userPlan, updateProfile, updatePassword, sign
           </div>
           <div className="min-w-0">
             <p className="text-ps-base font-bold text-ps-bone">Plano {planDisplayName(userPlan)}</p>
-            <p className="flex items-center gap-1.5 text-ps-sm text-ps-mut"><Calendar size={11} aria-hidden="true" className="shrink-0" /> Membro desde {formatMemberSince(user.created_at)}</p>
+            <p className="flex items-center gap-1.5 text-ps-sm text-ps-mut"><Calendar size={11} aria-hidden="true" className="shrink-0" /> {memberSince ? `Membro desde ${memberSince}` : 'Sem data de cadastro'}</p>
           </div>
         </div>
         {!isPaidPlan(userPlan) && (
