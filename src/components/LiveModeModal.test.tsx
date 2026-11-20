@@ -92,6 +92,8 @@ describe('Modo Ao Vivo: linguagem do palco', () => {
   it('camada própria abaixo dos Planos e só classes da linguagem nova', () => {
     abrir({ devices: ['192.168.0.12'], approvedIps: [] })
     expect((screen.getByRole('dialog').parentElement as HTMLElement).className).toContain('z-[100]')
+    // Sem aria-modal: os Planos abrem por cima (fora desta janela) e o leitor de tela tem de achá-los.
+    expect(screen.getByRole('dialog').getAttribute('aria-modal')).toBeNull()
     expect(oldLanguageClasses(document.body)).toEqual([])
   })
 })

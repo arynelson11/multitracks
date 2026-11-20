@@ -46,7 +46,6 @@ export function LiveModeModal({
             <Panel
                 variant="pop"
                 role="dialog"
-                aria-modal="true"
                 aria-labelledby={titleId}
                 onClick={e => e.stopPropagation()}
                 className="flex max-h-full w-full max-w-md flex-col overflow-hidden font-ps-sans text-ps-bone"

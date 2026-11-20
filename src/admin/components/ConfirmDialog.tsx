@@ -98,13 +98,13 @@ function OpenDialog({
   // e, ao fechar, devolve o foco a quem abriu.
   useEffect(() => {
     const opener = document.activeElement
-    // A nota é o TextArea do kit (16 px, o Safari do iPhone não amplia ao focar).
-    const overlay = overlayRef.current
-    ;(overlay?.querySelector<HTMLElement>('textarea') ?? overlay?.querySelector<HTMLElement>('[role="dialog"]'))?.focus()
+    // A nota é o TextArea do kit (16 px, o Safari do iPhone não amplia ao focar), achado pelo id.
+    ;(document.getElementById(fieldId) ?? overlayRef.current?.querySelector<HTMLElement>('[role="dialog"]'))?.focus()
     return () => {
       if (opener instanceof HTMLElement) opener.focus()
     }
-  }, [])
+    // O id do useId não muda: o efeito roda uma vez, ao abrir.
+  }, [fieldId])
 
   const valid = noteIsValid(note, text)
   const confirm = () => {
