@@ -159,8 +159,40 @@ describe('tela Criar nova senha', () => {
     render(<NewPasswordPage client={client} onDone={() => {}} onCancel={() => {}} />)
     for (const input of [nova(), repetir()]) {
       expect(input.type).toBe('password')
-      expect(input.className).toContain('text-[16px]')
+      // 16 px: o text-ps-md do campo do kit (antes, text-[16px]).
+      expect(input.className.split(' ')).toContain('text-ps-md')
       expect(input.getAttribute('autocomplete')).toBe('new-password')
     }
+  })
+})
+
+describe('tela Criar nova senha no visual do palco (Parte 3)', () => {
+  const OLD = /^(?:[a-z-]+:)*(?:bg|text|border|placeholder)-(?:tinta|laranja|warm-\d+|bone|red-\d+)(?:[-/].*)?$|^font-display$/
+  const own = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLElement>('[class]'))
+    .filter((el) => !el.closest('span.font-display.inline-flex'))
+    .flatMap((el) => el.className.toString().split(/\s+/).filter(Boolean))
+
+  it('campos do kit, Salvar laranja, Cancelar discreto, erro em âmbar e só tokens ps-*', async () => {
+    const { client } = fakeClient()
+    const { container } = render(<NewPasswordPage client={client} onDone={() => {}} onCancel={() => {}} />)
+    expect((container.firstElementChild as HTMLElement).className).toContain('bg-ps-ink')
+    for (const name of ['Nova senha', 'Repita a nova senha']) expect(screen.getByLabelText(name).parentElement!.className).toContain('focus-within:outline-ps-or')
+    expect(screen.getByRole('button', { name: 'Salvar nova senha' }).className).toContain('bg-ps-or')
+    expect(screen.getByRole('button', { name: 'Cancelar e voltar pra tela de entrar' }).className).toContain('text-ps-mut')
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Salvar nova senha' })))
+    expect(screen.getByRole('alert').className).toContain('text-ps-alert')
+    expect(own(container).filter((c) => OLD.test(c))).toEqual([])
+  })
+
+  it('depois de salvar: Continuar laranja e a confirmação num aviso neutro', async () => {
+    const { client } = fakeClient()
+    const { container } = render(<NewPasswordPage client={client} onDone={() => {}} onCancel={() => {}} />)
+    fireEvent.change(screen.getByLabelText('Nova senha'), { target: { value: 'senhaforte1' } })
+    fireEvent.change(screen.getByLabelText('Repita a nova senha'), { target: { value: 'senhaforte1' } })
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Salvar nova senha' })))
+    expect(screen.getByRole('status').className).toContain('bg-ps-s2')
+    expect(screen.getByRole('button', { name: 'Continuar' }).className).toContain('bg-ps-or')
+    expect(own(container).filter((c) => OLD.test(c))).toEqual([])
+    expect(container.innerHTML).not.toContain(String.fromCharCode(0x2014))
   })
 })

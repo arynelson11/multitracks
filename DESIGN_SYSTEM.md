@@ -659,6 +659,7 @@ Seções completas — múltiplas moléculas trabalhando juntas.
 - Google OAuth + email/senha form
 - Modo login | register | forgot
 - **Parte 3 (2026-11-20, [NÃO PUBLICADO]):** fundo `ps-ink`, formulário num `Panel` (`flat`, até 448px, padding 24px e 32px a partir de `sm`), título 28px bold, "Continuar com Google" e o enviar em `Button size="lg"` (o enviar no `primary` laranja, com o texto mantido e o ícone girando enquanto carrega), erro num `Notice` âmbar (`role="alert"`), mensagem num `Notice` neutro (`role="status"`), "Esqueceu sua senha?" em `Button ghost` e a troca de modo ("Criar conta", "Entrar") em `Button` padrão. Fora do `lg` a Wordmark fica no topo, no fluxo da página (antes ficava por cima, em posição absoluta).
+- **Criar nova senha** (`NewPasswordPage.tsx`, volta do link de recuperar senha), Parte 3 (2026-11-20, [NÃO PUBLICADO]): mesma linguagem numa coluna só (até 384px): Wordmark em cima, `Panel` com o título, os dois `TextField` de senha, o erro num `Notice` âmbar (`role="alert"`), "Salvar nova senha" em `Button primary` (`lg`, o cadeado vira o ícone girando enquanto salva) e "Cancelar e voltar pra tela de entrar" em `Button ghost`. Depois de salvar: a confirmação num `Notice` neutro (`role="status"`) e "Continuar" em `Button primary`.
 
 ### 4.14 Splash screen produto
 **Localização:** `App.tsx:336-363`
