@@ -80,3 +80,140 @@ describe('PricingModal: app de computador', () => {
     expect(await screen.findByText(/Abrimos o pagamento no seu navegador/)).toBeTruthy()
   })
 })
+
+describe('PricingModal: primeiro mês com desconto', () => {
+  const PRICES = { essencial_mensal: 24.9, pro_mensal: 59.9 }
+  const answer = (status: number, body: unknown) => ({ ok: status >= 200 && status < 300, status, statusText: 'x', text: async () => JSON.stringify(body) })
+  const activeOffer = () => answer(200, { status: 'active', expiresAt: new Date(Date.now() + 47 * 3_600_000).toISOString(), prices: PRICES })
+  const route = (offer: () => unknown, checkout: () => unknown) => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/checkout?action=offer') return offer()
+      if (url === '/api/checkout') return checkout()
+      throw new Error(`rota inesperada: ${url}`)
+    })
+  }
+  const bodies = (path: string) => fetchMock.mock.calls.filter(([url]) => url === path).map(([, init]) => JSON.parse(init.body))
+  const subscribe = (name: string) => fireEvent.click(within(card(name)).getByRole('button', { name: 'Assinar Agora' }))
+
+  beforeEach(() => {
+    auth.userPlan = 'free'
+    desktop.isElectron = true
+  })
+
+  it('com a janela aberta, Pro Mensal mostra primeiro mês por R$ 24,90, Studio Mensal R$ 59,90, e assinar manda offer true', async () => {
+    route(activeOffer, () => answer(200, { url: 'https://asaas.test/c/chk_1' }))
+    render(<PricingModal isOpen onClose={() => {}} />)
+    // Ao abrir, só lê a oferta: nunca abre janela.
+    await vi.waitFor(() => expect(card('Pro Mensal').textContent).toContain('Primeiro mês por'))
+    expect(bodies('/api/checkout?action=offer')).toEqual([{ open: false }])
+    expect(card('Pro Mensal').textContent).toMatch(/Primeiro mês porR\$ 24,90/)
+    expect(card('Pro Mensal').textContent).toContain('Depois R$ 49,90/mês')
+    expect(card('Studio Mensal').textContent).toMatch(/Primeiro mês porR\$ 59,90/)
+    expect(card('Studio Mensal').textContent).toContain('Depois R$ 119,90/mês')
+
+    subscribe('Pro Mensal')
+    await vi.waitFor(() => expect(desktop.openExternalUrl).toHaveBeenCalledWith('https://asaas.test/c/chk_1'))
+    subscribe('Studio Mensal')
+    await vi.waitFor(() => expect(bodies('/api/checkout')).toHaveLength(2))
+    expect(bodies('/api/checkout')).toEqual([
+      { planKey: 'essencial_mensal', confirmedSwitch: false, offer: true },
+      { planKey: 'pro_mensal', confirmedSwitch: false, offer: true },
+    ])
+    expect(window.alert).not.toHaveBeenCalled()
+  })
+
+  it('anual nunca mostra a oferta e sem janela tudo fica como antes', async () => {
+    route(activeOffer, () => answer(200, { url: 'https://asaas.test/c/chk_2' }))
+    const r = render(<PricingModal isOpen onClose={() => {}} />)
+    await vi.waitFor(() => expect(card('Pro Mensal').textContent).toContain('Primeiro mês por'))
+    for (const name of ['Pro Anual', 'Studio Anual']) {
+      expect(card(name).textContent).not.toContain('Primeiro mês')
+      expect(card(name).textContent).not.toContain('Depois')
+    }
+    expect(card('Pro Anual').textContent).toContain('R$ 454,80/ano')
+    subscribe('Pro Anual')
+    await vi.waitFor(() => expect(bodies('/api/checkout')).toHaveLength(1))
+    expect(bodies('/api/checkout')[0]).toEqual({ planKey: 'essencial_anual', confirmedSwitch: false })
+    r.unmount()
+
+    // Sem janela (o servidor responde none): preço cheio em todos e o checkout sem a oferta.
+    fetchMock.mockClear()
+    route(() => answer(200, { status: 'none', expiresAt: null, prices: PRICES }), () => answer(200, { url: 'https://asaas.test/c/chk_3' }))
+    render(<PricingModal isOpen onClose={() => {}} />)
+    await vi.waitFor(() => expect(bodies('/api/checkout?action=offer')).toHaveLength(1))
+    expect(card('Pro Mensal').textContent).toContain('R$ 49,90/mês')
+    expect(card('Studio Mensal').textContent).toContain('R$ 119,90/mês')
+    expect(screen.queryByText(/Primeiro mês/)).toBeNull()
+    subscribe('Pro Mensal')
+    await vi.waitFor(() => expect(bodies('/api/checkout')).toHaveLength(1))
+    expect(bodies('/api/checkout')[0]).toEqual({ planKey: 'essencial_mensal', confirmedSwitch: false })
+  })
+
+  it('leitura da oferta que falha mostra o preço cheio e o checkout vai sem a oferta', async () => {
+    let offerCalls = 0
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/checkout?action=offer') { offerCalls++; throw new TypeError('Failed to fetch') }
+      return answer(200, { url: 'https://asaas.test/c/chk_4' })
+    })
+    render(<PricingModal isOpen onClose={() => {}} />)
+    await vi.waitFor(() => expect(offerCalls).toBe(1))
+    expect(screen.queryByText(/Primeiro mês/)).toBeNull()
+    subscribe('Pro Mensal')
+    await vi.waitFor(() => expect(bodies('/api/checkout')).toHaveLength(1))
+    expect(bodies('/api/checkout')[0]).toEqual({ planKey: 'essencial_mensal', confirmedSwitch: false })
+  })
+
+  it('oferta que terminou (409 offerEnded) tira o desconto, mostra a frase do servidor na tela e não abre o pagamento sozinha', async () => {
+    const ENDED = 'A oferta do primeiro mês terminou. O preço agora é o cheio.'
+    let checkout = () => answer(409, { error: ENDED, offerEnded: true })
+    route(activeOffer, () => checkout())
+    render(<PricingModal isOpen onClose={() => {}} />)
+    await vi.waitFor(() => expect(card('Pro Mensal').textContent).toContain('Primeiro mês por'))
+    subscribe('Pro Mensal')
+    expect((await screen.findByRole('alert')).textContent).toBe(ENDED)
+    expect(screen.queryByText(/Primeiro mês/)).toBeNull()
+    expect(card('Pro Mensal').textContent).toContain('R$ 49,90/mês')
+    expect(desktop.openExternalUrl).not.toHaveBeenCalled()
+    expect(window.alert).not.toHaveBeenCalled()
+    expect(bodies('/api/checkout')).toHaveLength(1)
+
+    // A pessoa decide assinar pelo cheio: vai sem a oferta.
+    checkout = () => answer(200, { url: 'https://asaas.test/c/chk_5' })
+    subscribe('Pro Mensal')
+    await vi.waitFor(() => expect(desktop.openExternalUrl).toHaveBeenCalledWith('https://asaas.test/c/chk_5'))
+    expect(bodies('/api/checkout')[1]).toEqual({ planKey: 'essencial_mensal', confirmedSwitch: false })
+  })
+
+  it('409 sem offerEnded e 500 seguem no aviso de sempre, com a frase do servidor', async () => {
+    const HAS = 'Você já tem o Pro Mensal ativo. Não precisa assinar de novo; para mudar, escolha outro plano.'
+    route(activeOffer, () => answer(409, { error: HAS }))
+    render(<PricingModal isOpen onClose={() => {}} />)
+    await vi.waitFor(() => expect(card('Pro Mensal').textContent).toContain('Primeiro mês por'))
+    subscribe('Pro Mensal')
+    await vi.waitFor(() => expect(window.alert).toHaveBeenCalledWith(HAS))
+    // O desconto continua: não foi a oferta que terminou.
+    expect(card('Pro Mensal').textContent).toContain('Primeiro mês por')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('quem já paga (troca de plano) não lê a oferta: o aviso de troca fala do preço cheio', async () => {
+    auth.userPlan = 'essencial_mensal'
+    route(activeOffer, () => answer(200, { url: 'https://asaas.test/c/chk_6' }))
+    render(<PricingModal isOpen onClose={() => {}} />)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(screen.queryByText(/Primeiro mês/)).toBeNull()
+  })
+
+  it('fechada não lê a oferta; ao abrir de novo lê outra vez', async () => {
+    route(activeOffer, () => answer(200, { url: 'https://asaas.test/c/chk_7' }))
+    const r = render(<PricingModal isOpen={false} onClose={() => {}} />)
+    await new Promise((res) => setTimeout(res, 0))
+    expect(fetchMock).not.toHaveBeenCalled()
+    r.rerender(<PricingModal isOpen onClose={() => {}} />)
+    await vi.waitFor(() => expect(bodies('/api/checkout?action=offer')).toHaveLength(1))
+    r.rerender(<PricingModal isOpen={false} onClose={() => {}} />)
+    r.rerender(<PricingModal isOpen onClose={() => {}} />)
+    await vi.waitFor(() => expect(bodies('/api/checkout?action=offer')).toHaveLength(2))
+  })
+})

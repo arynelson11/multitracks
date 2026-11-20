@@ -1,10 +1,11 @@
-import { apiUrl } from '../lib/api';
-import { getAuthHeaders } from '../lib/supabase';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { X, Check } from 'lucide-react';
 import { isPaidPlan, planDisplayName } from '../lib/plans';
-import { isElectron, openExternalUrl } from '../lib/desktop';
+import { startCheckout, type CheckoutPlanKey } from '../lib/checkout';
+import { fetchOffer, toOfferView } from '../lib/offer';
+import { formatReais } from '../lib/prices';
+import type { OfferView } from './livre/limitCopy';
 
 interface PricingModalProps {
     isOpen: boolean;
@@ -12,7 +13,17 @@ interface PricingModalProps {
 }
 
 // planKey = nome interno do plano (vai pro backend, que sabe o preço e o ciclo).
-const PLANS = [
+type PlanCard = {
+    planKey: CheckoutPlanKey;
+    name: string;
+    priceStr: string;
+    period: string;
+    description: string;
+    features: string[];
+    isPopular?: boolean;
+};
+
+const PLANS: PlanCard[] = [
     {
         planKey: 'essencial_mensal',
         name: 'Pro Mensal',
@@ -48,52 +59,74 @@ const PLANS = [
     }
 ];
 
+const NO_OFFER: OfferView = { status: 'none' };
+
 export function PricingModal({ isOpen, onClose }: PricingModalProps) {
     const { user, userPlan, planExpiresAt } = useAuth();
     const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
     // Quem já paga confirma a troca antes: o plano novo é cobrado cheio e o
     // atual termina assim que o novo é pago (o webhook encerra a assinatura
     // antiga no Asaas), sem desconto proporcional.
-    const [pendingPlan, setPendingPlan] = useState<typeof PLANS[0] | null>(null);
+    const [pendingPlan, setPendingPlan] = useState<PlanCard | null>(null);
     const [openedExternally, setOpenedExternally] = useState(false);
     const isSwitching = isPaidPlan(userPlan);
     const currentName = planDisplayName(userPlan);
 
+    // Oferta do primeiro mês (Parte 3): a tela de Planos só lê a janela (nunca abre; quem abre
+    // é a tela de limite). Quem já paga não lê: a oferta é só da primeira assinatura e o aviso
+    // de troca fala do preço cheio. Cada vez que abre, começa sem desconto (preço cheio) até
+    // o servidor responder; a resposta de uma abertura antiga não vale pra nova.
+    const offerFor = isOpen && user && !isSwitching ? user.id : null;
+    const [offer, setOffer] = useState<OfferView>(NO_OFFER);
+    const [offerEndedNote, setOfferEndedNote] = useState<string | null>(null);
+    const [offerAsked, setOfferAsked] = useState(offerFor);
+    if (offerAsked !== offerFor) {
+        setOfferAsked(offerFor);
+        setOffer(NO_OFFER);
+        setOfferEndedNote(null);
+    }
+    useEffect(() => {
+        if (!offerFor) return;
+        let current = true;
+        void fetchOffer({ open: false }).then((r) => {
+            if (current) setOffer(toOfferView(r, Date.now()));
+        });
+        return () => { current = false; };
+    }, [offerFor]);
+
+    // O preço do primeiro mês que ESTA tela mostra no cartão (nulo: preço cheio). O checkout
+    // manda `offer: true` só com ele na tela, pra nunca cobrar diferente do que a pessoa viu.
+    const offerPrice = (planKey: CheckoutPlanKey): number | null => {
+        if (isSwitching || offer.status !== 'active') return null;
+        if (planKey === 'essencial_mensal' || planKey === 'pro_mensal') return offer.prices[planKey];
+        return null;
+    };
+
     if (!isOpen) return null;
 
-    const handleSubscribe = async (plan: typeof PLANS[0], confirmedSwitch = false) => {
+    const handleSubscribe = async (plan: PlanCard, confirmedSwitch = false) => {
         if (!user) {
             alert('Por favor, faça login para assinar um plano.');
             return;
         }
 
+        const withOffer = !confirmedSwitch && offerPrice(plan.planKey) !== null;
+        setLoadingPlan(plan.planKey);
         try {
-            setLoadingPlan(plan.planKey);
-            const response = await fetch(apiUrl('/api/checkout'), {
-                method: 'POST',
-                headers: await getAuthHeaders(),
-                body: JSON.stringify({ planKey: plan.planKey, confirmedSwitch })
-            });
-
-            const rawText = await response.text();
-            let data: any = null;
-            try { data = rawText ? JSON.parse(rawText) : null; } catch { /* não-JSON */ }
-
-            if (response.ok && data?.url) {
-                // No app de computador o pagamento abre no navegador do sistema
-                // (cartão e 3D Secure funcionam lá; o app relê o plano ao voltar).
-                if (isElectron) {
-                    openExternalUrl(data.url);
-                    setOpenedExternally(true);
-                    return;
-                }
-                window.location.href = data.url;
+            const out = await startCheckout({ planKey: plan.planKey, confirmedSwitch, offer: withOffer });
+            if (out.kind === 'opened') {
+                if (out.external) setOpenedExternally(true);
                 return;
             }
-
-            console.error('[checkout] HTTP', response.status);
+            if (out.offerEnded) {
+                // A oferta terminou (ou a conta já assinou): o desconto sai da tela, a frase do
+                // servidor fica nela e a pessoa decide se assina pelo cheio. Nada abre sozinho.
+                setOffer(NO_OFFER);
+                setOfferEndedNote(out.message);
+                return;
+            }
             // 409 = já tem este plano ativo; o servidor manda a mensagem pronta.
-            alert(typeof data?.error === 'string' ? data.error : 'Não deu para abrir o pagamento agora. Tente de novo em alguns minutos.');
+            alert(out.message);
         } catch (error) {
             console.error('Erro de rede ou processamento:', error);
             alert(`Não foi possível conectar com o servidor.\n${error instanceof Error ? error.message : ''}`);
@@ -128,6 +161,11 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
                             Abrimos o pagamento no seu navegador. Depois de pagar, volte para o app: o plano atualiza sozinho em alguns instantes.
                         </div>
                     )}
+                    {offerEndedNote && (
+                        <div role="alert" className="mb-6 rounded-xl border border-amber-400/40 bg-[#1c1c1e] p-4 text-zinc-300 text-xs leading-relaxed">
+                            {offerEndedNote}
+                        </div>
+                    )}
                     {pendingPlan && (
                         <div role="dialog" aria-label="Trocar de plano?" className="mb-6 rounded-xl border border-amber-400/40 bg-[#1c1c1e] p-4">
                             <h3 className="text-white text-sm font-bold mb-1">Trocar de plano?</h3>
@@ -151,7 +189,9 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
                         </div>
                     )}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        {PLANS.map((plan) => (
+                        {PLANS.map((plan) => {
+                            const firstMonth = offerPrice(plan.planKey);
+                            return (
                             <div 
                                 key={plan.planKey}
                                 className={`relative flex flex-col rounded-xl overflow-hidden border ${plan.isPopular ? 'border-primary ring-1 ring-primary/50' : 'border-border'} bg-[#1c1c1e] transition-transform hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/5`}
@@ -166,10 +206,18 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
                                     <h3 className="text-white text-sm font-bold uppercase tracking-widest mb-1">{plan.name}</h3>
                                     <p className="text-text-muted text-[10px] font-mono h-8">{plan.description}</p>
                                     
-                                    <div className="mt-4 mb-6">
-                                        <span className="text-2xl font-black text-white">{plan.priceStr}</span>
-                                        <span className="text-text-muted font-mono text-[10px]">{plan.period}</span>
-                                    </div>
+                                    {firstMonth !== null ? (
+                                        <div className="mt-4 mb-6">
+                                            <p className="text-primary text-[10px] font-bold uppercase tracking-widest">Primeiro mês por</p>
+                                            <span className="text-2xl font-black text-white">R$ {formatReais(firstMonth)}</span>
+                                            <p className="text-text-muted font-mono text-[10px]">Depois {plan.priceStr}{plan.period}. Cancele quando quiser.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="mt-4 mb-6">
+                                            <span className="text-2xl font-black text-white">{plan.priceStr}</span>
+                                            <span className="text-text-muted font-mono text-[10px]">{plan.period}</span>
+                                        </div>
+                                    )}
 
                                     <ul className="flex-1 space-y-3 mb-6">
                                         {plan.features.map((feat, i) => (
@@ -197,7 +245,8 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
                                     </button>
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             </div>
