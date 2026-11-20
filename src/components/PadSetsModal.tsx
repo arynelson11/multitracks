@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Loader2, Layers, Pencil, Trash2 } from 'lucide-react';
 import type { SelectedPadSet } from '../hooks/usePadSynth';
 import { getAuthHeaders } from '../lib/supabase';
-import { Button, Led, Notice, TextField, cx } from './ui';
+import { Button, IconButton, Led, Notice, TextField, cx } from './ui';
 import { StageDialog } from './stage/StageDialog';
 
 interface CatalogEntry {
@@ -183,8 +183,8 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
                                     </button>
                                     {isAdmin && (
                                         <>
-                                            <Button tone="ghost" aria-label={`Renomear ${padSet.name}`} title="Renomear" icon={<Pencil size={16} />} onClick={e => startEdit(padSet, e)} />
-                                            <Button tone="ghost" aria-label={`Apagar ${padSet.name}`} title="Apagar" icon={<Trash2 size={16} />} onClick={e => confirmDelete(padSet.id, e)} />
+                                            <IconButton tone="ghost" aria-label={`Renomear ${padSet.name}`} title="Renomear" icon={<Pencil size={16} />} onClick={e => startEdit(padSet, e)} />
+                                            <IconButton tone="ghost" aria-label={`Apagar ${padSet.name}`} title="Apagar" icon={<Trash2 size={16} />} onClick={e => confirmDelete(padSet.id, e)} />
                                         </>
                                     )}
                                 </li>

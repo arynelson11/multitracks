@@ -10,7 +10,7 @@ import {
 } from '../lib/autoClick';
 import { TIME_SIGNATURES, pulsesPerBar, type TimeSignature } from '../lib/stageContracts';
 import type { Song } from '../types';
-import { Button, Chip, Led, Notice, Switch, TextField } from './ui';
+import { Button, Chip, IconButton, Led, Notice, Switch, TextField } from './ui';
 import { StageDialog } from './stage/StageDialog';
 
 interface MetronomeModalProps {
@@ -138,9 +138,9 @@ function AutoClickResult({ sectionRef, plan, moveOne, halfBeat, songBpm, busy, c
       <div className="flex items-center justify-between gap-2 px-1">
         <span className="ps-label">Mover o 1</span>
         <div className="flex items-center gap-1.5">
-          <Button aria-label="Mover o 1 pra trás" icon={<ChevronLeft size={16} />} disabled={busy} onClick={() => onAdjust({ moveOne: moveOne - 1 })} />
+          <IconButton aria-label="Mover o 1 pra trás" icon={<ChevronLeft size={16} />} disabled={busy} onClick={() => onAdjust({ moveOne: moveOne - 1 })} />
           <span className="ps-num text-ps-bone text-ps-base font-bold min-w-8 text-center">{shownMove > 0 ? '+' : ''}{shownMove}</span>
-          <Button aria-label="Mover o 1 pra frente" icon={<ChevronRight size={16} />} disabled={busy} onClick={() => onAdjust({ moveOne: moveOne + 1 })} />
+          <IconButton aria-label="Mover o 1 pra frente" icon={<ChevronRight size={16} />} disabled={busy} onClick={() => onAdjust({ moveOne: moveOne + 1 })} />
         </div>
       </div>
       {d.offbeatRisk && (
@@ -382,13 +382,13 @@ export function MetronomeModal({ isOpen, onClose, playlistCurrentSong, onAddClic
             <span className="text-ps-sm font-bold text-ps-mut">{getTempoName(bpm)}</span>
           </div>
           <div className="flex items-center gap-2">
-            <Button aria-label="Diminuir o BPM" title="Diminuir o BPM" icon={<Minus size={18} />} disabled={isSynthesizing} onClick={() => handleBpmChange(bpm - 1)} />
+            <IconButton aria-label="Diminuir o BPM" icon={<Minus size={18} />} disabled={isSynthesizing} onClick={() => handleBpmChange(bpm - 1)} />
             <TextField
               label="BPM" hideLabel type="number" inputMode="numeric" min={40} max={300}
               value={bpmInput} onChange={(e) => setBpmInput(e.target.value)} onBlur={handleBpmInputBlur}
               disabled={isSynthesizing} trailing="BPM" className="flex-1" inputClassName="text-center ps-num font-bold"
             />
-            <Button aria-label="Aumentar o BPM" title="Aumentar o BPM" icon={<Plus size={18} />} disabled={isSynthesizing} onClick={() => handleBpmChange(bpm + 1)} />
+            <IconButton aria-label="Aumentar o BPM" icon={<Plus size={18} />} disabled={isSynthesizing} onClick={() => handleBpmChange(bpm + 1)} />
           </div>
           <div className="flex flex-wrap gap-2">
             <Button className="grow" icon={<Led state={tapCount > 0 ? 'on' : 'off'} />} disabled={isSynthesizing} onClick={handleTapTempo}>
