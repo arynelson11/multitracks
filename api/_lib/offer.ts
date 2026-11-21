@@ -84,15 +84,16 @@ function parseAnswer(data: unknown): OfferAnswer {
   throw new Error('resposta da oferta fora do formato')
 }
 
-// Estado da oferta da conta. Conta que já teve assinatura (accountSubscriptionCount > 0):
-// 'ineligible' sem chamar o registro (nada é gravado). Senão, o registro (readOfferWindow).
+// Estado da oferta da conta. Conta que já teve assinatura paga (accountSubscriptionCount com
+// paidOnly > 0; a criada e nunca paga não conta, Ruling M5-oferta): 'ineligible' sem chamar o
+// registro (nada é gravado). Senão, o registro (readOfferWindow).
 // Erro de banco ou resposta estranha lança: quem chama decide (sem oferta).
 export async function readOffer(
   db: SupabaseClient,
   userId: string,
   o: { open: boolean; trigger?: string; now: Date },
 ): Promise<OfferAnswer> {
-  if ((await accountSubscriptionCount(db, userId)) > 0) return { status: 'ineligible', expiresAt: null, month: null }
+  if ((await accountSubscriptionCount(db, userId, { paidOnly: true })) > 0) return { status: 'ineligible', expiresAt: null, month: null }
   return readOfferWindow(db, userId, o)
 }
 

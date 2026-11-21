@@ -215,12 +215,29 @@ describe('checkout com a oferta do primeiro mês', () => {
   })
 
   it('segunda assinatura da conta: 409 com offerEnded', async () => {
-    db.tables.billing_subscriptions.push(subRow({ id: 'chk_1', user_id: USER_A, status: 'canceled', cancel_source: 'user', access_until: '2026-11-10T03:00:00Z' }))
+    db.tables.billing_subscriptions.push(subRow({ id: 'chk_1', user_id: USER_A, status: 'canceled', cancel_source: 'user', access_until: '2026-11-10T03:00:00Z', first_paid_at: '2026-10-10T12:00:00Z' }))
     const res = await create('essencial_mensal', { offer: true })
     expect(res.statusCode).toBe(409)
     expect(res.body).toEqual({ error: FIRST_ONLY, offerEnded: true })
     expect(post).not.toHaveBeenCalled()
     expect(db.rpcCalls).toEqual([])
+  })
+
+  // Revisão macro 1b (Ruling M5-oferta): a assinatura que o Asaas criou e cuja cobrança nunca
+  // foi paga (cartão recusado) não conta como primeira assinatura: a oferta continua valendo.
+  it('assinatura criada e nunca paga não tira a oferta: o checkout abre com o desconto', async () => {
+    // A recusada do Pro: outro plano no checkout, pra não cair no "já tem este plano" (fora daqui).
+    db.tables.billing_subscriptions.push(subRow({ id: 'chk_recusado', user_id: USER_A, plan_key: 'essencial_mensal', status: 'active', first_paid_at: null }))
+    const res = await create('pro_mensal', { offer: true })
+    expect(res.statusCode).toBe(200)
+    expect(item().value).toBe(59.9)
+    // E a recusada que o Asaas já encerrou, no mesmo plano.
+    db.tables.billing_subscriptions[0].status = 'canceled'
+    post.mockClear()
+    post.mockResolvedValue({ data: { id: 'chk_10', link: 'https://asaas.test/c/chk_10' } })
+    const again = await create('essencial_mensal', { offer: true })
+    expect(again.statusCode).toBe(200)
+    expect(item().value).toBe(24.9)
   })
 
   it('pagou antes pelo registro antigo (payments): 409 com offerEnded', async () => {

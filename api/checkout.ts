@@ -197,8 +197,8 @@ type OfferCheck =
   | { kind: 'ok'; month: string }
   | { kind: 'error'; status: number; body: { error: string; offerEnded?: true } };
 
-// A conta tem direito ao desconto agora? Primeira assinatura da conta (mesma regra do
-// arrependimento, lida uma vez) e janela aberta no registro, lida sem abrir janela nova.
+// A conta tem direito ao desconto agora? Primeira assinatura paga da conta (a assinatura nunca
+// paga não conta, Ruling M5-oferta) e janela aberta no registro, lida sem abrir janela nova.
 // Falha do banco (assinaturas, registro da oferta, inclusive o SQL ainda não rodado, ou
 // resposta fora do formato): 500, nada no Asaas, a pessoa tenta de novo (nunca a frase falsa
 // de oferta terminada). O 409 de oferta terminada é só quando o registro diz que não há janela.
@@ -206,7 +206,7 @@ async function checkOfferForCheckout(db: SupabaseClient, userId: string, now: Da
   const down = { kind: 'error', status: 500, body: { error: MSG_CHECKOUT_DOWN } } as const;
   let count: number;
   try {
-    count = await accountSubscriptionCount(db, userId);
+    count = await accountSubscriptionCount(db, userId, { paidOnly: true });
   } catch (e) {
     console.error('[checkout] nao deu pra conferir a primeira assinatura:', e instanceof Error ? e.message : 'erro');
     return down;

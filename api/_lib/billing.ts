@@ -599,20 +599,23 @@ async function adoptLegacySubscriptions(db: SupabaseClient, asaas: AsaasApi, use
   }
 }
 
-// Quantas assinaturas pagas a conta já teve (contratos em billing_subscriptions do Asaas ou
+// Quantas assinaturas a conta já teve (contratos em billing_subscriptions do Asaas ou
 // checkouts do Asaas na tabela antiga payments, cada um contado uma vez). Compra repetida e
-// cortesia não contam. 0 = conta que nunca assinou (direito à oferta do primeiro mês,
-// api/_lib/offer.ts). Erro de banco lança, nunca vira 0.
-export async function accountSubscriptionCount(db: SupabaseClient, userId: string): Promise<number> {
+// cortesia não contam. Com `paidOnly` (a oferta do primeiro mês, api/_lib/offer.ts e o
+// checkout), só conta o contrato com cobrança paga (first_paid_at, ou o registro antigo, que só
+// nasce de checkout pago): a assinatura que o Asaas criou e cuja cobrança nunca foi paga (cartão
+// recusado) não tira o desconto (Ruling M5-oferta). Sem ele (o arrependimento), conta toda linha.
+// 0 = conta que nunca assinou. Erro de banco lança, nunca vira 0.
+export async function accountSubscriptionCount(db: SupabaseClient, userId: string, opts: { paidOnly?: boolean } = {}): Promise<number> {
   const ids = new Set<string>()
   // Compra repetida (cancel_source 'duplicate') não conta: ela não tira o
   // arrependimento da compra que ficou (Q8).
   const dupes = new Set<string>()
-  const subs = await db.from('billing_subscriptions').select('id, cancel_source').eq('user_id', userId).eq('kind', 'asaas')
+  const subs = await db.from('billing_subscriptions').select('id, cancel_source, first_paid_at').eq('user_id', userId).eq('kind', 'asaas')
   if (subs.error) throw new BillingError('db_error', `Falha no banco: ${subs.error.message}`, 500)
-  for (const r of (subs.data as { id: string; cancel_source?: string | null }[] | null) ?? []) {
+  for (const r of (subs.data as { id: string; cancel_source?: string | null; first_paid_at?: string | null }[] | null) ?? []) {
     if (r.cancel_source === 'duplicate') dupes.add(r.id)
-    else ids.add(r.id)
+    else if (!opts.paidOnly || r.first_paid_at) ids.add(r.id)
   }
   const pays = await db.from('payments').select('asaas_checkout_id').eq('user_id', userId)
   if (pays.error) throw new BillingError('db_error', `Falha no banco: ${pays.error.message}`, 500)
