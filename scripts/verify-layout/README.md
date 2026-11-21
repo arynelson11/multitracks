@@ -36,9 +36,11 @@ regra de estrutura.
 
 Separador (Parte 3, faixa D): pelo mesmo mecanismo, os estados `separador-inicio`
 (a entrada com 6 separações: nomes e artistas longos, uma sem nome, uma com 7
-faixas) e `separador-opcoes` (2, 4 e 6 faixas), montados em `pages.tsx` com os
+faixas), `separador-opcoes` (2, 4 e 6 faixas) e `separador-player` (a barra do
+player de reserva e 7 faixas com os nomes mais longos, com uma onda falsa de
+largura fixa no lugar do WaveSurfer), montados em `pages.tsx` com os
 dados de `pageFixtures.ts`, só com props (sem Supabase nem motor). Medem em
-1024x740, 1280x800, 1920x1080 e 390x844 (`PAGINAS_SEPARADOR` no `run.mjs`).
+1024x740, 1280x800, 1920x1080, 390x844 e 844x390 (`PAGINAS_SEPARADOR` no `run.mjs`).
 
 Largura de celular (as faixas B e C e a frente 1b, um jeito só): o Chrome headless não abre
 janela abaixo de 500 px, então qualquer tamanho mais estreito que isso roda na

@@ -1,7 +1,6 @@
 import { apiUrl } from '../lib/api';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import WaveSurfer from 'wavesurfer.js';
-import { Play, Pause, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Mic, Download, CheckCircle2, Lock, Repeat, SkipBack, SkipForward } from 'lucide-react';
 import { uploadToR2 } from '../lib/r2';
 import { getAuthHeaders } from '../lib/supabase';
 import { fetchMonthlyQuota, formatDateBR } from '../lib/separationUsage';
@@ -20,7 +19,10 @@ import { GuidedTour, type TourStep } from './GuidedTour';
 import { SeparatorHome } from './separator/SeparatorHome';
 import { SeparatorOptions } from './separator/SeparatorOptions';
 import { SeparatorProgress } from './separator/SeparatorProgress';
-import { PROGRESS_COPY } from './separator/separatorCopy';
+import { PLAYER_COPY, PROGRESS_COPY, laneFloor } from './separator/separatorCopy';
+import { SeparatorPlayerBar } from './separator/SeparatorPlayerBar';
+import { SeparatorTrackStrip } from './separator/SeparatorTrackStrip';
+import { FAMILY_COLOR } from '../lib/channelNames';
 import { Notice } from './ui';
 import { StageDialog } from './stage/StageDialog';
 import { BpmClickEditor } from './separation/BpmClickEditor';
@@ -94,6 +96,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   const [bpmMessage, setBpmMessage] = useState<string | null>(null);
   const [voiceMessage, setVoiceMessage] = useState<string | null>(null);
   const [cloudMessage, setCloudMessage] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   // Marcações que já estão no canal de Voz Guia: as outras acendem o "Gerar canal".
   const [committedCues, setCommittedCues] = useState<readonly VoiceCue[] | null>(null);
 
@@ -195,11 +198,12 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   const downloadStem = async (stem: StemData) => {
     if (!canDownload) { blockDownload(); return; }
     try {
+      setDownloadError(null);
       setEncodingStemId(stem.id);
       await downloadStemFile({ url: stem.url, songName, stemName: stem.name, format: downloadFormat });
     } catch (e) {
       console.error('Download error', e);
-      alert('Erro ao baixar a faixa. Tenta de novo.');
+      setDownloadError(PLAYER_COPY.downloadError);
     } finally {
       setEncodingStemId(null);
     }
@@ -243,7 +247,6 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   const cueRafRef = useRef<number | null>(null);
   const isPlayingRef = useRef(false);
 
-  const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
   // ── Click sincronizado ──
   // Ajuste fino (ms) que vai GRAVADO no arquivo do click na hora de gerar
@@ -767,7 +770,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   const computeLaneHeight = useCallback((count: number) => {
     const areaH = waveAreaRef.current?.clientHeight || (window.innerHeight - 172);
     const available = areaH - 28;
-    const floor = window.innerHeight <= 560 ? 56 : 100;
+    // Piso pelo que a faixa precisa pra nada cortar (nome que quebra linha, alvos de 44 px).
+    const floor = laneFloor(window.innerWidth, window.innerHeight);
     return Math.max(floor, Math.min(240, Math.floor(available / Math.max(1, count))));
   }, []);
   // A barra de rolagem horizontal da timeline ocupa altura só na coluna das ondas;
@@ -933,6 +937,13 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     if (isPlaying) pauseAll();
     else void playAll();
   };
+  // Início: todas no 0 e as marcações rearmam. Fim: todas na duração.
+  const goToStart = () => {
+    Object.values(wavesurfers.current).forEach(ws => ws.setTime(0));
+    voiceCuesRef.current.forEach(c => { c.fired = false; });
+    setProgressPlayback(0);
+  };
+  const goToEnd = () => { Object.values(wavesurfers.current).forEach(ws => ws.setTime(ws.getDuration())); };
 
   const handleSaveToDatabase = async () => {
     if (!canCloudSave) { setIsPricingOpen(true); return; }
@@ -1201,293 +1212,113 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     );
   }
 
+  const hasSolo = Object.values(stemStates).some(st => st.soloed);
   return (
-    <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col font-sans select-none overflow-hidden">
+    <div data-separator-player className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-ps-ink font-ps-sans text-ps-bone select-none">
 
-      {/* ═══ HEADER (barra única, estilo BandLab) ═══ */}
-      <header className="bg-[#18181a] border-b border-[#222] shrink-0 z-50 shadow-[0_2px_8px_rgba(0,0,0,0.6)] flex flex-col">
+      {/* ═══ HEADER (a barra do palco) ═══ */}
+      <SeparatorPlayerBar
+        songName={songName} channels={stems.length} format={downloadFormat} canSave={!!activeSepId} saving={isManualSaving}
+        bpm={bpm} songKey={songKey} keyPickerOpen={isKeyPickerOpen}
+        isPlaying={isPlaying} isLooping={isLooping}
+        time={formatCueTime(songDuration * progressPlayback / 100)} total={formatCueTime(songDuration)}
+        voice={stems.length > 0 ? { count: voiceCues.length, locked: !canVoiceGuide } : null}
+        sync={{ offsetMs: clickOffsetMs, enabled: hasMetronome, busy: isGeneratingClick }}
+        masterVolume={masterVolume}
+        onBack={goToSeparatorHome} onFormat={setDownloadFormat} onSave={() => { void forceSave(); }} onExport={() => setShowSaveForm(true)}
+        onOpenBpm={() => setShowBpmModal(true)} onKeyPicker={setIsKeyPickerOpen} onKey={setSongKey}
+        onStart={goToStart} onTogglePlay={togglePlay} onEnd={goToEnd} onToggleLoop={() => setIsLooping(p => !p)}
+        onVoice={() => canVoiceGuide ? setShowVoiceGuide(true) : setIsPricingOpen(true)}
+        onNudge={nudgeClick} onMaster={setMasterVolume}
+      />
+      {downloadError && <div className="shrink-0 px-ps-gutter pt-2"><Notice tone="alert" role="alert">{downloadError}</Notice></div>}
 
-        {/* ── Linha 1: Voltar · Título centralizado · Export ── */}
-        <div className="h-16 short:h-11 flex items-center justify-between px-2 sm:px-4 border-b border-[#1f1f22]">
-          <div className="shrink-0 flex items-center gap-2">
-            <button onClick={goToSeparatorHome} className="transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md text-[10px] font-bold text-white/80 hover:text-white cursor-pointer uppercase tracking-wider">
-              <ChevronLeft size={14}/> <span className="hidden sm:inline">Voltar</span>
-            </button>
-          </div>
-
-          <div className="flex-1 flex flex-col items-center justify-center min-w-0 px-2 gap-1.5 short:gap-1">
-            <div className="text-white font-black text-base sm:text-lg short:text-sm tracking-wide truncate max-w-full leading-none">
-              {songName || 'Sem título'}
-            </div>
-            <div className="flex items-center gap-1.5 text-[8px] font-mono text-white/45 uppercase tracking-[0.2em]">
-              <Disc3 size={9} className="text-primary" /> Separador IA · {stems.length} CH
-            </div>
-          </div>
-
-          <div className="shrink-0 flex items-center justify-end gap-1.5 sm:gap-2.5">
-            <div className="flex items-center gap-1 bg-[#0e0e10] border border-[#222] rounded-md p-0.5 h-9" title="Formato de download dos stems">
-              <span className="text-[7px] font-mono font-bold text-white/60 uppercase tracking-widest px-1.5 hidden sm:inline">DL</span>
-              {(['wav', 'mp3'] as DownloadFormat[]).map((fmt) => (
-                <button
-                  key={fmt}
-                  onClick={() => setDownloadFormat(fmt)}
-                  className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider font-mono transition-all cursor-pointer ${
-                    downloadFormat === fmt
-                      ? 'bg-primary/20 text-primary shadow-[0_0_8px_rgba(255,107,53,0.3)]'
-                      : 'text-white/55 hover:text-white'
-                  }`}
-                >
-                  {fmt}
-                </button>
-              ))}
-            </div>
-            {activeSepId && (
-              <button onClick={forceSave} disabled={isManualSaving}
-                title="Salvar tudo na sua biblioteca"
-                className="transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md text-[10px] font-black uppercase tracking-wider text-white/85 hover:text-white cursor-pointer disabled:opacity-50 disabled:cursor-wait">
-                {isManualSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-                <span className="hidden sm:inline">{isManualSaving ? 'SALVANDO' : 'SALVAR'}</span>
-              </button>
-            )}
-            <button onClick={() => setShowSaveForm(true)}
-              className="transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md text-[10px] font-black uppercase tracking-wider text-primary cursor-pointer border-primary/20">
-              <UploadCloud size={13} /> <span className="hidden sm:inline">EXPORTAR</span>
-            </button>
-          </div>
-        </div>
-
-        {/* ── Linha 2: BPM/TOM · Transporte + cronômetro · VOZ/SYNC/MASTER ── */}
-        {/* Grupo inteiro sempre centralizado; se não couber numa linha, quebra e cada
-            linha também fica centralizada (nada de "encostar" num lado só). */}
-        <div className="min-h-20 short:min-h-0 flex flex-wrap items-center justify-center px-3 sm:px-4 py-3 short:py-1.5 gap-x-3 gap-y-3 short:gap-y-1.5 sm:gap-x-5">
-
-          {/* Esquerda: BPM · TOM */}
-          <div className="flex-none flex items-center justify-center gap-2.5 min-w-0">
-            <button onClick={() => setShowBpmModal(true)}
-              className="transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md cursor-pointer">
-              <span className="text-[7px] text-white/70 uppercase tracking-widest font-bold font-mono">BPM</span>
-              <span className="text-primary text-[11px] font-mono font-black">{bpm}</span>
-            </button>
-
-            <div className="relative">
-              <button onClick={() => setIsKeyPickerOpen(p => !p)}
-                className={`transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md cursor-pointer ${isKeyPickerOpen ? 'border-primary/40' : ''}`}>
-                <span className="text-[7px] text-white/70 uppercase tracking-widest font-bold font-mono">TOM</span>
-                <span className="text-primary text-[11px] font-mono font-black">{songKey}</span>
-              </button>
-              {isKeyPickerOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setIsKeyPickerOpen(false)} />
-                  <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-[#1c1c1e] border border-[#3a3a3a] rounded-xl z-[60] p-3 w-44 shadow-[0_12px_40px_rgba(0,0,0,0.8)]">
-                    <p className="text-[8px] text-text-muted mb-2 font-mono uppercase tracking-wider">Selecionar tom:</p>
-                    <div className="grid grid-cols-4 gap-1">
-                      {KEYS.map(k => (
-                        <button key={k} onClick={() => { setSongKey(k); setIsKeyPickerOpen(false); }}
-                          className={`py-1.5 text-[9px] font-bold rounded transition-colors cursor-pointer font-mono ${songKey === k ? 'bg-primary text-black' : 'text-white/70 bg-white/5 hover:bg-primary/20 hover:text-primary'}`}>
-                          {k}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Centro: Transporte + cronômetro */}
-          <div className="flex items-center gap-3 justify-center shrink-0">
-            <button onClick={() => { Object.values(wavesurfers.current).forEach(ws => ws.setTime(0)); voiceCuesRef.current.forEach(c => { c.fired = false; }); setProgressPlayback(0); }}
-              title="Voltar ao início"
-              className="transport-btn w-9 h-9 flex items-center justify-center rounded-md text-white/70 hover:text-white cursor-pointer active:scale-90">
-              <SkipBack size={16}/>
-            </button>
-            <button onClick={togglePlay}
-              className={`transport-btn w-11 h-11 rounded-lg flex items-center justify-center cursor-pointer active:scale-95 transition-all ${isPlaying ? 'text-primary border-primary/40 shadow-[0_0_16px_rgba(255,107,53,0.25)]' : 'text-white hover:text-primary'}`}>
-              {isPlaying ? <Pause size={20} fill="currentColor"/> : <Play size={20} fill="currentColor" className="ml-0.5"/>}
-            </button>
-            <button onClick={() => Object.values(wavesurfers.current).forEach(ws => ws.setTime(ws.getDuration()))}
-              title="Ir para o fim"
-              className="transport-btn w-9 h-9 flex items-center justify-center rounded-md text-white/70 hover:text-white cursor-pointer active:scale-90">
-              <SkipForward size={16}/>
-            </button>
-            <button onClick={() => setIsLooping(p => !p)}
-              title={isLooping ? 'Loop ativado' : 'Loop desativado'}
-              className={`transport-btn w-9 h-9 flex items-center justify-center rounded-md cursor-pointer active:scale-90 transition-all ${isLooping ? 'text-primary border-primary/40 shadow-[0_0_12px_rgba(255,107,53,0.25)]' : 'text-white/70 hover:text-white'}`}>
-              <Repeat size={16}/>
-            </button>
-            <div className="lcd-display ml-1 px-3 h-9 flex items-center rounded text-[11px] font-mono font-black text-primary tabular-nums whitespace-nowrap">
-              {formatCueTime(songDuration * progressPlayback / 100)} <span className="text-white/30 mx-1">/</span> <span className="text-white/55">{formatCueTime(songDuration)}</span>
-            </div>
-          </div>
-
-          {/* Direita: VOZ · SYNC · MASTER */}
-          <div className="flex-none flex items-center justify-center gap-2.5 min-w-0">
-            {stems.length > 0 && (
-              <button onClick={() => canVoiceGuide ? setShowVoiceGuide(true) : setIsPricingOpen(true)}
-                title={canVoiceGuide ? 'Voz guia' : 'Voz guia disponível nos planos pagos'}
-                className={`transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md cursor-pointer transition-all ${voiceCues.length > 0 ? 'text-yellow-400 border-yellow-500/30' : 'text-white/70 hover:text-yellow-400'}`}>
-                {canVoiceGuide ? <Mic size={12} /> : <Lock size={12} />}
-                <span className="text-[7px] uppercase tracking-widest font-bold font-mono hidden md:inline">
-                  VOZ {voiceCues.length > 0 && `(${voiceCues.length})`}
-                </span>
-              </button>
-            )}
-
-            <div className={`transport-btn hidden sm:flex items-center gap-0.5 rounded-md px-1.5 h-9 ${hasMetronome ? '' : 'opacity-40'}`}
-              title={hasMetronome ? 'Ajuste fino do click: < adianta, > atrasa (10 ms por toque)' : 'Gere o click no BPM pra usar o ajuste fino'}>
-              <span className="text-[7px] text-white/70 uppercase tracking-widest font-bold px-1 font-mono hidden lg:inline">SYNC</span>
-              <button onClick={() => nudgeClick(-10)} disabled={!hasMetronome} className="w-5 h-full flex items-center justify-center text-white/60 hover:text-white rounded cursor-pointer disabled:cursor-not-allowed"><ChevronLeft size={12}/></button>
-              <span className="text-[9px] text-primary font-mono font-black w-9 text-center tabular-nums">
-                {isGeneratingClick ? <Loader2 size={10} className="animate-spin inline" /> : <>{clickOffsetMs > 0 ? '+' : ''}{clickOffsetMs}</>}
-              </span>
-              <button onClick={() => nudgeClick(10)} disabled={!hasMetronome} className="w-5 h-full flex items-center justify-center text-white/60 hover:text-white rounded cursor-pointer disabled:cursor-not-allowed"><ChevronRight size={12}/></button>
-              <span className="text-[6px] text-white/40 font-mono mr-1 hidden lg:inline">ms</span>
-            </div>
-
-            <div className="transport-btn flex items-center gap-1.5 h-9 px-2.5 rounded-md">
-              <Volume2 size={13} className="text-white/70 shrink-0"/>
-              <input type="range" min="0" max="1" step="0.01" value={masterVolume}
-                onChange={(e) => setMasterVolume(parseFloat(e.target.value))}
-                className="daw-slider w-12 sm:w-16 lg:w-24" title="Master Volume" />
-              <div className="lcd-display px-1.5 py-0.5 rounded-[3px] text-[8px] font-mono text-accent-green w-10 text-center shrink-0 tabular-nums hidden sm:block">
-                {masterVolume === 0 ? '-∞' : (masterVolume * 10 - 10).toFixed(1)}
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* ── Save Toast ── */}
-      <div className={`absolute top-[156px] left-1/2 -translate-x-1/2 z-[120] transition-all duration-500 pointer-events-none flex flex-col items-center
-        ${libSaveToast ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
-        <div className="bg-[#0f1a12] border border-accent-green/40 shadow-[0_8px_30px_rgba(0,0,0,0.6)] rounded-full px-5 py-2.5 flex items-center gap-2">
-          <CheckCircle2 size={15} className="text-accent-green" />
-          <span className="text-[11px] font-black text-white uppercase tracking-wider font-mono">Tudo salvo na biblioteca</span>
-        </div>
+      {/* ── Aviso de salvo (a região de status fica sempre na página) ── */}
+      <div role="status" className="pointer-events-none absolute left-1/2 top-28 z-[120] -translate-x-1/2">
+        {libSaveToast && <Notice className="whitespace-nowrap shadow-ps-pop">{PLAYER_COPY.saved}</Notice>}
       </div>
 
       {/* ═══ WORKSPACE ═══ */}
       {/* Mixer e waveform sempre lado a lado (também em mobile/tablet).
           min-w-0 na waveform (abaixo) evita que ela vaze da tela em telas estreitas. */}
-      <div className="flex-1 flex overflow-hidden min-h-0">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
 
         {/* LEFT: Channel Strip Controls */}
-        <div ref={ctrlColRef} onScroll={syncVerticalScroll('ctrl')} className="w-[220px] compact:w-[156px] short:w-[184px] bg-[#111113] border-r border-[#222] flex flex-col overflow-y-auto overflow-x-hidden shrink-0 z-10 shadow-[2px_0_12px_rgba(0,0,0,0.5)]">
+        <div ref={ctrlColRef} onScroll={syncVerticalScroll('ctrl')} className="z-10 flex w-[220px] shrink-0 flex-col overflow-y-auto overflow-x-hidden border-r border-ps-line bg-ps-s1 compact:w-[156px] short:w-[184px]">
           {/* Ruler spacer (fixo no topo, igual à régua das ondas) */}
-          <div className="h-7 bg-[#0e0e10] border-b border-[#1e1e20] flex items-center px-3 shrink-0 sticky top-0 z-10">
-            <span className="text-[7px] font-mono text-text-muted/30 uppercase tracking-[0.25em]">MIXER · {stems.length} CH</span>
+          <div className="sticky top-0 z-10 flex h-7 shrink-0 items-center border-b border-ps-line bg-ps-ink-0 px-3">
+            <span className="ps-label">{PLAYER_COPY.mixer(stems.length)}</span>
           </div>
 
           {stems.map((stem, trackIdx) => {
             const state = stemStates[stem.id];
             if (!state) return null;
-            const isMutedByOther = (Object.values(stemStates).some(s => s.soloed) && !state.soloed) || state.muted;
+            const patch = (next: Partial<typeof state>) => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], ...next } }));
             return (
-              <div key={`ctrl-${stem.id}`} style={{ height: laneHeight }} className="flex flex-col border-b border-[#1a1a1c] relative hover:bg-white/[0.01] transition-colors shrink-0">
-                {/* Color strip */}
-                <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ backgroundColor: stem.color, boxShadow: `0 0 8px ${stem.color}50` }} />
-                <div className="flex flex-col pt-3 px-2.5 pb-2 short:pt-2 short:pb-1 h-full">
-                  {/* Row 1: number + name + M/S/DL */}
-                  <div className="flex items-center justify-between mb-2 short:mb-1">
-                    <div className="flex items-center gap-1 min-w-0">
-                      <span className="text-[7px] font-mono font-bold text-white/40 shrink-0">{String(trackIdx + 1).padStart(2, '0')}</span>
-                      <span className="text-[8px] font-bold tracking-[0.1em] uppercase truncate font-mono" style={{ color: isMutedByOther ? '#444' : stem.color }}>
-                        {stem.name}
-                      </span>
-                    </div>
-                    <div className="flex gap-0.5 shrink-0">
-                      <button onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], muted: !p[stem.id].muted } }))}
-                        className={`w-6 h-5 rounded text-[8px] font-black transition-all active:scale-90 cursor-pointer border border-[#222] ${state.muted ? 'bg-[#ff3b30] text-white shadow-[0_0_8px_rgba(255,59,48,0.5)]' : 'bg-[#333] text-[#666] hover:bg-[#444]'}`}>M</button>
-                      <button onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], soloed: !p[stem.id].soloed } }))}
-                        className={`w-6 h-5 rounded text-[8px] font-black transition-all active:scale-90 cursor-pointer border border-[#222] ${state.soloed ? 'bg-[#ffcc00] text-black shadow-[0_0_8px_rgba(255,204,0,0.5)]' : 'bg-[#333] text-[#666] hover:bg-[#444]'}`}>S</button>
-                      <button onClick={() => canDownload ? downloadStem(stem) : blockDownload()} disabled={encodingStemId === stem.id}
-                        title={canDownload ? `Baixar ${stem.name} (${downloadFormat.toUpperCase()})` : 'Download disponível nos planos pagos'}
-                        className="w-6 h-5 rounded cursor-pointer border border-[#222] bg-[#333] text-[#666] hover:bg-[#444] hover:text-primary flex items-center justify-center transition-all active:scale-90 disabled:opacity-60 disabled:cursor-wait">
-                        {encodingStemId === stem.id ? <Loader2 size={9} className="animate-spin" /> : canDownload ? <Download size={9} /> : <Lock size={9} />}
-                      </button>
-                    </div>
-                  </div>
-                  {/* Row 2: Pan knob + Volume fader */}
-                  <div className="flex items-center gap-2.5 flex-1">
-                    {/* Em tela baixa (celular deitado) o pan sai pra a linha caber na faixa */}
-                    <div className="flex flex-col items-center gap-1 shrink-0 short:hidden">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[8px] font-mono font-black text-white/60 leading-none">L</span>
-                        <div className="logic-pan-knob" style={{ width: 34, height: 34, cursor: 'ew-resize' }}
-                          title="Pan (scroll=ajuste, clique=centro)"
-                          onWheel={(e) => { e.preventDefault(); const np = Math.round(Math.max(-1, Math.min(1, state.pan + (e.deltaY > 0 ? -0.1 : 0.1))) * 10) / 10; setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], pan: np } })); }}
-                          onClick={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], pan: 0 } }))}>
-                          <div className="logic-pan-indicator" style={{ transform: `rotate(${state.pan * 135}deg)` }} />
-                        </div>
-                        <span className="text-[8px] font-mono font-black text-white/60 leading-none">R</span>
-                      </div>
-                      <span className="text-[7px] font-mono font-bold text-white/50">
-                        {state.pan === 0 ? 'C' : state.pan > 0 ? `R${Math.round(Math.abs(state.pan) * 50)}` : `L${Math.round(Math.abs(state.pan) * 50)}`}
-                      </span>
-                    </div>
-                    <div className="flex-1 flex flex-col gap-1">
-                      <input type="range" min="0" max="1" step="0.01" value={state.volume}
-                        onChange={(e) => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], volume: parseFloat(e.target.value) } }))}
-                        className="daw-slider w-full" />
-                      <div className="flex items-center justify-between short:hidden">
-                        <span className="text-[7px] font-mono font-bold text-white/50 uppercase">VOL</span>
-                        <div className="lcd-display px-1.5 py-0.5 rounded-[2px] text-[7px] font-mono text-accent-green">
-                          {state.volume === 0 ? '-∞' : (state.volume * 10 - 10).toFixed(1)}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+              <div key={`ctrl-${stem.id}`} data-track-id={stem.id}>
+                <SeparatorTrackStrip
+                  index={trackIdx} name={stem.name} color={stem.color} state={state}
+                  silenced={state.muted || (hasSolo && !state.soloed)}
+                  height={laneHeight} compact={false}
+                  downloading={encodingStemId === stem.id}
+                  downloadTitle={canDownload ? PLAYER_COPY.download(stem.name, downloadFormat) : PLAYER_COPY.downloadLocked}
+                  downloadLocked={!canDownload}
+                  onMute={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], muted: !p[stem.id].muted } }))}
+                  onSolo={() => setStemStates(p => ({ ...p, [stem.id]: { ...p[stem.id], soloed: !p[stem.id].soloed } }))}
+                  onDownload={() => canDownload ? downloadStem(stem) : blockDownload()}
+                  onPan={(pan) => patch({ pan })} onPanCenter={() => patch({ pan: 0 })}
+                  onVolume={(volume) => patch({ volume })}
+                />
               </div>
             );
           })}
         </div>
 
         {/* RIGHT: Waveform area — viewport com scroll (vertical p/ canais, horizontal p/ timeline) */}
-        <div ref={waveAreaRef} onScroll={syncVerticalScroll('wave')} className="flex-1 min-w-0 min-h-0 bg-[#0a0a0c] overflow-auto flex flex-col">
+        <div ref={waveAreaRef} onScroll={syncVerticalScroll('wave')} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto bg-ps-ink">
 
           {/* Conteúdo com largura real da timeline (duração × px/s) — nunca comprime, rola de lado se passar da tela */}
-          <div ref={timelineContentRef} className="relative flex flex-col" style={{ width: songDuration > 0 ? Math.max(songDuration * WAVEFORM_PX_PER_SECOND, 100) : '100%', minWidth: '100%' }}>
+          <div ref={timelineContentRef} data-timeline className="relative flex flex-col" style={{ width: songDuration > 0 ? Math.max(songDuration * WAVEFORM_PX_PER_SECOND, 100) : '100%', minWidth: '100%' }}>
 
             {/* Time ruler */}
-            <div className="h-7 bg-[#0e0e10] border-b border-[#1e1e20] sticky top-0 z-30 relative overflow-hidden shrink-0">
+            <div data-ruler className="sticky top-0 z-30 h-7 shrink-0 overflow-hidden border-b border-ps-line bg-ps-ink-0">
               {[10, 20, 30, 40, 50, 60, 70, 80, 90].map(pct => (
-                <div key={pct} className="absolute bottom-0 flex flex-col items-center pointer-events-none" style={{ left: `${pct}%` }}>
-                  <span className="text-[6px] font-mono text-text-muted/30 mb-0.5 -translate-x-1/2">
+                <div key={pct} className="pointer-events-none absolute bottom-0 flex flex-col items-center" style={{ left: `${pct}%` }}>
+                  <span className="ps-num mb-0.5 -translate-x-1/2 text-ps-micro text-ps-dim">
                     {songDuration > 0 ? formatCueTime(songDuration * pct / 100) : ''}
                   </span>
-                  <div className="w-px h-2 bg-white/8" />
+                  <div className="h-2 w-px bg-ps-line-2" />
                 </div>
               ))}
               {/* Playhead on ruler */}
-              <div className="absolute top-0 bottom-0 w-px bg-primary/50 pointer-events-none z-10" style={{ left: `${progressPlayback}%` }} />
+              <div className="pointer-events-none absolute inset-y-0 z-10 w-px bg-ps-bone/60" style={{ left: `${progressPlayback}%` }} />
             </div>
 
             {/* Playhead over waveforms */}
-            <div className="absolute top-7 bottom-0 w-px bg-white/80 z-20 pointer-events-none shadow-[0_0_6px_rgba(255,255,255,0.6)]"
+            <div data-playhead className="pointer-events-none absolute bottom-0 top-7 z-20 w-px bg-ps-bone"
               style={{ left: `${progressPlayback}%` }}>
-              <div className="absolute -top-1.5 -translate-x-1/2 w-0 h-0 border-l-[4px] border-r-[4px] border-t-[6px] border-transparent border-t-white" />
+              <div className="absolute -top-1.5 h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[6px] border-x-transparent border-t-ps-bone" />
             </div>
 
             {/* Voice Cue Markers — arrastáveis */}
             {songDuration > 0 && voiceCues.map(cue => (
-              <div key={`marker-${cue.id}`}
-                className="absolute top-7 bottom-0 z-20 cursor-ew-resize group/cue touch-none"
-                style={{ left: `${(cue.time / songDuration) * 100}%` }}
+              <div key={`marker-${cue.id}`} data-cue={cue.id}
+                className="group/cue absolute bottom-0 top-7 z-20 cursor-ew-resize touch-none"
+                style={{ left: `${(cue.time / songDuration) * 100}%`, ['--cue' as string]: FAMILY_COLOR.guia }}
                 onPointerDown={(e) => handleCuePointerDown(e, cue.id)}
                 onPointerMove={handleCuePointerMove}
                 onPointerUp={(e) => handleCuePointerUp(e, cue)}
-                title={`${cue.label} · ${formatCueTime(cue.time)} — arraste para mover`}
+                title={PLAYER_COPY.cueTitle(cue.label, formatCueTime(cue.time))}
               >
-                <div className="w-px h-full bg-yellow-400/40 group-hover/cue:bg-yellow-400 transition-colors" />
-                <div className="absolute top-0 left-0.5 bg-yellow-400 text-black text-[6px] font-black px-1 py-0.5 rounded-[3px] whitespace-nowrap leading-tight shadow-sm group-hover/cue:bg-yellow-300 transition-colors select-none">
+                <div className="h-full w-px bg-(--cue) opacity-50 transition-opacity group-hover/cue:opacity-100" />
+                <div className="absolute left-0.5 top-0 select-none whitespace-nowrap rounded-ps-xs bg-(--cue) px-1 py-0.5 text-ps-micro font-extrabold leading-tight text-ps-ink">
                   {cue.label}
                 </div>
               </div>
             ))}
 
             {stems.map((stem) => (
-              <div key={`wavewrap-${stem.id}`} className="border-b border-black/30 relative shrink-0"
+              <div key={`wavewrap-${stem.id}`} data-wave-id={stem.id} className="relative shrink-0 border-b border-ps-line"
                 style={{ height: laneHeight, background: `linear-gradient(180deg, ${stem.color}40 0%, ${stem.color}1f 100%)` }}>
                 <div className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: stem.color }} />
                 <div id={`waveform-${stem.id}`} className="absolute w-full top-0 h-full" />
@@ -1500,7 +1331,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
       {/* Anúncio da casa no fim da separação (Parte 3): só no Livre, logo depois de separar e com a
           música parada (a daqui e a do palco). No fluxo, embaixo das faixas, sem cobrir nada.
           "Conhecer o Pro" abre os Planos aqui mesmo. */}
-      <div className="shrink-0 grid grid-cols-[minmax(0,28rem)] justify-center border-t border-[#222] bg-[#111113] px-3 py-3 empty:hidden">
+      <div className="grid shrink-0 grid-cols-[minmax(0,28rem)] justify-center border-t border-ps-line bg-ps-s1 px-3 py-3 empty:hidden">
         <AdSlot placement="separation-done" userId={user?.id ?? null} isLivre={isLivre} quiet={quiet} justSeparated={justSeparated} onCta={() => setIsPricingOpen(true)} />
       </div>
 

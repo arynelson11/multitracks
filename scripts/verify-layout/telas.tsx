@@ -135,7 +135,7 @@ export function TelaPage({ estado }: { estado: TelaEstado }) {
       {estado === 'aovivo-cheio' && <LiveModeModal {...LIVE} devices={BANDA_CHEIA} approvedIps={BANDA_CHEIA.slice(0, 2)} serverError={null} />}
       {estado === 'aovivo-erro' && <LiveModeModal {...LIVE} serverUrl={null} serverError="Não deu pra abrir a porta 3000: outro programa está usando (EADDRINUSE)." />}
       {estado === 'adminlogin' && <AdminLogin />}
-      {(estado === 'separador-inicio' || estado === 'separador-opcoes') && <SeparatorPage estado={estado} />}
+      {(estado === 'separador-inicio' || estado === 'separador-opcoes' || estado === 'separador-player') && <SeparatorPage estado={estado} />}
       {(estado === 'padsnuvem' || estado === 'padsnuvem-editar') && (
         <PadSetsModal isOpen onClose={noop} onSelect={noop} selectedPadSet={{ id: 'p2', name: 'Ambiente Suave', base_path: 'p2' }} isAdmin />
       )}

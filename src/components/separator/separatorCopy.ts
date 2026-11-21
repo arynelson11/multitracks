@@ -57,3 +57,70 @@ export function separationMeta(sep: Pick<SavedSeparation, 'songKey' | 'bpm' | 's
 export function separationDate(createdAt: number): string {
   return new Date(createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
 }
+
+export const PLAYER_COPY = {
+  back: 'Voltar',
+  subtitle: (channels: number) => `Separador IA · ${channels} CH`,
+  format: 'Formato de download das faixas',
+  save: 'Salvar',
+  saving: 'Salvando',
+  saveTitle: 'Salvar tudo na sua biblioteca',
+  saved: 'Tudo salvo na biblioteca',
+  export: 'Exportar',
+  bpm: 'BPM',
+  key: 'Tom',
+  keyPicker: 'Selecionar tom',
+  keyPickerClose: 'Fechar a escolha do tom',
+  start: 'Voltar ao início',
+  play: 'Tocar',
+  pause: 'Pausar',
+  end: 'Ir para o fim',
+  loopOn: 'Loop ativado',
+  loopOff: 'Loop desativado',
+  loop: 'Loop',
+  voice: 'Voz',
+  voiceTitle: 'Voz guia',
+  voiceLocked: 'Voz guia disponível nos planos pagos',
+  sync: 'SYNC',
+  syncTitle: 'Ajuste fino do click: < adianta, > atrasa (10 ms por toque)',
+  syncOff: 'Gere o click no BPM pra usar o ajuste fino',
+  syncEarlier: 'Adiantar o click 10 ms',
+  syncLater: 'Atrasar o click 10 ms',
+  master: 'Volume geral',
+  mute: 'Mudo',
+  solo: 'Solo',
+  download: (name: string, format: string) => `Baixar ${name} (${format.toUpperCase()})`,
+  downloadLocked: 'Download disponível nos planos pagos',
+  downloadError: 'Erro ao baixar a faixa. Tenta de novo.',
+  pan: (name: string) => `Pan de ${name}`,
+  panTitle: 'Pan (scroll=ajuste, clique=centro)',
+  volume: (name: string) => `Volume de ${name}`,
+  vol: 'VOL',
+  cueTitle: (label: string, time: string) => `${label} · ${time}, arraste para mover`,
+  mixer: (channels: number) => `MIXER · ${channels} CH`,
+} as const
+
+/** O número do volume ao lado do controle, na conta de hoje ("-∞" no zero). */
+export function volumeDb(v: number): string {
+  return v === 0 ? '-∞' : (v * 10 - 10).toFixed(1)
+}
+
+/** O pan como hoje: C no centro, L ou R com 0 a 50. */
+export function panText(pan: number): string {
+  return pan === 0 ? 'C' : pan > 0 ? `R${Math.round(Math.abs(pan) * 50)}` : `L${Math.round(Math.abs(pan) * 50)}`
+}
+
+/** Rolar no pan anda 0,1 por passo, de -1 a 1, com uma casa (a regra de hoje). */
+export function panFromWheel(pan: number, deltaY: number): number {
+  return Math.round(Math.max(-1, Math.min(1, pan + (deltaY > 0 ? -0.1 : 0.1))) * 10) / 10
+}
+
+/**
+ * Altura mínima da faixa do player pra nada cortar (nome que quebra linha e alvos de 44 px):
+ * celular em pé (até 639 px de largura) 150, tela baixa (até 560 px de altura) 112, o resto 132.
+ */
+export function laneFloor(width: number, height: number): number {
+  if (width < 640) return 150
+  if (height <= 560) return 112
+  return 132
+}

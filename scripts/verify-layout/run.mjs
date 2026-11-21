@@ -32,7 +32,7 @@ const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'reper
   // Demais telas da Parte 3 (faixa C), a mesma lista de telasEstados.ts.
   'metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'download-celular', 'aovivo', 'aovivo-cheio', 'aovivo-erro', 'adminlogin',
   // Separador (Parte 3, faixa D), a mesma lista de telasEstados.ts.
-  'separador-inicio', 'separador-opcoes']
+  'separador-inicio', 'separador-opcoes', 'separador-player']
 /**
  * Telas da faixa C que abrem no celular: sem --only, medem também em 390x844. O Modo Ao Vivo do host
  * só existe no computador, então fica de fora.
@@ -54,10 +54,10 @@ const ESTADOS_B = ['login', 'criarconta', 'recuperar', 'novasenha', 'config-perf
 const TELAS_B_SIZES = ['1024x740', '1280x800', '1920x1080', '390x844', '844x390']
 /**
  * Páginas do Separador (Parte 3, faixa D): abrem em qualquer tela, celular incluído, então medem
- * em 1024x740, 1280x800, 1920x1080 e 390x844.
+ * em 1024x740, 1280x800, 1920x1080, 390x844 e 844x390 (celular deitado, onde a faixa do player é baixa).
  */
-const PAGINAS_SEPARADOR = ['separador-inicio', 'separador-opcoes']
-const PAGINAS_SEPARADOR_SIZES = ['1024x740', '1280x800', '1920x1080', '390x844']
+const PAGINAS_SEPARADOR = ['separador-inicio', 'separador-opcoes', 'separador-player']
+const PAGINAS_SEPARADOR_SIZES = ['1024x740', '1280x800', '1920x1080', '390x844', '844x390']
 /** Largura de celular: abaixo da janela mínima do Chrome headless, roda na moldura (/moldura). */
 const CELULAR = '390x844'
 const PROVA = 'quebrado'

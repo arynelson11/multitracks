@@ -15,3 +15,15 @@ export const SEPARATIONS: SavedSeparation[] = [
   { id: 'v5', songName: 'Te Louvarei com Todo o Meu Coração e Toda a Minha Alma Para Sempre', artist: 'Comunidade Evangélica Internacional da Zona Sul', bpm: '140', songKey: 'F#', stems: stems(6), voiceCues: [], createdAt: day(3) },
   { id: 'v6', songName: 'Santo', artist: '', bpm: '96', songKey: 'C', stems: stems(4), voiceCues: [], createdAt: Date.UTC(2026, 9, 28, 15) },
 ]
+
+/** O player de reserva com a música e as 7 faixas de nome mais longo. */
+export const PLAYER_SONG = 'Grande é o Senhor (Ao Vivo no Ministério de Louvor com Nome Bem Comprido)'
+export const PLAYER_TRACKS = [
+  { id: 'vocals', name: 'Vocais Principais e Backing', color: '#06b6d4' },
+  { id: 'drums', name: 'Bateria Acústica Completa', color: '#f59e0b' },
+  { id: 'bass', name: 'Baixo Elétrico', color: '#8b5cf6' },
+  { id: 'guitar', name: 'Guitarra Base e Solo', color: '#ef4444' },
+  { id: 'piano', name: 'Piano/TeCL', color: '#10b981' },
+  { id: 'other', name: 'Outros/Fx', color: '#ec4899' },
+  { id: 'metronome', name: 'Metrônomo', color: '#e2e8f0' },
+]
