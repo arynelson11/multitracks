@@ -1052,7 +1052,7 @@ describe('rodada 3: canal novo no meio do corte, relógio, âncora e setSinkId',
     mem.settings = { ...mem.settings, outputs: STEREO }
     await act(async () => { hook.rerender() })
     const before = nodesOf(ctxOf(), 'StereoPannerNode').length
-    let adding!: Promise<void>
+    let adding!: Promise<unknown>
     await act(async () => { adding = hook.result.current.addChannelToActiveSong(new File(['mono'], 'CLICK 2.wav', { type: 'audio/wav' })); await adding })
     const [novo] = nodesOf(ctxOf(), 'StereoPannerNode').slice(before)
     expect(hook.result.current.outputPlan.mode).toBe('split2') // a troca ainda não aconteceu
@@ -1074,7 +1074,7 @@ describe('rodada 3: canal novo no meio do corte, relógio, âncora e setSinkId',
     // fundo, com a troca ainda subindo (o Chrome mediu isso em 7 de 60).
     let releaseFile!: () => void
     mem.fileGate = new Promise<void>((resolve) => { releaseFile = resolve })
-    let adding!: Promise<void>
+    let adding!: Promise<unknown>
     const before = nodesOf(ctxOf(), 'StereoPannerNode').length
     await act(async () => {
       adding = hook.result.current.addChannelToActiveSong(new File(['mono'], 'CLICK 2.wav', { type: 'audio/wav' }))

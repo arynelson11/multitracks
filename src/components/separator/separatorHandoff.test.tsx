@@ -6,7 +6,7 @@ import { OPEN_ERROR_TEXT, type StageSeparationOpen } from '../../lib/separation/
 import { FakeAudioContext, resetWaves, savedSeparation } from './separatorTestKit'
 
 const h = vi.hoisted(() => ({
-  lib: { separations: [] as unknown[], saveSeparation: vi.fn(async (): Promise<string | null> => 'sep_new'), deleteSeparation: vi.fn(), getSeparation: vi.fn(), isLoading: false },
+  lib: { separations: [] as unknown[], saveSeparation: vi.fn<(d: unknown) => Promise<string | null>>(async () => 'sep_new'), deleteSeparation: vi.fn(), getSeparation: vi.fn(), isLoading: false },
   livre: { isLivre: false, canOpen: true, requestLimit: vi.fn(), noteSongOpened: vi.fn() },
   auth: { isAdmin: true, userPlan: 'essencial_mensal' },
 }))

@@ -743,7 +743,10 @@ export default function App() {
     void loadAsCurrent(() => loadFiles(dt.files, meta.name, undefined, undefined, meta.originalKey, meta.bpm, {
       artist: meta.artist, separation: meta.separation, channelStates: separationChannelStates(stemsToOpen(o.sep)),
     })).then(() => setSeparationArrival({ sepId: o.sep.id, justSeparated: o.justSeparated }))
-  }, [pendingSeparation, isReady, isRestoring, loadFiles, loadAsCurrent])
+    // Roda quando a separação chega ou o motor fica pronto; o loadFiles e o loadAsCurrent são os
+    // da renderização de agora (mudam a cada uma) e o `pendingSeparationSeen` segura a repetição.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingSeparation, isReady, isRestoring])
   useEffect(() => {
     const arrival = separationArrival
     if (!arrival || separationArrivalSeen.current === arrival) return

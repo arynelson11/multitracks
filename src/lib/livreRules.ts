@@ -1,4 +1,5 @@
 import { brtMonth } from './separationUsage'
+import type { SeparationLink } from '../types'
 
 // Regras puras do Livre no aparelho (spec 5 e 6). O que custa dinheiro (separação, checkout)
 // o servidor barra; o resto do Livre é contado aqui, sem React e sem armazenamento: o store
@@ -82,7 +83,7 @@ export function stageUsed(l: StageLedger, limit: number): number {
 const ENDLESS_METRONOME_CHANNEL = 'Metronomo Loop'
 const ENDLESS_METRONOME_DURATION = 36000
 
-export function stageSongKey(song: { id: string; sourceId?: string; separation?: { id: string }; duration: number; channels: readonly { name: string }[] }): string | null {
+export function stageSongKey(song: { id: string; sourceId?: string; separation?: SeparationLink; duration: number; channels: readonly { name: string }[] }): string | null {
   const endless = song.duration === ENDLESS_METRONOME_DURATION
     && song.channels.length === 1
     && song.channels[0].name === ENDLESS_METRONOME_CHANNEL
@@ -100,7 +101,7 @@ export function separationKey(id: string): string {
 
 // Opções da conta do Livre pra a música do palco (Parte 3): a que veio de uma separação deste mês
 // abre sem contar (como no Separador); a de um mês anterior conta; música comum, nenhuma opção.
-export function stageSongOpenOpts(song: { separation?: { createdAt: number } } | null | undefined, now: Date): { freeThisMonth?: boolean } {
+export function stageSongOpenOpts(song: { separation?: SeparationLink } | null | undefined, now: Date): { freeThisMonth?: boolean } {
   if (!song?.separation) return {}
   return { freeThisMonth: separationIsThisMonth(song.separation.createdAt, now) }
 }

@@ -5,10 +5,10 @@ import type { Channel, Song } from '../types'
 import type { SavedSeparation } from './useSeparationLibrary'
 
 const mocks = vi.hoisted(() => ({
-  generateSeparatorClick: vi.fn(async () => 'blob:click'),
+  generateSeparatorClick: vi.fn<(i: unknown) => Promise<string>>(async () => 'blob:click'),
   renderVoiceGuideWav: vi.fn(async () => new Blob(['g'], { type: 'audio/wav' })),
   downloadStem: vi.fn(async () => {}),
-  publishToCloud: vi.fn(async () => {}),
+  publishToCloud: vi.fn<(i: unknown, onStatus?: unknown) => Promise<void>>(async () => {}),
   measureGrid: vi.fn(() => ({ bpm: 98.4, firstBeat: 0.1, downbeat: 0, confidence: 0.9 })),
 }))
 vi.mock('../lib/separation/separatorClick', async (orig) => ({ ...(await orig<typeof import('../lib/separation/separatorClick')>()), generateSeparatorClick: mocks.generateSeparatorClick, measureGrid: mocks.measureGrid }))

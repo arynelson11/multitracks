@@ -104,7 +104,7 @@ describe('SeparatorPlayerBar', () => {
     const grid = screen.getByRole('dialog', { name: 'Selecionar tom' })
     expect(grid.querySelectorAll('button')).toHaveLength(12)
     fireEvent.click(btn('A#')); expect(p.onKey).toHaveBeenCalledWith('A#'); expect(p.onKeyPicker).toHaveBeenCalledWith(false)
-    p.onKeyPicker.mockClear()
+    vi.mocked(p.onKeyPicker).mockClear()
     fireEvent.click(document.querySelector('[data-key-backdrop]')!); expect(p.onKeyPicker).toHaveBeenCalledWith(false)
   })
 })

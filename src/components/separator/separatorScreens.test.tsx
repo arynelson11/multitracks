@@ -19,7 +19,7 @@ const SEP_A: SavedSeparation = {
 }
 const SEP_B: SavedSeparation = { id: 'sep_b', songName: '', artist: '', bpm: '120', songKey: 'C', stems: [stem('vocals'), stem('no_vocals')], voiceCues: [], createdAt: Date.UTC(2026, 10, 18, 15) }
 
-let onBack: ReturnType<typeof vi.fn>, onPick: ReturnType<typeof vi.fn>, onOpen: ReturnType<typeof vi.fn>, onDelete: ReturnType<typeof vi.fn>
+let onBack = vi.fn<() => void>(), onPick = vi.fn<(f: File) => void>(), onOpen = vi.fn<(s: SavedSeparation) => void>(), onDelete = vi.fn<(id: string) => void>()
 beforeEach(() => { onBack = vi.fn(); onPick = vi.fn(); onOpen = vi.fn(); onDelete = vi.fn() })
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
@@ -110,7 +110,7 @@ describe('SeparatorHome', () => {
 
 describe('SeparatorOptions', () => {
   it('opções: só as do plano, cada uma com o texto de hoje, e tocar chama onChoose', () => {
-    const onChoose = vi.fn()
+    const onChoose = vi.fn<(c: 2 | 4 | 6) => void>()
     render(<SeparatorOptions options={[4, 6]} onBack={onBack} onChoose={onChoose} />)
     expect(screen.queryByText('Vocais, Instrumental')).toBeNull()
     expect(screen.queryByText('Separação Básica')).toBeNull()
@@ -125,7 +125,7 @@ describe('SeparatorOptions', () => {
   })
 
   it('quem paga vê a básica também', () => {
-    render(<SeparatorOptions options={[2, 4, 6]} onBack={onBack} onChoose={vi.fn()} />)
+    render(<SeparatorOptions options={[2, 4, 6]} onBack={onBack} onChoose={vi.fn<(c: 2 | 4 | 6) => void>()} />)
     expect(screen.getByText('Separação Básica')).toBeTruthy()
     expect(screen.getByRole('button', { name: /Vocais, Instrumental/ })).toBeTruthy()
     expect(screen.getByText('Selecione o nível de isolamento de instrumentos desejado')).toBeTruthy()
@@ -143,7 +143,7 @@ describe('SeparatorProgress', () => {
   })
 
   it('com erro, a frase em alerta, Tentar de novo e Voltar', () => {
-    const onRetry = vi.fn()
+    const onRetry = vi.fn<() => void>()
     render(<SeparatorProgress title="Abrindo no palco" subtitle="x" percent={50} detail="" error="Não deu pra baixar." onRetry={onRetry} onBack={onBack} />)
     expect(screen.getByRole('alert').textContent).toBe('Não deu pra baixar.')
     expect(screen.queryByRole('progressbar')).toBeNull()
@@ -155,7 +155,7 @@ describe('SeparatorProgress', () => {
 
   it('nenhum texto com travessão nem classe do visual antigo nas três vistas', () => {
     home()
-    render(<SeparatorOptions options={[2, 4, 6]} onBack={onBack} onChoose={vi.fn()} />)
+    render(<SeparatorOptions options={[2, 4, 6]} onBack={onBack} onChoose={vi.fn<(c: 2 | 4 | 6) => void>()} />)
     render(<SeparatorProgress title="Analisando Frequências" subtitle="Motor de IA GPU • Replicate" percent={10} detail="x" onBack={onBack} />)
     expect(document.body.textContent).not.toContain(TRAVESSAO)
     expect(oldLanguageClasses(document.body)).toEqual([])

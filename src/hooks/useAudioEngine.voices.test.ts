@@ -688,7 +688,7 @@ describe('canal entrando e saindo com a música tocando', () => {
     const when = startAt(0)
     let releaseWorklet!: () => void
     mem.pitchGate = new Promise<void>((resolve) => { releaseWorklet = resolve })
-    let adding!: Promise<void>
+    let adding!: Promise<unknown>
     ctxOf().currentTime = 1
     await act(async () => { adding = hook.result.current.addChannelToActiveSong(new File(['stereo'], 'GTR_1.wav', { type: 'audio/wav' })) })
     const gtr = () => hook.result.current.channels.find((c) => c.name === 'GTR_1')!
