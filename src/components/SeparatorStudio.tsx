@@ -1,7 +1,7 @@
 import { apiUrl } from '../lib/api';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import WaveSurfer from 'wavesurfer.js';
-import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Minus, Plus, Mic, Download, CheckCircle2, Lock, Repeat, SkipBack, SkipForward } from 'lucide-react';
+import { Play, Pause, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Mic, Download, CheckCircle2, Lock, Repeat, SkipBack, SkipForward } from 'lucide-react';
 import { uploadToR2 } from '../lib/r2';
 import { getAuthHeaders } from '../lib/supabase';
 import { fetchMonthlyQuota, formatDateBR } from '../lib/separationUsage';
@@ -14,7 +14,7 @@ import { LimitGate } from './livre/LimitGate';
 import { AdSlot } from './livre/AdSlot';
 import { type BeatGrid } from '../lib/beatGrid';
 import { SyncedTrackPlayer } from '../lib/syncedTrackPlayer';
-import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
+import { loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
 import { useSeparationLibrary, type SavedSeparation } from '../hooks/useSeparationLibrary';
 import { GuidedTour, type TourStep } from './GuidedTour';
 import { SeparatorHome } from './separator/SeparatorHome';
@@ -22,8 +22,13 @@ import { SeparatorOptions } from './separator/SeparatorOptions';
 import { SeparatorProgress } from './separator/SeparatorProgress';
 import { PROGRESS_COPY } from './separator/separatorCopy';
 import { Notice } from './ui';
-import { GUIDE_DYNAMICS, GUIDE_SECTIONS, detectVoiceCues, formatCueTime, guideUrl, parseCueTime, renderVoiceGuideWav, voiceSourceTrack, type VoiceCue } from '../lib/separation/voiceGuide';
-import { BEATS_PER_BAR, SEPARATOR_METERS, bpmReport, clickPlan, generateSeparatorClick, measureGrid, normalizeBpm, nudgeOffset, pickGridSource as pickGridTrack, scaleBpm, stepBpm, tapTempo, tempoName, type SeparatorMeter } from '../lib/separation/separatorClick';
+import { StageDialog } from './stage/StageDialog';
+import { BpmClickEditor } from './separation/BpmClickEditor';
+import { VoiceGuideEditor } from './separation/VoiceGuideEditor';
+import { CloudSaveForm } from './separation/CloudSaveForm';
+import { BPM_COPY, CLOUD_COPY, VOICE_COPY } from './separation/toolsCopy';
+import { detectVoiceCues, formatCueTime, guideUrl, parseCueTime, renderVoiceGuideWav, voiceSourceTrack, type VoiceCue } from '../lib/separation/voiceGuide';
+import { BEATS_PER_BAR, bpmReport, clickPlan, generateSeparatorClick, measureGrid, normalizeBpm, nudgeOffset, pickGridSource as pickGridTrack, scaleBpm, stepBpm, tapTempo, type SeparatorMeter } from '../lib/separation/separatorClick';
 import { downloadStem as downloadStemFile, readDownloadFormat, writeDownloadFormat, type DownloadFormat } from '../lib/separation/stemFiles';
 import { publishToCloud } from '../lib/separation/cloudPublish';
 
@@ -85,6 +90,12 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   // Frase de erro na entrada do Separador (hoje era um alert): falha no processamento.
   const [homeNotice, setHomeNotice] = useState<string | null>(null);
+  // Frases de erro das três ferramentas, mostradas dentro da janela delas (hoje eram alert).
+  const [bpmMessage, setBpmMessage] = useState<string | null>(null);
+  const [voiceMessage, setVoiceMessage] = useState<string | null>(null);
+  const [cloudMessage, setCloudMessage] = useState<string | null>(null);
+  // Marcações que já estão no canal de Voz Guia: as outras acendem o "Gerar canal".
+  const [committedCues, setCommittedCues] = useState<readonly VoiceCue[] | null>(null);
 
   // Tutorial da separação na primeira vez que a tela abre.
   useEffect(() => {
@@ -328,8 +339,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   // ── Renderiza a Voz Guia num canal real (igual ao Click) ──
   // Sobe o áudio pro R2 → URL https → persiste automaticamente como qualquer stem.
   const commitVoiceGuideChannel = async () => {
-    if (voiceCues.length === 0) { alert('Adicione marcadores de voz primeiro.'); return; }
+    if (voiceCues.length === 0) { setVoiceMessage(VOICE_COPY.needCues); return; }
+    setVoiceMessage(null);
     setIsRenderingGuide(true);
+    const committing = voiceCues;
     try {
       const blob = await renderVoiceGuideToBlob();
       if (!blob) throw new Error('Falha ao renderizar voz guia');
@@ -343,10 +356,11 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
         return [...prev.filter(s => s.id !== 'voiceguide'), guideStem];
       });
       setStemStates(p => ({ ...p, voiceguide: p.voiceguide ?? { muted: false, soloed: false, volume: 0.9, pan: 0 } }));
+      setCommittedCues(committing);
       setShowVoiceGuide(false);
     } catch (e) {
       console.error('Erro ao gerar canal de Voz Guia', e);
-      alert('Erro ao gerar canal de voz guia.');
+      setVoiceMessage(VOICE_COPY.renderError);
     } finally {
       setIsRenderingGuide(false);
     }
@@ -356,6 +370,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     renderVoiceGuideWav(voiceCues, songDuration || 300, decodeGuide);
 
   const autoDetectVoiceGuide = async () => {
+    setVoiceMessage(null);
     setIsAutoDetecting(true);
     try {
       const ctx = getAudioContext();
@@ -379,7 +394,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
       setVoiceCues(detectVoiceCues(buffer, bpm));
     } catch (e: any) {
       console.error('Auto-detect erro:', e);
-      alert('Não foi possível analisar a estrutura: ' + e.message);
+      setVoiceMessage(VOICE_COPY.detectError(e.message));
     } finally {
       setIsAutoDetecting(false);
     }
@@ -921,7 +936,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
 
   const handleSaveToDatabase = async () => {
     if (!canCloudSave) { setIsPricingOpen(true); return; }
-    if (!songName) return alert("Preencha o Nome da Música.");
+    if (!songName) { setCloudMessage(CLOUD_COPY.needName); return; }
+    setCloudMessage(null);
 
     setIsSaving(true);
     setSaveProgress(0);
@@ -961,7 +977,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
       }, 2000);
 
     } catch (e: any) {
-      alert("Erro ao salvar: " + e.message);
+      setCloudMessage(CLOUD_COPY.error(e.message));
       setIsSaving(false);
     }
   };
@@ -1033,6 +1049,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     const typed = parseFloat(bpm);
     const bpmNum = Number.isFinite(typed) && typed >= 20 ? typed : 120;
     const offsetMs = offsetOverrideMs ?? clickOffsetMs;
+    setBpmMessage(null);
     setIsGeneratingClick(true);
     try {
       const beatsPerBar = BEATS_PER_BAR[timeSignature];
@@ -1078,7 +1095,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
       })();
     } catch (e) {
       console.error('Erro ao gerar metrônomo', e);
-      alert('Não deu pra gerar o click. Tenta de novo.');
+      setBpmMessage(BPM_COPY.clickError);
     } finally {
       setIsGeneratingClick(false);
     }
@@ -1119,6 +1136,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     setBpm(sep.bpm || '120');
     setSongKey(sep.songKey || 'C');
     setVoiceCues(sep.voiceCues || []);
+    setCommittedCues(sep.stems.some(s => s.id === 'voiceguide') ? (sep.voiceCues || []) : null);
     setActiveSepId(sep.id);
     setActiveSepCreatedAt(sep.createdAt);
     setJustSeparated(false);
@@ -1486,369 +1504,48 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
         <AdSlot placement="separation-done" userId={user?.id ?? null} isLivre={isLivre} quiet={quiet} justSeparated={justSeparated} onCta={() => setIsPricingOpen(true)} />
       </div>
 
-      {/* SAVE MODAL */}
-      {showSaveForm && (
-        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="daw-panel w-full max-w-md p-6 rounded-lg relative">
-             {!isSaving && <button onClick={() => setShowSaveForm(false)} className="absolute top-3 right-3 text-text-muted hover:text-white cursor-pointer"><X size={16}/></button>}
-             
-             <h2 className="text-lg font-black text-white mb-1.5 uppercase tracking-wider">Publicar na Nuvem</h2>
-             <p className="text-text-muted text-[10px] mb-5 font-mono">Salvando projeto multi-faixa de {stems.length} canais na sua biblioteca.</p>
-             
-             {!isSaving ? (
-               <div className="flex flex-col gap-4">
-                 <div className="grid grid-cols-2 gap-3">
-                   <div>
-                     <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Música *</label>
-                     <input value={songName} onChange={e => setSongName(e.target.value)}
-                       className="w-full daw-input rounded-md px-3 py-2 text-white text-xs font-mono"
-                       placeholder="ex: Águas Purificadoras"
-                     />
-                   </div>
-                   <div>
-                     <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Artista</label>
-                     <input value={artist} onChange={e => setArtist(e.target.value)}
-                       className="w-full daw-input rounded-md px-3 py-2 text-white text-xs font-mono"
-                       placeholder="ex: Hillsong"
-                     />
-                   </div>
-                 </div>
-                 <div className="grid grid-cols-2 gap-3">
-                   {canBpm && (
-                     <div>
-                       <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">BPM (IA)</label>
-                       <input type="number" value={bpm} onChange={e => setBpm(e.target.value)}
-                         className="w-full daw-input rounded-md px-3 py-2 text-white text-xs font-mono"
-                       />
-                     </div>
-                   )}
-                   <div>
-                     <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Tom</label>
-                     <select value={songKey} onChange={e => setSongKey(e.target.value)}
-                       className="w-full daw-input rounded-md px-3 py-2 text-white text-xs font-mono appearance-none">
-                       {KEYS.map(k => <option key={k} value={k}>{k}</option>)}
-                     </select>
-                   </div>
-                 </div>
-                  <div className="mt-1">
-                    <label className="text-[9px] font-bold text-text-muted uppercase tracking-widest mb-1 block font-mono">Imagem de Capa (Opcional)</label>
-                    <div className="flex items-center gap-2">
-                      <label className="flex flex-1 items-center gap-2 daw-input rounded-md px-3 py-2 cursor-pointer text-text-muted text-xs font-mono overflow-hidden">
-                        <UploadCloud size={14} className="text-primary flex-shrink-0" />
-                        <span className="truncate">{coverFile ? coverFile.name : 'Selecionar imagem...'}</span>
-                        <input type="file" accept="image/*" className="hidden" onChange={e => setCoverFile(e.target.files?.[0] || null)} />
-                      </label>
-                      {coverFile && (
-                        <button onClick={() => setCoverFile(null)} className="p-2 text-text-muted hover:text-accent-red daw-input rounded-md transition-colors shrink-0">
-                          <X size={14} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {isAdmin && (
-                    <div className="mt-3 bg-primary/5 border border-primary/20 rounded-md p-3 flex items-center justify-between">
-                      <div>
-                        <div className="text-[10px] font-black text-primary uppercase tracking-wider font-mono mb-0.5">Visibilidade Global</div>
-                        <div className="text-[9px] text-text-muted font-mono leading-tight">Publicar na Plataforma para todos os usuários.</div>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" className="sr-only peer" checked={publishGlobal} onChange={(e) => setPublishGlobal(e.target.checked)} />
-                        <div className="w-9 h-5 bg-black/50 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-text-muted peer-checked:after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary border border-white/10"></div>
-                      </label>
-                    </div>
-                  )}
+      {/* Publicar na nuvem: não fecha publicando (como hoje). */}
+      <StageDialog open={showSaveForm} title={CLOUD_COPY.title} onClose={() => { if (!isSaving) setShowSaveForm(false); }} dismissible={!isSaving} closeDisabled={isSaving}>
+        <CloudSaveForm
+          channels={stems.length} name={songName} artist={artist} bpm={bpm} songKey={songKey} cover={coverFile}
+          showBpm={canBpm} isAdmin={isAdmin} publishGlobal={publishGlobal}
+          saving={isSaving} progress={saveProgress} status={saveStatus} message={cloudMessage}
+          onChange={(patch) => {
+            if (patch.name !== undefined) setSongName(patch.name);
+            if (patch.artist !== undefined) setArtist(patch.artist);
+            if (patch.bpm !== undefined) setBpm(patch.bpm);
+            if (patch.songKey !== undefined) setSongKey(patch.songKey);
+            if (patch.cover !== undefined) setCoverFile(patch.cover);
+            if (patch.publishGlobal !== undefined) setPublishGlobal(patch.publishGlobal);
+          }}
+          onSubmit={() => { void handleSaveToDatabase(); }}
+        />
+      </StageDialog>
 
-                 <button onClick={handleSaveToDatabase} className="w-full bg-primary text-black font-black py-3 rounded-md mt-3 uppercase tracking-wider text-xs active:scale-[0.98] transition-all shadow-[0_0_15px_rgba(16,185,129,0.15)] cursor-pointer">
-                   SALVAR & PUBLICAR
-                 </button>
-               </div>
-             ) : (
-               <div className="flex flex-col items-center py-8">
-                  <UploadCloud size={36} className="text-primary animate-pulse mb-4" />
-                  <div className="text-white font-black text-sm uppercase tracking-wider mb-1">{saveProgress >= 100 ? 'PRONTO!' : 'PUBLICANDO...'}</div>
-                  <div className="text-text-muted text-[10px] text-center mb-6 h-5 font-mono">{saveStatus}</div>
-                  
-                  <div className="w-full lcd-display rounded-md h-1.5 overflow-hidden">
-                    <div className="bg-primary h-full transition-all duration-300" style={{ width: `${saveProgress}%` }}></div>
-                  </div>
-               </div>
-             )}
-          </div>
-        </div>
-      )}
+      {/* BPM e click: não fecha gerando o click (como hoje). */}
+      <StageDialog open={showBpmModal} title={BPM_COPY.title} size="sm" onClose={() => { if (!isGeneratingClick) setShowBpmModal(false); }} dismissible={!isGeneratingClick} closeDisabled={isGeneratingClick}>
+        <BpmClickEditor
+          bpm={bpm} meter={timeSignature} accentBeat1={accentBeat1} downbeatShift={downbeatShift} clickSel={clickSel}
+          info={gridInfo} busy={isGeneratingClick ? 'click' : isDetectingBpm ? 'bpm' : null} hasTracks={stems.length > 0}
+          message={bpmMessage} detectLocked={!canBpm}
+          onBpm={setBpm} onBpmBlur={() => setBpm(normalizeBpm(bpm))} onStep={(d) => setBpm(stepBpm(bpm, d))}
+          onTap={handleTapTempo} onScale={(f) => setBpm(scaleBpm(bpm, f))} onDetect={() => { void detectBpmFromAudio(); }}
+          onMeter={setTimeSignature} onAccent={setAccentBeat1} onShiftDownbeat={(d) => setDownbeatShift(v => v + d)}
+          onClickSel={updateClickSel} onGenerate={() => { void addMetronomeChannel(); }}
+        />
+      </StageDialog>
 
-      {/* BPM MODAL */}
-      {showBpmModal && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => !isGeneratingClick && setShowBpmModal(false)}>
-          <div className="bg-[#1c1c1e] w-full max-w-[360px] rounded-2xl p-5 shadow-2xl border border-white/5 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
-            {/* Header */}
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-white text-sm font-bold tracking-wide">BPM</span>
-                <span className="text-white/40 text-xs font-medium ml-2">{tempoName(parseInt(bpm) || 120)}</span>
-              </div>
-              <button onClick={() => !isGeneratingClick && setShowBpmModal(false)} className="text-white/40 hover:text-white transition-colors cursor-pointer p-1"><X size={18} /></button>
-            </div>
-
-            {/* BPM stepper */}
-            <div className="flex items-center justify-between bg-[#141415] border border-white/5 rounded-xl p-2">
-              <button onClick={() => setBpm(stepBpm(bpm, -1))} disabled={isGeneratingClick}
-                className="w-12 h-12 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg active:scale-95 transition-all text-white/80 cursor-pointer disabled:opacity-50">
-                <Minus size={20} />
-              </button>
-              <input type="number" value={bpm}
-                onChange={e => setBpm(e.target.value)}
-                onBlur={() => setBpm(normalizeBpm(bpm))}
-                disabled={isGeneratingClick}
-                className="text-white font-black text-4xl w-24 text-center bg-transparent focus:outline-none"
-              />
-              <button onClick={() => setBpm(stepBpm(bpm, 1))} disabled={isGeneratingClick}
-                className="w-12 h-12 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg active:scale-95 transition-all text-white/80 cursor-pointer disabled:opacity-50">
-                <Plus size={20} />
-              </button>
-            </div>
-
-            {/* Tap + 2x row */}
-            <div className="flex gap-2">
-              <button
-                onClick={handleTapTempo}
-                disabled={isGeneratingClick}
-                className="flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40">
-                TAP TEMPO
-              </button>
-              <button
-                onClick={() => setBpm(scaleBpm(bpm, 2))}
-                disabled={isGeneratingClick}
-                className="px-4 py-3 rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40">
-                2×
-              </button>
-              <button
-                onClick={() => setBpm(scaleBpm(bpm, 0.5))}
-                disabled={isGeneratingClick}
-                className="px-4 py-3 rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40">
-                ½×
-              </button>
-            </div>
-
-            {/* Detectar BPM no áudio (recurso pago) */}
-            <button
-              onClick={() => { void detectBpmFromAudio(); }}
-              disabled={isDetectingBpm || isGeneratingClick || stems.length === 0}
-              title={canBpm ? 'Mede o BPM exato na bateria da música' : 'Detecção de BPM disponível nos planos pagos'}
-              className="w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 disabled:opacity-50 flex items-center justify-center gap-2">
-              {isDetectingBpm ? <Loader2 size={12} className="animate-spin" /> : canBpm ? null : <Lock size={11} />}
-              {isDetectingBpm ? 'Analisando a música...' : 'Detectar BPM da música'}
-            </button>
-            {gridInfo && <p className="text-white/50 text-[10px] text-center -mt-2 leading-snug">{gridInfo}</p>}
-
-            {/* Time signature */}
-            <div>
-              <p className="text-white/40 text-[9px] uppercase tracking-widest font-bold mb-2">Compasso</p>
-              <div className="grid grid-cols-6 gap-1">
-                {SEPARATOR_METERS.map(ts => (
-                  <button key={ts} onClick={() => setTimeSignature(ts)} disabled={isGeneratingClick}
-                    className={`py-2 rounded-lg text-[10px] font-black transition-all cursor-pointer active:scale-95 border ${timeSignature === ts ? 'bg-primary/15 border-primary text-primary' : 'bg-[#2a2a2d] border-white/5 text-white/60 hover:bg-[#343438]'}`}>
-                    {ts}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Accent beat 1 toggle */}
-            <div className="flex items-center justify-between bg-[#141415] border border-white/5 rounded-xl px-4 py-3">
-              <span className="text-white/60 text-xs font-bold uppercase tracking-wider">Acentuar Tempo 1</span>
-              <button
-                onClick={() => setAccentBeat1(p => !p)}
-                disabled={isGeneratingClick}
-                className={`relative w-10 h-5 rounded-full transition-colors cursor-pointer border ${accentBeat1 ? 'bg-primary border-primary' : 'bg-[#2a2a2d] border-white/10'}`}>
-                <div className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${accentBeat1 ? 'left-5 bg-black' : 'left-0.5 bg-white/40'}`} />
-              </button>
-            </div>
-
-            {/* Mover o "1": se o acento cair no tempo errado do compasso */}
-            {accentBeat1 && (
-              <div className="flex items-center justify-between bg-[#141415] border border-white/5 rounded-xl px-4 py-2">
-                <span className="text-white/60 text-xs font-bold uppercase tracking-wider" title="Use se o acento do click cair no tempo errado do compasso">Mover o "1"</span>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => setDownbeatShift(s => s - 1)} disabled={isGeneratingClick}
-                    className="w-7 h-7 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg text-white/70 cursor-pointer disabled:opacity-50"><ChevronLeft size={14} /></button>
-                  <span className="text-primary text-xs font-mono font-black w-8 text-center tabular-nums">{downbeatShift > 0 ? '+' : ''}{downbeatShift}</span>
-                  <button onClick={() => setDownbeatShift(s => s + 1)} disabled={isGeneratingClick}
-                    className="w-7 h-7 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg text-white/70 cursor-pointer disabled:opacity-50"><ChevronRight size={14} /></button>
-                </div>
-              </div>
-            )}
-
-            {/* Click Sound selector */}
-            {!isGeneratingClick && (
-              <div>
-                <p className="text-white/40 text-[9px] uppercase tracking-widest font-bold mb-2">Som do Click</p>
-                <div className="grid grid-cols-4 gap-1 mb-2">
-                  {CLICK_TYPES.map(t => (
-                    <button key={t.id} onClick={() => updateClickSel({ type: t.id })}
-                      className={`py-1.5 rounded-lg text-[9px] font-bold transition-all cursor-pointer active:scale-95 border ${clickSel.type === t.id ? 'bg-primary/15 border-primary text-primary' : 'bg-[#2a2a2d] border-white/5 text-white/60 hover:bg-[#343438]'}`}>
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="grid grid-cols-4 gap-1">
-                  {CLICK_SUBDIVISIONS.map(s => (
-                    <button key={s.id} onClick={() => updateClickSel({ subdivision: s.id })}
-                      className={`py-1.5 rounded-lg text-[9px] font-bold transition-all cursor-pointer active:scale-95 border ${clickSel.subdivision === s.id ? 'bg-primary/15 border-primary text-primary' : 'bg-[#2a2a2d] border-white/5 text-white/60 hover:bg-[#343438]'}`}>
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {isGeneratingClick && (
-              <div className="text-center text-[10px] font-bold text-primary animate-pulse uppercase tracking-wider">
-                Gerando click {clickSel.type}...
-              </div>
-            )}
-
-            <button onClick={() => { void addMetronomeChannel(); }} disabled={isGeneratingClick || isDetectingBpm || stems.length === 0}
-              className="w-full bg-[#2a2a2d] hover:bg-[#343438] text-white py-3.5 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-xs tracking-wider cursor-pointer border border-white/5 active:scale-95">
-              {isGeneratingClick ? <Loader2 size={16} className="animate-spin" /> : <Play fill="currentColor" size={14} />}
-              GERAR CLICK · {clickSel.type} {timeSignature} {clickSel.subdivision}
-            </button>
-            <p className="text-white/35 text-[9px] text-center -mt-2 leading-snug">
-              O click é alinhado sozinho à bateria da música. Se precisar, ajuste fino no SYNC da barra.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* VOICE GUIDE MODAL */}
-      {showVoiceGuide && (
-        <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowVoiceGuide(false)}>
-          <div className="bg-[#1c1c1e] w-full max-w-lg rounded-2xl shadow-2xl border border-white/8 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-white/5 shrink-0">
-              <div className="flex items-center gap-2">
-                <Mic size={16} className="text-yellow-400" />
-                <span className="text-white font-black text-sm uppercase tracking-wider">Voz Guia</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {/* Auto-Detect button */}
-                <button
-                  onClick={autoDetectVoiceGuide}
-                  disabled={isAutoDetecting}
-                  title="IA analisa o áudio e detecta seções automaticamente"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-yellow-400/30 bg-yellow-400/10 text-yellow-400 hover:bg-yellow-400/20 active:scale-95"
-                >
-                  {isAutoDetecting ? <Loader2 size={11} className="animate-spin" /> : <Mic size={11} />}
-                  {isAutoDetecting ? 'Analisando...' : 'Auto-Detectar'}
-                </button>
-                <button onClick={() => setShowVoiceGuide(false)} className="text-white/40 hover:text-white transition-colors cursor-pointer p-1">
-                  <X size={18} />
-                </button>
-              </div>
-            </div>
-
-            {/* Auto-detect loading state */}
-            {isAutoDetecting && (
-              <div className="px-5 py-4 flex items-center gap-3 bg-yellow-400/5 border-b border-yellow-400/10 shrink-0">
-                <Loader2 size={16} className="text-yellow-400 animate-spin shrink-0" />
-                <div>
-                  <p className="text-yellow-400 text-[10px] font-black uppercase tracking-wider">Analisando estrutura do áudio...</p>
-                  <p className="text-text-muted text-[9px] font-mono mt-0.5">Detectando mudanças de energia e seções</p>
-                </div>
-              </div>
-            )}
-
-            {/* Instruction */}
-            {!isAutoDetecting && (
-              <p className="text-[10px] text-text-muted font-mono px-5 pt-3 pb-2 shrink-0">
-                {isPlaying ? '▶ Clique em uma seção para marcar o tempo atual' : 'Reproduza a música e clique para carimbar o tempo. Ou use Auto-Detectar.'}
-              </p>
-            )}
-
-            {/* Tabs */}
-            {!isAutoDetecting && (
-              <div className="flex gap-1 px-5 pb-3 shrink-0">
-                <button
-                  onClick={() => setVoiceGuideTab('sections')}
-                  className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${voiceGuideTab === 'sections' ? 'bg-yellow-400 text-black' : 'bg-white/5 text-text-muted hover:bg-white/10 hover:text-white'}`}
-                >Seções</button>
-                <button
-                  onClick={() => setVoiceGuideTab('dynamic')}
-                  className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${voiceGuideTab === 'dynamic' ? 'bg-yellow-400 text-black' : 'bg-white/5 text-text-muted hover:bg-white/10 hover:text-white'}`}
-                >Dinâmicas</button>
-              </div>
-            )}
-
-            {/* Cue Grid */}
-            {!isAutoDetecting && (
-              <div className="overflow-y-auto px-5 pb-3 flex-1 custom-scrollbar">
-                <div className="grid grid-cols-4 gap-1.5">
-                  {(voiceGuideTab === 'sections' ? GUIDE_SECTIONS : GUIDE_DYNAMICS).map(item => (
-                    <button
-                      key={item.file}
-                      onClick={() => addVoiceCue(item.label, item.file)}
-                      className="py-2 px-1 rounded-lg text-[10px] font-bold text-center transition-all cursor-pointer border border-white/5 bg-white/4 hover:bg-yellow-400/15 hover:border-yellow-400/40 hover:text-yellow-400 text-white/70 active:scale-95 leading-tight"
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Added Cues List */}
-            {voiceCues.length > 0 && (
-              <div className="border-t border-white/5 px-5 pt-3 pb-4 shrink-0">
-                <p className="text-[9px] text-text-muted uppercase tracking-widest font-bold mb-2">Cues adicionados ({voiceCues.length})</p>
-                <div className="flex flex-col gap-1 max-h-32 overflow-y-auto custom-scrollbar">
-                  {voiceCues.map(cue => (
-                    <div key={cue.id} className="flex items-center justify-between bg-white/3 border border-white/5 rounded-md px-2.5 py-1.5">
-                      <input
-                        defaultValue={formatCueTime(cue.time)}
-                        key={`${cue.id}-${Math.floor(cue.time)}`}
-                        onBlur={e => updateCueTime(cue.id, e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                        className="text-yellow-400 font-mono text-[10px] font-bold w-12 bg-transparent border-b border-yellow-400/30 focus:border-yellow-400 focus:outline-none text-center shrink-0"
-                      />
-                      <span className="text-white/80 text-[10px] font-bold flex-1 px-2 truncate">{cue.label}</span>
-                      <button
-                        onClick={() => removeVoiceCue(cue.id)}
-                        className="text-text-muted hover:text-accent-red transition-colors cursor-pointer p-0.5"
-                      ><X size={11} /></button>
-                    </div>
-                  ))}
-                </div>
-                <button
-                  onClick={() => { setVoiceCues([]); voiceCuesRef.current = []; }}
-                  className="mt-2 text-[9px] font-mono text-text-muted/50 hover:text-accent-red transition-colors cursor-pointer underline"
-                >
-                  Limpar todos
-                </button>
-              </div>
-            )}
-
-            {/* Footer: gerar/atualizar canal de Voz Guia */}
-            {voiceCues.length > 0 && (
-              <div className="border-t border-white/8 px-5 py-3 shrink-0">
-                <button
-                  onClick={commitVoiceGuideChannel}
-                  disabled={isRenderingGuide}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-yellow-400 text-black hover:bg-yellow-300 active:scale-[0.98] shadow-[0_4px_15px_rgba(251,191,36,0.2)]"
-                >
-                  {isRenderingGuide ? <Loader2 size={13} className="animate-spin" /> : <Mic size={13} />}
-                  {isRenderingGuide
-                    ? 'Gerando canal...'
-                    : stems.some(s => s.id === 'voiceguide') ? 'Atualizar canal de Voz Guia' : 'Gerar canal de Voz Guia'}
-                </button>
-                <p className="text-[8px] text-text-muted/60 font-mono text-center mt-1.5 leading-tight">
-                  Vira um canal no mixer (igual ao Click). Edite os marcadores e clique de novo para atualizar.
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Voz guia */}
+      <StageDialog open={showVoiceGuide} title={VOICE_COPY.title} onClose={() => setShowVoiceGuide(false)}>
+        <VoiceGuideEditor
+          cues={voiceCues} tab={voiceGuideTab} playing={isPlaying} detecting={isAutoDetecting} rendering={isRenderingGuide}
+          hasChannel={stems.some(s => s.id === 'voiceguide')} pending={voiceCues.length > 0 && voiceCues !== committedCues}
+          message={voiceMessage}
+          onTab={setVoiceGuideTab} onAdd={(o) => addVoiceCue(o.label, o.file)} onRemove={removeVoiceCue} onTime={updateCueTime}
+          onClear={() => { setVoiceCues([]); voiceCuesRef.current = []; }}
+          onDetect={() => { void autoDetectVoiceGuide(); }} onCommit={() => { void commitVoiceGuideChannel(); }}
+        />
+      </StageDialog>
 
       <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
       {limitGate}
