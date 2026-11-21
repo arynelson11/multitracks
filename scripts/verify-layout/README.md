@@ -39,15 +39,15 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `contando` | pulo armado pro "Refrão Final Estendido", contagem no tempo 2, aviso COMPASSO ASSUMIDO, OFFLINE, HOST ligado e o aviso SAÍDAS |
 | `pads` | painel de pads aberto, pad G# tocando |
 | `editar` | modo EDITAR (barra de marcar seções), parado |
-| `livre` | plano Livre: convite pra marcar seções e o aviso SEM CLICK LIDO |
-| `selo` | plano Livre parado com o selo "LIVRE · 3 de 3 músicas este mês" na barra, OFFLINE, HOST ligado e o aviso SAÍDAS (o pior caso da barra; abaixo de 1280 px o selo encurta e o "Playback Studio" sai) |
+| `livre` | o convite das seções ("Conhecer os planos", no código, sem plano que use desde a Parte 3) e o aviso SEM CLICK LIDO |
+| `selo` | plano Livre parado (os portões de verdade do Livre: seções, e o AUTO travado com o selo LIVRE) com o selo "LIVRE · 3 de 3 músicas este mês" na barra, OFFLINE, HOST ligado e o aviso SAÍDAS (o pior caso da barra; abaixo de 1280 px o selo encurta e o "Playback Studio" sai) |
 | `repertorio` | gaveta REPERTÓRIOS aberta com 6 músicas e Anotações |
 | `tom` | grade de tons aberta (toque no botão do tom), com "Redefinir detecção de tom" |
 | `semtom` | grade aberta sem tom original: semitons em 3 linhas, com "Definir o tom original" ao lado do 0 |
 | `compasso` | diálogo do compasso aberto no EDITAR |
 | `config` | as duas seções da T19 numa página própria: placa de 2 canais (caindo de 4 ou mais, com avisos) e de 8 canais |
 | `inicio` | a tela inicial com o cartão "O que o Pro faz por você" do `AdSlot` (o de verdade, no Livre e parado), embaixo do lugar dos dois botões, no mesmo `div` do App (`mt-6 w-full max-w-md` numa coluna `px-6`): uma vez na largura da janela e outra numa moldura de 390 px (celular em pé, cartão com 342 px). O Chrome headless não abre janela com menos de 500 px de largura (`--only 390x844` sai com "janela de 500x844"), por isso a moldura |
-| `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso pra cada ramo das regras (15 falhas, uma por ramo) |
+| `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso pra cada ramo das regras (17 falhas, uma por ramo; as duas da casca que rola de lado e do aviso SAÍDAS em cima do ONLINE vêm do palco de mentira) |
 
 O fixture é o pior caso de texto: 14 canais com os nomes organizados mais
 longos da Parte 1 ("Percussão Dedilhado Ambiente"), 9 seções (uma "Refrão
