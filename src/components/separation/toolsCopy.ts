@@ -86,3 +86,6 @@ export const CLOUD_COPY = {
   needName: 'Preencha o Nome da Música.',
   error: (why: string) => `Erro ao salvar: ${why}`,
 } as const
+
+/** Baixar uma faixa que não chegou (a frase de hoje do Separador). */
+export const DOWNLOAD_ERROR = 'Erro ao baixar a faixa. Tenta de novo.'
