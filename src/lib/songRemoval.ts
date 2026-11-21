@@ -28,3 +28,13 @@ export function removalOpensRefusedSong<S extends { id: string }>(playlist: read
   const opened = songOpenedByRemoval(playlist, activeIndex, removedId)
   return opened !== null && !canOpen(opened.song)
 }
+
+/**
+ * A música que vem depois da atual (a "próxima" que o celular da banda vê). Nula na última, sem
+ * música atual (`NO_CURRENT_SONG`, que somado a 1 apontaria a primeira do repertório) ou com o
+ * índice fora do repertório.
+ */
+export function nextSongAfter<S>(playlist: readonly S[], activeIndex: number): S | null {
+  if (!Number.isInteger(activeIndex) || activeIndex < 0 || activeIndex >= playlist.length) return null
+  return playlist[activeIndex + 1] ?? null
+}

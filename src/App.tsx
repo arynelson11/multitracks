@@ -26,7 +26,7 @@ import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/Sec
 import { canUseSections, maxLiveDevices, planTier, canBandControlSections, canUseGeneratedClick, canChangeKey, canUsePlatformCatalog, canUseCloudPads, canUseRepertoire } from './lib/plans'
 import { useLivre } from './hooks/useLivre'
 import { stageSongKey } from './lib/livreRules'
-import { removalOpensRefusedSong } from './lib/songRemoval'
+import { nextSongAfter, removalOpensRefusedSong } from './lib/songRemoval'
 import { trackAd } from './lib/productEvents'
 import { LimitGate } from './components/livre/LimitGate'
 import { AdSlot } from './components/livre/AdSlot'
@@ -498,8 +498,9 @@ export default function App() {
     ? ([..._activeMarkers].sort((a, b) => a.time - b.time).find((m) => m.time > currentTime)?.label ?? null)
     : null
 
-  // Próxima música com tom e BPM (não só o nome) — o follower calcula a nota a partir de originalKey + pitch
-  const _next = playlist[activeSongIndex + 1]
+  // Próxima música com tom e BPM (não só o nome): o follower calcula a nota a partir de originalKey + pitch.
+  // Sem música atual (Livre que apagou a atual com o mês cheio) não há próxima.
+  const _next = nextSongAfter(playlist, activeSongIndex)
   const nextSongInfo = _next
     ? { name: _next.name, originalKey: _next.originalKey ?? null, pitch: _next.pitch ?? 0, bpm: _next.bpm ?? null }
     : null

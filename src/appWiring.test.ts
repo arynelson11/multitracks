@@ -164,6 +164,12 @@ describe('ligações do palco novo', () => {
     expect(app).toMatch(/case 'select-song':[^\n]*jumpToSongGated\(/)
   })
 
+  // Revisão macro 1b (parte 2, M3): sem música atual, a banda não vê a primeira do repertório como "próxima".
+  it('a próxima que o celular da banda vê sai do nextSongAfter (nula sem música atual)', () => {
+    expect(app).toMatch(/const _next = nextSongAfter\(playlist, activeSongIndex\)/)
+    expect(app).not.toMatch(/playlist\[activeSongIndex \+ 1\]/)
+  })
+
   it('o motor recebe autoNext pelo plano', () => { expect(app).toMatch(/autoNext:\s*isAdmin\s*\|\|\s*canUseRepertoire\(userPlan\)/) })
 
   it('a música atual conta pelo stageSongKey', () => { expect(app).toMatch(/noteSongOpened\(stageSongKey\(/) })

@@ -2,7 +2,7 @@
 // (ajuste do coordenador na T17): a conta de quem vira a atual e a recusa, com a regra de verdade
 // das músicas do mês (livreRules), sem o App.
 import { describe, expect, it } from 'vitest'
-import { NO_CURRENT_SONG, removalOpensRefusedSong, songOpenedByRemoval } from './songRemoval'
+import { NO_CURRENT_SONG, nextSongAfter, removalOpensRefusedSong, songOpenedByRemoval } from './songRemoval'
 import { decideOpen, stageLedgerFor, stageSongKey } from './livreRules'
 
 type S = { id: string; sourceId?: string; duration: number; channels: { name: string }[] }
@@ -79,5 +79,22 @@ describe('removalOpensRefusedSong: o portão do Livre na troca que tirar a atual
   it('quem paga (o portão sempre abre) nunca é recusado', () => {
     expect(removalOpensRefusedSong([A, B], 0, 'a', paid)).toBe(false)
     expect(removalOpensRefusedSong([A, B, C], 2, 'c', paid)).toBe(false)
+  })
+})
+
+// Revisão macro 1b (parte 2, M3): sem música atual não há "próxima" pro celular da banda; antes
+// o índice -1 + 1 mostrava a primeira do repertório como a próxima.
+describe('nextSongAfter', () => {
+  const list = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
+  it('a que vem depois da atual; na última, nenhuma', () => {
+    expect(nextSongAfter(list, 0)).toEqual({ id: 'b' })
+    expect(nextSongAfter(list, 1)).toEqual({ id: 'c' })
+    expect(nextSongAfter(list, 2)).toBeNull()
+  })
+  it('sem música atual (ou com índice fora do repertório), nenhuma', () => {
+    expect(nextSongAfter(list, NO_CURRENT_SONG)).toBeNull()
+    expect(nextSongAfter(list, -5)).toBeNull()
+    expect(nextSongAfter(list, 7)).toBeNull()
+    expect(nextSongAfter([], 0)).toBeNull()
   })
 })
