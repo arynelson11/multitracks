@@ -186,6 +186,15 @@ describe('ligações do palco novo', () => {
     for (const m of modals) expect(m).toMatch(/hideOffer=\{hidePlansOffer\}/)
   })
 
+  // Ruling hideOffer-config-1b: os Planos abertos pelas Configurações > Assinatura também escondem o desconto tocando.
+  it('o App passa o hidePlansOffer pro SettingsModal, que repassa pro PricingModal dele', () => {
+    const settings = app.match(/<SettingsModal\s[\s\S]*?\/>/)![0]
+    expect(settings).toMatch(/hideOffer=\{hidePlansOffer\}/)
+    const plans = settingsModal.match(/<PricingModal [\s\S]*?\/>/g) ?? []
+    expect(plans).toHaveLength(1)
+    expect(plans[0]).toMatch(/hideOffer=\{hideOffer\}/)
+  })
+
   // Revisão macro 1b (Ruling AUTO-livre): o AUTO travado no Livre, nos dois palcos.
   it('AUTO no Livre: os dois palcos passam pelo setEndModeGated, que pede a tela do repertório', () => {
     expect(app).toMatch(/const autoNextAllowed = !livre\.isLivre/)
