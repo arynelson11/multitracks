@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react'
 import { oldLanguageClasses } from '../../test/psLanguage'
 import { SeparatorPlayerBar } from './SeparatorPlayerBar'
 import { SeparatorTrackStrip } from './SeparatorTrackStrip'
@@ -175,6 +175,38 @@ describe('Separador montado', () => {
     fireEvent.keyDown(input, { code: 'Space' })
     expect(waves.every((w) => !w.playing)).toBe(true)
     input.remove()
+  })
+
+  // Revisão sep-2 I2: a janela tapa o transporte e é o único jeito de tocar enquanto marca a voz guia.
+  it('Espaço toca e pausa também com a janela da Voz Guia ou do BPM aberta, sem fechar nem marcar', async () => {
+    await openSaved()
+    fireEvent.click(btn(/^Voz/))
+    const dialog = screen.getByRole('dialog', { name: 'Voz Guia' })
+    // O foco abre no X: o Espaço não fecha a janela, toca.
+    const focused = document.activeElement as HTMLElement
+    expect(dialog.contains(focused)).toBe(true)
+    fireEvent.keyDown(focused, { code: 'Space', key: ' ' })
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+    expect(waves.every((w) => w.playing)).toBe(true)
+    expect(screen.getByRole('dialog', { name: 'Voz Guia' })).toBeTruthy()
+    // Num chip de seção, o Espaço pausa e não grava marcação.
+    const before = screen.getByText(/^Marcações \(\d+\)$/).textContent
+    const chip = within(dialog).getAllByRole('button').find((b) => /Refrão/.test(b.textContent ?? ''))!
+    chip.focus()
+    const down = createEvent.keyDown(chip, { code: 'Space', key: ' ' })
+    fireEvent(chip, down)
+    expect(down.defaultPrevented).toBe(true)
+    expect(waves.every((w) => !w.playing)).toBe(true)
+    expect(screen.getByText(/^Marcações \(\d+\)$/).textContent).toBe(before)
+    fireEvent.click(within(dialog).getByRole('button', { name: /Fechar/ }))
+    // Na janela do BPM também; no campo do BPM o Espaço é do campo.
+    fireEvent.click(btn(/^BPM/))
+    const bpm = screen.getByRole('dialog', { name: 'BPM' })
+    fireEvent.keyDown(document.activeElement as HTMLElement, { code: 'Space', key: ' ' })
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+    expect(waves.every((w) => w.playing)).toBe(true)
+    fireEvent.keyDown(within(bpm).getByRole('spinbutton', { name: 'BPM' }), { code: 'Space', key: ' ' })
+    expect(waves.every((w) => w.playing)).toBe(true)
   })
 
   it('arrastar a marcação muda o tempo dela e o clique leva a agulha', async () => {

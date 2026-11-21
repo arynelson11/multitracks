@@ -607,6 +607,37 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [playAll, pauseAll]);
 
+  // Espaço toca e pausa também com a janela da voz guia ou do BPM aberta (sep-2 I2): ela tapa o
+  // transporte, e marcar a voz guia é tocar e carimbar. A janela do palco não deixa a tecla sair dela
+  // (nem o X nem um chip pegam o Espaço): a captura na window vem antes. Campo de texto fica com ele.
+  const voiceToolRef = useRef<HTMLDivElement>(null);
+  const bpmToolRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showVoiceGuide && !showBpmModal) return;
+    const inToolDialog = (t: EventTarget | null): boolean => {
+      if (!(t instanceof Element)) return false;
+      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return false;
+      if (t instanceof HTMLElement && t.isContentEditable) return false;
+      const dialog = t.closest('[role="dialog"]');
+      return !!dialog && [voiceToolRef.current, bpmToolRef.current].some((el) => !!el && dialog.contains(el));
+    };
+    const onDown = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || !inToolDialog(e.target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (isPlayingRef.current) pauseAll();
+      else void playAll();
+    };
+    // O botão com foco ativa no soltar do Espaço em alguns navegadores: esse também fica com a gente.
+    const onUp = (e: KeyboardEvent) => { if (e.code === 'Space' && inToolDialog(e.target)) e.preventDefault(); };
+    window.addEventListener('keydown', onDown, true);
+    window.addEventListener('keyup', onUp, true);
+    return () => {
+      window.removeEventListener('keydown', onDown, true);
+      window.removeEventListener('keyup', onUp, true);
+    };
+  }, [showVoiceGuide, showBpmModal, playAll, pauseAll]);
+
   // Arquivo escolhido na entrada (botão ou arrastar e soltar): vai pra escolha das faixas.
   const handleFileUpload = (selected: File) => {
     setHomeNotice(null);
@@ -1457,6 +1488,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
 
       {/* BPM e click: não fecha gerando o click (como hoje). */}
       <StageDialog open={showBpmModal} title={BPM_COPY.title} size="sm" onClose={() => { if (!isGeneratingClick) setShowBpmModal(false); }} dismissible={!isGeneratingClick} closeDisabled={isGeneratingClick}>
+        <div ref={bpmToolRef} className="contents">
         <BpmClickEditor
           bpm={bpm} meter={timeSignature} accentBeat1={accentBeat1} downbeatShift={downbeatShift} clickSel={clickSel}
           info={gridInfo} busy={isGeneratingClick ? 'click' : isDetectingBpm ? 'bpm' : null} hasTracks={stems.length > 0}
@@ -1466,10 +1498,12 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
           onMeter={setTimeSignature} onAccent={setAccentBeat1} onShiftDownbeat={(d) => setDownbeatShift(v => v + d)}
           onClickSel={updateClickSel} onGenerate={() => { void addMetronomeChannel(); }}
         />
+        </div>
       </StageDialog>
 
       {/* Voz guia */}
       <StageDialog open={showVoiceGuide} title={VOICE_COPY.title} onClose={() => setShowVoiceGuide(false)}>
+        <div ref={voiceToolRef} className="contents">
         <VoiceGuideEditor
           cues={voiceCues} tab={voiceGuideTab} playing={isPlaying} detecting={isAutoDetecting} rendering={isRenderingGuide}
           hasChannel={stems.some(s => s.id === 'voiceguide')} pending={voiceCues.length > 0 && voiceCues !== committedCues}
@@ -1478,6 +1512,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
           onClear={() => { setVoiceCues([]); voiceCuesRef.current = []; }}
           onDetect={() => { void autoDetectVoiceGuide(); }} onCommit={() => { void commitVoiceGuideChannel(); }}
         />
+        </div>
       </StageDialog>
 
       <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
