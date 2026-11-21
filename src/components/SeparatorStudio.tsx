@@ -33,7 +33,7 @@ import { BPM_COPY, CLOUD_COPY, VOICE_COPY } from './separation/toolsCopy';
 import { detectVoiceCues, formatCueTime, guideUrl, parseCueTime, renderVoiceGuideWav, voiceSourceTrack, type VoiceCue } from '../lib/separation/voiceGuide';
 import { BEATS_PER_BAR, bpmReport, clickPlan, generateSeparatorClick, measureGrid, normalizeBpm, nudgeOffset, pickGridSource as pickGridTrack, scaleBpm, stepBpm, tapTempo, type SeparatorMeter } from '../lib/separation/separatorClick';
 import { downloadStem as downloadStemFile, readDownloadFormat, writeDownloadFormat, type DownloadFormat } from '../lib/separation/stemFiles';
-import { publishToCloud } from '../lib/separation/cloudPublish';
+import { CLOUD_STATUS, publishToCloud } from '../lib/separation/cloudPublish';
 
 const SEP_TOUR_STEPS: TourStep[] = [
   { title: 'Separação de Faixas', body: 'Aqui você transforma qualquer música em faixas separadas (vocal, bateria, baixo, instrumentos) usando IA. Veja como funciona.' },
@@ -639,18 +639,18 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
 
     setIsProcessing(true);
     setProgress(0);
-    setProgressMsg('Iniciando Inteligência Artificial Replicate...');
+    setProgressMsg(PROGRESS_COPY.steps.start);
 
     try {
       // 1. O Cloudflare tem upload muito mais rápido
-      setProgressMsg('Preparando roteamento e enviando arquivo para Nuvem R2...');
+      setProgressMsg(PROGRESS_COPY.steps.upload);
       const uploadRes = await uploadToR2('temp', `${Date.now()}_${audioFile.name}`, audioFile);
       if (uploadRes.error) throw new Error(uploadRes.error);
       const publicUrl = uploadRes.url!;
       setProgress(10);
 
       // 2. Chamar IA
-      setProgressMsg('Processando modelo de Separação de Stems em GPU...');
+      setProgressMsg(PROGRESS_COPY.steps.separating);
       const res = await fetch(apiUrl('/api/separate-audio'), {
         method: 'POST',
         headers: await getAuthHeaders(),
@@ -673,13 +673,11 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
       // 3. Polling do Replicate
       let status = prediction.status;
       let finalOutput = null;
-      let checkCount = 0;
       
       while (status !== 'succeeded' && status !== 'failed') {
-        setProgressMsg(`Extraindo instrumentos (Aguarde o aquecimento das GPUs)... Tentativa ${checkCount}`);
+        setProgressMsg(PROGRESS_COPY.steps.waiting);
         await new Promise(resolve => setTimeout(resolve, 4000));
         setProgress(p => Math.min(85, p + 2)); 
-        checkCount++;
         
         const checkRes = await fetch(apiUrl(`/api/check-separation?predictionId=${prediction.id}`), {
           headers: await getAuthHeaders(),
@@ -988,7 +986,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
 
     setIsSaving(true);
     setSaveProgress(0);
-    setSaveStatus('Gravando banco de dados...');
+    setSaveStatus(CLOUD_STATUS.start);
 
     try {
       await publishToCloud({

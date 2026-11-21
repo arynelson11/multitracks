@@ -87,10 +87,13 @@ describe('publishToCloud', () => {
     vi.stubGlobal('fetch', server())
     const seen: { status: string; progress: number }[] = []
     await publishToCloud(base(), (s) => seen.push(s))
-    expect(seen[0]).toEqual({ status: 'Gravando banco de dados...', progress: 0 })
+    expect(seen[0]).toEqual({ status: 'Criando a música na sua biblioteca...', progress: 0 })
+    expect(seen.map((s) => s.status)).toContain('Enviando Vocais pra nuvem (1 de 2)...')
+    // Nada técnico nem emoji na tela (banco de dados, implantando, renderizando).
+    for (const s of seen) expect(s.status).not.toMatch(/banco de dados|Implantando|Renderizando|☁/)
     expect(seen.map((s) => s.progress)).toContain(10)
     expect(Math.max(...seen.map((s) => s.progress))).toBe(90)
-    expect(seen.at(-1)!.status).toBe('Finalizando registros...')
+    expect(seen.at(-1)!.status).toBe('Terminando de salvar...')
     for (const s of seen) expect(s.status).not.toContain(TRAVESSAO)
   })
 })

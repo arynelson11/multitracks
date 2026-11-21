@@ -15,6 +15,15 @@ export interface CloudPublishInput {
 
 type Status = { status: string; progress: number }
 
+/** Frases do andamento, pra quem usa (sem banco de dados, sem emoji). */
+export const CLOUD_STATUS = {
+  start: 'Criando a música na sua biblioteca...',
+  cover: 'Enviando a capa...',
+  stem: (name: string, n: number, total: number) => `Enviando ${name} pra nuvem (${n} de ${total})...`,
+  guide: 'Preparando a voz guia...',
+  finish: 'Terminando de salvar...',
+} as const
+
 async function errorText(res: Response, fallback: string): Promise<string> {
   const b = await res.json().catch(() => ({})) as { error?: string }
   return b.error || fallback
@@ -23,11 +32,11 @@ async function errorText(res: Response, fallback: string): Promise<string> {
 export async function publishToCloud(i: CloudPublishInput, onStatus: (s: Status) => void): Promise<void> {
   let progress = 0
   const status = (text: string, p = progress) => { progress = p; onStatus({ status: text, progress }) }
-  status('Gravando banco de dados...', 0)
+  status(CLOUD_STATUS.start, 0)
 
   let cover_url: string | null = null
   if (i.cover) {
-    status('Subindo imagem de capa...')
+    status(CLOUD_STATUS.cover)
     const cName = `${Date.now()}_${i.cover.name.replace(/\\s+/g, '_')}`
     const rRes = await uploadToR2('covers', cName, i.cover)
     if (!rRes.error && rRes.url) cover_url = rRes.url
@@ -45,13 +54,13 @@ export async function publishToCloud(i: CloudPublishInput, onStatus: (s: Status)
   if (!songRes.ok) throw new Error(await errorText(songRes, `HTTP ${songRes.status}`))
   const { id: songId } = await songRes.json() as { id?: string }
   if (!songId) throw new Error('Falha ao criar música')
-  status('Gravando banco de dados...', 10)
+  status(CLOUD_STATUS.start, 10)
 
   const stemsData: { song_id: string; name: string; file_url: string; order: number }[] = []
   const total = i.stems.length
   for (let n = 0; n < total; n++) {
     const stem = i.stems[n]
-    status(`Implantando Nuvem ☁️: ${stem.name} (${n + 1}/${total})...`)
+    status(CLOUD_STATUS.stem(stem.name, n + 1, total))
     let fileUrl: string
     if (/^https?:\/\//.test(stem.url)) {
       const key = `stems/${i.userId}/${songId}/${stem.id}_${Date.now()}.wav`
@@ -71,11 +80,11 @@ export async function publishToCloud(i: CloudPublishInput, onStatus: (s: Status)
     }
     stemsData.push({ song_id: songId, name: stem.name || stem.id, file_url: fileUrl, order: n + 1 })
     progress = 10 + Math.floor(((n + 1) / total) * 80)
-    status(`Implantando Nuvem ☁️: ${stem.name} (${n + 1}/${total})...`)
+    status(CLOUD_STATUS.stem(stem.name, n + 1, total))
   }
 
   if (i.voiceGuide) {
-    status('Renderizando Voz Guia...')
+    status(CLOUD_STATUS.guide)
     try {
       const guideBlob = await i.voiceGuide()
       if (guideBlob) {
@@ -86,7 +95,7 @@ export async function publishToCloud(i: CloudPublishInput, onStatus: (s: Status)
     } catch (e) { console.error('Voz Guia render error', e) }
   }
 
-  status('Finalizando registros...')
+  status(CLOUD_STATUS.finish)
   const stemsRes = await fetch(apiUrl('/api/insert-stems'), {
     method: 'POST',
     headers: await getAuthHeaders(),

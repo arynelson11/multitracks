@@ -240,9 +240,9 @@ describe('CloudSaveForm', () => {
   })
 
   it('publicar: salvando mostra Publicando..., o status e a barra; message aparece em alerta', () => {
-    render(<CloudSaveForm {...cloudProps({ saving: true, progress: 40, status: 'Implantando Nuvem ☁️: Vocais (1/5)...' })} />)
+    render(<CloudSaveForm {...cloudProps({ saving: true, progress: 40, status: 'Enviando Vocais pra nuvem (1 de 5)...' })} />)
     expect(screen.getByText('Publicando...')).toBeTruthy()
-    expect(screen.getByText('Implantando Nuvem ☁️: Vocais (1/5)...')).toBeTruthy()
+    expect(screen.getByText('Enviando Vocais pra nuvem (1 de 5)...')).toBeTruthy()
     expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('40')
     expect(screen.queryByRole('button', { name: 'Salvar & publicar' })).toBeNull()
     cleanup()

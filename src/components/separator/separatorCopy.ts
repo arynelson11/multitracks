@@ -38,7 +38,14 @@ export const OPTIONS_COPY = {
 
 export const PROGRESS_COPY = {
   title: 'Analisando Frequências',
-  subtitle: 'Motor de IA GPU • Replicate',
+  subtitle: 'Separação de faixas com IA',
+  // Etapas da separação, faladas pra quem usa (sem nome de serviço nem termo técnico).
+  steps: {
+    start: 'Preparando a separação de faixas...',
+    upload: 'Enviando a música...',
+    separating: 'Separando as faixas...',
+    waiting: 'Separando as faixas: as multitracks ficam prontas em alguns minutos.',
+  },
   done: (percent: number) => `${percent}% concluído`,
   retry: 'Tentar de novo',
   back: 'Voltar',

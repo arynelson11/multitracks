@@ -7,7 +7,9 @@ import { AUDIO_FILE_ACCEPT } from '../../lib/uploadContentType'
 import { SeparatorHome } from './SeparatorHome'
 import { SeparatorOptions } from './SeparatorOptions'
 import { SeparatorProgress } from './SeparatorProgress'
-import { separationDate } from './separatorCopy'
+import { PROGRESS_COPY, separationDate } from './separatorCopy'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { oldLanguageClasses } from '../../test/psLanguage'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
@@ -134,7 +136,7 @@ describe('SeparatorOptions', () => {
 
 describe('SeparatorProgress', () => {
   it('progresso: título, etapa e porcentagem', () => {
-    render(<SeparatorProgress title="Analisando Frequências" subtitle="Motor de IA GPU • Replicate" percent={42} detail="Extraindo instrumentos" />)
+    render(<SeparatorProgress title="Analisando Frequências" subtitle={PROGRESS_COPY.subtitle} percent={42} detail="Extraindo instrumentos" />)
     const bar = screen.getByRole('progressbar')
     expect(bar.getAttribute('aria-valuenow')).toBe('42')
     expect(screen.getByText('42% concluído')).toBeTruthy()
@@ -156,12 +158,34 @@ describe('SeparatorProgress', () => {
   it('nenhum texto com travessão nem classe do visual antigo nas três vistas', () => {
     home()
     render(<SeparatorOptions options={[2, 4, 6]} onBack={onBack} onChoose={vi.fn<(c: 2 | 4 | 6) => void>()} />)
-    render(<SeparatorProgress title="Analisando Frequências" subtitle="Motor de IA GPU • Replicate" percent={10} detail="x" onBack={onBack} />)
+    render(<SeparatorProgress title="Analisando Frequências" subtitle={PROGRESS_COPY.subtitle} percent={10} detail="x" onBack={onBack} />)
     expect(document.body.textContent).not.toContain(TRAVESSAO)
     expect(oldLanguageClasses(document.body)).toEqual([])
     for (const el of document.querySelectorAll('[title],[aria-label]')) {
       expect(el.getAttribute('title') ?? '').not.toContain(TRAVESSAO)
       expect(el.getAttribute('aria-label') ?? '').not.toContain(TRAVESSAO)
     }
+  })
+})
+
+// Vocabulário (pedido do coordenador): a tela de progresso fala com quem usa, sem nome de serviço
+// nem termo técnico (Replicate, R2, GPU, stems, roteamento, modelo), e diz "separação de faixas".
+describe('textos do progresso da separação', () => {
+  const TECNICO = /Replicate|\bR2\b|GPU|[Ss]tems?\b|roteamento|modelo de|Inteligência Artificial/
+  it('as etapas e o subtítulo estão em português pra quem usa', () => {
+    const textos = [PROGRESS_COPY.subtitle, ...Object.values(PROGRESS_COPY.steps)]
+    for (const t of textos) expect(t).not.toMatch(TECNICO)
+    expect(PROGRESS_COPY.subtitle).toBe('Separação de faixas com IA')
+    expect(PROGRESS_COPY.steps.separating).toBe('Separando as faixas...')
+    expect(PROGRESS_COPY.steps.waiting).toMatch(/multitracks/)
+    for (const t of textos) expect(t).not.toContain(TRAVESSAO)
+  })
+
+  it('o Separador mostra as etapas do PROGRESS_COPY, sem frase técnica escrita na mão', () => {
+    const src = readFileSync(join(process.cwd(), 'src/components/SeparatorStudio.tsx'), 'utf8')
+    for (const m of src.matchAll(/setProgressMsg\(([^)]*)\)/g)) {
+      expect(m[1]).toMatch(/^(PROGRESS_COPY\.steps\.|'')/)
+    }
+    expect(src).not.toMatch(/setSaveStatus\('[^']*banco de dados/)
   })
 })
