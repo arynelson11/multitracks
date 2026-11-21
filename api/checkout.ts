@@ -105,8 +105,9 @@ export default async function handler(req: any, res: any) {
 
     const apiKey = process.env.ASAAS_API_KEY;
     if (!apiKey) {
+      // O detalhe fica no log; a pessoa vê a frase de sempre (inclusive dentro da tela de limite).
       console.error('[checkout] Missing ASAAS_API_KEY');
-      return res.status(500).json({ error: 'Server misconfiguration: ASAAS_API_KEY' });
+      return res.status(500).json({ error: MSG_CHECKOUT_DOWN });
     }
 
     const api = axios.create({

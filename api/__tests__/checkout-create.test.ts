@@ -76,6 +76,18 @@ describe('checkout: troca confirmada na tela (I7)', () => {
 })
 
 describe('checkout: erro do Asaas', () => {
+  // Revisão macro 1b (M6): a frase vai pra tela de limite do Livre; o detalhe fica no log.
+  it('servidor sem a chave do Asaas responde a frase de pagamento fora, sem nome de variável nem inglês', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubEnv('ASAAS_API_KEY', '')
+    const res = await create('pro_mensal')
+    expect(res.statusCode).toBe(500)
+    expect(res.body).toEqual({ error: 'Não deu para abrir o pagamento agora. Tente de novo em alguns minutos.' })
+    expect(JSON.stringify(res.body)).not.toMatch(/ASAAS_API_KEY|misconfiguration/i)
+    expect(log).toHaveBeenCalled()
+    expect(post).not.toHaveBeenCalled()
+  })
+
   it('não devolve detalhe do Asaas ao navegador', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     post.mockRejectedValue(Object.assign(new Error('Request failed'), { response: { data: { errors: [{ code: 'invalid_x', description: 'detalhe interno' }] } } }))
