@@ -4,7 +4,7 @@
 import { Loader2 } from 'lucide-react'
 import { Icon } from '../stage/icons'
 import { StageDialog } from '../stage/StageDialog'
-import { Button, Notice, Panel, Tag, cx } from '../ui'
+import { Button, Notice, Tag, cx } from '../ui'
 import { PRICING_COPY } from './pricingCatalog'
 import type { PricingPlan } from './pricingCatalog'
 import type { CheckoutPlanKey } from '../../lib/checkout'
@@ -43,7 +43,12 @@ export interface PricingViewProps {
 function PlanCard({ card, onChoose }: { card: PricingCardView; onChoose(planKey: CheckoutPlanKey): void }) {
   return (
     // O Pro Mensal (Mais Popular) tem o anel mais forte e o botão laranja (a ação principal da tela).
-    <Panel variant="raised" data-plan-card={card.planKey} className={cx('flex min-w-0 flex-col gap-4 p-5', card.popular && 'inset-ring-ps-line-3')}>
+    // A cara do Panel raised com um anel só, escolhido aqui (como o DownloadPage): o cx não resolve
+    // duas utilidades de anel opostas (inicio-2 Minor 4).
+    <div
+      data-plan-card={card.planKey}
+      className={cx('flex min-w-0 flex-col gap-4 rounded-ps-2xl bg-ps-raised p-5 inset-ring', card.popular ? 'inset-ring-ps-line-3' : 'inset-ring-ps-line')}
+    >
       <div className="flex flex-col gap-1">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="min-w-0 text-ps-md leading-snug font-bold break-words text-ps-bone">{card.name}</h3>
@@ -73,7 +78,8 @@ function PlanCard({ card, onChoose }: { card: PricingCardView; onChoose(planKey:
       </ul>
       <div className="flex flex-wrap">
         <Button
-          tone={card.popular ? 'primary' : 'default'}
+          // Laranja é ação ligada: o plano atual (desligado) fica no neutro (inicio-2 Minor 3).
+          tone={card.popular && !card.current ? 'primary' : 'default'}
           icon={card.loading ? <Loader2 size={14} className="animate-spin motion-reduce:animate-none" /> : undefined}
           aria-busy={card.loading || undefined}
           disabled={card.disabled}
@@ -82,7 +88,7 @@ function PlanCard({ card, onChoose }: { card: PricingCardView; onChoose(planKey:
           {card.loading ? PRICING_COPY.processing : card.current ? PRICING_COPY.current : PRICING_COPY.subscribe}
         </Button>
       </div>
-    </Panel>
+    </div>
   )
 }
 

@@ -65,6 +65,23 @@ describe('Planos (PricingView)', () => {
     expect(current.disabled).toBe(true)
   })
 
+  it('laranja só numa ação ligada: o plano atual desligado não fica laranja (inicio-2 Minor 3)', () => {
+    const orange = (b: HTMLElement) => /(^|\s)bg-ps-or(\s|$)/.test(b.className)
+    mount()
+    expect(orange(within(card('Pro Mensal')).getByRole('button', { name: 'Assinar Agora' }))).toBe(true)
+    cleanup()
+    mount({ cards: cards((c) => (c.planKey === 'essencial_mensal' ? { current: true, disabled: true } : {})) })
+    expect(orange(within(card('Pro Mensal')).getByRole('button', { name: 'Seu plano atual' }))).toBe(false)
+    expect(screen.getAllByRole('button').filter(orange)).toEqual([])
+  })
+
+  it('um anel só por cartão: o Pro Mensal o mais forte (line-3), os outros o line (inicio-2 Minor 4)', () => {
+    mount()
+    const rings = (name: string) => card(name).className.split(/\s+/).filter((c) => c.startsWith('inset-ring-ps-'))
+    expect(rings('Pro Mensal')).toEqual(['inset-ring-ps-line-3'])
+    for (const name of ['Pro Anual', 'Studio Mensal', 'Studio Anual']) expect(rings(name)).toEqual(['inset-ring-ps-line'])
+  })
+
   it('com offerPrice, o primeiro mês aparece no cartão e o preço cheio continua escrito', () => {
     mount({ cards: cards((c) => (c.planKey === 'essencial_mensal' ? { offerPrice: 'R$ 24,90' } : c.planKey === 'pro_mensal' ? { offerPrice: 'R$ 59,90' } : {})) })
     expect(card('Pro Mensal').textContent).toMatch(/Primeiro mês porR\$ 24,90/)
