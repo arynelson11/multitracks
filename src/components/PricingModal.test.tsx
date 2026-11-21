@@ -320,6 +320,39 @@ describe('PricingModal: erros na janela, sem alert', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
+  it('a resposta que chega com os Planos fechados aparece na próxima abertura e some ao fechar (inicio-2 Minor 1)', async () => {
+    auth.userPlan = 'free'
+    let answer!: (r: unknown) => void
+    fetchMock.mockImplementation((url: string) => {
+      if (url === '/api/checkout?action=offer') return Promise.resolve({ ok: true, status: 200, statusText: 'OK', text: async () => '{"status":"none"}' })
+      return new Promise((r) => { answer = r })
+    })
+    const r = render(<PricingModal isOpen onClose={() => {}} />)
+    fireEvent.click(within(card('Pro Mensal')).getByRole('button', { name: 'Assinar Agora' }))
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: /Processando\.\.\./ })).toBeTruthy())
+    // Fecha com o pagamento ainda abrindo; o servidor responde com erro depois.
+    r.rerender(<PricingModal isOpen={false} onClose={() => {}} />)
+    answer({ ok: false, status: 500, statusText: 'x', text: async () => '{"error":"teste"}' })
+    await new Promise((res) => setTimeout(res, 0))
+    r.rerender(<PricingModal isOpen onClose={() => {}} />)
+    expect((await screen.findByRole('alert')).textContent).not.toBe('')
+    r.rerender(<PricingModal isOpen={false} onClose={() => {}} />)
+    r.rerender(<PricingModal isOpen onClose={() => {}} />)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('"Abrimos o pagamento no seu navegador..." não fica pra sempre: ao abrir de novo, sai (inicio-2 Minor 2)', async () => {
+    desktop.isElectron = true
+    auth.userPlan = 'free'
+    fetchMock.mockResolvedValue({ ok: true, status: 200, statusText: 'OK', text: async () => '{"url":"https://asaas.test/c/chk_9"}' })
+    const r = render(<PricingModal isOpen onClose={() => {}} />)
+    fireEvent.click(within(card('Pro Mensal')).getByRole('button', { name: 'Assinar Agora' }))
+    expect(await screen.findByText(/Abrimos o pagamento no seu navegador/)).toBeTruthy()
+    r.rerender(<PricingModal isOpen={false} onClose={() => {}} />)
+    r.rerender(<PricingModal isOpen onClose={() => {}} />)
+    expect(screen.queryByText(/Abrimos o pagamento no seu navegador/)).toBeNull()
+  })
+
   it('Esc e o X fecham os Planos; com o "Trocar de plano?" aberto, o Esc fecha só ele', () => {
     const onClose = vi.fn()
     render(<PricingModal isOpen onClose={onClose} />)

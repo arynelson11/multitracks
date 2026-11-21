@@ -63,13 +63,16 @@ export function PricingModal({ isOpen, onClose, hideOffer = false }: PricingModa
         return null;
     };
 
-    // Erro do último assinar (antes era o aviso do navegador): frase na janela (Parte 3). Cada vez
-    // que a tela abre, começa sem erro.
+    // Erro do último assinar (antes era o aviso do navegador): frase na janela (Parte 3). Sai quando
+    // a tela fecha; a resposta que chega com ela já fechada (o Esc também fecha) fica pra próxima
+    // abertura, pra nunca sumir calada (inicio-2 Minor 1). Ao abrir, o aviso do pagamento aberto no
+    // navegador de uma vez antiga sai (inicio-2 Minor 2).
     const [message, setMessage] = useState<string | null>(null);
     const [seenOpen, setSeenOpen] = useState(isOpen);
     if (seenOpen !== isOpen) {
         setSeenOpen(isOpen);
-        setMessage(null);
+        if (isOpen) setOpenedExternally(false);
+        else setMessage(null);
     }
 
     if (!isOpen) return null;
