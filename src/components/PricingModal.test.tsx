@@ -186,7 +186,9 @@ describe('PricingModal: primeiro mês com desconto', () => {
 
   it('409 sem offerEnded e 500 seguem no aviso de sempre, com a frase do servidor', async () => {
     const HAS = 'Você já tem o Pro Mensal ativo. Não precisa assinar de novo; para mudar, escolha outro plano.'
-    route(activeOffer, () => answer(409, { error: HAS }))
+    const DOWN = 'Não deu para abrir o pagamento agora. Tente de novo em alguns minutos.'
+    let checkout = () => answer(409, { error: HAS })
+    route(activeOffer, () => checkout())
     render(<PricingModal isOpen onClose={() => {}} />)
     await vi.waitFor(() => expect(card('Pro Mensal').textContent).toContain('Primeiro mês por'))
     subscribe('Pro Mensal')
@@ -194,6 +196,17 @@ describe('PricingModal: primeiro mês com desconto', () => {
     // O desconto continua: não foi a oferta que terminou.
     expect(card('Pro Mensal').textContent).toContain('Primeiro mês por')
     expect(screen.queryByRole('alert')).toBeNull()
+
+    // O 500 (pagamento fora) também vai pelo aviso de sempre, e o desconto continua.
+    checkout = () => answer(500, { error: DOWN })
+    subscribe('Pro Mensal')
+    await vi.waitFor(() => expect(window.alert).toHaveBeenCalledWith(DOWN))
+    expect(window.alert).toHaveBeenCalledTimes(2)
+    expect(bodies('/api/checkout')).toHaveLength(2)
+    expect(bodies('/api/checkout')[1]).toEqual({ planKey: 'essencial_mensal', confirmedSwitch: false, offer: true })
+    expect(card('Pro Mensal').textContent).toContain('Primeiro mês por')
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(desktop.openExternalUrl).not.toHaveBeenCalled()
   })
 
   it('quem já paga (troca de plano) não lê a oferta: o aviso de troca fala do preço cheio', async () => {
