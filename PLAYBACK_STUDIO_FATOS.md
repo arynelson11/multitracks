@@ -261,11 +261,20 @@ Junção das duas faixas na branch `feat/parte3-telas-bc` (faixa B `feat/parte3-
 - **Antigos, fora desta onda (Ruling BC-onda):** a letra pode ir pra música errada se a música ativa mudar com a janela aberta; o login do `/admin` fica preso no erro quando a rede cai; o salvar dos pads da nuvem não mostra que está enviando; o aviso de atualização e o aviso de instalar o app se cobrem no rodapé.
 
 **Pra lançar (v1.4.25), nesta ordem** (@devops; sem SQL e sem variável nova):
-1. O portão abaixo, no HEAD da `feat/parte3-integra`. Se o `verify-pitch` cair só no relógio do áudio por carga, rodar de novo com a máquina parada.
+1. O portão (abaixo, rodado em 2026-11-21 no `67d25c7`); se o código mudar antes do release, rodar de novo. Se o `verify-pitch` cair só no relógio do áudio por carga, rodar de novo com a máquina parada. O `SPLIT` do `verify-pitch` precisa da referência da v1.4.15 em `scripts/verify-pitch/results/`, que fica fora do git: `node scripts/verify-pitch/run.mjs SPLIT --rev b53a95c --tag v1415`, ou copiar os três `SPLIT-*_v1415.json` de um clone que já tenha.
 2. Bump pra 1.4.25 no `package.json` e a entrada nova no topo do `src/lib/changelog.ts` com a nota de lançamento abaixo, com a data do dia (o `changelog.test.ts` confere que a primeira entrada é a versão do `package.json`).
 3. `lastmod` do sitemap (`src/content/routes.ts` e a data travada no `src/content/seoFiles.test.ts`): a landing (`/`) não muda nesta versão; a página `/download` muda de cara e ganha o selo SEU SISTEMA, com o mesmo texto dos instaladores. Se o release sair depois de 2026-11-21, decidir se a data de `/download` vai pro dia do release.
 4. Deploy web + Mac + Windows juntos; dono avisado. No mesmo commit do release, trocar os avisos "não publicado" listados no começo desta entrada pela versão publicada.
 5. Depois do deploy, no app de computador: abrir o login, as Configurações em todas as abas, o Metrônomo, a letra e cifra e o Modo Ao Vivo do host, e conferir que nada sai cortado nem encostando na borda.
+
+**Portão da integração** (2026-11-21, no `67d25c7`: o código do merge `9eccfa2` com a v1.4.24, mais só docs; uma vez, com `caffeinate -i` e a máquina dividida com outras cópias; a carga é a do `uptime`):
+- `npx vitest run`: 4245 de 4247 testes (183 arquivos). Os 2 que caíram são de tempo, com a carga subindo de 1,9 a 10,4 na rodada: o "pan automático e papel tocando também vão no corte" do `src/hooks/useAudioEngine.outputs.test.ts` (mede com o relógio de verdade) e o de 10 min de click do `src/lib/manualClickTrack.test.ts` (50,07 ms contra o teto de 50). Sozinhos, 42 de 42 (carga 7,1) e 6 de 6 (carga 6,2).
+- `npx tsc -b` limpo; `npm run typecheck` só com os 7 erros antigos (`MetronomeModal.auto.test`, `useAudioEngine.grid.test` e 5 no `useAudioEngine.transition.test`); o `tsc` do `api/` limpo.
+- eslint nos 74 arquivos `.ts`, `.tsx` e `.mjs` mudados contra o `origin/main`: 15 erros e 1 aviso, todos antigos, com a mesma contagem no `origin/main` (`App.tsx` 6 e 1, `AuthPage.tsx` 4, `AudioAnalyzer.ts` 2, `GuidedTour.tsx`, `LiveModeModal.tsx` e `PadSetsModal.tsx` 1 cada); os outros 68 com 0.
+- `DESKTOP=1 npx vite build` sem erro (só o aviso de tamanho de pedaço de sempre); o `dist/index.html` sem caminho absoluto, e nenhuma linha acrescentada em `src/` com caminho "/" novo nem `alert`, `confirm` ou `prompt`.
+- `node scripts/verify-layout/run.mjs`: 307 de 307 combinações, 0 falhas (17886 textos, 1090 botões só de ícone e 8335 alvos de toque), carga de 2,8 a 10,2.
+- `node scripts/verify-pitch/run.mjs`: 521 critérios, carga de 8,4 a 2,1. As 3 falhas eram só a falta da referência da v1.4.15 do `SPLIT` na worktree; com a referência copiada do clone `parte2` (a mesma `b53a95c`), o `SPLIT` sozinho deu 38 de 38 (carga de 1,5 a 5,6). Nenhuma falha no relógio do áudio.
+- 12 funções em `api/`; travessão nas linhas acrescentadas contra o `origin/main`: 0.
 
 **Nota de lançamento** (copiar pro `src/lib/changelog.ts` no commit do release; a data é a do dia em que sair):
 
