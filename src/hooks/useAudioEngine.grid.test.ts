@@ -299,10 +299,11 @@ async function openApp() {
 type Hook = Awaited<ReturnType<typeof openApp>>
 
 /** Carrega a música: cada arquivo é [nome, conteúdo] e o conteúdo escolhe o áudio do decode. */
-async function load(hook: Hook, files: [string, string][], o: { name?: string; bpm?: number; timeSignature?: TimeSignature; markers?: Marker[] } = {}) {
+async function load(hook: Hook, files: [string, string][], o: { name?: string; bpm?: number; timeSignature?: TimeSignature; markers?: Marker[]; separation?: { id: string; createdAt: number } } = {}) {
   const list = files.map(([name, content]) => new File([content], name, { type: 'audio/wav' }))
+  const meta = o.timeSignature || o.separation ? { ...(o.timeSignature ? { timeSignature: o.timeSignature } : {}), ...(o.separation ? { separation: o.separation } : {}) } : undefined
   await act(async () => {
-    await hook.result.current.loadFiles(list as unknown as FileList, o.name ?? 'Música', undefined, o.markers, 'C', o.bpm, o.timeSignature ? { timeSignature: o.timeSignature } : undefined)
+    await hook.result.current.loadFiles(list as unknown as FileList, o.name ?? 'Música', undefined, o.markers, 'C', o.bpm, meta)
   })
 }
 /** Espera a leitura da grade da música ativa terminar. */
@@ -1213,5 +1214,157 @@ describe('click do painel SEPARAÇÃO', () => {
     const names = hook.result.current.playlist[0].channels.map((c) => c.name)
     expect(names).toContain('Metrônomo')
     expect(names).not.toContain('Click_IA_120bpm')
+  })
+})
+
+// sep-1 I3, I4 e M6 (Ruling SEP-metronomo-X1): a troca do click do painel nunca acontece tocando, o
+// canal novo herda o mixer e o lugar do que sai e, como click gerado pelo app, nunca vai pro PA.
+describe('troca do canal do painel SEPARAÇÃO: parado, com o mixer de antes e longe do PA', () => {
+  const SPLIT = { mode: 'split2', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } }
+  const STEREO = { ...SPLIT, mode: 'stereo' }
+  const SEP = { id: 'sep_1', createdAt: 1 }
+  const panelClick = (content = 'click44') => new File([content], 'Metrônomo.wav', { type: 'audio/wav' })
+  const metroOf = (hook: Hook, i = 0) => hook.result.current.playlist[i].channels.find((c) => c.name === 'Metrônomo')
+  const savedMetro = (i = 0) => saved()[i].channels.find((c) => c.name === 'Metrônomo')
+  const names = (hook: Hook, i = 0) => hook.result.current.playlist[i].channels.map((c) => c.name)
+
+  it('sep-1 I3: começada parada e a música tocando no meio, a troca espera a parada', async () => {
+    const hook = await openApp()
+    await load(hook, [['DRUMS.wav', 'bateria'], ['BASS.wav', 'bateria']], { bpm: 120, separation: SEP })
+    await settled(hook)
+    const id = hook.result.current.playlist[0].id
+    await act(async () => { await hook.result.current.replaceAppChannel(id, ['Metrônomo'], panelClick()) })
+    await settled(hook)
+    const firstId = metroOf(hook)!.id
+    await act(async () => { await hook.result.current.play() })
+    let swap!: Promise<unknown>
+    await act(async () => { swap = hook.result.current.replaceAppChannel(id, ['Metrônomo'], panelClick('click34')) })
+    await wait(300)
+    // Tocando: o click de antes continua, nenhuma gravação troca.
+    expect(metroOf(hook)!.id).toBe(firstId)
+    expect(savedMetro()!.id).toBe(firstId)
+    act(() => { hook.result.current.pause() })
+    await act(async () => { await swap })
+    expect(metroOf(hook)!.id).not.toBe(firstId)
+    expect(names(hook).filter((n) => n === 'Metrônomo')).toHaveLength(1)
+    expect(savedMetro()!.id).toBe(metroOf(hook)!.id)
+  })
+
+  it('sep-1 I3: na pré-contagem a troca também espera', async () => {
+    const hook = await openApp()
+    await load(hook, [['DRUMS.wav', 'bateria']], { bpm: 120, separation: SEP })
+    await settled(hook)
+    const id = hook.result.current.playlist[0].id
+    act(() => { hook.result.current.togglePrecountEnabled(true) })
+    await act(async () => { await hook.result.current.playWithPrecount() })
+    let swap!: Promise<unknown>
+    await act(async () => { swap = hook.result.current.replaceAppChannel(id, ['Metrônomo'], panelClick()) })
+    await wait(200)
+    expect(metroOf(hook)).toBeUndefined()
+    act(() => { hook.result.current.cancelCountIn() })
+    act(() => { hook.result.current.pause() })
+    await act(async () => { await swap })
+    expect(metroOf(hook)).toBeDefined()
+  })
+
+  it('sep-1 I4: o click novo herda volume, mudo, solo e pan do click que sai', async () => {
+    mem.settings = { ...mem.settings, outputs: SPLIT }
+    const hook = await openApp()
+    await load(hook, [['DRUMS.wav', 'bateria'], ['BASS.wav', 'bateria']], { bpm: 120, separation: SEP })
+    await settled(hook)
+    const id = hook.result.current.playlist[0].id
+    await act(async () => { await hook.result.current.replaceAppChannel(id, ['Metrônomo'], panelClick()) })
+    await settled(hook)
+    const old = metroOf(hook)!.id
+    act(() => { hook.result.current.updateVolume(old, 0.6) })
+    act(() => { hook.result.current.updatePan(old, -0.4) })
+    act(() => { hook.result.current.toggleSolo(old) })
+    await act(async () => { await hook.result.current.replaceAppChannel(id, ['Metrônomo'], panelClick('click34')) })
+    await settled(hook)
+    const fresh = metroOf(hook)!
+    expect(fresh.id).not.toBe(old)
+    expect(fresh).toMatchObject({ volume: 0.6, muted: false, soloed: true, pan: -0.4 })
+    expect(savedMetro()).toMatchObject({ volume: 0.6, muted: false, soloed: true, pan: -0.4 })
+    const ctx = mem.ctx as FakeAudioContext
+    expect(valueAt(asFake(fresh.gainNode).gain, ctx.currentTime + 1)).toBeCloseTo(0.6, 5)
+    // Mudo no ensaio: o novo nasce mudo.
+    act(() => { hook.result.current.toggleMute(fresh.id) })
+    await act(async () => { await hook.result.current.replaceAppChannel(id, ['Metrônomo'], panelClick()) })
+    await settled(hook)
+    expect(metroOf(hook)).toMatchObject({ muted: true, volume: 0.6 })
+    expect(valueAt(asFake(metroOf(hook)!.gainNode).gain, ctx.currentTime + 1)).toBe(0)
+  })
+
+  it('sep-1 I4 (X1): em Tudo junto o Metrônomo do painel nasce mudo, mesmo com o click de antes ligado', async () => {
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    const hook = await openApp()
+    await load(hook, [['DRUMS.wav', 'bateria'], ['CLICK.wav', 'click44']], { bpm: 120, separation: SEP })
+    await settled(hook)
+    const id = hook.result.current.playlist[0].id
+    await act(async () => { await hook.result.current.replaceAppChannel(id, ['Metrônomo'], panelClick()) })
+    await settled(hook)
+    expect(metroOf(hook)!.muted).toBe(true)
+    // O operador liga no M; o Metrônomo seguinte nasce mudo de novo (entra numa saída que já é Tudo junto).
+    act(() => { hook.result.current.toggleMute(metroOf(hook)!.id) })
+    expect(metroOf(hook)!.muted).toBe(false)
+    await act(async () => { await hook.result.current.replaceAppChannel(id, ['Metrônomo'], panelClick('click34')) })
+    await settled(hook)
+    expect(metroOf(hook)!.muted).toBe(true)
+    expect(savedMetro()!.muted).toBe(true)
+    const ctx = mem.ctx as FakeAudioContext
+    expect(valueAt(asFake(metroOf(hook)!.gainNode).gain, ctx.currentTime + 1)).toBe(0)
+    // O click do usuário fica como está.
+    expect(hook.result.current.playlist[0].channels.find((c) => c.name === 'CLICK')!.muted).toBe(false)
+  })
+
+  it('sep-1 I4 (X1): a saída vira Tudo junto depois, o Metrônomo da separação fica mudo; o de uma música comum, não', async () => {
+    mem.settings = { ...mem.settings, outputs: SPLIT }
+    const hook = await openApp()
+    await load(hook, [['DRUMS.wav', 'bateria']], { bpm: 120, separation: SEP })
+    await load(hook, [['DRUMS.wav', 'bateria'], ['Metrônomo.wav', 'click44']], { name: 'Comum', bpm: 120 })
+    await settled(hook)
+    const id = hook.result.current.playlist[0].id
+    await act(async () => { await hook.result.current.replaceAppChannel(id, ['Metrônomo'], panelClick()) })
+    await settled(hook)
+    expect(metroOf(hook)!.muted).toBe(false)
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    await act(async () => { hook.rerender() })
+    await waitFor(() => expect(metroOf(hook)!.muted).toBe(true))
+    expect(metroOf(hook, 1)!.muted).toBe(false)
+    await waitFor(() => expect(savedMetro()!.muted).toBe(true))
+  })
+
+  it('sep-1 I4 (X1): abrir em Tudo junto com o Metrônomo de uma separação deixa ele mudo; a separação que chega com ele também', async () => {
+    const sepSong: SavedSong = { ...savedNoClick('s1'), separation: SEP, channels: [...savedNoClick('s1').channels, ch('s1-m', 'Metrônomo')] }
+    const plainSong: SavedSong = { ...savedNoClick('s2'), channels: [...savedNoClick('s2').channels, ch('s2-m', 'Metrônomo')] }
+    mem.settings = { ...mem.settings, outputs: STEREO }
+    seedSongs([sepSong, plainSong])
+    const hook = await openApp()
+    expect(metroOf(hook, 0)!.muted).toBe(true)
+    expect(metroOf(hook, 0)!.gainNode.gain.value).toBe(0)
+    expect(metroOf(hook, 1)!.muted).toBe(false)
+    expect(savedMetro(0)!.muted).toBe(true)
+    await load(hook, [['DRUMS.wav', 'bateria'], ['Metrônomo.wav', 'click44']], { name: 'Chegou', bpm: 120, separation: { id: 'sep_2', createdAt: 2 } })
+    expect(metroOf(hook, 2)!.muted).toBe(true)
+    expect(metroOf(hook, 2)!.gainNode.gain.value).toBe(0)
+  })
+
+  it('sep-1 M6: com a ordem arrastada à mão, o click novo fica no lugar do que sai', async () => {
+    const hook = await openApp()
+    await load(hook, [['DRUMS.wav', 'bateria'], ['BASS.wav', 'bateria'], ['GTR.wav', 'bateria']], { bpm: 120, separation: SEP })
+    await settled(hook)
+    const id = hook.result.current.playlist[0].id
+    await act(async () => { await hook.result.current.replaceAppChannel(id, ['Metrônomo'], panelClick()) })
+    await settled(hook)
+    const chs = hook.result.current.playlist[0].channels
+    const metro = chs.find((c) => c.name === 'Metrônomo')!
+    const others = chs.filter((c) => c !== metro)
+    // Metrônomo arrastado pro meio.
+    act(() => { hook.result.current.reorderChannels([others[0], metro, ...others.slice(1)]) })
+    expect(names(hook)).toEqual([others[0].name, 'Metrônomo', ...others.slice(1).map((c) => c.name)])
+    await act(async () => { await hook.result.current.replaceAppChannel(id, ['Metrônomo'], panelClick('click34')) })
+    await settled(hook)
+    expect(names(hook)).toEqual([others[0].name, 'Metrônomo', ...others.slice(1).map((c) => c.name)])
+    expect(saved()[0].channels.map((c) => c.name)).toEqual(names(hook))
   })
 })

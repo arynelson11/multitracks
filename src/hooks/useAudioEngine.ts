@@ -520,10 +520,10 @@ function fixLegacyPans(songs: SavedSong[], device: LegacyPanDevice, opts: { move
     };
 }
 
-/** O "Click gerado" mudo (Ruling X1-critical): ao abrir com a saída sem rota própria pro Click. */
+/** O click do app mudo (Ruling X1-critical): ao abrir com a saída sem rota própria pro Click. */
 const withGeneratedClickMuted = (song: SavedSong): SavedSong =>
-    (song.channels.some((ch) => isGeneratedClick(ch) && !ch.muted)
-        ? { ...song, channels: song.channels.map((ch) => (isGeneratedClick(ch) ? { ...ch, muted: true } : ch)) }
+    (song.channels.some((ch) => isAppClickIn(song, ch) && !ch.muted)
+        ? { ...song, channels: song.channels.map((ch) => (isAppClickIn(song, ch) ? { ...ch, muted: true } : ch)) }
         : song);
 
 // === Grade da música (Parte 2, T27; Arquitetura B) ===
@@ -537,6 +537,13 @@ const withGeneratedClickMuted = (song: SavedSong): SavedSong =>
 /** O canal é o click que o motor gerou (pelo nome do arquivo, que nunca muda) e ainda é Click. */
 const isGeneratedClick = (ch: ChannelIdentity): boolean => ch.name === GENERATED_CLICK_NAME && resolveChannelRole(ch) === 'click';
 /**
+ * Click gerado pelo app que nunca vai pro PA (Ruling X1-critical): o "Click gerado" e, numa música
+ * que veio de uma separação, o "Metrônomo" do painel SEPARAÇÃO (Ruling SEP-metronomo-X1). O
+ * "Metrônomo" de uma música comum é um arquivo do usuário e fica como ele deixou.
+ */
+const isAppClickIn = (song: { separation?: unknown }, ch: ChannelIdentity): boolean =>
+    isGeneratedClick(ch) || (!!song.separation && ch.name === SEPARATOR_CLICK_NAME && resolveChannelRole(ch) === 'click');
+/**
  * O Click tem rota própria, longe do PA (Ruling X1-critical)? Em "Tudo junto" (com ou sem o pan
  * automático) e na saída de 1 canal (que o plano dá como "Tudo junto") não: ali o click gerado
  * nunca nasce, e o que já existe fica mudo.
@@ -544,6 +551,8 @@ const isGeneratedClick = (ch: ChannelIdentity): boolean => ch.name === GENERATED
 const clickHasOwnRoute = (plan: OutputPlan, autoPan: boolean): boolean => plan.mode !== 'stereo' && !cueReachesVs(plan, autoPan);
 // Os clicks que o Metrônomo grava ("Click_IA_120bpm"; METRONOME_CLICK_NAME, em generatedChannels.ts)
 // saem do mesmo gerador, com cada click adiantado pelo ataque da amostra.
+/** De quanto em quanto a troca do painel confere se a VS já parou (sep-1 I3). */
+const QUIET_POLL_MS = 50;
 /** A leitura do click precisa de pelo menos 4 s de áudio (o mínimo do analyzeClickTrack). */
 const CLICK_MIN_SECONDS = 4;
 /** Canal de click abaixo disto (-60 dBFS) do começo ao fim é silêncio: nada a ler. */
@@ -1610,7 +1619,8 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // O repertório mais novo pra troca de rota fora da renderização (antes dos efeitos abaixo).
     useEffect(() => { playlistRef.current = playlist; }, [playlist]);
 
-    // "Click gerado" mudo fora da rota própria (Ruling X1-critical): o M aceso, o ganho em 0 na hora
+    // "Click gerado" (e o "Metrônomo" do painel numa separação, Ruling SEP-metronomo-X1) mudo fora
+    // da rota própria (Ruling X1-critical): o M aceso, o ganho em 0 na hora
     // (dentro do corte, quando a troca de saída passa por ele) e gravado. O operador pode ligar de
     // novo no M; o app só deixa mudo quando a saída vira "Tudo junto", ao abrir assim e quando o
     // click gerado entra numa saída que já virou.
@@ -1620,12 +1630,12 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             const graph = graphRef.current;
             if (!ctx || !graph || clickHasOwnRoute(graph.plan, autoPanRef.current)) return;
             const list = playlistRef.current;
-            if (!list.some((song) => song.channels.some((ch) => isGeneratedClick(ch) && !ch.muted))) return;
+            if (!list.some((song) => song.channels.some((ch) => isAppClickIn(song, ch) && !ch.muted))) return;
             const next = list.map((song) => {
-                if (!song.channels.some((ch) => isGeneratedClick(ch) && !ch.muted)) return song;
-                const channels = song.channels.map((ch) => (isGeneratedClick(ch) && !ch.muted ? { ...ch, muted: true } : ch));
+                if (!song.channels.some((ch) => isAppClickIn(song, ch) && !ch.muted)) return song;
+                const channels = song.channels.map((ch) => (isAppClickIn(song, ch) && !ch.muted ? { ...ch, muted: true } : ch));
                 for (const ch of channels) {
-                    if (!isGeneratedClick(ch) || !ch.gainNode) continue;
+                    if (!isAppClickIn(song, ch) || !ch.gainNode) continue;
                     ch.gainNode.gain.cancelScheduledValues(ctx.currentTime);
                     ch.gainNode.gain.setValueAtTime(0, ctx.currentTime);
                 }
@@ -2743,6 +2753,11 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             console.error('loadFiles: nada a carregar (sem arquivos e sem cache).');
             return;
         }
+        // O "Metrônomo" que vem na separação é click do app (Ruling SEP-metronomo-X1): sem rota
+        // própria pro Click (Tudo junto, saída de 1 canal), entra mudo e nunca vai pro PA.
+        if (separation && !generatedClickRoutable()) {
+            prepared = prepared.map((p) => (isAppClickIn({ separation }, { id: p.uuid, name: p.name }) ? { ...p, mix: { ...p.mix, muted: true } } : p));
+        }
 
         // Nome da música (folder/override/primeiro arquivo).
         let songName = overrideSongName;
@@ -3193,37 +3208,67 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // (sep-1 I1): a grade que veio do click do app que saiu não vale pro novo (BPM, SYNC ou o 1
     // mudaram), então sai (o compasso escolhido no EDITAR fica) e a leitura forçada entra na fila.
     // Música que saiu do repertório no meio: devolve null e não grava nada.
+    // A troca nunca acontece tocando (sep-1 I3): o canal novo fica pronto e, com a VS tocando ou na
+    // pré-contagem, a troca espera a parada. O canal novo herda volume, mudo, solo e pan do canal do
+    // mesmo papel que sai e, com a ordem arrastada à mão, o lugar dele (sep-1 I4 e M6). O click do
+    // app sem rota própria pro Click entra mudo (Ruling SEP-metronomo-X1).
     const replaceAppChannel = async (songId: string, names: readonly string[] | ((name: string) => boolean), file: File): Promise<Channel | null> => {
         if (!playlistRef.current.some((s) => s.id === songId)) return null;
-        const newChannel = await prepareChannel(file);
-        if (!newChannel) return null;
+        const prepared = await prepareChannel(file);
+        if (!prepared) return null;
         const listed = typeof names === 'function' ? null : new Set(names);
         const wanted = (name: string) => (listed ? listed.has(name) : (names as (name: string) => boolean)(name));
-        const isClick = resolveChannelRole(newChannel) === 'click';
+        const isClick = resolveChannelRole(prepared) === 'click';
+        // Daqui até a gravação não há await: a VS parada agora continua parada na troca.
+        if (engineBusy()) await whenVsQuiet();
+        let newChannel: Channel = prepared;
         let gone: Channel[] = [];
         let grew = false;
         const song = patchSong(songId, (s) => {
             gone = s.channels.filter((c) => wanted(c.name));
             const kept = s.channels.filter((c) => !wanted(c.name));
+            const role = resolveChannelRole(prepared);
+            const heir = gone.find((c) => resolveChannelRole(c) === role);
+            newChannel = {
+                ...prepared,
+                ...(heir ? { volume: heir.volume, muted: heir.muted, soloed: heir.soloed, pan: heir.pan } : {}),
+            };
+            if (isAppClickIn(s, newChannel) && !generatedClickRoutable()) newChannel = { ...newChannel, muted: true };
+            // Ordem manual: no lugar do que sai (entre os que ficam). Automática: a ordem padrão.
+            const at = heir && s.channelOrder === 'manual'
+                ? s.channels.slice(0, s.channels.indexOf(heir)).filter((c) => !wanted(c.name)).length
+                : -1;
+            const channels = at >= 0
+                ? [...kept.slice(0, at), newChannel, ...kept.slice(at)]
+                : arrangeChannels([...kept, newChannel], s.channelOrder);
             grew = newChannel.buffer.duration > s.duration;
             const prev = sanitizeGrid(s.grid);
             const staleGrid = isClick && prev?.source === 'click' && clickChannelsOf({ ...s, channels: kept }).length === 0;
             return {
                 ...s,
-                channels: arrangeChannels([...kept, newChannel], s.channelOrder),
+                channels,
                 duration: grew ? newChannel.buffer.duration : s.duration,
                 ...(gone.some(isRemovedClick) ? { clickRemoved: true as const } : {}),
                 ...(staleGrid ? { grid: prev.meterSource === 'manual' ? { ...prev, source: 'bpm' as const } : undefined, downbeatAssumed: undefined } : {}),
             };
         });
         if (!song) {
-            await discardPrepared(newChannel);
+            await discardPrepared(prepared);
             return null;
         }
+        // O mixer herdado no grafo: o fader pela regra central (M, Solo) e o pan efetivo do plano.
+        const ctx = audioCtxRef.current;
+        const graph = graphRef.current;
+        if (ctx) {
+            newChannel.gainNode.gain.cancelScheduledValues(ctx.currentTime);
+            newChannel.gainNode.gain.setValueAtTime(channelGain(newChannel, song.channels), ctx.currentTime);
+            if (graph) syncChannelPan(ctx, newChannel, routeJobsRef.current > 0 ? planOutputs(outputsRef.current, deviceChannels(ctx)) : graph.plan, autoPanRef.current, false);
+        }
         for (const c of gone) silenceChannel(c);
-        for (const c of gone) await deleteChannelFile(c.id);
         if (grew && activeSongIdRef.current === songId) setDuration(song.duration);
         await addLiveVoice(newChannel, song.channels, song.id);
+        // O arquivo de quem saiu sai do disco depois de o novo entrar (nada de buraco sem canal).
+        for (const c of gone) await deleteChannelFile(c.id);
         // Leitura forçada (como o "Ler o click de novo"): a grade de click que ficou (de outro click
         // do usuário) é lida de novo e sai a mesma. Sem Worker, nada é lido (fica a do BPM salvo).
         if (isClick && gridWorkerUsable()) void enqueueGridJob(song.id, { read: true, generate: false });
@@ -3262,6 +3307,12 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // Worker (ausente ou quebrado) a grade não é lida sozinha, nunca na thread principal; fica
     // a do BPM salvo e o Metrônomo, a pedido. Sem geração em lote: só a música carregada ou que
     // ficou ativa.
+    // Motor montado (a espera da parada para de conferir quando ele sai de cena).
+    const engineAliveRef = useRef(true);
+    useEffect(() => {
+        engineAliveRef.current = true;
+        return () => { engineAliveRef.current = false; };
+    }, []);
     const gridJobsRef = useRef(new Map<string, GridJob>());
     const [gridPending, setGridPending] = useState<readonly string[]>([]);
     const gridRunningRef = useRef(false);
@@ -3334,6 +3385,16 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
 
     // A VS toca ou vai tocar: algo agendado no relógio, play pendente ou contagem esperando a troca de papel.
     const engineBusy = () => playPendingRef.current || recountQueuedRef.current || timelineRef.current.length > 0;
+    // Espera a VS parar (nada agendado, nenhum play pendente nem contagem; sep-1 I3): confere de
+    // tempos em tempos só enquanto alguém espera. Motor desmontado: para de conferir.
+    const whenVsQuiet = (): Promise<void> => new Promise((resolve) => {
+        const check = () => {
+            if (!engineAliveRef.current) return;
+            if (engineBusy()) setTimeout(check, QUIET_POLL_MS);
+            else resolve();
+        };
+        check();
+    });
     // A próxima música vai entrar sozinha (AUTO, 5 s depois do fim; ou o fade da "próxima").
     const nextSongPending = () => autoNextTimeoutRef.current !== null || nextSongTimerRef.current !== null;
     // Cópia das amostras pro Worker (o original continua no AudioBuffer que toca), em pedaços e
