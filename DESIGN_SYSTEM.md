@@ -673,6 +673,7 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 - Cada aba da gaveta (e a janela "Publicar na Nuvem") mostra só a frase de erro da ferramenta dela, no `Notice tone="alert"` de sempre.
 - "Abrindo no palco" com erro (`SeparatorProgress`): "Tentar de novo" (`primary`), "Abrir aqui no Separador" e "Voltar" (`Button` padrão), nessa ordem, quebrando linha.
 - Janelas da Voz Guia e do BPM do Separador de reserva: o Espaço toca e pausa a música (captura na `window`, antes da janela do palco), fora de campo de texto; nenhum botão novo.
+- A faixa "Voz Guia" é sempre da cor da família Guia (`FAMILY_COLOR.guia`, pedra), gerada no Separador ou no painel; a gravada antes no âmbar (`#fbbf24`, o `ps-alert`) é mostrada em pedra por `stemColor` (`src/lib/separation/voiceGuide.ts`). Âmbar só pra alerta.
 - A separação que não abriu no palco (nenhuma faixa decodificou) mostra a frase num `Toast tone="alert"` no topo (6 s, some sozinho e nunca aparece tocando nem na pré-contagem).
 
 ---

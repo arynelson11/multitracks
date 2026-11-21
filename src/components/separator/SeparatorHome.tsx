@@ -6,6 +6,7 @@ import { Icon } from '../stage/icons'
 import { TwoTapTrashButton } from '../stage/TwoTapTrashButton'
 import { Button, FilePicker, Panel, Tag } from '../ui'
 import { HOME_COPY, savedCount, separationDate, separationMeta } from './separatorCopy'
+import { stemColor } from '../../lib/separation/voiceGuide'
 
 export interface SeparatorHomeProps {
   separations: readonly SavedSeparation[]
@@ -80,7 +81,7 @@ export function SeparatorHome({ separations, loading, onBack, onPickFile, onOpen
                             {separationMeta(sep).map((m) => <Tag key={m} num>{m}</Tag>)}
                             <span className="flex items-center gap-1" aria-hidden="true">
                               {sep.stems.slice(0, 6).map((s, i) => (
-                                <span key={i} className="size-2.5 rounded-full" style={{ backgroundColor: s.color }} title={s.name} />
+                                <span key={i} className="size-2.5 rounded-full" style={{ backgroundColor: stemColor(s) }} title={s.name} />
                               ))}
                               {sep.stems.length > 6 && <span className="ps-num text-ps-micro text-ps-dim">+{sep.stems.length - 6}</span>}
                             </span>

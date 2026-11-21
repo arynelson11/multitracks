@@ -5,6 +5,7 @@ import type { StageSeparation } from '../../hooks/useStageSeparation'
 import { Icon } from '../stage/icons'
 import { usePanelDismiss } from '../stage/panelDismiss'
 import { Button, IconButton, Notice, Segmented, TabPanel, Tabs } from '../ui'
+import { stemColor } from '../../lib/separation/voiceGuide'
 import { BpmClickEditor } from './BpmClickEditor'
 import { VoiceGuideEditor } from './VoiceGuideEditor'
 import { PANEL_COPY, PAUSE_TO_USE, type SeparationTab } from './toolsCopy'
@@ -87,7 +88,7 @@ export function SeparationPanel(p: SeparationPanelProps) {
                 const downloading = s.downloadingId === stem.id
                 return (
                   <li key={stem.id} data-separation-stem={stem.id} className="flex items-center gap-2 rounded-ps-md bg-ps-s1 py-1.5 pl-2 pr-1.5 inset-ring inset-ring-ps-line">
-                    <span aria-hidden="true" className="h-8 w-1 shrink-0 rounded-full" style={{ backgroundColor: stem.color }} />
+                    <span aria-hidden="true" className="h-8 w-1 shrink-0 rounded-full" style={{ backgroundColor: stemColor(stem) }} />
                     <span className="min-w-0 flex-1 break-words text-ps-base font-bold leading-snug">{stem.name}</span>
                     <Button
                       onClick={() => (p.canDownload ? void s.download(stem.id) : p.onLimit())}

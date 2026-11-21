@@ -3,8 +3,9 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   GUIDE_DYNAMICS, GUIDE_SECTIONS, detectVoiceCues, float32ToWav, formatCueTime, guideUrl, parseCueTime,
-  renderVoiceGuideWav, voiceSourceTrack, type MonoSource,
+  renderVoiceGuideWav, stemColor, voiceSourceTrack, type MonoSource,
 } from './voiceGuide'
+import { FAMILY_COLOR } from '../channelNames'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
 
@@ -21,6 +22,21 @@ function steppedSource(steps: { secs: number; amp: number }[], sampleRate = 1000
 }
 
 describe('voiceGuide', () => {
+  // Revisão sep-2 I4 (Ruling SEP-cor-guia): âmbar é só alerta; a voz guia é da família Guia.
+  it('stemColor mostra a voz guia antiga (âmbar) na cor da família Guia e deixa o resto como veio', () => {
+    expect(stemColor({ id: 'voiceguide', color: '#fbbf24' })).toBe(FAMILY_COLOR.guia)
+    expect(stemColor({ id: 'voiceguide', color: '#FBBF24' })).toBe(FAMILY_COLOR.guia)
+    expect(stemColor({ id: 'voiceguide', color: FAMILY_COLOR.guia })).toBe(FAMILY_COLOR.guia)
+    expect(stemColor({ id: 'drums', color: '#f59e0b' })).toBe('#f59e0b')
+    expect(stemColor({ id: 'other', color: '#fbbf24' })).toBe('#fbbf24')
+  })
+
+  it('o Separador gera a voz guia na cor da família Guia (nenhum âmbar fixo no código)', () => {
+    const studio = readFileSync(join(process.cwd(), 'src/components/SeparatorStudio.tsx'), 'utf8')
+    expect(studio).not.toMatch(/#fbbf24/i)
+    expect(studio).toMatch(/id: 'voiceguide', name: 'Voz Guia', url, color: FAMILY_COLOR\.guia/)
+  })
+
   it('formatCueTime e parseCueTime', () => {
     expect(formatCueTime(65)).toBe('1:05')
     expect(formatCueTime(0)).toBe('0:00')

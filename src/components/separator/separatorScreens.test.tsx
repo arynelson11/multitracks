@@ -44,6 +44,13 @@ describe('SeparatorHome', () => {
     expect(screen.getByText('1 salva')).toBeTruthy()
   })
 
+  it('sep-2 I4: a bolinha da voz guia antiga (âmbar) sai na cor da família Guia', () => {
+    home({ separations: [{ ...SEP_B, stems: [stem('vocals'), stem('voiceguide', '#fbbf24')] }] })
+    const dots = [...document.querySelectorAll('[data-separation-id="sep_b"] span[title]')] as HTMLElement[]
+    const guide = dots.find((d) => d.title === 'voiceguide')!
+    expect(guide.style.backgroundColor).toBe('rgb(168, 162, 158)')
+  })
+
   it('escolher um arquivo chama onPickFile com ele', () => {
     home()
     const input = document.querySelector('input[type="file"]') as HTMLInputElement

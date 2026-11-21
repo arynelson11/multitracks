@@ -30,7 +30,7 @@ import { BpmClickEditor } from './separation/BpmClickEditor';
 import { VoiceGuideEditor } from './separation/VoiceGuideEditor';
 import { CloudSaveForm } from './separation/CloudSaveForm';
 import { BPM_COPY, CLOUD_COPY, VOICE_COPY } from './separation/toolsCopy';
-import { detectVoiceCues, formatCueTime, guideUrl, parseCueTime, renderVoiceGuideWav, voiceSourceTrack, type VoiceCue } from '../lib/separation/voiceGuide';
+import { detectVoiceCues, formatCueTime, guideUrl, parseCueTime, renderVoiceGuideWav, stemColor, voiceSourceTrack, type VoiceCue } from '../lib/separation/voiceGuide';
 import { BEATS_PER_BAR, bpmReport, clickPlan, generateSeparatorClick, measureGrid, normalizeBpm, nudgeOffset, pickGridSource as pickGridTrack, scaleBpm, stepBpm, tapTempo, type SeparatorMeter } from '../lib/separation/separatorClick';
 import { downloadStem as downloadStemFile, readDownloadFormat, writeDownloadFormat, type DownloadFormat } from '../lib/separation/stemFiles';
 import { CLOUD_STATUS, publishToCloud } from '../lib/separation/cloudPublish';
@@ -379,7 +379,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
       setStems(prev => {
         const old = prev.find(s => s.id === 'voiceguide');
         if (old && old.url.startsWith('blob:')) URL.revokeObjectURL(old.url);
-        const guideStem: StemData = { id: 'voiceguide', name: 'Voz Guia', url, color: '#fbbf24' };
+        // A voz guia é da família Guia, a mesma cor do painel do palco (âmbar é só alerta, Ruling SEP-cor-guia).
+        const guideStem: StemData = { id: 'voiceguide', name: 'Voz Guia', url, color: FAMILY_COLOR.guia };
         return [...prev.filter(s => s.id !== 'voiceguide'), guideStem];
       });
       setStemStates(p => ({ ...p, voiceguide: p.voiceguide ?? { muted: false, soloed: false, volume: 0.9, pan: 0 } }));
@@ -1250,7 +1251,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
       const freeThisMonth = separationIsThisMonth(sep.createdAt, new Date());
       livre.noteSongOpened(separationKey(sep.id), { freeThisMonth });
     }
-    const stemsArray: StemData[] = sep.stems.map(s => ({ id: s.id, name: s.name, url: s.url, color: s.color }));
+    const stemsArray: StemData[] = sep.stems.map(s => ({ id: s.id, name: s.name, url: s.url, color: stemColor(s) }));
     const initialStates: Record<string, { muted: boolean; soloed: boolean; volume: number; pan: number }> = {};
     sep.stems.forEach(s => {
       // Restaura o mixer salvo (mute/solo/volume/pan); default se não houver.

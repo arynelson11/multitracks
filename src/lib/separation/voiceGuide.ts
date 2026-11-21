@@ -2,7 +2,7 @@
 // mistura das marcações num canal e a detecção das seções. Tudo puro, sem React; o áudio
 // decodificado (e o cache dele) fica com quem chama, pelo `decode`. Usado pelo Separador de
 // reserva e pelo painel SEPARAÇÃO do palco.
-import { channelFamily, resolveChannelRole } from '../channelNames'
+import { FAMILY_COLOR, channelFamily, resolveChannelRole } from '../channelNames'
 import { APP_GENERATED_NAMES } from '../generatedChannels'
 
 export interface VoiceCue { id: string; time: number; label: string; file: string }
@@ -324,4 +324,16 @@ export function voiceSourceTrack<T extends { id: string; name: string }>(tracks:
     || tracks.find(s => !['click', 'metronome', 'voiceguide'].includes(s.id)
       && !GENERATED_NAMES.includes(s.name)
       && resolveChannelRole({ id: s.id, name: s.name }) === 'normal')
+}
+
+/** A cor que a voz guia gravava antes (o mesmo valor do âmbar de alerta, `ps-alert`). */
+const OLD_GUIDE_AMBER = '#fbbf24'
+
+/**
+ * A cor de uma faixa da separação na tela (Ruling SEP-cor-guia, sep-2 I4): âmbar é só alerta, então
+ * a voz guia gravada no âmbar antigo aparece na cor da família Guia (pedra), a mesma do painel do
+ * palco. As outras faixas ficam com a cor delas (dado).
+ */
+export function stemColor(stem: { id: string; color: string }): string {
+  return stem.id === 'voiceguide' && stem.color.toLowerCase() === OLD_GUIDE_AMBER ? FAMILY_COLOR.guia : stem.color
 }
