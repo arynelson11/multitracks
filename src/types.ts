@@ -66,7 +66,16 @@ export interface Song {
     // O usuário apagou um canal de Click desta música: o motor não gera o "Click gerado" no lugar
     // (manual vence automático, Ruling X1-critical). Só `true`; ausente quer dizer nunca apagou.
     clickRemoved?: true;
+    // A música veio de uma separação do Separador (Parte 3): a conta do Livre usa a mesma chave
+    // do Separador e o painel SEPARAÇÃO lê as ferramentas dela. Vale só na conta (não vai pro .zip).
+    separation?: SeparationLink;
 }
+
+/** De qual separação a música do palco veio: a id e a data dela (a data nunca muda). */
+export interface SeparationLink { id: string; createdAt: number }
+
+/** O mixer salvo de uma faixa da separação, aplicado na primeira carga no palco. */
+export interface ChannelStartState { volume: number; muted: boolean; soloed: boolean; pan: number }
 
 export interface Marker {
     id: string; // generated UUID 

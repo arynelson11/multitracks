@@ -20,6 +20,7 @@ import {
   queueSettle,
   separationIsThisMonth,
   separationKey,
+  stageSongOpenOpts,
   shouldShowHomeAd,
   shouldShowSeparationAd,
   stageLedgerFor,
@@ -146,6 +147,23 @@ describe('livreRules: chave de cada música', () => {
     expect(stageSongKey({ id: 'm1', duration: 36000, channels: [canal('Baixo')] })).toBe('song:m1')
     expect(stageSongKey({ id: 'm1', duration: 240, channels: [canal('Metronomo Loop')] })).toBe('song:m1')
     expect(stageSongKey({ id: 'm1', duration: 36000, channels: [canal('Metronomo Loop'), canal('Baixo')] })).toBe('song:m1')
+  })
+
+  it('música que veio de uma separação conta como sep:<id>, mesmo com sourceId', () => {
+    const S = { id: 'r1', duration: 240, channels: [canal('Baixo')] }
+    expect(stageSongKey({ ...S, sourceId: 'c1', separation: { id: 'x', createdAt: 0 } })).toBe('sep:x')
+    expect(stageSongKey({ ...S, separation: { id: 'y', createdAt: 0 } })).toBe('sep:y')
+    // A mesma chave do Separador: abrir lá e tocar no palco é uma música só.
+    expect(stageSongKey({ ...S, separation: { id: 'z', createdAt: 0 } })).toBe(separationKey('z'))
+  })
+
+  it('stageSongOpenOpts: separação deste mês abre sem contar; a de outubro conta; música comum sem opções', () => {
+    const now = new Date('2026-11-20T15:00:00Z')
+    expect(stageSongOpenOpts({ separation: { id: 'a', createdAt: Date.parse('2026-11-03T12:00:00Z') } }, now)).toEqual({ freeThisMonth: true })
+    expect(stageSongOpenOpts({ separation: { id: 'b', createdAt: Date.parse('2026-10-20T12:00:00Z') } }, now)).toEqual({ freeThisMonth: false })
+    expect(stageSongOpenOpts({}, now)).toEqual({})
+    expect(stageSongOpenOpts(null, now)).toEqual({})
+    expect(stageSongOpenOpts(undefined, now)).toEqual({})
   })
 
   it('separationKey prefixa a id da separação', () => {

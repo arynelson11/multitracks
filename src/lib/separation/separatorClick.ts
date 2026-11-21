@@ -7,13 +7,14 @@ import { separatorGridUsable } from '../autoClick'
 import { detectBeatGrid, formatBpm, type BeatGrid } from '../beatGrid'
 import { channelFamily, resolveChannelRole } from '../channelNames'
 import type { ClickLibrarySelection } from '../clickLibrary'
+import { APP_GENERATED_NAMES } from '../generatedChannels'
 
 export type SeparatorMeter = '3/4' | '4/4' | '5/4' | '6/8' | '7/8' | '12/8'
 export const SEPARATOR_METERS: readonly SeparatorMeter[] = ['3/4', '4/4', '5/4', '6/8', '7/8', '12/8']
 export const BEATS_PER_BAR: Record<SeparatorMeter, number> = { '3/4': 3, '4/4': 4, '5/4': 5, '6/8': 6, '7/8': 7, '12/8': 12 }
 
-// Nomes dos canais que o app gera. A T7 junta os três em src/lib/generatedChannels.ts.
-const GENERATED_NAMES = ['Metrônomo', 'Voz Guia', 'Click gerado']
+// Nomes dos canais que o app gera (o click do motor, o do Separador e a voz guia).
+const GENERATED_NAMES = APP_GENERATED_NAMES
 
 type Track = { id: string; name: string }
 const family = (t: Track) => channelFamily({ id: t.id, name: t.name })

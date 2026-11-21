@@ -3,7 +3,8 @@ import { get, set, del, keys } from 'idb-keyval';
 import JSZip from 'jszip';
 import * as Tone from 'tone';
 import SignalsmithStretch, { type SignalsmithStretchNode } from 'signalsmith-stretch';
-import type { Channel, ChannelRole, Song, Marker } from '../types';
+import type { Channel, ChannelRole, ChannelStartState, Song, Marker, SeparationLink } from '../types';
+import { GENERATED_CLICK_NAME } from '../lib/generatedChannels';
 import { useSettings } from '../contexts/SettingsContext';
 import { detectKey, generateEndlessClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { loadClickSelection } from '../lib/clickLibrary';
@@ -23,7 +24,7 @@ import { NO_CURRENT_SONG, songOpenedByRemoval } from '../lib/songRemoval';
 import { getCachedStem, getCachedStemNames, isSongCached } from '../lib/offlineCache';
 import { applyChannelMetaToList, autoPanFor, channelGain, findClickChannel, isPitchExempt, pickMainChannel, pitchChangeAction, wantsFormantCompensation, type ChannelMetaPatch } from '../lib/channelRoles';
 import { arrangeChannels, resolveChannelRole, type ChannelIdentity } from '../lib/channelNames';
-import { REPERTOIRE_SCHEMA_VERSION, migrateManifestSong, migrateSavedSong, toManifestSong, toSavedSong, type SavedSong } from '../lib/repertoireSchema';
+import { REPERTOIRE_SCHEMA_VERSION, migrateManifestSong, migrateSavedSong, sanitizeSeparationLink, toManifestSong, toSavedSong, type SavedSong } from '../lib/repertoireSchema';
 import { createOutputGraph, type OutputGraph } from '../audio/outputGraph';
 import { createSchedulerClock, type ClockMode, type SchedulerClock } from '../audio/schedulerClock';
 import { FADE as SWITCH_FADE, SectionScheduler } from '../audio/sectionScheduler';
@@ -531,8 +532,8 @@ const withGeneratedClickMuted = (song: SavedSong): SavedSong =>
 // a grade sai do BPM salvo (sem fase) e, com o `autoClick` do plano, o motor gera o click que falta pelo
 // mesmo fluxo do Metrônomo (planAutoClick e renderAutoClick, M7).
 
-/** Nome do canal do click que o motor gera pra música sem click (o papel Click vem do nome). */
-const GENERATED_CLICK_NAME = 'Click gerado';
+// O nome do canal do click que o motor gera pra música sem click (o papel Click vem do nome) mora
+// em src/lib/generatedChannels.ts, junto dos outros canais que o app gera (Parte 3).
 /** O canal é o click que o motor gerou (pelo nome do arquivo, que nunca muda) e ainda é Click. */
 const isGeneratedClick = (ch: ChannelIdentity): boolean => ch.name === GENERATED_CLICK_NAME && resolveChannelRole(ch) === 'click';
 /**
@@ -2089,7 +2090,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
                         // O 1 não provado (Ruling T27-campo): o COMPASSO ASSUMIDO volta com a música.
                         downbeatAssumed: metaSong.downbeatAssumed,
                         // O usuário apagou o click dela: o click gerado não volta (Ruling X1-critical).
-                        clickRemoved: metaSong.clickRemoved === true ? true : undefined
+                        clickRemoved: metaSong.clickRemoved === true ? true : undefined,
+                        // De qual separação ela veio (Parte 3, já limpa pelo migrateSavedSong).
+                        ...(metaSong.separation ? { separation: metaSong.separation } : {})
                     };
                 };
 
@@ -2682,9 +2685,12 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
 
     // Load files
     // `meta.timeSignature`: compasso salvo na nuvem (songs.time_signature), vai pro Song.timeSignature.
-    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string, songMarkers?: Marker[], overrideOriginalKey?: string | null, overrideBpm?: number, meta?: { artist?: string; lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null; sourceId?: string; timeSignature?: TimeSignature | null }) => {
+    // `separation` (Parte 3): a música veio de uma separação do Separador. `channelStates`: o mixer
+    // salvo na separação, na ordem dos arquivos; valor que falta ou fora da faixa fica no padrão.
+    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string, songMarkers?: Marker[], overrideOriginalKey?: string | null, overrideBpm?: number, meta?: { artist?: string; lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null; sourceId?: string; timeSignature?: TimeSignature | null; separation?: SeparationLink; channelStates?: readonly (ChannelStartState | undefined)[] }) => {
         if (!audioCtxRef.current || !masterGainRef.current) return;
         const timeSignature = sanitizeTimeSignature(meta?.timeSignature) ?? undefined;
+        const separation = sanitizeSeparationLink(meta?.separation);
         setIsLoading(true);
 
         // try/finally garante que o loading sempre desligue: se qualquer decode
@@ -2695,6 +2701,19 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         // Pan gravado do arquivo novo: o knob no centro. O lado de Click, Guia e VS (e o
         // pan automático de "Tudo junto") sai só no panner, pelo papel (channelPanFor).
         const NEW_PAN = { pan: 0, bus: '1/2' as const };
+        // Mixer de partida de cada arquivo: o salvo na separação quando ele é válido, senão o de hoje.
+        const startOf = (st: ChannelStartState | undefined) => {
+            const ok = (v: unknown, lo: number, hi: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
+            return {
+                ...NEW_PAN,
+                pan: ok(st?.pan, -1, 1) ? st!.pan : NEW_PAN.pan,
+                mix: {
+                    volume: ok(st?.volume, 0, 2) ? st!.volume : 1,
+                    muted: typeof st?.muted === 'boolean' ? st.muted : false,
+                    soloed: typeof st?.soloed === 'boolean' ? st.soloed : false,
+                },
+            };
+        };
 
         // Música baixada e já no cache? Então NÃO recebemos os blobs em memória:
         // carregamos lendo do cache 1 stem por vez (getCachedStem) no decode, e
@@ -2706,16 +2725,16 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
 
         // Lista de stems a processar (sem decodificar ainda). file é opcional:
         // no modo cache-streaming os bytes vêm do cache no momento do decode.
-        type Prep = { uuid: string; idx: number; pan: number; bus: '1' | '2' | '1/2'; name: string; file?: File };
+        type Prep = { uuid: string; idx: number; pan: number; bus: '1' | '2' | '1/2'; name: string; file?: File; mix: Omit<ChannelStartState, 'pan'> };
         let prepared: Prep[];
         if (filesArray.length === 0 && cacheSrcId) {
             const names = (await getCachedStemNames(cacheSrcId)) || [];
             prepared = names.map((nm, idx) => {
-                return { uuid: crypto.randomUUID(), idx, ...NEW_PAN, name: nm.replace(/\.[^/.]+$/, "") };
+                return { uuid: crypto.randomUUID(), idx, ...startOf(meta?.channelStates?.[idx]), name: nm.replace(/\.[^/.]+$/, "") };
             });
         } else {
             prepared = filesArray.map((file, idx) => {
-                return { uuid: crypto.randomUUID(), idx, ...NEW_PAN, name: file.name.replace(/\.[^/.]+$/, ""), file };
+                return { uuid: crypto.randomUUID(), idx, ...startOf(meta?.channelStates?.[idx]), name: file.name.replace(/\.[^/.]+$/, ""), file };
             });
         }
         if (prepared.length === 0) {
@@ -2760,7 +2779,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             schemaVersion: REPERTOIRE_SCHEMA_VERSION,
             duration: 0,
             channels: prepared.map((p) => ({
-                id: p.uuid, name: p.name, volume: 1, muted: false, soloed: false, pan: p.pan, bus: p.bus,
+                id: p.uuid, name: p.name, volume: p.mix.volume, muted: p.mix.muted, soloed: p.mix.soloed, pan: p.pan, bus: p.bus,
                 srcId: cacheSrcId ?? undefined, srcIdx: cacheSrcId ? p.idx : undefined
             })),
             pitch: 0,
@@ -2771,7 +2790,8 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             lyrics: meta?.lyrics ?? null,
             lyricsSynced: meta?.lyricsSynced ?? null,
             chords: meta?.chords ?? null,
-            timeSignature
+            timeSignature,
+            ...(separation ? { separation } : {})
         };
         await set(DB_KEY_META, [...existingMeta, preliminarySaved]);
 
@@ -2813,7 +2833,8 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
                 setupPannerForBuffer(panner, audioBuffer);
                 const gain = audioCtxRef.current.createGain();
 
-                gain.gain.value = 1;
+                // Ganho pela regra central com o mixer de partida (Solo e M), como na restauração.
+                gain.gain.value = channelGain({ id: p.uuid, name: p.name, ...p.mix }, prepared.map((q) => ({ id: q.uuid, name: q.name, ...q.mix })));
 
                 panner.connect(gain);
                 // Fader no barramento do papel (pelo nome do canal, como o Channel abaixo).
@@ -2831,9 +2852,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
                     gainNode: gain,
                     pannerNode: panner,
                     sourceNode: null,
-                    volume: 1,
-                    muted: false,
-                    soloed: false,
+                    volume: p.mix.volume,
+                    muted: p.mix.muted,
+                    soloed: p.mix.soloed,
                     pan: p.pan,
                     bus: p.bus
                 } as Channel;
@@ -2884,7 +2905,8 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             lyrics: meta?.lyrics ?? null,
             lyricsSynced: meta?.lyricsSynced ?? null,
             chords: meta?.chords ?? null,
-            timeSignature
+            timeSignature,
+            ...(separation ? { separation } : {})
         };
 
         // Sobre o repertório mais novo, não o de quando o carregamento começou: a fila da grade
@@ -3034,23 +3056,20 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         return updated;
     };
 
-    // Canal novo numa música do repertório, ativa ou não (o "adicionar canal" da música ativa e o
-    // click gerado da T27): o arquivo fica gravado por stem (não fica na memória viva: o export
-    // relê do disco) e, tocando, o canal entra já pelo addLiveVoice. Devolve o canal, ou null se
-    // a música saiu do repertório no meio.
-    const appendChannelToSong = async (songId: string, file: File): Promise<Channel | null> => {
+    // Canal novo pronto pra entrar numa música: decodificado, ligado no grafo pelo papel (o fader
+    // no barramento dele e o panner pro lado dele; o pan gravado é o knob no centro) e o arquivo
+    // gravado por stem (não fica na memória viva: o export relê do disco). Ainda fora do repertório.
+    const prepareChannel = async (file: File): Promise<Channel | null> => {
         const ctx = audioCtxRef.current;
         const graph = graphRef.current;
         const cuts = routeCutsRef.current;
-        if (!ctx || !graph || !cuts || !playlistRef.current.some((s) => s.id === songId)) return null;
+        if (!ctx || !graph || !cuts) return null;
         const audioBuffer = await ctx.decodeAudioData(await file.arrayBuffer());
 
         const panner = ctx.createStereoPanner();
         setupPannerForBuffer(panner, audioBuffer);
         const gain = ctx.createGain();
 
-        // Regra central: o fader vai pro barramento do papel e o panner pro lado dele; o
-        // pan gravado é o knob no centro.
         const panValue = 0;
         const uuid = crypto.randomUUID();
         const channelName = file.name.replace(/\.[^/.]+$/, '');
@@ -3062,7 +3081,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
 
         await set(fileKey(uuid), file);
 
-        const newChannel: Channel = {
+        return {
             id: uuid,
             name: channelName,
             buffer: audioBuffer,
@@ -3075,18 +3094,33 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             pan: panValue,
             bus: '1/2'
         };
+    };
+
+    // Desfaz o canal pronto que não entrou (a música saiu do repertório no meio): nada dele fica
+    // no grafo nem no disco.
+    const discardPrepared = async (ch: Channel): Promise<void> => {
+        ch.gainNode.disconnect();
+        ch.pannerNode.disconnect();
+        await del(fileKey(ch.id));
+    };
+
+    // Canal novo numa música do repertório, ativa ou não (o "adicionar canal" da música ativa e o
+    // click gerado da T27). Tocando, o canal entra já pelo addLiveVoice. Devolve o canal, ou null se
+    // a música saiu do repertório no meio.
+    const appendChannelToSong = async (songId: string, file: File): Promise<Channel | null> => {
+        if (!playlistRef.current.some((s) => s.id === songId)) return null;
+        const newChannel = await prepareChannel(file);
+        if (!newChannel) return null;
 
         let grew = false;
         // Ordem automática encaixa o canal novo na ordem padrão; manual põe no fim.
         const song = patchSong(songId, (s) => {
-            grew = audioBuffer.duration > s.duration;
-            return { ...s, channels: arrangeChannels([...s.channels, newChannel], s.channelOrder), duration: grew ? audioBuffer.duration : s.duration };
+            grew = newChannel.buffer.duration > s.duration;
+            return { ...s, channels: arrangeChannels([...s.channels, newChannel], s.channelOrder), duration: grew ? newChannel.buffer.duration : s.duration };
         });
         if (!song) {
             // A música saiu do repertório enquanto o arquivo gravava: nada dele fica no grafo nem no disco.
-            gain.disconnect();
-            panner.disconnect();
-            await del(fileKey(uuid));
+            await discardPrepared(newChannel);
             return null;
         }
         if (grew && activeSongIdRef.current === songId) setDuration(song.duration);
@@ -3095,9 +3129,94 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         return newChannel;
     };
 
-    const addChannelToActiveSong = async (file: File) => {
+    // Cala um canal que sai da música: a voz dele para tocando, a cadeia sai do grafo (e o nó de
+    // tom). Palco novo: o pulo marcado com ele é desfeito antes (ou fecha o pouso) e marcado de novo sem ele.
+    const silenceChannel = (ch: Channel) => {
+        const ctx = audioCtxRef.current;
+        const sounding = stageModeRef.current === 'novo' && voicesRef.current.some((v) => v.channelId === ch.id);
+        if (sounding) sectionSchedulerRef.current?.reset();
+        const gone = voicesRef.current.filter((v) => v.channelId === ch.id);
+        if (gone.length > 0) {
+            voicesRef.current = voicesRef.current.filter((v) => v.channelId !== ch.id);
+            if (ctx) stopVoices(gone, ctx.currentTime);
+            for (const v of gone) { v.source.disconnect(); v.env.disconnect(); }
+        }
+        const chain = playChainRef.current;
+        if (chain) playChainRef.current = { ...chain, channels: chain.channels.filter((c) => c.id !== ch.id) };
+        ch.sourceNode = null;
+        releasePitchNode(ch.id);
+        ch.gainNode.disconnect();
+        ch.pannerNode.disconnect();
+        if (sounding) sectionTick();
+    };
+
+    // O arquivo do canal sai do disco: chave por stem (novo) + Map legado (compat).
+    const deleteChannelFile = async (channelId: string) => {
+        await del(fileKey(channelId));
+        const filesDb = await get<Map<string, File>>(DB_KEY_FILES);
+        if (filesDb && filesDb.delete(channelId)) {
+            await set(DB_KEY_FILES, filesDb);
+        }
+    };
+
+    // Click apagado pelo usuário (o dele ou o gerado): o motor não gera outro no lugar, nem na
+    // sessão seguinte, mesmo que ele nunca tenha dado grade (Ruling X1-critical).
+    const isRemovedClick = (ch: Channel) => resolveChannelRole(ch) === 'click' && !isEndlessLoop(ch);
+
+    // Tira um canal de uma música do repertório (ativa ou não), sobre a lista mais nova. Devolve a
+    // música nova, ou null se a música ou o canal não estão mais lá.
+    const dropChannel = async (songId: string, channelId: string): Promise<Song | null> => {
+        const ch = playlistRef.current.find((s) => s.id === songId)?.channels.find((c) => c.id === channelId);
+        if (!ch) return null;
+        silenceChannel(ch);
+        const song = patchSong(songId, (s) => ({
+            ...s,
+            channels: s.channels.filter((c) => c.id !== channelId),
+            ...(isRemovedClick(ch) ? { clickRemoved: true as const } : {}),
+        }));
+        await deleteChannelFile(channelId);
+        return song;
+    };
+
+    // Troca atômica do canal gerado pelo app (Parte 3, painel SEPARAÇÃO): tira da música `songId` todo
+    // canal cujo nome original (`name`, nunca o customName) está em `names` e põe o novo, numa
+    // gravação só (nem os dois, nem nenhum). O novo é preparado antes: se o arquivo não decodifica,
+    // nada muda. Tocando, o novo entra pelo addLiveVoice; Click novo agenda a leitura da grade.
+    // Música que saiu do repertório no meio: devolve null e não grava nada.
+    const replaceAppChannel = async (songId: string, names: readonly string[], file: File): Promise<Channel | null> => {
+        if (!playlistRef.current.some((s) => s.id === songId)) return null;
+        const newChannel = await prepareChannel(file);
+        if (!newChannel) return null;
+        const wanted = new Set(names);
+        let gone: Channel[] = [];
+        let grew = false;
+        const song = patchSong(songId, (s) => {
+            gone = s.channels.filter((c) => wanted.has(c.name));
+            const kept = s.channels.filter((c) => !wanted.has(c.name));
+            grew = newChannel.buffer.duration > s.duration;
+            return {
+                ...s,
+                channels: arrangeChannels([...kept, newChannel], s.channelOrder),
+                duration: grew ? newChannel.buffer.duration : s.duration,
+                ...(gone.some(isRemovedClick) ? { clickRemoved: true as const } : {}),
+            };
+        });
+        if (!song) {
+            await discardPrepared(newChannel);
+            return null;
+        }
+        for (const c of gone) silenceChannel(c);
+        for (const c of gone) await deleteChannelFile(c.id);
+        if (grew && activeSongIdRef.current === songId) setDuration(song.duration);
+        await addLiveVoice(newChannel, song.channels, song.id);
+        if (resolveChannelRole(newChannel) === 'click') scheduleSongGrid(song, { read: true, generate: false });
+        return newChannel;
+    };
+
+    // Devolve o canal criado (o painel SEPARAÇÃO usa), ou null.
+    const addChannelToActiveSong = async (file: File): Promise<Channel | null> => {
         const active = playlist[activeSongIndex];
-        if (!audioCtxRef.current || !masterGainRef.current || !graphRef.current || !routeCutsRef.current || !active) return;
+        if (!audioCtxRef.current || !masterGainRef.current || !graphRef.current || !routeCutsRef.current || !active) return null;
         setIsLoading(true);
 
         try {
@@ -3106,8 +3225,10 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             // grade é lida dele, na fila (com a VS tocando, espera a parada).
             const song = added && resolveChannelRole(added) === 'click' ? playlistRef.current.find((s) => s.id === active.id) : undefined;
             if (song) scheduleSongGrid(song, { read: true, generate: false });
+            return added;
         } catch (e) {
             console.error('Failed to add channel to active song:', e);
+            return null;
         } finally {
             setIsLoading(false);
         }
@@ -3748,45 +3869,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     };
 
     const removeChannel = async (channelId: string) => {
-        const newPlaylist = [...playlist];
-        const song = { ...newPlaylist[activeSongIndex] };
+        const song = playlist[activeSongIndex];
         if (!song) return;
-
-        const ch = song.channels.find(c => c.id === channelId);
-        if (ch) {
-            // Tocando: a voz dele para (a cadeia do canal sai do grafo logo abaixo). Palco novo: o
-            // pulo marcado com ele é desfeito antes (ou fecha o pouso) e marcado de novo sem ele.
-            const ctx = audioCtxRef.current;
-            const sounding = stageModeRef.current === 'novo' && voicesRef.current.some((v) => v.channelId === channelId);
-            if (sounding) sectionSchedulerRef.current?.reset();
-            const gone = voicesRef.current.filter((v) => v.channelId === channelId);
-            if (gone.length > 0) {
-                voicesRef.current = voicesRef.current.filter((v) => v.channelId !== channelId);
-                if (ctx) stopVoices(gone, ctx.currentTime);
-                for (const v of gone) { v.source.disconnect(); v.env.disconnect(); }
-            }
-            const chain = playChainRef.current;
-            if (chain) playChainRef.current = { ...chain, channels: chain.channels.filter((c) => c.id !== channelId) };
-            ch.sourceNode = null;
-            releasePitchNode(ch.id);
-            ch.gainNode.disconnect();
-            ch.pannerNode.disconnect();
-            if (sounding) sectionTick();
-        }
-
-        song.channels = song.channels.filter(c => c.id !== channelId);
-        // Click apagado pelo usuário (o dele ou o gerado): o motor não gera outro no lugar, nem na
-        // sessão seguinte, mesmo que ele nunca tenha dado grade (Ruling X1-critical).
-        if (ch && resolveChannelRole(ch) === 'click' && !isEndlessLoop(ch)) song.clickRemoved = true;
-        newPlaylist[activeSongIndex] = song;
-        updatePlaylistAndSave(newPlaylist);
-
-        // Remove from files DB. Chave por-stem (novo) + Map legado (compat).
-        await del(fileKey(channelId));
-        const filesDb = await get<Map<string, File>>(DB_KEY_FILES);
-        if (filesDb && filesDb.delete(channelId)) {
-            await set(DB_KEY_FILES, filesDb);
-        }
+        await dropChannel(song.id, channelId);
     };
 
     const reorderChannels = (newOrder: Channel[]) => {
@@ -4402,6 +4487,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         heardPosition,
         sectionClockMode,
         addChannelToActiveSong,
+        replaceAppChannel,
 
         // Channel management
         updatePan,

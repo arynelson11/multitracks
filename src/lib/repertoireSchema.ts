@@ -1,4 +1,4 @@
-import type { Channel, ChannelOrderMode, ChannelRole, Marker, Song } from '../types'
+import type { Channel, ChannelOrderMode, ChannelRole, Marker, Song, SeparationLink } from '../types'
 import { normalizeCustomName } from './channelRoles'
 import { sanitizeTimeSignature } from './cloudBpm'
 import { sanitizeGrid } from './songGrid'
@@ -59,6 +59,8 @@ export interface SavedSong {
   // O usuário apagou um canal de Click (Ruling X1-critical): o click gerado não volta no lugar.
   // Só `true`; ausente nos registros de antes. Não vai pro ZIP, como a grade.
   clickRemoved?: true
+  // A separação de onde a música veio (Parte 3). Só a conta usa; não vai pro ZIP (P11).
+  separation?: SeparationLink
   schemaVersion?: number
 }
 
@@ -105,8 +107,23 @@ export function toSavedSong(song: SongLike): SavedSong {
     timeSignature: sanitizeTimeSignature(song.timeSignature) ?? undefined,
     downbeatAssumed: oneAssumedWith(song.grid, song.downbeatAssumed),
     clickRemoved: song.clickRemoved === true ? true : undefined,
+    ...separationField(song.separation),
     schemaVersion: REPERTOIRE_SCHEMA_VERSION,
   }
+}
+
+// Só cria a chave quando há ligação: o registro de música comum fica igual ao de antes.
+function separationField(v: unknown): Pick<SavedSong, 'separation'> {
+  const link = sanitizeSeparationLink(v)
+  return link ? { separation: link } : {}
+}
+
+/** Ligação com a separação que pode entrar no aparelho: id em texto não vazio e data em número finito. */
+export function sanitizeSeparationLink(v: unknown): SeparationLink | undefined {
+  if (!v || typeof v !== 'object') return undefined
+  const { id, createdAt } = v as { id?: unknown; createdAt?: unknown }
+  if (typeof id !== 'string' || id === '' || typeof createdAt !== 'number' || !Number.isFinite(createdAt)) return undefined
+  return { id, createdAt }
 }
 
 // O 1 assumido só vale com grade de click (é dela) e só como `true`.
@@ -145,12 +162,14 @@ export function inferChannelOrder(channels: readonly SavedChannel[]): ChannelOrd
 // v2 → v3: grade e compasso passam pela regra do palco também no registro v3, porque o
 // aparelho guarda o que vier (inclusive NaN). Idempotente.
 export function migrateSavedSong(saved: SavedSong): SavedSong {
-  const { grid, timeSignature, downbeatAssumed, ...rest } = saved
+  const { grid, timeSignature, downbeatAssumed, separation, ...rest } = saved
   const isV1 = typeof saved.schemaVersion !== 'number' || saved.schemaVersion < 2
+  // A ligação com a separação (Parte 3) passa pela mesma regra: estragada, a música abre sem ela.
   return {
     ...rest,
     ...(isV1 ? { channelOrder: saved.channelOrder ?? inferChannelOrder(saved.channels) } : {}),
     ...savedMeter(grid, timeSignature, downbeatAssumed),
+    ...separationField(separation),
     schemaVersion: REPERTOIRE_SCHEMA_VERSION,
   }
 }
@@ -183,6 +202,8 @@ export function migrateManifestSong(entry: SavedSong): SavedSong {
   delete out.grid
   delete out.timeSignature
   delete out.downbeatAssumed
+  // A ligação com a separação vale só na conta de quem separou (P11): nunca entra pelo ZIP.
+  delete out.separation
   return { ...out, ...savedMeter(null, entry.timeSignature, undefined) }
 }
 

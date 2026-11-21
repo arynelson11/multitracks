@@ -715,6 +715,132 @@ describe('música nova', () => {
   })
 })
 
+// Parte 3 (faixa D): a música separada abre no palco. O motor guarda de qual separação ela veio e
+// o mixer salvo na separação, e o painel SEPARAÇÃO troca o click e a voz guia gerados numa troca
+// só (nem os dois, nem nenhum).
+const sepSong: SavedSong = {
+  id: 'sp', name: 'Separada', duration: 200, pitch: 0, originalKey: 'D', lyrics: null, lyricsSynced: null, chords: null,
+  channelOrder: 'auto', schemaVersion: REPERTOIRE_SCHEMA_VERSION,
+  channels: [
+    { id: 'gc', name: 'Click gerado', volume: 1, muted: false, soloed: false, pan: 0, bus: '1/2' },
+    { id: 'dr', name: 'Bateria', volume: 0.8, muted: false, soloed: false, pan: 0, bus: '1/2' },
+  ],
+}
+const metronome = () => new File(['m'], 'Metrônomo.wav', { type: 'audio/wav' })
+
+describe('separação no palco', () => {
+  it('loadFiles com separation grava a ligação e o estado inicial dos canais, e reabrir o app traz de volta', async () => {
+    const first = await openApp()
+    const files = ['Vocais.wav', 'Bateria.wav', 'CLICK.wav'].map((n) => new File([n], n, { type: 'audio/wav' }))
+    const channelStates = [undefined, { volume: 0.5, muted: true, soloed: false, pan: -0.3 }, { volume: 9, muted: false, soloed: false, pan: 4 }]
+    await act(async () => {
+      await first.result.current.loadFiles(files as unknown as FileList, 'Separada', undefined, undefined, null, undefined, {
+        separation: { id: 'sep_1', createdAt: 123 }, channelStates,
+      })
+    })
+    const nova = first.result.current.playlist[0]
+    expect(nova.separation).toEqual({ id: 'sep_1', createdAt: 123 })
+    const byName = (n: string) => nova.channels.find((c) => c.name === n)!
+    expect(byName('Bateria')).toMatchObject({ volume: 0.5, muted: true, soloed: false, pan: -0.3 })
+    expect(byName('Vocais')).toMatchObject({ volume: 1, muted: false, soloed: false, pan: 0 })
+    // Fora da faixa fica no padrão de hoje.
+    expect(byName('CLICK')).toMatchObject({ volume: 1, pan: 0 })
+    // O registro provisório (antes do decode) e o final levam os dois.
+    expect((mem.metaWrites[0] as SavedSong[])[0].separation).toEqual({ id: 'sep_1', createdAt: 123 })
+    expect((mem.metaWrites[0] as SavedSong[])[0].channels.find((c) => c.name === 'Bateria')).toMatchObject({ volume: 0.5, muted: true, pan: -0.3 })
+    expect(saved()[0].separation).toEqual({ id: 'sep_1', createdAt: 123 })
+    expect(saved()[0].channels.find((c) => c.name === 'Bateria')).toMatchObject({ volume: 0.5, muted: true, pan: -0.3 })
+    first.unmount()
+
+    const again = await openApp()
+    const reaberta = again.result.current.playlist[0]
+    expect(reaberta.separation).toEqual({ id: 'sep_1', createdAt: 123 })
+    expect(reaberta.channels.find((c) => c.name === 'Bateria')).toMatchObject({ volume: 0.5, muted: true, pan: -0.3 })
+  })
+
+  it('loadFiles sem separation continua como antes', async () => {
+    const { result } = await openApp()
+    const files = ['GTR_1.wav', 'CLICK.wav'].map((n) => new File([n], n, { type: 'audio/wav' }))
+    await act(async () => { await result.current.loadFiles(files as unknown as FileList, 'Comum') })
+    expect(result.current.playlist[0].separation).toBeUndefined()
+    expect(saved()[0]).not.toHaveProperty('separation')
+  })
+
+  it('replaceAppChannel troca o Click gerado pelo Metrônomo e marca clickRemoved', async () => {
+    seed(sepSong)
+    const { result } = await openApp()
+    let added: { name: string } | null = null
+    await act(async () => { added = await result.current.replaceAppChannel('sp', ['Click gerado', 'Metrônomo'], metronome()) })
+    expect(added).toMatchObject({ name: 'Metrônomo' })
+    expect(song(result, 'sp').channels.map((c) => c.name).sort()).toEqual(['Bateria', 'Metrônomo'])
+    expect(song(result, 'sp').clickRemoved).toBe(true)
+    expect(mem.db.has(stemKey('gc'))).toBe(false)
+    expect(savedSong('sp').channels.map((c) => c.name).sort()).toEqual(['Bateria', 'Metrônomo'])
+    expect(savedSong('sp').clickRemoved).toBe(true)
+    // O canal de fora fica como estava.
+    expect(savedSong('sp').channels.find((c) => c.name === 'Bateria')).toMatchObject({ id: 'dr', volume: 0.8 })
+  })
+
+  it('replaceAppChannel duas vezes deixa um Metrônomo só e o arquivo do antigo sai do disco', async () => {
+    seed(sepSong)
+    const { result } = await openApp()
+    let firstId = ''
+    await act(async () => { firstId = (await result.current.replaceAppChannel('sp', ['Click gerado', 'Metrônomo'], metronome()))!.id })
+    expect(mem.db.has(stemKey(firstId))).toBe(true)
+    let secondId = ''
+    await act(async () => { secondId = (await result.current.replaceAppChannel('sp', ['Click gerado', 'Metrônomo'], metronome()))!.id })
+    const names = song(result, 'sp').channels.map((c) => c.name)
+    expect(names.filter((n) => n === 'Metrônomo')).toHaveLength(1)
+    expect(names).not.toContain('Click gerado')
+    expect(mem.db.has(stemKey(firstId))).toBe(false)
+    expect(mem.db.has(stemKey(secondId))).toBe(true)
+    // Nunca os dois nem nenhum em nenhuma gravação do repertório.
+    for (const w of mem.metaWrites as SavedSong[][]) {
+      const sp = w.find((x) => x.id === 'sp')
+      if (!sp) continue
+      expect(sp.channels.filter((c) => c.name === 'Metrônomo' || c.name === 'Click gerado')).toHaveLength(1)
+    }
+  })
+
+  it('replaceAppChannel da voz guia não mexe no click', async () => {
+    seed(sepSong)
+    const { result } = await openApp()
+    await act(async () => { await result.current.replaceAppChannel('sp', ['Voz Guia'], new File(['g'], 'Voz Guia.wav', { type: 'audio/wav' })) })
+    expect(song(result, 'sp').channels.map((c) => c.name).sort()).toEqual(['Bateria', 'Click gerado', 'Voz Guia'])
+    expect(song(result, 'sp').clickRemoved).toBeUndefined()
+  })
+
+  it('replaceAppChannel numa música que saiu do repertório devolve null e não grava nada', async () => {
+    seed(sepSong)
+    const { result } = await openApp()
+    const before = [...mem.db.keys()].filter((k) => k.includes(':ch:')).sort()
+    resetWrites()
+    let out: unknown = 'x'
+    await act(async () => { out = await result.current.replaceAppChannel('sumiu', ['Click gerado'], metronome()) })
+    expect(out).toBeNull()
+    expect(mem.metaWrites).toHaveLength(0)
+    expect([...mem.db.keys()].filter((k) => k.includes(':ch:')).sort()).toEqual(before)
+  })
+
+  it('addChannelToActiveSong devolve o canal criado', async () => {
+    seed(sepSong)
+    const { result } = await openApp()
+    let added: { name: string; id: string } | null = null
+    await act(async () => { added = await result.current.addChannelToActiveSong(new File(['b'], 'Baixo.wav', { type: 'audio/wav' })) })
+    expect(added).toMatchObject({ name: 'Baixo' })
+    expect(song(result, 'sp').channels.some((c) => c.id === added!.id)).toBe(true)
+  })
+
+  it('removeChannel continua tirando o canal da música ativa, com o arquivo e o clickRemoved', async () => {
+    seed(sepSong)
+    const { result } = await openApp()
+    await act(async () => { await result.current.removeChannel('gc') })
+    expect(song(result, 'sp').channels.map((c) => c.id)).toEqual(['dr'])
+    expect(savedSong('sp').clickRemoved).toBe(true)
+    expect(mem.db.has(stemKey('gc'))).toBe(false)
+  })
+})
+
 describe('ZIP de repertório', () => {
   // Exportar baixa o arquivo por um <a download>; aqui o blob é capturado.
   async function exportZip(r: Engine): Promise<Blob> {

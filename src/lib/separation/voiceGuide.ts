@@ -3,6 +3,7 @@
 // decodificado (e o cache dele) fica com quem chama, pelo `decode`. Usado pelo Separador de
 // reserva e pelo painel SEPARAÇÃO do palco.
 import { channelFamily, resolveChannelRole } from '../channelNames'
+import { APP_GENERATED_NAMES } from '../generatedChannels'
 
 export interface VoiceCue { id: string; time: number; label: string; file: string }
 export interface GuideCueOption { label: string; file: string }
@@ -311,8 +312,8 @@ export function detectVoiceCues(buffer: MonoSource, bpmText: string, now: () => 
   return detectedCues
 }
 
-// Nomes dos canais que o app gera. A T7 junta os três em src/lib/generatedChannels.ts.
-const GENERATED_NAMES = ['Metrônomo', 'Voz Guia', 'Click gerado']
+// Nomes dos canais que o app gera (o click do motor, o do Separador e a voz guia).
+const GENERATED_NAMES = APP_GENERATED_NAMES
 
 /**
  * A faixa que a detecção escuta: a da família Vocal; sem ela, a primeira Normal que não é gerada

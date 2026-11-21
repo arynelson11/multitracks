@@ -4,6 +4,7 @@ import {
   inferChannelOrder,
   migrateManifestSong,
   migrateSavedSong,
+  sanitizeSeparationLink,
   toManifestSong,
   toSavedSong,
   type SavedSong,
@@ -249,5 +250,37 @@ describe('repertório v3: o 1 assumido da grade de click', () => {
     const importado = migrateManifestSong(noAparelho<SavedSong>({ ...manifestAntigo, grid: clickGrid, downbeatAssumed: true }))
     expect('downbeatAssumed' in importado).toBe(false)
     expect('downbeatAssumed' in toManifestSong({ ...migrateSavedSong(v1), grid: clickGrid, downbeatAssumed: true })).toBe(false)
+  })
+})
+
+// Parte 3 (faixa D): a música do palco sabe de qual separação veio (a conta do Livre e as
+// ferramentas do painel SEPARAÇÃO usam). Vale só na conta: não vai pro .zip (P11).
+describe('ligação com a separação', () => {
+  const SONG = { id: 's9', name: 'Separada', duration: 120, channels: [], pitch: 0, originalKey: null } as unknown as SongLike
+
+  it('a ligação com a separação vai e volta no repertório salvo e não vai pro .zip', () => {
+    const saved = toSavedSong({ ...SONG, separation: { id: 'sep_1', createdAt: 1_700_000_000_000 } })
+    expect(saved.separation).toEqual({ id: 'sep_1', createdAt: 1_700_000_000_000 })
+    expect(migrateSavedSong(saved).separation).toEqual({ id: 'sep_1', createdAt: 1_700_000_000_000 })
+    expect(toManifestSong({ ...SONG, separation: { id: 'sep_1', createdAt: 1 } })).not.toHaveProperty('separation')
+    // Um manifest mexido à mão não traz a ligação pro aparelho.
+    const fromZip = migrateManifestSong({ ...(saved as SavedSong), separation: { id: 'sep_1', createdAt: 1 } })
+    expect(fromZip).not.toHaveProperty('separation')
+    // Música comum: nenhuma chave nova.
+    expect(toSavedSong(SONG).separation).toBeUndefined()
+  })
+
+  it('sanitizeSeparationLink descarta id vazio e data quebrada', () => {
+    expect(sanitizeSeparationLink({ id: '', createdAt: 1 })).toBeUndefined()
+    expect(sanitizeSeparationLink({ id: 'a', createdAt: NaN })).toBeUndefined()
+    expect(sanitizeSeparationLink({ id: 'a', createdAt: '5' })).toBeUndefined()
+    expect(sanitizeSeparationLink(null)).toBeUndefined()
+    expect(sanitizeSeparationLink('sep')).toBeUndefined()
+    expect(sanitizeSeparationLink({ id: 'a', createdAt: 5, extra: true })).toEqual({ id: 'a', createdAt: 5 })
+  })
+
+  it('registro salvo com a ligação estragada abre sem ela', () => {
+    const bad = { ...toSavedSong(SONG), separation: { id: 7, createdAt: 'x' } } as unknown as SavedSong
+    expect(migrateSavedSong(bad)).not.toHaveProperty('separation')
   })
 })
