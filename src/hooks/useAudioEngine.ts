@@ -1958,161 +1958,165 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             setOutputPlan(plan);
             Tone.setContext(ctx);
             setIsReady(true);
+            // A restauração aparece desde já, na mesma renderização do motor pronto (sep-1 C1): quem
+            // espera `isReady && !isRestoring` (a separação que chega da tela inicial) nunca carrega
+            // com a leitura do aparelho no meio. Desliga no fim, também sem nada a restaurar ou com erro.
+            setIsRestoring(true);
+            try {
+                // Try Restore. Registro v1 (antes da Parte 1) migra pra v2 aqui; o
+                // primeiro save depois grava v2 com a mesma ordem, nome e papel.
+                const storedMeta = await get<SavedSong[]>(DB_KEY_META);
+                // Primeira restauração desta conta (R-23, Rulings T25-legacy, T25-reset-sempre e
+                // I1-rota): os pans ±1 que o pan automático gravou voltam ao centro, o que o operador
+                // girou à mão fica do lado dele (fixLegacyPans), e tudo já fica gravado, com todas as
+                // músicas (inclusive a que não abrir agora); depois a conta ganha a marca dela. Uma vez
+                // só por conta. Quem separava à mão sem o pan automático passa pra "Click e Guia
+                // separados" do mesmo lado, antes de qualquer canal ligar.
+                const resetLegacyPans = readLocal(LEGACY_PANS_DONE_KEY) !== '1';
+                const migratedMeta = Array.isArray(storedMeta) ? storedMeta.map(migrateSavedSong) : [];
+                const fixed = resetLegacyPans
+                    ? fixLegacyPans(migratedMeta, { outputs: outputsRef.current, autoPan: autoPanRef.current, legacyPanReset: legacyPanResetRef.current }, { moveOutputs: true })
+                    : { songs: migratedMeta, outputs: null };
+                if (fixed.outputs) {
+                    outputsRef.current = fixed.outputs;
+                    applyOutputsNow();
+                    const update = updateSettingRef.current;
+                    if (typeof update === 'function') update('outputs', fixed.outputs);
+                }
+                // O "Click gerado" de antes (v1.4.19) abre mudo quando a saída não tem rota própria pro
+                // Click: em "Tudo junto" ele iria pro PA (Ruling X1-critical).
+                const savedMeta = clickHasOwnRoute(graph.plan, autoPanRef.current) ? fixed.songs : fixed.songs.map(withGeneratedClickMuted);
+                if (savedMeta.some((s, i) => s !== migratedMeta[i])) await set(DB_KEY_META, savedMeta);
+                if (resetLegacyPans) writeLocal(LEGACY_PANS_DONE_KEY, '1');
+                // Map legado (repertórios gravados antes da migração por-stem). Pode
+                // não existir mais; os arquivos novos vivem em chaves por-stem.
+                const savedFiles = await get<Map<string, File>>(DB_KEY_FILES);
 
-            // Try Restore. Registro v1 (antes da Parte 1) migra pra v2 aqui; o
-            // primeiro save depois grava v2 com a mesma ordem, nome e papel.
-            const storedMeta = await get<SavedSong[]>(DB_KEY_META);
-            // Primeira restauração desta conta (R-23, Rulings T25-legacy, T25-reset-sempre e
-            // I1-rota): os pans ±1 que o pan automático gravou voltam ao centro, o que o operador
-            // girou à mão fica do lado dele (fixLegacyPans), e tudo já fica gravado, com todas as
-            // músicas (inclusive a que não abrir agora); depois a conta ganha a marca dela. Uma vez
-            // só por conta. Quem separava à mão sem o pan automático passa pra "Click e Guia
-            // separados" do mesmo lado, antes de qualquer canal ligar.
-            const resetLegacyPans = readLocal(LEGACY_PANS_DONE_KEY) !== '1';
-            const migratedMeta = Array.isArray(storedMeta) ? storedMeta.map(migrateSavedSong) : [];
-            const fixed = resetLegacyPans
-                ? fixLegacyPans(migratedMeta, { outputs: outputsRef.current, autoPan: autoPanRef.current, legacyPanReset: legacyPanResetRef.current }, { moveOutputs: true })
-                : { songs: migratedMeta, outputs: null };
-            if (fixed.outputs) {
-                outputsRef.current = fixed.outputs;
-                applyOutputsNow();
-                const update = updateSettingRef.current;
-                if (typeof update === 'function') update('outputs', fixed.outputs);
-            }
-            // O "Click gerado" de antes (v1.4.19) abre mudo quando a saída não tem rota própria pro
-            // Click: em "Tudo junto" ele iria pro PA (Ruling X1-critical).
-            const savedMeta = clickHasOwnRoute(graph.plan, autoPanRef.current) ? fixed.songs : fixed.songs.map(withGeneratedClickMuted);
-            if (savedMeta.some((s, i) => s !== migratedMeta[i])) await set(DB_KEY_META, savedMeta);
-            if (resetLegacyPans) writeLocal(LEGACY_PANS_DONE_KEY, '1');
-            // Map legado (repertórios gravados antes da migração por-stem). Pode
-            // não existir mais; os arquivos novos vivem em chaves por-stem.
-            const savedFiles = await get<Map<string, File>>(DB_KEY_FILES);
+                if (savedMeta.length > 0) {
+                    const restoreSongs = async (metaSong: SavedSong): Promise<Song | null> => {
+                        const channelPromises = metaSong.channels.map(async (metaCh): Promise<Channel | null> => {
+                            const file = await getChannelFile(metaCh.id, savedFiles, metaCh.srcId, metaCh.srcIdx);
+                            if (!file || !ctx) return null;
 
-            if (savedMeta.length > 0) {
-                setIsRestoring(true);
+                            try {
+                                const arrayBuffer = await file.arrayBuffer();
+                                const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
 
-                const restoreSongs = async (metaSong: SavedSong): Promise<Song | null> => {
-                    const channelPromises = metaSong.channels.map(async (metaCh): Promise<Channel | null> => {
-                        const file = await getChannelFile(metaCh.id, savedFiles, metaCh.srcId, metaCh.srcIdx);
-                        if (!file || !ctx) return null;
+                                const panner = ctx.createStereoPanner();
+                                setupPannerForBuffer(panner, audioBuffer);
+                                const gain = ctx.createGain();
 
-                        try {
-                            const arrayBuffer = await file.arrayBuffer();
-                            const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+                                gain.gain.value = channelGain(metaCh, metaSong.channels);
 
-                            const panner = ctx.createStereoPanner();
-                            setupPannerForBuffer(panner, audioBuffer);
-                            const gain = ctx.createGain();
+                                panner.connect(gain);
+                                connectChannel(cuts, graph, metaCh, panner, gain);
 
-                            gain.gain.value = channelGain(metaCh, metaSong.channels);
+                                // Worklet de tom é lazy: só nasce no play se houver transpose.
+                                // Não guarda o blob (file) na memória viva: já está
+                                // persistido (cache/IDB) e é relido só quando preciso
+                                // (export). Segurar file + buffer dobrava a RAM.
+                                return {
+                                    id: metaCh.id,
+                                    name: metaCh.name,
+                                    customName: metaCh.customName,
+                                    role: metaCh.role,
+                                    buffer: audioBuffer,
+                                    srcId: metaCh.srcId,
+                                    srcIdx: metaCh.srcIdx,
+                                    gainNode: gain,
+                                    pannerNode: panner,
+                                    sourceNode: null,
+                                    volume: metaCh.volume,
+                                    muted: metaCh.muted,
+                                    soloed: metaCh.soloed,
+                                    pan: metaCh.pan,
+                                    bus: metaCh.bus || '1/2'
+                                };
+                            } catch (e) {
+                                console.error(`Failed to restore channel ${metaCh.name}`, e);
+                                return null;
+                            }
+                        });
 
-                            panner.connect(gain);
-                            connectChannel(cuts, graph, metaCh, panner, gain);
+                        const decoded = (await Promise.all(channelPromises)).filter((c): c is Channel => c !== null);
+                        if (decoded.length === 0) return null;
+                        // Ordem automática volta na ordem padrão; manual mantém a do usuário.
+                        const channels = arrangeChannels(decoded, metaSong.channelOrder);
 
-                            // Worklet de tom é lazy: só nasce no play se houver transpose.
-                            // Não guarda o blob (file) na memória viva: já está
-                            // persistido (cache/IDB) e é relido só quando preciso
-                            // (export). Segurar file + buffer dobrava a RAM.
-                            return {
-                                id: metaCh.id,
-                                name: metaCh.name,
-                                customName: metaCh.customName,
-                                role: metaCh.role,
-                                buffer: audioBuffer,
-                                srcId: metaCh.srcId,
-                                srcIdx: metaCh.srcIdx,
-                                gainNode: gain,
-                                pannerNode: panner,
-                                sourceNode: null,
-                                volume: metaCh.volume,
-                                muted: metaCh.muted,
-                                soloed: metaCh.soloed,
-                                pan: metaCh.pan,
-                                bus: metaCh.bus || '1/2'
-                            };
-                        } catch (e) {
-                            console.error(`Failed to restore channel ${metaCh.name}`, e);
-                            return null;
-                        }
-                    });
+                        // O tom é detectado na ordem salva, como antes: a ordem padrão
+                        // põe a bateria na frente, que é ruim pra achar o tom.
+                        const mainCh = pickMainChannel(decoded);
 
-                    const decoded = (await Promise.all(channelPromises)).filter((c): c is Channel => c !== null);
-                    if (decoded.length === 0) return null;
-                    // Ordem automática volta na ordem padrão; manual mantém a do usuário.
-                    const channels = arrangeChannels(decoded, metaSong.channelOrder);
+                        let originalKey = metaSong.originalKey || null;
+                        if (!originalKey && mainCh) originalKey = detectKey(mainCh.buffer);
 
-                    // O tom é detectado na ordem salva, como antes: a ordem padrão
-                    // põe a bateria na frente, que é ruim pra achar o tom.
-                    const mainCh = pickMainChannel(decoded);
+                        const bpm = metaSong.bpm ?? undefined;
 
-                    let originalKey = metaSong.originalKey || null;
-                    if (!originalKey && mainCh) originalKey = detectKey(mainCh.buffer);
+                        // Meta salvo ANTES do decode (loadFiles persiste cedo p/ a
+                        // música sobreviver a um reload no celular) entra com duration
+                        // 0. Aqui já temos os buffers, então recalculamos a partir
+                        // deles em vez de mostrar 00:00.
+                        const restoredDuration = metaSong.duration && metaSong.duration > 0
+                            ? metaSong.duration
+                            : Math.max(0, ...channels.map((c) => c.buffer.duration));
 
-                    const bpm = metaSong.bpm ?? undefined;
+                        // Capas antigas podem ter sido salvas como blob: URL (object
+                        // URL de sessão). Ao reabrir o app esse blob está morto e a
+                        // imagem quebra (no desktop, ERR_FILE_NOT_FOUND). Descarta pra
+                        // cair no placeholder; novas capas já vêm como data: URL durável.
+                        const coverImage = metaSong.coverImage?.startsWith('blob:')
+                            ? undefined
+                            : metaSong.coverImage;
 
-                    // Meta salvo ANTES do decode (loadFiles persiste cedo p/ a
-                    // música sobreviver a um reload no celular) entra com duration
-                    // 0. Aqui já temos os buffers, então recalculamos a partir
-                    // deles em vez de mostrar 00:00.
-                    const restoredDuration = metaSong.duration && metaSong.duration > 0
-                        ? metaSong.duration
-                        : Math.max(0, ...channels.map((c) => c.buffer.duration));
-
-                    // Capas antigas podem ter sido salvas como blob: URL (object
-                    // URL de sessão). Ao reabrir o app esse blob está morto e a
-                    // imagem quebra (no desktop, ERR_FILE_NOT_FOUND). Descarta pra
-                    // cair no placeholder; novas capas já vêm como data: URL durável.
-                    const coverImage = metaSong.coverImage?.startsWith('blob:')
-                        ? undefined
-                        : metaSong.coverImage;
-
-                    return {
-                        id: metaSong.id,
-                        sourceId: metaSong.sourceId,
-                        name: metaSong.name,
-                        coverImage,
-                        channelOrder: metaSong.channelOrder,
-                        duration: restoredDuration,
-                        pitch: metaSong.pitch || 0,
-                        originalKey,
-                        bpm,
-                        channels,
-                        artist: metaSong.artist,
-                        markers: metaSong.markers,
-                        lyrics: metaSong.lyrics ?? null,
-                        lyricsSynced: metaSong.lyricsSynced ?? null,
-                        chords: metaSong.chords ?? null,
-                        // Grade e compasso do v3 (já limpos pelo migrateSavedSong). Sem eles, o
-                        // primeiro save de um v3 reaberto apagaria a grade (achado 67 do preflight);
-                        // a grade salva não é lida de novo ao reabrir.
-                        grid: metaSong.grid,
-                        timeSignature: metaSong.timeSignature,
-                        // O 1 não provado (Ruling T27-campo): o COMPASSO ASSUMIDO volta com a música.
-                        downbeatAssumed: metaSong.downbeatAssumed,
-                        // O usuário apagou o click dela: o click gerado não volta (Ruling X1-critical).
-                        clickRemoved: metaSong.clickRemoved === true ? true : undefined,
-                        // De qual separação ela veio (Parte 3, já limpa pelo migrateSavedSong).
-                        ...(metaSong.separation ? { separation: metaSong.separation } : {})
+                        return {
+                            id: metaSong.id,
+                            sourceId: metaSong.sourceId,
+                            name: metaSong.name,
+                            coverImage,
+                            channelOrder: metaSong.channelOrder,
+                            duration: restoredDuration,
+                            pitch: metaSong.pitch || 0,
+                            originalKey,
+                            bpm,
+                            channels,
+                            artist: metaSong.artist,
+                            markers: metaSong.markers,
+                            lyrics: metaSong.lyrics ?? null,
+                            lyricsSynced: metaSong.lyricsSynced ?? null,
+                            chords: metaSong.chords ?? null,
+                            // Grade e compasso do v3 (já limpos pelo migrateSavedSong). Sem eles, o
+                            // primeiro save de um v3 reaberto apagaria a grade (achado 67 do preflight);
+                            // a grade salva não é lida de novo ao reabrir.
+                            grid: metaSong.grid,
+                            timeSignature: metaSong.timeSignature,
+                            // O 1 não provado (Ruling T27-campo): o COMPASSO ASSUMIDO volta com a música.
+                            downbeatAssumed: metaSong.downbeatAssumed,
+                            // O usuário apagou o click dela: o click gerado não volta (Ruling X1-critical).
+                            clickRemoved: metaSong.clickRemoved === true ? true : undefined,
+                            // De qual separação ela veio (Parte 3, já limpa pelo migrateSavedSong).
+                            ...(metaSong.separation ? { separation: metaSong.separation } : {})
+                        };
                     };
-                };
 
-                const songResults = await Promise.all(savedMeta.map(restoreSongs));
-                const restoredPlaylist = songResults.filter((s): s is Song => s !== null);
+                    const songResults = await Promise.all(savedMeta.map(restoreSongs));
+                    const restoredPlaylist = songResults.filter((s): s is Song => s !== null);
 
-                if (restoredPlaylist.length > 0) {
-                    // A fila da grade (abaixo) já acha as músicas, antes da renderização.
-                    playlistRef.current = restoredPlaylist;
-                    setPlaylist(restoredPlaylist);
-                    setDuration(restoredPlaylist[0].duration);
-                    // Grade (T27): quem ainda não tem grade de click (repertório de antes da Parte 2)
-                    // lê o click na fila, com a VS parada, e chega no culto com a grade pronta
-                    // (a troca de música do AUTO é tocando, e tocando nada é lido). A grade salva
-                    // não é lida de novo; o click gerado só quando a música fica ativa parada.
-                    for (const song of restoredPlaylist) {
-                        gridReadSeenRef.current.add(song.id);
-                        scheduleSongGrid(song, { read: true, generate: false });
+                    if (restoredPlaylist.length > 0) {
+                        // A fila da grade (abaixo) já acha as músicas, antes da renderização.
+                        playlistRef.current = restoredPlaylist;
+                        setPlaylist(restoredPlaylist);
+                        setDuration(restoredPlaylist[0].duration);
+                        // Grade (T27): quem ainda não tem grade de click (repertório de antes da Parte 2)
+                        // lê o click na fila, com a VS parada, e chega no culto com a grade pronta
+                        // (a troca de música do AUTO é tocando, e tocando nada é lido). A grade salva
+                        // não é lida de novo; o click gerado só quando a música fica ativa parada.
+                        for (const song of restoredPlaylist) {
+                            gridReadSeenRef.current.add(song.id);
+                            scheduleSongGrid(song, { read: true, generate: false });
+                        }
                     }
                 }
+            } finally {
                 setIsRestoring(false);
             }
         }

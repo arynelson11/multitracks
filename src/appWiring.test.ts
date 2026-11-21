@@ -283,8 +283,14 @@ describe('separação abrindo no palco', () => {
     expect(app).toMatch(/loadFiles\(dt\.files, meta\.name, undefined, undefined, meta\.originalKey, meta\.bpm, \{/)
     expect(app).toMatch(/separation:\s*meta\.separation/)
     expect(app).toMatch(/channelStates:\s*separationChannelStates\(stemsToOpen\(o\.sep\)\)/)
-    // Espera o motor pronto e o repertório restaurado.
-    expect(app).toMatch(/!o\?\.files \|\| !isReady \|\| isRestoring/)
+    // Espera o motor pronto e o repertório restaurado (a regra em si: stageHandoff.test.ts).
+    expect(app).toMatch(/const step = pendingSeparationStep\(o\.sep\.id, \{ isReady, isRestoring \}, playlist\)\s*if \(step === 'esperar'\) return/)
+  })
+
+  it('sep-1 C1: a separação que o repertório restaurado já tem só pula, sem carregar de novo', () => {
+    expect(app).toMatch(/if \(step === 'pular'\) \{ setSeparationArrival\(\{ sepId: o\.sep\.id, justSeparated: o\.justSeparated \}\); return \}/)
+    // O pular vem antes do carregamento.
+    expect(app.indexOf("if (step === 'pular')")).toBeLessThan(app.indexOf('loadFiles(dt.files'))
   })
 
   it('com a VS tocando a separação espera a parada pra virar a atual', () => {

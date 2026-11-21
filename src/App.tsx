@@ -33,7 +33,7 @@ import { SeparationPanel } from './components/separation/SeparationPanel'
 import { CloudSaveForm } from './components/separation/CloudSaveForm'
 import { CLOUD_COPY, PAUSE_TO_USE, type SeparationTab } from './components/separation/toolsCopy'
 import { StageDialog } from './components/stage/StageDialog'
-import { findSeparationSong, separationChannelStates, separationStageMeta, stemsToOpen, type StageSeparationOpen } from './lib/separation/stageHandoff'
+import { findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen, type StageSeparationOpen } from './lib/separation/stageHandoff'
 import { removalOpensRefusedSong } from './lib/songRemoval'
 import { trackAd } from './lib/productEvents'
 import { LimitGate } from './components/livre/LimitGate'
@@ -734,8 +734,12 @@ export default function App() {
   }
   useEffect(() => {
     const o = pendingSeparation
-    if (!o?.files || !isReady || isRestoring || pendingSeparationSeen.current === o) return
+    if (!o?.files || pendingSeparationSeen.current === o) return
+    // Espera o motor pronto e o repertório salvo restaurado (sep-1 C1); a que já está nele só pula.
+    const step = pendingSeparationStep(o.sep.id, { isReady, isRestoring }, playlist)
+    if (step === 'esperar') return
     pendingSeparationSeen.current = o
+    if (step === 'pular') { setSeparationArrival({ sepId: o.sep.id, justSeparated: o.justSeparated }); return }
     const meta = separationStageMeta(o.sep)
     const dt = new DataTransfer()
     for (const f of o.files) dt.items.add(f)
@@ -743,8 +747,8 @@ export default function App() {
     void loadAsCurrent(() => loadFiles(dt.files, meta.name, undefined, undefined, meta.originalKey, meta.bpm, {
       artist: meta.artist, separation: meta.separation, channelStates: separationChannelStates(stemsToOpen(o.sep)),
     })).then(() => setSeparationArrival({ sepId: o.sep.id, justSeparated: o.justSeparated }))
-    // Roda quando a separação chega ou o motor fica pronto; o loadFiles e o loadAsCurrent são os
-    // da renderização de agora (mudam a cada uma) e o `pendingSeparationSeen` segura a repetição.
+    // Roda quando a separação chega, o motor fica pronto ou a restauração termina; o loadFiles, o
+    // loadAsCurrent e o repertório são os da renderização de agora e o `pendingSeparationSeen` segura a repetição.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingSeparation, isReady, isRestoring])
   useEffect(() => {

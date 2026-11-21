@@ -841,6 +841,71 @@ describe('separação no palco', () => {
   })
 })
 
+// sep-1 C1: a separação que chega com o motor recém-ligado (a partir da tela inicial) só pode
+// carregar com o repertório salvo já restaurado. O App espera `isReady && !isRestoring`: o motor
+// não pode mostrar essa condição com a leitura do aparelho ainda no meio.
+describe('motor recém-ligado: a restauração aparece desde o começo (sep-1 C1)', () => {
+  const oldSong: SavedSong = {
+    id: 'old', name: 'Antiga', duration: 200, pitch: 0, originalKey: 'D', lyrics: null, lyricsSynced: null, chords: null,
+    channelOrder: 'auto', schemaVersion: REPERTOIRE_SCHEMA_VERSION,
+    channels: [{ id: 'old-a', name: 'GTR_1', volume: 1, muted: false, soloed: false, pan: 0, bus: '1/2' }],
+  }
+  // Liga o motor com a leitura do repertório segura; devolve o estado no instante do efeito do App.
+  async function startEngine() {
+    const hook = renderHook(() => useAudioEngine('u1'))
+    let release!: () => void
+    mem.metaGate = new Promise<void>((resolve) => { release = resolve })
+    let init!: Promise<void>
+    await act(async () => { init = hook.result.current.initEngine() })
+    const during = { isReady: hook.result.current.isReady, isRestoring: hook.result.current.isRestoring }
+    return { hook, during, release: () => release(), init: () => init }
+  }
+
+  it('com repertório salvo: isRestoring liga junto com isReady e só desliga com ele na tela', async () => {
+    seed(oldSong)
+    const { hook, during, release, init } = await startEngine()
+    expect(during).toEqual({ isReady: true, isRestoring: true })
+    await act(async () => { release(); await init() })
+    mem.metaGate = null
+    expect(hook.result.current.isRestoring).toBe(false)
+    expect(hook.result.current.playlist.map((s) => s.name)).toEqual(['Antiga'])
+  })
+
+  it('sem nada salvo: isRestoring também cobre a leitura e desliga no fim', async () => {
+    const { hook, during, release, init } = await startEngine()
+    expect(during).toEqual({ isReady: true, isRestoring: true })
+    await act(async () => { release(); await init() })
+    mem.metaGate = null
+    expect(hook.result.current.isRestoring).toBe(false)
+    expect(hook.result.current.playlist).toEqual([])
+  })
+
+  it('leitura do aparelho que falha não deixa isRestoring ligado', async () => {
+    const hook = renderHook(() => useAudioEngine('u1'))
+    mem.metaGate = Promise.reject(new Error('IndexedDB fora do ar (teste)'))
+    mem.metaGate.catch(() => {})
+    let failed: unknown = null
+    await act(async () => { await hook.result.current.initEngine().catch((e) => { failed = e }) })
+    mem.metaGate = null
+    expect(failed).toBeInstanceOf(Error)
+    expect(hook.result.current.isRestoring).toBe(false)
+  })
+
+  it('a separação carregada depois da restauração entra junto da música salva (a lista do aparelho fica com as duas)', async () => {
+    seed(oldSong)
+    const { hook, release, init } = await startEngine()
+    await act(async () => { release(); await init() })
+    mem.metaGate = null
+    expect(hook.result.current.isRestoring).toBe(false)
+    const files = ['Vocais.wav', 'Bateria.wav'].map((n) => new File([n], n, { type: 'audio/wav' }))
+    await act(async () => {
+      await hook.result.current.loadFiles(files as unknown as FileList, 'Separada', undefined, undefined, null, undefined, { separation: { id: 'sep_x', createdAt: 1 } })
+    })
+    expect(hook.result.current.playlist.map((s) => s.name)).toEqual(['Antiga', 'Separada'])
+    expect(saved().map((s) => s.name)).toEqual(['Antiga', 'Separada'])
+  })
+})
+
 describe('ZIP de repertório', () => {
   // Exportar baixa o arquivo por um <a download>; aqui o blob é capturado.
   async function exportZip(r: Engine): Promise<Blob> {

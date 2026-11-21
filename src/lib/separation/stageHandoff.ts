@@ -72,3 +72,17 @@ export async function fetchSeparationFiles(
 export function findSeparationSong(playlist: readonly { separation?: { id: string } }[], sepId: string): number {
   return playlist.findIndex((s) => s.separation?.id === sepId)
 }
+
+/**
+ * A separação que chegou com as faixas (sep-1 C1): espera o motor pronto e o repertório salvo
+ * restaurado; se o repertório restaurado já tem essa separação, só pula pra ela (sem carregar de
+ * novo, P7); senão, carrega.
+ */
+export function pendingSeparationStep(
+  sepId: string,
+  engine: { isReady: boolean; isRestoring: boolean },
+  playlist: readonly { separation?: { id: string } }[],
+): 'esperar' | 'pular' | 'carregar' {
+  if (!engine.isReady || engine.isRestoring) return 'esperar'
+  return findSeparationSong(playlist, sepId) >= 0 ? 'pular' : 'carregar'
+}

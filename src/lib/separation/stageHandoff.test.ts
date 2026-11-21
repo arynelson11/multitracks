@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SavedSeparation } from '../../hooks/useSeparationLibrary'
 import {
-  OPEN_ERROR_TEXT, fetchSeparationFiles, findSeparationSong, separationChannelStates, separationStageMeta, stemsToOpen,
+  OPEN_ERROR_TEXT, fetchSeparationFiles, findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen,
 } from './stageHandoff'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
@@ -82,6 +82,17 @@ describe('stageHandoff', () => {
     expect(findSeparationSong([{}, { separation: { id: 's1' } }], 's1')).toBe(1)
     expect(findSeparationSong([], 's1')).toBe(-1)
     expect(findSeparationSong([{ separation: { id: 's2' } }], 's1')).toBe(-1)
+  })
+
+  // sep-1 C1: a separação que chega com as faixas espera o motor e a restauração do repertório; a
+  // que o repertório restaurado já tem só pula (nada de baixar e carregar de novo, P7).
+  it('pendingSeparationStep espera o motor e a restauração, pula a que já está no repertório e senão carrega', () => {
+    const restored = [{ separation: { id: 'velha' } }, { separation: { id: 'sep_1' } }]
+    expect(pendingSeparationStep('sep_1', { isReady: false, isRestoring: false }, [])).toBe('esperar')
+    expect(pendingSeparationStep('sep_1', { isReady: true, isRestoring: true }, [])).toBe('esperar')
+    expect(pendingSeparationStep('sep_1', { isReady: true, isRestoring: false }, restored)).toBe('pular')
+    expect(pendingSeparationStep('nova', { isReady: true, isRestoring: false }, restored)).toBe('carregar')
+    expect(pendingSeparationStep('nova', { isReady: true, isRestoring: false }, [])).toBe('carregar')
   })
 
   it('OPEN_ERROR_TEXT sem travessão', () => {
