@@ -6,6 +6,7 @@ import '@fontsource-variable/inter'
 import '@fontsource-variable/jetbrains-mono'
 import '../../src/index.css'
 import { AdSlot } from '../../src/components/livre/AdSlot'
+import { HomeScreen } from '../../src/components/home/HomeScreen'
 import { AudioOutputsSection } from '../../src/components/settings/AudioOutputsSection'
 import { StageVersionSetting } from '../../src/components/settings/StageVersionSetting'
 import { RepertoirePanel } from '../../src/components/stage/RepertoirePanel'
@@ -45,26 +46,17 @@ export function ConfigPage() {
 }
 
 /**
- * A tela inicial do App (o retorno do splash em src/App.tsx), com o que mede o anúncio da casa: a
- * coluna centrada com `px-6`, os dois botões (aqui duas caixas sem texto, no mesmo lugar) e,
- * embaixo, o cartão do AdSlot no mesmo `div` do App (`mt-6 w-full max-w-md`). O AdSlot é o de
- * verdade, no Livre e parado; sem Supabase no build, o evento do funil não sai. No celular (390x844)
- * a página roda na moldura do run.mjs (`/moldura`), como as telas das faixas B e C, e o cartão fica
- * com 342 px.
+ * A tela inicial do App (o retorno do splash em src/App.tsx): a `HomeScreen` de verdade, só com
+ * props. Em `inicio-anuncio`, com o `AdSlot` de verdade no `ad` (no Livre e parado, o cartão "O que
+ * o Pro faz por você"), como o App monta; sem Supabase no build, o evento do funil não sai. No
+ * celular (390x844) a página roda na moldura do run.mjs (`/moldura`), como as telas das faixas B e C.
  */
-export function InicioPage() {
+export function InicioPage({ anuncio }: { anuncio: boolean }) {
   return (
-    <div className="bg-[#0a0a0c] font-ps-sans text-ps-bone">
-      <div data-inicio className="flex min-h-dvh w-full flex-col items-center justify-center px-6">
-        <div aria-hidden="true" className="flex w-full max-w-md flex-col gap-4 sm:flex-row">
-          <div className="h-[118px] flex-1 rounded-xl bg-tinta-raised" />
-          <div className="h-[118px] flex-1 rounded-xl bg-tinta-raised" />
-        </div>
-        <div className="mt-6 w-full max-w-md empty:hidden">
-          <AdSlot placement="home" userId="verificador" isLivre quiet onCta={noop} />
-        </div>
-      </div>
-    </div>
+    <HomeScreen
+      restoring={false} onMultitracks={noop} onSeparator={noop}
+      ad={anuncio ? <AdSlot placement="home" userId="verificador" isLivre quiet onCta={noop} /> : undefined}
+    />
   )
 }
 
@@ -188,7 +180,8 @@ const EXPECT: Record<Estado, { sel: string; text?: string; count?: number }> = {
   semtom: { sel: '[data-cell="tom"] [data-define-original]' },
   compasso: { sel: '[data-stage-meter]' },
   config: { sel: '[data-placa="8 canais"] select' },
-  inicio: { sel: '[data-inicio] [data-house-ad="home"]', count: 1 },
+  inicio: { sel: '[data-home-screen] h1', text: 'Playback Studio' },
+  'inicio-anuncio': { sel: '[data-home-screen] [data-home-ad] [data-house-ad="home"]', count: 1 },
   separacao: { sel: '[data-stage-drawer-right] [data-separation-stem]', count: 7 },
   'separacao-voz': { sel: '[data-stage-drawer-right] [data-cue-row]', count: 14 },
   'separacao-bpm': { sel: '[data-stage-drawer-right] button[aria-label="Atrasar o click 10 ms"]' },
@@ -291,8 +284,8 @@ if (estadoB) {
 } else {
   window.addEventListener('error', (e) => reportFatal(name, estado, `erro na página: ${e.message}`))
   createRoot(document.getElementById('root')!).render(
-    <StrictMode>{isTela(estado) ? <TelaPage estado={estado} /> : estado === 'config' ? <ConfigPage /> : estado === 'inicio' ? <InicioPage /> : <Stage estado={estado} />}</StrictMode>,
+    <StrictMode>{isTela(estado) ? <TelaPage estado={estado} /> : estado === 'config' ? <ConfigPage /> : estado === 'inicio' || estado === 'inicio-anuncio' ? <InicioPage anuncio={estado === 'inicio-anuncio'} /> : <Stage estado={estado} />}</StrictMode>,
   )
-  const semPalco = estado === 'config' || estado === 'inicio' || isTela(estado)
+  const semPalco = estado === 'config' || estado === 'inicio' || estado === 'inicio-anuncio' || isTela(estado)
   void verifyPage(name, estado, { prepare: PREPARE[estado], expect: () => expectState(estado), checks: semPalco ? undefined : () => stageStructure(estado) })
 }

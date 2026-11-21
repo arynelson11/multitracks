@@ -298,11 +298,27 @@ describe('ligações do palco novo', () => {
     expect(end).toBeGreaterThan(start)
     const splash = app.slice(start, end)
     expect(splash).toMatch(/<AdSlot[\s\S]*?placement="home"[\s\S]*?userId=\{user\.id\}[\s\S]*?isLivre=\{livre\.isLivre\}[\s\S]*?quiet=\{engineQuiet\}[\s\S]*?onCta=\{\(\) => setIsPricingOpen\(true\)\}/)
-    // Embaixo dos dois botões.
-    expect(splash.indexOf('<AdSlot')).toBeGreaterThan(splash.indexOf('Separação de Faixas'))
+    // Embaixo dos dois botões: o AdSlot vai no `ad` da HomeScreen, que põe ele depois dos dois
+    // (homeScreen.test.tsx confere a ordem na página).
+    expect(splash).toMatch(/<HomeScreen[\s\S]*?ad=\{[\s\S]*?<AdSlot[\s\S]*?placement="home"/)
     expect(splash).toMatch(/<PricingModal isOpen=\{isPricingOpen\} onClose=\{\(\) => setIsPricingOpen\(false\)\} hideOffer=\{hidePlansOffer\} \/>/)
     // Música parada de verdade: nem tocando, nem na pré-contagem.
     expect(app).toMatch(/const engineQuiet = !isPlaying && !isCountingIn\b/)
+  })
+
+  it('a tela inicial é a HomeScreen, com o Multitracks ligando o motor só sem isReady', () => {
+    const start = app.indexOf('// ───────────────── SPLASH')
+    const splash = app.slice(start, app.indexOf('// Editor de marcadores do admin', start))
+    expect(splash).toMatch(/if \(!isReady \|\| forceShowSplash\) \{/)
+    expect(splash).toMatch(/<HomeScreen[\s\S]*?restoring=\{isRestoring\}/)
+    expect(splash).toMatch(/<HomeScreen[\s\S]*?onMultitracks=\{\(\)\s*=>\s*\{\s*setForceShowSplash\(false\);?\s*if\s*\(!isReady\)\s*initEngine\(\)/)
+    expect(splash).toMatch(/onSeparator=\{\(\)\s*=>\s*setIsSeparatorOpen\(true\)\}/)
+    // O visual antigo da tela inicial saiu do App (a vista é a HomeScreen).
+    expect(splash).not.toMatch(/hw-btn|animate-led|text-purple|bg-\[#0a0a0c\]/)
+  })
+
+  it('o AdSlot home continua na tela inicial, no ad da HomeScreen', () => {
+    expect(app).toMatch(/<HomeScreen[\s\S]*?ad=\{[\s\S]*?<AdSlot[\s\S]*?placement="home"/)
   })
 
   it('as Novidades esperam a música parar, com o mesmo engineQuiet do anúncio', () => {

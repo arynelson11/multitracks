@@ -29,7 +29,7 @@ const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/M
  */
 const SIZES = ['1024x740', '1024x768', '1280x760', '1280x800', '1440x900', '1920x1080', '900x740', '810x1080']
 /** Estados da rodada normal: a mesma lista de ESTADOS em fixture.ts. */
-const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config', 'inicio',
+const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config', 'inicio', 'inicio-anuncio',
   // Gaveta SEPARAÇÃO do palco (Parte 3, faixa D), nos 8 tamanhos do palco.
   'separacao', 'separacao-voz', 'separacao-bpm', 'separacao-publicar',
   // Demais telas da Parte 3 (faixa C), a mesma lista de telasEstados.ts.
@@ -42,10 +42,10 @@ const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'reper
  */
 const TELAS_C_CELULAR = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'adminlogin']
 /**
- * Estados do palco e da frente 1b que abrem no celular: a tela inicial com o cartão do anúncio da
- * casa (`inicio`). Sem --only, medem também em 390x844, pela mesma moldura das faixas B e C.
+ * Estados que abrem no celular: a tela inicial (`inicio`) e ela com o cartão do anúncio da casa
+ * (`inicio-anuncio`). Sem --only, medem também em 390x844, pela mesma moldura das faixas B e C.
  */
-const ESTADOS_CELULAR = ['inicio']
+const ESTADOS_CELULAR = ['inicio', 'inicio-anuncio']
 /** Telas da faixa C que só existem no celular (navegador de celular simulado): só em 390x844. */
 const TELAS_C_SO_CELULAR = ['download-celular']
 /**

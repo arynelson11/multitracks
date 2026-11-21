@@ -706,6 +706,14 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 - Frase que informa (a nota do BPM, a da voz guia, a lista vazia de "Minhas separações") em `text-ps-mut`; `text-ps-dim` só pra metadado (data, "+N", tempo da régua). Arquivo que não é de áudio na entrada: `Notice tone="alert"` no topo, pelo `onReject` do `FilePicker`.
 - A separação que não abriu no palco (nenhuma faixa decodificou) mostra a frase num `Toast tone="alert"` no topo (6 s, some sozinho e nunca aparece tocando nem na pré-contagem).
 
+### 2.11 Tela inicial, Biblioteca e Planos (Parte 3, partes 3 a 5, 2026-11-20, não publicado)
+
+> As três telas do começo do app na linguagem do palco, na ordem do spec (seção 10). Cada tela vira uma **vista só de props** (`src/components/home/`, `src/components/library/`, `src/components/pricing/`) e o arquivo de hoje vira o contêiner, com os hooks e a lógica sem mudar de sentido. Regras das faixas C e D valem (nada do dourado `primary`, do ciano `secondary`, do roxo nem de `hw-btn`; `oldLanguageClasses` nos testes). Fatos na entrada de 2026-11-20 "Tela inicial, Biblioteca e Planos" do `PLAYBACK_STUDIO_FATOS.md`.
+
+| Vista | Arquivo | Como ficou |
+|---|---|---|
+| Tela inicial | `src/components/home/HomeScreen.tsx` (textos em `homeCopy.ts`) | Tela cheia `bg-ps-ink` (`data-home-screen`), coluna centrada com 16 px de folga. O PlayMark num `Panel variant="raised"` de 80 px (sem a luz laranja piscando: laranja aceso quer dizer ligado); "Playback *Studio*" como na barra do palco (Inter extranegrito, Studio em `ps-or` itálico, a marca), de 30 a 48 px; "A plataforma do domingo" em `ps-label`. Multitracks e Separação de Faixas são cartões `Panel raised` que são um `<button>` inteiro (anel `line-2`, `line-3` no mouse, foco laranja, 44 px no mínimo), com o ícone em `bone`, o nome em `text-ps-lg` negrito e a linha de baixo em `mut`, quebrando linha; lado a lado a partir de 640 px, um embaixo do outro no celular, até 448 px. Restaurando, o ícone do Multitracks vira o carregando (`aria-busy`). O anúncio da casa (`AdSlot`) entra pelo `ad`, embaixo, na mesma largura; o lugar dele some quando o `AdSlot` não mostra nada (`empty:hidden`). Teste: `homeScreen.test.tsx`. |
+
 ---
 
 ## 3. Moléculas
@@ -824,6 +832,8 @@ Seções completas — múltiplas moléculas trabalhando juntas.
 - **Criar nova senha** (`NewPasswordPage.tsx`, volta do link de recuperar senha), Parte 3 (2026-11-20, [NÃO PUBLICADO]): mesma linguagem numa coluna só (até 384px): Wordmark em cima, `Panel` com o título, os dois `TextField` de senha, o erro num `Notice` âmbar (`role="alert"`), "Salvar nova senha" em `Button primary` (`lg`, o cadeado vira o ícone girando enquanto salva) e "Cancelar e voltar pra tela de entrar" em `Button ghost`. Depois de salvar: a confirmação num `Notice` neutro (`role="status"`) e "Continuar" em `Button primary`.
 
 ### 4.14 Splash screen produto
+> **ESTADO ATUAL (Parte 3, 2026-11-20, não publicado):** a tela inicial passou pra linguagem do palco, na vista `HomeScreen` (seção 2.11). O que segue descreve a de antes.
+
 **Localização:** `App.tsx:336-363`
 - Centro: ícone Music animado boot-glow + H1 dual wordmark + tagline mono
 - Dois botões hardware lado a lado: Multitracks (primary gold) | Separação IA (purple)

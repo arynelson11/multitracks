@@ -4,7 +4,6 @@ const AdminApp = lazy(() => import('./admin/AdminApp'))
 // Mesma função a cada render: o InAppAdmin importa de novo com ela no "Tentar de novo".
 const loadAdminApp = () => import('./admin/AdminApp')
 import { BrandLogo } from './components/BrandLogo'
-import { PlayMark } from './components/brand/PlayMark'
 import { useAudioEngine } from './hooks/useAudioEngine'
 import { usePadSynth } from './hooks/usePadSynth'
 import { useSamplesLibrary, type SampleItem } from './hooks/useSamplesLibrary'
@@ -98,6 +97,7 @@ const TOUR_STEPS: TourStep[] = [
 ]
 import { useAuth } from './hooks/useAuth'
 import { PricingModal } from './components/PricingModal'
+import { HomeScreen } from './components/home/HomeScreen'
 import { supabase, updateSongMarkers as saveMkToCloud, fetchSongs as fetchCloudSongs, updateSong } from './lib/supabase'
 import { LyricsEditor } from './components/LyricsEditor'
 import { Teleprompter } from './components/Teleprompter'
@@ -1573,38 +1573,21 @@ export default function App() {
   }
 
   // ───────────────── SPLASH ─────────────────
+  // A tela inicial na linguagem do palco (Parte 3): só a vista mudou; o App decide quando ela
+  // aparece, liga o motor no Multitracks e abre o Separador como antes.
   if (!isReady || forceShowSplash) {
     return (
-      <div className="min-h-screen bg-[#0a0a0c] text-text-main flex flex-col items-center justify-center px-6">
-        <div className="w-16 h-16 sm:w-20 sm:h-20 mb-8 rounded-2xl flex items-center justify-center border border-tinta-border bg-tinta-raised relative animate-boot">
-          <PlayMark size="lg" className="relative z-10" />
-          <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-laranja animate-led"></div>
-        </div>
-        <h1 className="font-display font-semibold text-3xl sm:text-5xl tracking-tight mb-1 text-center text-white" style={{ letterSpacing: '-0.02em' }}>Playback <span className="text-laranja italic font-medium">Studio</span></h1>
-        <p className="text-text-muted mb-10 text-center text-xs sm:text-sm font-mono tracking-widest uppercase">
-          A plataforma do domingo
-        </p>
-        <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md">
-          <button onClick={() => { setForceShowSplash(false); if (!isReady) initEngine(); }}
-            className="hw-btn flex-1 text-primary hover:text-white px-6 py-5 rounded-xl text-sm uppercase tracking-widest flex flex-col items-center gap-3 cursor-pointer">
-            {isRestoring ? <Loader2 className="animate-spin" size={28} /> : <Play size={28} fill="currentColor" />}
-            <span className="font-black">Multitracks</span>
-            <span className="text-[10px] font-mono text-text-muted normal-case tracking-wide">Motor de playback profissional</span>
-          </button>
-          <button onClick={() => setIsSeparatorOpen(true)}
-            className="hw-btn flex-1 text-purple-400 hover:text-white px-6 py-5 rounded-xl text-sm uppercase tracking-widest flex flex-col items-center gap-3 cursor-pointer border-purple-900/40 hover:border-purple-500/40">
-            <Wand2 size={28} />
-            <span className="font-black">Separação de Faixas</span>
-            <span className="text-[10px] font-mono text-text-muted normal-case tracking-wide">Separar instrumentos com IA</span>
-          </button>
-        </div>
-        {/* Anúncio da casa (Parte 3): só no Livre, com a música parada, uma vez por dia e no máximo um
-            anúncio grande por sessão. "Conhecer o Pro" abre os Planos aqui mesmo. */}
-        <div className="mt-6 w-full max-w-md empty:hidden">
-          <AdSlot placement="home" userId={user.id} isLivre={livre.isLivre} quiet={engineQuiet} onCta={() => setIsPricingOpen(true)} />
-        </div>
+      <>
+        <HomeScreen
+          restoring={isRestoring}
+          onMultitracks={() => { setForceShowSplash(false); if (!isReady) initEngine(); }}
+          onSeparator={() => setIsSeparatorOpen(true)}
+          // Anúncio da casa (Parte 3): só no Livre, com a música parada, uma vez por dia e no máximo um
+          // anúncio grande por sessão. "Conhecer o Pro" abre os Planos aqui mesmo.
+          ad={<AdSlot placement="home" userId={user.id} isLivre={livre.isLivre} quiet={engineQuiet} onCta={() => setIsPricingOpen(true)} />}
+        />
         <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} hideOffer={hidePlansOffer} />
-      </div>
+      </>
     )
   }
 

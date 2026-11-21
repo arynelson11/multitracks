@@ -198,6 +198,9 @@ Confirmado no código (2026-07-08):
 
 Confirmado por prints do produto em produção (2026-07-08):
 
+**Tela inicial, Biblioteca e Planos no layout do palco (Parte 3, partes 3 a 5, NÃO PUBLICADO):**
+- **Tela inicial** (aparece com o motor ainda não pronto e pelo INÍCIO): fundo escuro do palco, o PlayMark num quadro (sem a luz laranja piscando), "Playback *Studio*" com o Studio em laranja itálico, "A plataforma do domingo" em rótulo pequeno e os dois cartões Multitracks ("Motor de playback profissional"; restaurando o repertório, o ícone vira o carregando) e Separação de Faixas ("Separar instrumentos com IA"), lado a lado a partir de 640 px e um embaixo do outro no celular, sem o dourado e o roxo de antes. No Livre, o anúncio da casa continua embaixo dos dois, com as regras de sempre (só parado, uma vez por dia). Nada mudou no que os botões fazem.
+
 **Tela "Separador IA" (entrada):**
 - Título "Separador IA", subtítulo "Motor de separação multi-faixa profissional".
 - Botão "Carregar áudio & iniciar" aceitando **MP3, WAV ou AAC** (sem link).
@@ -221,11 +224,12 @@ Confirmado por prints do produto em produção (2026-07-08):
 ## 6. Histórico de mudanças (para saber o que foi feito sem rodar tudo)
 
 ### 2026-11-20: Tela inicial, Biblioteca e Planos no layout do palco (Parte 3, partes 3 a 5) [NÃO PUBLICADO]
-**Não publicado.** Branch `feat/parte3-inicio-biblioteca-planos` (a partir de `e4dab79`, o Separador no palco já junto com a 1b final e as faixas B e C), plano `docs/superpowers/plans/2026-11-20-parte3-inicio-biblioteca-planos.md`, spec `docs/superpowers/specs/2026-11-19-parte3-telas-e-livre-design.md` (seções 9 e 10). Muda a cara, não o que as telas fazem. O visual fica no DESIGN_SYSTEM 2.10.
+**Não publicado.** Branch `feat/parte3-inicio-biblioteca-planos` (a partir de `e4dab79`, o Separador no palco já junto com a 1b final e as faixas B e C), plano `docs/superpowers/plans/2026-11-20-parte3-inicio-biblioteca-planos.md`, spec `docs/superpowers/specs/2026-11-19-parte3-telas-e-livre-design.md` (seções 9 e 10). Muda a cara, não o que as telas fazem. O visual fica no DESIGN_SYSTEM 2.11 (a 2.10 que o plano pedia já é da Separação).
 
 - **Antes das telas, duas correções da separação no palco (Tarefa 0, re-revisão `review-sep-fix`, Ruling SEP-residuais):**
   - A grade segue o click novo também na corrida (N1): Gerar click, dar PLAY logo em seguida, parar e Gerar click de novo deixava a grade do click que saiu (o pulo no 1, a contagem e a batida do Ao Vivo seguiam o click velho), porque a leitura do click velho ainda estava rodando e engolia o pedido de ler o novo. Agora a leitura de um click que saiu da música no meio é descartada e a do click novo roda em seguida.
   - A gaveta SEPARAÇÃO não perde o trabalho na troca de música: marcar a voz guia tocando e o AUTO (ou a banda, ou um toque) entrar na próxima antes de 800 ms perdia as últimas marcações; agora elas gravam na hora da troca. E a voz guia ainda por gerar volta com a música: de volta a ela, o Gerar canal continua laranja com "Marcações novas ainda não estão no canal." e o fechar da gaveta parado gera o canal, como antes da troca. Voltar pra música antes de essa gravação terminar espera por ela (nada de marcação antiga na tela).
+- **Tela inicial no layout do palco (T1):** vista `HomeScreen` em `src/components/home/` (só props, textos em `homeCopy.ts`); o App continua decidindo quando ela aparece, liga o motor no Multitracks só quando ele ainda não está pronto e abre o Separador como antes. O `AdSlot` da 1b entra no lugar dele (embaixo dos dois cartões) e os Planos continuam abrindo dali. Verificador de layout: `inicio` (sem anúncio) e `inicio-anuncio` (com o cartão do anúncio), nos 8 tamanhos do palco e em 390x844. Nota de lançamento da parte A: "A tela inicial com a cara nova do palco".
 
 ### 2026-11-20: A música separada abre no palco (Parte 3, faixa D, Separador) [NÃO PUBLICADO]
 **Não publicado.** Branch `feat/parte3-separador-palco` (a partir de `6315c31`, a integração da 1b com as faixas B e C), plano `docs/superpowers/plans/2026-11-20-parte3-separador-no-palco.md`, spec `docs/superpowers/specs/2026-11-19-parte3-telas-e-livre-design.md` (seção 8). O visual fica no DESIGN_SYSTEM 2.10.
