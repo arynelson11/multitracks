@@ -1648,7 +1648,7 @@ export default function App() {
                       </button>
                       <label
                         className="w-full text-left px-4 py-2.5 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors">
-                        <span className="text-white text-sm font-medium flex items-center gap-3"><FolderOpen size={16} className="text-primary" />Importar Stems</span>
+                        <span className="text-white text-sm font-medium flex items-center gap-3"><FolderOpen size={16} className="text-primary" />Importar multitracks</span>
                         <ChevronRight size={14} className="text-text-muted" />
                         <input type="file" multiple accept={AUDIO_FILE_ACCEPT} className="hidden"
                           onChange={(e) => { if (e.target.files) { importFilesGated(e.target.files); setIsSetlistMenuOpen(false) } }} />
@@ -1950,7 +1950,7 @@ export default function App() {
                       <ChevronRight size={14} className="text-text-muted" />
                     </button>
                     <label className="w-full text-left px-4 py-2.5 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer">
-                      <span className="text-white text-sm font-medium flex items-center gap-3"><FolderOpen size={16} className="text-primary" />Importar Stems</span>
+                      <span className="text-white text-sm font-medium flex items-center gap-3"><FolderOpen size={16} className="text-primary" />Importar multitracks</span>
                       <ChevronRight size={14} className="text-text-muted" />
                       <input type="file" multiple accept={AUDIO_FILE_ACCEPT} className="hidden"
                         onChange={(e) => { if (e.target.files) { importFilesGated(e.target.files); setIsSetlistMenuOpen(false) } }} />

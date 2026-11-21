@@ -200,6 +200,12 @@ describe('ligações do palco novo', () => {
     expect(app.match(/setPlaybackMode\(/g)).toHaveLength(1)
   })
 
+  // Revisão macro 1b (vocabulário): na tela é "multitracks", nunca "Stems".
+  it('o menu de importar diz Importar multitracks, nos dois lugares', () => {
+    expect(app).not.toMatch(/Importar Stems/i)
+    expect(app.match(/Importar multitracks<\/span>/g)).toHaveLength(2)
+  })
+
   it('o motor recebe autoNext pelo plano', () => { expect(app).toMatch(/autoNext:\s*isAdmin\s*\|\|\s*canUseRepertoire\(userPlan\)/) })
 
   it('a música atual conta pelo stageSongKey', () => { expect(app).toMatch(/noteSongOpened\(stageSongKey\(/) })
