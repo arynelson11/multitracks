@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CloudSong } from '../../lib/supabase'
-import { downloadStateOf, libraryCountText, libraryEmptyText, songsForTab } from './libraryRows'
+import { downloadStateOf, libraryCountText, libraryEmptyText, removeScopeOf, songsForTab } from './libraryRows'
 
 const song = (id: string, over: Partial<CloudSong>) => ({ id, name: id, artist: '', key: 'C', bpm: 120, cover_url: null, markers: null, created_at: '', ...over }) as CloudSong
 
@@ -43,5 +43,18 @@ describe('estado do botão de baixar', () => {
     expect(downloadStateOf({ ...base, online: false, cached: true })).toBe('open')
     expect(downloadStateOf({ ...base, cached: true })).toBe('open')
     expect(downloadStateOf(base)).toBe('import')
+  })
+})
+
+describe('a lixeira (inicio-1 M5, Ruling lixeira-biblioteca)', () => {
+  it('removeScopeOf: da nuvem só o admin com internet; deste aparelho quem tem a música nele; senão nenhuma', () => {
+    expect(removeScopeOf({ online: true, isAdmin: true, cached: false })).toBe('cloud')
+    expect(removeScopeOf({ online: true, isAdmin: true, cached: true })).toBe('cloud')
+    expect(removeScopeOf({ online: true, isAdmin: false, cached: true })).toBe('device')
+    expect(removeScopeOf({ online: false, isAdmin: true, cached: true })).toBe('device')
+    expect(removeScopeOf({ online: false, isAdmin: false, cached: true })).toBe('device')
+    // O dono que não é admin não apaga na nuvem (a RLS não deixa): sem a música no aparelho, nada.
+    expect(removeScopeOf({ online: true, isAdmin: false, cached: false })).toBeNull()
+    expect(removeScopeOf({ online: false, isAdmin: true, cached: false })).toBeNull()
   })
 })

@@ -44,6 +44,19 @@ export function downloadStateOf(i: { downloading: boolean; added: boolean; onlin
   return i.cached ? 'open' : 'import'
 }
 
+/** De onde a lixeira tira a música: da nuvem pra todos, ou só deste aparelho. */
+export type RemoveScope = 'cloud' | 'device'
+
+/**
+ * A lixeira (inicio-1 M5, Ruling lixeira-biblioteca): excluir da nuvem, com o aviso de que some pra
+ * todos, só o admin com internet (a nuvem não deixa mais ninguém apagar); quem tem a música no
+ * aparelho tira só dele. Sem as duas coisas, nada de lixeira.
+ */
+export function removeScopeOf(i: { online: boolean; isAdmin: boolean; cached: boolean }): RemoveScope | null {
+  if (i.online && i.isAdmin) return 'cloud'
+  return i.cached ? 'device' : null
+}
+
 /** Uma música da lista, pronta pra vista. */
 export interface LibraryRow {
   id: string
@@ -58,8 +71,8 @@ export interface LibraryRow {
   progress: string
   /** Editar: com internet, admin ou dono. */
   canEdit: boolean
-  /** Excluir: no cache, ou com internet sendo admin ou dono. */
-  canDelete: boolean
+  /** A lixeira (removeScopeOf): da nuvem, deste aparelho, ou nenhuma. */
+  remove: RemoveScope | null
   deleting: boolean
 }
 
@@ -79,8 +92,8 @@ export const ROW_COPY = {
   bpm: (b: number) => `${b} BPM`,
   cached: 'OFFLINE',
   edit: 'Editar metadados',
-  deleteOnline: 'Excluir da Nuvem',
-  deleteOffline: 'Remover do Cache Local',
+  deleteCloud: 'Excluir da Nuvem',
+  deleteDevice: 'Tirar deste aparelho',
   import: 'IMPORTAR',
   importTitle: 'Baixar e importar da Nuvem',
   open: 'ABRIR',
@@ -108,13 +121,12 @@ export const EDIT_COPY = {
   editError: 'Erro ao editar.',
 } as const
 
-/** A confirmação de excluir: com internet some da nuvem pra todos; sem, só sai do aparelho. Os textos de antes. */
+/** A confirmação da lixeira: o admin exclui da nuvem pra todos (o texto de antes); quem tira deste aparelho tem o texto dele. */
 export const DELETE_COPY = {
-  titleOnline: 'Excluir da nuvem?',
-  titleOffline: 'Remover do aparelho?',
-  body: (name: string, online: boolean) => (online
+  title: (scope: RemoveScope) => (scope === 'cloud' ? 'Excluir da nuvem?' : 'Tirar deste aparelho?'),
+  body: (name: string, scope: RemoveScope) => (scope === 'cloud'
     ? `Excluir "${name}" da Nuvem e do Cache Local? Isso removerá permanentemente para todos os usuários.`
-    : `Remover "${name}" do Cache Offline local?`),
+    : `Tirar "${name}" deste aparelho? Ela continua na Biblioteca na Nuvem e dá pra baixar de novo.`),
   cancel: 'Cancelar',
-  confirm: 'Excluir',
+  confirm: (scope: RemoveScope) => (scope === 'cloud' ? 'Excluir' : 'Tirar'),
 } as const

@@ -33,7 +33,7 @@ export const PLAYER_TRACKS = [
 
 const libRow = (id: string, over: Partial<LibraryRow>): LibraryRow => ({
   id, name: 'Águas Purificadoras', artist: 'Hillsong', coverUrl: null, key: 'D', bpm: 68, cached: false,
-  state: 'import', progress: '', canEdit: false, canDelete: false, deleting: false, ...over,
+  state: 'import', progress: '', canEdit: false, remove: null, deleting: false, ...over,
 })
 
 /**
@@ -44,15 +44,15 @@ const libRow = (id: string, over: Partial<LibraryRow>): LibraryRow => ({
 export const LIBRARY_ROWS: LibraryRow[] = [
   libRow('b1', {
     name: 'Grande é o Senhor (Ao Vivo no Ministério de Louvor com Nome Bem Comprido)', artist: 'Ministério de Louvor Diante do Trono e Convidados Especiais',
-    key: 'G#m', bpm: 72.5, canEdit: true, canDelete: true,
+    key: 'G#m', bpm: 72.5, canEdit: true, remove: 'cloud',
   }),
-  libRow('b2', { name: 'Te Louvarei com Todo o Meu Coração e Toda a Minha Alma Para Sempre', artist: 'Comunidade Evangélica Internacional da Zona Sul', key: 'F#', bpm: 140, cached: true, state: 'open', canDelete: true }),
+  libRow('b2', { name: 'Te Louvarei com Todo o Meu Coração e Toda a Minha Alma Para Sempre', artist: 'Comunidade Evangélica Internacional da Zona Sul', key: 'F#', bpm: 140, cached: true, state: 'open', remove: 'device' }),
   libRow('b3', { name: 'Ousado Amor', artist: 'Isaías Saad', key: 'A#', bpm: 120, state: 'downloading', progress: 'Baixando as multitracks: 1024,8 MB (11 de 12)' }),
   libRow('b4', { name: 'Santo', artist: 'Fernandinho', key: 'C', bpm: 96, state: 'added' }),
   libRow('b5', { name: 'Lugar Secreto (Versão Acústica Estendida com Ministração)', artist: 'Gabriela Rocha', key: 'E', bpm: 64.25, state: 'offline' }),
   libRow('b6', { name: 'Música Sem Nome do Ensaio', artist: null, key: null, bpm: undefined }),
-  libRow('b7', { name: 'Minha Versão de Ensaio (Domingo à Noite)', artist: 'Banda da Igreja', key: 'Bb', bpm: 88, canEdit: true, canDelete: true, cached: true, state: 'open' }),
-  libRow('b8', { name: 'Raridade', artist: 'Anderson Freire', key: 'Ab', bpm: 70, canEdit: true, canDelete: true, deleting: true }),
+  libRow('b7', { name: 'Minha Versão de Ensaio (Domingo à Noite)', artist: 'Banda da Igreja', key: 'Bb', bpm: 88, canEdit: true, remove: 'cloud', cached: true, state: 'open' }),
+  libRow('b8', { name: 'Raridade', artist: 'Anderson Freire', key: 'Ab', bpm: 70, canEdit: true, remove: 'cloud', deleting: true }),
 ]
 
 /** A edição aberta na primeira música, com os valores longos e uma capa escolhida. */

@@ -117,7 +117,7 @@ export function LibraryPage({ estado }: { estado: 'biblioteca' | 'biblioteca-edi
       open onClose={noop} onRefresh={noop} query="Senhor" onQuery={noop} tab="platform" onTab={noop}
       loading={false} countText={libraryCountText(LIBRARY_ROWS.length)} emptyText={null}
       message={editing ? INVALID_BPM_MESSAGE : null}
-      rows={LIBRARY_ROWS} anyDownloading online edit={editing ? LIBRARY_EDIT : null} savingEdit={false}
+      rows={LIBRARY_ROWS} anyDownloading edit={editing ? LIBRARY_EDIT : null} savingEdit={false}
       onImport={noop} onCancel={noop} onEdit={noop} onEditChange={noop} onEditSave={noop} onEditClose={noop}
       onAskDelete={noop} confirmDelete={null} onConfirmDelete={noop} onCancelDelete={noop}
     />

@@ -8,7 +8,7 @@ import { type Marker } from '../types';
 import { INVALID_BPM_MESSAGE, editedBpmColumns, preciseBpm } from '../lib/cloudBpm';
 import type { TimeSignatureType } from '../lib/AudioAnalyzer';
 import { LibraryView } from './library/LibraryView';
-import { EDIT_COPY, downloadStateOf, libraryCountText, libraryEmptyText, songsForTab, type LibraryEdit, type LibraryRow, type LibraryTab } from './library/libraryRows';
+import { EDIT_COPY, downloadStateOf, libraryCountText, libraryEmptyText, removeScopeOf, songsForTab, type LibraryEdit, type LibraryRow, type LibraryTab } from './library/libraryRows';
 
 interface LibraryModalProps {
     isOpen: boolean;
@@ -154,14 +154,16 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
             state: downloadStateOf({ downloading: downloadingSongId === song.id, added: downloadedIds.has(song.id), online: isOnline, cached }),
             progress: downloadingSongId === song.id ? String(downloadProgress || '') : '',
             canEdit: isOnline && mine,
-            canDelete: cached || (isOnline && mine),
+            remove: removeScopeOf({ online: isOnline, isAdmin, cached }),
             deleting: deletingSongId === song.id,
         };
     });
 
     // A edição aberta, com o que está digitado por cima dos valores da música (o que não foi mexido
-    // continua indefinido no editingSong e o salvar usa o da música, como antes).
-    const editedSong = editingSong.id ? songs.find((s) => s.id === editingSong.id) : undefined;
+    // continua indefinido no editingSong e o salvar usa o da música, como antes). Só a da aba (e da
+    // busca) à vista (inicio-1 M4): fora dela a Biblioteca fecha no Esc e a frase fica no alto da
+    // lista; de volta, a edição continua com o que foi digitado.
+    const editedSong = editingSong.id ? shownSongs.find((s) => s.id === editingSong.id) : undefined;
     const edit: LibraryEdit | null = editedSong ? {
         id: editedSong.id,
         name: editingSong.name ?? editedSong.name,
@@ -171,12 +173,17 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
         file: editingSong.file ?? null,
     } : null;
 
+    // A lixeira lê a internet e o aparelho na hora: o título, o texto e o removeSong andam juntos.
     const deleteSong = deleteId ? songs.find((s) => s.id === deleteId) : undefined;
-    const confirmDelete = deleteSong ? { name: deleteSong.name, online: isOnline, busy: deletingSongId === deleteSong.id } : null;
+    const deleteScope = deleteSong ? removeScopeOf({ online: isOnline, isAdmin, cached: cachedSongIds.has(deleteSong.id) }) : null;
+    // A música saiu da lista (a internet caiu e a lista virou a do aparelho) ou a lixeira não vale
+    // mais pra ela: a confirmação fecha de vez e nunca reabre sozinha quando a lista volta (inicio-1 M3).
+    if (deleteId && !deleteScope) setDeleteId(null);
+    const confirmDelete = deleteSong && deleteScope ? { name: deleteSong.name, scope: deleteScope, busy: deletingSongId === deleteSong.id } : null;
     const handleConfirmDelete = async () => {
-        if (!deleteSong) return;
+        if (!deleteSong || !deleteScope) return;
         try {
-            await removeSong(deleteSong.id);
+            await removeSong(deleteSong.id, deleteScope);
         } finally {
             setDeleteId(null);
         }
@@ -197,7 +204,6 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
             message={message}
             rows={rows}
             anyDownloading={!!downloadingSongId}
-            online={isOnline}
             edit={edit}
             savingEdit={isSavingEdit}
             onImport={(id, name) => { void handleDownload(id, name); }}

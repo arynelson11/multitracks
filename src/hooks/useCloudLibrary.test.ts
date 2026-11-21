@@ -106,3 +106,21 @@ describe('Biblioteca: espaço em disco vira frase na janela (inicio-1 M2)', () =
     expect(hook.result.current.downloadingSongId).toBeNull()
   })
 })
+
+describe('Biblioteca: tirar deste aparelho não mexe na nuvem (inicio-1 M5)', () => {
+  it("'device' com internet tira só do aparelho e a música continua na lista; 'cloud' exclui da nuvem", async () => {
+    db.getCachedSongIds.mockResolvedValue(new Set(['s1']))
+    db.removeCachedSong.mockResolvedValue(undefined)
+    db.deleteSongFromCloud.mockResolvedValue(true)
+    const hook = await mounted()
+    await waitFor(() => expect(hook.result.current.cachedSongIds.has('s1')).toBe(true))
+    await act(async () => { expect(await hook.result.current.removeSong('s1', 'device')).toBe(true) })
+    expect(db.deleteSongFromCloud).not.toHaveBeenCalled()
+    expect(db.removeCachedSong).toHaveBeenCalledWith('s1')
+    expect(hook.result.current.cachedSongIds.has('s1')).toBe(false)
+    expect(hook.result.current.songs.map((x) => x.id)).toEqual(['s1'])
+    await act(async () => { await hook.result.current.removeSong('s1', 'cloud') })
+    expect(db.deleteSongFromCloud).toHaveBeenCalledWith('s1')
+    expect(hook.result.current.songs).toEqual([])
+  })
+})

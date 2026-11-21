@@ -14,14 +14,14 @@ afterEach(cleanup)
 
 const row = (over: Partial<LibraryRow> = {}): LibraryRow => ({
   id: 'r1', name: 'Grande é o Senhor', artist: 'Ministério', coverUrl: null, key: 'G', bpm: 72.5, cached: false,
-  state: 'import', progress: '', canEdit: false, canDelete: false, deleting: false, ...over,
+  state: 'import', progress: '', canEdit: false, remove: null, deleting: false, ...over,
 })
 
 function props(over: Partial<LibraryViewProps> = {}): LibraryViewProps {
   return {
     open: true, onClose: vi.fn(), onRefresh: vi.fn(), query: '', onQuery: vi.fn(), tab: 'platform', onTab: vi.fn(),
     loading: false, countText: '1 música exibida', emptyText: null,
-    rows: [row()], anyDownloading: false, online: true, edit: null, savingEdit: false,
+    rows: [row()], anyDownloading: false, edit: null, savingEdit: false,
     onImport: vi.fn(), onCancel: vi.fn(), onEdit: vi.fn(), onEditChange: vi.fn(), onEditSave: vi.fn(), onEditClose: vi.fn(),
     onAskDelete: vi.fn(), confirmDelete: null, onConfirmDelete: vi.fn(), onCancelDelete: vi.fn(),
     ...over,
@@ -137,18 +137,18 @@ describe('Biblioteca: as músicas, editar, excluir e baixar (LibraryView)', () =
   })
 
   it('sem internet: ABRIR no cache, OFFLINE desligado fora dele e sem editar', () => {
-    mount({ online: false, rows: [row({ id: 'a', cached: true, state: 'open', canDelete: true }), row({ id: 'b', state: 'offline' })] })
+    mount({ rows: [row({ id: 'a', cached: true, state: 'open', remove: 'device' }), row({ id: 'b', state: 'offline' })] })
     expect(within(rowEl('a')).getByRole('button', { name: /ABRIR/ })).toBeTruthy()
     const off = within(rowEl('b')).getByRole('button', { name: 'OFFLINE' }) as HTMLButtonElement
     expect(off.disabled).toBe(true)
     expect(off.parentElement!.title).toBe('Conecte-se à internet para baixar esta música')
     expect(screen.queryByRole('button', { name: 'Editar metadados' })).toBeNull()
-    // Sem internet o excluir só tira do aparelho.
-    expect(within(rowEl('a')).getByRole('button', { name: 'Remover do Cache Local' })).toBeTruthy()
+    // Sem internet a lixeira só tira deste aparelho.
+    expect(within(rowEl('a')).getByRole('button', { name: 'Tirar deste aparelho' })).toBeTruthy()
   })
 
   it('Editar abre o formulário com Nome, Artista, BPM, Tom e capa; Salvar chama onEditSave; fechar não salva', () => {
-    const { p, rerenderWith } = mount({ rows: [row({ canEdit: true, canDelete: true })] })
+    const { p, rerenderWith } = mount({ rows: [row({ canEdit: true, remove: 'cloud' })] })
     const editar = within(rowEl('r1')).getByRole('button', { name: 'Editar metadados' })
     expect(editar.title).toBe('Editar metadados')
     fireEvent.click(editar)
@@ -189,20 +189,24 @@ describe('Biblioteca: as músicas, editar, excluir e baixar (LibraryView)', () =
     expect(within(form).getByRole('alert').textContent).toBe('O BPM precisa ser um número.')
   })
 
-  it('excluir sem internet pergunta "Remover do cache offline" e com internet avisa que some pra todos', () => {
-    const { p, rerenderWith } = mount({ rows: [row({ canDelete: true })] })
+  it('excluir da nuvem avisa que some pra todos; tirar deste aparelho tem o texto dele, sem o aviso (inicio-1 M5)', () => {
+    const { p, rerenderWith } = mount({ rows: [row({ remove: 'cloud' })] })
     fireEvent.click(within(rowEl('r1')).getByRole('button', { name: 'Excluir da Nuvem' }))
     expect(p.onAskDelete).toHaveBeenCalledWith('r1')
-    rerenderWith({ confirmDelete: { name: 'Grande é o Senhor', online: true, busy: false } })
-    const online = screen.getByRole('dialog', { name: 'Excluir da nuvem?' })
-    expect(online.textContent).toContain('Excluir "Grande é o Senhor" da Nuvem e do Cache Local? Isso removerá permanentemente para todos os usuários.')
-    rerenderWith({ online: false, confirmDelete: { name: 'Grande é o Senhor', online: false, busy: false } })
-    const offline = screen.getByRole('dialog', { name: 'Remover do aparelho?' })
-    expect(offline.textContent).toContain('Remover "Grande é o Senhor" do Cache Offline local?')
+    rerenderWith({ confirmDelete: { name: 'Grande é o Senhor', scope: 'cloud', busy: false } })
+    const cloud = screen.getByRole('dialog', { name: 'Excluir da nuvem?' })
+    expect(cloud.textContent).toContain('Excluir "Grande é o Senhor" da Nuvem e do Cache Local? Isso removerá permanentemente para todos os usuários.')
+    expect(within(cloud).getByRole('button', { name: 'Excluir' })).toBeTruthy()
+    rerenderWith({ rows: [row({ remove: 'device', cached: true, state: 'open' })], confirmDelete: { name: 'Grande é o Senhor', scope: 'device', busy: false } })
+    expect(within(rowEl('r1')).getByRole('button', { name: 'Tirar deste aparelho' })).toBeTruthy()
+    const device = screen.getByRole('dialog', { name: 'Tirar deste aparelho?' })
+    expect(device.textContent).toContain('Tirar "Grande é o Senhor" deste aparelho? Ela continua na Biblioteca na Nuvem e dá pra baixar de novo.')
+    expect(device.textContent).not.toContain('todos')
+    expect(within(device).getByRole('button', { name: 'Tirar' })).toBeTruthy()
   })
 
   it('a confirmação: Cancelar e Excluir chamam as ações; excluindo, nada fecha; a Biblioteca continua aberta', () => {
-    const { p, rerenderWith } = mount({ rows: [row({ canDelete: true })], confirmDelete: { name: 'Grande é o Senhor', online: true, busy: false } })
+    const { p, rerenderWith } = mount({ rows: [row({ remove: 'cloud' })], confirmDelete: { name: 'Grande é o Senhor', scope: 'cloud', busy: false } })
     const confirm = screen.getByRole('dialog', { name: 'Excluir da nuvem?' })
     fireEvent.click(within(confirm).getByRole('button', { name: 'Cancelar' }))
     expect(p.onCancelDelete).toHaveBeenCalledTimes(1)
@@ -213,7 +217,7 @@ describe('Biblioteca: as músicas, editar, excluir e baixar (LibraryView)', () =
     expect(p.onCancelDelete).toHaveBeenCalledTimes(2)
     expect(p.onClose).not.toHaveBeenCalled()
     expect(screen.getByRole('dialog', { name: 'Biblioteca na Nuvem' })).toBeTruthy()
-    rerenderWith({ confirmDelete: { name: 'Grande é o Senhor', online: true, busy: true }, rows: [row({ canDelete: true, deleting: true })] })
+    rerenderWith({ confirmDelete: { name: 'Grande é o Senhor', scope: 'cloud', busy: true }, rows: [row({ remove: 'cloud', deleting: true })] })
     const busy = screen.getByRole('dialog', { name: 'Excluir da nuvem?' })
     expect((within(busy).getByRole('button', { name: /Excluir/ }) as HTMLButtonElement).disabled).toBe(true)
     expect((within(busy).getByRole('button', { name: 'Fechar' }) as HTMLButtonElement).disabled).toBe(true)
@@ -223,8 +227,8 @@ describe('Biblioteca: as músicas, editar, excluir e baixar (LibraryView)', () =
   it('linguagem do palco e nenhum texto com travessão', () => {
     mount({
       message: 'erro',
-      rows: [row({ id: 'a', canEdit: true, canDelete: true, cached: true, state: 'open' }), row({ id: 'b', state: 'downloading', progress: 'Buscando as multitracks...' }), row({ id: 'c', state: 'added' }), row({ id: 'd', state: 'offline' })],
-      confirmDelete: { name: 'x', online: true, busy: false },
+      rows: [row({ id: 'a', canEdit: true, remove: 'cloud', cached: true, state: 'open' }), row({ id: 'b', state: 'downloading', progress: 'Buscando as multitracks...' }), row({ id: 'c', state: 'added' }), row({ id: 'd', state: 'offline' })],
+      confirmDelete: { name: 'x', scope: 'cloud', busy: false },
     })
     for (const dialog of screen.getAllByRole('dialog')) {
       expect(oldLanguageClasses(dialog)).toEqual([])

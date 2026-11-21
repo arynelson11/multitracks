@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { CloudSong } from '../lib/supabase'
+import { INVALID_BPM_MESSAGE } from '../lib/cloudBpm'
 
 const SONG = {
   id: 'n1', name: 'Fé', artist: 'Ministério', bpm: 72, bpm_exact: null, key: 'G', cover_url: null, is_global: true, user_id: 'outro',
@@ -18,10 +19,11 @@ const RESULT = {
 
 const lib = vi.hoisted(() => ({
   downloadSong: vi.fn(), refreshSongs: vi.fn(), removeSong: vi.fn(), isOnline: true, cached: new Set<string>(), isAdmin: false,
+  songs: null as CloudSong[] | null,
 }))
 vi.mock('../hooks/useCloudLibrary', () => ({
   useCloudLibrary: () => ({
-    songs: [SONG], searchQuery: '', setSearchQuery: () => {}, isLoadingList: false, downloadingSongId: null, downloadProgress: 0,
+    songs: lib.songs ?? [SONG], searchQuery: '', setSearchQuery: () => {}, isLoadingList: false, downloadingSongId: null, downloadProgress: 0,
     deletingSongId: null, downloadSong: lib.downloadSong, refreshSongs: lib.refreshSongs, removeSong: lib.removeSong, cancelDownload: vi.fn(),
     cachedSongIds: lib.cached, isOnline: lib.isOnline,
   }),
@@ -39,6 +41,7 @@ afterEach(() => {
   lib.isOnline = true
   lib.cached = new Set<string>()
   lib.isAdmin = false
+  lib.songs = null
 })
 
 const importButton = () => screen.getByTitle('Baixar e importar da Nuvem')
@@ -134,22 +137,100 @@ describe('biblioteca: baixar e excluir no contêiner (Parte 3, T3)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Excluir da Nuvem' }))
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Excluir da nuvem?' })).getByRole('button', { name: /Excluir/ }))
     await waitFor(() => expect(lib.removeSong).toHaveBeenCalledTimes(1))
-    expect(lib.removeSong).toHaveBeenCalledWith('n1')
+    expect(lib.removeSong).toHaveBeenCalledWith('n1', 'cloud')
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Excluir da nuvem?' })).toBeNull())
   })
 
-  it('excluir sem internet pergunta "Remover do cache offline" e só aparece com a música no cache', () => {
+  it('sem internet, a lixeira só tira deste aparelho e só aparece com a música nele', () => {
     lib.isOnline = false
+    lib.isAdmin = true
     const first = render(<LibraryModal isOpen onClose={() => {}} onDownload={() => {}} />)
-    // Fora do cache e sem internet: nem excluir, nem editar, e o baixar fica OFFLINE desligado.
-    expect(screen.queryByRole('button', { name: 'Remover do Cache Local' })).toBeNull()
+    // Fora do aparelho e sem internet: nem excluir, nem editar (nem o admin), e o baixar fica OFFLINE desligado.
+    expect(screen.queryByRole('button', { name: 'Tirar deste aparelho' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Excluir da Nuvem' })).toBeNull()
     expect((screen.getByRole('button', { name: 'OFFLINE' }) as HTMLButtonElement).disabled).toBe(true)
     first.unmount()
     lib.cached = new Set(['n1'])
     render(<LibraryModal isOpen onClose={() => {}} onDownload={() => {}} />)
     expect(screen.queryByRole('button', { name: 'Editar metadados' })).toBeNull()
     expect(screen.getByTitle('Carregar do cache local offline')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Remover do Cache Local' }))
-    expect(screen.getByRole('dialog', { name: 'Remover do aparelho?' }).textContent).toContain('Remover "Fé" do Cache Offline local?')
+    fireEvent.click(screen.getByRole('button', { name: 'Tirar deste aparelho' }))
+    const dialog = screen.getByRole('dialog', { name: 'Tirar deste aparelho?' })
+    expect(dialog.textContent).toContain('Tirar "Fé" deste aparelho? Ela continua na Biblioteca na Nuvem e dá pra baixar de novo.')
+    expect(dialog.textContent).not.toContain('todos')
+  })
+
+  it('a confirmação de excluir não reabre sozinha quando a música sai da lista e volta (inicio-1 M3)', () => {
+    lib.isAdmin = true
+    const modal = () => <LibraryModal isOpen onClose={() => {}} onDownload={() => {}} />
+    const view = render(modal())
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir da Nuvem' }))
+    expect(screen.getByRole('dialog', { name: 'Excluir da nuvem?' })).toBeTruthy()
+    // A internet cai e a lista vira a do aparelho, sem a música: a confirmação fecha.
+    lib.songs = []
+    view.rerender(modal())
+    expect(screen.queryByRole('dialog', { name: 'Excluir da nuvem?' })).toBeNull()
+    // A internet volta e a lista também: nada reabre por cima, a qualquer hora.
+    lib.songs = [SONG]
+    view.rerender(modal())
+    expect(screen.queryByRole('dialog', { name: /Excluir da nuvem|Tirar deste aparelho/ })).toBeNull()
+    expect(lib.removeSong).not.toHaveBeenCalled()
+  })
+
+  it('a edição de uma aba não trava a outra: Esc fecha a Biblioteca, a frase fica no alto e a edição volta com a aba (inicio-1 M4)', () => {
+    lib.isAdmin = true
+    const onClose = vi.fn()
+    render(<LibraryModal isOpen onClose={onClose} onDownload={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Editar metadados' }))
+    const form = screen.getByRole('group', { name: 'Editar Música' })
+    fireEvent.change(within(form).getByLabelText('BPM'), { target: { value: 'setenta' } })
+    fireEvent.click(within(form).getByRole('button', { name: /Salvar/i }))
+    expect(within(form).getByRole('alert').textContent).toBe(INVALID_BPM_MESSAGE)
+    // Na outra aba a edição não está à vista: a Biblioteca volta a fechar no Esc, e a frase fica no alto.
+    fireEvent.click(screen.getByRole('tab', { name: 'Minhas Músicas' }))
+    expect(screen.queryByRole('group', { name: 'Editar Música' })).toBeNull()
+    expect(screen.getByRole('alert').textContent).toBe(INVALID_BPM_MESSAGE)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+    // De volta à aba, a edição continua com o que foi digitado.
+    fireEvent.click(screen.getByRole('tab', { name: 'Plataforma' }))
+    const again = screen.getByRole('group', { name: 'Editar Música' })
+    expect((within(again).getByLabelText('BPM') as HTMLInputElement).value).toBe('setenta')
+  })
+})
+
+describe('lixeira da Biblioteca: excluir da nuvem só pro admin (inicio-1 M5, Ruling lixeira-biblioteca)', () => {
+  it('quem não é admin e tem a música no aparelho só tira deste aparelho, com texto próprio e sem o aviso de todos', async () => {
+    lib.cached = new Set(['n1'])
+    lib.removeSong.mockResolvedValue(true)
+    render(<LibraryModal isOpen onClose={() => {}} onDownload={() => {}} />)
+    expect(screen.queryByRole('button', { name: 'Excluir da Nuvem' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Tirar deste aparelho' }))
+    const dialog = screen.getByRole('dialog', { name: 'Tirar deste aparelho?' })
+    expect(dialog.textContent).toContain('Tirar "Fé" deste aparelho? Ela continua na Biblioteca na Nuvem e dá pra baixar de novo.')
+    expect(dialog.textContent).not.toContain('todos')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Tirar' }))
+    await waitFor(() => expect(lib.removeSong).toHaveBeenCalledWith('n1', 'device'))
+  })
+
+  it('o dono que não é admin, com a música fora do aparelho, não vê a lixeira; editar continua como antes', () => {
+    lib.songs = [{ ...SONG, user_id: 'livre' } as CloudSong]
+    render(<LibraryModal isOpen onClose={() => {}} onDownload={() => {}} />)
+    expect(screen.queryByRole('button', { name: 'Excluir da Nuvem' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Tirar deste aparelho' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Editar metadados' })).toBeTruthy()
+  })
+
+  it('o admin com internet exclui da nuvem com o aviso de todos, mesmo com a música no aparelho', async () => {
+    lib.isAdmin = true
+    lib.cached = new Set(['n1'])
+    lib.removeSong.mockResolvedValue(true)
+    render(<LibraryModal isOpen onClose={() => {}} onDownload={() => {}} />)
+    expect(screen.queryByRole('button', { name: 'Tirar deste aparelho' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir da Nuvem' }))
+    const dialog = screen.getByRole('dialog', { name: 'Excluir da nuvem?' })
+    expect(dialog.textContent).toContain('Isso removerá permanentemente para todos os usuários.')
+    fireEvent.click(within(dialog).getByRole('button', { name: /Excluir/ }))
+    await waitFor(() => expect(lib.removeSong).toHaveBeenCalledWith('n1', 'cloud'))
   })
 })

@@ -287,15 +287,18 @@ export function useCloudLibrary() {
         }
     }, [songs, isOnline, cachedSongIds]);
 
-    const removeSong = useCallback(async (songId: string) => {
+    // `scope`: 'cloud' exclui da nuvem (com internet, só o admin consegue) e do aparelho; 'device'
+    // tira só deste aparelho, e com internet a música continua na lista (inicio-1 M5).
+    const removeSong = useCallback(async (songId: string, scope: 'cloud' | 'device' = 'cloud') => {
         setDeletingSongId(songId);
-        
+        const fromCloud = isOnline && scope === 'cloud';
+
         let success = false;
-        if (isOnline) {
+        if (fromCloud) {
             // Online: delete from database (if allowed/admin)
             success = await deleteSongFromCloud(songId);
         } else {
-            // Offline: only delete from local cache
+            // Offline, ou só deste aparelho: only delete from local cache
             success = true;
         }
 
@@ -308,10 +311,10 @@ export function useCloudLibrary() {
                 return next;
             });
 
-            // Update current list state
-            if (isOnline) {
+            // Update current list state (só deste aparelho com internet: continua na lista da nuvem)
+            if (fromCloud) {
                 setSongs(prev => prev.filter(s => s.id !== songId));
-            } else {
+            } else if (!isOnline) {
                 const cachedSongs = await getCachedSongsList();
                 setSongs(cachedSongs.filter(s => s.id !== songId));
                 await cacheSongsList(cachedSongs.filter(s => s.id !== songId));

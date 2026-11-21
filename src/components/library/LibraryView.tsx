@@ -9,7 +9,7 @@ import { Icon } from '../stage/icons'
 import { StageDialog } from '../stage/StageDialog'
 import { Button, FilePicker, IconButton, Notice, Panel, SearchField, TabPanel, Tabs, Tag, TextField } from '../ui'
 import { DELETE_COPY, EDIT_COPY, LIBRARY_COPY, ROW_COPY } from './libraryRows'
-import type { LibraryEdit, LibraryRow, LibraryTab } from './libraryRows'
+import type { LibraryEdit, LibraryRow, LibraryTab, RemoveScope } from './libraryRows'
 
 export interface LibraryViewProps {
   open: boolean
@@ -29,8 +29,6 @@ export interface LibraryViewProps {
   rows: readonly LibraryRow[]
   /** Alguma música baixando: o Importar e o Abrir das outras esperam. */
   anyDownloading: boolean
-  /** Com internet (o nome do excluir muda). */
-  online: boolean
   /** A edição aberta (nulo: nenhuma). */
   edit: LibraryEdit | null
   savingEdit: boolean
@@ -41,8 +39,8 @@ export interface LibraryViewProps {
   onEditSave(): void
   onEditClose(): void
   onAskDelete(id: string): void
-  /** A confirmação de excluir aberta (nulo: fechada). */
-  confirmDelete: { name: string; online: boolean; busy: boolean } | null
+  /** A confirmação da lixeira aberta (nulo: fechada): da nuvem ou deste aparelho. */
+  confirmDelete: { name: string; scope: RemoveScope; busy: boolean } | null
   onConfirmDelete(): void
   onCancelDelete(): void
 }
@@ -88,7 +86,7 @@ function DownloadAction({ row, anyDownloading, onImport, onCancel }: { row: Libr
 }
 
 function Row({ row, p }: { row: LibraryRow; p: LibraryViewProps }) {
-  const deleteLabel = p.online ? ROW_COPY.deleteOnline : ROW_COPY.deleteOffline
+  const deleteLabel = row.remove === 'cloud' ? ROW_COPY.deleteCloud : ROW_COPY.deleteDevice
   return (
     <Panel data-library-row={row.id} className="flex flex-wrap items-center gap-3 p-3">
       <div className="flex min-w-0 flex-1 basis-56 items-start gap-3">
@@ -107,7 +105,7 @@ function Row({ row, p }: { row: LibraryRow; p: LibraryViewProps }) {
       </div>
       <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
         {row.canEdit && <IconButton icon={<Icon name="edit" className="size-4" />} aria-label={ROW_COPY.edit} onClick={() => p.onEdit(row.id)} />}
-        {row.canDelete && (
+        {row.remove !== null && (
           <IconButton
             icon={row.deleting ? spinner(16) : <Icon name="trash" className="size-4" />}
             aria-label={deleteLabel}
@@ -206,10 +204,10 @@ export function LibraryView(p: LibraryViewProps) {
           </TabPanel>
         </div>
       </StageDialog>
-      {/* Excluir: uma segunda janela por cima (pilha do palco), com o aviso escrito de antes. */}
+      {/* A lixeira: uma segunda janela por cima (pilha do palco), com o aviso escrito. */}
       <StageDialog
         open={open && confirmDelete !== null}
-        title={confirmDelete?.online === false ? DELETE_COPY.titleOffline : DELETE_COPY.titleOnline}
+        title={DELETE_COPY.title(confirmDelete?.scope ?? 'cloud')}
         onClose={p.onCancelDelete}
         size="sm"
         closeDisabled={confirmDelete?.busy ?? false}
@@ -223,12 +221,12 @@ export function LibraryView(p: LibraryViewProps) {
               disabled={confirmDelete?.busy}
               onClick={p.onConfirmDelete}
             >
-              {DELETE_COPY.confirm}
+              {DELETE_COPY.confirm(confirmDelete?.scope ?? 'cloud')}
             </Button>
           </>
         )}
       >
-        {confirmDelete ? <p className="leading-relaxed text-ps-bone">{DELETE_COPY.body(confirmDelete.name, confirmDelete.online)}</p> : null}
+        {confirmDelete ? <p className="leading-relaxed text-ps-bone">{DELETE_COPY.body(confirmDelete.name, confirmDelete.scope)}</p> : null}
       </StageDialog>
     </>
   )
