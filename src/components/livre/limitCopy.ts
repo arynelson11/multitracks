@@ -29,9 +29,10 @@ export const LIMIT_COPY: Record<LimitScreenKind, { title: string; body: string }
     title: 'Montar o repertório é do Pro',
     body: 'No Pro você monta o culto em ordem e passa de uma música pra outra sem parar o palco.',
   },
+  // Parte 3 (faixa D, P9): no palco, BAIXAR e SALVAR NA NUVEM do painel SEPARAÇÃO abrem esta mesma tela.
   download: {
-    title: 'Baixar as faixas é do Pro',
-    body: 'No Pro cada músico leva a sua faixa pro ensaio, em WAV ou MP3.',
+    title: 'Baixar e salvar na nuvem é do Pro',
+    body: 'No Pro cada músico leva a sua faixa pro ensaio, em WAV ou MP3, e a música fica salva na nuvem pra abrir em qualquer aparelho.',
   },
 }
 

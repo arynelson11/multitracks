@@ -224,6 +224,17 @@ describe('useStageSeparation', () => {
     expect(alertSpy).not.toHaveBeenCalled()
   })
 
+  it('as ações não mudam entre renders (o palco memorizado não renderiza à toa)', async () => {
+    const hook = await mount()
+    const first = hook.result.current
+    hook.rerender({ br: { ...bridge } })
+    expect(hook.result.current.setBpm).toBe(first.setBpm)
+    expect(hook.result.current.generateClick).toBe(first.generateClick)
+    expect(hook.result.current.addCue).toBe(first.addCue)
+    // Sem nada mudar no estado, o objeto inteiro também é o mesmo.
+    expect(hook.result.current).toBe(first)
+  })
+
   it('detectBpm mede no canal de bateria do palco e mostra a frase', async () => {
     const hook = await mount()
     await act(async () => { await run(hook.result.current.detectBpm()) })

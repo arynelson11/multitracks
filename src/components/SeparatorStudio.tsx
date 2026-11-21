@@ -19,7 +19,8 @@ import { GuidedTour, type TourStep } from './GuidedTour';
 import { SeparatorHome } from './separator/SeparatorHome';
 import { SeparatorOptions } from './separator/SeparatorOptions';
 import { SeparatorProgress } from './separator/SeparatorProgress';
-import { PLAYER_COPY, PROGRESS_COPY, laneFloor } from './separator/separatorCopy';
+import { OPENING_COPY, PLAYER_COPY, PROGRESS_COPY, laneFloor } from './separator/separatorCopy';
+import { OPEN_ERROR_TEXT, fetchSeparationFiles, stemsToOpen, type StageSeparationOpen } from '../lib/separation/stageHandoff';
 import { SeparatorPlayerBar } from './separator/SeparatorPlayerBar';
 import { SeparatorTrackStrip } from './separator/SeparatorTrackStrip';
 import { FAMILY_COLOR } from '../lib/channelNames';
@@ -38,10 +39,21 @@ const SEP_TOUR_STEPS: TourStep[] = [
   { title: 'Separação de Faixas', body: 'Aqui você transforma qualquer música em faixas separadas (vocal, bateria, baixo, instrumentos) usando IA. Veja como funciona.' },
   { target: 'sep-upload', title: '1. Carregue a música', body: 'Envie um arquivo de áudio (MP3, WAV ou AAC) do seu computador. É o ponto de partida.' },
   { title: '2. Escolha as faixas', body: 'Depois de enviar, você escolhe em quantas faixas separar: 2, 4 ou 6. Quanto mais faixas, mais controle sobre cada instrumento.' },
-  { title: '3. Processa na nuvem', body: 'A IA separa a música em alguns minutos. Você pode ouvir cada faixa isolada, ajustar e gerar um click no tempo da música.' },
-  { target: 'sep-biblioteca', title: '4. Suas separações', body: 'Tudo que você separa fica salvo aqui. Reabra quando quiser ou mande direto pro seu repertório do Multitracks.' },
+  { title: '3. Processa na nuvem', body: 'A IA separa a música em alguns minutos e ela abre no palco, com as ferramentas no painel SEPARAÇÃO.' },
+  { target: 'sep-biblioteca', title: '4. Suas separações', body: 'Tudo que você separa fica salvo aqui. Reabra quando quiser: a música abre no palco.' },
   { title: 'Pronto!', body: 'Carregue uma música e experimente. A separação é o atalho pra ter qualquer faixa pronta pro domingo.' },
 ]
+
+// Onde o palco novo não aparece (tela menor ou palco Antigo), a separação abre no player do
+// Separador, com as mesmas ferramentas: os passos 3 e 4 dizem isso. Os alvos são os mesmos.
+const SEP_TOUR_STEPS_RESERVA: TourStep[] = SEP_TOUR_STEPS.map((step) =>
+  step.title === '3. Processa na nuvem'
+    ? { ...step, body: 'A IA separa a música em alguns minutos. Você pode ouvir cada faixa isolada, ajustar e gerar um click no tempo da música.' }
+    : step.title === '4. Suas separações'
+      ? { ...step, body: 'Tudo que você separa fica salvo aqui. Reabra quando quiser ou mande direto pro seu repertório do Multitracks.' }
+      : step)
+
+const NO_STAGE_SEPARATIONS: ReadonlySet<string> = new Set()
 
 // Densidade da waveform: px por segundo de áudio. Timeline nunca comprime —
 // se a duração * esse valor passar da largura visível, a área rola de lado.
@@ -59,6 +71,12 @@ interface SeparatorStudioProps {
   // O motor do palco (App), que continua tocando com o Separador aberto. A tela de limite e o
   // anúncio do Livre só aparecem com ele parado também (Ruling R12).
   stageBusy: EngineBusy;
+  // Parte 3 (faixa D): com o palco novo na tela (chave Novo e janela larga), a separação abre no
+  // palco; sem ele, aqui no player de reserva, como antes.
+  stageAvailable?: boolean;
+  // As separações que já estão no repertório do palco (não são baixadas de novo, P7).
+  stageSeparationIds?: ReadonlySet<string>;
+  onOpenOnStage?: (o: StageSeparationOpen) => void;
 }
 
 let globalAudioCtx: AudioContext | null = null;
@@ -69,7 +87,7 @@ function getAudioContext() {
   return globalAudioCtx;
 }
 
-export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stageBusy }) => {
+export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stageBusy, stageAvailable = false, stageSeparationIds = NO_STAGE_SEPARATIONS, onOpenOnStage }) => {
   const { user, userPlan, isAdmin, loading: authLoading } = useAuth();
   const canDownload = isAdmin || canDownloadStems(userPlan);
   const canVoiceGuide = isAdmin || canUseVoiceGuide(userPlan);
@@ -92,6 +110,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   // Frase de erro na entrada do Separador (hoje era um alert): falha no processamento.
   const [homeNotice, setHomeNotice] = useState<string | null>(null);
+  // Abrindo no palco: as faixas baixando (com o progresso) ou a frase do erro com Tentar de novo.
+  const [opening, setOpening] = useState<{ sep: SavedSeparation; justSeparated: boolean; done: number; total: number; error: string | null } | null>(null);
+  const openAbortRef = useRef<AbortController | null>(null);
   // Frases de erro das três ferramentas, mostradas dentro da janela delas (hoje eram alert).
   const [bpmMessage, setBpmMessage] = useState<string | null>(null);
   const [voiceMessage, setVoiceMessage] = useState<string | null>(null);
@@ -472,6 +493,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   // canais locais (blob: voz guia/metrônomo) são efêmeros e o usuário regera ao reabrir.
   const persistSeparation = useCallback(() => {
     if (!activeSepId) return Promise.resolve();
+    // Nunca grava a separação sem faixas (a que foi pro palco nunca é sobrescrita ao fechar).
+    if (!stems.some(s => /^https?:\/\//.test(s.url))) return Promise.resolve();
     return saveSeparation({
       id: activeSepId,
       createdAt: activeSepCreatedAt ?? undefined,
@@ -727,33 +750,46 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
         return s;
       }));
 
-      setStemStates(initialStates);
-      setStems(persistedStems);
       setProgress(100);
-      setIsProcessing(false);
-      // Acabou de separar: é do mês, então abre sem contar nas 3 do Livre, e chama o anúncio do fim.
-      setJustSeparated(true);
 
-      // ── Auto-save to local library ──
+      // ── Auto-save to local library ── (antes de mostrar: com o registro, a música pode abrir no palco)
+      const createdAt = Date.now();
+      const songTitle = audioFile.name.replace(/\.[^/.]+$/, '');
+      const savedStems = persistedStems.map(s => ({ id: s.id, name: s.name, url: s.url, color: s.color }));
+      let sepId: string | null = null;
       try {
-        const createdAt = Date.now();
-        const sepId = await saveSeparation({
-          songName: audioFile.name.replace(/\.[^/.]+$/, ''),
+        sepId = await saveSeparation({
+          songName: songTitle,
           artist: '',
           bpm: bpm,
           songKey: songKey,
           createdAt,
-          stems: persistedStems.map(s => ({ id: s.id, name: s.name, url: s.url, color: s.color })),
+          stems: savedStems,
           voiceCues: [],
         });
-        if (sepId) {
-          setActiveSepId(sepId);
-          setActiveSepCreatedAt(createdAt);
-          setLibSaveToast(true);
-          setTimeout(() => setLibSaveToast(false), 2500);
-        }
       } catch (e) {
         console.warn('[SepLib] Auto-save failed:', e);
+      }
+
+      // Palco novo na tela e a separação salva: ela abre no palco (com o anúncio do fim no painel).
+      // Sem registro (P10) ou sem o palco novo, o player daqui, como antes.
+      if (sepId && stageAvailable) {
+        setIsProcessing(false);
+        setFile(null);
+        void openOnStage({ id: sepId, songName: songTitle, artist: '', bpm, songKey, stems: savedStems, voiceCues: [], createdAt }, true);
+        return;
+      }
+
+      setStemStates(initialStates);
+      setStems(persistedStems);
+      setIsProcessing(false);
+      // Acabou de separar: é do mês, então abre sem contar nas 3 do Livre, e chama o anúncio do fim.
+      setJustSeparated(true);
+      if (sepId) {
+        setActiveSepId(sepId);
+        setActiveSepCreatedAt(createdAt);
+        setLibSaveToast(true);
+        setTimeout(() => setLibSaveToast(false), 2500);
       }
 
     } catch (e: any) {
@@ -1124,6 +1160,35 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     nudgeTimerRef.current = window.setTimeout(() => { void addMetronomeChannel(next); }, 600);
   };
 
+  // ── Abrir no palco ──
+  // Baixa as faixas uma por vez (tudo ou nada) e entrega ao App, que fecha o Separador e carrega no
+  // palco. "Voltar" cancela; erro mostra a frase com Tentar de novo, e nada vai pro App.
+  const openOnStage = async (sep: SavedSeparation, justSeparatedNow: boolean) => {
+    openAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    openAbortRef.current = ctrl;
+    const toOpen = stemsToOpen(sep);
+    setOpening({ sep, justSeparated: justSeparatedNow, done: 0, total: toOpen.length, error: null });
+    try {
+      const files = await fetchSeparationFiles(toOpen, {
+        signal: ctrl.signal,
+        onProgress: (done, total) => { if (!ctrl.signal.aborted) setOpening(o => (o && o.sep.id === sep.id ? { ...o, done, total } : o)); },
+      });
+      if (ctrl.signal.aborted) return;
+      onOpenOnStage?.({ sep, files, justSeparated: justSeparatedNow });
+    } catch (e) {
+      if (ctrl.signal.aborted) return;
+      console.error('[Separador] abrir no palco falhou', e);
+      setOpening(o => (o && o.sep.id === sep.id ? { ...o, error: OPEN_ERROR_TEXT } : o));
+    }
+  };
+  const cancelOpening = () => {
+    openAbortRef.current?.abort();
+    openAbortRef.current = null;
+    setOpening(null);
+  };
+  useEffect(() => () => { openAbortRef.current?.abort(); }, []);
+
   // ── Load a saved separation ──
   const handleOpenSavedSeparation = (sep: SavedSeparation) => {
     // Livre: a separação do mês sempre abre, sem contar. A de um mês anterior conta nas 3 músicas
@@ -1134,6 +1199,12 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
       livre.noteSongOpened(separationKey(sep.id), { freeThisMonth });
     }
     setHomeNotice(null);
+    // Palco novo na tela: a separação abre no palco. Já no repertório, só pula pra ela (P7).
+    if (stageAvailable) {
+      if (stageSeparationIds.has(sep.id)) { onOpenOnStage?.({ sep, files: null, justSeparated: false }); return; }
+      void openOnStage(sep, false);
+      return;
+    }
     const stemsArray: StemData[] = sep.stems.map(s => ({ id: s.id, name: s.name, url: s.url, color: s.color }));
     const initialStates: Record<string, { muted: boolean; soloed: boolean; volume: number; pan: number }> = {};
     sep.stems.forEach(s => {
@@ -1161,6 +1232,20 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   const limitGate = livre.limit !== null && (
     <LimitGate key={livre.limit} kind={livre.limit} onClose={livre.closeLimit} onSeePlans={() => { livre.closeLimit(); setIsPricingOpen(true) }} />
   );
+
+  if (opening) {
+    return (
+      <>
+        <SeparatorProgress
+          title={OPENING_COPY.title} subtitle={opening.sep.songName || 'Sem título'}
+          percent={opening.total > 0 ? (opening.done / opening.total) * 100 : 0}
+          detail={OPENING_COPY.detail(opening.done, opening.total)} error={opening.error}
+          onRetry={() => { void openOnStage(opening.sep, opening.justSeparated); }} onBack={cancelOpening}
+        />
+        {limitGate}
+      </>
+    );
+  }
 
   if (separationStep === 'options' && pendingFile) {
     // As opções vêm do plano (plans.ts): o Livre separa em 4 ou 6 faixas, quem paga em 2, 4 ou 6.
@@ -1193,7 +1278,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
           onPickFile={handleFileUpload}
           onOpen={handleOpenSavedSeparation}
           onDelete={(id) => { void deleteSeparation(id); }}
-          tour={showSepTour ? <GuidedTour steps={SEP_TOUR_STEPS} onClose={closeSepTour} /> : null}
+          tour={showSepTour ? <GuidedTour steps={stageAvailable ? SEP_TOUR_STEPS : SEP_TOUR_STEPS_RESERVA} onClose={closeSepTour} /> : null}
           notice={homeNotice ? <Notice tone="alert" role="alert">{homeNotice}</Notice> : null}
         />
         {/* "Ver os planos" da tela de limite também abre os Planos aqui. */}

@@ -89,3 +89,17 @@ describe('saveSeparation guarda a data da separação', () => {
     expect(saved('sep_nova')?.createdAt).toBe(NOW)
   })
 })
+
+// Parte 3 (faixa D): o App usa a biblioteca só pra ler e gravar a separação da música do palco.
+describe('loadList: false', () => {
+  it('não busca a lista ao montar, mas lê e grava pelo id com a data da separação', async () => {
+    idb.store.clear()
+    idb.store.set('sep__index', [{ ...BASE, id: 'sep_oct', createdAt: OCT }])
+    const hook = renderHook(() => useSeparationLibrary({ loadList: false }))
+    await act(async () => { await Promise.resolve() })
+    expect(hook.result.current.separations).toEqual([])
+    expect((await hook.result.current.getSeparation('sep_oct'))?.createdAt).toBe(OCT)
+    await act(async () => { await hook.result.current.saveSeparation({ ...BASE, id: 'sep_oct', createdAt: OCT, bpm: '90' }) })
+    expect(saved('sep_oct')).toMatchObject({ bpm: '90', createdAt: OCT })
+  })
+})

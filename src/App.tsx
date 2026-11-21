@@ -23,9 +23,17 @@ import { DownloadPage } from './components/DownloadPage'
 import { GuidedTour, type TourStep } from './components/GuidedTour'
 import { WhatsNewModal } from './components/WhatsNewModal'
 import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/SectionBar'
-import { canUseSections, maxLiveDevices, planTier, canBandControlSections, canUseGeneratedClick, canChangeKey, canUsePlatformCatalog, canUseCloudPads, canUseRepertoire } from './lib/plans'
+import { canUseSections, maxLiveDevices, planTier, canBandControlSections, canUseGeneratedClick, canChangeKey, canUsePlatformCatalog, canUseCloudPads, canUseRepertoire, canDownloadStems, canUseBpmDetection } from './lib/plans'
 import { useLivre } from './hooks/useLivre'
-import { stageSongKey } from './lib/livreRules'
+import { stageSongKey, stageSongOpenOpts } from './lib/livreRules'
+import { uploadToR2 } from './lib/r2'
+import { useSeparationLibrary } from './hooks/useSeparationLibrary'
+import { useStageSeparation } from './hooks/useStageSeparation'
+import { SeparationPanel } from './components/separation/SeparationPanel'
+import { CloudSaveForm } from './components/separation/CloudSaveForm'
+import { CLOUD_COPY, PAUSE_TO_USE, type SeparationTab } from './components/separation/toolsCopy'
+import { StageDialog } from './components/stage/StageDialog'
+import { findSeparationSong, separationChannelStates, separationStageMeta, stemsToOpen, type StageSeparationOpen } from './lib/separation/stageHandoff'
 import { removalOpensRefusedSong } from './lib/songRemoval'
 import { trackAd } from './lib/productEvents'
 import { LimitGate } from './components/livre/LimitGate'
@@ -278,14 +286,25 @@ const STAGE_MENU_ITEM =
 
 interface StageTracksMenuProps {
   hasSong: boolean; onClose(): void; onImport(files: FileList): void; onMetronome(): void; onRename(): void; onCover(file: File): void
+  // Parte 3 (faixa D): com a música atual vinda de uma separação, "Separação" abre a gaveta; "Minhas
+  // separações" abre o Separador.
+  hasSeparation: boolean; onSeparation(): void; onMySeparations(): void
 }
 
 /** Menu FAIXAS do palco novo: o de hoje (importar e metrônomo infinito) mais renomear e trocar a capa da música. */
-function StageTracksMenu({ hasSong, onClose, onImport, onMetronome, onRename, onCover }: StageTracksMenuProps) {
+function StageTracksMenu({ hasSong, onClose, onImport, onMetronome, onRename, onCover, hasSeparation, onSeparation, onMySeparations }: StageTracksMenuProps) {
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div role="menu" aria-label="Faixas" className="relative z-50 mt-1 flex w-max max-w-[calc(100vw-32px)] flex-col gap-0.5 rounded-ps-xl bg-ps-pop p-1.5 font-ps-sans shadow-ps-pop inset-ring inset-ring-ps-line-2">
+        {hasSeparation && (
+          <button type="button" role="menuitem" className={STAGE_MENU_ITEM} onClick={() => { onClose(); onSeparation() }}>
+            <Wand2 size={16} className="shrink-0 text-ps-mut" /> Separação
+          </button>
+        )}
+        <button type="button" role="menuitem" className={STAGE_MENU_ITEM} onClick={() => { onClose(); onMySeparations() }}>
+          <FolderOpen size={16} className="shrink-0 text-ps-mut" /> Minhas separações
+        </button>
         <label className={STAGE_MENU_ITEM}>
           <Upload size={16} className="shrink-0 text-ps-mut" /> Importar do dispositivo
           <input type="file" multiple accept={AUDIO_FILE_ACCEPT} className="hidden"
@@ -384,7 +403,7 @@ export default function App() {
     changePitch, setOriginalKey, currentMarker, setSongMarkers, setSongLyrics, syncSongMeta,
     playbackMode, setPlaybackMode,
     activeLoop, pendingJump, armLoop, cancelLoop, armJump, cancelJump,
-    addChannelToActiveSong,
+    addChannelToActiveSong, replaceAppChannel,
     updatePan, removeChannel, reorderChannels, setChannelMeta,
     precountEnabled, precountBeats, isCountingIn,
     setPrecountBeats, togglePrecountEnabled, playWithPrecount, cancelCountIn,
@@ -624,7 +643,7 @@ export default function App() {
   // Quem paga e o admin passam direto, como antes.
   const jumpToSongGated = useCallback((i: number) => {
     const song = playlist[i]
-    if (livre.isLivre && song && !livre.canOpenSong(stageSongKey(song))) { livre.requestLimit('stage-songs'); return }
+    if (livre.isLivre && song && !livre.canOpenSong(stageSongKey(song), stageSongOpenOpts(song, new Date()))) { livre.requestLimit('stage-songs'); return }
     jumpToSong(i)
   }, [livre, playlist, jumpToSong])
   // Sem próxima música não há o que pedir: o motor também não faz nada.
@@ -650,7 +669,7 @@ export default function App() {
   // contada), não sobra música atual: a VS fica parada sem música e a tela das músicas do mês é
   // pedida (aparece só parada). Aceita, ela vira a atual e conta pelo efeito da contagem.
   const removeSongGated = (id: string) => {
-    if (livre.isLivre && removalOpensRefusedSong(playlist, activeSongIndex, id, (s) => livre.canOpenSong(stageSongKey(s)))) {
+    if (livre.isLivre && removalOpensRefusedSong(playlist, activeSongIndex, id, (s) => livre.canOpenSong(stageSongKey(s), stageSongOpenOpts(s, new Date())))) {
       removeSongFromPlaylist(id, { openNext: false })
       livre.requestLimit('stage-songs')
       return
@@ -685,10 +704,77 @@ export default function App() {
   // A música que vira a atual conta nas do mês no Livre (D3), por qualquer caminho, inclusive a
   // restaurada ao abrir o app (essa nunca é barrada). A mesma música de novo no mês não conta outra
   // vez. Quem barra é quem troca de música (as versões acima); aqui só se grava.
+  // A música que veio de uma separação conta pela chave do Separador (sep:<id>) e, a do mês, não conta.
   const { noteSongOpened } = livre
   useEffect(() => {
-    if (activeSong) noteSongOpened(stageSongKey(activeSong))
+    if (activeSong) noteSongOpened(stageSongKey(activeSong), stageSongOpenOpts(activeSong, new Date()))
   }, [activeSong, noteSongOpened])
+
+  // ── A música separada abre no palco (Parte 3, faixa D) ──
+  // O Separador entrega a separação (com as faixas baixadas, ou só a id quando ela já está no
+  // repertório, P7) e fecha. O palco carrega pelo loadFiles com a ligação e o mixer salvo; ela vira
+  // a atual com a VS parada (P8) e a gaveta SEPARAÇÃO abre na aba FAIXAS. O anúncio do fim (Livre)
+  // fica ligado enquanto a separação que acabou de terminar for a atual.
+  const separationLib = useSeparationLibrary({ loadList: false })
+  const [pendingSeparation, setPendingSeparation] = useState<StageSeparationOpen | null>(null)
+  const pendingSeparationSeen = useRef<StageSeparationOpen | null>(null)
+  const [separationArrival, setSeparationArrival] = useState<{ sepId: string; justSeparated: boolean } | null>(null)
+  const separationArrivalSeen = useRef<{ sepId: string; justSeparated: boolean } | null>(null)
+  const [isSeparationPanelOpen, setIsSeparationPanelOpen] = useState(false)
+  const [separationTab, setSeparationTab] = useState<SeparationTab>('faixas')
+  const [justSeparatedId, setJustSeparatedId] = useState<string | null>(null)
+  const [isCloudSaveOpen, setIsCloudSaveOpen] = useState(false)
+  const stageSeparationIds = useMemo(() => new Set(playlist.flatMap((s) => (s.separation ? [s.separation.id] : []))), [playlist])
+  const openSeparationOnStage = (o: StageSeparationOpen) => {
+    setIsSeparatorOpen(false)
+    setForceShowSplash(false)
+    if (!isReady) void initEngine()
+    if (o.files) setPendingSeparation(o)
+    else setSeparationArrival({ sepId: o.sep.id, justSeparated: o.justSeparated })
+  }
+  useEffect(() => {
+    const o = pendingSeparation
+    if (!o?.files || !isReady || isRestoring || pendingSeparationSeen.current === o) return
+    pendingSeparationSeen.current = o
+    const meta = separationStageMeta(o.sep)
+    const dt = new DataTransfer()
+    for (const f of o.files) dt.items.add(f)
+    // Pelo mesmo carregamento do Livre (Ruling R9); a chegada abaixo faz a música virar a atual em todos os planos.
+    void loadAsCurrent(() => loadFiles(dt.files, meta.name, undefined, undefined, meta.originalKey, meta.bpm, {
+      artist: meta.artist, separation: meta.separation, channelStates: separationChannelStates(stemsToOpen(o.sep)),
+    })).then(() => setSeparationArrival({ sepId: o.sep.id, justSeparated: o.justSeparated }))
+  }, [pendingSeparation, isReady, isRestoring, loadFiles, loadAsCurrent])
+  useEffect(() => {
+    const arrival = separationArrival
+    if (!arrival || separationArrivalSeen.current === arrival) return
+    const i = findSeparationSong(playlist, arrival.sepId)
+    // Com a VS tocando ou na pré-contagem, a separação espera a parada pra virar a atual (P8).
+    const quietNow = !isPlaying && !isCountingIn
+    if (i < 0 || !quietNow) return
+    separationArrivalSeen.current = arrival
+    if (i !== activeSongIndex) jumpToSongGated(i)
+    setSeparationTab('faixas')
+    setIsSeparationPanelOpen(true)
+    setJustSeparatedId(arrival.justSeparated ? arrival.sepId : null)
+  }, [separationArrival, playlist, isPlaying, isCountingIn, activeSongIndex, jumpToSongGated])
+
+  // As ferramentas do painel sobre a música atual, pela troca atômica do motor.
+  const stageSeparation = useStageSeparation({
+    song: activeSong ?? null,
+    busy: isPlaying || isCountingIn,
+    heardPosition,
+    replaceChannel: (names, file) => (activeSong ? replaceAppChannel(activeSong.id, names, file) : Promise.resolve(null)),
+  }, {
+    userId: user?.id ?? null,
+    isAdmin,
+    getSeparation: separationLib.getSeparation,
+    saveSeparation: separationLib.saveSeparation,
+    upload: async (path, file) => { const r = await uploadToR2('stems', path, file); return !r.error && r.url ? r.url : null },
+  })
+  const canDownloadSeparation = isAdmin || canDownloadStems(userPlan)
+  const canCloudSaveSeparation = isAdmin || planTier(userPlan) !== 'free'
+  const separationPanelShown = isSeparationPanelOpen && !!activeSong?.separation
+  const showSeparationAd = livre.isLivre && justSeparatedId !== null && activeSong?.separation?.id === justSeparatedId
 
   // Ações do palco (StageActions + a da casca) e o que os painéis do App chamam. A casca recebe
   // um objeto estável (delegateTo) que chama a versão da renderização mais nova.
@@ -809,6 +895,9 @@ export default function App() {
     tracksClose: () => setIsTracksMenuOpen(false),
     tracksImport: (files: FileList) => importFilesGated(files),
     tracksMetronome: () => promptEndlessMetronome(),
+    // Separação (Parte 3): a gaveta da música atual e o Separador com "Minhas separações".
+    tracksSeparation: () => { setSeparationTab('faixas'); setIsSeparationPanelOpen(true) },
+    tracksMySeparations: () => setIsSeparatorOpen(true),
     tracksRename: () => {
       if (activeSong) setTextPrompt({ kind: 'rename', songId: activeSong.id, name: activeSong.name })
     },
@@ -855,6 +944,8 @@ export default function App() {
     return { id: s.id, name: title, artist, coverImage: s.coverImage, originalKey: s.originalKey ?? null, bpm: s.bpm ?? null }
   }), [playlist])
   const hasActiveSong = !!activeSong
+  const hasSongSeparation = !!activeSong?.separation
+  const activeSongName = activeSong?.name ?? ''
   const stageSlots = useMemo(() => ({
     repertoire: (
       <RepertoirePanel
@@ -867,9 +958,24 @@ export default function App() {
       <StageTracksMenu
         hasSong={hasActiveSong} onClose={stageCalls.tracksClose} onImport={stageCalls.tracksImport} onMetronome={stageCalls.tracksMetronome}
         onRename={stageCalls.tracksRename} onCover={stageCalls.tracksCover}
+        hasSeparation={hasSongSeparation} onSeparation={stageCalls.tracksSeparation} onMySeparations={stageCalls.tracksMySeparations}
       />
     ) : null,
-  }), [stageCalls, isRepertoireOpen, repertoireSongs, activeSongIndex, isPlaying, repertoireNotes, isTracksMenuOpen, hasActiveSong])
+    // Gaveta SEPARAÇÃO (Parte 3): só aberta e só com a música atual vinda de uma separação.
+    separation: separationPanelShown ? (
+      <SeparationPanel
+        open songName={activeSongName} tab={separationTab} onTab={setSeparationTab} s={stageSeparation} playing={isPlaying || isCountingIn}
+        canDownload={canDownloadSeparation} canCloudSave={canCloudSaveSeparation}
+        onLimit={() => livre.requestLimit('download')} onOpenCloudSave={() => setIsCloudSaveOpen(true)} onMySeparations={() => setIsSeparatorOpen(true)}
+        ad={showSeparationAd ? (
+          <AdSlot placement="separation-done" userId={user?.id ?? null} isLivre={livre.isLivre} quiet={!isPlaying && !isCountingIn} justSeparated onCta={() => setIsPricingOpen(true)} />
+        ) : null}
+        onClose={() => { void stageSeparation.flushPending(); setIsSeparationPanelOpen(false) }}
+      />
+    ) : null,
+  }), [stageCalls, isRepertoireOpen, repertoireSongs, activeSongIndex, isPlaying, repertoireNotes, isTracksMenuOpen, hasActiveSong,
+    hasSongSeparation, separationPanelShown, activeSongName, separationTab, stageSeparation, isCountingIn, canDownloadSeparation,
+    canCloudSaveSeparation, livre, showSeparationAd, user?.id])
 
   // Ao Vivo do host com o palco novo: seções pelas spans (os índices batem com os comandos da
   // banda), o pulo armado e a contagem do pulo agendado (o número muda quando o bipe ouvido muda).
@@ -1403,7 +1509,10 @@ export default function App() {
   // O motor do palco segue tocando com o Separador aberto: ele recebe o estado pra a tela de limite
   // e o anúncio do Livre esperarem a música parar (Ruling R12).
   if (isSeparatorOpen) {
-    return <SeparatorStudio onClose={() => setIsSeparatorOpen(false)} stageBusy={{ isPlaying, isCountingIn }} />
+    return (
+      <SeparatorStudio onClose={() => setIsSeparatorOpen(false)} stageBusy={{ isPlaying, isCountingIn }}
+        stageAvailable={wantNewStage} stageSeparationIds={stageSeparationIds} onOpenOnStage={openSeparationOnStage} />
+    )
   }
 
   // ───────────────── ADMIN (dentro do app, só pra quem tem o papel) ─────────────────
@@ -1566,7 +1675,7 @@ export default function App() {
   // Modais do App abertos (e a tela de limite do Livre): o teclado do palco fica desligado (Espaço não toca por baixo deles).
   const stageKeyboard = !isSettingsOpen && !isLibraryOpen && !isAdminOpen && !isMetronomeModalOpen && !isLyricsEditorOpen
     && !isPadSetsModalOpen && !isPricingOpen && !isLiveModeOpen && !showTour && !showWhatsNew && !isPadSoundsOpen && textPrompt === null
-    && livre.limit === null
+    && livre.limit === null && !isCloudSaveOpen
 
   // ───────────────── MAIN APP ─────────────────
   return (
@@ -1583,6 +1692,23 @@ export default function App() {
             slots={stageAdminTools ? { ...stageSlots, adminTools: stageAdminTools } : stageSlots}
             keyboardEnabled={stageKeyboard} outputWarning={outputPlan.warning}
           />
+          {/* Publicar na nuvem pela gaveta SEPARAÇÃO: não fecha publicando. */}
+          <StageDialog
+            open={isCloudSaveOpen && !!stageSeparation.sep} title={CLOUD_COPY.title}
+            onClose={() => { if (stageSeparation.busy !== 'cloud') setIsCloudSaveOpen(false) }}
+            dismissible={stageSeparation.busy !== 'cloud'} closeDisabled={stageSeparation.busy === 'cloud'}
+          >
+            <CloudSaveForm
+              channels={stageSeparation.sep?.stems.length ?? 0} name={stageSeparation.cloud.name} artist={stageSeparation.cloud.artist}
+              bpm={stageSeparation.cloud.bpm} songKey={stageSeparation.cloud.songKey} cover={stageSeparation.cloud.cover}
+              showBpm={isAdmin || canUseBpmDetection(userPlan)} isAdmin={isAdmin} publishGlobal={stageSeparation.cloud.publishGlobal}
+              saving={stageSeparation.busy === 'cloud' || stageSeparation.cloud.progress >= 100} progress={stageSeparation.cloud.progress}
+              status={stageSeparation.cloud.status} message={stageSeparation.message}
+              disabledReason={isPlaying || isCountingIn ? PAUSE_TO_USE : null}
+              onChange={stageSeparation.setCloud}
+              onSubmit={() => { void stageSeparation.publish().then((ok) => { if (ok) window.setTimeout(() => { setIsCloudSaveOpen(false); stageSeparation.setCloud({ progress: 0, status: '' }) }, 2000) }) }}
+            />
+          </StageDialog>
         </>
       ) : (
       <>

@@ -82,7 +82,10 @@ function separationToRow(sep: SavedSeparation, userId: string) {
 
 // ─── Hook ──────────────────────────────────────────────────────────────────
 
-export function useSeparationLibrary() {
+// `loadList: false` (Parte 3, o App): só ler e gravar uma separação pelo id, sem buscar a lista
+// inteira ao abrir o app (o palco lê a separação da música atual quando precisa).
+export function useSeparationLibrary(opts: { loadList?: boolean } = {}) {
+  const loadList = opts.loadList ?? true;
   const { user, userPlan, isAdmin } = useAuth();
   const userId = user?.id ?? null;
   // Biblioteca em nuvem é recurso pago. O Livre usa só o local (IndexedDB).
@@ -165,8 +168,8 @@ export function useSeparationLibrary() {
   }, [useCloud, userId, loadFromCloud, loadFromLocal, migrateLocalToCloud]);
 
   useEffect(() => {
-    refreshLibrary();
-  }, [refreshLibrary]);
+    if (loadList) refreshLibrary();
+  }, [refreshLibrary, loadList]);
 
   // A data da separação nunca muda ao gravar de novo: no Livre ela decide se a separação é do mês
   // (abre de graça) ou de um mês anterior (conta nas 3). Quem grava passa a data que tem

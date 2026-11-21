@@ -3,7 +3,7 @@
 // separação da música ativa e grava de volta em "Minhas separações" sempre com a data dela (P15).
 // Com a música tocando ou na pré-contagem, nada que gera, analisa ou baixa roda (P3); marcar a voz
 // guia funciona sempre, no tempo ouvido. Erro vira `message` (a frase de hoje), nunca alert.
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Channel, Song } from '../types'
 import type { SavedSeparation, SavedStem } from './useSeparationLibrary'
 import type { BeatGrid } from '../lib/beatGrid'
@@ -105,6 +105,10 @@ function decoder(): BaseAudioContext {
   }
   return decodeCtx
 }
+
+type StageSeparationActions = Omit<StageSeparation,
+  'sep' | 'loading' | 'bpm' | 'meter' | 'accentBeat1' | 'downbeatShift' | 'clickSel' | 'offsetMs' | 'hasClick' | 'gridInfo'
+  | 'cues' | 'cuesPending' | 'hasGuide' | 'guideTab' | 'format' | 'downloadingId' | 'cloud' | 'busy' | 'message'>
 
 export function useStageSeparation(bridge: StageSeparationBridge, store: StageSeparationStore): StageSeparation {
   const song = bridge.song
@@ -264,23 +268,9 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
   const sortCues = (cues: VoiceCue[]) => [...cues].sort((a, b) => a.time - b.time)
   const editCues = (f: (cues: VoiceCue[]) => VoiceCue[]) => patch((w) => ({ cues: sortCues(f(w.cues)), cuesPending: true, dirty: true }))
 
-  const channels = song?.channels ?? []
-  const sep = cur?.sep ?? null
-
-  return {
-    sep,
-    loading: !!key && !cur,
-    bpm: cur?.bpm ?? '120', meter: cur?.meter ?? '4/4', accentBeat1: cur?.accentBeat1 ?? true, downbeatShift: cur?.downbeatShift ?? 0,
-    clickSel, offsetMs: cur?.offsetMs ?? 0,
-    hasClick: channels.some((c) => c.name === SEPARATOR_CLICK_NAME),
-    gridInfo: cur?.gridInfo ?? '',
-    cues: cur?.cues ?? [], cuesPending: cur?.cuesPending ?? false,
-    hasGuide: channels.some((c) => c.name === VOICE_GUIDE_NAME) || !!sep?.stems.some((s) => s.id === 'voiceguide'),
-    guideTab: cur?.guideTab ?? 'sections',
-    format, downloadingId,
-    cloud: cur?.cloud ?? EMPTY_CLOUD,
-    busy, message,
-
+  // Ações estáveis (só leem a versão mais nova pelos refs): o palco (memo) não renderiza de novo
+  // só porque o App renderizou.
+  const [actions] = useState<StageSeparationActions>(() => ({
     setBpm: (t) => patch({ bpm: t, dirty: true }),
     blurBpm: () => patch((w) => ({ bpm: normalizeBpm(w.bpm), dirty: true })),
     stepBpm: (d) => patch((w) => ({ bpm: stepBpmText(w.bpm, d), dirty: true })),
@@ -322,7 +312,7 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
       const next = nudgeOffset(w.offsetMs, deltaMs)
       patch({ offsetMs: next })
       live.current = { ...live.current, cur: { ...w, offsetMs: next } }
-      if (!channels.some((c) => c.name === SEPARATOR_CLICK_NAME)) return
+      if (!(live.current.bridge.song?.channels ?? []).some((c) => c.name === SEPARATOR_CLICK_NAME)) return
       if (nudgeTimer.current) window.clearTimeout(nudgeTimer.current)
       nudgeTimer.current = window.setTimeout(() => { void generateClick(next) }, SYNC_DELAY_MS)
     },
@@ -410,6 +400,27 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
       if (!w?.sep) return
       if (w.cuesPending && w.cues.length > 0 && stopped()) { await commitVoiceGuide(); return }
       if (w.dirty) await persist()
-    },
-  }
+    }
+  }))
+
+  const songChannels = song?.channels
+  const sep = cur?.sep ?? null
+  return useMemo<StageSeparation>(() => {
+    const channels = songChannels ?? []
+    return {
+      sep,
+      loading: !!key && !cur,
+      bpm: cur?.bpm ?? '120', meter: cur?.meter ?? '4/4', accentBeat1: cur?.accentBeat1 ?? true, downbeatShift: cur?.downbeatShift ?? 0,
+      clickSel, offsetMs: cur?.offsetMs ?? 0,
+      hasClick: channels.some((c) => c.name === SEPARATOR_CLICK_NAME),
+      gridInfo: cur?.gridInfo ?? '',
+      cues: cur?.cues ?? [], cuesPending: cur?.cuesPending ?? false,
+      hasGuide: channels.some((c) => c.name === VOICE_GUIDE_NAME) || !!sep?.stems.some((s) => s.id === 'voiceguide'),
+      guideTab: cur?.guideTab ?? 'sections',
+      format, downloadingId,
+      cloud: cur?.cloud ?? EMPTY_CLOUD,
+      busy, message,
+      ...actions,
+    }
+  }, [sep, cur, key, clickSel, songChannels, format, downloadingId, busy, message, actions])
 }

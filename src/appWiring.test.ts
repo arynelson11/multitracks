@@ -155,7 +155,7 @@ describe('ligações do palco novo', () => {
     expect(app).toMatch(/removeSongGated\(song\.id\)/)
     // removeSongFromPlaylist( só dentro do removeSongGated: a troca recusada e a normal.
     expect(app.match(/\bremoveSongFromPlaylist\(/g)).toHaveLength(2)
-    expect(app).toMatch(/const removeSongGated = \(id: string\) => \{[\s\S]{0,300}livre\.isLivre && removalOpensRefusedSong\(playlist, activeSongIndex, id, \(s\) => livre\.canOpenSong\(stageSongKey\(s\)\)\)[\s\S]{0,100}removeSongFromPlaylist\(id, \{ openNext: false \}\)[\s\S]{0,60}livre\.requestLimit\('stage-songs'\)[\s\S]{0,60}\}\s*removeSongFromPlaylist\(id\)/)
+    expect(app).toMatch(/const removeSongGated = \(id: string\) => \{[\s\S]{0,300}livre\.isLivre && removalOpensRefusedSong\(playlist, activeSongIndex, id, \(s\) => livre\.canOpenSong\(stageSongKey\(s\), stageSongOpenOpts\(s, new Date\(\)\)\)\)[\s\S]{0,100}removeSongFromPlaylist\(id, \{ openNext: false \}\)[\s\S]{0,60}livre\.requestLimit\('stage-songs'\)[\s\S]{0,60}\}\s*removeSongFromPlaylist\(id\)/)
   })
 
   it('comandos next, prev e select-song da banda passam pelas versões com o Livre', () => {
@@ -273,5 +273,71 @@ describe('ligações do palco novo', () => {
     for (const text of [app, settingsModal, main]) {
       for (const line of text.split('\n')) if (/StageShell|useNewStage|stageMode|StageVersionSetting|AudioOutputsSection|backgroundThrottling/.test(line)) expect(line).not.toContain(TRAVESSAO)
     }
+  })
+})
+
+// Parte 3 (faixa D): a música separada abre no palco, com o painel SEPARAÇÃO.
+describe('separação abrindo no palco', () => {
+  it('o App entrega a separação pro palco pelo loadFiles com a ligação e o mixer salvo', () => {
+    expect(app).toMatch(/const openSeparationOnStage = \(o: StageSeparationOpen\) => \{[\s\S]{0,200}setIsSeparatorOpen\(false\)[\s\S]{0,80}setForceShowSplash\(false\)[\s\S]{0,80}initEngine\(\)/)
+    expect(app).toMatch(/loadFiles\(dt\.files, meta\.name, undefined, undefined, meta\.originalKey, meta\.bpm, \{/)
+    expect(app).toMatch(/separation:\s*meta\.separation/)
+    expect(app).toMatch(/channelStates:\s*separationChannelStates\(stemsToOpen\(o\.sep\)\)/)
+    // Espera o motor pronto e o repertório restaurado.
+    expect(app).toMatch(/!o\?\.files \|\| !isReady \|\| isRestoring/)
+  })
+
+  it('com a VS tocando a separação espera a parada pra virar a atual', () => {
+    expect(app).toMatch(/separationArrival[\s\S]{0,400}const quietNow = !isPlaying && !isCountingIn[\s\S]{0,80}if \(i < 0 \|\| !quietNow\) return/)
+    expect(app).toMatch(/findSeparationSong\(playlist, arrival\.sepId\)/)
+  })
+
+  it('separação já no repertório: só pula, sem baixar de novo', () => {
+    expect(app).toMatch(/if \(o\.files\) setPendingSeparation\(o\)\s*else setSeparationArrival\(/)
+    expect(app).toMatch(/stageSeparationIds = useMemo\(\(\) => new Set\(playlist\.flatMap\(\(s\) => \(s\.separation \? \[s\.separation\.id\] : \[\]\)\)\)/)
+  })
+
+  it('a gaveta SEPARAÇÃO entra na casca e o Livre baixa e salva pela tela de limite download', () => {
+    expect(app).toMatch(/separation:\s*separationPanelShown \? \(\s*<SeparationPanel/)
+    expect(app).toMatch(/onLimit=\{\(\) => livre\.requestLimit\('download'\)\}/)
+    expect(app).toMatch(/const canDownloadSeparation = isAdmin \|\| canDownloadStems\(userPlan\)/)
+    expect(app).toMatch(/const canCloudSaveSeparation = isAdmin \|\| planTier\(userPlan\) !== 'free'/)
+    expect(app).toMatch(/const separationPanelShown = isSeparationPanelOpen && !!activeSong\?\.separation/)
+    // O anúncio do fim no painel: só no Livre, com a separação que acabou de terminar, parado.
+    expect(app).toMatch(/<AdSlot placement="separation-done"[^>]*quiet=\{!isPlaying && !isCountingIn\}[^>]*justSeparated/)
+    expect(app).toMatch(/const showSeparationAd = livre\.isLivre && justSeparatedId !== null/)
+  })
+
+  it('as ferramentas trocam o canal pela troca atômica do motor', () => {
+    expect(app).toMatch(/replaceAppChannel\(activeSong\.id, names, file\)/)
+    expect(app).toMatch(/busy: isPlaying \|\| isCountingIn/)
+  })
+
+  it('a música atual e o pulo do repertório passam stageSongOpenOpts', () => {
+    expect(app.match(/stageSongOpenOpts\(/g)?.length ?? 0).toBeGreaterThanOrEqual(3)
+    expect(app).toMatch(/noteSongOpened\(stageSongKey\(activeSong\), stageSongOpenOpts\(activeSong, new Date\(\)\)\)/)
+    expect(app).toMatch(/canOpenSong\(stageSongKey\(song\), stageSongOpenOpts\(song, new Date\(\)\)\)/)
+  })
+
+  it('menu FAIXAS tem Separação e Minhas separações', () => {
+    expect(app).toMatch(/hasSeparation && \([\s\S]{0,200}onSeparation\(\)[\s\S]{0,120}Separação/)
+    expect(app).toMatch(/onMySeparations\(\) \}\}>[\s\S]{0,120}Minhas separações/)
+    expect(app).toMatch(/hasSeparation=\{hasSongSeparation\} onSeparation=\{stageCalls\.tracksSeparation\} onMySeparations=\{stageCalls\.tracksMySeparations\}/)
+  })
+
+  it('o Separador recebe stageAvailable pelo wantNewStage', () => {
+    expect(app).toMatch(/<SeparatorStudio[\s\S]*?stageAvailable=\{wantNewStage\}/)
+    expect(app).toMatch(/<SeparatorStudio[\s\S]*?stageSeparationIds=\{stageSeparationIds\}/)
+    expect(app).toMatch(/<SeparatorStudio[\s\S]*?onOpenOnStage=\{openSeparationOnStage\}/)
+  })
+
+  it('publicar na nuvem pela gaveta: janela do palco que não fecha publicando e o teclado do palco desligado', () => {
+    expect(app).toMatch(/<StageDialog[\s\S]{0,120}open=\{isCloudSaveOpen && !!stageSeparation\.sep\}[\s\S]{0,300}closeDisabled=\{stageSeparation\.busy === 'cloud'\}/)
+    expect(app).toMatch(/livre\.limit === null && !isCloudSaveOpen/)
+  })
+
+  it('nenhum alert, confirm ou prompt novo no App', () => {
+    expect(app.match(/\balert\(/g)?.length ?? 0).toBe(4)
+    expect(app).not.toMatch(/window\.(prompt|confirm)\(/)
   })
 })

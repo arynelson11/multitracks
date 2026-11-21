@@ -402,3 +402,13 @@ describe('tela de limite por cima de outra janela do palco', () => {
     expect(metroClose).not.toHaveBeenCalled()
   })
 })
+
+// Parte 3 (faixa D, P9): no palco, BAIXAR e SALVAR NA NUVEM do painel SEPARAÇÃO abrem a mesma tela de
+// limite `download` (nenhum tipo novo): o texto fala dos dois.
+describe('limite download fala de baixar e de salvar na nuvem', () => {
+  it('o limite download fala de baixar e de salvar na nuvem', () => {
+    expect(LIMIT_COPY.download.title).toBe('Baixar e salvar na nuvem é do Pro')
+    expect(LIMIT_COPY.download.body).toBe('No Pro cada músico leva a sua faixa pro ensaio, em WAV ou MP3, e a música fica salva na nuvem pra abrir em qualquer aparelho.')
+    expect(LIMIT_COPY.download.title + LIMIT_COPY.download.body).not.toContain(String.fromCharCode(0x2014))
+  })
+})

@@ -69,7 +69,8 @@ describe('Separador no Livre: limites, tela de limite e anúncio (T19)', () => {
     expect(sep).toMatch(/const quiet = isQuiet\(busy\);/)
     // Os minutos do Ao Vivo só correm na instância do App.
     expect(sep).toMatch(/useLivre\(\{ userId: user\?\.id \?\? null, plan: userPlan, isAdmin, busy, liveActive: false, onLiveExpired: \(\) => \{\} \}\)/)
-    expect(app).toMatch(/<SeparatorStudio onClose=\{\(\) => setIsSeparatorOpen\(false\)\} stageBusy=\{\{ isPlaying, isCountingIn \}\} \/>/)
+    // Parte 3 (faixa D): o App passa também o palco disponível e a entrega pro palco.
+    expect(app).toMatch(/<SeparatorStudio onClose=\{\(\) => setIsSeparatorOpen\(false\)\} stageBusy=\{\{ isPlaying, isCountingIn \}\}[\s\S]{0,200}\/>/)
   })
 
   it('regra do Livre só com o plano lido: o useAuth desta tela começa em Livre até ler o perfil', () => {

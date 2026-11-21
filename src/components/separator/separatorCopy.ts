@@ -124,3 +124,8 @@ export function laneFloor(width: number, height: number): number {
   if (height <= 560) return 112
   return 132
 }
+
+export const OPENING_COPY = {
+  title: 'Abrindo no palco',
+  detail: (done: number, total: number) => `Baixando as faixas (${done} de ${total})`,
+} as const
