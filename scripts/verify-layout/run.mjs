@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // Verificador de texto cortado e de alvos de toque do palco novo (T20), no Chrome headless.
 // Uso: node scripts/verify-layout/run.mjs [--only 1280x800[,1440x900]] [--estado normal[,tom]] [--jobs 3] [--no-build]
-//   sem --estado: os 12 estados normais e 18 dos 19 estados da faixa C nos 8 tamanhos (240 combinações),
-//   17 estados em 390x844 (o inicio da frente 1b, os 15 da faixa C que abrem no celular e o
-//   download-celular, só de celular) e os 10 estados da faixa B (login e Configurações) em 1024x740,
-//   1280x800, 1920x1080, 390x844 e 844x390 (50); com a faixa D (gaveta e janela de publicar do palco nos
-//   8, páginas do Separador em 5 tamanhos e as janelas dele em 2): 360; com a tela inicial com o anúncio
-//   (8 e 390x844), a Biblioteca e os Planos (4 estados em 5 tamanhos, JANELAS_INICIO): 389 combinações;
+//   sem --estado: 411 combinações. Nos 8 tamanhos, 35 estados (280): os 11 do palco e das Configurações
+//   da T19, os 4 da gaveta SEPARAÇÃO, os 2 da tela inicial e 18 dos 19 da faixa C. Em 390x844, 18 (a
+//   tela inicial, os 15 da faixa C que abrem no celular e o download-celular, só de celular); em
+//   844x390, a tela inicial (2). O Separador: 3 páginas em 5 tamanhos e 3 janelas em 2 (21). A
+//   Biblioteca e os Planos: 8 estados em 5 tamanhos (40, JANELAS_INICIO). A faixa B (login e
+//   Configurações): 10 estados em 1024x740, 1280x800, 1920x1080, 390x844 e 844x390 (50);
 //   --estado quebrado: só a prova (um botão de largura fixa com texto longo), que tem de falhar
 //   (com --only 390x844, a prova da moldura do celular).
 // Sai com código 1 se alguma combinação falhar (ou não responder). Resultados em scripts/verify-layout/results/.
@@ -37,8 +37,8 @@ const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'reper
   'metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'download-celular', 'aovivo', 'aovivo-cheio', 'aovivo-erro', 'adminlogin',
   // Separador (Parte 3, faixa D), a mesma lista de telasEstados.ts.
   'separador-inicio', 'separador-opcoes', 'separador-player', 'separador-bpm', 'separador-voz', 'separador-publicar',
-  // Biblioteca na Nuvem (Parte 3, partes 3 a 5), a mesma lista de telasEstados.ts.
-  'biblioteca', 'biblioteca-editar', 'planos', 'planos-oferta']
+  // Biblioteca na Nuvem e Planos (Parte 3, partes 3 a 5), a mesma lista de telasEstados.ts.
+  'biblioteca', 'biblioteca-editar', 'biblioteca-excluir', 'biblioteca-carregando', 'biblioteca-vazia', 'planos', 'planos-oferta', 'planos-troca']
 /**
  * Telas da faixa C que abrem no celular: sem --only, medem também em 390x844. O Modo Ao Vivo do host
  * só existe no computador, então fica de fora.
@@ -46,9 +46,11 @@ const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'reper
 const TELAS_C_CELULAR = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'adminlogin']
 /**
  * Estados que abrem no celular: a tela inicial (`inicio`) e ela com o cartão do anúncio da casa
- * (`inicio-anuncio`). Sem --only, medem também em 390x844, pela mesma moldura das faixas B e C.
+ * (`inicio-anuncio`). Sem --only, medem também em 390x844, pela mesma moldura das faixas B e C, e em
+ * 844x390 (celular deitado, a tela mais baixa, inicio-2 Minor 7).
  */
 const ESTADOS_CELULAR = ['inicio', 'inicio-anuncio']
+const DEITADO = '844x390'
 /** Telas da faixa C que só existem no celular (navegador de celular simulado): só em 390x844. */
 const TELAS_C_SO_CELULAR = ['download-celular']
 /**
@@ -75,7 +77,7 @@ const JANELAS_SEPARADOR_SIZES = ['390x844', '1024x740']
  * nos dois palcos e no celular, então medem em 1024x740, 1280x800, 1920x1080, 390x844 e 844x390
  * (celular deitado, onde a janela fica baixa e a lista rola dentro).
  */
-const JANELAS_INICIO = ['biblioteca', 'biblioteca-editar', 'planos', 'planos-oferta']
+const JANELAS_INICIO = ['biblioteca', 'biblioteca-editar', 'biblioteca-excluir', 'biblioteca-carregando', 'biblioteca-vazia', 'planos', 'planos-oferta', 'planos-troca']
 const JANELAS_INICIO_SIZES = ['1024x740', '1280x800', '1920x1080', '390x844', '844x390']
 /** Largura de celular: abaixo da janela mínima do Chrome headless, roda na moldura (/moldura). */
 const CELULAR = '390x844'
@@ -225,7 +227,8 @@ const sizesFor = (estado) => {
   if (JANELAS_SEPARADOR.includes(estado)) return JANELAS_SEPARADOR_SIZES
   if (JANELAS_INICIO.includes(estado)) return JANELAS_INICIO_SIZES
   if (TELAS_C_SO_CELULAR.includes(estado)) return [CELULAR]
-  if (TELAS_C_CELULAR.includes(estado) || ESTADOS_CELULAR.includes(estado)) return [...SIZES, CELULAR]
+  if (ESTADOS_CELULAR.includes(estado)) return [...SIZES, CELULAR, DEITADO]
+  if (TELAS_C_CELULAR.includes(estado)) return [...SIZES, CELULAR]
   return SIZES
 }
 const combos = estados.flatMap((estado) => sizesFor(estado).map((size) => ({ estado, size })))

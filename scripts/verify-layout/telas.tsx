@@ -137,8 +137,8 @@ export function TelaPage({ estado }: { estado: TelaEstado }) {
       {estado === 'adminlogin' && <AdminLogin />}
       {(estado === 'separador-inicio' || estado === 'separador-opcoes' || estado === 'separador-player'
         || estado === 'separador-bpm' || estado === 'separador-voz' || estado === 'separador-publicar') && <SeparatorPage estado={estado} />}
-      {(estado === 'biblioteca' || estado === 'biblioteca-editar') && <LibraryPage estado={estado} />}
-      {(estado === 'planos' || estado === 'planos-oferta') && <PlansPage estado={estado} />}
+      {(estado === 'biblioteca' || estado === 'biblioteca-editar' || estado === 'biblioteca-excluir' || estado === 'biblioteca-carregando' || estado === 'biblioteca-vazia') && <LibraryPage estado={estado} />}
+      {(estado === 'planos' || estado === 'planos-oferta' || estado === 'planos-troca') && <PlansPage estado={estado} />}
       {(estado === 'padsnuvem' || estado === 'padsnuvem-editar') && (
         <PadSetsModal isOpen onClose={noop} onSelect={noop} selectedPadSet={{ id: 'p2', name: 'Ambiente Suave', base_path: 'p2' }} isAdmin />
       )}

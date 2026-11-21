@@ -11,8 +11,9 @@
  *
  * If you add a new tier, also:
  *   1. add it to LIMITS in SeparatorStudio.tsx + SettingsModal.tsx
- *   2. add a product entry in PricingModal.tsx
- *   3. add its price/cycle to PLAN_PRICING in api/checkout.ts
+ *   2. add a card in src/components/pricing/pricingCatalog.ts (its price comes from PRICES in
+ *      src/content/site.ts; pricingCatalog.test.ts checks every card against PLAN_PRICING)
+ *   3. add its price/cycle to PLAN_PRICING in api/_lib/pricing.ts (used by api/checkout.ts)
  *   4. add its key to VALID_PLANS in api/webhook/asaas.ts
  */
 

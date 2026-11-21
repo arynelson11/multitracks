@@ -4,9 +4,9 @@ import { SeparatorHome } from '../../src/components/separator/SeparatorHome'
 import { SeparatorOptions } from '../../src/components/separator/SeparatorOptions'
 import { SeparatorPlayerBar } from '../../src/components/separator/SeparatorPlayerBar'
 import { SeparatorTrackStrip } from '../../src/components/separator/SeparatorTrackStrip'
-import { LIBRARY_EDIT, LIBRARY_ROWS, PLAYER_SONG, PLAYER_TRACKS, SEPARATIONS } from './pageFixtures'
+import { LIBRARY_DELETE_NAME, LIBRARY_EDIT, LIBRARY_ROWS, PLAYER_SONG, PLAYER_TRACKS, SEPARATIONS } from './pageFixtures'
 import { LibraryView } from '../../src/components/library/LibraryView'
-import { libraryCountText } from '../../src/components/library/libraryRows'
+import { libraryCountText, libraryEmptyText } from '../../src/components/library/libraryRows'
 import { INVALID_BPM_MESSAGE } from '../../src/lib/cloudBpm'
 import { PricingView } from '../../src/components/pricing/PricingView'
 import type { PricingCardView } from '../../src/components/pricing/PricingView'
@@ -108,18 +108,28 @@ export function SeparatorPage({ estado }: { estado: 'separador-inicio' | 'separa
 
 /**
  * Biblioteca na Nuvem (Parte 3): a vista com as 8 músicas de pior caso, por cima do fundo do app.
- * Em `biblioteca-editar`, a edição aberta na primeira música, com a frase de erro.
+ * Em `biblioteca-editar`, a edição aberta na primeira música, com a frase de erro. Em
+ * `biblioteca-excluir` (inicio-1 M7), a lixeira aberta por cima: "Excluir da nuvem?" com o nome de
+ * 80 caracteres no texto de antes. `biblioteca-carregando` e `biblioteca-vazia` são a lista
+ * carregando e a aba Minhas Músicas vazia, como o LibraryModal manda (sem músicas na aba).
  */
-export function LibraryPage({ estado }: { estado: 'biblioteca' | 'biblioteca-editar' }) {
+export function LibraryPage({ estado }: { estado: 'biblioteca' | 'biblioteca-editar' | 'biblioteca-excluir' | 'biblioteca-carregando' | 'biblioteca-vazia' }) {
   const editing = estado === 'biblioteca-editar'
+  const empty = estado === 'biblioteca-carregando' || estado === 'biblioteca-vazia'
+  const tab = estado === 'biblioteca-vazia' ? 'personal' : 'platform'
+  const query = empty ? '' : 'Senhor'
+  const rows = empty ? [] : LIBRARY_ROWS
   return (
     <LibraryView
-      open onClose={noop} onRefresh={noop} query="Senhor" onQuery={noop} tab="platform" onTab={noop}
-      loading={false} countText={libraryCountText(LIBRARY_ROWS.length)} emptyText={null}
+      open onClose={noop} onRefresh={noop} query={query} onQuery={noop} tab={tab} onTab={noop}
+      loading={estado === 'biblioteca-carregando'} countText={libraryCountText(rows.length)}
+      emptyText={empty ? libraryEmptyText(query, tab) : null}
       message={editing ? INVALID_BPM_MESSAGE : null}
-      rows={LIBRARY_ROWS} anyDownloading edit={editing ? LIBRARY_EDIT : null} savingEdit={false}
+      rows={rows} anyDownloading={!empty} edit={editing ? LIBRARY_EDIT : null} savingEdit={false}
       onImport={noop} onCancel={noop} onEdit={noop} onEditChange={noop} onEditSave={noop} onEditClose={noop}
-      onAskDelete={noop} confirmDelete={null} onConfirmDelete={noop} onCancelDelete={noop}
+      onAskDelete={noop}
+      confirmDelete={estado === 'biblioteca-excluir' ? { name: LIBRARY_DELETE_NAME, scope: 'cloud', busy: false } : null}
+      onConfirmDelete={noop} onCancelDelete={noop}
     />
   )
 }
@@ -128,9 +138,12 @@ export function LibraryPage({ estado }: { estado: 'biblioteca' | 'biblioteca-edi
  * Planos (Parte 3): `planos` é quem já paga (Pro Mensal, o plano atual desligado, a linha da troca e o
  * aviso do pagamento aberto no navegador); `planos-oferta` é o Livre com a janela do primeiro mês
  * aberta (R$ 24,90 e R$ 59,90 nos mensais), o Studio Mensal abrindo o pagamento e a frase de erro.
+ * `planos-troca` (inicio-2 Minor 7) é quem já paga com o "Trocar de plano?" aberto por cima e o pé
+ * da janela com os três avisos juntos (o pagamento no navegador, a oferta que terminou e o erro).
  */
-export function PlansPage({ estado }: { estado: 'planos' | 'planos-oferta' }) {
+export function PlansPage({ estado }: { estado: 'planos' | 'planos-oferta' | 'planos-troca' }) {
   const oferta = estado === 'planos-oferta'
+  const troca = estado === 'planos-troca'
   const cards: PricingCardView[] = PRICING_PLANS.map((p) => {
     const current = !oferta && p.planKey === 'essencial_mensal'
     const loading = oferta && p.planKey === 'pro_mensal'
@@ -140,8 +153,11 @@ export function PlansPage({ estado }: { estado: 'planos' | 'planos-oferta' }) {
   return (
     <PricingView
       open onClose={noop} switching={!oferta} currentName={oferta ? 'Livre' : 'Pro Mensal'} cards={cards}
-      openedExternally={!oferta} pending={null} onConfirmSwitch={noop} onCancelSwitch={noop}
-      message={oferta ? 'Não foi possível conectar com o servidor. Confira a internet e tente de novo.' : null}
+      openedExternally={!oferta}
+      pending={troca ? { name: 'Studio Anual', price: PRICING_PLANS[3].price, period: PRICING_PLANS[3].period } : null}
+      onConfirmSwitch={noop} onCancelSwitch={noop}
+      offerNote={troca ? 'A oferta do primeiro mês terminou. Você ainda pode assinar pelo preço normal.' : null}
+      message={oferta || troca ? 'Não foi possível conectar com o servidor. Confira a internet e tente de novo.' : null}
       onChoose={noop}
     />
   )

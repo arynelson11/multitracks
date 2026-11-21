@@ -1,14 +1,20 @@
 // Estados das demais telas da Parte 3 (faixa C) no verificador: uma janela ou página por estado,
 // montada em telas.tsx, com o que conferir e o que abrir antes de medir. O run.mjs tem a mesma lista.
+import { DELETE_COPY } from '../../src/components/library/libraryRows'
+import { PRICING_COPY } from '../../src/components/pricing/pricingCatalog'
+import { LIBRARY_DELETE_NAME } from './pageFixtures'
+
 export const TELA_ESTADOS = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'download-celular', 'aovivo', 'aovivo-cheio', 'aovivo-erro', 'adminlogin',
   // Separador (Parte 3, faixa D): vistas soltas, em pages.tsx.
   'separador-inicio', 'separador-opcoes', 'separador-player',
   // As janelas do Separador de reserva, uma por vez por cima do player (revisão sep-2 I5).
   'separador-bpm', 'separador-voz', 'separador-publicar',
-  // Biblioteca na Nuvem (Parte 3, partes 3 a 5): a vista solta, em pages.tsx.
-  'biblioteca', 'biblioteca-editar',
-  // Planos (Parte 3, partes 3 a 5): a vista solta, em pages.tsx.
-  'planos', 'planos-oferta'] as const
+  // Biblioteca na Nuvem (Parte 3, partes 3 a 5): a vista solta, em pages.tsx. A lixeira aberta e a
+  // lista carregando e vazia entraram na revisão macro (inicio-1 M7).
+  'biblioteca', 'biblioteca-editar', 'biblioteca-excluir', 'biblioteca-carregando', 'biblioteca-vazia',
+  // Planos (Parte 3, partes 3 a 5): a vista solta, em pages.tsx. O "Trocar de plano?" com o pé cheio
+  // entrou na revisão macro (inicio-2 Minor 7).
+  'planos', 'planos-oferta', 'planos-troca'] as const
 export type TelaEstado = (typeof TELA_ESTADOS)[number]
 
 export function isTela(value: string): value is TelaEstado {
@@ -46,7 +52,13 @@ export const TELA_EXPECT: Record<TelaEstado, { sel: string; text?: string; count
   'separador-publicar': { sel: '[role="dialog"] [data-cloud-form] [role="switch"]' },
   biblioteca: { sel: '[role="dialog"] [data-library] [data-library-row]', count: 8 },
   'biblioteca-editar': { sel: '[role="dialog"] [data-library-edit="b1"] input[inputmode="decimal"]' },
+  // A lixeira por cima da Biblioteca, com o texto de antes e o nome de 80 caracteres.
+  'biblioteca-excluir': { sel: '[role="dialog"] p.leading-relaxed', text: DELETE_COPY.body(LIBRARY_DELETE_NAME, 'cloud'), count: 1 },
+  'biblioteca-carregando': { sel: '[role="dialog"] [data-library] [role="tabpanel"] [role="status"]', text: 'Carregando a biblioteca...' },
+  'biblioteca-vazia': { sel: '[role="dialog"] [data-library] [role="tabpanel"] p', text: 'Nenhuma música pessoal encontrada.' },
   planos: { sel: '[role="dialog"] [data-plan-card]', count: 4 },
+  // O "Trocar de plano?" por cima dos Planos (o pé com os três avisos vem das props, em pages.tsx).
+  'planos-troca': { sel: '[role="dialog"] p.leading-relaxed', text: PRICING_COPY.switchBody('Studio Anual', 'R$ 1.078,80', '/ano', 'Pro Mensal'), count: 1 },
   'planos-oferta': { sel: '[role="dialog"] [data-plan-card="pro_mensal"] [data-offer]' },
 }
 

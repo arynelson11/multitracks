@@ -63,3 +63,6 @@ export const LIBRARY_EDIT: LibraryEdit = {
   bpmText: '72,5', key: 'G#m',
   file: new File(['capa'], 'capa_grande_e_o_senhor_ao_vivo_ministerio_versao_final_2026.png', { type: 'image/png' }),
 }
+
+/** A lixeira aberta (inicio-1 M7): o nome de 80 caracteres no texto de antes de "Excluir da nuvem?". */
+export const LIBRARY_DELETE_NAME = 'Te Louvarei com Todo o Meu Coração e Toda a Minha Alma (Ao Vivo na Igreja, 2026)'

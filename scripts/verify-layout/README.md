@@ -8,7 +8,7 @@ nova: usa o Vite, o React e o Tailwind do repo e o Google Chrome da máquina.
 
 ```bash
 source ~/.nvm/nvm.sh && nvm use 24
-node scripts/verify-layout/run.mjs                                    # rodada inteira (389 combinações, abaixo)
+node scripts/verify-layout/run.mjs                                    # rodada inteira (411 combinações, abaixo)
 node scripts/verify-layout/run.mjs --only 1280x800 --estado quebrado  # prova: tem de sair com 1
 node scripts/verify-layout/run.mjs --only 390x844 --estado quebrado   # prova da moldura do celular: tem de sair com 1
 node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
@@ -21,16 +21,24 @@ node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
 | `--jobs N` | quantos Chrome ao mesmo tempo (padrão 3) |
 | `--no-build` | usa a página já montada em `.build/` |
 
-Sem opção, a rodada mede os 12 estados do palco e da tela inicial e 18 dos 19
-estados das 10 telas da faixa C nos 8 tamanhos (240), 17 estados em 390x844 (o
-`inicio` da frente 1b, os 15 da faixa C que abrem no celular, sem os três do
-Modo Ao Vivo do host, que só existe no computador, mais o `download-celular`,
-que só existe no celular) e os 10 estados das 3 telas da faixa B em 5 tamanhos
-(50): 307 combinações; com a faixa D (a gaveta SEPARAÇÃO nas abas FAIXAS, VOZ GUIA e
-BPM E CLICK e a janela "Publicar na Nuvem" do palco nos 8 tamanhos, as três páginas do
-Separador em 5 tamanhos e as três janelas dele em 2), 360; com as partes 3 a 5 da Parte 3
-(o `inicio-anuncio` nos 8 tamanhos e em 390x844, e a Biblioteca e os Planos, 4 estados em
-5 tamanhos), 389. A prova da moldura
+Sem opção, a rodada mede 411 combinações:
+
+| Grupo | Estados | Tamanhos | Combinações |
+|---|---|---|---|
+| Palco e Configurações da T19 (`normal` a `compasso` e `config`) | 11 | os 8 | 88 |
+| Gaveta SEPARAÇÃO do palco (faixa D: `separacao`, `separacao-voz`, `separacao-bpm`, `separacao-publicar`) | 4 | os 8 | 32 |
+| Tela inicial (`inicio` e `inicio-anuncio`) | 2 | os 8, 390x844 e 844x390 | 20 |
+| Telas da faixa C (sem o `download-celular`) | 18 | os 8 | 144 |
+| Telas da faixa C que abrem no celular (sem os três do Modo Ao Vivo do host, que só existe no computador) | 15 | 390x844 | 15 |
+| `download-celular` (só existe no celular) | 1 | 390x844 | 1 |
+| Páginas do Separador (faixa D) | 3 | 5 (`PAGINAS_SEPARADOR_SIZES`) | 15 |
+| Janelas do Separador de reserva | 3 | 390x844 e 1024x740 | 6 |
+| Biblioteca e Planos (partes 3 a 5: `biblioteca`, `biblioteca-editar`, `biblioteca-excluir`, `biblioteca-carregando`, `biblioteca-vazia`, `planos`, `planos-oferta`, `planos-troca`) | 8 | 5 (`JANELAS_INICIO_SIZES`) | 40 |
+| Telas da faixa B (login e Configurações) | 10 | 5 (`TELAS_B_SIZES`) | 50 |
+
+Histórico: 307 até a faixa C; 360 com a faixa D; 389 com as partes 3 a 5 da Parte 3; 411
+com a revisão macro delas (a lixeira, a lista carregando e vazia da Biblioteca, o "Trocar de
+plano?" com o pé cheio e a tela inicial em 844x390). A prova da moldura
 (`--only 390x844 --estado quebrado`) tem de sair com 1: mostra que a página no
 iframe do celular também acusa falha.
 
@@ -127,12 +135,16 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `aovivo-erro` | o mesmo, com o erro de abrir o servidor |
 | `adminlogin` | Login do /admin na web (faixa C) |
 | `config` | as duas seções da T19 numa página própria: placa de 2 canais (caindo de 4 ou mais, com avisos) e de 8 canais |
-| `inicio` | a tela inicial (`HomeScreen`, Parte 3, partes 3 a 5) no layout do palco: o logo, "Playback Studio", "A plataforma do domingo" e os dois cartões Multitracks e Separação de Faixas, sem anúncio; nos 8 tamanhos e em 390x844 (celular em pé, pela moldura, acima) |
-| `inicio-anuncio` | a mesma tela com o cartão "O que o Pro faz por você" do `AdSlot` (o de verdade, no Livre e parado) no `ad` da `HomeScreen`, embaixo dos dois cartões (até 448 px); nos 8 tamanhos e em 390x844 (era o `inicio` da frente 1b, que media o cartão sobre duas caixas no lugar dos botões) |
+| `inicio` | a tela inicial (`HomeScreen`, Parte 3, partes 3 a 5) no layout do palco: o logo, "Playback Studio", "A plataforma do domingo" e os dois cartões Multitracks e Separação de Faixas, sem anúncio; nos 8 tamanhos, em 390x844 (celular em pé, pela moldura, acima) e em 844x390 (celular deitado) |
+| `inicio-anuncio` | a mesma tela com o cartão "O que o Pro faz por você" do `AdSlot` (o de verdade, no Livre e parado) no `ad` da `HomeScreen`, embaixo dos dois cartões (até 448 px); nos 8 tamanhos, em 390x844 e em 844x390 (era o `inicio` da frente 1b, que media o cartão sobre duas caixas no lugar dos botões) |
 | `biblioteca` | a Biblioteca na Nuvem (Parte 3, `LibraryView` solta, em `pages.tsx`) com 8 músicas de pior caso (`pageFixtures.ts`: nome e artista longos, uma em cada estado do baixar, o andamento mais longo, uma sem artista, tom nem BPM, uma do admin com editar e excluir e uma excluindo); em 1024x740, 1280x800, 1920x1080, 390x844 e 844x390 (`JANELAS_INICIO` no `run.mjs`) |
 | `biblioteca-editar` | a mesma, com a edição aberta na primeira música (valores longos, a capa escolhida com nome longo e o erro do BPM inválido); nos mesmos 5 tamanhos |
+| `biblioteca-excluir` | a mesma, com a lixeira aberta por cima ("Excluir da nuvem?", segunda janela `size="sm"`): o texto de antes com um nome de 80 caracteres, Cancelar e Excluir; nos mesmos 5 tamanhos |
+| `biblioteca-carregando` | a Biblioteca carregando a lista (o ícone girando e "Carregando a biblioteca..."), sem músicas; nos mesmos 5 tamanhos |
+| `biblioteca-vazia` | a aba Minhas Músicas vazia ("Nenhuma música pessoal encontrada.", com a nuvem) e "0 músicas exibidas"; nos mesmos 5 tamanhos |
 | `planos` | os Planos (Parte 3, `PricingView` solta, em `pages.tsx`) de quem já paga: a linha da troca, o Pro Mensal como plano atual (desligado) e o aviso "Abrimos o pagamento no seu navegador..." no pé; nos mesmos 5 tamanhos da Biblioteca |
 | `planos-oferta` | os Planos no Livre com a janela do primeiro mês aberta (R$ 24,90 e R$ 59,90 nos mensais, com o "Depois..."), o Studio Mensal em "Processando..." e a frase de erro de rede no pé; nos mesmos 5 tamanhos |
+| `planos-troca` | quem já paga com o "Trocar de plano?" aberto por cima (pro Studio Anual, o preço mais longo) e o pé dos Planos com os três avisos juntos (o pagamento no navegador, a oferta que terminou e o erro de rede), o caso mais apertado da janela; nos mesmos 5 tamanhos, com o 844x390 |
 | `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso pra cada ramo das regras (18 falhas: uma por ramo; o texto acima do começo da rolagem cai em duas, na regra do texto cortado e na de nada acima do topo de uma área que rola, da revisão macro BC; as duas da casca que rola de lado e do aviso SAÍDAS em cima do ONLINE vêm do palco de mentira, da frente 1b) |
 
 O fixture é o pior caso de texto: 14 canais com os nomes organizados mais
