@@ -8,7 +8,7 @@ nova: usa o Vite, o React e o Tailwind do repo e o Google Chrome da máquina.
 
 ```bash
 source ~/.nvm/nvm.sh && nvm use 24
-node scripts/verify-layout/run.mjs                                    # rodada inteira (307 combinações, abaixo)
+node scripts/verify-layout/run.mjs                                    # rodada inteira (360 combinações, abaixo)
 node scripts/verify-layout/run.mjs --only 1280x800 --estado quebrado  # prova: tem de sair com 1
 node scripts/verify-layout/run.mjs --only 390x844 --estado quebrado   # prova da moldura do celular: tem de sair com 1
 node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
@@ -26,7 +26,9 @@ estados das 10 telas da faixa C nos 8 tamanhos (240), 17 estados em 390x844 (o
 `inicio` da frente 1b, os 15 da faixa C que abrem no celular, sem os três do
 Modo Ao Vivo do host, que só existe no computador, mais o `download-celular`,
 que só existe no celular) e os 10 estados das 3 telas da faixa B em 5 tamanhos
-(50): 307 combinações. A prova da moldura
+(50): 307 combinações; com a faixa D (a gaveta SEPARAÇÃO nas abas FAIXAS, VOZ GUIA e
+BPM E CLICK e a janela "Publicar na Nuvem" do palco nos 8 tamanhos, as três páginas do
+Separador em 5 tamanhos e as três janelas dele em 2), 360. A prova da moldura
 (`--only 390x844 --estado quebrado`) tem de sair com 1: mostra que a página no
 iframe do celular também acusa falha.
 
@@ -41,6 +43,11 @@ player de reserva e 7 faixas com os nomes mais longos, com uma onda falsa de
 largura fixa no lugar do WaveSurfer), montados em `pages.tsx` com os
 dados de `pageFixtures.ts`, só com props (sem Supabase nem motor). Medem em
 1024x740, 1280x800, 1920x1080, 390x844 e 844x390 (`PAGINAS_SEPARADOR` no `run.mjs`).
+As janelas do Separador de reserva (revisão sep-2 I5) abrem uma por vez por cima do
+player: `separador-bpm` (BPM e click em 12/8, Percussive com Acentos, o 1 movido e o
+erro), `separador-voz` (14 marcações, tocando, com o erro) e `separador-publicar`
+(nome e artista longos, o admin com a visibilidade global, a capa e o erro), em
+390x844 e 1024x740 (`JANELAS_SEPARADOR`).
 
 Largura de celular (as faixas B e C e a frente 1b, um jeito só): o Chrome headless não abre
 janela abaixo de 500 px, então qualquer tamanho mais estreito que isso roda na
@@ -93,6 +100,8 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `repertorio` | gaveta REPERTÓRIOS aberta com 6 músicas e Anotações |
 | `separacao` | gaveta SEPARAÇÃO aberta à direita (Parte 3, faixa D), aba FAIXAS com 7 faixas de nome longo, palco parado |
 | `separacao-voz` | a mesma gaveta na aba VOZ GUIA com 14 marcações |
+| `separacao-bpm` | a mesma gaveta na aba BPM E CLICK com o SYNC, em 12/8, Percussive com Acentos, o 1 movido e o erro do click |
+| `separacao-publicar` | a janela "Publicar na Nuvem" da gaveta por cima do palco, no pior caso (nome e artista longos, admin, capa e erro) |
 | `tom` | grade de tons aberta (toque no botão do tom), com "Redefinir detecção de tom" |
 | `semtom` | grade aberta sem tom original: semitons em 3 linhas, com "Definir o tom original" ao lado do 0 |
 | `compasso` | diálogo do compasso aberto no EDITAR |

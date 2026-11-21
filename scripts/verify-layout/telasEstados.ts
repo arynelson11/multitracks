@@ -2,7 +2,9 @@
 // montada em telas.tsx, com o que conferir e o que abrir antes de medir. O run.mjs tem a mesma lista.
 export const TELA_ESTADOS = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'download-celular', 'aovivo', 'aovivo-cheio', 'aovivo-erro', 'adminlogin',
   // Separador (Parte 3, faixa D): vistas soltas, em pages.tsx.
-  'separador-inicio', 'separador-opcoes', 'separador-player'] as const
+  'separador-inicio', 'separador-opcoes', 'separador-player',
+  // As janelas do Separador de reserva, uma por vez por cima do player (revisão sep-2 I5).
+  'separador-bpm', 'separador-voz', 'separador-publicar'] as const
 export type TelaEstado = (typeof TELA_ESTADOS)[number]
 
 export function isTela(value: string): value is TelaEstado {
@@ -35,6 +37,9 @@ export const TELA_EXPECT: Record<TelaEstado, { sel: string; text?: string }> = {
   'separador-inicio': { sel: '[data-separator-home] [data-separation-id="v6"]' },
   'separador-opcoes': { sel: '[data-separator-options] section button', text: 'Vocais, Instrumental2 faixas' },
   'separador-player': { sel: '[data-separator-player] [data-track-strip]:nth-of-type(8) button[data-touch-exception="ms"]', text: 'M' },
+  'separador-bpm': { sel: '[role="dialog"] button[aria-label="Mover o 1 um tempo pra frente"]' },
+  'separador-voz': { sel: '[role="dialog"] [data-cue-row]' },
+  'separador-publicar': { sel: '[role="dialog"] [data-cloud-form] [role="switch"]' },
 }
 
 /** Toque de ponteiro (click com detail 1), como o dedo. */

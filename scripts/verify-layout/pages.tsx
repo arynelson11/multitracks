@@ -6,6 +6,12 @@ import { SeparatorPlayerBar } from '../../src/components/separator/SeparatorPlay
 import { SeparatorTrackStrip } from '../../src/components/separator/SeparatorTrackStrip'
 import { PLAYER_SONG, PLAYER_TRACKS, SEPARATIONS } from './pageFixtures'
 import { laneFloor } from '../../src/components/separator/separatorCopy'
+import { BpmClickEditor } from '../../src/components/separation/BpmClickEditor'
+import { CloudSaveForm } from '../../src/components/separation/CloudSaveForm'
+import { VoiceGuideEditor } from '../../src/components/separation/VoiceGuideEditor'
+import { BPM_COPY, CLOUD_COPY, VOICE_COPY } from '../../src/components/separation/toolsCopy'
+import { StageDialog } from '../../src/components/stage/StageDialog'
+import { CLOUD_FORM_PROPS } from './fixture'
 
 const noop = () => {}
 
@@ -49,7 +55,46 @@ function PlayerPage() {
   )
 }
 
-export function SeparatorPage({ estado }: { estado: 'separador-inicio' | 'separador-opcoes' | 'separador-player' }) {
+const CUE_LABELS = ['1', '2', '3', '4', 'Intro', 'Verso 1', 'Pré-Refrão', 'Refrão 1', 'Verso 2', 'Pré-Refrão 2', 'Refrão 2', 'Ponte', 'Refrão 3', 'Final']
+
+/** As janelas do Separador de reserva no pior caso, como o Separador abre (revisão sep-2 I5). */
+function ToolDialog({ estado }: { estado: 'separador-bpm' | 'separador-voz' | 'separador-publicar' }) {
+  if (estado === 'separador-bpm') {
+    return (
+      <StageDialog open title={BPM_COPY.title} size="sm" onClose={noop}>
+        <BpmClickEditor
+          bpm="72.5" meter="12/8" accentBeat1 downbeatShift={-2} clickSel={{ type: 'Percussive', subdivision: 'accents' }}
+          info="72.48 BPM medido na faixa Bateria Acústica Completa com Pratos." busy={null} hasTracks
+          message="Não deu pra gerar o click. Tenta de novo." detectLocked={false}
+          onBpm={noop} onBpmBlur={noop} onStep={noop} onTap={noop} onScale={noop} onDetect={noop}
+          onMeter={noop} onAccent={noop} onShiftDownbeat={noop} onClickSel={noop} onGenerate={noop}
+        />
+      </StageDialog>
+    )
+  }
+  if (estado === 'separador-voz') {
+    return (
+      <StageDialog open title={VOICE_COPY.title} onClose={noop}>
+        <VoiceGuideEditor
+          cues={CUE_LABELS.map((label, i) => ({ id: `c${i}`, time: i * 17.5, label, file: 'f' }))} tab="sections" playing detecting={false}
+          rendering={false} hasChannel pending message="Erro ao gerar canal de voz guia."
+          onTab={noop} onAdd={noop} onRemove={noop} onTime={noop} onClear={noop} onDetect={noop} onCommit={noop}
+        />
+      </StageDialog>
+    )
+  }
+  return <StageDialog open title={CLOUD_COPY.title} onClose={noop}><CloudSaveForm {...CLOUD_FORM_PROPS} /></StageDialog>
+}
+
+export function SeparatorPage({ estado }: { estado: 'separador-inicio' | 'separador-opcoes' | 'separador-player' | 'separador-bpm' | 'separador-voz' | 'separador-publicar' }) {
+  if (estado === 'separador-bpm' || estado === 'separador-voz' || estado === 'separador-publicar') {
+    return (
+      <>
+        <PlayerPage />
+        <ToolDialog estado={estado} />
+      </>
+    )
+  }
   if (estado === 'separador-player') return <PlayerPage />
   if (estado === 'separador-opcoes') return <SeparatorOptions options={[2, 4, 6]} onBack={noop} onChoose={noop} />
   return <SeparatorHome separations={SEPARATIONS} loading={false} onBack={noop} onPickFile={noop} onOpen={noop} onDelete={noop} />

@@ -15,8 +15,11 @@ import { TelaPage } from './telas'
 import { isTela, TELA_EXPECT, TELA_PREPARE } from './telasEstados'
 import type { Failure } from './check'
 import type { Estado } from './fixture'
-import { ACTIONS, CLOCK, OUTPUT_CASES, PADS, makePeaks, outputWarningFor, parseEstado, repertoireProps, separationPanelProps, viewFor } from './fixture'
+import { ACTIONS, CLOCK, CLOUD_FORM_PROPS, OUTPUT_CASES, PADS, makePeaks, outputWarningFor, parseEstado, repertoireProps, separationPanelProps, viewFor } from './fixture'
 import { SeparationPanel } from '../../src/components/separation/SeparationPanel'
+import { CloudSaveForm } from '../../src/components/separation/CloudSaveForm'
+import { CLOUD_COPY } from '../../src/components/separation/toolsCopy'
+import { StageDialog } from '../../src/components/stage/StageDialog'
 import { expectB, parseEstadoB, prepareB } from './telasB'
 import { TelasBPage } from './TelasBPage'
 
@@ -134,10 +137,14 @@ export function Stage({ estado }: { estado: Estado }) {
         view={viewFor(estado)} actions={ACTIONS} clock={CLOCK} peaks={peaks} pads={PADS}
         slots={{
           repertoire: <RepertoirePanel {...repertoireProps(estado === 'repertorio')} />,
-          separation: estado === 'separacao' || estado === 'separacao-voz' ? <SeparationPanel {...separationPanelProps(estado)} /> : null,
+          separation: estado === 'separacao' || estado === 'separacao-voz' || estado === 'separacao-bpm' ? <SeparationPanel {...separationPanelProps(estado)} /> : null,
         }}
         keyboardEnabled={false} outputWarning={outputWarningFor(estado)}
       />
+      {/* A janela "Publicar na Nuvem" da gaveta, por cima do palco (revisão sep-2 I5). */}
+      {estado === 'separacao-publicar' && (
+        <StageDialog open title={CLOUD_COPY.title} onClose={noop}><CloudSaveForm {...CLOUD_FORM_PROPS} /></StageDialog>
+      )}
       {estado === 'quebrado' && <BrokenCases />}
     </>
   )
@@ -175,6 +182,8 @@ const EXPECT: Record<Estado, { sel: string; text?: string; count?: number }> = {
   inicio: { sel: '[data-inicio] [data-house-ad="home"]', count: 1 },
   separacao: { sel: '[data-stage-drawer-right] [data-separation-stem]', count: 7 },
   'separacao-voz': { sel: '[data-stage-drawer-right] [data-cue-row]', count: 14 },
+  'separacao-bpm': { sel: '[data-stage-drawer-right] button[aria-label="Atrasar o click 10 ms"]' },
+  'separacao-publicar': { sel: '[role="dialog"] [data-cloud-form] [role="switch"]' },
   quebrado: { sel: '[data-prova]' },
 }
 

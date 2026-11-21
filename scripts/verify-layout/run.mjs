@@ -4,7 +4,8 @@
 //   sem --estado: os 12 estados normais e 18 dos 19 estados da faixa C nos 8 tamanhos (240 combinações),
 //   17 estados em 390x844 (o inicio da frente 1b, os 15 da faixa C que abrem no celular e o
 //   download-celular, só de celular) e os 10 estados da faixa B (login e Configurações) em 1024x740,
-//   1280x800, 1920x1080, 390x844 e 844x390 (50): 307 combinações;
+//   1280x800, 1920x1080, 390x844 e 844x390 (50); com a faixa D (gaveta e janela de publicar do palco nos
+//   8, páginas do Separador em 5 tamanhos e as janelas dele em 2): 360 combinações;
 //   --estado quebrado: só a prova (um botão de largura fixa com texto longo), que tem de falhar
 //   (com --only 390x844, a prova da moldura do celular).
 // Sai com código 1 se alguma combinação falhar (ou não responder). Resultados em scripts/verify-layout/results/.
@@ -30,11 +31,11 @@ const SIZES = ['1024x740', '1024x768', '1280x760', '1280x800', '1440x900', '1920
 /** Estados da rodada normal: a mesma lista de ESTADOS em fixture.ts. */
 const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config', 'inicio',
   // Gaveta SEPARAÇÃO do palco (Parte 3, faixa D), nos 8 tamanhos do palco.
-  'separacao', 'separacao-voz',
+  'separacao', 'separacao-voz', 'separacao-bpm', 'separacao-publicar',
   // Demais telas da Parte 3 (faixa C), a mesma lista de telasEstados.ts.
   'metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'download-celular', 'aovivo', 'aovivo-cheio', 'aovivo-erro', 'adminlogin',
   // Separador (Parte 3, faixa D), a mesma lista de telasEstados.ts.
-  'separador-inicio', 'separador-opcoes', 'separador-player']
+  'separador-inicio', 'separador-opcoes', 'separador-player', 'separador-bpm', 'separador-voz', 'separador-publicar']
 /**
  * Telas da faixa C que abrem no celular: sem --only, medem também em 390x844. O Modo Ao Vivo do host
  * só existe no computador, então fica de fora.
@@ -60,6 +61,12 @@ const TELAS_B_SIZES = ['1024x740', '1280x800', '1920x1080', '390x844', '844x390'
  */
 const PAGINAS_SEPARADOR = ['separador-inicio', 'separador-opcoes', 'separador-player']
 const PAGINAS_SEPARADOR_SIZES = ['1024x740', '1280x800', '1920x1080', '390x844', '844x390']
+/**
+ * As janelas do Separador de reserva (BPM e click, Voz Guia e Publicar, revisão sep-2 I5): abertas
+ * uma por vez por cima do player, no celular em pé e na menor tela do palco.
+ */
+const JANELAS_SEPARADOR = ['separador-bpm', 'separador-voz', 'separador-publicar']
+const JANELAS_SEPARADOR_SIZES = ['390x844', '1024x740']
 /** Largura de celular: abaixo da janela mínima do Chrome headless, roda na moldura (/moldura). */
 const CELULAR = '390x844'
 const PROVA = 'quebrado'
@@ -205,6 +212,7 @@ const sizesFor = (estado) => {
   if (onlySizes) return sizes
   if (ESTADOS_B.includes(estado)) return TELAS_B_SIZES
   if (PAGINAS_SEPARADOR.includes(estado)) return PAGINAS_SEPARADOR_SIZES
+  if (JANELAS_SEPARADOR.includes(estado)) return JANELAS_SEPARADOR_SIZES
   if (TELAS_C_SO_CELULAR.includes(estado)) return [CELULAR]
   if (TELAS_C_CELULAR.includes(estado) || ESTADOS_CELULAR.includes(estado)) return [...SIZES, CELULAR]
   return SIZES
