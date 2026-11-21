@@ -11,8 +11,8 @@ export const APP_ROUTES = ['/', '/download', '/admin'] as const
 // lastmod é a data da ÚLTIMA MUDANÇA DO CONTEÚDO da página, fixa (não a data do build: o
 // Google ignora lastmod que muda a cada deploy). Mudou o texto da página, troque a data aqui.
 export const SITEMAP_PAGES: { path: string; lastmod: string }[] = [
-  { path: '/', lastmod: '2026-11-16' },
-  { path: '/download', lastmod: '2026-11-16' },
+  { path: '/', lastmod: '2026-11-21' },
+  { path: '/download', lastmod: '2026-11-21' },
   ...LEGAL_LINKS.map(l => ({ path: l.href, lastmod: l.lastmod })),
 ]
 export const SITEMAP_PATHS: string[] = SITEMAP_PAGES.map(p => p.path)
