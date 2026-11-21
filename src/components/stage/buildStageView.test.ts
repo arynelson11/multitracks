@@ -104,10 +104,10 @@ describe('buildStageView', () => {
 
   it('portões do plano Livre e do Studio', () => {
     // Parte 3 (Livre como amostra): o Livre tem seções e o loop infinito como os pagos; a banda nas seções segue do Studio.
-    expect(buildStageView(engine(), { ...UI, plan: 'free' }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: false })
-    expect(buildStageView(engine(), { ...UI, plan: null }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: false })
-    expect(buildStageView(engine(), { ...UI, plan: 'essencial_anual' }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: false })
-    expect(buildStageView(engine(), { ...UI, plan: 'pro_mensal' }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: true })
+    expect(buildStageView(engine(), { ...UI, plan: 'free' }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: false, autoNext: false })
+    expect(buildStageView(engine(), { ...UI, plan: null }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: false, autoNext: false })
+    expect(buildStageView(engine(), { ...UI, plan: 'essencial_anual' }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: false, autoNext: true })
+    expect(buildStageView(engine(), { ...UI, plan: 'pro_mensal' }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: true, autoNext: true })
     // O motor recebe os mesmos portões que a tela.
     expect(stageGatesFor('pro_anual')).toEqual(buildStageView(engine(), { ...UI, plan: 'pro_anual' }).gates)
   })
@@ -164,6 +164,23 @@ describe('buildStageView', () => {
     expect(liveArmedOf({ ...v, intent: { target: 7, plays: 1 } })).toBeNull()
   })
 
+  // Revisão macro 1b (Ruling AUTO-livre): o AUTO entre músicas é do pago; no Livre ele aparece
+  // travado e o fim mostra PARAR (o motor para no fim, como no 'stop'). O admin segue com o AUTO.
+  describe('AUTO travado no Livre (gates.autoNext)', () => {
+    it('Livre: autoNext falso e o continue do motor aparece como PARAR', () => {
+      const v = build({ playbackMode: 'continue' }, { plan: 'free' })
+      expect(v.gates.autoNext).toBe(false)
+      expect(v.endMode).toBe('stop')
+      expect(build({ playbackMode: 'fade-out' }, { plan: 'free' }).endMode).toBe('fade-out')
+    })
+    it('quem paga e o admin no Livre: o AUTO como sempre', () => {
+      expect(build({ playbackMode: 'continue' }, { plan: 'essencial_mensal' }).endMode).toBe('continue')
+      const admin = build({ playbackMode: 'continue' }, { plan: 'free', isAdmin: true })
+      expect(admin.gates.autoNext).toBe(true)
+      expect(admin.endMode).toBe('continue')
+    })
+  })
+
   describe('selo do Livre (app.livre)', () => {
     const L = { used: 2, limit: 3 }
     it('o selo some com a música tocando e na pré-contagem', () => {
@@ -171,6 +188,15 @@ describe('buildStageView', () => {
       expect(build({ isCountingIn: true }, { livre: L }).app.livre).toBeNull()
       expect(build({ isPlaying: true, isCountingIn: true }, { livre: L }).app.livre).toBeNull()
       expect(build({}, { livre: L }).app.livre).toEqual(L)
+    })
+    // Ruling relogio-livre: com a sessão do Ao Vivo ligada (liveLeftMs), o selo fica também com a
+    // música tocando, só como texto (sem o toque que abre os Planos por cima do palco).
+    it('com a sessão do Ao Vivo ligada o selo fica tocando, sem toque; parado, com toque', () => {
+      const LL = { used: 2, limit: 3, liveLeftMs: 432_000 }
+      expect(build({ isPlaying: true }, { livre: LL }).app.livre).toEqual({ ...LL, tappable: false })
+      expect(build({ isCountingIn: true }, { livre: LL }).app.livre).toEqual({ ...LL, tappable: false })
+      expect(build({}, { livre: LL }).app.livre).toEqual(LL)
+      expect(build({ isPlaying: true }, { livre: { used: 2, limit: 3, liveLeftMs: null } }).app.livre).toBeNull()
     })
     it('conta paga: app.livre nulo', () => {
       expect(build({}, { livre: null }).app.livre).toBeNull()

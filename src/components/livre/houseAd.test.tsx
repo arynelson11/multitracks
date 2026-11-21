@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { HouseAdCard } from './HouseAdCard'
 import type { HouseAdCardProps } from './HouseAdCard'
 import { LivreBadge } from './LivreBadge'
-import { HOME_AD, LIVRE_BADGE_REST, SEPARATION_AD, livreBadgeShort, livreBadgeText } from './adCopy'
+import { HOME_AD, LIVRE_BADGE_REST, SEPARATION_AD, formatLiveLeft, livreBadgeShort, livreBadgeText, livreLiveLeftText } from './adCopy'
 
 afterEach(() => {
   cleanup()
@@ -133,6 +133,43 @@ describe('selo do Livre', () => {
     expect(rest.className.split(/\s+/)).toEqual(['hidden', 'xl:inline'])
     expect(livreBadgeShort(2, 3) + LIVRE_BADGE_REST).toBe(livreBadgeText(2, 3))
     expect(livreBadgeShort(2, 3)).toBe('LIVRE · 2 de 3')
+  })
+
+  // Revisão macro 1b (Ruling relogio-livre): com a sessão do Ao Vivo ligada, o selo mostra o tempo
+  // que falta hoje com a banda, em texto (vale com a música tocando: aí é só texto, sem toque).
+  it('formatLiveLeft: MM:SS, o segundo quebrado conta inteiro, nunca negativo', () => {
+    expect(formatLiveLeft(600_000)).toBe('10:00')
+    expect(formatLiveLeft(432_000)).toBe('07:12')
+    expect(formatLiveLeft(431_001)).toBe('07:12')
+    expect(formatLiveLeft(999)).toBe('00:01')
+    expect(formatLiveLeft(0)).toBe('00:00')
+    expect(formatLiveLeft(-5)).toBe('00:00')
+    expect(formatLiveLeft(Number.NaN)).toBe('00:00')
+    expect(formatLiveLeft(Number.POSITIVE_INFINITY)).toBe('00:00')
+    expect(livreLiveLeftText(432_000)).toBe('No Livre, restam 07:12 hoje com a banda.')
+  })
+
+  it('com a sessão ligada o selo mostra o tempo que falta; abaixo de 1280 px LIVRE · 07:12', () => {
+    const onClick = vi.fn()
+    render(<LivreBadge used={2} limit={3} liveLeftMs={432_000} onClick={onClick} />)
+    const btn = screen.getByRole('button')
+    const pill = btn.querySelector('[data-livre-pill]') as HTMLElement
+    expect(pill.textContent).toBe('LIVRE · 07:12 com a banda hoje')
+    const rest = [...btn.querySelectorAll('span')].find((el) => el.textContent === ' com a banda hoje')!
+    expect(rest.className.split(/\s+/)).toEqual(['hidden', 'xl:inline'])
+    // O nome do botão tem as duas contas.
+    expect(btn.getAttribute('aria-label')).toBe('LIVRE · 2 de 3 músicas este mês. No Livre, restam 07:12 hoje com a banda.')
+    fireEvent.click(btn)
+    expect(onClick).toHaveBeenCalledTimes(1)
+  })
+
+  it('sem onClick (música tocando) o selo é só texto: nenhum botão, o mesmo tamanho e o relógio', () => {
+    render(<LivreBadge used={2} limit={3} liveLeftMs={65_000} />)
+    expect(screen.queryByRole('button')).toBeNull()
+    const selo = document.querySelector('[data-livre-badge]') as HTMLElement
+    expect(selo.getAttribute('role')).toBe('timer')
+    expect(selo.className).toContain('min-h-ps-touch')
+    expect((selo.querySelector('[data-livre-pill]') as HTMLElement).textContent).toBe('LIVRE · 01:05 com a banda hoje')
   })
 
   it('nenhum travessão e nenhum stems nos textos e nos arquivos do anúncio e do selo', () => {

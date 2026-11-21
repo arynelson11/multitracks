@@ -16,6 +16,7 @@ interface LiveModeModalProps {
     onToggleAll: () => void;
     remoteSessionCode: string | null;
     onToggleRemote: () => void;
+    livreTimeLeft?: string | null; // Livre: o tempo do Ao Vivo que falta hoje, em frase pronta (Ruling relogio-livre)
 }
 
 export function LiveModeModal({
@@ -30,7 +31,8 @@ export function LiveModeModal({
     onToggleDevice,
     onToggleAll,
     remoteSessionCode,
-    onToggleRemote
+    onToggleRemote,
+    livreTimeLeft
 }: LiveModeModalProps) {
     const titleId = useId();
     // Apertou dentro da caixa (ex.: arrastando pra selecionar o endereço): o clique que cai na
@@ -97,6 +99,9 @@ export function LiveModeModal({
                                     {serverUrl}
                                 </p>
                             </div>
+
+                            {/* Livre: o tempo do Ao Vivo que falta hoje (Ruling relogio-livre), antes de quem controla. */}
+                            {livreTimeLeft && <p role="timer" className="w-full text-center text-ps-sm font-bold text-ps-bone">{livreTimeLeft}</p>}
 
                             {/* Quem controla: aprovação por aparelho */}
                             <div className="flex w-full flex-col gap-2 rounded-ps-lg bg-ps-s1 p-3 inset-ring inset-ring-ps-line">

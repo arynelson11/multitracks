@@ -6,6 +6,7 @@ import type { PadPanelProps } from '../../src/components/stage/PadPanel'
 import { TELA_ESTADOS } from './telasEstados'
 import type { RepertoirePanelProps, RepertoireSongItem } from '../../src/components/stage/RepertoirePanel'
 import type { StageShellActions } from '../../src/components/stage/StageShell'
+import { stageGatesFor } from '../../src/components/stage/buildStageView'
 import type { OutputWarning } from '../../src/lib/outputPlan'
 import type {
   OutputPlan, OutputSettings, SongGrid, StageChannel, StageClock, StageGates, StageSection, StageSong, StageView, TransitionView,
@@ -89,8 +90,8 @@ const SPLIT: OutputPlan = { mode: 'split2', channels: 2, vs: [1], click: [0], gu
 const PAGO: StageGates = { sections: true, infinite: true, maxRepeats: 8, bandSections: true }
 // Portões sem seções: o convite das seções ("Conhecer os planos") e o REPETIR sem ∞. Nenhum plano
 // usa mais desde a Parte 3 (o Livre tem seções como os pagos), mas o convite continua no código e
-// fica medido aqui; o estado `selo` também usa, só pela barra com o selo do Livre.
-const LIVRE: StageGates = { sections: false, infinite: false, maxRepeats: 4, bandSections: false }
+// fica medido aqui (estado `livre`).
+const SEM_SECOES: StageGates = { sections: false, infinite: false, maxRepeats: 4, bandSections: false }
 
 // ---------- Relógio parado na contagem ----------
 
@@ -148,11 +149,13 @@ export function viewFor(estado: Estado): StageView {
     case 'compasso':
       return { ...BASE, editMode: true, isPlaying: false }
     case 'livre':
-      return { ...BASE, gates: LIVRE, grid: { ...GRID, source: 'bpm' }, gridWarning: 'sem-click-lido' }
+      return { ...BASE, gates: SEM_SECOES, grid: { ...GRID, source: 'bpm' }, gridWarning: 'sem-click-lido' }
     case 'selo':
-      // Pior caso da barra com o selo do Livre (Parte 3): palco parado (o selo só aparece parado),
+      // Pior caso da barra com o selo do Livre (Parte 3): palco parado (o selo aparece parado),
       // OFFLINE (mais largo que ONLINE), HOST ligado, o aviso SAÍDAS e as 3 músicas do mês usadas.
-      return { ...BASE, gates: LIVRE, isPlaying: false, app: { ...BASE.app, online: false, hostActive: true, livre: { used: 3, limit: 3 } } }
+      // Os portões do Livre de verdade (seções e ∞ como os pagos, o AUTO travado com o selo LIVRE e
+      // o fim mostrando PARAR, como o buildStageView faz).
+      return { ...BASE, gates: stageGatesFor('free'), endMode: 'stop', isPlaying: false, app: { ...BASE.app, online: false, hostActive: true, livre: { used: 3, limit: 3 } } }
     case 'semtom':
       // Grade de tons sem tom original (a maior): semitons em 3 linhas, com "Definir o tom original" ao lado do 0.
       return { ...BASE, song: { ...SONG, originalKey: null, pitch: 3 } }

@@ -138,8 +138,8 @@ describe('LimitGate', () => {
     expect(proButton()).toBeNull()
     expect(studioButton()).toBeNull()
     expect(screen.queryByRole('timer')).toBeNull()
-    // Busca de novo só lendo, sem abrir janela, e não abre pagamento nenhum sozinha.
-    expect(offerCalls()).toEqual([{ open: true, trigger: 'repertoire' }, { open: false }])
+    // Não busca a oferta de novo nem abre pagamento nenhum sozinha.
+    expect(offerCalls()).toEqual([{ open: true, trigger: 'repertoire' }])
     expect(checkoutCalls()).toHaveLength(1)
     expect(desktop.openExternalUrl).not.toHaveBeenCalled()
     expect(alertSpy).not.toHaveBeenCalled()
@@ -148,15 +148,42 @@ describe('LimitGate', () => {
     expect(onSeePlans).toHaveBeenCalledTimes(1)
   })
 
-  it('se a nova leitura ainda disser que a janela está aberta, a tela nunca mostra a frase de oferta terminada junto do desconto', async () => {
+  it('depois do 409 de oferta terminada, a tela fica sem desconto e com a frase, mesmo se a oferta ainda vier aberta', async () => {
+    // O servidor da oferta segue respondendo `active` (relógios diferentes, corrida entre as
+    // leituras): a tela não volta a mostrar o desconto que o checkout acabou de recusar.
     routes.offer = [activeOffer]
     routes.checkout = [() => answer(409, { error: ENDED, offerEnded: true })]
     renderGate('stage-songs')
     fireEvent.click(await screen.findByRole('button', { name: 'Assinar o Pro por R$ 24,90' }))
-    await vi.waitFor(() => expect(offerCalls()).toHaveLength(2))
-    await screen.findByRole('button', { name: 'Assinar o Pro por R$ 24,90' })
-    expect(screen.queryByRole('alert')).toBeNull()
+    expect((await screen.findByRole('alert')).textContent).toBe(ENDED)
+    await flush()
+    await flush()
+    expect(proButton()).toBeNull()
+    expect(studioButton()).toBeNull()
+    expect(screen.queryByRole('timer')).toBeNull()
+    expect(screen.getByRole('alert').textContent).toBe(ENDED)
+    expect(checkoutCalls()).toHaveLength(1)
     expect(desktop.openExternalUrl).not.toHaveBeenCalled()
+  })
+
+  it('"Ver os planos" da tela sem oferta grava o anúncio clicado no lugar limit e abre os Planos', async () => {
+    routes.offer = [() => answer(200, { status: 'used', expiresAt: null, prices: PRICES })]
+    const { onSeePlans } = renderGate('download')
+    await flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Ver os planos' }))
+    expect(onSeePlans).toHaveBeenCalledTimes(1)
+    await flush()
+    expect(trackCalls()).toEqual([{ kind: 'ad_shown', placement: 'limit' }, { kind: 'ad_clicked', placement: 'limit' }])
+  })
+
+  it('"Ver todos os planos" da tela com a oferta grava o anúncio clicado no lugar limit e abre os Planos', async () => {
+    const { onSeePlans } = renderGate('stage-songs')
+    await screen.findByRole('timer')
+    fireEvent.click(screen.getByRole('button', { name: 'Ver todos os planos' }))
+    expect(onSeePlans).toHaveBeenCalledTimes(1)
+    await flush()
+    expect(trackCalls()).toEqual([{ kind: 'ad_shown', placement: 'limit' }, { kind: 'ad_clicked', placement: 'limit' }])
+    expect(checkoutCalls()).toEqual([])
   })
 
   it('409 sem offerEnded ("já tem este plano"), 400 e 500 mostram a frase do servidor na tela, sem alert, e o desconto fica', async () => {

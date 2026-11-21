@@ -108,7 +108,7 @@ export function buildNoscript(): string {
     '<div style="max-width:720px;margin:0 auto;padding:32px 20px;font-family:system-ui,sans-serif;line-height:1.6;color:#E8E8EC;background:#121214">',
     `<h1>${escapeHtml(PAGE_HEADS.home.title)}</h1>`,
     `<p>${escapeHtml(PAGE_HEADS.home.description)}</p>`,
-    '<p>O Playback Studio separa qualquer música em multitracks (voz, bateria, baixo, guitarra, piano e outros instrumentos) pra banda da igreja ensaiar e tocar no domingo, com mixer, troca de tom, BPM e voz guia. Funciona no navegador, no celular e no tablet, e tem app grátis pra Mac e Windows, que toca sem internet. O Modo Ao Vivo, aberto pelo app de computador, vem em todos os planos: no Livre com 1 celular por até 10 minutos por dia, no Pro com até 4 e no Studio sem limite.</p>',
+    '<p>O Playback Studio separa qualquer música em multitracks (voz, bateria, baixo, guitarra, piano e outros instrumentos) pra banda da igreja ensaiar e tocar no domingo, com mixer, troca de tom, BPM e voz guia. Funciona no navegador, no celular e no tablet, e tem app grátis pra Mac e Windows, que toca sem internet. O Modo Ao Vivo, aberto pelo app de computador, vem em todos os planos: no Livre com 1 celular no controle (os outros acompanham) por até 10 minutos por dia, no Pro com até 4 celulares no controle e no Studio sem limite.</p>',
     '<h2>Planos</h2>',
     '<ul>',
     plan('Livre', 'grátis', PLAN_SUMMARIES.livre),

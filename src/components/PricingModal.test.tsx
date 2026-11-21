@@ -67,6 +67,17 @@ describe('PricingModal: Alterar Plano', () => {
   })
 })
 
+// Revisão macro 1b: o Modo Ao Vivo aparece em todos os cartões que o têm, com o limite do FATOS
+// (no Pro, até 4 celulares no controle e os outros acompanham; no Studio, sem limite).
+describe('PricingModal: Modo Ao Vivo nos cartões', () => {
+  it('Pro Mensal e Pro Anual: até 4 celulares no controle; Studio Mensal e Anual: sem limite de aparelhos', () => {
+    render(<PricingModal isOpen onClose={() => {}} />)
+    for (const name of ['Pro Mensal', 'Pro Anual']) expect(card(name).textContent).toContain('Modo Ao Vivo com até 4 celulares no controle')
+    for (const name of ['Studio Mensal', 'Studio Anual']) expect(card(name).textContent).toContain('Modo Ao Vivo sem limite de aparelhos')
+    expect(screen.queryByText(/até 4 aparelhos|Ao Vivo ilimitado/)).toBeNull()
+  })
+})
+
 describe('PricingModal: app de computador', () => {
   it('abre o pagamento no navegador do sistema, não dentro da janela do app', async () => {
     desktop.isElectron = true
@@ -120,6 +131,26 @@ describe('PricingModal: primeiro mês com desconto', () => {
       { planKey: 'pro_mensal', confirmedSwitch: false, offer: true },
     ])
     expect(window.alert).not.toHaveBeenCalled()
+  })
+
+  // Revisão macro 1b (Ruling pads-tocando): com a música tocando ou na pré-contagem, os Planos
+  // abertos não mostram o desconto (oferta por cima do palco tocando, nunca) e o checkout vai pelo
+  // preço da tela, o cheio. A música parando, o desconto volta.
+  it('com a música tocando (hideOffer) não mostra o desconto e assinar vai sem a oferta; parando, volta', async () => {
+    route(activeOffer, () => answer(200, { url: 'https://asaas.test/c/chk_8' }))
+    const r = render(<PricingModal isOpen onClose={() => {}} hideOffer />)
+    await vi.waitFor(() => expect(bodies('/api/checkout?action=offer')).toHaveLength(1))
+    await new Promise((res) => setTimeout(res, 0))
+    expect(screen.queryByText(/Primeiro mês/)).toBeNull()
+    expect(card('Pro Mensal').textContent).toContain('R$ 49,90/mês')
+    subscribe('Pro Mensal')
+    await vi.waitFor(() => expect(bodies('/api/checkout')).toHaveLength(1))
+    expect(bodies('/api/checkout')[0]).toEqual({ planKey: 'essencial_mensal', confirmedSwitch: false })
+
+    r.rerender(<PricingModal isOpen onClose={() => {}} hideOffer={false} />)
+    await vi.waitFor(() => expect(card('Pro Mensal').textContent).toContain('Primeiro mês por'))
+    // A janela aberta não lê de novo só porque a música parou.
+    expect(bodies('/api/checkout?action=offer')).toHaveLength(1)
   })
 
   it('anual nunca mostra a oferta e sem janela tudo fica como antes', async () => {
@@ -186,7 +217,9 @@ describe('PricingModal: primeiro mês com desconto', () => {
 
   it('409 sem offerEnded e 500 seguem no aviso de sempre, com a frase do servidor', async () => {
     const HAS = 'Você já tem o Pro Mensal ativo. Não precisa assinar de novo; para mudar, escolha outro plano.'
-    route(activeOffer, () => answer(409, { error: HAS }))
+    const DOWN = 'Não deu para abrir o pagamento agora. Tente de novo em alguns minutos.'
+    let checkout = () => answer(409, { error: HAS })
+    route(activeOffer, () => checkout())
     render(<PricingModal isOpen onClose={() => {}} />)
     await vi.waitFor(() => expect(card('Pro Mensal').textContent).toContain('Primeiro mês por'))
     subscribe('Pro Mensal')
@@ -194,6 +227,17 @@ describe('PricingModal: primeiro mês com desconto', () => {
     // O desconto continua: não foi a oferta que terminou.
     expect(card('Pro Mensal').textContent).toContain('Primeiro mês por')
     expect(screen.queryByRole('alert')).toBeNull()
+
+    // O 500 (pagamento fora) também vai pelo aviso de sempre, e o desconto continua.
+    checkout = () => answer(500, { error: DOWN })
+    subscribe('Pro Mensal')
+    await vi.waitFor(() => expect(window.alert).toHaveBeenCalledWith(DOWN))
+    expect(window.alert).toHaveBeenCalledTimes(2)
+    expect(bodies('/api/checkout')).toHaveLength(2)
+    expect(bodies('/api/checkout')[1]).toEqual({ planKey: 'essencial_mensal', confirmedSwitch: false, offer: true })
+    expect(card('Pro Mensal').textContent).toContain('Primeiro mês por')
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(desktop.openExternalUrl).not.toHaveBeenCalled()
   })
 
   it('quem já paga (troca de plano) não lê a oferta: o aviso de troca fala do preço cheio', async () => {

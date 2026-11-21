@@ -6,8 +6,8 @@ import { uploadToR2 } from '../lib/r2';
 import { AUDIO_FILE_ACCEPT } from '../lib/uploadContentType';
 import { getAuthHeaders } from '../lib/supabase';
 import { fetchMonthlyQuota, formatDateBR } from '../lib/separationUsage';
-import { useAuth } from '../hooks/useAuth';
 import { useLivre } from '../hooks/useLivre';
+import { usePlansWhenQuiet } from '../hooks/usePlansWhenQuiet';
 import { canDownloadStems, canUseVoiceGuide, canUseBpmDetection, planTier, separationStemOptions, ALL_STEM_COUNTS, type StemCount } from '../lib/plans';
 import { isQuiet, separationIsThisMonth, separationKey, type EngineBusy } from '../lib/livreRules';
 import { PricingModal } from './PricingModal';
@@ -162,6 +162,11 @@ interface SeparatorStudioProps {
   // O motor do palco (App), que continua tocando com o Separador aberto. A tela de limite e o
   // anúncio do Livre só aparecem com ele parado também (Ruling R12).
   stageBusy: EngineBusy;
+  // A conta, o plano e o papel lidos no App, que só passa do carregando com eles: o Separador
+  // nunca decide o Livre (nem quem paga, nem o admin) com o plano ainda carregando.
+  userId: string | null;
+  userPlan: string;
+  isAdmin: boolean;
 }
 
 let globalAudioCtx: AudioContext | null = null;
@@ -172,8 +177,7 @@ function getAudioContext() {
   return globalAudioCtx;
 }
 
-export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stageBusy }) => {
-  const { user, userPlan, isAdmin, loading: authLoading } = useAuth();
+export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stageBusy, userId, userPlan, isAdmin }) => {
   const canDownload = isAdmin || canDownloadStems(userPlan);
   const canVoiceGuide = isAdmin || canUseVoiceGuide(userPlan);
   const canBpm = isAdmin || canUseBpmDetection(userPlan);
@@ -224,10 +228,12 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   // Os minutos do Ao Vivo correm só na instância do App.
   const busy: EngineBusy = { isPlaying: isPlaying || stageBusy.isPlaying, isCountingIn: stageBusy.isCountingIn };
   const quiet = isQuiet(busy);
-  const livre = useLivre({ userId: user?.id ?? null, plan: userPlan, isAdmin, busy, liveActive: false, onLiveExpired: () => {} });
-  // O useAuth desta tela começa em Livre até ler o perfil: quem paga e o admin nunca veem regra do
-  // Livre nesse meio tempo.
-  const isLivre = livre.isLivre && !authLoading;
+  const livre = useLivre({ userId, plan: userPlan, isAdmin, busy, liveActive: false, onLiveExpired: () => {} });
+  const isLivre = livre.isLivre;
+  // Recurso pago no Livre com a música tocando (a daqui ou a do palco atrás): os Planos esperam ela
+  // parar e, abertos tocando, não mostram o desconto (Ruling pads-tocando).
+  const openPlans = usePlansWhenQuiet(isLivre, quiet, () => setIsPricingOpen(true));
+  const hidePlansOffer = isLivre && !quiet;
   // A separação acabou de terminar (até abrir outra ou voltar): só ela chama o anúncio do fim.
   const [justSeparated, setJustSeparated] = useState(false);
   const [isLooping, setIsLooping] = useState(false);
@@ -470,7 +476,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
       const blob = await renderVoiceGuideToBlob();
       if (!blob) throw new Error('Falha ao renderizar voz guia');
       const file = new File([blob], 'voz_guia.wav', { type: 'audio/wav' });
-      const up = await uploadToR2('stems', `${user?.id || 'anon'}/${activeSepId || 'tmp'}/voz_guia_${Date.now()}.wav`, file);
+      const up = await uploadToR2('stems', `${userId || 'anon'}/${activeSepId || 'tmp'}/voz_guia_${Date.now()}.wav`, file);
       const url = (!up.error && up.url) ? up.url : URL.createObjectURL(blob);
       setStems(prev => {
         const old = prev.find(s => s.id === 'voiceguide');
@@ -1025,9 +1031,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
       setProgress(92);
       const songSlug = `sep_${Date.now()}`;
       const persistedStems: StemData[] = await Promise.all(stemsArray.map(async (s) => {
-        if (!user?.id || !/^https?:\/\//.test(s.url)) return s;
+        if (!userId || !/^https?:\/\//.test(s.url)) return s;
         try {
-          const key = `stems/${user.id}/${songSlug}/${s.id}_${Date.now()}.wav`;
+          const key = `stems/${userId}/${songSlug}/${s.id}_${Date.now()}.wav`;
           const copyRes = await fetch(apiUrl('/api/upload-stem-from-url'), {
             method: 'POST',
             headers: await getAuthHeaders(),
@@ -1254,7 +1260,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   };
 
   const handleSaveToDatabase = async () => {
-    if (!canCloudSave) { setIsPricingOpen(true); return; }
+    if (!canCloudSave) { openPlans(); return; }
     if (!songName) return alert("Preencha o Nome da Música.");
 
     setIsSaving(true);
@@ -1297,7 +1303,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
         let fileUrl: string;
         const isRemoteUrl = stem.url.startsWith('http://') || stem.url.startsWith('https://');
         if (isRemoteUrl) {
-          const key = `stems/${user?.id}/${songId}/${stem.id}_${Date.now()}.wav`;
+          const key = `stems/${userId}/${songId}/${stem.id}_${Date.now()}.wav`;
           const copyRes = await fetch(apiUrl('/api/upload-stem-from-url'), {
             method: 'POST',
             headers: await getAuthHeaders(),
@@ -1418,7 +1424,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   };
 
   const detectBpmFromAudio = async () => {
-    if (!canBpm) { setIsPricingOpen(true); return; }
+    if (!canBpm) { openPlans(); return; }
     setIsDetectingBpm(true);
     setGridInfo('');
     try {
@@ -1493,7 +1499,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
         try {
           const blob = await (await fetch(clickTrackUrl)).blob();
           const file = new File([blob], 'click.wav', { type: 'audio/wav' });
-          const up = await uploadToR2('stems', `${user?.id || 'anon'}/${activeSepId || 'tmp'}/click_${Date.now()}.wav`, file);
+          const up = await uploadToR2('stems', `${userId || 'anon'}/${activeSepId || 'tmp'}/click_${Date.now()}.wav`, file);
           if (up.error || !up.url) { console.warn('[Click] upload falhou, fica só nesta sessão:', up.error); return; }
           const remoteUrl = up.url;
           urlAliases.current.set(remoteUrl, clickTrackUrl);
@@ -1632,7 +1638,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
           </div>
         </div>
 
-        {isPricingOpen && <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />}
+        {isPricingOpen && <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} hideOffer={hidePlansOffer} />}
         {limitGate}
       </div>
     );
@@ -1748,7 +1754,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
         </div>
 
         {/* "Ver os planos" da tela de limite também abre os Planos aqui. */}
-        <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
+        <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} hideOffer={hidePlansOffer} />
         {limitGate}
       </div>
     );
@@ -1896,7 +1902,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
           {/* Direita: VOZ · SYNC · MASTER */}
           <div className="flex-none flex items-center justify-center gap-2.5 min-w-0">
             {stems.length > 0 && (
-              <button onClick={() => canVoiceGuide ? setShowVoiceGuide(true) : setIsPricingOpen(true)}
+              <button onClick={() => canVoiceGuide ? setShowVoiceGuide(true) : openPlans()}
                 title={canVoiceGuide ? 'Voz guia' : 'Voz guia disponível nos planos pagos'}
                 className={`transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md cursor-pointer transition-all ${voiceCues.length > 0 ? 'text-yellow-400 border-yellow-500/30' : 'text-white/70 hover:text-yellow-400'}`}>
                 {canVoiceGuide ? <Mic size={12} /> : <Lock size={12} />}
@@ -2074,7 +2080,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
           música parada (a daqui e a do palco). No fluxo, embaixo das faixas, sem cobrir nada.
           "Conhecer o Pro" abre os Planos aqui mesmo. */}
       <div className="shrink-0 grid grid-cols-[minmax(0,28rem)] justify-center border-t border-[#222] bg-[#111113] px-3 py-3 empty:hidden">
-        <AdSlot placement="separation-done" userId={user?.id ?? null} isLivre={isLivre} quiet={quiet} justSeparated={justSeparated} onCta={() => setIsPricingOpen(true)} />
+        <AdSlot placement="separation-done" userId={userId} isLivre={isLivre} quiet={quiet} justSeparated={justSeparated} onCta={() => setIsPricingOpen(true)} />
       </div>
 
       {/* SAVE MODAL */}
@@ -2441,7 +2447,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
         </div>
       )}
 
-      <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
+      <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} hideOffer={hidePlansOffer} />
       {limitGate}
     </div>
   );

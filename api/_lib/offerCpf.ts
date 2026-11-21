@@ -10,8 +10,9 @@ import type { BillingDeps } from './billing.js'
 // Nada aqui derruba a cobrança: qualquer falha vira a marcação "CPF não conferido" na ficha
 // da assinatura (billing_flag_review), pro admin olhar.
 
-const NOTE_REUSED = 'oferta do primeiro mes: o mesmo CPF ja usou a oferta em outra conta'
-const NOTE_UNCHECKED = 'oferta do primeiro mes: CPF nao conferido (Asaas fora ou servidor sem OFFER_CPF_SECRET)'
+// As marcações aparecem na ficha do admin: português com acento e sem nome de variável.
+const NOTE_REUSED = 'oferta do primeiro mês: o mesmo CPF já usou a oferta em outra conta'
+const NOTE_UNCHECKED = 'oferta do primeiro mês: CPF não conferido (Asaas fora ou segredo do CPF não configurado no servidor)'
 
 export type OfferCpfResult = 'ok' | 'reused' | 'unchecked'
 

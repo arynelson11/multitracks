@@ -17,8 +17,9 @@ const SECRET = 'segredo-falso-so-de-teste'
 const CPF = '12345678909'
 const CPF_SHOWN = '123.456.789-09'
 const TRAVESSAO = String.fromCharCode(0x2014)
-const NOTE_REUSED = 'oferta do primeiro mes: o mesmo CPF ja usou a oferta em outra conta'
-const NOTE_UNCHECKED = 'oferta do primeiro mes: CPF nao conferido (Asaas fora ou servidor sem OFFER_CPF_SECRET)'
+// As marcações aparecem na ficha do admin: português com acento, sem nome de variável.
+const NOTE_REUSED = 'oferta do primeiro mês: o mesmo CPF já usou a oferta em outra conta'
+const NOTE_UNCHECKED = 'oferta do primeiro mês: CPF não conferido (Asaas fora ou segredo do CPF não configurado no servidor)'
 const FULL_PRO = { value: 49.9, cycle: 'MONTHLY', description: 'Playback Studio Pro (mensal)', updatePendingPayments: true }
 const FULL_STUDIO = { value: 119.9, cycle: 'MONTHLY', description: 'Playback Studio Studio (mensal)', updatePendingPayments: true }
 
@@ -527,6 +528,8 @@ describe('CPF da oferta (HMAC, nunca o número)', () => {
     vi.stubEnv('OFFER_CPF_SECRET', '')
     expect(await paid()).toEqual({ result: 'activated' })
     expect(sub('chk_1').admin_note).toContain(NOTE_UNCHECKED)
+    // A ficha do admin nunca mostra nome de variável do servidor.
+    expect(sub('chk_1').admin_note).not.toMatch(/[A-Z]+_[A-Z_]+/)
     // sem o segredo nem pergunta o CPF ao Asaas
     expect(customerReads()).toEqual([])
     expect(rpcArgs('offer_record_cpf')).toEqual([])

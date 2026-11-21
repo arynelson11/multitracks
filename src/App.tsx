@@ -25,9 +25,12 @@ import { WhatsNewModal } from './components/WhatsNewModal'
 import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/SectionBar'
 import { canUseSections, maxLiveDevices, planTier, canBandControlSections, canUseGeneratedClick, canChangeKey, canUsePlatformCatalog, canUseCloudPads, canUseRepertoire } from './lib/plans'
 import { useLivre } from './hooks/useLivre'
+import { usePlansWhenQuiet } from './hooks/usePlansWhenQuiet'
 import { stageSongKey } from './lib/livreRules'
-import { removalOpensRefusedSong } from './lib/songRemoval'
+import { nextSongAfter, removalOpensRefusedSong } from './lib/songRemoval'
+import { cycleEndMode, shownEndMode, type EndMode } from './lib/autoAdvance'
 import { trackAd } from './lib/productEvents'
+import { livreLiveLeftText } from './components/livre/adCopy'
 import { LimitGate } from './components/livre/LimitGate'
 import { AdSlot } from './components/livre/AdSlot'
 import { AdminEntryButton, InAppAdmin } from './components/AdminEntryButton'
@@ -499,8 +502,9 @@ export default function App() {
     ? ([..._activeMarkers].sort((a, b) => a.time - b.time).find((m) => m.time > currentTime)?.label ?? null)
     : null
 
-  // Próxima música com tom e BPM (não só o nome) — o follower calcula a nota a partir de originalKey + pitch
-  const _next = playlist[activeSongIndex + 1]
+  // Próxima música com tom e BPM (não só o nome): o follower calcula a nota a partir de originalKey + pitch.
+  // Sem música atual (Livre que apagou a atual com o mês cheio) não há próxima.
+  const _next = nextSongAfter(playlist, activeSongIndex)
   const nextSongInfo = _next
     ? { name: _next.name, originalKey: _next.originalKey ?? null, pitch: _next.pitch ?? 0, bpm: _next.bpm ?? null }
     : null
@@ -578,6 +582,11 @@ export default function App() {
   // e liberações apagados) e o motor segue tocando: nada aqui mexe no som.
   const onLiveExpired = () => { void handleStopLiveMode(); setRemoteSessionCode(null); setApprovedIps([]) }
   const livre = useLivre({ userId: user?.id ?? null, plan: userPlan, isAdmin, busy: { isPlaying, isCountingIn }, liveActive: hostActive && (connectedIps.length > 0 || remoteSessionCode !== null), onLiveExpired })
+  // Recurso pago tocado no Livre com a música tocando ou na pré-contagem (Ruling pads-tocando):
+  // os Planos esperam a música parar, como a tela de limite. Quem paga e o admin abrem na hora.
+  const openPlans = usePlansWhenQuiet(livre.isLivre, engineQuiet, () => setIsPricingOpen(true))
+  // Planos abertos com a música tocando não mostram o desconto (nada de oferta por cima do palco).
+  const hidePlansOffer = livre.isLivre && !engineQuiet
   const isDesktopApp = !!window.playbackDesktop?.isElectron
   const stageView = useMemo(() => (useNewStage ? buildStageView({
     song: activeSong, playlist, activeIndex: activeSongIndex, duration, spans: sectionSpansView, currentSection: stageSection,
@@ -586,13 +595,14 @@ export default function App() {
   }, {
     plan: userPlan, isAdmin, online: isOnline, isDesktop: isDesktopApp, userName, hostActive, editMode: isEditMode,
     channelEditMode: isChannelEditMode, padPanelOpen: isPadPanelOpen, activePad: activeNote, repertoireName: null,
-    // Selo do Livre na barra ("LIVRE · 2 de 3 músicas este mês"); a vista tira ele tocando.
-    livre: livre.isLivre ? livre.stage : null, autoPan: settings.autoPan,
+    // Selo do Livre na barra ("LIVRE · 2 de 3 músicas este mês"); a vista tira ele tocando. Com a
+    // sessão do Ao Vivo ligada, o tempo que falta hoje (Ruling relogio-livre), que fica tocando.
+    livre: livre.isLivre ? { ...livre.stage, liveLeftMs: hostActive ? livre.live.remainingMs : null } : null, autoPan: settings.autoPan,
   }) : null), [
     useNewStage, activeSong, playlist, activeSongIndex, duration, sectionSpansView, stageSection, isPlaying, isCountingIn, precountEnabled,
     precountBeats, precountTimes, playbackMode, sectionIntent, transitionView, landed, stageGrid, gridWarning, isReadingGrid, outputPlan,
     masterVolume, masterMuted, userPlan, isAdmin, isOnline, isDesktopApp, userName, hostActive, isEditMode, isChannelEditMode,
-    isPadPanelOpen, activeNote, settings.autoPan, livre.isLivre, livre.stage,
+    isPadPanelOpen, activeNote, settings.autoPan, livre.isLivre, livre.stage, livre.live,
   ])
 
   // Grava o compasso na nuvem quem pode editar BPM e tom daquela música (R-30): o admin nas músicas
@@ -612,7 +622,7 @@ export default function App() {
       console.error('Falha ao salvar o compasso na nuvem:', e)
     }
   }
-  const upgradeIf = (r: { upgrade: boolean }) => { if (r.upgrade) setIsPricingOpen(true) }
+  const upgradeIf = (r: { upgrade: boolean }) => { if (r.upgrade) openPlans() }
   const clampToSong = (t: number) => Math.max(0, Math.min(duration || 0, Number.isFinite(t) ? t : 0))
   const promptEndlessMetronome = () => setTextPrompt({ kind: 'metronome' })
 
@@ -637,6 +647,14 @@ export default function App() {
     if (livre.isLivre && activeSongIndex > 0) { livre.requestLimit('repertoire'); return }
     prevSong()
   }, [livre, activeSongIndex, prevSong])
+  // AUTO entre músicas (Ruling AUTO-livre): no Livre ele aparece travado nos dois palcos (a tela
+  // mostra PARAR, shownEndMode) e o toque nele pede a tela do repertório, que espera a VS parar.
+  const autoNextAllowed = !livre.isLivre
+  const shownMode = shownEndMode(playbackMode, autoNextAllowed)
+  const setEndModeGated = (m: EndMode) => {
+    if (m === 'continue' && !autoNextAllowed) { livre.requestLimit('repertoire'); return }
+    setPlaybackMode(m)
+  }
   const exportZipGated = () => {
     if (livre.isLivre) { setIsSetlistMenuOpen(false); livre.requestLimit('repertoire'); return }
     void handleExport()
@@ -701,7 +719,7 @@ export default function App() {
       if (startAction(isPlaying, sectionSpansView.length, sectionGates) === 'arm') upgradeIf(armSection(0))
       else seekTo(0)
     },
-    setEndMode: (m: 'continue' | 'stop' | 'fade-out') => setPlaybackMode(m),
+    setEndMode: (m: 'continue' | 'stop' | 'fade-out') => setEndModeGated(m),
     togglePrecount: () => togglePrecountEnabled(!precountEnabled),
     cyclePrecountBeats: () => setPrecountBeats(precountBeats >= 8 ? 1 : precountBeats + 1),
     toggleClick: () => { const click = findClickChannel(channels); if (click) toggleMute(click.id) },
@@ -737,7 +755,7 @@ export default function App() {
     openSettings: () => { setSettingsFocus(null); setIsSettingsOpen(true) },
     goHome: () => setForceShowSplash(true),
     signOut: () => { void signOut() },
-    openUpgrade: () => setIsPricingOpen(true),
+    openUpgrade: () => openPlans(),
     openLivreBadge: () => { trackAd('ad_clicked', 'badge'); setIsPricingOpen(true) },
     openChannelEdit: (id: string) => setEditing({ channelId: id, songIndex: activeSongIndex }),
     reorderChannel: (from: number, to: number) => {
@@ -750,7 +768,7 @@ export default function App() {
     removeChannel: (id: string) => removeChannel(id),
     // Modo EDITAR (T16): marcar, ajustar e tirar seção mexem na marca de origem do trecho.
     markSection: (label: string) => {
-      if (!canUseSections(userPlan)) { setIsPricingOpen(true); return }
+      if (!canUseSections(userPlan)) { openPlans(); return }
       if (!activeSong) return
       setSongMarkers(activeSong.id, addSectionAt(activeSong.markers ?? [], heardPosition(), label, stageGrid, () => crypto.randomUUID()))
     },
@@ -1132,10 +1150,11 @@ export default function App() {
     localStorage.setItem('last_seen_version', CURRENT_VERSION)
   }
 
-  // Recurso preso a um portão do plano (src/lib/plans.ts): liberado, roda a ação; senão abre os Planos.
+  // Recurso preso a um portão do plano (src/lib/plans.ts): liberado, roda a ação; senão abre os
+  // Planos (no Livre, só com a música parada: openPlans espera ela parar).
   const withPlan = (allowed: boolean, action: () => void) => {
     if (!allowed) {
-      setIsPricingOpen(true)
+      openPlans()
       return
     }
     action()
@@ -1403,7 +1422,7 @@ export default function App() {
   // O motor do palco segue tocando com o Separador aberto: ele recebe o estado pra a tela de limite
   // e o anúncio do Livre esperarem a música parar (Ruling R12).
   if (isSeparatorOpen) {
-    return <SeparatorStudio onClose={() => setIsSeparatorOpen(false)} stageBusy={{ isPlaying, isCountingIn }} />
+    return <SeparatorStudio onClose={() => setIsSeparatorOpen(false)} stageBusy={{ isPlaying, isCountingIn }} userId={user?.id ?? null} userPlan={userPlan} isAdmin={isAdmin} />
   }
 
   // ───────────────── ADMIN (dentro do app, só pra quem tem o papel) ─────────────────
@@ -1443,7 +1462,7 @@ export default function App() {
         <div className="mt-6 w-full max-w-md empty:hidden">
           <AdSlot placement="home" userId={user.id} isLivre={livre.isLivre} quiet={engineQuiet} onCta={() => setIsPricingOpen(true)} />
         </div>
-        <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
+        <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} hideOffer={hidePlansOffer} />
       </div>
     )
   }
@@ -1630,7 +1649,7 @@ export default function App() {
                       </button>
                       <label
                         className="w-full text-left px-4 py-2.5 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer transition-colors">
-                        <span className="text-white text-sm font-medium flex items-center gap-3"><FolderOpen size={16} className="text-primary" />Importar Stems</span>
+                        <span className="text-white text-sm font-medium flex items-center gap-3"><FolderOpen size={16} className="text-primary" />Importar multitracks</span>
                         <ChevronRight size={14} className="text-text-muted" />
                         <input type="file" multiple accept={AUDIO_FILE_ACCEPT} className="hidden"
                           onChange={(e) => { if (e.target.files) { importFilesGated(e.target.files); setIsSetlistMenuOpen(false) } }} />
@@ -1718,10 +1737,10 @@ export default function App() {
               Modo ao terminar (AUTO/PARAR/FADE) vira um botão que alterna a cada toque. */}
           <div className="hidden short:flex items-center gap-1 shrink-0">
             <button
-              onClick={() => setPlaybackMode(playbackMode === 'continue' ? 'stop' : playbackMode === 'stop' ? 'fade-out' : 'continue')}
-              title="Ao terminar a música: toque pra trocar (Auto, Parar, Fade)"
-              className={`transport-btn h-8 px-2 rounded-md text-[9px] font-bold uppercase tracking-wider font-mono cursor-pointer whitespace-nowrap ${playbackMode === 'continue' ? 'text-primary' : playbackMode === 'stop' ? 'text-accent-red' : 'text-purple-400'}`}>
-              {playbackMode === 'continue' ? '▶ Auto' : playbackMode === 'stop' ? '■ Parar' : 'Fade'}
+              onClick={() => setEndModeGated(cycleEndMode(playbackMode, autoNextAllowed))}
+              title={autoNextAllowed ? 'Ao terminar a música: toque pra trocar (Auto, Parar, Fade)' : 'Ao terminar a música: toque pra trocar (Parar, Fade). No Livre, o Auto é do Pro'}
+              className={`transport-btn h-8 px-2 rounded-md text-[9px] font-bold uppercase tracking-wider font-mono cursor-pointer whitespace-nowrap ${shownMode === 'continue' ? 'text-primary' : shownMode === 'stop' ? 'text-accent-red' : 'text-purple-400'}`}>
+              {shownMode === 'continue' ? '▶ Auto' : shownMode === 'stop' ? '■ Parar' : 'Fade'}
             </button>
             <button onClick={prevSongGated} title="Música anterior" aria-label="Música anterior"
               className="transport-btn w-8 h-8 flex items-center justify-center rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipBack size={15} /></button>
@@ -1932,7 +1951,7 @@ export default function App() {
                       <ChevronRight size={14} className="text-text-muted" />
                     </button>
                     <label className="w-full text-left px-4 py-2.5 rounded-md hover:bg-white/5 flex items-center justify-between cursor-pointer">
-                      <span className="text-white text-sm font-medium flex items-center gap-3"><FolderOpen size={16} className="text-primary" />Importar Stems</span>
+                      <span className="text-white text-sm font-medium flex items-center gap-3"><FolderOpen size={16} className="text-primary" />Importar multitracks</span>
                       <ChevronRight size={14} className="text-text-muted" />
                       <input type="file" multiple accept={AUDIO_FILE_ACCEPT} className="hidden"
                         onChange={(e) => { if (e.target.files) { importFilesGated(e.target.files); setIsSetlistMenuOpen(false) } }} />
@@ -2027,14 +2046,14 @@ export default function App() {
         <div className="flex flex-col tight:flex-row tight:justify-center items-center px-3 py-2 sm:py-2.5 tight:py-1.5 short:py-1 short:hidden bg-[#141416] gap-1 tight:gap-4">
           {/* Playback Mode — acima dos controles */}
           <div data-tour="modos" className="hidden sm:flex items-center lcd-display rounded-md overflow-hidden">
-            <button onClick={() => setPlaybackMode('continue')}
-              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer font-mono ${playbackMode === 'continue' ? 'bg-primary/15 text-primary' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
-              title="Continuar para próxima música">▶ AUTO</button>
-            <button onClick={() => setPlaybackMode('stop')}
-              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider border-l border-r border-border transition-all cursor-pointer font-mono ${playbackMode === 'stop' ? 'bg-accent-red/15 text-accent-red' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
+            <button onClick={() => setEndModeGated('continue')}
+              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer font-mono ${shownMode === 'continue' ? 'bg-primary/15 text-primary' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
+              title={autoNextAllowed ? 'Continuar para próxima música' : 'No Livre, passar sozinho pra próxima música é do Pro'}>▶ AUTO{!autoNextAllowed && <span className="ml-1 px-1 rounded bg-white/10 text-[7px] text-text-muted">LIVRE</span>}</button>
+            <button onClick={() => setEndModeGated('stop')}
+              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider border-l border-r border-border transition-all cursor-pointer font-mono ${shownMode === 'stop' ? 'bg-accent-red/15 text-accent-red' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
               title="Parar no final">⏹ PARAR</button>
-            <button onClick={() => setPlaybackMode('fade-out')}
-              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer font-mono ${playbackMode === 'fade-out' ? 'bg-purple-500/15 text-purple-400' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
+            <button onClick={() => setEndModeGated('fade-out')}
+              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer font-mono ${shownMode === 'fade-out' ? 'bg-purple-500/15 text-purple-400' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
               title="Fade nos últimos 5 segundos">🔉 FADE</button>
           </div>
 
@@ -2265,7 +2284,7 @@ export default function App() {
                 canEdit={!!user}
                 infiniteAllowed={canUseSections(userPlan)}
                 maxRepeats={9}
-                onUpgrade={() => setIsPricingOpen(true)}
+                onUpgrade={() => openPlans()}
                 onSeek={seekTo}
                 onArmLoop={armLoop}
                 onCancelLoop={cancelLoop}
@@ -2716,6 +2735,7 @@ export default function App() {
         onToggleAll={approveAllLiveDevices}
         remoteSessionCode={remoteSessionCode}
         onToggleRemote={() => setRemoteSessionCode(prev => prev ? null : Math.random().toString(36).slice(2, 8).toUpperCase())}
+        livreTimeLeft={livre.isLivre ? livreLiveLeftText(livre.live.remainingMs) : null}
       />
 
       {/* Renomear (menu FAIXAS do palco novo) e BPM do metrônomo infinito, nos dois palcos. */}
@@ -2790,7 +2810,7 @@ export default function App() {
         />
       )}
 
-      <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
+      <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} hideOffer={hidePlansOffer} />
 
       {/* Tela de limite do Livre (Parte 3): só com a VS parada (o useLivre segura o pedido até parar).
           Ela fica por cima dos Planos, então "Ver todos os planos" fecha ela antes de abrir os Planos. */}

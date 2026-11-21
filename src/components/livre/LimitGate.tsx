@@ -6,7 +6,8 @@
 // Regra de cobrança: `offer: true` só sai quando a tela mostrou o desconto. Os botões de assinar
 // só existem com a oferta no ar (LimitScreen); sem a oferta (sem internet, já assinou, janela
 // vencida), a tela leva pros Planos, com o preço cheio. Se o servidor diz que a oferta terminou,
-// o desconto some, a frase dele aparece e a pessoa decide; nada abre sozinho.
+// o desconto some de vez, a frase dele aparece e a pessoa decide; nada abre sozinho. Os dois
+// botões dos Planos ("Ver os planos" e "Ver todos os planos") gravam o anúncio clicado.
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '../ui'
 import { StageDialog } from '../stage/StageDialog'
@@ -81,15 +82,15 @@ export function LimitGate({ kind, onClose, onSeePlans }: LimitGateProps) {
       return
     }
     setError(out.message)
-    if (!out.offerEnded) return
-    // A oferta terminou no meio: tira o desconto já e lê de novo, sem abrir janela. O servidor
-    // lê do mesmo jeito nos dois pedidos, então a resposta é sem oferta; se mesmo assim disser
-    // que a janela segue aberta, vale ela, e a frase de oferta terminada sai (nunca as duas juntas).
-    setOffer({ status: 'loading' })
-    const view = toOfferView(await fetchOffer({ open: false }), Date.now())
-    if (!mounted.current) return
-    setOffer(view)
-    if (view.status === 'active') setError(null)
+    // A oferta terminou no meio: o desconto sai de vez e a frase fica, sem ler a oferta de novo.
+    // Quem decide a cobrança é o checkout; uma leitura que ainda dissesse `active` (relógios
+    // diferentes, corrida entre as duas leituras) mostraria o desconto recusado em laço.
+    if (out.offerEnded) setOffer({ status: 'none' })
+  }
+
+  const seePlans = () => {
+    trackAd('ad_clicked', 'limit')
+    onSeePlans()
   }
 
   if (openedOutside) {
@@ -113,7 +114,7 @@ export function LimitGate({ kind, onClose, onSeePlans }: LimitGateProps) {
       busyPlan={busyPlan}
       error={error}
       onChoose={(planKey) => { void choose(planKey) }}
-      onSeePlans={onSeePlans}
+      onSeePlans={seePlans}
       onClose={onClose}
     />
   )
