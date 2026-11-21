@@ -138,6 +138,18 @@ describe('barra do app', () => {
     }
   })
 
+  it('com a sessão do Ao Vivo ligada a barra mostra o tempo no selo; tocando (tappable falso) sem toque', () => {
+    const { rerender, actions } = renderBar({ isDesktop: true, hostActive: true, livre: { used: 2, limit: 3, liveLeftMs: 432_000 } })
+    expect(livreBadge()!.textContent).toBe('LIVRE · 07:12 com a banda hoje')
+    fireEvent.click(livreBadge()!)
+    expect(actions.openLivreBadge).toHaveBeenCalledTimes(1)
+    rerender(<StageAppBar app={{ ...APP, isDesktop: true, hostActive: true, livre: { used: 2, limit: 3, liveLeftMs: 431_000, tappable: false } }} editMode={false} actions={actions} />)
+    expect(livreBadge()!.tagName).toBe('SPAN')
+    expect(livreBadge()!.textContent).toBe('LIVRE · 07:11 com a banda hoje')
+    fireEvent.click(livreBadge()!)
+    expect(actions.openLivreBadge).toHaveBeenCalledTimes(1)
+  })
+
   it('sem app.livre a barra não mostra o selo', () => {
     const { rerender, actions } = renderBar({ livre: null })
     expect(livreBadge()).toBeNull()

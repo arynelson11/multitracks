@@ -53,8 +53,9 @@ function initial(name: string | null): string {
 
 /**
  * Barra fina do app no palco novo (mockup v5): PlayMark e "Playback Studio", selo ONLINE ou
- * OFFLINE, o selo do Livre ao lado dele (só com `app.livre`: conta Livre e palco parado; o toque
- * abre os Planos; abaixo de 1280 px o selo encurta e o "Playback Studio" sai, fica o PlayMark) e o menu REPERTÓRIOS, FAIXAS, BIBLIOTECA, EDITAR (aceso no modo EDITAR), HOST (só no
+ * OFFLINE, o selo do Livre ao lado dele (só com `app.livre`: conta Livre e palco parado, ou com a
+ * sessão do Ao Vivo ligada, aí com o tempo que falta e, tocando, só texto; o toque abre os Planos;
+ * abaixo de 1280 px o selo encurta e o "Playback Studio" sai, fica o PlayMark) e o menu REPERTÓRIOS, FAIXAS, BIBLIOTECA, EDITAR (aceso no modo EDITAR), HOST (só no
  * app do computador; aceso com o host ligado), CONFIG, INÍCIO, avatar e SAIR. Os `data-tour`
  * são os mesmos do palco antigo, pro tour achar os botões.
  */
@@ -75,7 +76,12 @@ export function StageAppBar({ app, editMode, actions }: StageAppBarProps) {
         <span aria-hidden="true" className={cx('size-1.5 shrink-0 rounded-full', app.online ? DOT_ONLINE : DOT_OFFLINE)} />
         {app.online ? 'ONLINE' : 'OFFLINE'}
       </span>
-      {app.livre && <LivreBadge used={app.livre.used} limit={app.livre.limit} onClick={actions.openLivreBadge} />}
+      {app.livre && (
+        <LivreBadge
+          used={app.livre.used} limit={app.livre.limit} liveLeftMs={app.livre.liveLeftMs ?? null}
+          onClick={app.livre.tappable === false ? undefined : actions.openLivreBadge}
+        />
+      )}
 
       <nav aria-label="Navegação do app" className="ml-auto flex shrink-0 items-center gap-0.5">
         <NavButton data-tour="repertorios" text="REPERTÓRIOS" aria-label="Repertórios" title="Lista do repertório e Anotações" onClick={actions.openRepertoires} />

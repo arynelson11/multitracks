@@ -189,6 +189,15 @@ describe('buildStageView', () => {
       expect(build({ isPlaying: true, isCountingIn: true }, { livre: L }).app.livre).toBeNull()
       expect(build({}, { livre: L }).app.livre).toEqual(L)
     })
+    // Ruling relogio-livre: com a sessão do Ao Vivo ligada (liveLeftMs), o selo fica também com a
+    // música tocando, só como texto (sem o toque que abre os Planos por cima do palco).
+    it('com a sessão do Ao Vivo ligada o selo fica tocando, sem toque; parado, com toque', () => {
+      const LL = { used: 2, limit: 3, liveLeftMs: 432_000 }
+      expect(build({ isPlaying: true }, { livre: LL }).app.livre).toEqual({ ...LL, tappable: false })
+      expect(build({ isCountingIn: true }, { livre: LL }).app.livre).toEqual({ ...LL, tappable: false })
+      expect(build({}, { livre: LL }).app.livre).toEqual(LL)
+      expect(build({ isPlaying: true }, { livre: { used: 2, limit: 3, liveLeftMs: null } }).app.livre).toBeNull()
+    })
     it('conta paga: app.livre nulo', () => {
       expect(build({}, { livre: null }).app.livre).toBeNull()
       expect(build({ isPlaying: true }, { livre: null }).app.livre).toBeNull()

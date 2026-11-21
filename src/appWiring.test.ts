@@ -215,7 +215,18 @@ describe('ligações do palco novo', () => {
     expect(hook).toBeGreaterThan(expired)
     expect(view).toBeGreaterThan(hook)
     expect(app).toMatch(/useLivre\(\{\s*userId: user\?\.id \?\? null,\s*plan: userPlan,\s*isAdmin,\s*busy: \{ isPlaying, isCountingIn \},\s*liveActive: hostActive\b/)
-    expect(app).toMatch(/livre:\s*livre\.isLivre\s*\?\s*livre\.stage\s*:\s*null/)
+    // Com a sessão do Ao Vivo ligada, o selo leva o tempo que falta (Ruling relogio-livre).
+    expect(app).toMatch(/livre:\s*livre\.isLivre\s*\?\s*\{ \.\.\.livre\.stage, liveLeftMs: hostActive \? livre\.live\.remainingMs : null \}\s*:\s*null/)
+  })
+
+  // Revisão macro 1b (Ruling relogio-livre): o tempo que falta do Ao Vivo do Livre em texto na
+  // janela do Ao Vivo (uma prop e uma linha no LiveModeModal) e no selo, com a sessão ligada.
+  it('a janela do Ao Vivo recebe o tempo que falta do Livre', () => {
+    expect(app).toMatch(/<LiveModeModal[\s\S]*?livreTimeLeft=\{livre\.isLivre \? livreLiveLeftText\(livre\.live\.remainingMs\) : null\}/)
+    const modal = read('./components/LiveModeModal.tsx')
+    expect(modal).toMatch(/livreTimeLeft\?: string \| null;/)
+    expect(modal).toMatch(/\{livreTimeLeft && <p role="timer"[^>]*>\{livreTimeLeft\}<\/p>\}/)
+    expect(app).toMatch(/isPadPanelOpen, activeNote, settings\.autoPan, livre\.isLivre, livre\.stage, livre\.live,/)
   })
 
   it('a tela de limite está no App e desliga os atalhos', () => {

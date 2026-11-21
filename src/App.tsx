@@ -30,6 +30,7 @@ import { stageSongKey } from './lib/livreRules'
 import { nextSongAfter, removalOpensRefusedSong } from './lib/songRemoval'
 import { cycleEndMode, shownEndMode, type EndMode } from './lib/autoAdvance'
 import { trackAd } from './lib/productEvents'
+import { livreLiveLeftText } from './components/livre/adCopy'
 import { LimitGate } from './components/livre/LimitGate'
 import { AdSlot } from './components/livre/AdSlot'
 import { AdminEntryButton, InAppAdmin } from './components/AdminEntryButton'
@@ -593,13 +594,14 @@ export default function App() {
   }, {
     plan: userPlan, isAdmin, online: isOnline, isDesktop: isDesktopApp, userName, hostActive, editMode: isEditMode,
     channelEditMode: isChannelEditMode, padPanelOpen: isPadPanelOpen, activePad: activeNote, repertoireName: null,
-    // Selo do Livre na barra ("LIVRE · 2 de 3 músicas este mês"); a vista tira ele tocando.
-    livre: livre.isLivre ? livre.stage : null, autoPan: settings.autoPan,
+    // Selo do Livre na barra ("LIVRE · 2 de 3 músicas este mês"); a vista tira ele tocando. Com a
+    // sessão do Ao Vivo ligada, o tempo que falta hoje (Ruling relogio-livre), que fica tocando.
+    livre: livre.isLivre ? { ...livre.stage, liveLeftMs: hostActive ? livre.live.remainingMs : null } : null, autoPan: settings.autoPan,
   }) : null), [
     useNewStage, activeSong, playlist, activeSongIndex, duration, sectionSpansView, stageSection, isPlaying, isCountingIn, precountEnabled,
     precountBeats, precountTimes, playbackMode, sectionIntent, transitionView, landed, stageGrid, gridWarning, isReadingGrid, outputPlan,
     masterVolume, masterMuted, userPlan, isAdmin, isOnline, isDesktopApp, userName, hostActive, isEditMode, isChannelEditMode,
-    isPadPanelOpen, activeNote, settings.autoPan, livre.isLivre, livre.stage,
+    isPadPanelOpen, activeNote, settings.autoPan, livre.isLivre, livre.stage, livre.live,
   ])
 
   // Grava o compasso na nuvem quem pode editar BPM e tom daquela música (R-30): o admin nas músicas
@@ -2732,6 +2734,7 @@ export default function App() {
         onToggleAll={approveAllLiveDevices}
         remoteSessionCode={remoteSessionCode}
         onToggleRemote={() => setRemoteSessionCode(prev => prev ? null : Math.random().toString(36).slice(2, 8).toUpperCase())}
+        livreTimeLeft={livre.isLivre ? livreLiveLeftText(livre.live.remainingMs) : null}
       />
 
       {/* Renomear (menu FAIXAS do palco novo) e BPM do metrônomo infinito, nos dois palcos. */}

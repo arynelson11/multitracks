@@ -14,6 +14,7 @@ interface LiveModeModalProps {
     onToggleAll: () => void;
     remoteSessionCode: string | null;
     onToggleRemote: () => void;
+    livreTimeLeft?: string | null; // Livre: o tempo do Ao Vivo que falta hoje, em frase pronta (Ruling relogio-livre)
 }
 
 export function LiveModeModal({
@@ -28,7 +29,8 @@ export function LiveModeModal({
     onToggleDevice,
     onToggleAll,
     remoteSessionCode,
-    onToggleRemote
+    onToggleRemote,
+    livreTimeLeft
 }: LiveModeModalProps) {
     const allApproved = devices.length > 0 && devices.every(ip => approvedIps.includes(ip));
     const remoteLink = remoteSessionCode ? `https://playbackstudio.com.br/?s=${remoteSessionCode}` : '';
@@ -89,6 +91,7 @@ export function LiveModeModal({
                                 </div>
                             </div>
 
+                            {livreTimeLeft && <p role="timer" className="w-full mb-3 text-center text-xs font-bold text-white">{livreTimeLeft}</p>}
                             {/* Controle remoto — aprovação por dispositivo */}
                             <div className="w-full mb-3 bg-[#1c1c1e] border border-border rounded-lg p-3">
                                 <div className="flex items-center justify-between gap-2 mb-2.5">

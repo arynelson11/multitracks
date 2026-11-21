@@ -125,6 +125,17 @@ function stageChannels(song: Song | undefined): StageChannel[] {
   })
 }
 
+/**
+ * Selo do Livre: com o palco parado, como veio (o toque abre os Planos). Tocando ou na
+ * pré-contagem, só com a sessão do Ao Vivo ligada (o tempo que falta, Ruling relogio-livre) e
+ * só como texto (`tappable` falso): nada abre por cima do palco. Sem sessão, some tocando.
+ */
+function liveBadge(livre: StageUiState['livre'], quiet: boolean): StageView['app']['livre'] {
+  if (!livre) return null
+  if (quiet) return livre
+  return livre.liveLeftMs != null ? { ...livre, tappable: false } : null
+}
+
 /** A vista inteira do palco novo. */
 export function buildStageView(e: EngineStageState, ui: StageUiState): StageView {
   const clickChannel = findClickChannel(e.song?.channels ?? [])
@@ -158,8 +169,7 @@ export function buildStageView(e: EngineStageState, ui: StageUiState): StageView
     activePad: ui.activePad,
     app: {
       online: ui.online, isDesktop: ui.isDesktop, isAdmin: ui.isAdmin, userName: ui.userName, hostActive: ui.hostActive,
-      // Selo do Livre só com o palco parado: nunca com a música tocando ou na pré-contagem.
-      livre: ui.livre && !e.isPlaying && !e.isCountingIn ? ui.livre : null,
+      livre: liveBadge(ui.livre, !e.isPlaying && !e.isCountingIn),
     },
     autoPan: ui.autoPan === true,
   }

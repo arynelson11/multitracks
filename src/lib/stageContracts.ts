@@ -125,10 +125,15 @@ export interface StageView {
   channels: StageChannel[]; master: { volume: number; muted: boolean }; outputs: OutputPlan; gates: StageGates
   editMode: boolean; channelEditMode: boolean; padPanelOpen: boolean; activePad: string | null
   /**
-   * `livre`: selo do Livre na barra ("LIVRE · 2 de 3 músicas este mês"), só com a música parada e
-   * fora da pré-contagem (o buildStageView zera tocando); nulo pra conta paga.
+   * `livre`: selo do Livre na barra ("LIVRE · 2 de 3 músicas este mês"), com a música parada e
+   * fora da pré-contagem; nulo pra conta paga. Com a sessão do Ao Vivo ligada, `liveLeftMs` é o
+   * tempo que falta hoje (Ruling relogio-livre) e o selo fica também tocando, com `tappable` falso
+   * (só texto, sem abrir os Planos por cima do palco); sem o campo, o toque vale.
    */
-  app: { online: boolean; isDesktop: boolean; isAdmin: boolean; userName: string | null; hostActive: boolean; livre: { used: number; limit: number } | null }
+  app: {
+    online: boolean; isDesktop: boolean; isAdmin: boolean; userName: string | null; hostActive: boolean
+    livre: { used: number; limit: number; liveLeftMs?: number | null; tappable?: boolean } | null
+  }
   /** Pan automático ligado nas Configurações. Só muda o som em "Tudo junto", onde o lado vem do papel e o knob trava. */
   autoPan?: boolean
 }
