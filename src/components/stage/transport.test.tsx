@@ -363,6 +363,27 @@ describe('transporte', () => {
     }
     expect(screen.getByRole('radiogroup', { name: 'Fim da música' })).toBeTruthy()
   })
+  // Revisão macro 1b (Ruling AUTO-livre): no Livre o AUTO aparece travado, desligado e com o selo
+  // LIVRE; tocar nele chama o setEndMode('continue'), que o App troca pela tela do repertório.
+  it('no Livre o AUTO aparece desligado e com o selo LIVRE; tocar nele pede o continue ao App', () => {
+    const a = actions()
+    render(<TransportBar view={view({ isPlaying: false, endMode: 'stop', gates: { sections: true, infinite: true, maxRepeats: 9, bandSections: false, autoNext: false } })} actions={a} clock={clock} pulse={null} />)
+    const auto = screen.getByRole('radio', { name: /^AUTO/ })
+    expect(auto.getAttribute('aria-checked')).toBe('false')
+    expect(screen.getByRole('radio', { name: 'PARAR' }).getAttribute('aria-checked')).toBe('true')
+    expect(auto.textContent).toContain('LIVRE')
+    expect(auto.getAttribute('title')).toMatch(/Livre/)
+    fireEvent.click(auto)
+    expect(a.setEndMode).toHaveBeenLastCalledWith('continue')
+  })
+
+  it('quem paga não vê selo no AUTO', () => {
+    render(<TransportBar view={view({ gates: { sections: true, infinite: true, maxRepeats: 9, bandSections: true, autoNext: true } })} actions={actions()} clock={clock} pulse={null} />)
+    const auto = screen.getByRole('radio', { name: 'AUTO' })
+    expect(auto.textContent).toBe('AUTO')
+    expect(auto.getAttribute('aria-checked')).toBe('true')
+  })
+
   it('COMEÇO parado volta direto pro 0:00 com um toque (Ruling I3-comeco)', () => {
     const a = actions()
     render(<TransportBar view={view({ isPlaying: false })} actions={a} clock={clock} pulse={null} />)

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { shouldAutoAdvance } from './autoAdvance'
+import { cycleEndMode, shownEndMode, shouldAutoAdvance } from './autoAdvance'
 
 // T9 (Parte 3): o AUTO (passar sozinho pra próxima música no fim) só acontece quando o plano
 // permite. A regra é pura; a ligação no motor é conferida no texto do código, no padrão do
@@ -15,6 +15,25 @@ const songEnd = (() => {
   return start >= 0 && end > start ? engine.slice(start, end) : ''
 })()
 const TRAVESSAO = String.fromCharCode(0x2014)
+
+// Revisão macro 1b (Ruling AUTO-livre): no Livre o AUTO aparece travado. O modo guardado no motor
+// pode ser o 'continue' (o padrão), mas sem o AUTO o fim para como no 'stop': a tela mostra PARAR.
+describe('shownEndMode e cycleEndMode (AUTO travado no Livre)', () => {
+  it('sem o AUTO, o continue aparece como PARAR; o resto aparece como é', () => {
+    expect(shownEndMode('continue', false)).toBe('stop')
+    expect(shownEndMode('stop', false)).toBe('stop')
+    expect(shownEndMode('fade-out', false)).toBe('fade-out')
+    for (const m of ['continue', 'stop', 'fade-out'] as const) expect(shownEndMode(m, true)).toBe(m)
+  })
+  it('o botão que alterna (celular deitado): com o AUTO, AUTO, PARAR, FADE e volta; sem ele, PARAR e FADE', () => {
+    expect(cycleEndMode('continue', true)).toBe('stop')
+    expect(cycleEndMode('stop', true)).toBe('fade-out')
+    expect(cycleEndMode('fade-out', true)).toBe('continue')
+    expect(cycleEndMode('continue', false)).toBe('fade-out')
+    expect(cycleEndMode('stop', false)).toBe('fade-out')
+    expect(cycleEndMode('fade-out', false)).toBe('stop')
+  })
+})
 
 describe('shouldAutoAdvance', () => {
   it('continue com próxima música e permitido avança', () => {

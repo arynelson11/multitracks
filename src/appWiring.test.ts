@@ -186,6 +186,20 @@ describe('ligações do palco novo', () => {
     for (const m of modals) expect(m).toMatch(/hideOffer=\{hidePlansOffer\}/)
   })
 
+  // Revisão macro 1b (Ruling AUTO-livre): o AUTO travado no Livre, nos dois palcos.
+  it('AUTO no Livre: os dois palcos passam pelo setEndModeGated, que pede a tela do repertório', () => {
+    expect(app).toMatch(/const autoNextAllowed = !livre\.isLivre/)
+    expect(app).toMatch(/const shownMode = shownEndMode\(playbackMode, autoNextAllowed\)/)
+    expect(app).toMatch(/if \(m === 'continue' && !autoNextAllowed\) \{ livre\.requestLimit\('repertoire'\); return \}/)
+    expect(app).toMatch(/setEndMode: \(m: 'continue' \| 'stop' \| 'fade-out'\) => setEndModeGated\(m\)/)
+    // Palco antigo: os três botões e o que alterna (celular deitado) mostram o shownMode.
+    expect(app).toMatch(/onClick=\{\(\) => setEndModeGated\('continue'\)\}/)
+    expect(app).toMatch(/onClick=\{\(\) => setEndModeGated\(cycleEndMode\(playbackMode, autoNextAllowed\)\)\}/)
+    expect(app).toMatch(/▶ AUTO\{!autoNextAllowed && <span[^>]*>LIVRE<\/span>\}/)
+    // Ninguém mais troca o modo de fim por fora do portão.
+    expect(app.match(/setPlaybackMode\(/g)).toHaveLength(1)
+  })
+
   it('o motor recebe autoNext pelo plano', () => { expect(app).toMatch(/autoNext:\s*isAdmin\s*\|\|\s*canUseRepertoire\(userPlan\)/) })
 
   it('a música atual conta pelo stageSongKey', () => { expect(app).toMatch(/noteSongOpened\(stageSongKey\(/) })

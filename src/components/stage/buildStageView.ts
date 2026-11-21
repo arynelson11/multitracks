@@ -2,7 +2,8 @@
 // sem React e sem Web Audio. O App chama uma vez por mudança (useMemo) e a casca só desenha.
 import { buildChannelLabels } from '../../lib/channelNames'
 import { findClickChannel, isSilencedBySolo } from '../../lib/channelRoles'
-import { canBandControlSections, canUseSections } from '../../lib/plans'
+import { shownEndMode } from '../../lib/autoAdvance'
+import { canBandControlSections, canUseRepertoire, canUseSections } from '../../lib/plans'
 import { armLabel } from '../../lib/sectionArm'
 import { defaultSectionName, SECTION_SHORTCUTS } from '../../lib/sectionTypes'
 import { barSeconds, markerIdForSpan } from '../../lib/songGrid'
@@ -43,11 +44,12 @@ export const STAGE_MAX_REPEATS = 9
 /**
  * Portões do plano (plans.ts), os mesmos pro palco e pro motor: seções e loop infinito seguem
  * `canUseSections` (todos os planos desde a Parte 3, o Livre inclusive); a banda controlar
- * seções é do Studio (`canBandControlSections`).
+ * seções é do Studio (`canBandControlSections`); o AUTO entre músicas é do pago
+ * (`canUseRepertoire`, o mesmo `autoNext` que o motor recebe; o admin ganha na vista).
  */
 export function stageGatesFor(plan: string | null | undefined): StageGates {
   const sections = canUseSections(plan)
-  return { sections, infinite: sections, maxRepeats: STAGE_MAX_REPEATS, bandSections: canBandControlSections(plan) }
+  return { sections, infinite: sections, maxRepeats: STAGE_MAX_REPEATS, bandSections: canBandControlSections(plan), autoNext: canUseRepertoire(plan) }
 }
 
 /** Cor de reserva de uma seção sem tipo e sem cor (a do Refrão, como o `colorForSection`). */
@@ -126,6 +128,9 @@ function stageChannels(song: Song | undefined): StageChannel[] {
 /** A vista inteira do palco novo. */
 export function buildStageView(e: EngineStageState, ui: StageUiState): StageView {
   const clickChannel = findClickChannel(e.song?.channels ?? [])
+  // O admin tem o AUTO em qualquer plano, como no motor (autoNext: isAdmin || canUseRepertoire).
+  const planGates = stageGatesFor(ui.plan)
+  const gates = ui.isAdmin ? { ...planGates, autoNext: true } : planGates
   return {
     song: stageSong(e, ui.repertoireName),
     sections: stageSections(e.song, e.duration, e.spans, e.songGrid),
@@ -139,13 +144,14 @@ export function buildStageView(e: EngineStageState, ui: StageUiState): StageView
     isPlaying: e.isPlaying,
     isCountingIn: e.isCountingIn,
     precount: { enabled: e.precountEnabled, beats: e.precountBeats, times: [...e.precountTimes] },
-    endMode: e.playbackMode,
+    // Sem o AUTO (Livre), o 'continue' do motor para no fim: a tela mostra PARAR (Ruling AUTO-livre).
+    endMode: shownEndMode(e.playbackMode, gates.autoNext !== false),
     // Click ligado = o canal de click sem o M (o botão CLICK é o M dele).
     click: { channelId: clickChannel?.id ?? null, on: !!clickChannel && !clickChannel.muted },
     channels: stageChannels(e.song),
     master: { volume: e.masterVolume, muted: e.masterMuted },
     outputs: e.outputPlan,
-    gates: stageGatesFor(ui.plan),
+    gates,
     editMode: ui.editMode,
     channelEditMode: ui.channelEditMode,
     padPanelOpen: ui.padPanelOpen,

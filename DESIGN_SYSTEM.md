@@ -335,7 +335,8 @@ import { Button, Chip, Segmented, Panel, Led, cx } from './components/ui'
 />
 ```
 
-- `options`: lista de `{ value, label, disabled? }`; `value`: o selecionado ou `null`; `onChange(value)`; `aria-label` obrigatório; `className` opcional.
+- `options`: lista de `{ value, label, disabled?, badge?, title? }`; `value`: o selecionado ou `null`; `onChange(value)`; `aria-label` obrigatório; `className` opcional.
+- `badge`: selo pequeno depois do rótulo (`data-segmented-badge`), nas cores neutras do OFFLINE e do selo do Livre (`bg-ps-s2`, `text-ps-mut`, anel `line-2`, `text-ps-micro` extranegrito): é informação, não alerta. Hoje só o AUTO do "Fim da música" usa, com `LIVRE`, no Livre (o AUTO travado, Ruling AUTO-livre); o selo entra no nome da opção ("AUTO LIVRE"). `title`: a dica da opção.
 - É um `radiogroup`: cada opção tem `role="radio"` e `aria-checked`. Só a selecionada entra no Tab (sem seleção, a primeira habilitada). Setas andam com volta, pulando as desabilitadas; Home e End vão pra primeira e pra última habilitada; cada movimento já seleciona.
 - Opção com no mínimo 62px de largura e 44px de altura. Selecionada: superfície `s3` com anel `line-2`; as outras ficam em `mut`.
 

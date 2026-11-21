@@ -28,6 +28,7 @@ import { useLivre } from './hooks/useLivre'
 import { usePlansWhenQuiet } from './hooks/usePlansWhenQuiet'
 import { stageSongKey } from './lib/livreRules'
 import { nextSongAfter, removalOpensRefusedSong } from './lib/songRemoval'
+import { cycleEndMode, shownEndMode, type EndMode } from './lib/autoAdvance'
 import { trackAd } from './lib/productEvents'
 import { LimitGate } from './components/livre/LimitGate'
 import { AdSlot } from './components/livre/AdSlot'
@@ -643,6 +644,14 @@ export default function App() {
     if (livre.isLivre && activeSongIndex > 0) { livre.requestLimit('repertoire'); return }
     prevSong()
   }, [livre, activeSongIndex, prevSong])
+  // AUTO entre músicas (Ruling AUTO-livre): no Livre ele aparece travado nos dois palcos (a tela
+  // mostra PARAR, shownEndMode) e o toque nele pede a tela do repertório, que espera a VS parar.
+  const autoNextAllowed = !livre.isLivre
+  const shownMode = shownEndMode(playbackMode, autoNextAllowed)
+  const setEndModeGated = (m: EndMode) => {
+    if (m === 'continue' && !autoNextAllowed) { livre.requestLimit('repertoire'); return }
+    setPlaybackMode(m)
+  }
   const exportZipGated = () => {
     if (livre.isLivre) { setIsSetlistMenuOpen(false); livre.requestLimit('repertoire'); return }
     void handleExport()
@@ -707,7 +716,7 @@ export default function App() {
       if (startAction(isPlaying, sectionSpansView.length, sectionGates) === 'arm') upgradeIf(armSection(0))
       else seekTo(0)
     },
-    setEndMode: (m: 'continue' | 'stop' | 'fade-out') => setPlaybackMode(m),
+    setEndMode: (m: 'continue' | 'stop' | 'fade-out') => setEndModeGated(m),
     togglePrecount: () => togglePrecountEnabled(!precountEnabled),
     cyclePrecountBeats: () => setPrecountBeats(precountBeats >= 8 ? 1 : precountBeats + 1),
     toggleClick: () => { const click = findClickChannel(channels); if (click) toggleMute(click.id) },
@@ -1725,10 +1734,10 @@ export default function App() {
               Modo ao terminar (AUTO/PARAR/FADE) vira um botão que alterna a cada toque. */}
           <div className="hidden short:flex items-center gap-1 shrink-0">
             <button
-              onClick={() => setPlaybackMode(playbackMode === 'continue' ? 'stop' : playbackMode === 'stop' ? 'fade-out' : 'continue')}
-              title="Ao terminar a música: toque pra trocar (Auto, Parar, Fade)"
-              className={`transport-btn h-8 px-2 rounded-md text-[9px] font-bold uppercase tracking-wider font-mono cursor-pointer whitespace-nowrap ${playbackMode === 'continue' ? 'text-primary' : playbackMode === 'stop' ? 'text-accent-red' : 'text-purple-400'}`}>
-              {playbackMode === 'continue' ? '▶ Auto' : playbackMode === 'stop' ? '■ Parar' : 'Fade'}
+              onClick={() => setEndModeGated(cycleEndMode(playbackMode, autoNextAllowed))}
+              title={autoNextAllowed ? 'Ao terminar a música: toque pra trocar (Auto, Parar, Fade)' : 'Ao terminar a música: toque pra trocar (Parar, Fade). No Livre, o Auto é do Pro'}
+              className={`transport-btn h-8 px-2 rounded-md text-[9px] font-bold uppercase tracking-wider font-mono cursor-pointer whitespace-nowrap ${shownMode === 'continue' ? 'text-primary' : shownMode === 'stop' ? 'text-accent-red' : 'text-purple-400'}`}>
+              {shownMode === 'continue' ? '▶ Auto' : shownMode === 'stop' ? '■ Parar' : 'Fade'}
             </button>
             <button onClick={prevSongGated} title="Música anterior" aria-label="Música anterior"
               className="transport-btn w-8 h-8 flex items-center justify-center rounded-md text-text-muted hover:text-white active:scale-90 cursor-pointer"><SkipBack size={15} /></button>
@@ -2034,14 +2043,14 @@ export default function App() {
         <div className="flex flex-col tight:flex-row tight:justify-center items-center px-3 py-2 sm:py-2.5 tight:py-1.5 short:py-1 short:hidden bg-[#141416] gap-1 tight:gap-4">
           {/* Playback Mode — acima dos controles */}
           <div data-tour="modos" className="hidden sm:flex items-center lcd-display rounded-md overflow-hidden">
-            <button onClick={() => setPlaybackMode('continue')}
-              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer font-mono ${playbackMode === 'continue' ? 'bg-primary/15 text-primary' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
-              title="Continuar para próxima música">▶ AUTO</button>
-            <button onClick={() => setPlaybackMode('stop')}
-              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider border-l border-r border-border transition-all cursor-pointer font-mono ${playbackMode === 'stop' ? 'bg-accent-red/15 text-accent-red' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
+            <button onClick={() => setEndModeGated('continue')}
+              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer font-mono ${shownMode === 'continue' ? 'bg-primary/15 text-primary' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
+              title={autoNextAllowed ? 'Continuar para próxima música' : 'No Livre, passar sozinho pra próxima música é do Pro'}>▶ AUTO{!autoNextAllowed && <span className="ml-1 px-1 rounded bg-white/10 text-[7px] text-text-muted">LIVRE</span>}</button>
+            <button onClick={() => setEndModeGated('stop')}
+              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider border-l border-r border-border transition-all cursor-pointer font-mono ${shownMode === 'stop' ? 'bg-accent-red/15 text-accent-red' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
               title="Parar no final">⏹ PARAR</button>
-            <button onClick={() => setPlaybackMode('fade-out')}
-              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer font-mono ${playbackMode === 'fade-out' ? 'bg-purple-500/15 text-purple-400' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
+            <button onClick={() => setEndModeGated('fade-out')}
+              className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer font-mono ${shownMode === 'fade-out' ? 'bg-purple-500/15 text-purple-400' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
               title="Fade nos últimos 5 segundos">🔉 FADE</button>
           </div>
 

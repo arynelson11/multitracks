@@ -25,6 +25,13 @@ const END_MODES: SegmentedOption<StageView['endMode']>[] = [
   { value: 'stop', label: 'PARAR' },
   { value: 'fade-out', label: 'FADE' },
 ]
+// No Livre o AUTO entre músicas é do pago (Ruling AUTO-livre): aparece desligado, com o selo do
+// Livre, e o toque vai pro App, que pede a tela do repertório (com a música parada).
+const END_MODES_LIVRE: SegmentedOption<StageView['endMode']>[] = [
+  { value: 'continue', label: 'AUTO', badge: 'LIVRE', title: 'No Livre, passar sozinho pra próxima música é do Pro' },
+  { value: 'stop', label: 'PARAR' },
+  { value: 'fade-out', label: 'FADE' },
+]
 const NO_CLICK = 'Esta música não tem canal de click'
 const START_SEEK = 'Volta a VS pro 0:00'
 const START_ARM = 'Arma a volta pro começo: a seção termina, conta e entra no 1 da primeira seção. Toque de novo, no X do aviso ou Esc cancela.'
@@ -147,7 +154,7 @@ export function TransportBar({ view, actions, clock, pulse }: TransportBarProps)
         <div data-tour="modos" className="flex flex-col gap-[5px]">
           <span className="ps-label leading-none">Fim da música</span>
           <Segmented
-            aria-label="Fim da música" options={END_MODES} value={view.endMode} onChange={actions.setEndMode}
+            aria-label="Fim da música" options={view.gates.autoNext === false ? END_MODES_LIVRE : END_MODES} value={view.endMode} onChange={actions.setEndMode}
             className="max-xl:[&>button]:min-w-ps-touch max-xl:[&>button]:px-2"
           />
         </div>

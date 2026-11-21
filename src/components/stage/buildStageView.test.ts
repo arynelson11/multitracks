@@ -104,10 +104,10 @@ describe('buildStageView', () => {
 
   it('portões do plano Livre e do Studio', () => {
     // Parte 3 (Livre como amostra): o Livre tem seções e o loop infinito como os pagos; a banda nas seções segue do Studio.
-    expect(buildStageView(engine(), { ...UI, plan: 'free' }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: false })
-    expect(buildStageView(engine(), { ...UI, plan: null }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: false })
-    expect(buildStageView(engine(), { ...UI, plan: 'essencial_anual' }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: false })
-    expect(buildStageView(engine(), { ...UI, plan: 'pro_mensal' }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: true })
+    expect(buildStageView(engine(), { ...UI, plan: 'free' }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: false, autoNext: false })
+    expect(buildStageView(engine(), { ...UI, plan: null }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: false, autoNext: false })
+    expect(buildStageView(engine(), { ...UI, plan: 'essencial_anual' }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: false, autoNext: true })
+    expect(buildStageView(engine(), { ...UI, plan: 'pro_mensal' }).gates).toEqual({ sections: true, infinite: true, maxRepeats: 9, bandSections: true, autoNext: true })
     // O motor recebe os mesmos portões que a tela.
     expect(stageGatesFor('pro_anual')).toEqual(buildStageView(engine(), { ...UI, plan: 'pro_anual' }).gates)
   })
@@ -162,6 +162,23 @@ describe('buildStageView', () => {
     expect(liveArmedOf({ ...v, intent: { target: 0, plays: 3 } })).toEqual({ index: 0, label: 'Intro', color: '#3b82f6', kind: 'repete', plays: 3 })
     expect(liveArmedOf({ ...v, intent: null })).toBeNull()
     expect(liveArmedOf({ ...v, intent: { target: 7, plays: 1 } })).toBeNull()
+  })
+
+  // Revisão macro 1b (Ruling AUTO-livre): o AUTO entre músicas é do pago; no Livre ele aparece
+  // travado e o fim mostra PARAR (o motor para no fim, como no 'stop'). O admin segue com o AUTO.
+  describe('AUTO travado no Livre (gates.autoNext)', () => {
+    it('Livre: autoNext falso e o continue do motor aparece como PARAR', () => {
+      const v = build({ playbackMode: 'continue' }, { plan: 'free' })
+      expect(v.gates.autoNext).toBe(false)
+      expect(v.endMode).toBe('stop')
+      expect(build({ playbackMode: 'fade-out' }, { plan: 'free' }).endMode).toBe('fade-out')
+    })
+    it('quem paga e o admin no Livre: o AUTO como sempre', () => {
+      expect(build({ playbackMode: 'continue' }, { plan: 'essencial_mensal' }).endMode).toBe('continue')
+      const admin = build({ playbackMode: 'continue' }, { plan: 'free', isAdmin: true })
+      expect(admin.gates.autoNext).toBe(true)
+      expect(admin.endMode).toBe('continue')
+    })
   })
 
   describe('selo do Livre (app.livre)', () => {

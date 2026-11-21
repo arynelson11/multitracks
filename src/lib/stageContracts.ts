@@ -112,7 +112,11 @@ export interface TransitionView {
 }
 export interface StageChannel { id: string; label: string; color: string; role: ChannelRole; volume: number; muted: boolean; soloed: boolean; pan: number; silenced: boolean }
 export interface StageSong { id: string; name: string; artist?: string; coverImage?: string; originalKey: string | null; pitch: number; bpm: number | null; signature: TimeSignature | null; duration: number; position: number; total: number; prevName: string | null; nextName: string | null; repertoireName: string | null }
-export interface StageGates { sections: boolean; infinite: boolean; maxRepeats: number; bandSections: boolean }
+/**
+ * Portões do plano no palco. `autoNext` falso: o AUTO entre músicas é do pago (o Livre), e o AUTO
+ * aparece travado (Ruling AUTO-livre); sem o campo, liberado.
+ */
+export interface StageGates { sections: boolean; infinite: boolean; maxRepeats: number; bandSections: boolean; autoNext?: boolean }
 export interface StageView {
   song: StageSong | null; sections: StageSection[]; currentSection: number; intent: ArmIntent | null; transition: TransitionView | null
   landed: { index: number; at: number } | null; grid: SongGrid | null; gridWarning: GridWarning | null; isReadingGrid: boolean
