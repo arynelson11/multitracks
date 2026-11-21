@@ -49,3 +49,40 @@ Worktree: `~/playback-studio-work/parte3-inicio`. Uma linha por tarefa: commit e
 - `node scripts/verify-layout/run.mjs`: 389 combinações, 389 ok, 0 falhas (26271 textos, 1873 botões só de ícone, 13003 alvos de toque).
 - Travessão: 0 nas linhas adicionadas contra `origin/main` (5e52512, buscado agora), 0 nas da branch (e4dab79..HEAD) e 0 nas mensagens de commit. Os arquivos inteiros com travessão (DESIGN_SYSTEM, FATOS, App.tsx, useAudioEngine.ts) já tinham antes.
 
+
+## Onda de correção da revisão macro (2026-11-21, a partir de ffcb300)
+
+Revisões: `review-inicio-1.md` (motor, Biblioteca, App, verificador e docs) e `review-inicio-2.md` (tela inicial e Planos). Uma linha por achado.
+
+| Achado | Commit | Testes |
+|---|---|---|
+| inicio-1 I1 e M1 (fila de gravação por separação, só o que mudou) | 3a23cd6 (+ 5e666dc, tipo no tsc) | useStageSeparation 25/25 (3 RED antes: click, voz guia e a ordem inversa; a prova do revisor passa) |
+| inicio-1 I2 e M2 (frases do baixar, espaço em disco na janela) | 3694a75 | useCloudLibrary 4 novos (RED antes), LibraryModal 1 novo, o "nenhum alert" lê também o useCloudLibrary.ts |
+| inicio-1 M3, M4 e M5 (lixeira, confirmação que não reabre, edição presa à aba) | 1441470 (+ 645b787, `confirmLabel`) | LibraryModal 5 novos e 2 ajustados (RED antes), removeScopeOf, removeSong 'device', vista |
+| inicio-1 M6 e M7, inicio-2 Minor 7 (docs e verificador) | b2cf1bf | verify-layout dos estados novos 30/30 antes do portão |
+| inicio-2 Minor 1 e 2 (erro tardio, aviso do navegador) | 7960888 | PricingModal 2 novos (RED antes) |
+| inicio-2 Minor 3 e 4 (laranja só ligado, um anel) | 69bd3da | pricingView 2 novos (RED antes) |
+| inicio-2 Minor 6 e 8 (Configurações com os Planos de verdade, paridade de preço) | 9103aa5 | SettingsModal.planos 3 novos (sem o stopPropagation, 2 falham), pricingCatalog 1 novo |
+| inicio-2 Minor 5 (Q9) | sem commit | Ruling Q9-neutro: selo, anel e preço do primeiro mês ficam neutros |
+| inicio-2 Important (Configurações sem hideOffer) | sem commit | corrigido na outra branch, chega pelo merge (não mexido aqui) |
+
+### Decisões da onda
+
+- Decisão (I1): a leitura da separação também entra na fila (e o efeito da leitura vem depois do da troca), pra a volta à música ler o que a gravação da troca e a de uma ação no ar deixaram. Custo se errado: a gaveta pode mostrar o carregando um pouco mais ao voltar pra música com gravação na fila (duas idas à rede).
+- Decisão (M5): "Tirar deste aparelho" é o nome único de tirar só do aparelho, também pro admin e pra qualquer um sem internet (no lugar de "Remover do Cache Local" e "Remover do aparelho?"). O dono que não é admin, com a música fora do aparelho, fica sem lixeira (a RLS não deixa ele apagar na nuvem). Custo se errado: dois textos em `ROW_COPY`/`DELETE_COPY` e uma linha em `removeScopeOf`.
+- Decisão (M4): a edição sai do que está à vista (`shownSongs`) em vez de fechar ao trocar de aba: o digitado fica guardado e volta com a aba. Custo se errado: fechar a edição no `onTab`.
+- Decisão (M2): a frase de espaço é a de antes; cada tentativa de baixar limpa a frase da janela (também a de um erro da edição, se ela estiver aberta). Custo se errado: limpar só a de espaço.
+- Decisão (I2): "Carregando offline..." e "Erro: Indisponível offline" ficaram (o Ruling lista os outros; "offline" já é palavra da tela, o selo OFFLINE).
+- Decisão (Minor 7): o `planos-troca` junta os três avisos no pé mesmo pra quem já paga (a oferta que terminou não acontece pra ele): é o pior caso de layout, não um caso real.
+
+### Portão da onda (uma vez, `caffeinate -i`, 2026-11-21)
+
+- `npx vitest run`: 202 arquivos, 4519 testes, 4518 passaram e 1 falhou, sem "Errors": `useAudioEngine.outputs.test.ts` "papel manual Guia no Baixo religa no barramento da guia sem cortar o medidor" (teste de tempo do motor, `letAudioRun`, com carga 12,9 no fim da rodada). Sozinho, logo depois (carga 10,2): 42/42. O motor não foi tocado nesta onda.
+- `npx tsc -b`: código 0.
+- `npm run typecheck`: os 7 erros antigos (MetronomeModal.auto.test 1, useAudioEngine.grid.test 1 na linha 296, useAudioEngine.transition.test 5).
+- eslint nos 22 arquivos .ts/.tsx tocados: 0 erros, 2 avisos antigos de deps (LibraryModal.tsx e useCloudLibrary.ts, efeitos não mexidos).
+- `DESKTOP=1 npx vite build`: ok.
+- `node scripts/verify-layout/run.mjs`: 411 combinações, 411 ok, 0 falhas (26829 textos, 1943 botões só de ícone, 13174 alvos de toque); carga de 8,3 a 15.
+- Som, com a carga abaixo de 5 (4,8 ao começar): referência `SPLIT --rev b53a95c --tag v1415` 27/27; `verify-pitch` completo 521 critérios, 0 falhas; `section-jump` 13/13 OK.
+- `api/`: 12 funções.
+- Travessão: 0 nas linhas adicionadas contra `origin/main` (5e52512), 0 na onda (ffcb300..HEAD) e 0 nas mensagens de commit.
