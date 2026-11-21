@@ -45,6 +45,8 @@ const mem = vi.hoisted(() => ({
   metaGate: null as Promise<void> | null,
   // Segura o nascimento do worklet de tom (play pendente) até o teste liberar.
   pitchGate: null as Promise<void> | null,
+  // Conteúdo de arquivo que não decodifica (arquivo estragado).
+  failDecode: null as RegExp | null,
   sources: [] as FakeSource[],
   pitchNodes: [] as FakePitchNode[],
   // Passa-baixa de cada bipe da contagem (um por tempo): a saída dele é a entrada da contagem.
@@ -154,7 +156,10 @@ class FakeAudioContext {
   // Roteador das saídas e medidor do principal (grafo da T12, montado no initEngine desde a T25).
   createChannelSplitter() { return audioNode() }
   createAnalyser() { return { ...audioNode(), fftSize: 2048, smoothingTimeConstant: 0.8, getFloatTimeDomainData() {} } }
-  async decodeAudioData() { return { duration: 300 } }
+  async decodeAudioData(ab: ArrayBuffer) {
+    if (mem.failDecode?.test(new TextDecoder().decode(ab))) throw new Error('arquivo estragado (teste)')
+    return { duration: 300 }
+  }
   async resume() {}
 }
 
@@ -180,6 +185,7 @@ beforeEach(() => {
   mem.beeps.length = 0
   mem.metaGate = null
   mem.pitchGate = null
+  mem.failDecode = null
   mem.onStart = null
   mem.settings.autoPan = true
   mem.settings.outputs = undefined
@@ -756,6 +762,22 @@ describe('separação no palco', () => {
     const reaberta = again.result.current.playlist[0]
     expect(reaberta.separation).toEqual({ id: 'sep_1', createdAt: 123 })
     expect(reaberta.channels.find((c) => c.name === 'Bateria')).toMatchObject({ volume: 0.5, muted: true, pan: -0.3 })
+  })
+
+  it('sep-1 M3: loadFiles diz se a música entrou (nada decodificou: não entra, nada fica salvo)', async () => {
+    const { result } = await openApp()
+    const files = (names: string[]) => names.map((n) => new File([n], n, { type: 'audio/wav' })) as unknown as FileList
+    let ok: unknown = null
+    await act(async () => { ok = await result.current.loadFiles(files(['Vocais.wav']), 'Boa', undefined, undefined, null, undefined, { separation: { id: 'sep_ok', createdAt: 1 } }) })
+    expect(ok).toBe(true)
+    mem.failDecode = /^Ruim/
+    let bad: unknown = null
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await act(async () => { bad = await result.current.loadFiles(files(['Ruim1.wav', 'Ruim2.wav']), 'Ruim', undefined, undefined, null, undefined, { separation: { id: 'sep_ruim', createdAt: 1 } }) })
+    errors.mockRestore()
+    expect(bad).toBe(false)
+    expect(result.current.playlist.map((s) => s.name)).toEqual(['Boa'])
+    expect(saved().map((s) => s.name)).toEqual(['Boa'])
   })
 
   it('loadFiles sem separation continua como antes', async () => {

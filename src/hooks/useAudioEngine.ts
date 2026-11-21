@@ -2699,8 +2699,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // `meta.timeSignature`: compasso salvo na nuvem (songs.time_signature), vai pro Song.timeSignature.
     // `separation` (Parte 3): a música veio de uma separação do Separador. `channelStates`: o mixer
     // salvo na separação, na ordem dos arquivos; valor que falta ou fora da faixa fica no padrão.
-    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string, songMarkers?: Marker[], overrideOriginalKey?: string | null, overrideBpm?: number, meta?: { artist?: string; lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null; sourceId?: string; timeSignature?: TimeSignature | null; separation?: SeparationLink; channelStates?: readonly (ChannelStartState | undefined)[] }) => {
-        if (!audioCtxRef.current || !masterGainRef.current) return;
+    // Devolve se a música entrou no repertório (sep-1 M3: nada decodificou, ela não entra).
+    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string, songMarkers?: Marker[], overrideOriginalKey?: string | null, overrideBpm?: number, meta?: { artist?: string; lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null; sourceId?: string; timeSignature?: TimeSignature | null; separation?: SeparationLink; channelStates?: readonly (ChannelStartState | undefined)[] }): Promise<boolean> => {
+        if (!audioCtxRef.current || !masterGainRef.current) return false;
         const timeSignature = sanitizeTimeSignature(meta?.timeSignature) ?? undefined;
         const separation = sanitizeSeparationLink(meta?.separation);
         setIsLoading(true);
@@ -2751,7 +2752,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         }
         if (prepared.length === 0) {
             console.error('loadFiles: nada a carregar (sem arquivos e sem cache).');
-            return;
+            return false;
         }
         // O "Metrônomo" que vem na separação é click do app (Ruling SEP-metronomo-X1): sem rota
         // própria pro Click (Tudo junto, saída de 1 canal), entra mudo e nunca vai pro PA.
@@ -2890,7 +2891,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             const revertMeta = await get<SavedSong[]>(DB_KEY_META) || [];
             await set(DB_KEY_META, revertMeta.filter((s) => s.id !== newSongId));
             await Promise.all(prepared.map((p) => del(fileKey(p.uuid))));
-            return;
+            return false;
         }
 
         let maxDuration = 0;
@@ -2943,6 +2944,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         gridReadSeenRef.current.add(newSongId);
         gridGenSeenRef.current.add(newSongId);
         scheduleSongGrid(newSong, { read: true, generate: true });
+        return true;
         } finally {
             setIsLoading(false);
         }

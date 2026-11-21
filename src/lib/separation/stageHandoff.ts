@@ -86,3 +86,6 @@ export function pendingSeparationStep(
   if (!engine.isReady || engine.isRestoring) return 'esperar'
   return findSeparationSong(playlist, sepId) >= 0 ? 'pular' : 'carregar'
 }
+
+/** O palco não conseguiu abrir nenhuma faixa da separação (sep-1 M3). */
+export const STAGE_LOAD_ERROR_TEXT = 'Não deu pra abrir as faixas dessa separação no palco. Tente de novo em Minhas separações.'

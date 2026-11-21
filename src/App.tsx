@@ -33,7 +33,7 @@ import { SeparationPanel } from './components/separation/SeparationPanel'
 import { CloudSaveForm } from './components/separation/CloudSaveForm'
 import { CLOUD_COPY, PAUSE_TO_USE, type SeparationTab } from './components/separation/toolsCopy'
 import { StageDialog } from './components/stage/StageDialog'
-import { findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen, type StageSeparationOpen } from './lib/separation/stageHandoff'
+import { STAGE_LOAD_ERROR_TEXT, findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen, type StageSeparationOpen } from './lib/separation/stageHandoff'
 import { removalOpensRefusedSong } from './lib/songRemoval'
 import { trackAd } from './lib/productEvents'
 import { LimitGate } from './components/livre/LimitGate'
@@ -105,7 +105,7 @@ import { channelFaderFill, channelGain, findClickChannel, isSilencedBySolo, pick
 import { ChannelEditPanel } from './components/ChannelEditPanel'
 import { ChannelTrashButton } from './components/ChannelTrashButton'
 import { useTwoTapConfirm } from './hooks/useTwoTapConfirm'
-import { Button } from './components/ui'
+import { Button, Toast } from './components/ui'
 import { TextPromptDialog } from './components/TextPromptDialog'
 import { endlessMetronomeBpmError, songNameError } from './lib/textPromptRules'
 
@@ -683,8 +683,8 @@ export default function App() {
   // nada. Tocando, a música nova só entra no repertório.
   const [livreLoaded, setLivreLoaded] = useState<{ before: ReadonlySet<string> } | null>(null)
   const livreLoadedSeen = useRef<{ before: ReadonlySet<string> } | null>(null)
-  const loadAsCurrent = async (load: () => Promise<void>) => {
-    if (!livre.isLivre) return load()
+  const loadAsCurrent = async (load: () => Promise<unknown>): Promise<void> => {
+    if (!livre.isLivre) { await load(); return }
     const before = new Set(playlist.map((s) => s.id))
     await load()
     setLivreLoaded({ before })
@@ -716,14 +716,28 @@ export default function App() {
   // a atual com a VS parada (P8) e a gaveta SEPARAÇÃO abre na aba FAIXAS. O anúncio do fim (Livre)
   // fica ligado enquanto a separação que acabou de terminar for a atual.
   const separationLib = useSeparationLibrary({ loadList: false })
+  // As faixas baixadas ficam aqui só até o carregamento pegar elas (sep-1 I5): o estado volta a nulo
+  // na hora, e os arquivos saem da memória quando o loadFiles termina.
   const [pendingSeparation, setPendingSeparation] = useState<StageSeparationOpen | null>(null)
-  const pendingSeparationSeen = useRef<StageSeparationOpen | null>(null)
   const [separationArrival, setSeparationArrival] = useState<{ sepId: string; justSeparated: boolean } | null>(null)
   const separationArrivalSeen = useRef<{ sepId: string; justSeparated: boolean } | null>(null)
-  const [isSeparationPanelOpen, setIsSeparationPanelOpen] = useState(false)
+  // Nada decodificou (sep-1 M3): a frase aparece no palco, com a música parada.
+  const [separationLoadFailed, setSeparationLoadFailed] = useState(false)
+  // A gaveta SEPARAÇÃO e a janela de publicar são da música em que abriram (sep-1 I6 e M2): trocar de
+  // música fecha as duas, e voltar pra ela (pelo AUTO, tocando) não abre nada sozinho.
+  const [separationPanelSongId, setSeparationPanelSongId] = useState<string | null>(null)
   const [separationTab, setSeparationTab] = useState<SeparationTab>('faixas')
   const [justSeparatedId, setJustSeparatedId] = useState<string | null>(null)
-  const [isCloudSaveOpen, setIsCloudSaveOpen] = useState(false)
+  const [cloudSaveSongId, setCloudSaveSongId] = useState<string | null>(null)
+  const activeSongId = activeSong?.id ?? null
+  const panelSongRef = useRef<string | null>(activeSongId)
+  useEffect(() => {
+    const left = panelSongRef.current
+    panelSongRef.current = activeSongId
+    if (left === null || left === activeSongId) return
+    setSeparationPanelSongId((id) => (id === left ? null : id))
+    setCloudSaveSongId((id) => (id === left ? null : id))
+  }, [activeSongId])
   const stageSeparationIds = useMemo(() => new Set(playlist.flatMap((s) => (s.separation ? [s.separation.id] : []))), [playlist])
   const openSeparationOnStage = (o: StageSeparationOpen) => {
     setIsSeparatorOpen(false)
@@ -734,21 +748,26 @@ export default function App() {
   }
   useEffect(() => {
     const o = pendingSeparation
-    if (!o?.files || pendingSeparationSeen.current === o) return
+    if (!o?.files) return
     // Espera o motor pronto e o repertório salvo restaurado (sep-1 C1); a que já está nele só pula.
     const step = pendingSeparationStep(o.sep.id, { isReady, isRestoring }, playlist)
     if (step === 'esperar') return
-    pendingSeparationSeen.current = o
-    if (step === 'pular') { setSeparationArrival({ sepId: o.sep.id, justSeparated: o.justSeparated }); return }
+    // Pegou: o estado solta as faixas (sep-1 I5); quem segura até o fim do carregamento é só este efeito.
+    setPendingSeparation(null)
+    const arrived = () => setSeparationArrival({ sepId: o.sep.id, justSeparated: o.justSeparated })
+    if (step === 'pular') { arrived(); return }
     const meta = separationStageMeta(o.sep)
     const dt = new DataTransfer()
     for (const f of o.files) dt.items.add(f)
     // Pelo mesmo carregamento do Livre (Ruling R9); a chegada abaixo faz a música virar a atual em todos os planos.
+    let entered = false
     void loadAsCurrent(() => loadFiles(dt.files, meta.name, undefined, undefined, meta.originalKey, meta.bpm, {
       artist: meta.artist, separation: meta.separation, channelStates: separationChannelStates(stemsToOpen(o.sep)),
-    })).then(() => setSeparationArrival({ sepId: o.sep.id, justSeparated: o.justSeparated }))
+    }).then((ok) => { entered = ok }))
+      .catch((e) => { console.error('[Separação] o palco não carregou as faixas', e) })
+      .then(() => { if (entered) arrived(); else setSeparationLoadFailed(true) })
     // Roda quando a separação chega, o motor fica pronto ou a restauração termina; o loadFiles, o
-    // loadAsCurrent e o repertório são os da renderização de agora e o `pendingSeparationSeen` segura a repetição.
+    // loadAsCurrent e o repertório são os da renderização de agora, e a separação sai do estado ao ser pega.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingSeparation, isReady, isRestoring])
   useEffect(() => {
@@ -761,7 +780,7 @@ export default function App() {
     separationArrivalSeen.current = arrival
     if (i !== activeSongIndex) jumpToSongGated(i)
     setSeparationTab('faixas')
-    setIsSeparationPanelOpen(true)
+    setSeparationPanelSongId(playlist[i].id)
     setJustSeparatedId(arrival.justSeparated ? arrival.sepId : null)
   }, [separationArrival, playlist, isPlaying, isCountingIn, activeSongIndex, jumpToSongGated])
 
@@ -780,7 +799,8 @@ export default function App() {
   })
   const canDownloadSeparation = isAdmin || canDownloadStems(userPlan)
   const canCloudSaveSeparation = isAdmin || planTier(userPlan) !== 'free'
-  const separationPanelShown = isSeparationPanelOpen && !!activeSong?.separation
+  const separationPanelShown = !!activeSong?.separation && separationPanelSongId === activeSong.id
+  const cloudSaveShown = !!stageSeparation.sep && cloudSaveSongId !== null && cloudSaveSongId === activeSongId
   const showSeparationAd = livre.isLivre && justSeparatedId !== null && activeSong?.separation?.id === justSeparatedId
   // Partes estáveis do Livre pra gaveta (o objeto inteiro muda com os minutos do Ao Vivo e refaria o palco).
   const requestLivreLimit = livre.requestLimit
@@ -906,7 +926,9 @@ export default function App() {
     tracksImport: (files: FileList) => importFilesGated(files),
     tracksMetronome: () => promptEndlessMetronome(),
     // Separação (Parte 3): a gaveta da música atual e o Separador com "Minhas separações".
-    tracksSeparation: () => { setSeparationTab('faixas'); setIsSeparationPanelOpen(true) },
+    tracksSeparation: () => { setSeparationTab('faixas'); setSeparationPanelSongId(activeSong?.id ?? null) },
+    // A janela "Publicar na Nuvem" da gaveta, presa à música atual (sep-1 M2).
+    openSeparationCloudSave: () => setCloudSaveSongId(activeSong?.id ?? null),
     tracksMySeparations: () => setIsSeparatorOpen(true),
     tracksRename: () => {
       if (activeSong) setTextPrompt({ kind: 'rename', songId: activeSong.id, name: activeSong.name })
@@ -976,11 +998,11 @@ export default function App() {
       <SeparationPanel
         open songName={activeSongName} tab={separationTab} onTab={setSeparationTab} s={stageSeparation} playing={isPlaying || isCountingIn}
         canDownload={canDownloadSeparation} canCloudSave={canCloudSaveSeparation}
-        onLimit={() => requestLivreLimit('download')} onOpenCloudSave={() => setIsCloudSaveOpen(true)} onMySeparations={() => setIsSeparatorOpen(true)}
+        onLimit={() => requestLivreLimit('download')} onOpenCloudSave={stageCalls.openSeparationCloudSave} onMySeparations={() => setIsSeparatorOpen(true)}
         ad={showSeparationAd ? (
           <AdSlot placement="separation-done" userId={user?.id ?? null} isLivre={isLivreNow} quiet={!isPlaying && !isCountingIn} justSeparated onCta={() => setIsPricingOpen(true)} />
         ) : null}
-        onClose={() => { void stageSeparation.flushPending(); setIsSeparationPanelOpen(false) }}
+        onClose={() => { void stageSeparation.flushPending(); setSeparationPanelSongId(null) }}
       />
     ) : null,
   }), [stageCalls, isRepertoireOpen, repertoireSongs, activeSongIndex, isPlaying, repertoireNotes, isTracksMenuOpen, hasActiveSong,
@@ -1685,7 +1707,7 @@ export default function App() {
   // Modais do App abertos (e a tela de limite do Livre): o teclado do palco fica desligado (Espaço não toca por baixo deles).
   const stageKeyboard = !isSettingsOpen && !isLibraryOpen && !isAdminOpen && !isMetronomeModalOpen && !isLyricsEditorOpen
     && !isPadSetsModalOpen && !isPricingOpen && !isLiveModeOpen && !showTour && !showWhatsNew && !isPadSoundsOpen && textPrompt === null
-    && livre.limit === null && !isCloudSaveOpen
+    && livre.limit === null && !cloudSaveShown
 
   // ───────────────── MAIN APP ─────────────────
   return (
@@ -1704,8 +1726,8 @@ export default function App() {
           />
           {/* Publicar na nuvem pela gaveta SEPARAÇÃO: não fecha publicando. */}
           <StageDialog
-            open={isCloudSaveOpen && !!stageSeparation.sep} title={CLOUD_COPY.title}
-            onClose={() => { if (stageSeparation.busy !== 'cloud') setIsCloudSaveOpen(false) }}
+            open={cloudSaveShown} title={CLOUD_COPY.title}
+            onClose={() => { if (stageSeparation.busy !== 'cloud') setCloudSaveSongId(null) }}
             dismissible={stageSeparation.busy !== 'cloud'} closeDisabled={stageSeparation.busy === 'cloud'}
           >
             <CloudSaveForm
@@ -1716,9 +1738,13 @@ export default function App() {
               status={stageSeparation.cloud.status} message={stageSeparation.message}
               disabledReason={isPlaying || isCountingIn ? PAUSE_TO_USE : null}
               onChange={stageSeparation.setCloud}
-              onSubmit={() => { void stageSeparation.publish().then((ok) => { if (ok) window.setTimeout(() => { setIsCloudSaveOpen(false); stageSeparation.setCloud({ progress: 0, status: '' }) }, 2000) }) }}
+              onSubmit={() => { void stageSeparation.publish().then((ok) => { if (ok) window.setTimeout(() => { setCloudSaveSongId(null); stageSeparation.setCloud({ progress: 0, status: '' }) }, 2000) }) }}
             />
           </StageDialog>
+          {/* A separação não abriu no palco (sep-1 M3): a frase some sozinha e nunca aparece tocando. */}
+          <Toast open={separationLoadFailed} onClose={() => setSeparationLoadFailed(false)} playing={isPlaying || isCountingIn} tone="alert" duration={6000}>
+            {STAGE_LOAD_ERROR_TEXT}
+          </Toast>
         </>
       ) : (
       <>

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SavedSeparation } from '../../hooks/useSeparationLibrary'
 import {
-  OPEN_ERROR_TEXT, fetchSeparationFiles, findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen,
+  OPEN_ERROR_TEXT, STAGE_LOAD_ERROR_TEXT, fetchSeparationFiles, findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen,
 } from './stageHandoff'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
@@ -96,6 +96,7 @@ describe('stageHandoff', () => {
   })
 
   it('OPEN_ERROR_TEXT sem travessão', () => {
+    expect(STAGE_LOAD_ERROR_TEXT).not.toContain(TRAVESSAO)
     expect(OPEN_ERROR_TEXT).not.toContain(TRAVESSAO)
     expect(OPEN_ERROR_TEXT).toBe('Não deu pra baixar as faixas da separação. Confira a internet e tente de novo.')
   })

@@ -288,7 +288,7 @@ describe('separação abrindo no palco', () => {
   })
 
   it('sep-1 C1: a separação que o repertório restaurado já tem só pula, sem carregar de novo', () => {
-    expect(app).toMatch(/if \(step === 'pular'\) \{ setSeparationArrival\(\{ sepId: o\.sep\.id, justSeparated: o\.justSeparated \}\); return \}/)
+    expect(app).toMatch(/const arrived = \(\) => setSeparationArrival\(\{ sepId: o\.sep\.id, justSeparated: o\.justSeparated \}\)\s*if \(step === 'pular'\) \{ arrived\(\); return \}/)
     // O pular vem antes do carregamento.
     expect(app.indexOf("if (step === 'pular')")).toBeLessThan(app.indexOf('loadFiles(dt.files'))
   })
@@ -309,7 +309,7 @@ describe('separação abrindo no palco', () => {
     expect(app).toMatch(/const requestLivreLimit = livre\.requestLimit/)
     expect(app).toMatch(/const canDownloadSeparation = isAdmin \|\| canDownloadStems\(userPlan\)/)
     expect(app).toMatch(/const canCloudSaveSeparation = isAdmin \|\| planTier\(userPlan\) !== 'free'/)
-    expect(app).toMatch(/const separationPanelShown = isSeparationPanelOpen && !!activeSong\?\.separation/)
+    expect(app).toMatch(/const separationPanelShown = !!activeSong\?\.separation && separationPanelSongId === activeSong\.id/)
     // O anúncio do fim no painel: só no Livre, com a separação que acabou de terminar, parado.
     expect(app).toMatch(/<AdSlot placement="separation-done"[^>]*quiet=\{!isPlaying && !isCountingIn\}[^>]*justSeparated/)
     expect(app).toMatch(/const showSeparationAd = livre\.isLivre && justSeparatedId !== null/)
@@ -339,8 +339,30 @@ describe('separação abrindo no palco', () => {
   })
 
   it('publicar na nuvem pela gaveta: janela do palco que não fecha publicando e o teclado do palco desligado', () => {
-    expect(app).toMatch(/<StageDialog[\s\S]{0,120}open=\{isCloudSaveOpen && !!stageSeparation\.sep\}[\s\S]{0,300}closeDisabled=\{stageSeparation\.busy === 'cloud'\}/)
-    expect(app).toMatch(/livre\.limit === null && !isCloudSaveOpen/)
+    expect(app).toMatch(/<StageDialog[\s\S]{0,120}open=\{cloudSaveShown\}[\s\S]{0,300}closeDisabled=\{stageSeparation\.busy === 'cloud'\}/)
+    // sep-1 M2: o teclado do palco segue a mesma condição da janela.
+    expect(app).toMatch(/livre\.limit === null && !cloudSaveShown/)
+    expect(app).toMatch(/const cloudSaveShown = !!stageSeparation\.sep && cloudSaveSongId !== null && cloudSaveSongId === activeSongId/)
+  })
+
+  it('sep-1 I6 e M2: a gaveta e a janela de publicar são da música em que abriram; trocar de música fecha as duas', () => {
+    expect(app).toMatch(/useEffect\(\(\) => \{\s*const left = panelSongRef\.current[\s\S]{0,200}setSeparationPanelSongId\(\(id\) => \(id === left \? null : id\)\)\s*setCloudSaveSongId\(\(id\) => \(id === left \? null : id\)\)\s*\}, \[activeSongId\]\)/)
+    // Só a chegada (parada) e o FAIXAS > Separação abrem a gaveta.
+    expect(app.match(/setSeparationPanelSongId\((?!null\)|\(id\))/g)).toHaveLength(2)
+    expect(app).toMatch(/const quietNow = !isPlaying && !isCountingIn[\s\S]{0,300}setSeparationPanelSongId\(playlist\[i\]\.id\)/)
+    expect(app).toMatch(/tracksSeparation: \(\) => \{ setSeparationTab\('faixas'\); setSeparationPanelSongId\(activeSong\?\.id \?\? null\) \}/)
+    expect(app).toMatch(/onOpenCloudSave=\{stageCalls\.openSeparationCloudSave\}/)
+  })
+
+  it('sep-1 I5: a separação sai do estado quando o carregamento pega as faixas', () => {
+    expect(app).toMatch(/if \(step === 'esperar'\) return\s*\/\/[^\n]*\n\s*setPendingSeparation\(null\)/)
+    expect(app).not.toMatch(/pendingSeparationSeen/)
+  })
+
+  it('sep-1 M3: nada decodificou, a frase aparece no palco (nunca tocando) e a chegada não fica pendente', () => {
+    expect(app).toMatch(/\.then\(\(ok\) => \{ entered = ok \}\)\)/)
+    expect(app).toMatch(/\.then\(\(\) => \{ if \(entered\) arrived\(\); else setSeparationLoadFailed\(true\) \}\)/)
+    expect(app).toMatch(/<Toast open=\{separationLoadFailed\}[\s\S]{0,200}playing=\{isPlaying \|\| isCountingIn\}[\s\S]{0,80}\{STAGE_LOAD_ERROR_TEXT\}/)
   })
 
   it('nenhum alert, confirm ou prompt novo no App', () => {
