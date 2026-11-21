@@ -186,7 +186,7 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
     const w = from ?? live.current.cur
     if (!w?.sep) return Promise.resolve()
     if (!change.stem && w.sep.stems.length === 0) return Promise.resolve()
-    const { id, createdAt } = w.sep
+    const { id, createdAt, songKey: knownKey } = w.sep
     // O tom original só vem da música ativa (a gravação do timer e do fechar a gaveta).
     const originalKey = from ? null : live.current.bridge.song?.originalKey
     return enqueue(saveQueue.current, id, async () => {
@@ -202,7 +202,7 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
       const data = {
         id, createdAt,
         songName: change.songName ?? rec.songName, artist: change.artist ?? rec.artist,
-        bpm: src ? src.bpm : rec.bpm, songKey: originalKey || rec.songKey || w.sep.songKey,
+        bpm: src ? src.bpm : rec.bpm, songKey: originalKey || rec.songKey || knownKey,
         stems, voiceCues: [...(src ? src.cues : rec.voiceCues ?? [])],
       }
       await st.saveSeparation(data)
