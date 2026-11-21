@@ -9,7 +9,7 @@ import type { SavedSeparation, SavedStem } from './useSeparationLibrary'
 import type { BeatGrid } from '../lib/beatGrid'
 import { FAMILY_COLOR } from '../lib/channelNames'
 import { loadClickSelection, saveClickSelection, type ClickLibrarySelection } from '../lib/clickLibrary'
-import { APP_CLICK_NAMES, SEPARATOR_CLICK_NAME, VOICE_GUIDE_NAME } from '../lib/generatedChannels'
+import { SEPARATOR_CLICK_NAME, VOICE_GUIDE_NAME, isAppClickName } from '../lib/generatedChannels'
 import { publishToCloud } from '../lib/separation/cloudPublish'
 import {
   BEATS_PER_BAR, bpmReport, clickPlan, generateSeparatorClick, measureGrid, normalizeBpm, nudgeOffset, pickGridSource,
@@ -27,8 +27,8 @@ export interface StageSeparationBridge {
   /** Tocando ou na pré-contagem. */
   busy: boolean
   heardPosition(): number
-  /** O App passa (n, f) => replaceAppChannel(song.id, n, f). */
-  replaceChannel(names: readonly string[], file: File): Promise<Channel | null>
+  /** O App passa (n, f) => replaceAppChannel(song.id, n, f): os nomes que saem, ou um casador de nome. */
+  replaceChannel(names: readonly string[] | ((name: string) => boolean), file: File): Promise<Channel | null>
 }
 
 export interface StageSeparationStore {
@@ -232,8 +232,9 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
       const blob = await (await fetch(url)).blob()
       URL.revokeObjectURL(url)
       const file = new File([blob], `${SEPARATOR_CLICK_NAME}.wav`, { type: 'audio/wav' })
-      // Um click gerado pelo app por música (P5): troca o do motor ou o de antes, numa troca só.
-      const added = await br.replaceChannel(APP_CLICK_NAMES, file)
+      // Um click gerado pelo app por música (P5): troca o do motor, o de antes ou o do Metrônomo
+      // (sep-1 M5), numa troca só.
+      const added = await br.replaceChannel(isAppClickName, file)
       if (!added) return
       const remote = await st.upload(`${st.userId || 'anon'}/${w.sep.id}/click_${Date.now()}.wav`, file)
       if (remote) await persist({ stems: stemsWith({ id: 'metronome', name: SEPARATOR_CLICK_NAME, url: remote, color: CLICK_COLOR }, w) }, w)

@@ -107,7 +107,11 @@ describe('useStageSeparation', () => {
   it('generateClick troca o click gerado pelo app pelo Metrônomo e grava a faixa metronome com a mesma data', async () => {
     const hook = await mount()
     await act(async () => { await run(hook.result.current.generateClick()) })
-    expect(bridge.replaceChannel).toHaveBeenCalledWith(['Click gerado', 'Metrônomo'], expect.objectContaining({ name: 'Metrônomo.wav' }))
+    expect(bridge.replaceChannel).toHaveBeenCalledWith(expect.any(Function), expect.objectContaining({ name: 'Metrônomo.wav' }))
+    // Sai todo click que o app gera (o do motor, o de antes e os do Metrônomo, sep-1 M5); o do usuário fica.
+    const matches = bridge.replaceChannel.mock.calls[0][0] as (name: string) => boolean
+    expect(['Click gerado', 'Metrônomo', 'Click_IA_120bpm', 'Click_Classic_92.5bpm'].every(matches)).toBe(true)
+    expect(['CLICK', 'Click', 'Voz Guia', 'Bateria'].some(matches)).toBe(false)
     expect(store.upload).toHaveBeenCalledWith(expect.stringMatching(/^u1\/sep_1\/click_\d+\.wav$/), expect.any(File))
     expect(store.saveSeparation).toHaveBeenLastCalledWith(expect.objectContaining({
       id: 'sep_1', createdAt: SEP.createdAt,

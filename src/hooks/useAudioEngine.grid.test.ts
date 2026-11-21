@@ -15,6 +15,7 @@ import type { SavedSong } from '../lib/repertoireSchema'
 import type { StageGates, StageMode, TimeSignature } from '../lib/stageContracts'
 import type { Marker } from '../types'
 import { handleGridRequest, type GridWorkerRequest, type GridWorkerResponse } from '../workers/gridWorker'
+import { isAppClickName } from '../lib/generatedChannels'
 import { useAudioEngine } from './useAudioEngine'
 
 // T27: a grade de cada música sai da faixa de click (analyzeClickTrack da T3 + gridFromClick da
@@ -1137,5 +1138,80 @@ describe('click do painel SEPARAÇÃO', () => {
     // O "Click gerado" que não entrou não fica no disco.
     const stems = [...mem.db.keys()].filter((k) => k.startsWith('mt_files_u1:ch:'))
     expect(stems).toHaveLength(saved()[0].channels.length)
+  })
+
+  it('sep-1 I1: o Metrônomo do painel no lugar do Click gerado, a grade passa a ser a dele', async () => {
+    mem.opts = { autoClick: true, stageMode: 'novo' }
+    mem.plan = okPlan()
+    const hook = await openApp()
+    await load(hook, [['DRUMS.wav', 'bateria'], ['BASS.wav', 'bateria']], { bpm: 120, timeSignature: '4/4' })
+    await settled(hook)
+    const id = hook.result.current.playlist[0].id
+    expect(hook.result.current.songGrid).toMatchObject({ bpm: 120, source: 'click' })
+    // Detectar deu 100 em 3/4 no painel: o click novo é outro.
+    await act(async () => { await hook.result.current.replaceAppChannel(id, ['Click gerado', 'Metrônomo'], panelClick('click34')) })
+    await settled(hook)
+    await wait(100)
+    expect(hook.result.current.playlist[0].channels.map((c) => c.name)).toContain('Metrônomo')
+    expect(hook.result.current.songGrid?.bpm).toBeCloseTo(100, 0)
+    // O compasso salvo na nuvem (4/4) continua valendo na leitura, como em qualquer click.
+    expect(hook.result.current.songGrid).toMatchObject({ signature: '4/4', source: 'click' })
+    expect(saved()[0].grid).toEqual(hook.result.current.songGrid)
+  })
+
+  it('sep-1 I1: o segundo Gerar click (SYNC, Mover o 1) sobre um Metrônomo já lido lê o novo', async () => {
+    const hook = await openApp()
+    await load(hook, [['DRUMS.wav', 'bateria']], { bpm: 120 })
+    await settled(hook)
+    const id = hook.result.current.playlist[0].id
+    await act(async () => { await hook.result.current.replaceAppChannel(id, ['Click gerado', 'Metrônomo'], panelClick('click44')) })
+    await settled(hook)
+    await wait(100)
+    expect(hook.result.current.songGrid?.bpm).toBeCloseTo(120, 0)
+    await act(async () => { await hook.result.current.replaceAppChannel(id, ['Click gerado', 'Metrônomo'], panelClick('click34')) })
+    await settled(hook)
+    await wait(100)
+    expect(hook.result.current.songGrid?.bpm).toBeCloseTo(100, 0)
+    expect(hook.result.current.playlist[0].channels.filter((c) => c.name === 'Metrônomo')).toHaveLength(1)
+  })
+
+  it('sep-1 I1: o Metrônomo do painel volta o ataque da amostra, como o click do Metrônomo do app', async () => {
+    const hook = await openApp()
+    await load(hook, [['DRUMS.wav', 'bateria']], { bpm: 120 })
+    await settled(hook)
+    const id = hook.result.current.playlist[0].id
+    await act(async () => { await hook.result.current.replaceAppChannel(id, ['Click gerado', 'Metrônomo'], panelClick('percussive')) })
+    await settled(hook)
+    await wait(100)
+    const grid = hook.result.current.songGrid!
+    expect(grid.source).toBe('click')
+    expect(Math.abs(grid.firstDownbeat - 0.87)).toBeLessThan(0.0012)
+  })
+
+  it('sep-1 I1: com outro click do usuário na música, a grade dele fica (só o click do app troca)', async () => {
+    const hook = await openApp()
+    await load(hook, [['CLICK.wav', 'click44'], ['DRUMS.wav', 'bateria']], { bpm: 120 })
+    await settled(hook)
+    const id = hook.result.current.playlist[0].id
+    const before = hook.result.current.songGrid
+    expect(before).toMatchObject({ source: 'click' })
+    await act(async () => { await hook.result.current.replaceAppChannel(id, ['Click gerado', 'Metrônomo'], panelClick('click34')) })
+    await settled(hook)
+    await wait(100)
+    expect(hook.result.current.songGrid?.bpm).toBeCloseTo(before!.bpm, 3)
+  })
+
+  it('sep-1 M5: o click que o Metrônomo do app inseriu também sai quando o painel gera o dele', async () => {
+    const hook = await openApp()
+    await load(hook, [['DRUMS.wav', 'bateria']], { bpm: 120 })
+    await settled(hook)
+    await act(async () => { await hook.result.current.addChannelToActiveSong(new File(['click44'], 'Click_IA_120bpm.wav', { type: 'audio/wav' })) })
+    await settled(hook)
+    const id = hook.result.current.playlist[0].id
+    await act(async () => { await hook.result.current.replaceAppChannel(id, isAppClickName, panelClick('click34')) })
+    await settled(hook)
+    const names = hook.result.current.playlist[0].channels.map((c) => c.name)
+    expect(names).toContain('Metrônomo')
+    expect(names).not.toContain('Click_IA_120bpm')
   })
 })

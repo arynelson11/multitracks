@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import * as Tone from 'tone';
 import SignalsmithStretch, { type SignalsmithStretchNode } from 'signalsmith-stretch';
 import type { Channel, ChannelRole, ChannelStartState, Song, Marker, SeparationLink } from '../types';
-import { GENERATED_CLICK_NAME } from '../lib/generatedChannels';
+import { GENERATED_CLICK_NAME, METRONOME_CLICK_NAME, SEPARATOR_CLICK_NAME } from '../lib/generatedChannels';
 import { useSettings } from '../contexts/SettingsContext';
 import { detectKey, generateEndlessClickTrackFromSample } from '../lib/AudioAnalyzer';
 import { loadClickSelection } from '../lib/clickLibrary';
@@ -542,11 +542,8 @@ const isGeneratedClick = (ch: ChannelIdentity): boolean => ch.name === GENERATED
  * nunca nasce, e o que já existe fica mudo.
  */
 const clickHasOwnRoute = (plan: OutputPlan, autoPan: boolean): boolean => plan.mode !== 'stereo' && !cueReachesVs(plan, autoPan);
-/**
- * Clicks que o Metrônomo grava ("Click_IA_120bpm", "Click_Classic_120bpm"; MetronomeModal.tsx):
- * gerados pelo mesmo gerador, com cada click adiantado pelo ataque da amostra.
- */
-const METRONOME_CLICK_NAME = /^Click_[A-Za-z]+_[\d.]+bpm$/;
+// Os clicks que o Metrônomo grava ("Click_IA_120bpm"; METRONOME_CLICK_NAME, em generatedChannels.ts)
+// saem do mesmo gerador, com cada click adiantado pelo ataque da amostra.
 /** A leitura do click precisa de pelo menos 4 s de áudio (o mínimo do analyzeClickTrack). */
 const CLICK_MIN_SECONDS = 4;
 /** Canal de click abaixo disto (-60 dBFS) do começo ao fim é silêncio: nada a ler. */
@@ -677,12 +674,13 @@ function gridFromAutoClick(plan: AutoClickOkPlan, signatureKnown: boolean): Read
 }
 
 /**
- * Click gravado pelo gerador do app (o do motor ou os do Metrônomo): a leitura põe o 1 depois do
- * início audível pelo jeito da amostra soar (Aviso T27/M7), e a grade volta pelo ataque da
- * amostra escolhida na biblioteca (a que o gerador usa). Outro click: 0.
+ * Click gravado pelo gerador do app (o do motor, os do Metrônomo e o "Metrônomo" do painel
+ * SEPARAÇÃO, sep-1 I1): a leitura põe o 1 depois do início audível pelo jeito da amostra soar
+ * (Aviso T27/M7), e a grade volta pelo ataque da amostra escolhida na biblioteca (a que o gerador
+ * usa). Outro click: 0.
  */
 function generatedClickLead(ch: Pick<Channel, 'name'>): number {
-    if (ch.name !== GENERATED_CLICK_NAME && !METRONOME_CLICK_NAME.test(ch.name)) return 0;
+    if (ch.name !== GENERATED_CLICK_NAME && ch.name !== SEPARATOR_CLICK_NAME && !METRONOME_CLICK_NAME.test(ch.name)) return 0;
     const { type, subdivision } = loadClickSelection();
     return attackSeconds(type, subdivision);
 }
@@ -3189,26 +3187,33 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     };
 
     // Troca atômica do canal gerado pelo app (Parte 3, painel SEPARAÇÃO): tira da música `songId` todo
-    // canal cujo nome original (`name`, nunca o customName) está em `names` e põe o novo, numa
-    // gravação só (nem os dois, nem nenhum). O novo é preparado antes: se o arquivo não decodifica,
-    // nada muda. Tocando, o novo entra pelo addLiveVoice; Click novo agenda a leitura da grade.
+    // canal cujo nome original (`name`, nunca o customName) está em `names` (ou passa no casador) e
+    // põe o novo, numa gravação só (nem os dois, nem nenhum). O novo é preparado antes: se o arquivo
+    // não decodifica, nada muda. Tocando, o novo entra pelo addLiveVoice. Click novo é lido de novo
+    // (sep-1 I1): a grade que veio do click do app que saiu não vale pro novo (BPM, SYNC ou o 1
+    // mudaram), então sai (o compasso escolhido no EDITAR fica) e a leitura forçada entra na fila.
     // Música que saiu do repertório no meio: devolve null e não grava nada.
-    const replaceAppChannel = async (songId: string, names: readonly string[], file: File): Promise<Channel | null> => {
+    const replaceAppChannel = async (songId: string, names: readonly string[] | ((name: string) => boolean), file: File): Promise<Channel | null> => {
         if (!playlistRef.current.some((s) => s.id === songId)) return null;
         const newChannel = await prepareChannel(file);
         if (!newChannel) return null;
-        const wanted = new Set(names);
+        const listed = typeof names === 'function' ? null : new Set(names);
+        const wanted = (name: string) => (listed ? listed.has(name) : (names as (name: string) => boolean)(name));
+        const isClick = resolveChannelRole(newChannel) === 'click';
         let gone: Channel[] = [];
         let grew = false;
         const song = patchSong(songId, (s) => {
-            gone = s.channels.filter((c) => wanted.has(c.name));
-            const kept = s.channels.filter((c) => !wanted.has(c.name));
+            gone = s.channels.filter((c) => wanted(c.name));
+            const kept = s.channels.filter((c) => !wanted(c.name));
             grew = newChannel.buffer.duration > s.duration;
+            const prev = sanitizeGrid(s.grid);
+            const staleGrid = isClick && prev?.source === 'click' && clickChannelsOf({ ...s, channels: kept }).length === 0;
             return {
                 ...s,
                 channels: arrangeChannels([...kept, newChannel], s.channelOrder),
                 duration: grew ? newChannel.buffer.duration : s.duration,
                 ...(gone.some(isRemovedClick) ? { clickRemoved: true as const } : {}),
+                ...(staleGrid ? { grid: prev.meterSource === 'manual' ? { ...prev, source: 'bpm' as const } : undefined, downbeatAssumed: undefined } : {}),
             };
         });
         if (!song) {
@@ -3219,7 +3224,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         for (const c of gone) await deleteChannelFile(c.id);
         if (grew && activeSongIdRef.current === songId) setDuration(song.duration);
         await addLiveVoice(newChannel, song.channels, song.id);
-        if (resolveChannelRole(newChannel) === 'click') scheduleSongGrid(song, { read: true, generate: false });
+        // Leitura forçada (como o "Ler o click de novo"): a grade de click que ficou (de outro click
+        // do usuário) é lida de novo e sai a mesma. Sem Worker, nada é lido (fica a do BPM salvo).
+        if (isClick && gridWorkerUsable()) void enqueueGridJob(song.id, { read: true, generate: false });
         return newChannel;
     };
 
