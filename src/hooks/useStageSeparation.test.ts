@@ -347,6 +347,69 @@ describe('useStageSeparation', () => {
     })
   })
 
+  describe('gravação de uma ação no ar (inicio-1 I1 e M1: uma fila por separação, só o que mudou)', () => {
+    const SONG2 = () => SONG({ id: 'song_2', separation: { id: 'sep_2', createdAt: 5 } })
+    let db: Map<string, SavedSeparation>
+    beforeEach(() => {
+      db = new Map([['sep_1', structuredClone(SEP)], ['sep_2', { ...structuredClone(SEP), id: 'sep_2', createdAt: 5, voiceCues: [] }]])
+      store.getSeparation.mockImplementation(async (id: string) => structuredClone(db.get(id) ?? null))
+      store.saveSeparation.mockImplementation(async (d: SavedSeparation) => { db.set(d.id, structuredClone({ ...db.get(d.id)!, ...d })); return d.id })
+    })
+    const cueLabels = (id: string) => (db.get(id)?.voiceCues ?? []).map((c) => c.label)
+    const stemIds = (id: string) => (db.get(id)?.stems ?? []).map((s) => s.id)
+
+    // O revisor provou com o click; a voz guia grava do mesmo jeito.
+    for (const [tool, stem] of [['generateClick', 'metronome'], ['commitVoiceGuide', 'voiceguide']] as const) {
+      it(`marcação feita enquanto o ${tool} sobe pra nuvem não some, nem na gravação dele nem na volta da música`, async () => {
+        let releaseUpload!: () => void
+        store.upload.mockImplementationOnce((path: string) => new Promise((r) => { releaseUpload = () => r(`https://r2/${path}`) }))
+        const hook = await mount()
+        let p!: Promise<void>
+        act(() => { p = hook.result.current[tool]() })
+        await act(async () => { await vi.advanceTimersByTimeAsync(200) })
+        expect(store.upload).toHaveBeenCalledTimes(1)
+        // A faixa sobe; a pessoa dá PLAY e marca a voz guia (P3), e os 800 ms gravam.
+        hook.rerender({ br: { ...bridge, busy: true } })
+        act(() => { hook.result.current.addCue({ label: 'Ponte', file: 'Song Sections/Portugese - Bridge.wav' }) })
+        await act(async () => { await vi.advanceTimersByTimeAsync(900) })
+        expect(cueLabels('sep_1')).toEqual(['Verso 1', 'Ponte'])
+        // O envio termina: a gravação da ação leva a faixa nova sem tirar a Ponte.
+        await act(async () => { releaseUpload(); await vi.advanceTimersByTimeAsync(10); await p })
+        expect(cueLabels('sep_1')).toEqual(['Verso 1', 'Ponte'])
+        expect(stemIds('sep_1')).toContain(stem)
+        // O AUTO troca de música e volta: a Ponte continua lá, com o Gerar canal laranja.
+        hook.rerender({ br: { ...bridge, busy: true, song: SONG2() } })
+        await act(async () => { await vi.advanceTimersByTimeAsync(10) })
+        hook.rerender({ br: { ...bridge, busy: false, song: SONG() } })
+        await act(async () => { await vi.advanceTimersByTimeAsync(10) })
+        expect(hook.result.current.cues.map((c) => c.label)).toEqual(['Verso 1', 'Ponte'])
+        expect(hook.result.current.cuesPending).toBe(true)
+      })
+    }
+
+    it('a gravação da troca de música não apaga a faixa que a ação acabou de subir (ordem inversa)', async () => {
+      // Rede lenta: cada gravação leva 50 ms pra chegar no banco.
+      store.saveSeparation.mockImplementation((d: SavedSeparation) => new Promise((r) => {
+        window.setTimeout(() => { db.set(d.id, structuredClone({ ...db.get(d.id)!, ...d })); r(d.id) }, 50)
+      }))
+      let releaseUpload!: () => void
+      store.upload.mockImplementationOnce((path: string) => new Promise((r) => { releaseUpload = () => r(`https://r2/${path}`) }))
+      const hook = await mount()
+      let p!: Promise<void>
+      act(() => { p = hook.result.current.generateClick() })
+      await act(async () => { await vi.advanceTimersByTimeAsync(200) })
+      hook.rerender({ br: { ...bridge, busy: true } })
+      act(() => { hook.result.current.addCue({ label: 'Ponte', file: 'Song Sections/Portugese - Bridge.wav' }) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(300) })
+      // O click termina de subir e a gravação dele vai pro banco; no meio dela, o AUTO troca de música.
+      await act(async () => { releaseUpload(); await vi.advanceTimersByTimeAsync(10) })
+      hook.rerender({ br: { ...bridge, busy: true, song: SONG2() } })
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); await p })
+      expect(stemIds('sep_1')).toContain('metronome')
+      expect(cueLabels('sep_1')).toEqual(['Verso 1', 'Ponte'])
+    })
+  })
+
   it('marcação feita durante uma gravação continua pendente e grava depois', async () => {
     const hook = await mount()
     let release!: () => void

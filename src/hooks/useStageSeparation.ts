@@ -99,6 +99,19 @@ function workFor(key: string, sep: SavedSeparation | null): Work {
   }
 }
 
+/** Põe o trabalho na fila da separação (inicio-1 I1 e M1): um por vez, na ordem em que chegaram, pra
+ *  duas gravações (ou uma leitura e uma gravação) nunca se cruzarem entre o getSeparation e o upsert. */
+function enqueue<T>(queue: Map<string, Promise<unknown>>, id: string, job: () => Promise<T>): Promise<T> {
+  const run = (queue.get(id) ?? Promise.resolve()).then(job)
+  const tail = run.catch(() => undefined)
+  queue.set(id, tail)
+  void tail.then(() => { if (queue.get(id) === tail) queue.delete(id) })
+  return run
+}
+
+/** O que uma ação muda na separação gravada: a faixa nova (click ou voz guia) e o nome publicado. */
+interface SepChange { stem?: SavedStem; songName?: string; artist?: string }
+
 /** As amostras de cada lado do áudio do canal, pra medir a grade. */
 function samplesOf(buffer: AudioBuffer): Float32Array[] {
   return Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i))
@@ -146,36 +159,13 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
   const syncPending = useRef<{ key: string; offset: number } | null>(null)
   const cueSeq = useRef(0)
   // Trabalho da música que saiu (review-sep-fix, gaveta presa à música): as chaves com a voz guia
-  // ainda por gerar e a gravação da troca em andamento, que a leitura da volta espera.
+  // ainda por gerar. A gravação da troca entra na fila da separação, que a leitura da volta espera.
   const cuesPendingByKey = useRef(new Set<string>())
-  const leaving = useRef(new Map<string, Promise<void>>())
+  const saveQueue = useRef(new Map<string, Promise<unknown>>())
   const withPendingCues = (w: Work): Work => {
     if (!cuesPendingByKey.current.delete(w.key)) return w
     return { ...w, cuesPending: true }
   }
-
-  // Lê a separação da música ativa (a de outra música fica escondida pela chave). Sem resposta
-  // (offline, ou a separação ainda subindo pra nuvem), tenta de novo sozinha (sep-1 M7).
-  useEffect(() => {
-    if (!key || !sepId) return
-    let alive = true
-    let timer: number | undefined
-    let attempt = 0
-    const read = () => {
-      // A gravação da troca de música (as marcações dos últimos 800 ms) termina antes de ler.
-      void (leaving.current.get(key) ?? Promise.resolve())
-        .then(() => live.current.store.getSeparation(sepId))
-        .catch(() => null)
-        .then((rec) => {
-          if (!alive) return
-          if (rec) { setWork(withPendingCues(workFor(key, rec))); return }
-          setWork((w) => (w && w.key === key && w.sep ? w : workFor(key, null)))
-          if (attempt < READ_RETRY_MS.length) timer = window.setTimeout(read, READ_RETRY_MS[attempt++])
-        })
-    }
-    read()
-    return () => { alive = false; window.clearTimeout(timer) }
-  }, [key, sepId])
 
   const patch = useCallback((p: Partial<Work> | ((w: Work) => Partial<Work>)) => {
     setWork((w) => (w && w.key === live.current.key ? { ...w, ...(typeof p === 'function' ? p(w) : p) } : w))
@@ -186,26 +176,40 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
   }
   const stopped = () => !live.current.bridge.busy && busyRef.current === null
 
-  // Grava em "Minhas separações": sempre com a id e a data da separação, nunca sem faixas.
+  // Grava em "Minhas separações": sempre com a id e a data da separação, nunca sem faixas, na fila
+  // da separação e sobre o registro lido (inicio-1 I1 e M1). A ação grava só o que ela muda (a faixa
+  // nova sobre as faixas do registro, o nome publicado), com as marcações e o BPM do trabalho mais
+  // novo da mesma música, ou os do registro se a música já saiu. Só a gravação da troca (`leave`)
+  // grava as marcações e o BPM do trabalho que sai.
   // `from`: o trabalho de quando a ação começou (a música pode ter trocado no meio de um await).
-  const persist = useCallback(async (over: Partial<Pick<SavedSeparation, 'stems' | 'songName' | 'artist'>> = {}, from?: Work) => {
-    const { store: st, bridge: br } = live.current
+  const persist = useCallback((change: SepChange = {}, from?: Work, leave = false): Promise<void> => {
     const w = from ?? live.current.cur
-    if (!w?.sep) return
-    const stems = over.stems ?? w.sep.stems
-    if (stems.length === 0) return
-    // Apagada em "Minhas separações" com a música ainda no palco (sep-1 M4): não volta pela gravação.
-    if (!(await st.getSeparation(w.sep.id).catch(() => null))) return
-    const data = {
-      id: w.sep.id, createdAt: w.sep.createdAt,
-      songName: over.songName ?? w.sep.songName, artist: over.artist ?? w.sep.artist,
-      bpm: w.bpm, songKey: (from ? null : br.song?.originalKey) || w.sep.songKey,
-      stems, voiceCues: [...w.cues],
-    }
-    await st.saveSeparation(data)
-    // Mudou algo durante a gravação (uma marcação nova tocando, por exemplo): continua pendente.
-    const same = (x: Work) => x.cues === w.cues && x.bpm === w.bpm
-    setWork((x) => (x && x.key === w.key && x.sep ? { ...x, dirty: same(x) ? false : x.dirty, sep: { ...x.sep, ...data } } : x))
+    if (!w?.sep) return Promise.resolve()
+    if (!change.stem && w.sep.stems.length === 0) return Promise.resolve()
+    const { id, createdAt } = w.sep
+    // O tom original só vem da música ativa (a gravação do timer e do fechar a gaveta).
+    const originalKey = from ? null : live.current.bridge.song?.originalKey
+    return enqueue(saveQueue.current, id, async () => {
+      const st = live.current.store
+      const rec = await st.getSeparation(id).catch(() => null)
+      // Apagada em "Minhas separações" com a música ainda no palco (sep-1 M4): não volta pela gravação.
+      if (!rec) return
+      const { stem } = change
+      const stems = stem ? [...rec.stems.filter((s) => s.id !== stem.id), stem] : rec.stems
+      if (stems.length === 0) return
+      const newest = live.current.work
+      const src = leave ? w : newest && newest.key === w.key && newest.sep ? newest : null
+      const data = {
+        id, createdAt,
+        songName: change.songName ?? rec.songName, artist: change.artist ?? rec.artist,
+        bpm: src ? src.bpm : rec.bpm, songKey: originalKey || rec.songKey || w.sep.songKey,
+        stems, voiceCues: [...(src ? src.cues : rec.voiceCues ?? [])],
+      }
+      await st.saveSeparation(data)
+      // Mudou algo durante a gravação (uma marcação nova tocando, por exemplo): continua pendente.
+      const same = (x: Work) => !!src && x.cues === src.cues && x.bpm === src.bpm
+      setWork((x) => (x && x.key === w.key && x.sep ? { ...x, dirty: same(x) ? false : x.dirty, sep: { ...x.sep, ...data } } : x))
+    })
   }, [])
 
   // Trocou de música (o AUTO, tocando, ou um toque): o trabalho da que saiu grava na hora, sem
@@ -220,10 +224,31 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
     if (!w || w.key !== left || !w.sep) return
     if (w.cuesPending) cuesPendingByKey.current.add(left)
     if (!w.dirty) return
-    const saving = persist({}, w).catch((e) => { console.error('[Separação] o trabalho da música que saiu não gravou', e) })
-    leaving.current.set(left, saving)
-    void saving.then(() => { if (leaving.current.get(left) === saving) leaving.current.delete(left) })
+    void persist({}, w, true).catch((e) => { console.error('[Separação] o trabalho da música que saiu não gravou', e) })
   }, [key, persist])
+
+  // Lê a separação da música ativa (a de outra música fica escondida pela chave). Sem resposta
+  // (offline, ou a separação ainda subindo pra nuvem), tenta de novo sozinha (sep-1 M7). A leitura
+  // entra na fila da separação: a gravação da troca de música (as marcações dos últimos 800 ms) e a
+  // de uma ação no ar terminam antes (por isso este efeito vem depois do da troca).
+  useEffect(() => {
+    if (!key || !sepId) return
+    let alive = true
+    let timer: number | undefined
+    let attempt = 0
+    const read = () => {
+      void enqueue(saveQueue.current, sepId, () => live.current.store.getSeparation(sepId))
+        .catch(() => null)
+        .then((rec) => {
+          if (!alive) return
+          if (rec) { setWork(withPendingCues(workFor(key, rec))); return }
+          setWork((w) => (w && w.key === key && w.sep ? w : workFor(key, null)))
+          if (attempt < READ_RETRY_MS.length) timer = window.setTimeout(read, READ_RETRY_MS[attempt++])
+        })
+    }
+    read()
+    return () => { alive = false; window.clearTimeout(timer) }
+  }, [key, sepId])
 
   // BPM, marcações e o tom original gravam 800 ms depois da última mudança.
   const songKeyNow = song?.originalKey ?? null
@@ -242,11 +267,6 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
     syncPending.current = null
     if (p.key === key) void generateClickRef.current(p.offset)
   }, [bridgeBusy, busy, key])
-
-  const stemsWith = (stem: SavedStem, w: Work): SavedStem[] => {
-    const stems = w.sep?.stems ?? []
-    return [...stems.filter((s) => s.id !== stem.id), stem]
-  }
 
   // Grade medida no canal de bateria do palco (sem ela, instrumental, baixo...), com cache.
   const analyze = async (nearBpm: number | undefined, beatsPerBar: number, channels: readonly Channel[] = live.current.bridge.song?.channels ?? []): Promise<{ grid: BeatGrid; name: string } | null> => {
@@ -298,7 +318,7 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
       const added = await br.replaceChannel(isAppClickName, file)
       if (!added) return
       const remote = await st.upload(`${st.userId || 'anon'}/${w.sep.id}/click_${Date.now()}.wav`, file)
-      if (remote) await persist({ stems: stemsWith({ id: 'metronome', name: SEPARATOR_CLICK_NAME, url: remote, color: CLICK_COLOR }, w) }, w)
+      if (remote) await persist({ stem: { id: 'metronome', name: SEPARATOR_CLICK_NAME, url: remote, color: CLICK_COLOR } }, w)
     } catch (e) {
       console.error('Erro ao gerar metrônomo', e)
       say('bpm', BPM_COPY.clickError)
@@ -327,7 +347,7 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
       cuesPendingByKey.current.delete(w.key)
       setWork((x) => (x && x.key === w.key ? { ...x, cuesPending: false } : x))
       const remote = await st.upload(`${st.userId || 'anon'}/${w.sep.id}/voz_guia_${Date.now()}.wav`, file)
-      await persist(remote ? { stems: stemsWith({ id: 'voiceguide', name: VOICE_GUIDE_NAME, url: remote, color: FAMILY_COLOR.guia }, w) } : {}, w)
+      await persist(remote ? { stem: { id: 'voiceguide', name: VOICE_GUIDE_NAME, url: remote, color: FAMILY_COLOR.guia } } : {}, w)
     } catch (e) {
       console.error('Erro ao gerar canal de Voz Guia', e)
       say('voz', VOICE_COPY.renderError)
