@@ -91,6 +91,8 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `livre` | plano Livre: convite pra marcar seções e o aviso SEM CLICK LIDO |
 | `selo` | plano Livre parado com o selo "LIVRE · 3 de 3 músicas este mês" na barra, OFFLINE, HOST ligado e o aviso SAÍDAS (o pior caso da barra; abaixo de 1280 px o selo encurta e o "Playback Studio" sai) |
 | `repertorio` | gaveta REPERTÓRIOS aberta com 6 músicas e Anotações |
+| `separacao` | gaveta SEPARAÇÃO aberta à direita (Parte 3, faixa D), aba FAIXAS com 7 faixas de nome longo, palco parado |
+| `separacao-voz` | a mesma gaveta na aba VOZ GUIA com 14 marcações |
 | `tom` | grade de tons aberta (toque no botão do tom), com "Redefinir detecção de tom" |
 | `semtom` | grade aberta sem tom original: semitons em 3 linhas, com "Definir o tom original" ao lado do 0 |
 | `compasso` | diálogo do compasso aberto no EDITAR |

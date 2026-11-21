@@ -4,6 +4,8 @@
 // Nada daqui entra no app.
 import type { PadPanelProps } from '../../src/components/stage/PadPanel'
 import { TELA_ESTADOS } from './telasEstados'
+import type { SeparationPanelProps } from '../../src/components/separation/SeparationPanel'
+import type { StageSeparation } from '../../src/hooks/useStageSeparation'
 import type { RepertoirePanelProps, RepertoireSongItem } from '../../src/components/stage/RepertoirePanel'
 import type { StageShellActions } from '../../src/components/stage/StageShell'
 import type { OutputWarning } from '../../src/lib/outputPlan'
@@ -12,7 +14,7 @@ import type {
 } from '../../src/lib/stageContracts'
 
 /** Estados da rodada normal, nessa ordem (o run.mjs tem a mesma lista); os das demais telas vêm de telasEstados.ts. */
-export const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config', 'inicio', ...TELA_ESTADOS] as const
+export const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config', 'inicio', 'separacao', 'separacao-voz', ...TELA_ESTADOS] as const
 /** Estado de prova: um botão de largura fixa com texto longo, que o verificador tem de acusar. */
 export const ESTADO_PROVA = 'quebrado'
 export type Estado = (typeof ESTADOS)[number] | typeof ESTADO_PROVA
@@ -153,6 +155,10 @@ export function viewFor(estado: Estado): StageView {
       // Pior caso da barra com o selo do Livre (Parte 3): palco parado (o selo só aparece parado),
       // OFFLINE (mais largo que ONLINE), HOST ligado, o aviso SAÍDAS e as 3 músicas do mês usadas.
       return { ...BASE, gates: LIVRE, isPlaying: false, app: { ...BASE.app, online: false, hostActive: true, livre: { used: 3, limit: 3 } } }
+    case 'separacao':
+    case 'separacao-voz':
+      // Gaveta SEPARAÇÃO aberta (Parte 3, faixa D): o painel só faz tudo com o palco parado.
+      return { ...BASE, isPlaying: false }
     case 'semtom':
       // Grade de tons sem tom original (a maior): semitons em 3 linhas, com "Definir o tom original" ao lado do 0.
       return { ...BASE, song: { ...SONG, originalKey: null, pitch: 3 } }
@@ -199,3 +205,33 @@ export const OUTPUT_CASES: OutputsCase[] = [
   { outputs: { mode: 'multi', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } }, maxChannels: 2, supportsDevicePick: false, loadWarnings: ['lado-assumido'] },
   { outputs: { mode: 'multi', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } }, maxChannels: 8, supportsDevicePick: true, loadWarnings: [] },
 ]
+
+// ---------- Gaveta SEPARAÇÃO (Parte 3, faixa D) ----------
+
+const SEP_STEMS = [
+  { id: 'vocals', name: 'Vocais Principais e Backing Vocal', url: 'https://r2/v.wav', color: '#06b6d4' },
+  { id: 'drums', name: 'Bateria Acústica Completa com Pratos', url: 'https://r2/d.wav', color: '#f59e0b' },
+  { id: 'bass', name: 'Baixo Elétrico', url: 'https://r2/b.wav', color: '#8b5cf6' },
+  { id: 'guitar', name: 'Guitarra Base e Solo', url: 'https://r2/g.wav', color: '#ef4444' },
+  { id: 'piano', name: 'Piano/TeCL', url: 'https://r2/p.wav', color: '#10b981' },
+  { id: 'other', name: 'Outros/Fx', url: 'https://r2/o.wav', color: '#ec4899' },
+  { id: 'metronome', name: 'Metrônomo', url: 'https://r2/m.wav', color: '#e2e8f0' },
+]
+const SEP_CUE_LABELS = ['1', '2', '3', '4', 'Intro', 'Verso 1', 'Pré-Refrão', 'Refrão 1', 'Verso 2', 'Pré-Refrão 2', 'Refrão 2', 'Ponte', 'Refrão 3', 'Final']
+
+/** O que a gaveta SEPARAÇÃO mostra: 7 faixas com os nomes mais longos e, na voz guia, 14 marcações. */
+export function separationPanelProps(estado: 'separacao' | 'separacao-voz'): SeparationPanelProps {
+  const s = new Proxy({
+    sep: { id: 'sep_v', songName: SONG.name, artist: SONG.artist ?? '', bpm: '72.5', songKey: 'F#', stems: SEP_STEMS, voiceCues: [], createdAt: Date.UTC(2026, 10, 18) },
+    loading: false, bpm: '72.5', meter: '4/4', accentBeat1: true, downbeatShift: 0, clickSel: { type: 'Percussive', subdivision: 'sixteenth' },
+    offsetMs: -120, hasClick: true, gridInfo: '72.48 BPM medido na faixa Bateria Acústica Completa com Pratos.',
+    cues: SEP_CUE_LABELS.map((label, i) => ({ id: `c${i}`, time: i * 17.5, label, file: 'f' })),
+    cuesPending: true, hasGuide: true, guideTab: 'sections', format: 'mp3', downloadingId: 'drums',
+    cloud: { name: SONG.name, artist: '', bpm: '72.5', songKey: 'F#', cover: null, publishGlobal: false, progress: 0, status: '' },
+    busy: null, message: null,
+  } as unknown as StageSeparation, { get: (t, k) => (k in t ? (t as unknown as Record<string | symbol, unknown>)[k] : noop) }) as StageSeparation
+  return {
+    open: true, songName: SONG.name, tab: estado === 'separacao-voz' ? 'voz' : 'faixas', onTab: noop, s, playing: false,
+    canDownload: true, canCloudSave: true, onLimit: noop, onOpenCloudSave: noop, onMySeparations: noop, onClose: noop,
+  }
+}

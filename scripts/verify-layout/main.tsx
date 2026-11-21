@@ -15,7 +15,8 @@ import { TelaPage } from './telas'
 import { isTela, TELA_EXPECT, TELA_PREPARE } from './telasEstados'
 import type { Failure } from './check'
 import type { Estado } from './fixture'
-import { ACTIONS, CLOCK, OUTPUT_CASES, PADS, makePeaks, outputWarningFor, parseEstado, repertoireProps, viewFor } from './fixture'
+import { ACTIONS, CLOCK, OUTPUT_CASES, PADS, makePeaks, outputWarningFor, parseEstado, repertoireProps, separationPanelProps, viewFor } from './fixture'
+import { SeparationPanel } from '../../src/components/separation/SeparationPanel'
 import { expectB, parseEstadoB, prepareB } from './telasB'
 import { TelasBPage } from './TelasBPage'
 
@@ -131,7 +132,10 @@ export function Stage({ estado }: { estado: Estado }) {
     <>
       <StageShell
         view={viewFor(estado)} actions={ACTIONS} clock={CLOCK} peaks={peaks} pads={PADS}
-        slots={{ repertoire: <RepertoirePanel {...repertoireProps(estado === 'repertorio')} /> }}
+        slots={{
+          repertoire: <RepertoirePanel {...repertoireProps(estado === 'repertorio')} />,
+          separation: estado === 'separacao' || estado === 'separacao-voz' ? <SeparationPanel {...separationPanelProps(estado)} /> : null,
+        }}
         keyboardEnabled={false} outputWarning={outputWarningFor(estado)}
       />
       {estado === 'quebrado' && <BrokenCases />}
@@ -169,6 +173,8 @@ const EXPECT: Record<Estado, { sel: string; text?: string; count?: number }> = {
   compasso: { sel: '[data-stage-meter]' },
   config: { sel: '[data-placa="8 canais"] select' },
   inicio: { sel: '[data-inicio] [data-house-ad="home"]', count: 1 },
+  separacao: { sel: '[data-stage-drawer-right] [data-separation-stem]', count: 7 },
+  'separacao-voz': { sel: '[data-stage-drawer-right] [data-cue-row]', count: 14 },
   quebrado: { sel: '[data-prova]' },
 }
 

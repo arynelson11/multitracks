@@ -30,7 +30,9 @@ export interface StageShellActions extends StageActions { openOutputSettings(): 
 export interface StageShellProps {
   view: StageView; actions: StageShellActions; clock: StageClock; peaks: Float32Array | null
   pads: Omit<PadPanelProps, 'open' | 'onClose'>
-  slots: { repertoire: React.ReactNode; tracksMenu?: React.ReactNode; adminTools?: React.ReactNode; channelEditPanel?: React.ReactNode }
+  // `separation` (Parte 3): a gaveta SEPARAÇÃO, à direita, espelho da REPERTÓRIOS. Só com a música
+  // atual vinda de uma separação (o App decide).
+  slots: { repertoire: React.ReactNode; tracksMenu?: React.ReactNode; adminTools?: React.ReactNode; channelEditPanel?: React.ReactNode; separation?: React.ReactNode }
   keyboardEnabled: boolean
   /**
    * Aviso do plano de saídas de agora (`PlannedOutputs.warning` do motor, o mesmo que as
@@ -413,6 +415,9 @@ export function StageShell({ view, actions, clock, peaks, pads, slots, keyboardE
       </div>
 
       <div data-stage-drawer="" className="absolute top-11 bottom-0 left-0 z-40 flex">{slots.repertoire}</div>
+      {slots.separation != null && slots.separation !== false && (
+        <div data-stage-drawer-right="" className="absolute top-11 bottom-0 right-0 z-40 flex">{slots.separation}</div>
+      )}
       {slots.channelEditPanel}
     </div>
   )

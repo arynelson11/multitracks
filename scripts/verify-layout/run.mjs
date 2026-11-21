@@ -29,6 +29,8 @@ const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/M
 const SIZES = ['1024x740', '1024x768', '1280x760', '1280x800', '1440x900', '1920x1080', '900x740', '810x1080']
 /** Estados da rodada normal: a mesma lista de ESTADOS em fixture.ts. */
 const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config', 'inicio',
+  // Gaveta SEPARAÇÃO do palco (Parte 3, faixa D), nos 8 tamanhos do palco.
+  'separacao', 'separacao-voz',
   // Demais telas da Parte 3 (faixa C), a mesma lista de telasEstados.ts.
   'metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'download-celular', 'aovivo', 'aovivo-cheio', 'aovivo-erro', 'adminlogin',
   // Separador (Parte 3, faixa D), a mesma lista de telasEstados.ts.

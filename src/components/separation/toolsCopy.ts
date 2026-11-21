@@ -89,3 +89,24 @@ export const CLOUD_COPY = {
 
 /** Baixar uma faixa que não chegou (a frase de hoje do Separador). */
 export const DOWNLOAD_ERROR = 'Erro ao baixar a faixa. Tenta de novo.'
+
+/** Abas da gaveta SEPARAÇÃO do palco. */
+export type SeparationTab = 'faixas' | 'voz' | 'bpm'
+
+export const PANEL_COPY = {
+  title: 'Separação',
+  close: 'Fechar a separação',
+  closeTitle: 'Fechar (Esc)',
+  tabs: 'Ferramentas da separação',
+  tracks: 'Faixas',
+  voice: 'Voz guia',
+  bpm: 'BPM e click',
+  loading: 'Carregando a separação',
+  missing: 'Não deu pra ler esta separação em "Minhas separações".',
+  format: 'Formato',
+  formatLabel: 'Formato de download das faixas',
+  download: 'Baixar',
+  downloadTitle: (name: string, format: string) => `Baixar ${name} (${format.toUpperCase()})`,
+  cloud: 'Salvar na nuvem',
+  mine: 'Minhas separações',
+} as const

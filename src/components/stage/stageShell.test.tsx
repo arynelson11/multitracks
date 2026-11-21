@@ -547,6 +547,20 @@ describe('casca do palco', () => {
     expect(q('[data-editar-canal]')).not.toBeNull()
   })
 
+  it('slots.separation fica na gaveta da direita, fora da área que rola', () => {
+    renderShell({}, { slots: { repertoire: null, separation: <div role="dialog" aria-label="Separação">faixas</div> } })
+    const right = q('[data-stage-drawer-right]')!
+    expect(within(right).getByRole('dialog', { name: 'Separação' })).toBeTruthy()
+    expect(right.className).toMatch(/\bright-0\b/)
+    expect(right.className).toMatch(/\btop-11\b/)
+    expect(q('[data-stage-scroll]')!.contains(right)).toBe(false)
+    expect(q('[data-stage-drawer]')!.contains(right)).toBe(false)
+    cleanup()
+    // Sem o painel (palco antigo ou música comum), nenhuma gaveta da direita.
+    renderShell()
+    expect(q('[data-stage-drawer-right]')).toBeNull()
+  })
+
   it('texto da casca em português e sem travessão', () => {
     const { container } = renderShell({ editMode: true, outputs: { ...SPLIT, fellBackFrom: 'multi' }, padPanelOpen: true }, { outputWarning: 'poucos-canais' })
     fireEvent.click(screen.getByRole('button', { name: /^Compasso/ }))
