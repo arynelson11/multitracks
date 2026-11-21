@@ -11,6 +11,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.24',
+    date: '2026-11-21',
+    title: 'Livre com o palco completo',
+    items: [
+      'No Livre, o palco agora funciona completo, uma música por vez, com seções, troca de tom, click e voz guia, em até 3 músicas diferentes por mês.',
+      'No Livre, são 3 separações por mês, em 4 ou 6 faixas.',
+      'No Livre, o Modo Ao Vivo do app de computador funciona 10 minutos por dia, com 1 celular da banda no controle (os outros acompanham).',
+      'Quando o Livre chega num limite, o primeiro mês do Pro sai por R$ 24,90 e o do Studio por R$ 59,90, por 48 horas, na primeira assinatura. Depois, o preço normal.',
+      'A janela de novidades agora espera a música parar pra aparecer.',
+    ],
+  },
+  {
     version: '1.4.23',
     date: '2026-11-19',
     title: 'Pagamento do Studio Mensal',
