@@ -778,6 +778,9 @@ export default function App() {
   const canCloudSaveSeparation = isAdmin || planTier(userPlan) !== 'free'
   const separationPanelShown = isSeparationPanelOpen && !!activeSong?.separation
   const showSeparationAd = livre.isLivre && justSeparatedId !== null && activeSong?.separation?.id === justSeparatedId
+  // Partes estáveis do Livre pra gaveta (o objeto inteiro muda com os minutos do Ao Vivo e refaria o palco).
+  const requestLivreLimit = livre.requestLimit
+  const isLivreNow = livre.isLivre
 
   // Ações do palco (StageActions + a da casca) e o que os painéis do App chamam. A casca recebe
   // um objeto estável (delegateTo) que chama a versão da renderização mais nova.
@@ -969,16 +972,16 @@ export default function App() {
       <SeparationPanel
         open songName={activeSongName} tab={separationTab} onTab={setSeparationTab} s={stageSeparation} playing={isPlaying || isCountingIn}
         canDownload={canDownloadSeparation} canCloudSave={canCloudSaveSeparation}
-        onLimit={() => livre.requestLimit('download')} onOpenCloudSave={() => setIsCloudSaveOpen(true)} onMySeparations={() => setIsSeparatorOpen(true)}
+        onLimit={() => requestLivreLimit('download')} onOpenCloudSave={() => setIsCloudSaveOpen(true)} onMySeparations={() => setIsSeparatorOpen(true)}
         ad={showSeparationAd ? (
-          <AdSlot placement="separation-done" userId={user?.id ?? null} isLivre={livre.isLivre} quiet={!isPlaying && !isCountingIn} justSeparated onCta={() => setIsPricingOpen(true)} />
+          <AdSlot placement="separation-done" userId={user?.id ?? null} isLivre={isLivreNow} quiet={!isPlaying && !isCountingIn} justSeparated onCta={() => setIsPricingOpen(true)} />
         ) : null}
         onClose={() => { void stageSeparation.flushPending(); setIsSeparationPanelOpen(false) }}
       />
     ) : null,
   }), [stageCalls, isRepertoireOpen, repertoireSongs, activeSongIndex, isPlaying, repertoireNotes, isTracksMenuOpen, hasActiveSong,
     hasSongSeparation, separationPanelShown, activeSongName, separationTab, stageSeparation, isCountingIn, canDownloadSeparation,
-    canCloudSaveSeparation, livre, showSeparationAd, user?.id])
+    canCloudSaveSeparation, requestLivreLimit, isLivreNow, showSeparationAd, user?.id])
 
   // Ao Vivo do host com o palco novo: seções pelas spans (os índices batem com os comandos da
   // banda), o pulo armado e a contagem do pulo agendado (o número muda quando o bipe ouvido muda).

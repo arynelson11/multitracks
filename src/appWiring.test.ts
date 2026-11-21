@@ -299,7 +299,8 @@ describe('separação abrindo no palco', () => {
 
   it('a gaveta SEPARAÇÃO entra na casca e o Livre baixa e salva pela tela de limite download', () => {
     expect(app).toMatch(/separation:\s*separationPanelShown \? \(\s*<SeparationPanel/)
-    expect(app).toMatch(/onLimit=\{\(\) => livre\.requestLimit\('download'\)\}/)
+    expect(app).toMatch(/onLimit=\{\(\) => requestLivreLimit\('download'\)\}/)
+    expect(app).toMatch(/const requestLivreLimit = livre\.requestLimit/)
     expect(app).toMatch(/const canDownloadSeparation = isAdmin \|\| canDownloadStems\(userPlan\)/)
     expect(app).toMatch(/const canCloudSaveSeparation = isAdmin \|\| planTier\(userPlan\) !== 'free'/)
     expect(app).toMatch(/const separationPanelShown = isSeparationPanelOpen && !!activeSong\?\.separation/)
