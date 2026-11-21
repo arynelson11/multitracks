@@ -24,7 +24,7 @@ function fakeSeparation(over: Partial<StageSeparation> = {}): StageSeparation {
     offsetMs: 0, hasClick: true, gridInfo: '', cues: [{ id: 'c1', time: 10, label: 'Verso 1', file: 'f' }], cuesPending: false, hasGuide: false,
     guideTab: 'sections', format: 'wav', downloadingId: null,
     cloud: { name: 'Águas', artist: '', bpm: '72', songKey: 'D', cover: null, publishGlobal: false, progress: 0, status: '' },
-    busy: null, message: null,
+    busy: null, messages: { faixas: null, voz: null, bpm: null, cloud: null },
     setBpm: fn(), blurBpm: fn(), stepBpm: fn(), tap: fn(), scaleBpm: fn(), detectBpm: fn(), setMeter: fn(), setAccent: fn(), shiftDownbeat: fn(),
     setClickSel: fn(), generateClick: fn(), nudge: fn(), setGuideTab: fn(), addCue: fn(), removeCue: fn(), setCueTime: fn(), clearCues: fn(),
     detectCues: fn(), commitVoiceGuide: fn(), setFormat: fn(), download: fn(), setCloud: fn(), publish: fn(), flushPending: fn(),
@@ -130,8 +130,19 @@ describe('SeparationPanel', () => {
   })
 
   it('mensagem de erro do hook aparece em alerta; carregando e sem separação também dizem', () => {
-    render(<SeparationPanel {...props({ s: fakeSeparation({ message: 'Erro ao baixar a faixa. Tenta de novo.' }) })} />)
+    render(<SeparationPanel {...props({ s: fakeSeparation({ messages: { faixas: 'Erro ao baixar a faixa. Tenta de novo.', voz: null, bpm: null, cloud: null } }) })} />)
     expect(screen.getByRole('alert').textContent).toBe('Erro ao baixar a faixa. Tenta de novo.')
+    cleanup()
+    // sep-2 M4: cada aba mostra só a frase da ferramenta dela.
+    const onlyBpm = fakeSeparation({ messages: { faixas: null, voz: null, bpm: 'Não deu pra gerar o click. Tenta de novo.', cloud: 'Erro ao salvar: x' } })
+    render(<SeparationPanel {...props({ s: onlyBpm })} />)
+    expect(screen.queryByRole('alert')).toBeNull()
+    cleanup()
+    render(<SeparationPanel {...props({ s: onlyBpm, tab: 'voz' })} />)
+    expect(screen.queryByRole('alert')).toBeNull()
+    cleanup()
+    render(<SeparationPanel {...props({ s: onlyBpm, tab: 'bpm' })} />)
+    expect(screen.getByRole('alert').textContent).toBe('Não deu pra gerar o click. Tenta de novo.')
     cleanup()
     render(<SeparationPanel {...props({ s: fakeSeparation({ loading: true, sep: null }) })} />)
     expect(screen.getByRole('status').textContent).toBe('Carregando a separação')

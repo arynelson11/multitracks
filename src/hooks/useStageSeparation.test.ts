@@ -148,7 +148,7 @@ describe('useStageSeparation', () => {
     store.getSeparation.mockResolvedValueOnce({ ...structuredClone(SEP), voiceCues: [] })
     const hook = await mount()
     await act(async () => { await hook.result.current.commitVoiceGuide() })
-    expect(hook.result.current.message).toBe('Adicione marcadores de voz primeiro.')
+    expect(hook.result.current.messages.voz).toBe('Adicione marcadores de voz primeiro.')
   })
 
   it('flushPending parado com marcação nova gera o canal; tocando só grava as marcações', async () => {
@@ -210,22 +210,68 @@ describe('useStageSeparation', () => {
     expect((mocks.publishToCloud.mock.calls[1][0] as { isGlobal: boolean }).isGlobal).toBe(true)
   })
 
-  it('erro vira message com a frase de hoje, sem alert', async () => {
+  it('erro vira a frase de hoje na ferramenta dele (sep-2 M4), sem alert', async () => {
     const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
     mocks.generateSeparatorClick.mockRejectedValueOnce(new Error('x'))
     const hook = await mount()
     await act(async () => { await run(hook.result.current.generateClick()) })
-    expect(hook.result.current.message).toBe('Não deu pra gerar o click. Tenta de novo.')
+    expect(hook.result.current.messages).toEqual({ faixas: null, voz: null, bpm: 'Não deu pra gerar o click. Tenta de novo.', cloud: null })
     mocks.downloadStem.mockRejectedValueOnce(new Error('rede'))
     await act(async () => { await hook.result.current.download('vocals') })
-    expect(hook.result.current.message).toBe('Erro ao baixar a faixa. Tenta de novo.')
+    expect(hook.result.current.messages.faixas).toBe('Erro ao baixar a faixa. Tenta de novo.')
+    // A do click continua só na aba dela.
+    expect(hook.result.current.messages.bpm).toBe('Não deu pra gerar o click. Tenta de novo.')
     mocks.publishToCloud.mockRejectedValueOnce(new Error('sem permissão'))
     await act(async () => { expect(await hook.result.current.publish()).toBe(false) })
-    expect(hook.result.current.message).toBe('Erro ao salvar: sem permissão')
+    expect(hook.result.current.messages.cloud).toBe('Erro ao salvar: sem permissão')
     act(() => { hook.result.current.setCloud({ name: '' }) })
     await act(async () => { await hook.result.current.publish() })
-    expect(hook.result.current.message).toBe('Preencha o Nome da Música.')
+    expect(hook.result.current.messages.cloud).toBe('Preencha o Nome da Música.')
+    expect(hook.result.current.messages.faixas).toBe('Erro ao baixar a faixa. Tenta de novo.')
+    // Gerar de novo limpa só a da ferramenta.
+    await act(async () => { await run(hook.result.current.generateClick()) })
+    expect(hook.result.current.messages.bpm).toBeNull()
+    expect(hook.result.current.messages.faixas).toBe('Erro ao baixar a faixa. Tenta de novo.')
     expect(alertSpy).not.toHaveBeenCalled()
+  })
+
+  it('sep-1 M1: SYNC com PLAY antes dos 600 ms regera o click na parada, com o ajuste mostrado', async () => {
+    const withClick = { ...bridge, song: SONG({ channels: [ch('a', 'Vocais'), ch('b', 'Bateria'), ch('m', 'Metrônomo')] }) }
+    const hook = await mount(withClick)
+    act(() => { hook.result.current.nudge(10) })
+    expect(hook.result.current.offsetMs).toBe(10)
+    hook.rerender({ br: { ...withClick, busy: true } })
+    await act(async () => { await vi.advanceTimersByTimeAsync(700) })
+    expect(mocks.generateSeparatorClick).not.toHaveBeenCalled()
+    hook.rerender({ br: { ...withClick, busy: false } })
+    await act(async () => { await vi.advanceTimersByTimeAsync(200) })
+    expect(mocks.generateSeparatorClick).toHaveBeenCalledTimes(1)
+    const plan = (mocks.generateSeparatorClick.mock.calls[0][0] as { plan: { firstBeat: number } }).plan
+    expect(plan.firstBeat).toBeCloseTo(0.1 + 0.01, 6)
+    expect(withClick.replaceChannel).toHaveBeenCalledTimes(1)
+  })
+
+  it('sep-1 M4: separação apagada em "Minhas separações" não volta pela próxima gravação do palco', async () => {
+    const hook = await mount()
+    store.saveSeparation.mockClear()
+    // Apagada no Separador (a música continua no palco).
+    store.getSeparation.mockResolvedValue(null)
+    act(() => { hook.result.current.setBpm('91') })
+    await act(async () => { await vi.advanceTimersByTimeAsync(900) })
+    await act(async () => { await hook.result.current.flushPending() })
+    expect(store.saveSeparation).not.toHaveBeenCalled()
+  })
+
+  it('sep-1 M7: a leitura que falha tenta de novo sozinha (offline, ou a separação ainda subindo pra nuvem)', async () => {
+    store.getSeparation.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(null)
+    const hook = await mount()
+    expect(hook.result.current.sep).toBeNull()
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    expect(hook.result.current.sep?.id).toBe('sep_1')
+    expect(store.getSeparation).toHaveBeenCalledTimes(3)
+    // Achou: não lê mais.
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
+    expect(store.getSeparation).toHaveBeenCalledTimes(3)
   })
 
   it('trocar de música no meio do Gerar click não leva o click nem a gravação pra outra música', async () => {

@@ -73,7 +73,7 @@ export function SeparationPanel(p: SeparationPanelProps) {
         ) : p.tab === 'faixas' ? (
           <div className="flex flex-col gap-3">
             {p.ad}
-            {s.message && <Notice tone="alert" role="alert">{s.message}</Notice>}
+            {s.messages.faixas && <Notice tone="alert" role="alert">{s.messages.faixas}</Notice>}
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="ps-label">{PANEL_COPY.format}</span>
               <Segmented
@@ -115,7 +115,7 @@ export function SeparationPanel(p: SeparationPanelProps) {
         ) : p.tab === 'voz' ? (
           <VoiceGuideEditor
             cues={s.cues} tab={s.guideTab} playing={p.playing} detecting={s.busy === 'cues'} rendering={s.busy === 'guide'}
-            hasChannel={s.hasGuide} pending={s.cuesPending} message={s.message} disabledReason={reason}
+            hasChannel={s.hasGuide} pending={s.cuesPending} message={s.messages.voz} disabledReason={reason}
             onTab={s.setGuideTab} onAdd={s.addCue} onRemove={s.removeCue} onTime={s.setCueTime}
             onClear={s.clearCues} onDetect={() => { void s.detectCues() }} onCommit={() => { void s.commitVoiceGuide() }}
           />
@@ -123,7 +123,7 @@ export function SeparationPanel(p: SeparationPanelProps) {
           <BpmClickEditor
             bpm={s.bpm} meter={s.meter} accentBeat1={s.accentBeat1} downbeatShift={s.downbeatShift} clickSel={s.clickSel}
             info={s.gridInfo} busy={s.busy === 'click' ? 'click' : s.busy === 'bpm' ? 'bpm' : null} hasTracks={stems.length > 0}
-            message={s.message} disabledReason={reason}
+            message={s.messages.bpm} disabledReason={reason}
             onBpm={s.setBpm} onBpmBlur={s.blurBpm} onStep={s.stepBpm} onTap={s.tap} onScale={s.scaleBpm} onDetect={() => { void s.detectBpm() }}
             onMeter={s.setMeter} onAccent={s.setAccent} onShiftDownbeat={s.shiftDownbeat} onClickSel={s.setClickSel}
             onGenerate={() => { void s.generateClick() }}

@@ -42,6 +42,10 @@ export interface StageSeparationStore {
 
 export type SeparationBusy = 'click' | 'bpm' | 'guide' | 'cues' | 'download' | 'cloud' | null
 
+/** Onde a frase de erro aparece (sep-2 M4): cada ferramenta mostra só a dela. */
+export type SeparationMessageArea = 'faixas' | 'voz' | 'bpm' | 'cloud'
+export type SeparationMessages = Readonly<Record<SeparationMessageArea, string | null>>
+
 export interface StageSeparationCloud { name: string; artist: string; bpm: string; songKey: string; cover: File | null; publishGlobal: boolean; progress: number; status: string }
 
 export interface StageSeparation {
@@ -51,7 +55,7 @@ export interface StageSeparation {
   cues: readonly VoiceCue[]; cuesPending: boolean; hasGuide: boolean; guideTab: 'sections' | 'dynamic'
   format: DownloadFormat; downloadingId: string | null
   cloud: StageSeparationCloud
-  busy: SeparationBusy; message: string | null
+  busy: SeparationBusy; messages: SeparationMessages
   setBpm(t: string): void; blurBpm(): void; stepBpm(d: 1 | -1): void; tap(): void; scaleBpm(f: 2 | 0.5): void; detectBpm(): Promise<void>
   setMeter(m: SeparatorMeter): void; setAccent(on: boolean): void; shiftDownbeat(d: 1 | -1): void; setClickSel(p: Partial<ClickLibrarySelection>): void
   generateClick(): Promise<void>; nudge(deltaMs: 10 | -10): void
@@ -78,6 +82,9 @@ interface Work {
 const EMPTY_CLOUD: StageSeparationCloud = { name: '', artist: '', bpm: '120', songKey: 'C', cover: null, publishGlobal: false, progress: 0, status: '' }
 const SAVE_DELAY_MS = 800
 const SYNC_DELAY_MS = 600
+/** A leitura da separação que falha tenta de novo depois disso (sep-1 M7), e para depois da última. */
+const READ_RETRY_MS: readonly number[] = [3000, 10000, 30000]
+const NO_MESSAGES: SeparationMessages = { faixas: null, voz: null, bpm: null, cloud: null }
 const PUBLISHED = 'Sucesso! Música publicada na nuvem.'
 const CLICK_COLOR = '#e2e8f0'
 
@@ -108,7 +115,7 @@ function decoder(): BaseAudioContext {
 
 type StageSeparationActions = Omit<StageSeparation,
   'sep' | 'loading' | 'bpm' | 'meter' | 'accentBeat1' | 'downbeatShift' | 'clickSel' | 'offsetMs' | 'hasClick' | 'gridInfo'
-  | 'cues' | 'cuesPending' | 'hasGuide' | 'guideTab' | 'format' | 'downloadingId' | 'cloud' | 'busy' | 'message'>
+  | 'cues' | 'cuesPending' | 'hasGuide' | 'guideTab' | 'format' | 'downloadingId' | 'cloud' | 'busy' | 'messages'>
 
 export function useStageSeparation(bridge: StageSeparationBridge, store: StageSeparationStore): StageSeparation {
   const song = bridge.song
@@ -116,14 +123,14 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
   const key = song && sepId ? `${song.id}|${sepId}` : null
 
   const [work, setWork] = useState<Work | null>(null)
-  const [msg, setMsg] = useState<{ key: string | null; text: string } | null>(null)
+  const [msgs, setMsgs] = useState<{ key: string | null; byArea: SeparationMessages }>({ key: null, byArea: NO_MESSAGES })
   const [busy, setBusyState] = useState<SeparationBusy>(null)
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [clickSel, setClickSelState] = useState<ClickLibrarySelection>(() => loadClickSelection())
   const [format, setFormatState] = useState<DownloadFormat>(() => readDownloadFormat())
 
   const cur = work && work.key === key ? work : null
-  const message = msg && msg.key === key ? msg.text : null
+  const messages = msgs.key === key ? msgs.byArea : NO_MESSAGES
 
   // A versão mais nova de tudo pros timers e pras ações que esperam (atualizada só em efeito).
   const live = useRef({ bridge, store, cur, busy, clickSel, format, key })
@@ -134,22 +141,38 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
   const gridCache = useRef<{ key: string; grid: BeatGrid } | null>(null)
   const guideCache = useRef(new Map<string, GuideAudio>())
   const nudgeTimer = useRef<number | null>(null)
+  // SYNC que o timer não pôde regerar (a música começou antes dos 600 ms, sep-1 M1): regera na parada.
+  const syncPending = useRef<{ key: string; offset: number } | null>(null)
   const cueSeq = useRef(0)
 
-  // Lê a separação da música ativa (a de outra música fica escondida pela chave).
+  // Lê a separação da música ativa (a de outra música fica escondida pela chave). Sem resposta
+  // (offline, ou a separação ainda subindo pra nuvem), tenta de novo sozinha (sep-1 M7).
   useEffect(() => {
     if (!key || !sepId) return
     let alive = true
-    void live.current.store.getSeparation(sepId)
-      .then((rec) => { if (alive) setWork(workFor(key, rec)) })
-      .catch(() => { if (alive) setWork(workFor(key, null)) })
-    return () => { alive = false }
+    let timer: number | undefined
+    let attempt = 0
+    const read = () => {
+      void live.current.store.getSeparation(sepId)
+        .catch(() => null)
+        .then((rec) => {
+          if (!alive) return
+          if (rec) { setWork(workFor(key, rec)); return }
+          setWork((w) => (w && w.key === key && w.sep ? w : workFor(key, null)))
+          if (attempt < READ_RETRY_MS.length) timer = window.setTimeout(read, READ_RETRY_MS[attempt++])
+        })
+    }
+    read()
+    return () => { alive = false; window.clearTimeout(timer) }
   }, [key, sepId])
 
   const patch = useCallback((p: Partial<Work> | ((w: Work) => Partial<Work>)) => {
     setWork((w) => (w && w.key === live.current.key ? { ...w, ...(typeof p === 'function' ? p(w) : p) } : w))
   }, [])
-  const say = (text: string | null) => setMsg(text === null ? null : { key: live.current.key, text })
+  const say = (area: SeparationMessageArea, text: string | null) => {
+    const k = live.current.key
+    setMsgs((m) => ({ key: k, byArea: { ...(m.key === k ? m.byArea : NO_MESSAGES), [area]: text } }))
+  }
   const stopped = () => !live.current.bridge.busy && busyRef.current === null
 
   // Grava em "Minhas separações": sempre com a id e a data da separação, nunca sem faixas.
@@ -160,6 +183,8 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
     if (!w?.sep) return
     const stems = over.stems ?? w.sep.stems
     if (stems.length === 0) return
+    // Apagada em "Minhas separações" com a música ainda no palco (sep-1 M4): não volta pela gravação.
+    if (!(await st.getSeparation(w.sep.id).catch(() => null))) return
     const data = {
       id: w.sep.id, createdAt: w.sep.createdAt,
       songName: over.songName ?? w.sep.songName, artist: over.artist ?? w.sep.artist,
@@ -181,6 +206,14 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
   }, [cur?.sep, cur?.dirty, cur?.bpm, cur?.cues, songKeyNow, persist])
 
   useEffect(() => () => { if (nudgeTimer.current) window.clearTimeout(nudgeTimer.current) }, [])
+  // O SYNC guardado regera assim que a música para e nenhuma ferramenta está no meio (sep-1 M1).
+  const bridgeBusy = bridge.busy
+  useEffect(() => {
+    const p = syncPending.current
+    if (!p || bridgeBusy || busy !== null) return
+    syncPending.current = null
+    if (p.key === key) void generateClickRef.current(p.offset)
+  }, [bridgeBusy, busy, key])
 
   const stemsWith = (stem: SavedStem, w: Work): SavedStem[] => {
     const stems = w.sep?.stems ?? []
@@ -221,7 +254,7 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
     const s = br.song
     if (!w?.sep || !s || !stopped()) return
     setBusy('click')
-    say(null)
+    say('bpm', null)
     try {
       const typed = parseFloat(w.bpm)
       const near = Number.isFinite(typed) && typed >= 20 ? typed : 120
@@ -240,19 +273,22 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
       if (remote) await persist({ stems: stemsWith({ id: 'metronome', name: SEPARATOR_CLICK_NAME, url: remote, color: CLICK_COLOR }, w) }, w)
     } catch (e) {
       console.error('Erro ao gerar metrônomo', e)
-      say(BPM_COPY.clickError)
+      say('bpm', BPM_COPY.clickError)
     } finally {
       setBusy(null)
     }
   }
 
+  const generateClickRef = useRef(generateClick)
+  useEffect(() => { generateClickRef.current = generateClick })
+
   const commitVoiceGuide = async () => {
     const { cur: w, bridge: br, store: st } = live.current
     const s = br.song
     if (!w?.sep || !s || !stopped()) return
-    if (w.cues.length === 0) { say(VOICE_COPY.needCues); return }
+    if (w.cues.length === 0) { say('voz', VOICE_COPY.needCues); return }
     setBusy('guide')
-    say(null)
+    say('voz', null)
     try {
       const blob = await renderVoiceGuideWav(w.cues, s.duration || 300, decodeGuide)
       if (!blob) throw new Error('Falha ao renderizar voz guia')
@@ -264,7 +300,7 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
       await persist(remote ? { stems: stemsWith({ id: 'voiceguide', name: VOICE_GUIDE_NAME, url: remote, color: FAMILY_COLOR.guia }, w) } : {}, w)
     } catch (e) {
       console.error('Erro ao gerar canal de Voz Guia', e)
-      say(VOICE_COPY.renderError)
+      say('voz', VOICE_COPY.renderError)
     } finally {
       setBusy(null)
     }
@@ -319,7 +355,14 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
       live.current = { ...live.current, cur: { ...w, offsetMs: next } }
       if (!(live.current.bridge.song?.channels ?? []).some((c) => c.name === SEPARATOR_CLICK_NAME)) return
       if (nudgeTimer.current) window.clearTimeout(nudgeTimer.current)
-      nudgeTimer.current = window.setTimeout(() => { void generateClick(next) }, SYNC_DELAY_MS)
+      syncPending.current = null
+      const k = live.current.key
+      nudgeTimer.current = window.setTimeout(() => {
+        nudgeTimer.current = null
+        // Tocando (ou outra ferramenta no meio): regera na parada, com o ajuste que a tela mostra.
+        if (stopped()) void generateClick(next)
+        else if (k) syncPending.current = { key: k, offset: next }
+      }, SYNC_DELAY_MS)
     },
 
     setGuideTab: (t) => patch({ guideTab: t }),
@@ -336,7 +379,7 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
       const w = live.current.cur
       if (!w?.sep || !stopped()) return
       setBusy('cues')
-      say(null)
+      say('voz', null)
       try {
         const source = voiceSourceTrack(live.current.bridge.song?.channels ?? [])
         if (!source?.buffer) throw new Error('Sem faixas para analisar')
@@ -344,7 +387,7 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
         patch({ cues: detected, cuesPending: true, dirty: true })
       } catch (e) {
         console.error('Auto-detect erro:', e)
-        say(VOICE_COPY.detectError(e instanceof Error ? e.message : String(e)))
+        say('voz', VOICE_COPY.detectError(e instanceof Error ? e.message : String(e)))
       } finally {
         setBusy(null)
       }
@@ -358,12 +401,12 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
       if (!w?.sep || !stem || !stopped()) return
       setBusy('download')
       setDownloadingId(stemId)
-      say(null)
+      say('faixas', null)
       try {
         await downloadStem({ url: stem.url, songName: w.sep.songName, stemName: stem.name, format: live.current.format })
       } catch (e) {
         console.error('Download error', e)
-        say(DOWNLOAD_ERROR)
+        say('faixas', DOWNLOAD_ERROR)
       } finally {
         setDownloadingId(null)
         setBusy(null)
@@ -376,9 +419,9 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
       const s = live.current.bridge.song
       const st = live.current.store
       if (!w?.sep || !s || !stopped()) return false
-      if (!w.cloud.name) { say(CLOUD_COPY.needName); return false }
+      if (!w.cloud.name) { say('cloud', CLOUD_COPY.needName); return false }
       setBusy('cloud')
-      say(null)
+      say('cloud', null)
       const cues = w.cues
       try {
         await publishToCloud({
@@ -393,7 +436,7 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
         await persist({ songName: w.cloud.name, artist: w.cloud.artist }, w)
         return true
       } catch (e) {
-        say(CLOUD_COPY.error(e instanceof Error ? e.message : String(e)))
+        say('cloud', CLOUD_COPY.error(e instanceof Error ? e.message : String(e)))
         return false
       } finally {
         setBusy(null)
@@ -424,8 +467,8 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
       guideTab: cur?.guideTab ?? 'sections',
       format, downloadingId,
       cloud: cur?.cloud ?? EMPTY_CLOUD,
-      busy, message,
+      busy, messages,
       ...actions,
     }
-  }, [sep, cur, key, clickSel, songChannels, format, downloadingId, busy, message, actions])
+  }, [sep, cur, key, clickSel, songChannels, format, downloadingId, busy, messages, actions])
 }

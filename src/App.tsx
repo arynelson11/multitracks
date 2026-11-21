@@ -1735,7 +1735,7 @@ export default function App() {
               bpm={stageSeparation.cloud.bpm} songKey={stageSeparation.cloud.songKey} cover={stageSeparation.cloud.cover}
               showBpm={isAdmin || canUseBpmDetection(userPlan)} isAdmin={isAdmin} publishGlobal={stageSeparation.cloud.publishGlobal}
               saving={stageSeparation.busy === 'cloud' || stageSeparation.cloud.progress >= 100} progress={stageSeparation.cloud.progress}
-              status={stageSeparation.cloud.status} message={stageSeparation.message}
+              status={stageSeparation.cloud.status} message={stageSeparation.messages.cloud}
               disabledReason={isPlaying || isCountingIn ? PAUSE_TO_USE : null}
               onChange={stageSeparation.setCloud}
               onSubmit={() => { void stageSeparation.publish().then((ok) => { if (ok) window.setTimeout(() => { setCloudSaveSongId(null); stageSeparation.setCloud({ progress: 0, status: '' }) }, 2000) }) }}

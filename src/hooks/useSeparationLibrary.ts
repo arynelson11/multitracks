@@ -252,12 +252,21 @@ export function useSeparationLibrary(opts: { loadList?: boolean } = {}) {
 
   const getSeparation = useCallback(async (id: string): Promise<SavedSeparation | null> => {
     if (useCloud && userId && supabase) {
-      const { data, error } = await supabase
+      const client = supabase;
+      const fetchOne = () => client
         .from('user_separations')
         .select('*')
         .eq('id', id)
         .eq('user_id', userId)
         .maybeSingle();
+      let { data, error } = await fetchOne();
+      // Não achou na nuvem: quem acabou de virar pago ainda tem as separações só no aparelho, e a
+      // migração só rodava com a lista (o palco lê sem ela). Migra uma vez e lê de novo (sep-1 M7).
+      if (!error && !data && migrationRanFor.current !== userId) {
+        await migrateLocalToCloud(userId);
+        migrationRanFor.current = userId;
+        ({ data, error } = await fetchOne());
+      }
       if (error) {
         console.error('[SepLib] Cloud get failed:', error.message);
         return null;
@@ -271,7 +280,7 @@ export function useSeparationLibrary(opts: { loadList?: boolean } = {}) {
       console.error('[SepLib] Local get failed:', e);
       return null;
     }
-  }, [useCloud, userId]);
+  }, [useCloud, userId, migrateLocalToCloud]);
 
   return {
     separations,
