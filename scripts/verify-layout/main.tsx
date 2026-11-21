@@ -75,7 +75,8 @@ export function InicioPage() {
  * item pela metade numa fileira que rola de lado, faixa larga que faz a página rolar de lado, caixa do
  * texto cortada (com o texto inteiro), texto acima do começo de uma rolagem, texto saindo de caixa
  * grande, M/S abaixo de 32x30, bloco estreito baixo, botão só de ícone cortado e, num palco de
- * mentira, faixas fora de ordem e a área do palco rolando na vertical.
+ * mentira, faixas fora de ordem, a área do palco rolando na vertical, a casca rolando de lado a
+ * partir de 1024 px e o aviso SAÍDAS em cima do selo ONLINE.
  */
 export function BrokenCases() {
   return (
@@ -114,9 +115,17 @@ export function BrokenCases() {
           </button>
         </div>
       </div>
-      {/* Palco de mentira, sem texto: faixas fora de ordem (mixer antes da faixa do meio) e a área que rola maior que a janela dela. */}
+      {/* Palco de mentira, sem texto: faixas fora de ordem (mixer antes da faixa do meio), a área que rola maior que a janela dela,
+          a casca mais larga que a caixa (rola de lado a partir de 1024 px) e o aviso SAÍDAS começando em cima do selo ONLINE. */}
       <div data-stage-shell="" data-prova-palco="" aria-hidden="true" className="fixed top-24 right-4 z-[60] flex w-16 flex-col bg-ps-ink">
-        <header className="h-2 bg-ps-s2" />
+        <header className="relative h-2 bg-ps-s2">
+          <span data-online="" className="absolute top-0 left-0 h-2 w-6" />
+          <span data-output-alert="" className="absolute top-0 left-2 h-2 w-4" />
+          <nav className="absolute top-0 right-0 h-2 w-4" />
+        </header>
+        <div data-stage-hscroll="" className="h-2 w-16 overflow-x-auto">
+          <div className="h-1 w-40" />
+        </div>
         <div data-stage-scroll="" className="flex h-10 flex-col overflow-y-auto">
           <section aria-label="Transporte" className="h-4 shrink-0" />
           <div data-stage-wave="" className="h-4 shrink-0" />

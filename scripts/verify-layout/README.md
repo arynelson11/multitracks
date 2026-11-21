@@ -95,8 +95,8 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `contando` | pulo armado pro "Refrão Final Estendido", contagem no tempo 2, aviso COMPASSO ASSUMIDO, OFFLINE, HOST ligado e o aviso SAÍDAS |
 | `pads` | painel de pads aberto, pad G# tocando |
 | `editar` | modo EDITAR (barra de marcar seções), parado |
-| `livre` | plano Livre: convite pra marcar seções e o aviso SEM CLICK LIDO |
-| `selo` | plano Livre parado com o selo "LIVRE · 3 de 3 músicas este mês" na barra, OFFLINE, HOST ligado e o aviso SAÍDAS (o pior caso da barra; abaixo de 1280 px o selo encurta e o "Playback Studio" sai) |
+| `livre` | o convite das seções ("Conhecer os planos", no código, sem plano que use desde a Parte 3) e o aviso SEM CLICK LIDO |
+| `selo` | plano Livre parado (os portões de verdade do Livre: seções, e o AUTO travado com o selo LIVRE) com o selo "LIVRE · 3 de 3 músicas este mês" na barra, OFFLINE, HOST ligado e o aviso SAÍDAS (o pior caso da barra; abaixo de 1280 px o selo encurta e o "Playback Studio" sai) |
 | `repertorio` | gaveta REPERTÓRIOS aberta com 6 músicas e Anotações |
 | `separacao` | gaveta SEPARAÇÃO aberta à direita (Parte 3, faixa D), aba FAIXAS com 7 faixas de nome longo, palco parado |
 | `separacao-voz` | a mesma gaveta na aba VOZ GUIA com 14 marcações |
@@ -126,7 +126,7 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `adminlogin` | Login do /admin na web (faixa C) |
 | `config` | as duas seções da T19 numa página própria: placa de 2 canais (caindo de 4 ou mais, com avisos) e de 8 canais |
 | `inicio` | a tela inicial (frente 1b) com o cartão "O que o Pro faz por você" do `AdSlot` (o de verdade, no Livre e parado), embaixo do lugar dos dois botões, no mesmo `div` do App (`mt-6 w-full max-w-md` numa coluna `px-6`), na largura da janela; nos 8 tamanhos e em 390x844 (celular em pé, cartão com 342 px), este pela moldura do celular (acima) |
-| `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso pra cada ramo das regras (16 falhas: uma por ramo, e o texto acima do começo da rolagem cai em duas, na regra do texto cortado e na de nada acima do topo de uma área que rola, da revisão macro BC) |
+| `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso pra cada ramo das regras (18 falhas: uma por ramo; o texto acima do começo da rolagem cai em duas, na regra do texto cortado e na de nada acima do topo de uma área que rola, da revisão macro BC; as duas da casca que rola de lado e do aviso SAÍDAS em cima do ONLINE vêm do palco de mentira, da frente 1b) |
 
 O fixture é o pior caso de texto: 14 canais com os nomes organizados mais
 longos da Parte 1 ("Percussão Dedilhado Ambiente"), 9 seções (uma "Refrão

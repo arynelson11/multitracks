@@ -647,6 +647,36 @@ describe('remover a música ativa', () => {
     expect(result.current.duration).toBe(200)
   })
 
+  // Revisão macro 1b (parte 2, M3): sem música atual, um comando de mixer da banda que chega com o
+  // id de um canal da música apagada (antes do estado novo chegar ao celular) não faz nada: nem
+  // lança, nem grava, nem cria música no índice -1.
+  it('sem música atual, os comandos de mixer não fazem nada e não lançam', async () => {
+    seed(v1, v1Local)
+    const { result } = await openApp()
+    await act(async () => { result.current.removeSongFromPlaylist('s1', { openNext: false }) })
+    expect(result.current.activeSongIndex).toBe(NO_CURRENT_SONG)
+    const before = structuredClone(mem.db.get(META))
+    const keptChannels = result.current.playlist[0].channels.map((c) => c.id)
+    resetWrites()
+
+    await act(async () => {
+      result.current.updateVolume('a', 0.3)
+      result.current.toggleMute('a')
+      result.current.toggleSolo('b')
+      result.current.updatePan('c', 0.5)
+      await result.current.removeChannel('a')
+      result.current.reorderChannels([])
+      result.current.setChannelBus('c', '2')
+    })
+
+    expect(result.current.playlist.map((s) => s.id)).toEqual(['s3'])
+    expect(Object.keys(result.current.playlist)).toEqual(['0'])
+    expect(result.current.playlist[0].channels.map((c) => c.id)).toEqual(keptChannels)
+    expect(result.current.activeSongIndex).toBe(NO_CURRENT_SONG)
+    expect(mem.metaWrites).toEqual([])
+    expect(mem.db.get(META)).toEqual(before)
+  })
+
   it('sem a opção (quem paga e o admin), a seguinte vira a atual como sempre', async () => {
     seed(v1, v1Local)
     const { result } = await openApp()

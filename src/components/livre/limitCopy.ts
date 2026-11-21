@@ -19,7 +19,7 @@ export const LIMIT_COPY: Record<LimitScreenKind, { title: string; body: string }
   },
   live: {
     title: 'Os 10 minutos de hoje com a banda acabaram',
-    body: 'No Pro até 4 celulares da banda acompanham o culto do começo ao fim.',
+    body: 'No Pro são até 4 celulares no controle, com a banda acompanhando o culto do começo ao fim.',
   },
   'live-devices': {
     title: 'No Livre, só 1 celular da banda controla o palco',

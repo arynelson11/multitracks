@@ -107,13 +107,24 @@ describe('?action=offer', () => {
 
   it('quem já teve assinatura recebe ineligible e nada é gravado', async () => {
     const windows = offerModel()
-    db.tables.billing_subscriptions.push(subRow({ id: 'chk_1', user_id: USER_A, status: 'canceled', cancel_source: 'user' }))
+    db.tables.billing_subscriptions.push(subRow({ id: 'chk_1', user_id: USER_A, status: 'canceled', cancel_source: 'user', first_paid_at: '2026-10-01T12:00:00Z' }))
     const res = await call('offer', { open: true, trigger: 'stage-songs' })
     expect(res.statusCode).toBe(200)
     expect(res.body).toEqual({ status: 'ineligible', expiresAt: null, prices: PRICES })
     expect(rpcNames()).not.toContain('offer_open_window')
     expect(rpcNames()).not.toContain('offer_current')
     expect(windows).toEqual([])
+  })
+
+  // Revisão macro 1b (Ruling M5-oferta): o Asaas cria a assinatura antes de a cobrança ser paga
+  // (cartão em análise e reprovado, por exemplo). Sem nenhuma cobrança paga, a conta nunca assinou.
+  it('assinatura criada no Asaas e nunca paga (cartão recusado) não tira a oferta', async () => {
+    const windows = offerModel()
+    db.tables.billing_subscriptions.push(subRow({ id: 'chk_1', user_id: USER_A, status: 'active', first_paid_at: null }))
+    const res = await call('offer', { open: true, trigger: 'stage-songs' })
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toEqual({ status: 'active', expiresAt: EXPIRES, prices: PRICES })
+    expect(windows).toHaveLength(1)
   })
 
   it('quem pagou pelo registro antigo (payments) também recebe ineligible', async () => {
@@ -290,6 +301,23 @@ describe('conta bloqueada e ordem das ações', () => {
 })
 
 describe('accountSubscriptionCount', () => {
+  it('com paidOnly (a oferta) conta só assinatura com cobrança paga; sem ele (o arrependimento) conta todas', async () => {
+    db.tables.billing_subscriptions.push(
+      subRow({ id: 'chk_nunca', user_id: USER_A, status: 'active', first_paid_at: null }),
+      subRow({ id: 'chk_recusa', user_id: USER_A, status: 'canceled', cancel_source: 'user', first_paid_at: null }),
+    )
+    expect(await accountSubscriptionCount(db as never, USER_A, { paidOnly: true })).toBe(0)
+    expect(await accountSubscriptionCount(db as never, USER_A)).toBe(2)
+    db.tables.billing_subscriptions.push(subRow({ id: 'chk_paga', user_id: USER_A, status: 'canceled', cancel_source: 'user', first_paid_at: '2026-10-01T12:00:00Z' }))
+    expect(await accountSubscriptionCount(db as never, USER_A, { paidOnly: true })).toBe(1)
+    // o registro antigo (payments) só nasce de checkout pago: conta nos dois
+    db.tables.payments.push({ id: 'pay_9', user_id: USER_A, asaas_checkout_id: 'chk_antigo' })
+    expect(await accountSubscriptionCount(db as never, USER_A, { paidOnly: true })).toBe(2)
+    // a assinatura sem a data do pagamento, mas com o registro antigo do mesmo checkout, foi paga
+    db.tables.payments.push({ id: 'pay_10', user_id: USER_A, asaas_checkout_id: 'chk_nunca' })
+    expect(await accountSubscriptionCount(db as never, USER_A, { paidOnly: true })).toBe(3)
+  })
+
   it('accountSubscriptionCount não conta compra repetida nem cortesia', async () => {
     db.tables.billing_subscriptions.push(
       subRow({ id: 'chk_1', user_id: USER_A }),

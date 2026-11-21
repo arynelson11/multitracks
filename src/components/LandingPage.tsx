@@ -49,11 +49,11 @@ const AUDIENCE = [
  */
 const FEATURES = [
   { icon: Gauge,      pro: false, title: 'BPM detectado pela IA',      desc: 'Ao separar, a IA já estima o andamento da música. O click entra na velocidade certa, sem você contar nada.' },
-  { icon: ScrollText, pro: true,  title: 'Teleprompter de letras',     desc: 'Suba a letra da música e a equipe acompanha na tela, sincronizada com as seções, no palco ou pelo celular.' },
+  { icon: ScrollText, pro: false, title: 'Teleprompter de letras',     desc: 'Nas músicas com letra, a equipe acompanha a letra na tela, sincronizada com as seções, no palco ou pelo celular.' },
   { icon: Sparkles,   pro: false, title: 'Voz guia automática',        desc: 'O Playback Studio marca sozinho os pontos de entrada e monta a voz guia, falada em português, pra orientar quem canta.' },
   { icon: Archive,    pro: true,  title: 'Repertório com backup .zip', desc: 'Monte seus repertórios e salve tudo num arquivo .zip. Carregue de volta em qualquer aparelho, quando quiser.' },
   { icon: FileAudio,  pro: true,  title: 'Download em WAV ou MP3',     desc: 'Baixe cada faixa separada no formato que precisar. WAV pra produzir, MP3 pra mandar rápido pra equipe.' },
-  { icon: QrCode,     pro: true,  title: 'Banda conecta por QR Code',  desc: 'No Modo Ao Vivo, aberto pelo app de computador, cada músico aponta o celular pro QR Code e entra na sessão. Música, tom e letra em tempo real.' },
+  { icon: QrCode,     pro: false, title: 'Banda conecta por QR Code',  desc: 'No Modo Ao Vivo, aberto pelo app de computador, cada músico aponta o celular pro QR Code e entra na sessão. Música, tom e letra em tempo real.' },
   { icon: WifiOff,    pro: false, title: 'App desktop que toca offline', desc: 'Baixe o app pro Mac ou Windows, grátis. Depois de carregar as músicas, ele toca no palco mesmo sem internet. Os recursos seguem o seu plano.' },
 ]
 
@@ -72,11 +72,11 @@ const PLANS = [
       'Separação em 4 ou 6 faixas',
       'Até 3 músicas diferentes por mês no palco',
       'Seções, troca de tom, BPM pela IA, click e voz guia',
-      'Modo Ao Vivo com 1 celular, até 10 minutos por dia',
+      'Modo Ao Vivo com 1 celular no controle (os outros acompanham), até 10 minutos por dia',
       'Ouça cada faixa isolada no mixer',
       'Biblioteca de separações local, salva no navegador',
     ],
-    note: 'Download das faixas, repertório com várias músicas, pads e biblioteca na nuvem e Modo Ao Vivo com mais celulares e sem limite de tempo ficam nos planos Pro e Studio.' as string | null,
+    note: 'Download das faixas, repertório com várias músicas, pads da nuvem, biblioteca na nuvem e Modo Ao Vivo com mais celulares no controle e sem limite de tempo ficam nos planos Pro e Studio.' as string | null,
     cta: 'Começar grátis',
   },
   {
@@ -95,7 +95,7 @@ const PLANS = [
       'Pads de ambiente',
       'Marque seções e repita em loop infinito ao vivo',
       'Troca de tom',
-      'Modo Ao Vivo no app de computador: a banda conecta por QR Code, até 4 aparelhos',
+      'Modo Ao Vivo no app de computador: a banda conecta por QR Code, até 4 celulares no controle',
       'Teleprompter de letras',
       'Biblioteca na nuvem e repertório com backup .zip',
     ],

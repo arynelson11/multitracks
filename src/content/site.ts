@@ -64,8 +64,8 @@ export const PRICES = {
 
 // Resumo de cada plano (vai pro <noscript>). Segue a seção 2 do FATOS.
 export const PLAN_SUMMARIES = {
-  livre: '3 separações por mês em 4 ou 6 faixas, até 3 músicas diferentes por mês no palco com seções, troca de tom, BPM pela IA, click e voz guia, e Modo Ao Vivo com 1 celular por até 10 minutos por dia. A biblioteca de separações fica no navegador.',
-  pro: '50 separações por mês em 2, 4 ou 6 faixas, download em WAV e MP3, BPM pela IA, voz guia, pads, seções com loop, troca de tom, teleprompter, biblioteca na nuvem com repertório e Modo Ao Vivo com até 4 aparelhos.',
+  livre: '3 separações por mês em 4 ou 6 faixas, até 3 músicas diferentes por mês no palco com seções, troca de tom, BPM pela IA, click e voz guia, e Modo Ao Vivo com 1 celular no controle (os outros acompanham) por até 10 minutos por dia. A biblioteca de separações fica no navegador.',
+  pro: '50 separações por mês em 2, 4 ou 6 faixas, download em WAV e MP3, BPM pela IA, voz guia, pads, seções com loop, troca de tom, teleprompter, biblioteca na nuvem com repertório e Modo Ao Vivo com até 4 celulares no controle.',
   studio: '150 separações por mês, tudo do Pro, Modo Ao Vivo sem limite de aparelhos e a banda controla loop e seções pelo celular.',
 } as const
 
@@ -128,7 +128,7 @@ export const FAQS: Faq[] = [
   },
   {
     q: 'A banda consegue acompanhar pelo celular?',
-    a: 'Sim, no Modo Ao Vivo, que abre pelo app de computador (Mac ou Windows). Cada músico aponta o celular pro QR Code e acompanha a música, o tom e a letra em tempo real, sem instalar nada. No Livre entra 1 celular, por até 10 minutos por dia. No Pro entram até 4 aparelhos. No Studio não tem limite, e a banda ainda controla as repetições e as seções pelo celular.',
+    a: 'Sim, no Modo Ao Vivo, que abre pelo app de computador (Mac ou Windows). Cada músico aponta o celular pro QR Code e acompanha a música, o tom e a letra em tempo real, sem instalar nada. No Livre, 1 celular no controle (os outros acompanham), por até 10 minutos por dia. No Pro, até 4 celulares no controle. No Studio não tem limite, e a banda ainda controla as repetições e as seções pelo celular.',
   },
   {
     q: 'Como funciona a separação?',

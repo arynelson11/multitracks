@@ -62,7 +62,8 @@ const flush = async (ms = 0) => { await act(async () => { await new Promise((r) 
 
 function mount(over: Partial<React.ComponentProps<typeof SeparatorStudio>> = {}) {
   const onOpenOnStage = vi.fn<(o: StageSeparationOpen) => void>()
-  const utils = render(<SeparatorStudio onClose={vi.fn()} stageBusy={{ isPlaying: false, isCountingIn: false }} stageAvailable onOpenOnStage={onOpenOnStage} {...over} />)
+  // A conta, o plano e o papel vêm do App (1b, sem useAuth no Separador); o mock do useAuth fica pros Planos.
+  const utils = render(<SeparatorStudio onClose={vi.fn()} stageBusy={{ isPlaying: false, isCountingIn: false }} userId="u1" userPlan={h.auth.userPlan} isAdmin={h.auth.isAdmin} stageAvailable onOpenOnStage={onOpenOnStage} {...over} />)
   return { onOpenOnStage, ...utils }
 }
 

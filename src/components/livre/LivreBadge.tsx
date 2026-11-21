@@ -4,31 +4,51 @@
 // informação, não alerta nem ação principal. O botão em volta dá o alvo de 44 px. Abaixo de
 // 1280 px a barra não tem lugar pro texto inteiro com OFFLINE, HOST e o aviso SAÍDAS: o selo
 // mostra "LIVRE · 2 de 3" e o nome do botão continua com o texto inteiro. Quem decide se aparece
-// é o buildStageView (só com a música parada e fora da pré-contagem).
-import { LIVRE_BADGE_REST, livreBadgeShort, livreBadgeText } from './adCopy'
+// é o buildStageView (com a música parada e fora da pré-contagem; com a sessão do Ao Vivo ligada,
+// também tocando).
+//
+// Com a sessão do Ao Vivo ligada (`liveLeftMs`, Ruling relogio-livre) o selo mostra o tempo que
+// falta hoje com a banda ("LIVRE · 07:12 com a banda hoje"), com as duas contas no nome. Sem
+// `onClick` (música tocando) ele é só texto, do mesmo tamanho: nada abre por cima do palco.
+import {
+  LIVRE_BADGE_LIVE_REST, LIVRE_BADGE_REST, livreBadgeLiveShort, livreBadgeShort, livreBadgeText, livreLiveLeftText,
+} from './adCopy'
 
 export interface LivreBadgeProps {
   used: number
   limit: number
-  onClick(): void
+  /** Tempo do Ao Vivo que falta hoje, com a sessão ligada; nulo ou ausente sem sessão. */
+  liveLeftMs?: number | null
+  /** O toque abre os Planos; sem ele (música tocando) o selo é só texto. */
+  onClick?(): void
 }
 
 const BTN =
   'group inline-flex shrink-0 items-center justify-center min-h-ps-touch min-w-ps-touch select-none rounded-ps-pill focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ps-or'
+// Só texto: o mesmo lugar na barra, sem foco nem toque.
+const TEXT = 'inline-flex shrink-0 items-center justify-center min-h-ps-touch min-w-ps-touch select-none'
 // As mesmas medidas do selo ONLINE/OFFLINE (StageAppBar), com as cores neutras do OFFLINE.
 const PILL =
   'inline-flex h-[22px] shrink-0 items-center rounded-ps-pill px-[9px] text-ps-micro leading-none font-extrabold tracking-[0.14em] whitespace-nowrap bg-ps-s2 text-ps-mut inset-ring inset-ring-ps-line-2 transition-colors duration-150 group-hover:text-ps-bone group-hover:inset-ring-ps-line-3'
 
-export function LivreBadge({ used, limit, onClick }: LivreBadgeProps) {
-  return (
-    <button type="button" data-livre-badge="" aria-label={livreBadgeText(used, limit)} title="Ver os planos" onClick={onClick} className={BTN}>
-      <span data-livre-pill="" className={PILL}>
-        {/* Uma linha de texto só (o flex da pílula comeria o espaço antes de "músicas"). */}
-        <span>
-          {livreBadgeShort(used, limit)}
-          <span className="hidden xl:inline">{LIVRE_BADGE_REST}</span>
-        </span>
+export function LivreBadge({ used, limit, liveLeftMs = null, onClick }: LivreBadgeProps) {
+  const live = liveLeftMs !== null
+  const label = live ? `${livreBadgeText(used, limit)}. ${livreLiveLeftText(liveLeftMs)}` : livreBadgeText(used, limit)
+  const pill = (
+    <span data-livre-pill="" className={PILL}>
+      {/* Uma linha de texto só (o flex da pílula comeria o espaço antes do resto). */}
+      <span>
+        {live ? livreBadgeLiveShort(liveLeftMs) : livreBadgeShort(used, limit)}
+        <span className="hidden xl:inline">{live ? LIVRE_BADGE_LIVE_REST : LIVRE_BADGE_REST}</span>
       </span>
+    </span>
+  )
+  if (!onClick) {
+    return <span data-livre-badge="" role="timer" aria-label={label} className={TEXT}>{pill}</span>
+  }
+  return (
+    <button type="button" data-livre-badge="" aria-label={label} title="Ver os planos" onClick={onClick} className={BTN}>
+      {pill}
     </button>
   )
 }

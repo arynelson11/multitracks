@@ -145,7 +145,7 @@ function pointer(el: Element, type: string, clientX: number) {
 
 async function openSaved(sep = savedSeparation()) {
   lib.separations = [sep]
-  render(<SeparatorStudio onClose={vi.fn()} stageBusy={{ isPlaying: false, isCountingIn: false }} />)
+  render(<SeparatorStudio onClose={vi.fn()} stageBusy={{ isPlaying: false, isCountingIn: false }} userId="u1" userPlan="essencial_mensal" isAdmin={false} />)
   fireEvent.click(document.querySelector(`[data-separation-id="${sep.id}"]`)!)
   // As ondas ficam prontas no ciclo seguinte (a duração vem da primeira).
   await act(async () => { await new Promise((r) => setTimeout(r, 5)) })

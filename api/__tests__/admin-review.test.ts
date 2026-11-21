@@ -1098,6 +1098,19 @@ describe('último erro em frase pronta (lastErrorLabel)', () => {
     expect(lastErrorLabel(`${phrase} pay_1`)).toBe('Erro inesperado no servidor.')
   })
 
+  // Revisão macro 1b (M4): a pendência que não acha a assinatura no Asaas (o Asaas ainda não
+  // mostra a do checkout) ou que tem um plano que o servidor não conhece ganha frase própria,
+  // em vez do "Erro inesperado no servidor." que parece servidor quebrado.
+  it('assinatura não achada no Asaas e plano desconhecido viram frases próprias, e passam de novo sem mudar', () => {
+    const notFound = 'O Asaas ainda não mostra esta assinatura. O servidor tenta de novo sozinho.'
+    const unknownPlan = 'A assinatura está com um plano que o servidor não conhece.'
+    expect(lastErrorLabel('assinatura nao achada no Asaas')).toBe(notFound)
+    expect(lastErrorLabel('plano da assinatura desconhecido')).toBe(unknownPlan)
+    expect(lastErrorLabel(notFound)).toBe(notFound)
+    expect(lastErrorLabel(unknownPlan)).toBe(unknownPlan)
+    expect(lastErrorLabel('assinatura nao achada no Asaas sub_1')).toBe('Erro inesperado no servidor.')
+  })
+
   it('troca o texto do Asaas pela frase com o status, e nulo continua nulo', () => {
     expect(lastErrorLabel('Asaas sem resposta (ECONNRESET)')).toBe('O Asaas não respondeu.')
     expect(lastErrorLabel('Asaas sem resposta em 9000 ms')).toBe('O Asaas não respondeu.')

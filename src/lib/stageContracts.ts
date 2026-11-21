@@ -112,7 +112,11 @@ export interface TransitionView {
 }
 export interface StageChannel { id: string; label: string; color: string; role: ChannelRole; volume: number; muted: boolean; soloed: boolean; pan: number; silenced: boolean }
 export interface StageSong { id: string; name: string; artist?: string; coverImage?: string; originalKey: string | null; pitch: number; bpm: number | null; signature: TimeSignature | null; duration: number; position: number; total: number; prevName: string | null; nextName: string | null; repertoireName: string | null }
-export interface StageGates { sections: boolean; infinite: boolean; maxRepeats: number; bandSections: boolean }
+/**
+ * Portões do plano no palco. `autoNext` falso: o AUTO entre músicas é do pago (o Livre), e o AUTO
+ * aparece travado (Ruling AUTO-livre); sem o campo, liberado.
+ */
+export interface StageGates { sections: boolean; infinite: boolean; maxRepeats: number; bandSections: boolean; autoNext?: boolean }
 export interface StageView {
   song: StageSong | null; sections: StageSection[]; currentSection: number; intent: ArmIntent | null; transition: TransitionView | null
   landed: { index: number; at: number } | null; grid: SongGrid | null; gridWarning: GridWarning | null; isReadingGrid: boolean
@@ -121,10 +125,15 @@ export interface StageView {
   channels: StageChannel[]; master: { volume: number; muted: boolean }; outputs: OutputPlan; gates: StageGates
   editMode: boolean; channelEditMode: boolean; padPanelOpen: boolean; activePad: string | null
   /**
-   * `livre`: selo do Livre na barra ("LIVRE · 2 de 3 músicas este mês"), só com a música parada e
-   * fora da pré-contagem (o buildStageView zera tocando); nulo pra conta paga.
+   * `livre`: selo do Livre na barra ("LIVRE · 2 de 3 músicas este mês"), com a música parada e
+   * fora da pré-contagem; nulo pra conta paga. Com a sessão do Ao Vivo ligada, `liveLeftMs` é o
+   * tempo que falta hoje (Ruling relogio-livre) e o selo fica também tocando, com `tappable` falso
+   * (só texto, sem abrir os Planos por cima do palco); sem o campo, o toque vale.
    */
-  app: { online: boolean; isDesktop: boolean; isAdmin: boolean; userName: string | null; hostActive: boolean; livre: { used: number; limit: number } | null }
+  app: {
+    online: boolean; isDesktop: boolean; isAdmin: boolean; userName: string | null; hostActive: boolean
+    livre: { used: number; limit: number; liveLeftMs?: number | null; tappable?: boolean } | null
+  }
   /** Pan automático ligado nas Configurações. Só muda o som em "Tudo junto", onde o lado vem do papel e o knob trava. */
   autoPan?: boolean
 }

@@ -49,3 +49,24 @@ export const LIVRE_BADGE_REST = ' músicas este mês'
 export function livreBadgeText(used: number, limit: number): string {
   return livreBadgeShort(used, limit) + LIVRE_BADGE_REST
 }
+
+const two = (n: number) => String(n).padStart(2, '0')
+
+/** Tempo do Ao Vivo que falta hoje, "MM:SS". O segundo quebrado conta inteiro; negativo ou estragado: 00:00. */
+export function formatLiveLeft(ms: number): string {
+  const total = Number.isFinite(ms) && ms > 0 ? Math.ceil(ms / 1000) : 0
+  return `${two(Math.floor(total / 60))}:${two(total % 60)}`
+}
+
+/** O resto do selo com a sessão do Ao Vivo ligada, que a barra esconde abaixo de 1280 px. */
+export const LIVRE_BADGE_LIVE_REST = ' com a banda hoje'
+
+/** Começo do selo com a sessão do Ao Vivo ligada: "LIVRE · 07:12". */
+export function livreBadgeLiveShort(ms: number): string {
+  return `LIVRE · ${formatLiveLeft(ms)}`
+}
+
+/** O tempo que falta em frase (janela do Ao Vivo e nome do selo): "No Livre, restam 07:12 hoje com a banda." */
+export function livreLiveLeftText(ms: number): string {
+  return `No Livre, restam ${formatLiveLeft(ms)} hoje com a banda.`
+}

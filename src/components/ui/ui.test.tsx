@@ -57,6 +57,15 @@ describe('Segmented', () => {
     expect(guia.className).not.toMatch(FIXED_WIDTH)
     expect(guia.className).toContain('min-w-[62px]')
   })
+  it('opção com selo e dica: o selo vai depois do rótulo, pequeno e neutro, e a dica no title', () => {
+    render(<Segmented aria-label="Fim" options={[{ value: 'a', label: 'AUTO', badge: 'LIVRE', title: 'Dica' }, { value: 'b', label: 'PARAR' }]} value="b" onChange={() => {}} />)
+    const a = screen.getByRole('radio', { name: 'AUTO LIVRE' })
+    expect(a.getAttribute('title')).toBe('Dica')
+    const badge = a.querySelector('[data-segmented-badge]') as HTMLElement
+    expect(badge.textContent).toBe('LIVRE')
+    expect(badge.className).toContain('text-ps-micro')
+    expect(screen.getByRole('radio', { name: 'PARAR' }).querySelector('[data-segmented-badge]')).toBeNull()
+  })
   it('clique e setas chamam onChange (com volta), Home e End', () => {
     const onChange = vi.fn()
     render(<Segmented aria-label="Papel" options={[...opts]} value="normal" onChange={onChange} />)

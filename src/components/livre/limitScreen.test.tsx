@@ -65,6 +65,11 @@ describe('textos da tela de limite', () => {
     }
   })
 
+  // Revisão macro 1b (I2): no Pro o teto é de quem controla (até 4); os outros acompanham.
+  it('os 10 minutos acabaram: o texto do Pro fala de até 4 celulares no controle', () => {
+    expect(LIMIT_COPY.live.body).toBe('No Pro são até 4 celulares no controle, com a banda acompanhando o culto do começo ao fim.')
+  })
+
   it('o celular a mais no Livre tem título e texto próprios, verdadeiros com minutos sobrando', () => {
     expect(LIMIT_COPY['live-devices']).toEqual({
       title: 'No Livre, só 1 celular da banda controla o palco',

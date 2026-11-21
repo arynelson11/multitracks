@@ -6,6 +6,10 @@ export interface SegmentedOption<T extends string> {
   value: T
   label: string
   disabled?: boolean
+  /** Selo pequeno depois do rótulo (ex.: LIVRE no AUTO travado), nas cores neutras. */
+  badge?: string
+  /** Dica da opção (title). */
+  title?: string
 }
 
 export interface SegmentedProps<T extends string> {
@@ -27,6 +31,8 @@ const OPTION_IDLE = 'text-ps-mut hover:text-ps-bone'
 const OPTION_SELECTED = 'bg-ps-s3 text-ps-bone inset-ring inset-ring-ps-line-2'
 // A marcada continua com cara de escolhida mesmo desligada (só leitura).
 const OPTION_DISABLED = 'opacity-35'
+// O selo da opção: informação neutra (as cores do OFFLINE e do selo do Livre), nunca alerta.
+const BADGE = 'ml-1.5 inline-flex h-4 items-center rounded-ps-pill bg-ps-s2 px-1.5 align-middle text-ps-micro leading-none font-extrabold tracking-[0.14em] text-ps-mut inset-ring inset-ring-ps-line-2'
 
 /** Próxima opção habilitada a partir de `from`, andando `step` (1 ou -1) com volta. -1 se nenhuma. */
 function nextEnabled<T extends string>(options: SegmentedOption<T>[], from: number, step: 1 | -1): number {
@@ -97,11 +103,13 @@ export function Segmented<T extends string>({
             aria-checked={isSelected}
             tabIndex={i === tabStop ? 0 : -1}
             disabled={o.disabled}
+            title={o.title}
             onClick={() => onChange(o.value)}
             onKeyDown={(e) => onKeyDown(e, i)}
             className={cx(OPTION, isSelected ? OPTION_SELECTED : OPTION_IDLE, o.disabled && !isSelected && OPTION_DISABLED)}
           >
             {o.label}
+            {o.badge && <span data-segmented-badge="" className={BADGE}>{o.badge}</span>}
           </button>
         )
       })}

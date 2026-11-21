@@ -164,6 +164,48 @@ describe('ligações do palco novo', () => {
     expect(app).toMatch(/case 'select-song':[^\n]*jumpToSongGated\(/)
   })
 
+  // Revisão macro 1b (parte 2, M3): sem música atual, a banda não vê a primeira do repertório como "próxima".
+  it('a próxima que o celular da banda vê sai do nextSongAfter (nula sem música atual)', () => {
+    expect(app).toMatch(/const _next = nextSongAfter\(playlist, activeSongIndex\)/)
+    expect(app).not.toMatch(/playlist\[activeSongIndex \+ 1\]/)
+  })
+
+  // Revisão macro 1b (Ruling pads-tocando): no Livre, recurso pago tocado com a música tocando não
+  // abre os Planos por cima do palco; eles esperam a música parar e, abertos tocando, sem desconto.
+  it('recurso pago no Livre tocando: os Planos esperam a música parar e não mostram o desconto', () => {
+    expect(app).toMatch(/const openPlans = usePlansWhenQuiet\(livre\.isLivre, engineQuiet, \(\) => setIsPricingOpen\(true\)\)/)
+    expect(app).toMatch(/const hidePlansOffer = livre\.isLivre && !engineQuiet/)
+    const withPlan = app.match(/const withPlan = \(allowed: boolean, action: \(\) => void\) => \{[\s\S]*?\n {2}\}/)![0]
+    expect(withPlan).toMatch(/openPlans\(\)/)
+    expect(withPlan).not.toMatch(/setIsPricingOpen/)
+    expect(app).toMatch(/const upgradeIf = \(r: \{ upgrade: boolean \}\) => \{ if \(r\.upgrade\) openPlans\(\) \}/)
+    expect(app).toMatch(/openUpgrade: \(\) => openPlans\(\)/)
+    expect(app).toMatch(/onUpgrade=\{\(\) => openPlans\(\)\}/)
+    const modals = app.match(/<PricingModal [\s\S]*?\/>/g) ?? []
+    expect(modals).toHaveLength(2)
+    for (const m of modals) expect(m).toMatch(/hideOffer=\{hidePlansOffer\}/)
+  })
+
+  // Revisão macro 1b (Ruling AUTO-livre): o AUTO travado no Livre, nos dois palcos.
+  it('AUTO no Livre: os dois palcos passam pelo setEndModeGated, que pede a tela do repertório', () => {
+    expect(app).toMatch(/const autoNextAllowed = !livre\.isLivre/)
+    expect(app).toMatch(/const shownMode = shownEndMode\(playbackMode, autoNextAllowed\)/)
+    expect(app).toMatch(/if \(m === 'continue' && !autoNextAllowed\) \{ livre\.requestLimit\('repertoire'\); return \}/)
+    expect(app).toMatch(/setEndMode: \(m: 'continue' \| 'stop' \| 'fade-out'\) => setEndModeGated\(m\)/)
+    // Palco antigo: os três botões e o que alterna (celular deitado) mostram o shownMode.
+    expect(app).toMatch(/onClick=\{\(\) => setEndModeGated\('continue'\)\}/)
+    expect(app).toMatch(/onClick=\{\(\) => setEndModeGated\(cycleEndMode\(playbackMode, autoNextAllowed\)\)\}/)
+    expect(app).toMatch(/▶ AUTO\{!autoNextAllowed && <span[^>]*>LIVRE<\/span>\}/)
+    // Ninguém mais troca o modo de fim por fora do portão.
+    expect(app.match(/setPlaybackMode\(/g)).toHaveLength(1)
+  })
+
+  // Revisão macro 1b (vocabulário): na tela é "multitracks", nunca "Stems".
+  it('o menu de importar diz Importar multitracks, nos dois lugares', () => {
+    expect(app).not.toMatch(/Importar Stems/i)
+    expect(app.match(/Importar multitracks<\/span>/g)).toHaveLength(2)
+  })
+
   it('o motor recebe autoNext pelo plano', () => { expect(app).toMatch(/autoNext:\s*isAdmin\s*\|\|\s*canUseRepertoire\(userPlan\)/) })
 
   it('a música atual conta pelo stageSongKey', () => { expect(app).toMatch(/noteSongOpened\(stageSongKey\(/) })
@@ -179,7 +221,18 @@ describe('ligações do palco novo', () => {
     expect(hook).toBeGreaterThan(expired)
     expect(view).toBeGreaterThan(hook)
     expect(app).toMatch(/useLivre\(\{\s*userId: user\?\.id \?\? null,\s*plan: userPlan,\s*isAdmin,\s*busy: \{ isPlaying, isCountingIn \},\s*liveActive: hostActive\b/)
-    expect(app).toMatch(/livre:\s*livre\.isLivre\s*\?\s*livre\.stage\s*:\s*null/)
+    // Com a sessão do Ao Vivo ligada, o selo leva o tempo que falta (Ruling relogio-livre).
+    expect(app).toMatch(/livre:\s*livre\.isLivre\s*\?\s*\{ \.\.\.livre\.stage, liveLeftMs: hostActive \? livre\.live\.remainingMs : null \}\s*:\s*null/)
+  })
+
+  // Revisão macro 1b (Ruling relogio-livre): o tempo que falta do Ao Vivo do Livre em texto na
+  // janela do Ao Vivo (uma prop e uma linha no LiveModeModal) e no selo, com a sessão ligada.
+  it('a janela do Ao Vivo recebe o tempo que falta do Livre', () => {
+    expect(app).toMatch(/<LiveModeModal[\s\S]*?livreTimeLeft=\{livre\.isLivre \? livreLiveLeftText\(livre\.live\.remainingMs\) : null\}/)
+    const modal = read('./components/LiveModeModal.tsx')
+    expect(modal).toMatch(/livreTimeLeft\?: string \| null;/)
+    expect(modal).toMatch(/\{livreTimeLeft && <p role="timer"[^>]*>\{livreTimeLeft\}<\/p>\}/)
+    expect(app).toMatch(/isPadPanelOpen, activeNote, settings\.autoPan, livre\.isLivre, livre\.stage, livre\.live,/)
   })
 
   it('a tela de limite está no App e desliga os atalhos', () => {
@@ -247,7 +300,7 @@ describe('ligações do palco novo', () => {
     expect(splash).toMatch(/<AdSlot[\s\S]*?placement="home"[\s\S]*?userId=\{user\.id\}[\s\S]*?isLivre=\{livre\.isLivre\}[\s\S]*?quiet=\{engineQuiet\}[\s\S]*?onCta=\{\(\) => setIsPricingOpen\(true\)\}/)
     // Embaixo dos dois botões.
     expect(splash.indexOf('<AdSlot')).toBeGreaterThan(splash.indexOf('Separação de Faixas'))
-    expect(splash).toMatch(/<PricingModal isOpen=\{isPricingOpen\} onClose=\{\(\) => setIsPricingOpen\(false\)\} \/>/)
+    expect(splash).toMatch(/<PricingModal isOpen=\{isPricingOpen\} onClose=\{\(\) => setIsPricingOpen\(false\)\} hideOffer=\{hidePlansOffer\} \/>/)
     // Música parada de verdade: nem tocando, nem na pré-contagem.
     expect(app).toMatch(/const engineQuiet = !isPlaying && !isCountingIn\b/)
   })

@@ -3885,8 +3885,10 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // calado pelo Solo não faz ele voltar a tocar.
     const updateVolume = (id: string, volume: number) => {
         const newPlaylist = [...playlist];
-        const song = { ...newPlaylist[activeSongIndex] };
-        if (!song) return;
+        // Sem música atual (Livre que apagou a atual com o mês cheio), nada a mexer.
+        const current = newPlaylist[activeSongIndex];
+        if (!current) return;
+        const song = { ...current };
 
         song.channels = song.channels.map(ch => (ch.id === id ? { ...ch, volume } : ch));
         const changed = song.channels.find(ch => ch.id === id);
@@ -3899,8 +3901,10 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
 
     const toggleMute = (id: string) => {
         const newPlaylist = [...playlist];
-        const song = { ...newPlaylist[activeSongIndex] };
-        if (!song) return;
+        // Sem música atual (Livre que apagou a atual com o mês cheio), nada a mexer.
+        const current = newPlaylist[activeSongIndex];
+        if (!current) return;
+        const song = { ...current };
 
         song.channels = song.channels.map(ch => (ch.id === id ? { ...ch, muted: !ch.muted } : ch));
         const changed = song.channels.find(ch => ch.id === id);
@@ -3914,8 +3918,10 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
 
     const toggleSolo = (id: string) => {
         const newPlaylist = [...playlist];
-        const song = { ...newPlaylist[activeSongIndex] };
-        if (!song) return;
+        // Sem música atual (Livre que apagou a atual com o mês cheio), nada a mexer.
+        const current = newPlaylist[activeSongIndex];
+        if (!current) return;
+        const song = { ...current };
 
         song.channels = song.channels.map(ch => (ch.id === id ? { ...ch, soloed: !ch.soloed } : ch));
 
@@ -3933,8 +3939,10 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
 
     const updatePan = (id: string, pan: number) => {
         const newPlaylist = [...playlist];
-        const song = { ...newPlaylist[activeSongIndex] };
-        if (!song) return;
+        // Sem música atual (Livre que apagou a atual com o mês cheio), nada a mexer.
+        const current = newPlaylist[activeSongIndex];
+        if (!current) return;
+        const song = { ...current };
 
         // O knob grava o pan; o panner recebe o efetivo do plano (fora de "Tudo junto" o
         // papel decide o lado do Click e da Guia, e em separados também o da VS).
@@ -3958,7 +3966,10 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
 
     const reorderChannels = (newOrder: Channel[]) => {
         const newPlaylist = [...playlist];
-        const song = { ...newPlaylist[activeSongIndex] };
+        // Sem música atual, nada a reordenar (e nunca grava no índice -1).
+        const current = newPlaylist[activeSongIndex];
+        if (!current) return;
+        const song = { ...current };
         song.channels = newOrder;
         // Arrastar fixa a ordem do usuário: manual vence a ordem padrão.
         song.channelOrder = 'manual';
@@ -4188,7 +4199,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         const newPan = panMap[bus];
 
         const newPlaylist = [...playlist];
-        const song = { ...newPlaylist[activeSongIndex] };
+        const current = newPlaylist[activeSongIndex];
+        if (!current) return;
+        const song = { ...current };
         song.channels = song.channels.map(ch => {
             if (ch.id === channelId && audioCtxRef.current) {
                 const next = { ...ch, bus, pan: newPan };

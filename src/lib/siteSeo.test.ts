@@ -42,6 +42,12 @@ describe('JSON-LD', () => {
     expect(app).not.toHaveProperty('aggregateRating')
   })
 
+  it('a FAQ da banda no celular diz quem controla e quem acompanha (revisão macro 1b, I2)', () => {
+    const banda = FAQS.find((f) => f.q === 'A banda consegue acompanhar pelo celular?')!
+    expect(banda.a).toContain('No Livre, 1 celular no controle (os outros acompanham), por até 10 minutos por dia. No Pro, até 4 celulares no controle.')
+    expect(banda.a).not.toMatch(/No Livre entra 1 celular|até 4 aparelhos/)
+  })
+
   it('FAQPage com as perguntas e respostas reais da landing', () => {
     const faq = byType(nodes, 'FAQPage')
     const items = faq?.mainEntity as Node[]
@@ -81,7 +87,11 @@ describe('noscript', () => {
 describe('noscript e os planos', () => {
   it('diz que o Modo Ao Vivo, no app de computador, vem em todos os planos, com o limite do Livre (Parte 3)', () => {
     const html = buildNoscript()
-    expect(html).toContain('O Modo Ao Vivo, aberto pelo app de computador, vem em todos os planos: no Livre com 1 celular por até 10 minutos por dia, no Pro com até 4 e no Studio sem limite.')
+    // Revisão macro 1b (I2): o teto é de quem controla; os outros celulares acompanham.
+    expect(html).toContain('O Modo Ao Vivo, aberto pelo app de computador, vem em todos os planos: no Livre com 1 celular no controle (os outros acompanham) por até 10 minutos por dia, no Pro com até 4 celulares no controle e no Studio sem limite.')
+    expect(html).toContain('Modo Ao Vivo com 1 celular no controle (os outros acompanham) por até 10 minutos por dia')
+    expect(html).toContain('Modo Ao Vivo com até 4 celulares no controle')
+    expect(html).not.toContain('até 4 aparelhos')
     expect(html).not.toContain('nos planos Pro e Studio, troca de tom')
     expect(html).toContain('3 separações por mês em 4 ou 6 faixas')
     expect(html).not.toContain('tem app pra Mac e Windows com Modo Ao Vivo')
