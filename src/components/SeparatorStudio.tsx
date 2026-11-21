@@ -1,9 +1,8 @@
 import { apiUrl } from '../lib/api';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import WaveSurfer from 'wavesurfer.js';
-import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Minus, Plus, Mic, Download, Trash2, FolderOpen, Clock, CheckCircle2, Lock, Repeat, SkipBack, SkipForward } from 'lucide-react';
+import { Play, Pause, X, Loader2, UploadCloud, ChevronLeft, ChevronRight, Volume2, Save, Disc3, Minus, Plus, Mic, Download, CheckCircle2, Lock, Repeat, SkipBack, SkipForward } from 'lucide-react';
 import { uploadToR2 } from '../lib/r2';
-import { AUDIO_FILE_ACCEPT } from '../lib/uploadContentType';
 import { getAuthHeaders } from '../lib/supabase';
 import { fetchMonthlyQuota, formatDateBR } from '../lib/separationUsage';
 import { useAuth } from '../hooks/useAuth';
@@ -18,6 +17,11 @@ import { SyncedTrackPlayer } from '../lib/syncedTrackPlayer';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
 import { useSeparationLibrary, type SavedSeparation } from '../hooks/useSeparationLibrary';
 import { GuidedTour, type TourStep } from './GuidedTour';
+import { SeparatorHome } from './separator/SeparatorHome';
+import { SeparatorOptions } from './separator/SeparatorOptions';
+import { SeparatorProgress } from './separator/SeparatorProgress';
+import { PROGRESS_COPY } from './separator/separatorCopy';
+import { Notice } from './ui';
 import { GUIDE_DYNAMICS, GUIDE_SECTIONS, detectVoiceCues, formatCueTime, guideUrl, parseCueTime, renderVoiceGuideWav, voiceSourceTrack, type VoiceCue } from '../lib/separation/voiceGuide';
 import { BEATS_PER_BAR, SEPARATOR_METERS, bpmReport, clickPlan, generateSeparatorClick, measureGrid, normalizeBpm, nudgeOffset, pickGridSource as pickGridTrack, scaleBpm, stepBpm, tapTempo, tempoName, type SeparatorMeter } from '../lib/separation/separatorClick';
 import { downloadStem as downloadStemFile, readDownloadFormat, writeDownloadFormat, type DownloadFormat } from '../lib/separation/stemFiles';
@@ -42,13 +46,6 @@ interface StemData {
   url: string;
   color: string;
 }
-
-// Cartões da tela de opções: o que sai em cada número de faixas.
-const STEM_OPTION_LABELS: Record<StemCount, string> = {
-  2: 'Vocais, Instrumental',
-  4: 'Vocais, Bateria, Baixo, Outros',
-  6: 'Vocais, Bateria, Baixo, Guitarra, Piano, Outros',
-};
 
 interface SeparatorStudioProps {
   onClose: () => void;
@@ -86,6 +83,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   const [separationStep, setSeparationStep] = useState<'upload' | 'options'>('upload');
   const [showSepTour, setShowSepTour] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  // Frase de erro na entrada do Separador (hoje era um alert): falha no processamento.
+  const [homeNotice, setHomeNotice] = useState<string | null>(null);
 
   // Tutorial da separação na primeira vez que a tela abre.
   useEffect(() => {
@@ -564,20 +563,11 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [playAll, pauseAll]);
 
-  // Handle Drag & Drop e Upload
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement> | React.DragEvent) => {
-    let selected;
-    if ('dataTransfer' in e) {
-      e.preventDefault();
-      selected = e.dataTransfer.files[0];
-    } else {
-      selected = e.target.files?.[0];
-    }
-    
-    if (selected) {
-      setPendingFile(selected);
-      setSeparationStep('options');
-    }
+  // Arquivo escolhido na entrada (botão ou arrastar e soltar): vai pra escolha das faixas.
+  const handleFileUpload = (selected: File) => {
+    setHomeNotice(null);
+    setPendingFile(selected);
+    setSeparationStep('options');
   };
 
   // Livre sem separação no mês (pelo contador lido antes ou pelo 402 do servidor): a tela de limite
@@ -750,7 +740,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
 
     } catch (e: any) {
       console.error(e);
-      alert('⚠️ Erro no processamento: ' + e.message);
+      // Volta pra entrada com a frase no topo (no lugar do alert de antes).
+      setHomeNotice('Erro no processamento: ' + e.message);
       setIsProcessing(false);
       setFile(null);
     }
@@ -1114,6 +1105,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
       if (!livre.canOpenSong(separationKey(sep.id), { freeThisMonth })) { livre.requestLimit('stage-songs'); return; }
       livre.noteSongOpened(separationKey(sep.id), { freeThisMonth });
     }
+    setHomeNotice(null);
     const stemsArray: StemData[] = sep.stems.map(s => ({ id: s.id, name: s.name, url: s.url, color: s.color }));
     const initialStates: Record<string, { muted: boolean; soloed: boolean; volume: number; pan: number }> = {};
     sep.stems.forEach(s => {
@@ -1145,8 +1137,6 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     // As opções vêm do plano (plans.ts): o Livre separa em 4 ou 6 faixas, quem paga em 2, 4 ou 6.
     // Admin nunca tem a trava do Livre.
     const stemOptions = isAdmin ? ALL_STEM_COUNTS : separationStemOptions(userPlan);
-    const basicOptions = stemOptions.filter(n => n === 2);
-    const advancedOptions = stemOptions.filter(n => n !== 2);
 
     const handleSelectOption = (stemsCount: StemCount) => {
       setFile(pendingFile);
@@ -1156,202 +1146,40 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     };
 
     return (
-      <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col overflow-hidden">
-        <button onClick={() => { setSeparationStep('upload'); setPendingFile(null); }} className="transport-btn absolute top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold text-text-muted cursor-pointer uppercase tracking-wider">
-          <ChevronLeft size={13}/> Voltar
-        </button>
-
-        <div className="flex-1 overflow-y-auto px-6 py-12">
-          <div className="max-w-4xl mx-auto mt-8">
-            <h1 className="text-3xl font-black text-white mb-2">Separar faixas</h1>
-            <p className="text-text-muted text-sm mb-12">Selecione o nível de isolamento de instrumentos desejado</p>
-
-            <div className="space-y-12">
-              {/* Separação Básica */}
-              {basicOptions.length > 0 && (
-                <div>
-                  <h2 className="text-white font-bold text-sm mb-4">Separação Básica</h2>
-                  <div className="grid grid-cols-1 gap-4">
-                    {basicOptions.map(n => (
-                      <div
-                        key={n}
-                        onClick={() => handleSelectOption(n)}
-                        className="hw-btn flex flex-col p-6 rounded-xl cursor-pointer hover:bg-white/5 transition-colors border border-border/50 hover:border-primary/50 group"
-                      >
-                        <div className="text-white font-bold text-base mb-2 group-hover:text-primary transition-colors">{STEM_OPTION_LABELS[n]}</div>
-                        <div className="text-text-muted text-xs">{n} faixas</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Separação Avançada */}
-              {advancedOptions.length > 0 && (
-                <div>
-                  <h2 className="text-white font-bold text-sm mb-4 flex items-center gap-2">
-                    Separação Avançada
-                  </h2>
-                  <div className="grid grid-cols-1 gap-4">
-                    {advancedOptions.map(n => (
-                      <div
-                        key={n}
-                        onClick={() => handleSelectOption(n)}
-                        className="hw-btn flex items-center p-6 rounded-xl border transition-colors group cursor-pointer hover:bg-white/5 border-border/50 hover:border-primary/50"
-                      >
-                        <div className="flex-1">
-                          <div className="text-white font-bold text-base mb-2">{STEM_OPTION_LABELS[n]}</div>
-                          <div className="text-text-muted text-xs">{n} faixas</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-            </div>
-          </div>
-        </div>
-
+      <>
+        <SeparatorOptions options={stemOptions} onBack={() => { setSeparationStep('upload'); setPendingFile(null); }} onChoose={handleSelectOption} />
         {isPricingOpen && <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />}
         {limitGate}
-      </div>
+      </>
     );
   }
 
   if (separationStep === 'upload' && !file && stems.length === 0) {
     return (
-      <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col overflow-hidden">
-        {showSepTour && <GuidedTour steps={SEP_TOUR_STEPS} onClose={closeSepTour} />}
-        <button onClick={onClose} className="transport-btn absolute top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold text-text-muted cursor-pointer uppercase tracking-wider">
-          <ChevronLeft size={13}/> Voltar
-        </button>
-
-        <div className="flex-1 overflow-y-auto">
-          {/* ── Hero / Upload ── */}
-          <div className="flex flex-col items-center text-center pt-16 pb-8 px-6">
-            <div className="w-20 h-20 mb-8 rounded-2xl flex items-center justify-center border border-border bg-surface relative shadow-[0_0_40px_rgba(212,168,67,0.08)]">
-              <Disc3 size={36} className="text-primary animate-[spin_10s_linear_infinite]" />
-              <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-primary animate-pulse"></div>
-            </div>
-            <h1 className="text-3xl font-black tracking-[0.15em] uppercase mb-2 text-white">SEPARADOR IA</h1>
-            <p className="text-text-muted mb-8 text-[10px] font-mono tracking-widest uppercase">Motor de Separação Multi-faixa Profissional</p>
-            <label data-tour="sep-upload" className="w-full max-w-md hw-btn flex flex-col items-center gap-4 px-8 py-10 rounded-xl cursor-pointer group">
-              <UploadCloud size={36} className="text-primary group-hover:scale-110 transition-transform" />
-              <div>
-                <div className="font-black text-white uppercase tracking-wider text-sm mb-1">Carregar Áudio & Iniciar</div>
-                <div className="text-[10px] text-text-muted/50 font-mono">MP3, WAV ou AAC</div>
-              </div>
-              <input type="file" accept={AUDIO_FILE_ACCEPT} onChange={handleFileUpload} className="hidden" />
-            </label>
-          </div>
-
-          {/* ── Separation Library ── */}
-          <div data-tour="sep-biblioteca" className="max-w-3xl mx-auto px-4 pb-12">
-            <div className="flex items-center gap-2 mb-4">
-              <FolderOpen size={14} className="text-primary" />
-              <h2 className="text-white font-black text-xs uppercase tracking-[0.15em]">Minhas Separações</h2>
-              <span className="text-[9px] font-mono text-text-muted/40 ml-auto">{separations.length} salva(s)</span>
-            </div>
-
-            {isLibLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 size={20} className="animate-spin text-primary" />
-              </div>
-            ) : separations.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Disc3 size={32} className="text-text-muted/15 mb-3" />
-                <p className="text-text-muted/40 text-[10px] font-mono">Nenhuma separação salva ainda.</p>
-                <p className="text-text-muted/25 text-[9px] font-mono mt-1">Faça sua primeira separação e ela aparecerá aqui automaticamente.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                {separations.map(sep => (
-                  <div key={sep.id}
-                    className="group bg-[#141416] border border-[#222] hover:border-primary/30 rounded-lg p-3.5 transition-all hover:bg-[#1a1a1c] cursor-pointer relative"
-                    onClick={() => handleOpenSavedSeparation(sep)}
-                  >
-                    {/* Delete button */}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); deleteSeparation(sep.id); }}
-                      className="absolute top-2 right-2 p-1.5 rounded-md text-text-muted/30 hover:text-red-400 hover:bg-red-400/10 transition-all opacity-0 group-hover:opacity-100 cursor-pointer z-10"
-                      title="Excluir separação"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-
-                    {/* Song name */}
-                    <div className="font-black text-white text-[11px] uppercase tracking-wider truncate pr-8 mb-1.5">
-                      {sep.songName || 'Sem título'}
-                    </div>
-
-                    {/* Artist */}
-                    {sep.artist && (
-                      <div className="text-text-muted/50 text-[9px] font-mono truncate mb-2.5">{sep.artist}</div>
-                    )}
-
-                    {/* Metadata chips */}
-                    <div className="flex items-center gap-1.5 mb-3">
-                      {sep.songKey && sep.songKey !== 'C' && (
-                        <span className="text-[8px] font-bold bg-secondary/10 text-secondary/80 px-1.5 py-0.5 rounded font-mono">{sep.songKey}</span>
-                      )}
-                      {sep.bpm && sep.bpm !== '120' && (
-                        <span className="text-[8px] font-bold bg-primary/10 text-primary/80 px-1.5 py-0.5 rounded font-mono">{sep.bpm} BPM</span>
-                      )}
-                      <span className="text-[8px] font-bold bg-white/5 text-text-muted/50 px-1.5 py-0.5 rounded font-mono">{sep.stems.length} faixas</span>
-                    </div>
-
-                    {/* Stem color dots */}
-                    <div className="flex items-center gap-1 mb-2.5">
-                      {sep.stems.slice(0, 6).map((s, i) => (
-                        <div key={i} className="w-2.5 h-2.5 rounded-full border border-black/30" style={{ backgroundColor: s.color }} title={s.name} />
-                      ))}
-                      {sep.stems.length > 6 && (
-                        <span className="text-[7px] text-text-muted/30 font-mono">+{sep.stems.length - 6}</span>
-                      )}
-                    </div>
-
-                    {/* Footer: date + open */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1 text-[8px] text-text-muted/30 font-mono">
-                        <Clock size={8} />
-                        {new Date(sep.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
-                      </div>
-                      <div className="flex items-center gap-1 text-[9px] text-primary/60 group-hover:text-primary font-bold uppercase tracking-wider transition-colors">
-                        <Play size={9} fill="currentColor" /> Abrir
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
+      <>
+        <SeparatorHome
+          separations={separations}
+          loading={isLibLoading}
+          onBack={onClose}
+          onPickFile={handleFileUpload}
+          onOpen={handleOpenSavedSeparation}
+          onDelete={(id) => { void deleteSeparation(id); }}
+          tour={showSepTour ? <GuidedTour steps={SEP_TOUR_STEPS} onClose={closeSepTour} /> : null}
+          notice={homeNotice ? <Notice tone="alert" role="alert">{homeNotice}</Notice> : null}
+        />
         {/* "Ver os planos" da tela de limite também abre os Planos aqui. */}
         <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
         {limitGate}
-      </div>
+      </>
     );
   }
 
   if (isProcessing) {
     return (
-      <div className="fixed inset-0 z-50 bg-[#0a0a0c] flex flex-col items-center justify-center p-6">
-        <div className="w-16 h-16 mb-8 rounded-2xl flex items-center justify-center border border-border bg-surface relative">
-          <Loader2 size={28} className="text-primary animate-spin" />
-        </div>
-        <h2 className="text-2xl font-black text-white tracking-[0.15em] uppercase mb-2">Analisando Frequências</h2>
-        <p className="text-text-muted text-[10px] font-mono tracking-widest uppercase mb-8">Motor de IA GPU • Replicate</p>
-        <div className="w-full max-w-sm mb-3">
-          <div className="lcd-display rounded-md h-1.5 overflow-hidden">
-            <div className="bg-primary h-full transition-all duration-300 ease-out" style={{ width: `${progress}%` }}></div>
-          </div>
-        </div>
-        <div className="text-[9px] text-text-muted font-mono h-8 text-center max-w-md">{progressMsg}</div>
-        <p className="text-primary/60 text-[9px] mt-2 font-mono font-black tracking-[0.2em]">{progress}% CONCLUÍDO</p>
+      <>
+        <SeparatorProgress title={PROGRESS_COPY.title} subtitle={PROGRESS_COPY.subtitle} percent={progress} detail={progressMsg} />
         {limitGate}
-      </div>
+      </>
     );
   }
 

@@ -34,6 +34,12 @@ Demais telas da Parte 3 (faixa C): cada uma tem um estado (lista em
 `telasEstados.ts`, telas montadas em `telas.tsx`), medido como o palco, sem a
 regra de estrutura.
 
+Separador (Parte 3, faixa D): pelo mesmo mecanismo, os estados `separador-inicio`
+(a entrada com 6 separações: nomes e artistas longos, uma sem nome, uma com 7
+faixas) e `separador-opcoes` (2, 4 e 6 faixas), montados em `pages.tsx` com os
+dados de `pageFixtures.ts`, só com props (sem Supabase nem motor). Medem em
+1024x740, 1280x800, 1920x1080 e 390x844 (`PAGINAS_SEPARADOR` no `run.mjs`).
+
 Largura de celular (as faixas B e C e a frente 1b, um jeito só): o Chrome headless não abre
 janela abaixo de 500 px, então qualquer tamanho mais estreito que isso roda na
 rota `/moldura` do `run.mjs`, uma página mínima com a página do verificador num

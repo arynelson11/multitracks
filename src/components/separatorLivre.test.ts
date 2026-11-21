@@ -22,7 +22,12 @@ describe('Separador no Livre', () => {
   it('a tela de opções não decide o plano sozinha: nenhum 2, 4 ou 6 fixo, sem cadeado e sem selo PRO', () => {
     expect(start).toBeGreaterThan(0)
     expect(end).toBeGreaterThan(start)
-    expect(optionsScreen).toMatch(/stemOptions[\s\S]*?\.map\(/)
+    // Parte 3 (faixa D): os cartões saem da vista SeparatorOptions, que só mostra as opções que recebe.
+    expect(optionsScreen).toMatch(/<SeparatorOptions options=\{stemOptions\}/)
+    const optionsView = read('./separator/SeparatorOptions.tsx')
+    expect(optionsView).toMatch(/options\.map\(/)
+    expect(optionsView).toMatch(/options\.filter\(/)
+    expect(optionsView).not.toMatch(/\b[246]\s*faixas|<Lock\b|planTier\(|>PRO</)
     expect(optionsScreen).not.toMatch(/handleSelectOption\(\s*[246]/)
     expect(optionsScreen).not.toMatch(/<Lock\b/)
     expect(optionsScreen).not.toMatch(/canUsePro|canUseStudio|planTier\(/)

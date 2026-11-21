@@ -30,7 +30,9 @@ const SIZES = ['1024x740', '1024x768', '1280x760', '1280x800', '1440x900', '1920
 /** Estados da rodada normal: a mesma lista de ESTADOS em fixture.ts. */
 const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'repertorio', 'tom', 'semtom', 'compasso', 'config', 'inicio',
   // Demais telas da Parte 3 (faixa C), a mesma lista de telasEstados.ts.
-  'metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'download-celular', 'aovivo', 'aovivo-cheio', 'aovivo-erro', 'adminlogin']
+  'metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'download-celular', 'aovivo', 'aovivo-cheio', 'aovivo-erro', 'adminlogin',
+  // Separador (Parte 3, faixa D), a mesma lista de telasEstados.ts.
+  'separador-inicio', 'separador-opcoes']
 /**
  * Telas da faixa C que abrem no celular: sem --only, medem também em 390x844. O Modo Ao Vivo do host
  * só existe no computador, então fica de fora.
@@ -50,6 +52,12 @@ const TELAS_C_SO_CELULAR = ['download-celular']
 const ESTADOS_B = ['login', 'criarconta', 'recuperar', 'novasenha', 'config-perfil', 'config-geral', 'config-buses', 'config-novidades', 'config-assinatura', 'config-sobre']
 // 844x390: celular deitado, onde as Configurações cortavam o fim de cada aba (revisão macro BC, BC1-M6).
 const TELAS_B_SIZES = ['1024x740', '1280x800', '1920x1080', '390x844', '844x390']
+/**
+ * Páginas do Separador (Parte 3, faixa D): abrem em qualquer tela, celular incluído, então medem
+ * em 1024x740, 1280x800, 1920x1080 e 390x844.
+ */
+const PAGINAS_SEPARADOR = ['separador-inicio', 'separador-opcoes']
+const PAGINAS_SEPARADOR_SIZES = ['1024x740', '1280x800', '1920x1080', '390x844']
 /** Largura de celular: abaixo da janela mínima do Chrome headless, roda na moldura (/moldura). */
 const CELULAR = '390x844'
 const PROVA = 'quebrado'
@@ -194,6 +202,7 @@ const frame = await calibrate(port)
 const sizesFor = (estado) => {
   if (onlySizes) return sizes
   if (ESTADOS_B.includes(estado)) return TELAS_B_SIZES
+  if (PAGINAS_SEPARADOR.includes(estado)) return PAGINAS_SEPARADOR_SIZES
   if (TELAS_C_SO_CELULAR.includes(estado)) return [CELULAR]
   if (TELAS_C_CELULAR.includes(estado) || ESTADOS_CELULAR.includes(estado)) return [...SIZES, CELULAR]
   return SIZES

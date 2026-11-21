@@ -153,9 +153,11 @@ describe('Tour: os alvos', () => {
 
   it('o tour do Separador acha cada alvo no SeparatorStudio', () => {
     const sep = ler('components/SeparatorStudio.tsx')
+    // Parte 3 (faixa D): as telas do Separador viraram vistas em components/separator/.
+    const vistas = readdirSync(join(ROOT, 'components/separator')).filter((f) => f.endsWith('.tsx') && !f.includes('.test.'))
     const alvos = alvosDe(sep, 'SEP_TOUR_STEPS')
     expect(alvos.length).toBeGreaterThan(0)
-    const d = donos(sep)
+    const d = donos([sep, ...vistas.map((f) => ler(`components/separator/${f}`))].join('\n'))
     expect(alvos.filter((a) => !d.has(a))).toEqual([])
   })
 })
