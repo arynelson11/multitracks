@@ -128,5 +128,5 @@ export const DELETE_COPY = {
     ? `Excluir "${name}" da Nuvem e do Cache Local? Isso removerá permanentemente para todos os usuários.`
     : `Tirar "${name}" deste aparelho? Ela continua na Biblioteca na Nuvem e dá pra baixar de novo.`),
   cancel: 'Cancelar',
-  confirm: (scope: RemoveScope) => (scope === 'cloud' ? 'Excluir' : 'Tirar'),
+  confirmLabel: (scope: RemoveScope) => (scope === 'cloud' ? 'Excluir' : 'Tirar'),
 } as const

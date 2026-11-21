@@ -221,7 +221,7 @@ export function LibraryView(p: LibraryViewProps) {
               disabled={confirmDelete?.busy}
               onClick={p.onConfirmDelete}
             >
-              {DELETE_COPY.confirm(confirmDelete?.scope ?? 'cloud')}
+              {DELETE_COPY.confirmLabel(confirmDelete?.scope ?? 'cloud')}
             </Button>
           </>
         )}
