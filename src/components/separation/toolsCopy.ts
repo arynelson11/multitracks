@@ -4,6 +4,16 @@
 
 export const PAUSE_TO_USE = 'Pare a música pra usar'
 
+// O que denuncia um motivo técnico (sep-2 M2): código HTTP, rede, servidor, banco ou inglês.
+const TECHNICAL = /\bHTTP\b|\b[1-5]\d\d\b|fetch|network|server|failed|unable|error|exception|undefined|\bnull\b|json|token|timeout|abort|decode|cors|violates|policy|row-level|permission denied|supabase|replicate|\bthe\b|\bto\b|\bof\b|\bnot\b/i
+
+/** O motivo do erro, se ele é uma frase pra quem usa; senão nulo (quem chama mostra a frase de reserva). */
+export function friendlyReason(raw: string | null | undefined): string | null {
+  const text = (raw ?? '').trim()
+  if (!text || TECHNICAL.test(text)) return null
+  return text
+}
+
 export const KEYS: readonly string[] = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
 export const BPM_COPY = {
@@ -63,7 +73,10 @@ export const VOICE_COPY = {
   note: 'Vira um canal no mixer (igual ao Click). Edite os marcadores e clique de novo para atualizar.',
   needCues: 'Adicione marcadores de voz primeiro.',
   renderError: 'Erro ao gerar canal de voz guia.',
-  detectError: (why: string) => `Não foi possível analisar a estrutura: ${why}`,
+  detectError: (why: string) => {
+    const reason = friendlyReason(why)
+    return reason ? `Não foi possível analisar a estrutura: ${reason}` : 'Não foi possível analisar a estrutura do áudio. Tente de novo.'
+  },
 } as const
 
 export const CLOUD_COPY = {
@@ -84,7 +97,10 @@ export const CLOUD_COPY = {
   done: 'Pronto!',
   progress: 'Publicando na nuvem',
   needName: 'Preencha o Nome da Música.',
-  error: (why: string) => `Erro ao salvar: ${why}`,
+  error: (why: string) => {
+    const reason = friendlyReason(why)
+    return reason ? `Erro ao salvar: ${reason}` : 'Não deu pra salvar agora. Confira a internet e tente de novo.'
+  },
 } as const
 
 /** Baixar uma faixa que não chegou (a frase de hoje do Separador). */

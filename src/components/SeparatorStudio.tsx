@@ -19,7 +19,7 @@ import { GuidedTour, type TourStep } from './GuidedTour';
 import { SeparatorHome } from './separator/SeparatorHome';
 import { SeparatorOptions } from './separator/SeparatorOptions';
 import { SeparatorProgress } from './separator/SeparatorProgress';
-import { OPENING_COPY, PLAYER_COPY, PROGRESS_COPY, laneFloor } from './separator/separatorCopy';
+import { HOME_COPY, OPENING_COPY, PLAYER_COPY, PROGRESS_COPY, laneFloor } from './separator/separatorCopy';
 import { fetchSeparationFiles, openErrorText, stemsToOpen, type StageSeparationOpen } from '../lib/separation/stageHandoff';
 import { SeparatorPlayerBar } from './separator/SeparatorPlayerBar';
 import { SeparatorTrackStrip } from './separator/SeparatorTrackStrip';
@@ -50,7 +50,7 @@ const SEP_TOUR_STEPS_RESERVA: TourStep[] = SEP_TOUR_STEPS.map((step) =>
   step.title === '3. Processa na nuvem'
     ? { ...step, body: 'A IA separa a música em alguns minutos. Você pode ouvir cada faixa isolada, ajustar e gerar um click no tempo da música.' }
     : step.title === '4. Suas separações'
-      ? { ...step, body: 'Tudo que você separa fica salvo aqui. Reabra quando quiser ou mande direto pro seu repertório do Multitracks.' }
+      ? { ...step, body: 'Tudo que você separa fica salvo aqui. Reabra quando quiser e continue de onde parou.' }
       : step)
 
 const NO_STAGE_SEPARATIONS: ReadonlySet<string> = new Set()
@@ -700,7 +700,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
           throw new Error(errBody.error || 'Você chegou no limite de separações deste mês.');
         }
         if (res.status === 401) throw new Error('Sessão expirada. Faça login novamente.');
-        throw new Error(errBody.error || 'Falha ao iniciar IA.');
+        throw new Error(errBody.error || PROGRESS_COPY.startError);
       }
       const { prediction } = await res.json();
       setProgress(30);
@@ -722,10 +722,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
         status = checkData.prediction.status;
         
         if (status === 'succeeded') finalOutput = checkData.prediction.output;
-        else if (status === 'failed') throw new Error('Falha no motor de IA.');
+        else if (status === 'failed') throw new Error(PROGRESS_COPY.engineError);
       }
 
-      if (!finalOutput) throw new Error("Sem saída da IA.");
+      if (!finalOutput) throw new Error(PROGRESS_COPY.noOutput);
       setProgress(90);
 
       // Preparando as faixas finais
@@ -828,7 +828,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     } catch (e: any) {
       console.error(e);
       // Volta pra entrada com a frase no topo (no lugar do alert de antes).
-      setHomeNotice('Erro no processamento: ' + e.message);
+      setHomeNotice(PROGRESS_COPY.processError(e.message));
       setIsProcessing(false);
       setFile(null);
     }
@@ -1328,6 +1328,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
           onDelete={(id) => { void deleteSeparation(id); }}
           tour={showSepTour ? <GuidedTour steps={stageAvailable ? SEP_TOUR_STEPS : SEP_TOUR_STEPS_RESERVA} onClose={closeSepTour} /> : null}
           notice={homeNotice ? <Notice tone="alert" role="alert">{homeNotice}</Notice> : null}
+          onReject={() => setHomeNotice(HOME_COPY.notAudio)}
         />
         {/* "Ver os planos" da tela de limite também abre os Planos aqui. */}
         <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />

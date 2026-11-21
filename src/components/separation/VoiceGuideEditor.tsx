@@ -107,7 +107,7 @@ export function VoiceGuideEditor(p: VoiceGuideEditorProps) {
           >
             {p.rendering ? VOICE_COPY.rendering : p.hasChannel ? VOICE_COPY.update : VOICE_COPY.generate}
           </Button>
-          <p className="text-center text-ps-base leading-snug text-ps-dim">{VOICE_COPY.note}</p>
+          <p className="text-center text-ps-base leading-snug text-ps-mut">{VOICE_COPY.note}</p>
         </div>
       )}
     </div>

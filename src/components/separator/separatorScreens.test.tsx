@@ -51,6 +51,22 @@ describe('SeparatorHome', () => {
     expect(guide.style.backgroundColor).toBe('rgb(168, 162, 158)')
   })
 
+  it('sep-2 M7: soltar ou escolher um arquivo que não é de áudio chama onReject, nunca onPickFile', () => {
+    const onReject = vi.fn()
+    home({ onReject })
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [new File(['x'], 'cifra.txt', { type: 'text/plain' })] } })
+    expect(onReject).toHaveBeenCalledTimes(1)
+    expect(onPick).not.toHaveBeenCalled()
+  })
+
+  it('sep-2 M6: as frases que informam ficam em mut (contraste), o dim fica pra metadado', () => {
+    home({ separations: [] })
+    const body = screen.getByText('Faça sua primeira separação e ela aparecerá aqui automaticamente.')
+    expect(body.className).toContain('text-ps-mut')
+    expect(body.className).not.toContain('text-ps-dim')
+  })
+
   it('escolher um arquivo chama onPickFile com ele', () => {
     home()
     const input = document.querySelector('input[type="file"]') as HTMLInputElement

@@ -254,6 +254,24 @@ describe('CloudSaveForm', () => {
   })
 })
 
+// Revisão sep-2 M6: as frases que informam ficam em mut (4,5:1 ou mais); o dim fica pra metadado.
+describe('contraste das instruções', () => {
+  it('a nota do BPM e a da voz guia em mut', () => {
+    render(<BpmClickEditor {...bpmProps()} />)
+    expect(screen.getByText(/O click é alinhado sozinho/).className).toContain('text-ps-mut')
+    cleanup()
+    render(<VoiceGuideEditor {...voiceProps()} />)
+    const note = screen.getByText(/Vira um canal no mixer/)
+    expect(note.className).toContain('text-ps-mut')
+    expect(note.className).not.toContain('text-ps-dim')
+  })
+
+  it('sep-2 M3: o comentário do Detectar não promete cadeado', () => {
+    const src = readFileSync(join(process.cwd(), 'src/components/separation/BpmClickEditor.tsx'), 'utf8')
+    expect(src).not.toMatch(/mostra o cadeado/)
+  })
+})
+
 describe('as três peças no Separador', () => {
   it('o Separador abre as três no StageDialog e nenhum alert sobrou nessas ferramentas', () => {
     const src = readFileSync(join(process.cwd(), 'src/components/SeparatorStudio.tsx'), 'utf8')

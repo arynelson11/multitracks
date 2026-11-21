@@ -2,6 +2,8 @@
 import type React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { OPEN_ERROR_TEXT, OPEN_MISSING_TEXT, type StageSeparationOpen } from '../../lib/separation/stageHandoff'
 import { FakeAudioContext, resetWaves, savedSeparation } from './separatorTestKit'
 
@@ -285,5 +287,19 @@ describe('Separador de reserva: Livre, Planos e o caminho que sobra (revisão se
     fireEvent.click(screen.getByRole('button', { name: 'Abrir aqui no Separador' }))
     await flush(5)
     expect(h.livre.noteSongOpened).toHaveBeenCalledTimes(1)
+  })
+
+  it('sep-2 M7: arquivo que não é de áudio na entrada mostra a frase, sem ir pras opções', async () => {
+    mount()
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [new File(['x'], 'cifra.pdf', { type: 'application/pdf' })] } })
+    expect(screen.getByRole('alert').textContent).toBe('Esse arquivo não é de áudio.')
+    expect(document.querySelector('[data-separator-home]')).toBeTruthy()
+  })
+
+  it('sep-2 M5: o passo 4 do tour de reserva não fala mais do repertório do Multitracks', () => {
+    const src = readFileSync(join(process.cwd(), 'src/components/SeparatorStudio.tsx'), 'utf8')
+    expect(src).not.toMatch(/repertório do Multitracks/)
+    expect(src).toContain('Tudo que você separa fica salvo aqui. Reabra quando quiser e continue de onde parou.')
   })
 })

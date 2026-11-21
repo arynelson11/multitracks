@@ -2,6 +2,7 @@
 // aparecia em caixa alta só pelo CSS vira caixa de frase.
 import type { SavedSeparation } from '../../hooks/useSeparationLibrary'
 import type { StemCount } from '../../lib/plans'
+import { friendlyReason } from '../separation/toolsCopy'
 
 export const HOME_COPY = {
   back: 'Voltar',
@@ -15,6 +16,7 @@ export const HOME_COPY = {
   emptyBody: 'Faça sua primeira separação e ela aparecerá aqui automaticamente.',
   loading: 'Carregando as separações',
   open: 'Abrir',
+  notAudio: 'Esse arquivo não é de áudio.',
 } as const
 
 /** "1 salva", "N salvas" (hoje era "N salva(s)"). */
@@ -47,6 +49,14 @@ export const PROGRESS_COPY = {
     waiting: 'Separando as faixas: as multitracks ficam prontas em alguns minutos.',
   },
   done: (percent: number) => `${percent}% concluído`,
+  // Erro no processamento (era alert): o motivo só quando é uma frase pra quem usa (sep-2 M2).
+  processError: (why: string) => {
+    const reason = friendlyReason(why)
+    return reason ? `Erro no processamento: ${reason}` : 'Não deu pra separar agora. Confira a internet e tente de novo.'
+  },
+  startError: 'Não deu pra começar a separação. Tente de novo.',
+  engineError: 'A separação não deu certo. Tente de novo.',
+  noOutput: 'A separação não devolveu as faixas. Tente de novo.',
   retry: 'Tentar de novo',
   openHere: 'Abrir aqui no Separador',
   back: 'Voltar',

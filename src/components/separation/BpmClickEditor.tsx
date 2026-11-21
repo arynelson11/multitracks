@@ -17,7 +17,7 @@ export interface BpmClickEditorProps {
   message?: string | null
   /** Palco: "Pare a música pra usar" (P3); nulo no Separador. */
   disabledReason?: string | null
-  /** Sem a detecção no plano: o Detectar mostra o cadeado e o motivo (o toque abre os Planos). */
+  /** Sem a detecção no plano: o Detectar continua tocável, com o motivo no title (o toque abre os Planos). */
   detectLocked?: boolean
   onBpm(text: string): void
   onBpmBlur(): void
@@ -140,7 +140,7 @@ export function BpmClickEditor(p: BpmClickEditorProps) {
         </div>
       )}
 
-      <p className="text-center text-ps-base leading-snug text-ps-dim">{p.sync ? BPM_COPY.noteWithSync : BPM_COPY.note}</p>
+      <p className="text-center text-ps-base leading-snug text-ps-mut">{p.sync ? BPM_COPY.noteWithSync : BPM_COPY.note}</p>
     </div>
   )
 }

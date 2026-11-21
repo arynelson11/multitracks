@@ -19,10 +19,12 @@ export interface SeparatorHomeProps {
   tour?: React.ReactNode
   /** Frase de erro no topo (falha no processamento, falha ao abrir no palco). */
   notice?: React.ReactNode
+  /** Arquivo que não é de áudio no "Carregar áudio" (escolhido ou solto, sep-2 M7). */
+  onReject?(): void
 }
 
 /** Entrada do Separador: carregar o áudio e "Minhas separações", na linguagem do palco. */
-export function SeparatorHome({ separations, loading, onBack, onPickFile, onOpen, onDelete, tour, notice }: SeparatorHomeProps) {
+export function SeparatorHome({ separations, loading, onBack, onPickFile, onOpen, onDelete, tour, notice, onReject }: SeparatorHomeProps) {
   return (
     <div data-separator-home className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-ps-ink font-ps-sans text-ps-bone">
       {tour}
@@ -47,6 +49,7 @@ export function SeparatorHome({ separations, loading, onBack, onPickFile, onOpen
               accept={AUDIO_FILE_ACCEPT}
               help={HOME_COPY.uploadHelp}
               onFiles={([f]) => { if (f) onPickFile(f) }}
+              onReject={onReject ? () => onReject() : undefined}
             />
           </Panel>
 
@@ -61,7 +64,7 @@ export function SeparatorHome({ separations, loading, onBack, onPickFile, onOpen
             ) : separations.length === 0 ? (
               <div className="flex flex-col items-center gap-1 py-8 text-center">
                 <p className="text-ps-base text-ps-mut">{HOME_COPY.emptyTitle}</p>
-                <p className="text-ps-base text-ps-dim">{HOME_COPY.emptyBody}</p>
+                <p className="text-ps-base text-ps-mut">{HOME_COPY.emptyBody}</p>
               </div>
             ) : (
               <ul className="flex flex-col gap-2">
