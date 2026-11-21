@@ -290,6 +290,63 @@ describe('useStageSeparation', () => {
     expect(store.saveSeparation).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'sep_1', createdAt: SEP.createdAt }))
   })
 
+  describe('troca de música com trabalho pendente na gaveta (review-sep-fix, gaveta presa à música)', () => {
+    const SONG2 = () => SONG({ id: 'song_2', separation: { id: 'sep_2', createdAt: 5 } })
+    let db: Map<string, SavedSeparation>
+    beforeEach(() => {
+      db = new Map([['sep_1', structuredClone(SEP)], ['sep_2', { ...structuredClone(SEP), id: 'sep_2', createdAt: 5, voiceCues: [] }]])
+      store.getSeparation.mockImplementation(async (id: string) => structuredClone(db.get(id) ?? null))
+      store.saveSeparation.mockImplementation(async (d: SavedSeparation) => { db.set(d.id, structuredClone({ ...db.get(d.id)!, ...d })); return d.id })
+    })
+    const cueLabels = (id: string) => (db.get(id)?.voiceCues ?? []).map((c) => c.label)
+
+    it('as marcações dos últimos 800 ms gravam na troca, e a voz guia pendente volta com a música', async () => {
+      const hook = await mount({ ...bridge, busy: true })
+      // Tocando (P3): marca e o AUTO entra na próxima antes dos 800 ms da gravação.
+      act(() => { hook.result.current.addCue({ label: 'Ponte', file: 'Song Sections/Portugese - Bridge.wav' }) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(300) })
+      hook.rerender({ br: { ...bridge, busy: true, song: SONG2() } })
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(cueLabels('sep_1')).toEqual(['Verso 1', 'Ponte'])
+      // A música nova começa sem pendente e sem as marcações da outra.
+      expect(hook.result.current.sep?.id).toBe('sep_2')
+      expect(hook.result.current.cuesPending).toBe(false)
+      expect(cueLabels('sep_2')).toEqual([])
+      // De volta, parada: o Gerar canal fica laranja de novo e o fechar da gaveta gera o canal.
+      hook.rerender({ br: { ...bridge, busy: false, song: SONG() } })
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(hook.result.current.sep?.id).toBe('sep_1')
+      expect(hook.result.current.cues.map((c) => c.label)).toEqual(['Verso 1', 'Ponte'])
+      expect(hook.result.current.cuesPending).toBe(true)
+      await act(async () => { await hook.result.current.flushPending() })
+      expect(bridge.replaceChannel).toHaveBeenCalledWith(['Voz Guia'], expect.any(File))
+      expect(hook.result.current.cuesPending).toBe(false)
+    })
+
+    it('voltar pra música antes de a gravação da troca terminar lê as marcações gravadas', async () => {
+      const hook = await mount({ ...bridge, busy: true })
+      act(() => { hook.result.current.addCue({ label: 'Tag', file: 'Song Sections/Portugese - Tag.wav' }) })
+      let release!: () => void
+      const realSave = store.saveSeparation.getMockImplementation()!
+      store.saveSeparation.mockImplementationOnce((d: SavedSeparation) => new Promise((r) => { release = () => r(realSave(d)) }))
+      hook.rerender({ br: { ...bridge, busy: true, song: SONG2() } })
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      hook.rerender({ br: { ...bridge, busy: true, song: SONG() } })
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      await act(async () => { release(); await vi.advanceTimersByTimeAsync(0) })
+      expect(hook.result.current.cues.map((c) => c.label)).toEqual(['Verso 1', 'Tag'])
+      expect(hook.result.current.cuesPending).toBe(true)
+    })
+
+    it('sem nada pendente, a troca não grava nada', async () => {
+      const hook = await mount()
+      store.saveSeparation.mockClear()
+      hook.rerender({ br: { ...bridge, song: SONG2() } })
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(store.saveSeparation).not.toHaveBeenCalled()
+    })
+  })
+
   it('marcação feita durante uma gravação continua pendente e grava depois', async () => {
     const hook = await mount()
     let release!: () => void

@@ -1202,6 +1202,34 @@ describe('click do painel SEPARAÇÃO', () => {
     expect(hook.result.current.songGrid?.bpm).toBeCloseTo(before!.bpm, 3)
   })
 
+  it('sep-fix N1: Gerar click, PLAY, parar e Gerar click de novo em seguida: a grade final é a do click novo', async () => {
+    const hook = await openApp()
+    await load(hook, [['DRUMS.wav', 'bateria']], { bpm: 120, separation: { id: 'sep_1', createdAt: 1 } })
+    await settled(hook)
+    const id = hook.result.current.playlist[0].id
+    // A leitura do click 1 fica presa no Worker até o teste soltar.
+    let release!: () => void
+    mem.workerGate = new Promise<void>((r) => { release = r })
+    const clickReads = () => mem.requests.filter((r) => r.req.kind === 'click').length
+    // Gerar click e PLAY logo em seguida: a leitura forçada do click 1 fica pra parada.
+    await act(async () => { await hook.result.current.replaceAppChannel(id, isAppClickName, panelClick('click44')) })
+    await act(async () => { await hook.result.current.play() })
+    act(() => { hook.result.current.pause() })
+    await waitFor(() => expect(clickReads()).toBe(1), { timeout: 5000 })
+    // Gerar click de novo (outro BPM) com a leitura do click 1 ainda no Worker.
+    await act(async () => { await hook.result.current.replaceAppChannel(id, isAppClickName, panelClick('click34')) })
+    mem.workerGate = null
+    await act(async () => { release() })
+    await settled(hook)
+    await wait(150)
+    expect(hook.result.current.playlist[0].channels.filter((c) => c.name === 'Metrônomo')).toHaveLength(1)
+    // A leitura do click que saiu é descartada e o click novo é lido.
+    expect(clickReads()).toBe(2)
+    expect(hook.result.current.songGrid).toMatchObject({ source: 'click' })
+    expect(hook.result.current.songGrid?.bpm).toBeCloseTo(100, 0)
+    expect(saved()[0].grid).toEqual(hook.result.current.songGrid)
+  })
+
   it('sep-1 M5: o click que o Metrônomo do app inseriu também sai quando o painel gera o dele', async () => {
     const hook = await openApp()
     await load(hook, [['DRUMS.wav', 'bateria']], { bpm: 120 })

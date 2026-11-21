@@ -3461,8 +3461,10 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // nulo); sem nenhum, vale a grade do BPM salvo (songGridOf). O compasso escolhido no EDITAR
     // fica (keepManualMeter, depois do sanitizeGrid). A leitura é no Worker; aqui só a cópia do
     // canal 0 (transferida). 'espera' = a VS vai tocar antes de mandar o próximo canal (o que já
-    // está no Worker termina lá e o resultado vale, mesmo tocando: aplicar é barato).
-    const readSongGrid = async (songId: string): Promise<'feita' | 'espera'> => {
+    // está no Worker termina lá e o resultado vale, mesmo tocando: aplicar é barato). 'de-novo' =
+    // um canal lido saiu da música durante a leitura (a troca do click do painel, review-sep-fix
+    // N1): o resultado é descartado e a leitura recomeça com os canais de agora.
+    const readSongGrid = async (songId: string): Promise<'feita' | 'espera' | 'de-novo'> => {
         const song = playlistRef.current.find((s) => s.id === songId);
         if (!song) return 'feita';
         const before = sanitizeGrid(song.grid);
@@ -3475,11 +3477,12 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         const known = before?.meterSource === 'manual' ? before.signature : sanitizeTimeSignature(song.timeSignature);
         const bpm = typeof song.bpm === 'number' && Number.isFinite(song.bpm) ? song.bpm : null;
         let found: ReadGrid | null = null;
-        let analyzed = 0;
+        const analyzed: string[] = [];
         for (const ch of clicks) {
             const samples = readableClick(ch.buffer);
             if (!samples) continue;
-            if (analyzed++ > 0) await new Promise((resolve) => setTimeout(resolve, GRID_YIELD_MS));
+            if (analyzed.length > 0) await new Promise((resolve) => setTimeout(resolve, GRID_YIELD_MS));
+            analyzed.push(ch.id);
             if (engineBusy()) return 'espera';
             // A cópia vai embora (transferida); o original continua no AudioBuffer que toca.
             const copy = await copyForGridWorker(samples);
@@ -3494,6 +3497,8 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         }
         const latest = playlistRef.current.find((s) => s.id === songId);
         if (!latest) return 'feita';
+        // A grade de um click que já saiu não vale pro que entrou no lugar: lê de novo.
+        if (analyzed.some((chId) => !latest.channels.some((c) => c.id === chId))) return 'de-novo';
         // O compasso pode ter sido escolhido enquanto lia: vale o de agora.
         const prev = sanitizeGrid(latest.grid);
         const next = found
@@ -3597,7 +3602,10 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
                     job.plan = undefined;
                 }
                 if (job.read) {
-                    if (await gridStepsRef.current.read(songId) === 'espera') return 'espera';
+                    const read = await gridStepsRef.current.read(songId);
+                    if (read === 'espera') return 'espera';
+                    // O pedido continua com a leitura ligada e anda de novo (review-sep-fix N1).
+                    if (read === 'de-novo') continue;
                     job.read = false;
                 }
             } catch (e) {

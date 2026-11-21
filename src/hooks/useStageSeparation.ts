@@ -68,7 +68,8 @@ export interface StageSeparation {
 }
 
 // O trabalho em cima de uma separação, preso à música e à separação de onde veio (`key`):
-// trocar de música não precisa zerar nada, a chave diferente já esconde o de antes.
+// trocar de música não precisa zerar nada, a chave diferente já esconde o de antes. O que estava
+// pendente na música que sai é gravado na troca, e a voz guia por gerar volta com ela (ver leaveWork).
 interface Work {
   key: string
   sep: SavedSeparation | null
@@ -133,8 +134,8 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
   const messages = msgs.key === key ? msgs.byArea : NO_MESSAGES
 
   // A versão mais nova de tudo pros timers e pras ações que esperam (atualizada só em efeito).
-  const live = useRef({ bridge, store, cur, busy, clickSel, format, key })
-  useEffect(() => { live.current = { bridge, store, cur, busy, clickSel, format, key } })
+  const live = useRef({ bridge, store, cur, busy, clickSel, format, key, work })
+  useEffect(() => { live.current = { bridge, store, cur, busy, clickSel, format, key, work } })
   const busyRef = useRef<SeparationBusy>(null)
   const setBusy = (b: SeparationBusy) => { busyRef.current = b; setBusyState(b) }
   const taps = useRef<number[]>([])
@@ -144,6 +145,14 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
   // SYNC que o timer não pôde regerar (a música começou antes dos 600 ms, sep-1 M1): regera na parada.
   const syncPending = useRef<{ key: string; offset: number } | null>(null)
   const cueSeq = useRef(0)
+  // Trabalho da música que saiu (review-sep-fix, gaveta presa à música): as chaves com a voz guia
+  // ainda por gerar e a gravação da troca em andamento, que a leitura da volta espera.
+  const cuesPendingByKey = useRef(new Set<string>())
+  const leaving = useRef(new Map<string, Promise<void>>())
+  const withPendingCues = (w: Work): Work => {
+    if (!cuesPendingByKey.current.delete(w.key)) return w
+    return { ...w, cuesPending: true }
+  }
 
   // Lê a separação da música ativa (a de outra música fica escondida pela chave). Sem resposta
   // (offline, ou a separação ainda subindo pra nuvem), tenta de novo sozinha (sep-1 M7).
@@ -153,11 +162,13 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
     let timer: number | undefined
     let attempt = 0
     const read = () => {
-      void live.current.store.getSeparation(sepId)
+      // A gravação da troca de música (as marcações dos últimos 800 ms) termina antes de ler.
+      void (leaving.current.get(key) ?? Promise.resolve())
+        .then(() => live.current.store.getSeparation(sepId))
         .catch(() => null)
         .then((rec) => {
           if (!alive) return
-          if (rec) { setWork(workFor(key, rec)); return }
+          if (rec) { setWork(withPendingCues(workFor(key, rec))); return }
           setWork((w) => (w && w.key === key && w.sep ? w : workFor(key, null)))
           if (attempt < READ_RETRY_MS.length) timer = window.setTimeout(read, READ_RETRY_MS[attempt++])
         })
@@ -196,6 +207,23 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
     const same = (x: Work) => x.cues === w.cues && x.bpm === w.bpm
     setWork((x) => (x && x.key === w.key && x.sep ? { ...x, dirty: same(x) ? false : x.dirty, sep: { ...x.sep, ...data } } : x))
   }, [])
+
+  // Trocou de música (o AUTO, tocando, ou um toque): o trabalho da que saiu grava na hora, sem
+  // esperar os 800 ms (o timer de baixo é limpo na troca), e a voz guia ainda por gerar fica
+  // guardada pela chave: de volta à música, o Gerar canal continua laranja com o aviso.
+  const prevKey = useRef(key)
+  useEffect(() => {
+    const left = prevKey.current
+    prevKey.current = key
+    if (!left || left === key) return
+    const w = live.current.work
+    if (!w || w.key !== left || !w.sep) return
+    if (w.cuesPending) cuesPendingByKey.current.add(left)
+    if (!w.dirty) return
+    const saving = persist({}, w).catch((e) => { console.error('[Separação] o trabalho da música que saiu não gravou', e) })
+    leaving.current.set(left, saving)
+    void saving.then(() => { if (leaving.current.get(left) === saving) leaving.current.delete(left) })
+  }, [key, persist])
 
   // BPM, marcações e o tom original gravam 800 ms depois da última mudança.
   const songKeyNow = song?.originalKey ?? null
@@ -295,6 +323,8 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
       const file = new File([blob], `${VOICE_GUIDE_NAME}.wav`, { type: 'audio/wav' })
       const added = await br.replaceChannel([VOICE_GUIDE_NAME], file)
       if (!added) return
+      // Também na música que saiu no meio da geração: de volta, nada fica pendente à toa.
+      cuesPendingByKey.current.delete(w.key)
       setWork((x) => (x && x.key === w.key ? { ...x, cuesPending: false } : x))
       const remote = await st.upload(`${st.userId || 'anon'}/${w.sep.id}/voz_guia_${Date.now()}.wav`, file)
       await persist(remote ? { stems: stemsWith({ id: 'voiceguide', name: VOICE_GUIDE_NAME, url: remote, color: FAMILY_COLOR.guia }, w) } : {}, w)
