@@ -3110,11 +3110,17 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
 
     // Canal novo numa música do repertório, ativa ou não (o "adicionar canal" da música ativa e o
     // click gerado da T27). Tocando, o canal entra já pelo addLiveVoice. Devolve o canal, ou null se
-    // a música saiu do repertório no meio.
-    const appendChannelToSong = async (songId: string, file: File): Promise<Channel | null> => {
+    // a música saiu do repertório no meio. `stillWanted`: conferido de novo sobre a lista mais nova,
+    // logo antes de entrar (sem await no meio); falso, o canal pronto é desfeito e nada entra.
+    const appendChannelToSong = async (songId: string, file: File, stillWanted?: (song: Song) => boolean): Promise<Channel | null> => {
         if (!playlistRef.current.some((s) => s.id === songId)) return null;
         const newChannel = await prepareChannel(file);
         if (!newChannel) return null;
+        const latest = playlistRef.current.find((s) => s.id === songId);
+        if (latest && stillWanted && !stillWanted(latest)) {
+            await discardPrepared(newChannel);
+            return null;
+        }
 
         let grew = false;
         // Ordem automática encaixa o canal novo na ordem padrão; manual põe no fim.
@@ -3473,7 +3479,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         // E a saída ou o palco podem ter mudado nesse meio tempo: sem rota própria, nada entra.
         const latest = playlistRef.current.find((s) => s.id === songId);
         if (!latest || !wantsGeneratedClick(latest) || !mayGenerateClick()) return 'feita';
-        const added = await appendChannelToSong(songId, new File([blob], `${GENERATED_CLICK_NAME}.wav`, { type: 'audio/wav' }));
+        // O painel SEPARAÇÃO pode pôr o click dele enquanto este grava (sep-1 I2): conferido de novo
+        // na hora de entrar, nunca os dois.
+        const added = await appendChannelToSong(songId, new File([blob], `${GENERATED_CLICK_NAME}.wav`, { type: 'audio/wav' }), wantsGeneratedClick);
         if (!added) return 'feita';
         // A saída virou "Tudo junto" durante a leitura do WAV: ele entra mudo.
         muteGeneratedRef.current();

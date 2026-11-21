@@ -62,6 +62,8 @@ const mem = vi.hoisted(() => ({
   ctx: null as unknown,
   // Opções do contexto falso do motor (ex.: aparelho de 1 canal).
   ctxOpts: {} as FakeAudioContextOptions,
+  // Segura a decodificação do WAV do click gerado (o motor no meio de gravar o "Click gerado").
+  genGate: null as Promise<void> | null,
 }))
 
 class FakeGridWorker {
@@ -240,6 +242,7 @@ beforeEach(() => {
   mem.clickBlob = null
   mem.renderDecoded = false
   mem.renderFinished = false
+  mem.genGate = null
   mem.settings = { autoPan: false, audioDeviceId: 'default', outputs: { mode: 'split2', earOnSecond: false, multi: { vsPair: 0, click: 2, guide: 3 } } }
   localStorage.setItem('mt_legacy_pans_reset:u1', '1')
   mem.buffers.clear()
@@ -249,6 +252,7 @@ beforeEach(() => {
   mem.buffers.set('tom', tone(20))
   const decode = async (data: ArrayBuffer) => {
     const key = new TextDecoder().decode(data)
+    if (key === 'gerado' && mem.genGate) await mem.genGate
     // O WAV do gerador sai a 44,1 kHz.
     // 5 min de bateria muda a 8 kHz (pouca memória): a duração da música do click gerado.
     if (key === 'longo') return new FakeAudioBuffer(1, 300 * 8000, 8000)
@@ -1106,5 +1110,32 @@ describe('pré-contagem', () => {
     expect(compound).toHaveLength(4)
     for (let k = 1; k < compound.length; k++) expect(compound[k] - compound[k - 1]).toBeCloseTo(1.5, 2)
     act(() => { hook.result.current.pause() })
+  })
+})
+
+// Painel SEPARAÇÃO no lugar do click do motor (Parte 3, revisão macro sep-1).
+describe('click do painel SEPARAÇÃO', () => {
+  const panelClick = (content: string) => new File([content], 'Metrônomo.wav', { type: 'audio/wav' })
+
+  it('sep-1 I2: Gerar click do painel enquanto o motor grava o "Click gerado" deixa um click só', async () => {
+    mem.opts = { autoClick: true, stageMode: 'novo' }
+    mem.plan = okPlan()
+    let releaseGen!: () => void
+    mem.genGate = new Promise<void>((r) => { releaseGen = r })
+    const hook = await openApp()
+    await load(hook, [['DRUMS.wav', 'bateria'], ['BASS.wav', 'bateria']], { bpm: 120, timeSignature: '4/4' })
+    await waitFor(() => expect(mem.renderCalls).toHaveLength(1), { timeout: 5000 })
+    await wait(50)
+    const id = hook.result.current.playlist[0].id
+    await act(async () => { await hook.result.current.replaceAppChannel(id, ['Click gerado', 'Metrônomo'], panelClick('click44')) })
+    await act(async () => { releaseGen() })
+    await settled(hook)
+    await wait(200)
+    const clicks = (names: string[]) => names.filter((n) => n === 'Click gerado' || n === 'Metrônomo')
+    expect(clicks(hook.result.current.playlist[0].channels.map((c) => c.name))).toEqual(['Metrônomo'])
+    expect(clicks(saved()[0].channels.map((c) => c.name))).toEqual(['Metrônomo'])
+    // O "Click gerado" que não entrou não fica no disco.
+    const stems = [...mem.db.keys()].filter((k) => k.startsWith('mt_files_u1:ch:'))
+    expect(stems).toHaveLength(saved()[0].channels.length)
   })
 })
