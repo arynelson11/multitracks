@@ -327,7 +327,7 @@ describe('useStageSeparation', () => {
       const hook = await mount({ ...bridge, busy: true })
       act(() => { hook.result.current.addCue({ label: 'Tag', file: 'Song Sections/Portugese - Tag.wav' }) })
       let release!: () => void
-      const realSave = store.saveSeparation.getMockImplementation()!
+      const realSave = store.saveSeparation.getMockImplementation() as (d: SavedSeparation) => Promise<string>
       store.saveSeparation.mockImplementationOnce((d: SavedSeparation) => new Promise((r) => { release = () => r(realSave(d)) }))
       hook.rerender({ br: { ...bridge, busy: true, song: SONG2() } })
       await act(async () => { await vi.advanceTimersByTimeAsync(0) })
