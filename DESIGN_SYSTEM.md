@@ -671,6 +671,7 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 **Correções da revisão macro (2026-11-21, não publicado):**
 - A gaveta SEPARAÇÃO e a janela "Publicar na Nuvem" do palco são da música em que abriram: trocar de música fecha as duas e nada abre sozinho tocando (só a chegada da separação, com a música parada, e o FAIXAS > Separação abrem a gaveta).
 - Cada aba da gaveta (e a janela "Publicar na Nuvem") mostra só a frase de erro da ferramenta dela, no `Notice tone="alert"` de sempre.
+- "Abrindo no palco" com erro (`SeparatorProgress`): "Tentar de novo" (`primary`), "Abrir aqui no Separador" e "Voltar" (`Button` padrão), nessa ordem, quebrando linha.
 - A separação que não abriu no palco (nenhuma faixa decodificou) mostra a frase num `Toast tone="alert"` no topo (6 s, some sozinho e nunca aparece tocando nem na pré-contagem).
 
 ---

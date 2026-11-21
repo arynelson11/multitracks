@@ -20,7 +20,7 @@ import { SeparatorHome } from './separator/SeparatorHome';
 import { SeparatorOptions } from './separator/SeparatorOptions';
 import { SeparatorProgress } from './separator/SeparatorProgress';
 import { OPENING_COPY, PLAYER_COPY, PROGRESS_COPY, laneFloor } from './separator/separatorCopy';
-import { OPEN_ERROR_TEXT, fetchSeparationFiles, stemsToOpen, type StageSeparationOpen } from '../lib/separation/stageHandoff';
+import { fetchSeparationFiles, openErrorText, stemsToOpen, type StageSeparationOpen } from '../lib/separation/stageHandoff';
 import { SeparatorPlayerBar } from './separator/SeparatorPlayerBar';
 import { SeparatorTrackStrip } from './separator/SeparatorTrackStrip';
 import { FAMILY_COLOR } from '../lib/channelNames';
@@ -215,6 +215,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     if (isLivre) livre.requestLimit('download');
     else setIsPricingOpen(true);
   };
+  // Salvar na nuvem sem o recurso no plano: o mesmo caminho do baixar (no Livre a tela de limite
+  // download, como no painel do palco, P9; sep-2 I1). Nunca com uma janela aberta por cima.
+  const blockCloudSave = blockDownload;
 
   const downloadStem = async (stem: StemData) => {
     if (!canDownload) { blockDownload(); return; }
@@ -980,7 +983,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   const goToEnd = () => { Object.values(wavesurfers.current).forEach(ws => ws.setTime(ws.getDuration())); };
 
   const handleSaveToDatabase = async () => {
-    if (!canCloudSave) { setIsPricingOpen(true); return; }
+    // Os Planos nunca abrem atrás da janela de publicar: ela fecha antes (sep-2 I1).
+    if (!canCloudSave) { setShowSaveForm(false); blockCloudSave(); return; }
     if (!songName) { setCloudMessage(CLOUD_COPY.needName); return; }
     setCloudMessage(null);
 
@@ -1058,7 +1062,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   };
 
   const detectBpmFromAudio = async () => {
-    if (!canBpm) { setIsPricingOpen(true); return; }
+    // Os Planos nunca abrem atrás da janela do BPM: ela fecha antes (sep-2 I1).
+    if (!canBpm) { setShowBpmModal(false); setIsPricingOpen(true); return; }
     setIsDetectingBpm(true);
     setGridInfo('');
     try {
@@ -1177,7 +1182,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     } catch (e) {
       if (ctrl.signal.aborted) return;
       console.error('[Separador] abrir no palco falhou', e);
-      setOpening(o => (o && o.sep.id === sep.id ? { ...o, error: OPEN_ERROR_TEXT } : o));
+      // Faixa que não existe mais (4xx) tem a frase dela; o resto é a da internet (sep-2 I3).
+      setOpening(o => (o && o.sep.id === sep.id ? { ...o, error: openErrorText(e) } : o));
     }
   };
   const cancelOpening = () => {
@@ -1194,14 +1200,24 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     if (isLivre) {
       const freeThisMonth = separationIsThisMonth(sep.createdAt, new Date());
       if (!livre.canOpenSong(separationKey(sep.id), { freeThisMonth })) { livre.requestLimit('stage-songs'); return; }
-      livre.noteSongOpened(separationKey(sep.id), { freeThisMonth });
     }
     setHomeNotice(null);
-    // Palco novo na tela: a separação abre no palco. Já no repertório, só pula pra ela (P7).
+    // Palco novo na tela: a separação abre no palco. Já no repertório, só pula pra ela (P7). Quem
+    // conta no Livre é o palco, quando ela vira a atual (sep-2 M1: cancelar ou falhar não gasta a vaga).
     if (stageAvailable) {
       if (stageSeparationIds.has(sep.id)) { onOpenOnStage?.({ sep, files: null, justSeparated: false }); return; }
       void openOnStage(sep, false);
       return;
+    }
+    openInReserve(sep, false);
+  };
+
+  // O player de reserva com a separação: sem o palco novo na tela, ou pelo "Abrir aqui no Separador"
+  // quando uma faixa não baixa pro palco (sep-2 I3). No Livre a separação de mês anterior conta aqui.
+  const openInReserve = (sep: SavedSeparation, justSeparatedNow: boolean) => {
+    if (isLivre) {
+      const freeThisMonth = separationIsThisMonth(sep.createdAt, new Date());
+      livre.noteSongOpened(separationKey(sep.id), { freeThisMonth });
     }
     const stemsArray: StemData[] = sep.stems.map(s => ({ id: s.id, name: s.name, url: s.url, color: s.color }));
     const initialStates: Record<string, { muted: boolean; soloed: boolean; volume: number; pan: number }> = {};
@@ -1219,7 +1235,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     setCommittedCues(sep.stems.some(s => s.id === 'voiceguide') ? (sep.voiceCues || []) : null);
     setActiveSepId(sep.id);
     setActiveSepCreatedAt(sep.createdAt);
-    setJustSeparated(false);
+    setJustSeparated(justSeparatedNow);
     setFile(null); // signal we're in "loaded" mode, stems drive the UI
     resetClickSync();
   };
@@ -1238,7 +1254,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
           title={OPENING_COPY.title} subtitle={opening.sep.songName || 'Sem título'}
           percent={opening.total > 0 ? (opening.done / opening.total) * 100 : 0}
           detail={OPENING_COPY.detail(opening.done, opening.total)} error={opening.error}
-          onRetry={() => { void openOnStage(opening.sep, opening.justSeparated); }} onBack={cancelOpening}
+          onRetry={() => { void openOnStage(opening.sep, opening.justSeparated); }}
+          onOpenHere={() => { const { sep, justSeparated: just } = opening; cancelOpening(); openInReserve(sep, just); }}
+          onBack={cancelOpening}
         />
         {limitGate}
       </>
@@ -1308,7 +1326,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
         voice={stems.length > 0 ? { count: voiceCues.length, locked: !canVoiceGuide } : null}
         sync={{ offsetMs: clickOffsetMs, enabled: hasMetronome, busy: isGeneratingClick }}
         masterVolume={masterVolume}
-        onBack={goToSeparatorHome} onFormat={setDownloadFormat} onSave={() => { void forceSave(); }} onExport={() => setShowSaveForm(true)}
+        onBack={goToSeparatorHome} onFormat={setDownloadFormat} onSave={() => { void forceSave(); }}
+        onExport={() => (canCloudSave ? setShowSaveForm(true) : blockCloudSave())}
         onOpenBpm={() => setShowBpmModal(true)} onKeyPicker={setIsKeyPickerOpen} onKey={setSongKey}
         onStart={goToStart} onTogglePlay={togglePlay} onEnd={goToEnd} onToggleLoop={() => setIsLooping(p => !p)}
         onVoice={() => canVoiceGuide ? setShowVoiceGuide(true) : setIsPricingOpen(true)}

@@ -9,12 +9,14 @@ export interface SeparatorProgressProps {
   /** Com erro: a frase em alerta, "Tentar de novo" e "Voltar" (o "Abrindo no palco" usa). */
   error?: string | null
   onRetry?(): void
+  /** Com erro: abrir no player de reserva do Separador (o "Abrindo no palco" usa, sep-2 I3). */
+  onOpenHere?(): void
   /** "Voltar" também aparece sem erro quando vem (cancela o "Abrindo no palco"). */
   onBack?(): void
 }
 
 /** Tela de trabalho do Separador (separando, abrindo no palco): barra laranja, etapa e porcentagem. */
-export function SeparatorProgress({ title, subtitle, percent, detail, error, onRetry, onBack }: SeparatorProgressProps) {
+export function SeparatorProgress({ title, subtitle, percent, detail, error, onRetry, onOpenHere, onBack }: SeparatorProgressProps) {
   const value = Math.max(0, Math.min(100, Math.round(percent)))
   return (
     <div data-separator-progress className="fixed inset-0 z-50 flex flex-col items-center justify-center overflow-y-auto bg-ps-ink px-ps-gutter py-8 font-ps-sans text-ps-bone">
@@ -26,6 +28,7 @@ export function SeparatorProgress({ title, subtitle, percent, detail, error, onR
             <Notice tone="alert" role="alert" className="w-full text-left">{error}</Notice>
             <div className="flex flex-wrap justify-center gap-2">
               {onRetry && <Button tone="primary" onClick={onRetry}>{PROGRESS_COPY.retry}</Button>}
+              {onOpenHere && <Button onClick={onOpenHere}>{PROGRESS_COPY.openHere}</Button>}
               {onBack && <Button onClick={onBack}>{PROGRESS_COPY.back}</Button>}
             </div>
           </>

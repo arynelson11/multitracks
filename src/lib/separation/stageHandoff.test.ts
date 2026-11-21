@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SavedSeparation } from '../../hooks/useSeparationLibrary'
 import {
-  OPEN_ERROR_TEXT, STAGE_LOAD_ERROR_TEXT, fetchSeparationFiles, findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen,
+  OPEN_ERROR_TEXT, OPEN_MISSING_TEXT, STAGE_LOAD_ERROR_TEXT, SeparationFetchError, fetchSeparationFiles, openErrorText, findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen,
 } from './stageHandoff'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
@@ -93,6 +93,19 @@ describe('stageHandoff', () => {
     expect(pendingSeparationStep('sep_1', { isReady: true, isRestoring: false }, restored)).toBe('pular')
     expect(pendingSeparationStep('nova', { isReady: true, isRestoring: false }, restored)).toBe('carregar')
     expect(pendingSeparationStep('nova', { isReady: true, isRestoring: false }, [])).toBe('carregar')
+  })
+
+  // sep-2 I3: faixa que o servidor diz que não existe (4xx) não culpa a internet.
+  it('openErrorText: 4xx é a faixa que sumiu; 5xx, rede e o resto são a internet', async () => {
+    const gone = vi.fn(async () => ({ ok: false, status: 404, blob: async () => new Blob() }) as unknown as Response) as unknown as typeof fetch
+    const err = await fetchSeparationFiles(stemsToOpen(sep()), { fetchImpl: gone }).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(SeparationFetchError)
+    expect((err as SeparationFetchError).status).toBe(404)
+    expect(openErrorText(err)).toBe(OPEN_MISSING_TEXT)
+    expect(openErrorText(new SeparationFetchError(403))).toBe(OPEN_MISSING_TEXT)
+    expect(openErrorText(new SeparationFetchError(500))).toBe(OPEN_ERROR_TEXT)
+    expect(openErrorText(new TypeError('Failed to fetch'))).toBe(OPEN_ERROR_TEXT)
+    expect(OPEN_MISSING_TEXT).not.toContain(TRAVESSAO)
   })
 
   it('OPEN_ERROR_TEXT sem travessão', () => {

@@ -2,7 +2,7 @@
 import type React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { OPEN_ERROR_TEXT, type StageSeparationOpen } from '../../lib/separation/stageHandoff'
+import { OPEN_ERROR_TEXT, OPEN_MISSING_TEXT, type StageSeparationOpen } from '../../lib/separation/stageHandoff'
 import { FakeAudioContext, resetWaves, savedSeparation } from './separatorTestKit'
 
 const h = vi.hoisted(() => ({
@@ -24,7 +24,8 @@ vi.mock('../../hooks/useLivre', () => ({
 vi.mock('../../lib/r2', () => ({ uploadToR2: vi.fn(async () => ({ url: 'https://r2/temp.mp3' })) }))
 vi.mock('../../lib/supabase', () => ({ getAuthHeaders: async () => ({}) }))
 vi.mock('../GuidedTour', () => ({ GuidedTour: () => null }))
-vi.mock('../PricingModal', () => ({ PricingModal: () => null }))
+// Os Planos abertos ficam marcados na página (pra provar que nunca abrem atrás de uma janela).
+vi.mock('../PricingModal', () => ({ PricingModal: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div data-pricing-open="" /> : null) }))
 vi.mock('../livre/AdSlot', () => ({ AdSlot: () => null }))
 vi.mock('../livre/LimitGate', () => ({ LimitGate: () => null }))
 
@@ -43,7 +44,9 @@ beforeEach(() => {
   h.livre.isLivre = false
   h.livre.canOpen = true
   h.livre.requestLimit.mockReset()
+  h.livre.noteSongOpened.mockReset()
   h.auth.isAdmin = true
+  h.auth.userPlan = 'essencial_mensal'
   localStorage.setItem('sep_tour_seen', '1')
   ;(window as unknown as { AudioContext: unknown }).AudioContext = FakeAudioContext
   window.requestAnimationFrame = ((cb: FrameRequestCallback) => setTimeout(() => cb(0), 16) as unknown as number)
@@ -186,5 +189,101 @@ describe('Separador entregando a separação pro palco', () => {
     expect(h.livre.requestLimit).toHaveBeenCalledWith('stage-songs')
     expect(onOpenOnStage).not.toHaveBeenCalled()
     h.auth.userPlan = 'essencial_mensal'
+  })
+})
+
+describe('Separador de reserva: Livre, Planos e o caminho que sobra (revisão sep-2)', () => {
+  const livreUser = () => { h.auth.isAdmin = false; h.auth.userPlan = 'free'; h.livre.isLivre = true }
+  const openReserve = async (sep = savedSeparation()) => {
+    h.lib.separations = [sep]
+    const utils = mount({ stageAvailable: false })
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir' }))
+    await flush(5)
+    expect(document.querySelector('[data-separator-player]')).toBeTruthy()
+    return utils
+  }
+
+  it('sep-2 I1: no Livre, Exportar abre a tela de limite download, nunca o formulário nem os Planos por baixo', async () => {
+    livreUser()
+    await openReserve()
+    fireEvent.click(screen.getByRole('button', { name: 'Exportar' }))
+    expect(h.livre.requestLimit).toHaveBeenCalledWith('download')
+    expect(screen.queryByRole('dialog', { name: 'Publicar na Nuvem' })).toBeNull()
+    expect(document.querySelector('[data-pricing-open]')).toBeNull()
+  })
+
+  it('sep-2 I1: quem paga continua abrindo o formulário de publicar pelo Exportar', async () => {
+    h.auth.isAdmin = false
+    await openReserve()
+    fireEvent.click(screen.getByRole('button', { name: 'Exportar' }))
+    expect(screen.getByRole('dialog', { name: 'Publicar na Nuvem' })).toBeTruthy()
+    expect(h.livre.requestLimit).not.toHaveBeenCalled()
+  })
+
+  it('sep-2 M1: com o palco novo, o Separador não conta a separação de mês anterior (quem conta é o palco, na chegada)', async () => {
+    livreUser()
+    h.lib.separations = [savedSeparation({ createdAt: Date.UTC(2026, 8, 1) })]
+    const { onOpenOnStage } = mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir' }))
+    await flush(5)
+    expect(onOpenOnStage).toHaveBeenCalledTimes(1)
+    expect(h.livre.noteSongOpened).not.toHaveBeenCalled()
+  })
+
+  it('sep-2 M1: erro ao baixar pro palco não gasta a vaga do Livre', async () => {
+    livreUser()
+    h.lib.separations = [savedSeparation({ createdAt: Date.UTC(2026, 8, 1) })]
+    route = async () => { throw new TypeError('Failed to fetch') }
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir' }))
+    await flush(5)
+    fireEvent.click(screen.getByRole('button', { name: 'Voltar' }))
+    expect(h.livre.noteSongOpened).not.toHaveBeenCalled()
+  })
+
+  it('sep-2 M1: no Separador de reserva a separação de mês anterior conta ao abrir, como antes', async () => {
+    livreUser()
+    await openReserve(savedSeparation({ createdAt: Date.UTC(2026, 8, 1) }))
+    expect(h.livre.noteSongOpened).toHaveBeenCalledTimes(1)
+  })
+
+  it('sep-2 I3: faixa que não baixa: "Abrir aqui no Separador" abre no player de reserva, com a frase de faixa que não existe mais pro 4xx', async () => {
+    h.lib.separations = [savedSeparation()]
+    let n = 0
+    route = async (url: string) => (++n === 2 ? { ok: false, status: 404, blob: async () => new Blob() } : okAudio(url))
+    const { onOpenOnStage } = mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir' }))
+    await flush(5)
+    expect(screen.getByRole('alert').textContent).toBe(OPEN_MISSING_TEXT)
+    expect(OPEN_MISSING_TEXT).not.toBe(OPEN_ERROR_TEXT)
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir aqui no Separador' }))
+    await flush(5)
+    expect(document.querySelector('[data-separator-player]')).toBeTruthy()
+    expect(onOpenOnStage).not.toHaveBeenCalled()
+    expect([...document.querySelectorAll('[data-track-id]')].map((e) => e.getAttribute('data-track-id'))).toEqual(['vocals', 'drums', 'bass'])
+  })
+
+  it('sep-2 I3: sem internet continua a frase da internet, e o Abrir aqui no Separador também está lá', async () => {
+    h.lib.separations = [savedSeparation()]
+    route = async () => { throw new TypeError('Failed to fetch') }
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir' }))
+    await flush(5)
+    expect(screen.getByRole('alert').textContent).toBe(OPEN_ERROR_TEXT)
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Abrir aqui no Separador' })).toBeTruthy()
+  })
+
+  it('sep-2 I3: no Livre, abrir aqui no Separador uma separação de mês anterior conta nesse momento', async () => {
+    livreUser()
+    h.lib.separations = [savedSeparation({ createdAt: Date.UTC(2026, 8, 1) })]
+    route = async () => { throw new TypeError('Failed to fetch') }
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir' }))
+    await flush(5)
+    expect(h.livre.noteSongOpened).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir aqui no Separador' }))
+    await flush(5)
+    expect(h.livre.noteSongOpened).toHaveBeenCalledTimes(1)
   })
 })

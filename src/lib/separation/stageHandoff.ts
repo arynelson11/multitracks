@@ -12,6 +12,22 @@ export interface StageSeparationOpen { sep: SavedSeparation; files: File[] | nul
 export interface StageSeparationMeta { name: string; artist?: string; bpm?: number; originalKey?: string; separation: SeparationLink }
 
 export const OPEN_ERROR_TEXT = 'Não deu pra baixar as faixas da separação. Confira a internet e tente de novo.'
+/** O servidor respondeu que uma faixa não existe mais (4xx, sep-2 I3): a internet não é o problema. */
+export const OPEN_MISSING_TEXT = 'Uma das faixas dessa separação não está mais na nuvem. Abra aqui no Separador pra usar as outras.'
+
+/** O servidor respondeu com erro ao baixar uma faixa (o status vai junto, sep-2 I3). */
+export class SeparationFetchError extends Error {
+  readonly status: number
+  constructor(status: number) {
+    super(`HTTP ${status}`)
+    this.status = status
+  }
+}
+
+/** A frase do erro ao abrir no palco: faixa que não existe mais (4xx) ou falta de internet (o resto). */
+export function openErrorText(e: unknown): string {
+  return e instanceof SeparationFetchError && e.status >= 400 && e.status < 500 ? OPEN_MISSING_TEXT : OPEN_ERROR_TEXT
+}
 
 /**
  * Nome "Artista - Música" quando há artista (como a Biblioteca), "Sem título" sem nome. BPM "120"
@@ -58,7 +74,7 @@ export async function fetchSeparationFiles(
     if (i.signal?.aborted) throw new DOMException('Cancelado', 'AbortError')
     const stem = stems[n]
     const res = await doFetch(stem.url, { signal: i.signal })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw new SeparationFetchError(res.status)
     const blob = await res.blob()
     if (i.signal?.aborted) throw new DOMException('Cancelado', 'AbortError')
     const name = stem.name?.trim() || `Faixa ${n + 1}`

@@ -104,12 +104,20 @@ describe('Separador no Livre: limites, tela de limite e anúncio (T19)', () => {
     expect(o).toMatch(/const freeThisMonth = separationIsThisMonth\(sep\.createdAt, new Date\(\)\);/)
     expect(o).toMatch(/canOpenSong\(separationKey\(sep\.id\),\s*\{\s*freeThisMonth/)
     expect(o).toMatch(/\{ livre\.requestLimit\('stage-songs'\); return; \}/)
-    expect(o).toMatch(/noteSongOpened\(separationKey\(sep\.id\),\s*\{\s*freeThisMonth\s*\}\)/)
-    // A conta vem antes de qualquer troca de tela; abrir outra desliga o anúncio do fim.
+    // A conta vem antes de qualquer troca de tela.
     expect(o.indexOf('canOpenSong(')).toBeGreaterThan(0)
-    expect(o.indexOf('canOpenSong(')).toBeLessThan(o.indexOf('noteSongOpened('))
-    expect(o.indexOf('noteSongOpened(')).toBeLessThan(o.indexOf('setStems('))
-    expect(o).toMatch(/setJustSeparated\(false\)/)
+    expect(o.indexOf('canOpenSong(')).toBeLessThan(o.indexOf('stageAvailable'))
+    // Revisão sep-2 M1: com o palco novo quem conta é o palco, na chegada; aqui só o caminho de
+    // reserva conta (openInReserve), com as mesmas opções, antes de trocar de tela.
+    expect(o).not.toMatch(/noteSongOpened\(/)
+    expect(o).toMatch(/openInReserve\(sep, false\)/)
+    const r = body('openInReserve')
+    expect(r).toMatch(/const freeThisMonth = separationIsThisMonth\(sep\.createdAt, new Date\(\)\);/)
+    expect(r).toMatch(/noteSongOpened\(separationKey\(sep\.id\),\s*\{\s*freeThisMonth\s*\}\)/)
+    expect(r.indexOf('noteSongOpened(')).toBeLessThan(r.indexOf('setStems('))
+    // Abrir outra desliga o anúncio do fim (o "Abrir aqui no Separador" de uma recém-separada mantém).
+    expect(r).toMatch(/setJustSeparated\(justSeparatedNow\)/)
+    expect(o.indexOf('openInReserve(sep, false)')).toBeGreaterThan(0)
   })
 
   it('a separação que acabou de terminar abre sem contar nas 3 e liga o anúncio do fim', () => {
@@ -154,7 +162,14 @@ describe('Separador no Livre: limites, tela de limite e anúncio (T19)', () => {
     const calls = sep.split('saveSeparation({').slice(1)
     expect(calls).toHaveLength(3)
     for (const c of calls) expect(c.slice(0, c.indexOf('stems:'))).toMatch(/createdAt/)
-    expect(body('handleOpenSavedSeparation')).toMatch(/setActiveSepCreatedAt\(sep\.createdAt\)/)
+    expect(body('openInReserve')).toMatch(/setActiveSepCreatedAt\(sep\.createdAt\)/)
     expect(body('goToSeparatorHome')).toMatch(/setActiveSepCreatedAt\(null\)/)
+  })
+
+  it('revisão sep-2 I1: no Livre o Exportar vai pra tela de limite download, e os Planos nunca abrem atrás de uma janela', () => {
+    expect(sep).toMatch(/onExport=\{\(\) => \(canCloudSave \? setShowSaveForm\(true\) : blockCloudSave\(\)\)\}/)
+    expect(sep).toMatch(/const blockCloudSave = blockDownload;/)
+    expect(body('handleSaveToDatabase')).toMatch(/if \(!canCloudSave\) \{ setShowSaveForm\(false\); blockCloudSave\(\); return; \}/)
+    expect(body('detectBpmFromAudio')).toMatch(/if \(!canBpm\) \{ setShowBpmModal\(false\); setIsPricingOpen\(true\); return; \}/)
   })
 })

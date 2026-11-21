@@ -48,6 +48,7 @@ export const PROGRESS_COPY = {
   },
   done: (percent: number) => `${percent}% concluído`,
   retry: 'Tentar de novo',
+  openHere: 'Abrir aqui no Separador',
   back: 'Voltar',
 } as const
 
