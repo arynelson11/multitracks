@@ -7,6 +7,7 @@ import { AUDIO_FILE_ACCEPT } from '../lib/uploadContentType';
 import { getAuthHeaders } from '../lib/supabase';
 import { fetchMonthlyQuota, formatDateBR } from '../lib/separationUsage';
 import { useLivre } from '../hooks/useLivre';
+import { usePlansWhenQuiet } from '../hooks/usePlansWhenQuiet';
 import { canDownloadStems, canUseVoiceGuide, canUseBpmDetection, planTier, separationStemOptions, ALL_STEM_COUNTS, type StemCount } from '../lib/plans';
 import { isQuiet, separationIsThisMonth, separationKey, type EngineBusy } from '../lib/livreRules';
 import { PricingModal } from './PricingModal';
@@ -229,6 +230,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   const quiet = isQuiet(busy);
   const livre = useLivre({ userId, plan: userPlan, isAdmin, busy, liveActive: false, onLiveExpired: () => {} });
   const isLivre = livre.isLivre;
+  // Recurso pago no Livre com a música tocando (a daqui ou a do palco atrás): os Planos esperam ela
+  // parar e, abertos tocando, não mostram o desconto (Ruling pads-tocando).
+  const openPlans = usePlansWhenQuiet(isLivre, quiet, () => setIsPricingOpen(true));
+  const hidePlansOffer = isLivre && !quiet;
   // A separação acabou de terminar (até abrir outra ou voltar): só ela chama o anúncio do fim.
   const [justSeparated, setJustSeparated] = useState(false);
   const [isLooping, setIsLooping] = useState(false);
@@ -1255,7 +1260,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   };
 
   const handleSaveToDatabase = async () => {
-    if (!canCloudSave) { setIsPricingOpen(true); return; }
+    if (!canCloudSave) { openPlans(); return; }
     if (!songName) return alert("Preencha o Nome da Música.");
 
     setIsSaving(true);
@@ -1419,7 +1424,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   };
 
   const detectBpmFromAudio = async () => {
-    if (!canBpm) { setIsPricingOpen(true); return; }
+    if (!canBpm) { openPlans(); return; }
     setIsDetectingBpm(true);
     setGridInfo('');
     try {
@@ -1633,7 +1638,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
           </div>
         </div>
 
-        {isPricingOpen && <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />}
+        {isPricingOpen && <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} hideOffer={hidePlansOffer} />}
         {limitGate}
       </div>
     );
@@ -1749,7 +1754,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
         </div>
 
         {/* "Ver os planos" da tela de limite também abre os Planos aqui. */}
-        <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
+        <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} hideOffer={hidePlansOffer} />
         {limitGate}
       </div>
     );
@@ -1897,7 +1902,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
           {/* Direita: VOZ · SYNC · MASTER */}
           <div className="flex-none flex items-center justify-center gap-2.5 min-w-0">
             {stems.length > 0 && (
-              <button onClick={() => canVoiceGuide ? setShowVoiceGuide(true) : setIsPricingOpen(true)}
+              <button onClick={() => canVoiceGuide ? setShowVoiceGuide(true) : openPlans()}
                 title={canVoiceGuide ? 'Voz guia' : 'Voz guia disponível nos planos pagos'}
                 className={`transport-btn flex items-center gap-1.5 h-9 px-3.5 rounded-md cursor-pointer transition-all ${voiceCues.length > 0 ? 'text-yellow-400 border-yellow-500/30' : 'text-white/70 hover:text-yellow-400'}`}>
                 {canVoiceGuide ? <Mic size={12} /> : <Lock size={12} />}
@@ -2442,7 +2447,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
         </div>
       )}
 
-      <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
+      <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} hideOffer={hidePlansOffer} />
       {limitGate}
     </div>
   );

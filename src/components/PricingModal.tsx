@@ -10,6 +10,8 @@ import type { OfferView } from './livre/limitCopy';
 interface PricingModalProps {
     isOpen: boolean;
     onClose: () => void;
+    /** Música tocando ou na pré-contagem (Livre): os cartões mostram o preço cheio, sem o desconto. */
+    hideOffer?: boolean;
 }
 
 // planKey = nome interno do plano (vai pro backend, que sabe o preço e o ciclo).
@@ -61,7 +63,7 @@ const PLANS: PlanCard[] = [
 
 const NO_OFFER: OfferView = { status: 'none' };
 
-export function PricingModal({ isOpen, onClose }: PricingModalProps) {
+export function PricingModal({ isOpen, onClose, hideOffer = false }: PricingModalProps) {
     const { user, userPlan, planExpiresAt } = useAuth();
     const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
     // Quem já paga confirma a troca antes: o plano novo é cobrado cheio e o
@@ -96,8 +98,10 @@ export function PricingModal({ isOpen, onClose }: PricingModalProps) {
 
     // O preço do primeiro mês que ESTA tela mostra no cartão (nulo: preço cheio). O checkout
     // manda `offer: true` só com ele na tela, pra nunca cobrar diferente do que a pessoa viu.
+    // Com a música tocando (`hideOffer`, Ruling pads-tocando) a oferta não aparece por cima do
+    // palco: o cartão fica no cheio e volta a mostrar o desconto quando a música para.
     const offerPrice = (planKey: CheckoutPlanKey): number | null => {
-        if (isSwitching || offer.status !== 'active') return null;
+        if (hideOffer || isSwitching || offer.status !== 'active') return null;
         if (planKey === 'essencial_mensal' || planKey === 'pro_mensal') return offer.prices[planKey];
         return null;
     };

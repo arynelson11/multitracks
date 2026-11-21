@@ -25,6 +25,7 @@ import { WhatsNewModal } from './components/WhatsNewModal'
 import { SectionBar, SECTION_SHORTCUTS, colorForSection } from './components/SectionBar'
 import { canUseSections, maxLiveDevices, planTier, canBandControlSections, canUseGeneratedClick, canChangeKey, canUsePlatformCatalog, canUseCloudPads, canUseRepertoire } from './lib/plans'
 import { useLivre } from './hooks/useLivre'
+import { usePlansWhenQuiet } from './hooks/usePlansWhenQuiet'
 import { stageSongKey } from './lib/livreRules'
 import { nextSongAfter, removalOpensRefusedSong } from './lib/songRemoval'
 import { trackAd } from './lib/productEvents'
@@ -578,6 +579,11 @@ export default function App() {
   // e liberações apagados) e o motor segue tocando: nada aqui mexe no som.
   const onLiveExpired = () => { void handleStopLiveMode(); setRemoteSessionCode(null); setApprovedIps([]) }
   const livre = useLivre({ userId: user?.id ?? null, plan: userPlan, isAdmin, busy: { isPlaying, isCountingIn }, liveActive: hostActive && (connectedIps.length > 0 || remoteSessionCode !== null), onLiveExpired })
+  // Recurso pago tocado no Livre com a música tocando ou na pré-contagem (Ruling pads-tocando):
+  // os Planos esperam a música parar, como a tela de limite. Quem paga e o admin abrem na hora.
+  const openPlans = usePlansWhenQuiet(livre.isLivre, engineQuiet, () => setIsPricingOpen(true))
+  // Planos abertos com a música tocando não mostram o desconto (nada de oferta por cima do palco).
+  const hidePlansOffer = livre.isLivre && !engineQuiet
   const isDesktopApp = !!window.playbackDesktop?.isElectron
   const stageView = useMemo(() => (useNewStage ? buildStageView({
     song: activeSong, playlist, activeIndex: activeSongIndex, duration, spans: sectionSpansView, currentSection: stageSection,
@@ -612,7 +618,7 @@ export default function App() {
       console.error('Falha ao salvar o compasso na nuvem:', e)
     }
   }
-  const upgradeIf = (r: { upgrade: boolean }) => { if (r.upgrade) setIsPricingOpen(true) }
+  const upgradeIf = (r: { upgrade: boolean }) => { if (r.upgrade) openPlans() }
   const clampToSong = (t: number) => Math.max(0, Math.min(duration || 0, Number.isFinite(t) ? t : 0))
   const promptEndlessMetronome = () => setTextPrompt({ kind: 'metronome' })
 
@@ -737,7 +743,7 @@ export default function App() {
     openSettings: () => { setSettingsFocus(null); setIsSettingsOpen(true) },
     goHome: () => setForceShowSplash(true),
     signOut: () => { void signOut() },
-    openUpgrade: () => setIsPricingOpen(true),
+    openUpgrade: () => openPlans(),
     openLivreBadge: () => { trackAd('ad_clicked', 'badge'); setIsPricingOpen(true) },
     openChannelEdit: (id: string) => setEditing({ channelId: id, songIndex: activeSongIndex }),
     reorderChannel: (from: number, to: number) => {
@@ -750,7 +756,7 @@ export default function App() {
     removeChannel: (id: string) => removeChannel(id),
     // Modo EDITAR (T16): marcar, ajustar e tirar seção mexem na marca de origem do trecho.
     markSection: (label: string) => {
-      if (!canUseSections(userPlan)) { setIsPricingOpen(true); return }
+      if (!canUseSections(userPlan)) { openPlans(); return }
       if (!activeSong) return
       setSongMarkers(activeSong.id, addSectionAt(activeSong.markers ?? [], heardPosition(), label, stageGrid, () => crypto.randomUUID()))
     },
@@ -1132,10 +1138,11 @@ export default function App() {
     localStorage.setItem('last_seen_version', CURRENT_VERSION)
   }
 
-  // Recurso preso a um portão do plano (src/lib/plans.ts): liberado, roda a ação; senão abre os Planos.
+  // Recurso preso a um portão do plano (src/lib/plans.ts): liberado, roda a ação; senão abre os
+  // Planos (no Livre, só com a música parada: openPlans espera ela parar).
   const withPlan = (allowed: boolean, action: () => void) => {
     if (!allowed) {
-      setIsPricingOpen(true)
+      openPlans()
       return
     }
     action()
@@ -1443,7 +1450,7 @@ export default function App() {
         <div className="mt-6 w-full max-w-md empty:hidden">
           <AdSlot placement="home" userId={user.id} isLivre={livre.isLivre} quiet={engineQuiet} onCta={() => setIsPricingOpen(true)} />
         </div>
-        <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
+        <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} hideOffer={hidePlansOffer} />
       </div>
     )
   }
@@ -2265,7 +2272,7 @@ export default function App() {
                 canEdit={!!user}
                 infiniteAllowed={canUseSections(userPlan)}
                 maxRepeats={9}
-                onUpgrade={() => setIsPricingOpen(true)}
+                onUpgrade={() => openPlans()}
                 onSeek={seekTo}
                 onArmLoop={armLoop}
                 onCancelLoop={cancelLoop}
@@ -2838,7 +2845,7 @@ export default function App() {
         />
       )}
 
-      <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
+      <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} hideOffer={hidePlansOffer} />
 
       {/* Tela de limite do Livre (Parte 3): só com a VS parada (o useLivre segura o pedido até parar).
           Ela fica por cima dos Planos, então "Ver todos os planos" fecha ela antes de abrir os Planos. */}

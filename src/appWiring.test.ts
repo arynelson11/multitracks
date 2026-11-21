@@ -170,6 +170,22 @@ describe('ligações do palco novo', () => {
     expect(app).not.toMatch(/playlist\[activeSongIndex \+ 1\]/)
   })
 
+  // Revisão macro 1b (Ruling pads-tocando): no Livre, recurso pago tocado com a música tocando não
+  // abre os Planos por cima do palco; eles esperam a música parar e, abertos tocando, sem desconto.
+  it('recurso pago no Livre tocando: os Planos esperam a música parar e não mostram o desconto', () => {
+    expect(app).toMatch(/const openPlans = usePlansWhenQuiet\(livre\.isLivre, engineQuiet, \(\) => setIsPricingOpen\(true\)\)/)
+    expect(app).toMatch(/const hidePlansOffer = livre\.isLivre && !engineQuiet/)
+    const withPlan = app.match(/const withPlan = \(allowed: boolean, action: \(\) => void\) => \{[\s\S]*?\n {2}\}/)![0]
+    expect(withPlan).toMatch(/openPlans\(\)/)
+    expect(withPlan).not.toMatch(/setIsPricingOpen/)
+    expect(app).toMatch(/const upgradeIf = \(r: \{ upgrade: boolean \}\) => \{ if \(r\.upgrade\) openPlans\(\) \}/)
+    expect(app).toMatch(/openUpgrade: \(\) => openPlans\(\)/)
+    expect(app).toMatch(/onUpgrade=\{\(\) => openPlans\(\)\}/)
+    const modals = app.match(/<PricingModal [\s\S]*?\/>/g) ?? []
+    expect(modals).toHaveLength(2)
+    for (const m of modals) expect(m).toMatch(/hideOffer=\{hidePlansOffer\}/)
+  })
+
   it('o motor recebe autoNext pelo plano', () => { expect(app).toMatch(/autoNext:\s*isAdmin\s*\|\|\s*canUseRepertoire\(userPlan\)/) })
 
   it('a música atual conta pelo stageSongKey', () => { expect(app).toMatch(/noteSongOpened\(stageSongKey\(/) })
@@ -253,7 +269,7 @@ describe('ligações do palco novo', () => {
     expect(splash).toMatch(/<AdSlot[\s\S]*?placement="home"[\s\S]*?userId=\{user\.id\}[\s\S]*?isLivre=\{livre\.isLivre\}[\s\S]*?quiet=\{engineQuiet\}[\s\S]*?onCta=\{\(\) => setIsPricingOpen\(true\)\}/)
     // Embaixo dos dois botões.
     expect(splash.indexOf('<AdSlot')).toBeGreaterThan(splash.indexOf('Separação de Faixas'))
-    expect(splash).toMatch(/<PricingModal isOpen=\{isPricingOpen\} onClose=\{\(\) => setIsPricingOpen\(false\)\} \/>/)
+    expect(splash).toMatch(/<PricingModal isOpen=\{isPricingOpen\} onClose=\{\(\) => setIsPricingOpen\(false\)\} hideOffer=\{hidePlansOffer\} \/>/)
     // Música parada de verdade: nem tocando, nem na pré-contagem.
     expect(app).toMatch(/const engineQuiet = !isPlaying && !isCountingIn\b/)
   })

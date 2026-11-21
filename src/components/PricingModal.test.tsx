@@ -122,6 +122,26 @@ describe('PricingModal: primeiro mês com desconto', () => {
     expect(window.alert).not.toHaveBeenCalled()
   })
 
+  // Revisão macro 1b (Ruling pads-tocando): com a música tocando ou na pré-contagem, os Planos
+  // abertos não mostram o desconto (oferta por cima do palco tocando, nunca) e o checkout vai pelo
+  // preço da tela, o cheio. A música parando, o desconto volta.
+  it('com a música tocando (hideOffer) não mostra o desconto e assinar vai sem a oferta; parando, volta', async () => {
+    route(activeOffer, () => answer(200, { url: 'https://asaas.test/c/chk_8' }))
+    const r = render(<PricingModal isOpen onClose={() => {}} hideOffer />)
+    await vi.waitFor(() => expect(bodies('/api/checkout?action=offer')).toHaveLength(1))
+    await new Promise((res) => setTimeout(res, 0))
+    expect(screen.queryByText(/Primeiro mês/)).toBeNull()
+    expect(card('Pro Mensal').textContent).toContain('R$ 49,90/mês')
+    subscribe('Pro Mensal')
+    await vi.waitFor(() => expect(bodies('/api/checkout')).toHaveLength(1))
+    expect(bodies('/api/checkout')[0]).toEqual({ planKey: 'essencial_mensal', confirmedSwitch: false })
+
+    r.rerender(<PricingModal isOpen onClose={() => {}} hideOffer={false} />)
+    await vi.waitFor(() => expect(card('Pro Mensal').textContent).toContain('Primeiro mês por'))
+    // A janela aberta não lê de novo só porque a música parou.
+    expect(bodies('/api/checkout?action=offer')).toHaveLength(1)
+  })
+
   it('anual nunca mostra a oferta e sem janela tudo fica como antes', async () => {
     route(activeOffer, () => answer(200, { url: 'https://asaas.test/c/chk_2' }))
     const r = render(<PricingModal isOpen onClose={() => {}} />)
