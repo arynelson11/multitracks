@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { X, Download, Cloud, Loader2, Music, Trash2, Edit2, Save, UploadCloud } from 'lucide-react';
 import { useCloudLibrary } from '../hooks/useCloudLibrary';
 import { useAuth } from '../hooks/useAuth';
 import { updateSong, type CloudSong } from '../lib/supabase';
@@ -9,7 +8,7 @@ import { type Marker } from '../types';
 import { INVALID_BPM_MESSAGE, editedBpmColumns, preciseBpm } from '../lib/cloudBpm';
 import type { TimeSignatureType } from '../lib/AudioAnalyzer';
 import { LibraryView } from './library/LibraryView';
-import { libraryCountText, libraryEmptyText, songsForTab, type LibraryTab } from './library/libraryRows';
+import { EDIT_COPY, downloadStateOf, libraryCountText, libraryEmptyText, songsForTab, type LibraryEdit, type LibraryRow, type LibraryTab } from './library/libraryRows';
 
 interface LibraryModalProps {
     isOpen: boolean;
@@ -45,6 +44,10 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
     const [editingSong, setEditingSong] = useState<Partial<CloudSong> & { file?: File | null; bpmText?: string }>({});
     const [isSavingEdit, setIsSavingEdit] = useState(false);
     const [activeTab, setActiveTab] = useState<LibraryTab>('platform');
+    // Erro da edição (antes era o aviso do navegador): frase em alerta dentro da janela (Parte 3).
+    const [message, setMessage] = useState<string | null>(null);
+    // A música da confirmação de excluir (antes era a pergunta do navegador): a segunda janela do palco.
+    const [deleteId, setDeleteId] = useState<string | null>(null);
 
     useEffect(() => {
         if (isOpen) refreshSongs();
@@ -56,10 +59,11 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
         // texto inválido avisa e não grava (nunca apaga o BPM por engano).
         const bpmCols = editedBpmColumns(song, editingSong.bpmText);
         if (!bpmCols) {
-            alert(INVALID_BPM_MESSAGE);
+            setMessage(INVALID_BPM_MESSAGE);
             return;
         }
 
+        setMessage(null);
         setIsSavingEdit(true);
         try {
             let newCoverUrl = song.cover_url;
@@ -104,11 +108,11 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
                 await refreshSongs();
                 setEditingSong({});
             } else {
-                alert("Erro ao salvar alterações na música.");
+                setMessage(EDIT_COPY.saveError);
             }
         } catch (e) {
             console.error(e);
-            alert("Erro ao editar.");
+            setMessage(EDIT_COPY.editError);
         } finally {
             setIsSavingEdit(false);
         }
@@ -130,6 +134,47 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
     };
 
     const shownSongs = songsForTab(songs, activeTab, user?.id);
+    const rows: LibraryRow[] = shownSongs.map((song) => {
+        const cached = cachedSongIds.has(song.id);
+        const mine = isAdmin || song.user_id === user?.id;
+        return {
+            id: song.id,
+            name: song.name,
+            artist: song.artist || null,
+            coverUrl: song.cover_url,
+            key: song.key || null,
+            bpm: preciseBpm(song),
+            cached,
+            state: downloadStateOf({ downloading: downloadingSongId === song.id, added: downloadedIds.has(song.id), online: isOnline, cached }),
+            progress: downloadingSongId === song.id ? String(downloadProgress || '') : '',
+            canEdit: isOnline && mine,
+            canDelete: cached || (isOnline && mine),
+            deleting: deletingSongId === song.id,
+        };
+    });
+
+    // A edição aberta, com o que está digitado por cima dos valores da música (o que não foi mexido
+    // continua indefinido no editingSong e o salvar usa o da música, como antes).
+    const editedSong = editingSong.id ? songs.find((s) => s.id === editingSong.id) : undefined;
+    const edit: LibraryEdit | null = editedSong ? {
+        id: editedSong.id,
+        name: editingSong.name ?? editedSong.name,
+        artist: (editingSong.artist ?? editedSong.artist) || '',
+        bpmText: editingSong.bpmText ?? String(preciseBpm(editedSong) ?? ''),
+        key: (editingSong.key ?? editedSong.key) || '',
+        file: editingSong.file ?? null,
+    } : null;
+
+    const deleteSong = deleteId ? songs.find((s) => s.id === deleteId) : undefined;
+    const confirmDelete = deleteSong ? { name: deleteSong.name, online: isOnline, busy: deletingSongId === deleteSong.id } : null;
+    const handleConfirmDelete = async () => {
+        if (!deleteSong) return;
+        try {
+            await removeSong(deleteSong.id);
+        } finally {
+            setDeleteId(null);
+        }
+    };
 
     return (
         <LibraryView
@@ -143,171 +188,22 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
             loading={isLoadingList}
             countText={libraryCountText(shownSongs.length)}
             emptyText={shownSongs.length === 0 ? libraryEmptyText(searchQuery, activeTab) : null}
-        >
-            <div className="grid gap-2">
-                                    {shownSongs.map((song: CloudSong) => {
-                                        const isDownloading = downloadingSongId === song.id;
-                                        const isDownloaded = downloadedIds.has(song.id);
-                                        const isEditing = editingSong.id === song.id;
-                                        const songBpm = preciseBpm(song);
-
-                                if (isEditing) {
-                                    return (
-                                        <div key={song.id} className="flex flex-col gap-3 p-3 rounded-md border border-secondary/20 bg-surface">
-                                            <div className="flex justify-between items-center mb-1">
-                                                <h3 className="font-black text-white text-xs uppercase tracking-wider">Editar Música</h3>
-                                                <button onClick={() => setEditingSong({})} className="text-text-muted hover:text-white"><X size={14}/></button>
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <div>
-                                                    <label className="text-[9px] text-text-muted uppercase font-bold font-mono tracking-wider">Nome</label>
-                                                    <input value={editingSong.name ?? song.name} onChange={e => setEditingSong({...editingSong, name: e.target.value})} className="w-full daw-input rounded-md px-2 py-1.5 text-white text-xs font-mono" />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[9px] text-text-muted uppercase font-bold font-mono tracking-wider">Artista</label>
-                                                    <input value={(editingSong.artist ?? song.artist) || ''} onChange={e => setEditingSong({...editingSong, artist: e.target.value})} className="w-full daw-input rounded-md px-2 py-1.5 text-white text-xs font-mono" />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[9px] text-text-muted uppercase font-bold font-mono tracking-wider">BPM</label>
-                                                    <input type="text" inputMode="decimal" autoComplete="off" value={editingSong.bpmText ?? String(songBpm ?? '')} onChange={e => setEditingSong({...editingSong, bpmText: e.target.value})} className="w-full daw-input rounded-md px-2 py-1.5 text-white text-xs font-mono" />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[9px] text-text-muted uppercase font-bold font-mono tracking-wider">Tom</label>
-                                                    <input value={(editingSong.key ?? song.key) || ''} onChange={e => setEditingSong({...editingSong, key: e.target.value})} className="w-full daw-input rounded-md px-2 py-1.5 text-white text-xs font-mono" />
-                                                </div>
-                                                <div className="col-span-2">
-                                                    <label className="text-[9px] text-text-muted uppercase font-bold font-mono tracking-wider">Nova Capa (Opcional)</label>
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        <label className="flex flex-1 items-center gap-2 daw-input px-2 py-1.5 rounded-md cursor-pointer text-xs text-text-muted font-mono">
-                                                            <UploadCloud size={12} />
-                                                            <span className="truncate">{editingSong.file ? editingSong.file.name : 'Escolher imagem...'}</span>
-                                                            <input type="file" accept="image/*" className="hidden" onChange={e => setEditingSong({...editingSong, file: e.target.files?.[0]})} />
-                                                        </label>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="flex justify-end mt-1">
-                                                <button onClick={() => handleEditSave(song)} disabled={isSavingEdit} className="bg-secondary text-black font-black px-3 py-1.5 rounded-md text-[10px] flex items-center gap-1.5 uppercase tracking-wider disabled:opacity-50">
-                                                    {isSavingEdit ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} SALVAR
-                                                </button>
-                                            </div>
-                                        </div>
-                                    );
-                                }
-
-                                return (
-                                    <div key={song.id}
-                                        className={`flex flex-wrap items-center gap-2 sm:gap-3 p-2.5 rounded-md border transition-all ${isDownloaded
-                                            ? 'bg-primary/5 border-primary/15'
-                                            : 'bg-surface border-border hover:border-white/15 hover:bg-white/3'
-                                            }`}>
-
-                                        {/* Cover */}
-                                        <div className="w-12 h-12 rounded-md bg-black/40 flex-shrink-0 overflow-hidden border border-border flex items-center justify-center">
-                                            {song.cover_url ? (
-                                                <img src={song.cover_url} className="w-full h-full object-cover" alt={song.name} loading="lazy" />
-                                            ) : (
-                                                <Music size={16} className="opacity-15" />
-                                            )}
-                                        </div>
-
-                                        {/* Info */}
-                                        <div className="flex-1 min-w-0 basis-0">
-                                            <div className="font-bold text-xs text-white truncate uppercase tracking-wider">{song.name}</div>
-                                            <div className="text-[10px] text-text-muted truncate font-mono">{song.artist || 'Artista Desconhecido'}</div>
-                                            <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                                {song.key && (
-                                                    <span className="text-[9px] font-bold bg-secondary/10 text-secondary px-1.5 py-0.5 rounded font-mono">
-                                                        TOM: {song.key}
-                                                    </span>
-                                                )}
-                                                {songBpm !== undefined && (
-                                                    <span className="text-[9px] font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded font-mono">
-                                                        {songBpm} BPM
-                                                    </span>
-                                                )}
-                                                {cachedSongIds.has(song.id) && (
-                                                    <span className="text-[9px] font-bold bg-[#5b6b47]/20 text-[#8b9b6e] px-1.5 py-0.5 rounded font-mono flex items-center gap-1">
-                                                        <span className="w-1 h-1 rounded-full bg-[#8b9b6e]" />
-                                                        OFFLINE
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Download and Delete Buttons — quebra para próxima linha em mobile estreito */}
-                                        <div className="flex items-center gap-2 ml-auto basis-full sm:basis-auto sm:ml-0 justify-end sm:justify-start pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5 -mx-0.5 sm:mx-0 px-0.5 sm:px-0">
-                                            {(cachedSongIds.has(song.id) || (isOnline && (isAdmin || song.user_id === user?.id))) && (
-                                                <div className="flex items-center gap-1">
-                                                    {isOnline && (isAdmin || song.user_id === user?.id) && (
-                                                        <button
-                                                            onClick={() => setEditingSong({ id: song.id })}
-                                                            className="p-1.5 rounded-md text-xs flex items-center justify-center transition-all cursor-pointer bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white border border-blue-500/15 active:scale-95"
-                                                            title="Editar metadados"
-                                                        >
-                                                            <Edit2 size={14} />
-                                                        </button>
-                                                    )}
-                                                    <button
-                                                        onClick={async () => {
-                                                            const msg = isOnline
-                                                                ? `Excluir "${song.name}" da Nuvem e do Cache Local? Isso removerá permanentemente para todos os usuários.`
-                                                                : `Remover "${song.name}" do Cache Offline local?`;
-                                                            if (window.confirm(msg)) {
-                                                                await removeSong(song.id);
-                                                            }
-                                                        }}
-                                                        disabled={deletingSongId === song.id}
-                                                        className={`p-1.5 rounded-md text-xs flex items-center justify-center transition-all cursor-pointer ${deletingSongId === song.id
-                                                            ? 'bg-accent-red/10 text-accent-red/50 cursor-not-allowed'
-                                                            : 'bg-accent-red/10 text-accent-red hover:bg-accent-red hover:text-white border border-accent-red/15 active:scale-95'
-                                                            }`}
-                                                        title={isOnline ? "Excluir da Nuvem" : "Remover do Cache Local"}
-                                                    >
-                                                        {deletingSongId === song.id ? (
-                                                            <Loader2 size={16} className="animate-spin" />
-                                                        ) : (
-                                                            <Trash2 size={16} />
-                                                        )}
-                                                    </button>
-                                                </div>
-                                            )}
-                                            {isDownloading ? (
-                                                <div className="flex flex-col items-center gap-1 min-w-[70px]">
-                                                    <Loader2 size={16} className="animate-spin text-secondary" />
-                                                    <span className="text-[8px] text-secondary font-bold text-center font-mono uppercase tracking-wider leading-tight max-w-[80px]">{downloadProgress}</span>
-                                                    <button
-                                                        onClick={() => cancelDownload(song.id)}
-                                                        className="text-[8px] text-accent-red font-bold underline uppercase cursor-pointer hover:text-white mt-0.5 active:scale-95 px-1 rounded hover:bg-white/5 transition-all"
-                                                        title="Cancelar download"
-                                                    >
-                                                        Cancelar
-                                                    </button>
-                                                </div>
-                                            ) : isDownloaded ? (
-                                                <div className="flex items-center gap-1 text-primary text-[10px] font-bold px-2 py-1.5 rounded-md bg-primary/10 font-mono uppercase">
-                                                    <span>✓</span> ADICIONADA
-                                                </div>
-                                            ) : (!isOnline && !cachedSongIds.has(song.id)) ? (
-                                                <div className="flex items-center gap-1 text-text-muted text-[10px] font-bold px-2.5 py-1.5 rounded-md bg-white/5 border border-white/10 font-mono uppercase cursor-not-allowed" title="Conecte-se à internet para baixar esta música">
-                                                    <span>OFFLINE</span>
-                                                </div>
-                                            ) : (
-                                                <button
-                                                    onClick={() => handleDownload(song.id, song.name)}
-                                                    disabled={!!downloadingSongId}
-                                                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[10px] font-bold transition-all active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed min-h-[36px] uppercase tracking-wider font-mono ${cachedSongIds.has(song.id) ? 'bg-primary/15 hover:bg-primary/25 text-primary border border-primary/20' : 'bg-secondary/10 hover:bg-secondary/20 text-secondary border border-secondary/10'}`}
-                                                    title={cachedSongIds.has(song.id) ? "Carregar do cache local offline" : "Baixar e importar da Nuvem"}
-                                                >
-                                                    {cachedSongIds.has(song.id) ? <Cloud size={14} /> : <Download size={14} />}
-                                                    <span className="hidden sm:inline">{cachedSongIds.has(song.id) ? 'ABRIR' : 'IMPORTAR'}</span>
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                                    })}
-                                </div>
-        </LibraryView>
+            message={message}
+            rows={rows}
+            anyDownloading={!!downloadingSongId}
+            online={isOnline}
+            edit={edit}
+            savingEdit={isSavingEdit}
+            onImport={(id, name) => { void handleDownload(id, name); }}
+            onCancel={cancelDownload}
+            onEdit={(id) => { setMessage(null); setEditingSong({ id }); }}
+            onEditChange={(p) => setEditingSong((e) => ({ ...e, ...p }))}
+            onEditSave={() => { if (editedSong) void handleEditSave(editedSong); }}
+            onEditClose={() => { setMessage(null); setEditingSong({}); }}
+            onAskDelete={setDeleteId}
+            confirmDelete={confirmDelete}
+            onConfirmDelete={() => { void handleConfirmDelete(); }}
+            onCancelDelete={() => setDeleteId(null)}
+        />
     );
 }

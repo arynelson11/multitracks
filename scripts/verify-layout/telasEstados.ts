@@ -4,7 +4,9 @@ export const TELA_ESTADOS = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letr
   // Separador (Parte 3, faixa D): vistas soltas, em pages.tsx.
   'separador-inicio', 'separador-opcoes', 'separador-player',
   // As janelas do Separador de reserva, uma por vez por cima do player (revisão sep-2 I5).
-  'separador-bpm', 'separador-voz', 'separador-publicar'] as const
+  'separador-bpm', 'separador-voz', 'separador-publicar',
+  // Biblioteca na Nuvem (Parte 3, partes 3 a 5): a vista solta, em pages.tsx.
+  'biblioteca', 'biblioteca-editar'] as const
 export type TelaEstado = (typeof TELA_ESTADOS)[number]
 
 export function isTela(value: string): value is TelaEstado {
@@ -12,7 +14,7 @@ export function isTela(value: string): value is TelaEstado {
 }
 
 /** O que tem de estar na tela em cada estado: sem isso a medida passaria sem medir a tela. */
-export const TELA_EXPECT: Record<TelaEstado, { sel: string; text?: string }> = {
+export const TELA_EXPECT: Record<TelaEstado, { sel: string; text?: string; count?: number }> = {
   metronomo: { sel: '[role="dialog"] [role="switch"]' },
   padsnuvem: { sel: '[role="dialog"] [aria-current="true"]' },
   'padsnuvem-editar': { sel: '[role="dialog"] input[placeholder="Nome do conjunto"]' },
@@ -40,6 +42,8 @@ export const TELA_EXPECT: Record<TelaEstado, { sel: string; text?: string }> = {
   'separador-bpm': { sel: '[role="dialog"] button[aria-label="Mover o 1 um tempo pra frente"]' },
   'separador-voz': { sel: '[role="dialog"] [data-cue-row]' },
   'separador-publicar': { sel: '[role="dialog"] [data-cloud-form] [role="switch"]' },
+  biblioteca: { sel: '[role="dialog"] [data-library] [data-library-row]', count: 8 },
+  'biblioteca-editar': { sel: '[role="dialog"] [data-library-edit="b1"] input[inputmode="decimal"]' },
 }
 
 /** Toque de ponteiro (click com detail 1), como o dedo. */

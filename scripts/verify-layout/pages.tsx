@@ -4,7 +4,10 @@ import { SeparatorHome } from '../../src/components/separator/SeparatorHome'
 import { SeparatorOptions } from '../../src/components/separator/SeparatorOptions'
 import { SeparatorPlayerBar } from '../../src/components/separator/SeparatorPlayerBar'
 import { SeparatorTrackStrip } from '../../src/components/separator/SeparatorTrackStrip'
-import { PLAYER_SONG, PLAYER_TRACKS, SEPARATIONS } from './pageFixtures'
+import { LIBRARY_EDIT, LIBRARY_ROWS, PLAYER_SONG, PLAYER_TRACKS, SEPARATIONS } from './pageFixtures'
+import { LibraryView } from '../../src/components/library/LibraryView'
+import { libraryCountText } from '../../src/components/library/libraryRows'
+import { INVALID_BPM_MESSAGE } from '../../src/lib/cloudBpm'
 import { laneFloor } from '../../src/components/separator/separatorCopy'
 import { BpmClickEditor } from '../../src/components/separation/BpmClickEditor'
 import { CloudSaveForm } from '../../src/components/separation/CloudSaveForm'
@@ -99,3 +102,22 @@ export function SeparatorPage({ estado }: { estado: 'separador-inicio' | 'separa
   if (estado === 'separador-opcoes') return <SeparatorOptions options={[2, 4, 6]} onBack={noop} onChoose={noop} />
   return <SeparatorHome separations={SEPARATIONS} loading={false} onBack={noop} onPickFile={noop} onOpen={noop} onDelete={noop} />
 }
+
+/**
+ * Biblioteca na Nuvem (Parte 3): a vista com as 8 músicas de pior caso, por cima do fundo do app.
+ * Em `biblioteca-editar`, a edição aberta na primeira música, com a frase de erro.
+ */
+export function LibraryPage({ estado }: { estado: 'biblioteca' | 'biblioteca-editar' }) {
+  const editing = estado === 'biblioteca-editar'
+  return (
+    <LibraryView
+      open onClose={noop} onRefresh={noop} query="Senhor" onQuery={noop} tab="platform" onTab={noop}
+      loading={false} countText={libraryCountText(LIBRARY_ROWS.length)} emptyText={null}
+      message={editing ? INVALID_BPM_MESSAGE : null}
+      rows={LIBRARY_ROWS} anyDownloading online edit={editing ? LIBRARY_EDIT : null} savingEdit={false}
+      onImport={noop} onCancel={noop} onEdit={noop} onEditChange={noop} onEditSave={noop} onEditClose={noop}
+      onAskDelete={noop} confirmDelete={null} onConfirmDelete={noop} onCancelDelete={noop}
+    />
+  )
+}
+

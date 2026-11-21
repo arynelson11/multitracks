@@ -40,7 +40,7 @@ function openEditor() {
   const onSongEdited = vi.fn()
   render(<LibraryModal isOpen onClose={() => {}} onDownload={() => {}} onSongEdited={onSongEdited} />)
   fireEvent.click(screen.getByTitle('Editar metadados'))
-  const bpm = screen.getByText('BPM').parentElement!.querySelector('input')!
+  const bpm = screen.getByLabelText('BPM') as HTMLInputElement
   return { onSongEdited, bpm }
 }
 
@@ -49,7 +49,7 @@ describe('biblioteca: editar o BPM', () => {
     const { onSongEdited, bpm } = openEditor()
     expect(bpm.value).toBe('72')
     fireEvent.change(bpm, { target: { value: '72,5' } })
-    fireEvent.click(screen.getByRole('button', { name: /SALVAR/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Salvar/i }))
     await waitFor(() => expect(lib.updateSong).toHaveBeenCalledTimes(1))
     expect(lib.updateSong).toHaveBeenCalledWith('n1', expect.objectContaining({ bpm: 73, bpm_exact: 72.5, name: 'Fé', key: 'G' }))
     await waitFor(() => expect(onSongEdited).toHaveBeenCalledTimes(1))
@@ -57,13 +57,34 @@ describe('biblioteca: editar o BPM', () => {
     expect(lib.updateCachedSongMeta).toHaveBeenCalledWith('n1', expect.objectContaining({ bpm: 73, bpm_exact: 72.5 }))
   })
 
-  it('texto inválido avisa e não grava nem apaga o BPM', () => {
+  it('BPM inválido mostra INVALID_BPM_MESSAGE em alerta e não grava nem apaga o BPM', () => {
     const alert = vi.spyOn(window, 'alert').mockImplementation(() => {})
     const { onSongEdited, bpm } = openEditor()
     fireEvent.change(bpm, { target: { value: 'setenta' } })
-    fireEvent.click(screen.getByRole('button', { name: /SALVAR/ }))
-    expect(alert).toHaveBeenCalledWith(INVALID_BPM_MESSAGE)
+    fireEvent.click(screen.getByRole('button', { name: /Salvar/i }))
+    // A frase fica na janela (Parte 3), sem o aviso do navegador.
+    expect(screen.getByRole('alert').textContent).toBe(INVALID_BPM_MESSAGE)
+    expect(alert).not.toHaveBeenCalled()
     expect(lib.updateSong).not.toHaveBeenCalled()
     expect(onSongEdited).not.toHaveBeenCalled()
+    // O formulário continua aberto com o que foi digitado.
+    expect(bpm.value).toBe('setenta')
+  })
+
+  it('erro ao salvar vira frase na janela, sem alert', async () => {
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    lib.updateSong.mockResolvedValue(false)
+    const { onSongEdited } = openEditor()
+    fireEvent.click(screen.getByRole('button', { name: /Salvar/i }))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Erro ao salvar alterações na música.'))
+    expect(alert).not.toHaveBeenCalled()
+    expect(onSongEdited).not.toHaveBeenCalled()
+  })
+
+  it('fechar a edição sem salvar não grava nada', () => {
+    openEditor()
+    fireEvent.click(screen.getByRole('button', { name: 'Fechar a edição' }))
+    expect(screen.queryByRole('group', { name: 'Editar Música' })).toBeNull()
+    expect(lib.updateSong).not.toHaveBeenCalled()
   })
 })

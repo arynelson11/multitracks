@@ -1,6 +1,7 @@
 // Dados das páginas do Separador no verificador (Parte 3, faixa D): o pior caso de texto em
 // "Minhas separações" (nomes e artistas longos, uma sem nome, uma com 7 faixas). Nada daqui entra no app.
 import type { SavedSeparation } from '../../src/hooks/useSeparationLibrary'
+import type { LibraryEdit, LibraryRow } from '../../src/components/library/libraryRows'
 
 const COLORS = ['#06b6d4', '#f59e0b', '#8b5cf6', '#ef4444', '#10b981', '#ec4899', '#e2e8f0']
 const NAMES = ['Vocais', 'Bateria', 'Baixo', 'Guitarra', 'Piano/TeCL', 'Outros/Fx', 'Metrônomo']
@@ -27,3 +28,38 @@ export const PLAYER_TRACKS = [
   { id: 'other', name: 'Outros/Fx', color: '#ec4899' },
   { id: 'metronome', name: 'Metrônomo', color: '#e2e8f0' },
 ]
+
+// ---------- Biblioteca na Nuvem (Parte 3, partes 3 a 5) ----------
+
+const libRow = (id: string, over: Partial<LibraryRow>): LibraryRow => ({
+  id, name: 'Águas Purificadoras', artist: 'Hillsong', coverUrl: null, key: 'D', bpm: 68, cached: false,
+  state: 'import', progress: '', canEdit: false, canDelete: false, deleting: false, ...over,
+})
+
+/**
+ * 8 músicas com o pior caso de texto: nome e artista longos, uma em cada estado do baixar (importar,
+ * abrir do cache, baixando com o progresso mais longo, adicionada, sem internet fora do cache), uma
+ * sem artista, tom nem BPM, uma do admin com editar e excluir e uma excluindo.
+ */
+export const LIBRARY_ROWS: LibraryRow[] = [
+  libRow('b1', {
+    name: 'Grande é o Senhor (Ao Vivo no Ministério de Louvor com Nome Bem Comprido)', artist: 'Ministério de Louvor Diante do Trono e Convidados Especiais',
+    key: 'G#m', bpm: 72.5, canEdit: true, canDelete: true,
+  }),
+  libRow('b2', { name: 'Te Louvarei com Todo o Meu Coração e Toda a Minha Alma Para Sempre', artist: 'Comunidade Evangélica Internacional da Zona Sul', key: 'F#', bpm: 140, cached: true, state: 'open', canDelete: true }),
+  libRow('b3', { name: 'Ousado Amor', artist: 'Isaías Saad', key: 'A#', bpm: 120, state: 'downloading', progress: 'Rede: 128.4 MB lidos (11/12 concluídos)' }),
+  libRow('b4', { name: 'Santo', artist: 'Fernandinho', key: 'C', bpm: 96, state: 'added' }),
+  libRow('b5', { name: 'Lugar Secreto (Versão Acústica Estendida com Ministração)', artist: 'Gabriela Rocha', key: 'E', bpm: 64.25, state: 'offline' }),
+  libRow('b6', { name: 'Música Sem Nome do Ensaio', artist: null, key: null, bpm: undefined }),
+  libRow('b7', { name: 'Minha Versão de Ensaio (Domingo à Noite)', artist: 'Banda da Igreja', key: 'Bb', bpm: 88, canEdit: true, canDelete: true, cached: true, state: 'open' }),
+  libRow('b8', { name: 'Raridade', artist: 'Anderson Freire', key: 'Ab', bpm: 70, canEdit: true, canDelete: true, deleting: true }),
+]
+
+/** A edição aberta na primeira música, com os valores longos e uma capa escolhida. */
+export const LIBRARY_EDIT: LibraryEdit = {
+  id: 'b1',
+  name: 'Grande é o Senhor (Ao Vivo no Ministério de Louvor com Nome Bem Comprido)',
+  artist: 'Ministério de Louvor Diante do Trono e Convidados Especiais',
+  bpmText: '72,5', key: 'G#m',
+  file: new File(['capa'], 'capa_grande_e_o_senhor_ao_vivo_ministerio_versao_final_2026.png', { type: 'image/png' }),
+}

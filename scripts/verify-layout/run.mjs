@@ -5,7 +5,8 @@
 //   17 estados em 390x844 (o inicio da frente 1b, os 15 da faixa C que abrem no celular e o
 //   download-celular, só de celular) e os 10 estados da faixa B (login e Configurações) em 1024x740,
 //   1280x800, 1920x1080, 390x844 e 844x390 (50); com a faixa D (gaveta e janela de publicar do palco nos
-//   8, páginas do Separador em 5 tamanhos e as janelas dele em 2): 360 combinações;
+//   8, páginas do Separador em 5 tamanhos e as janelas dele em 2): 360; com a tela inicial com o anúncio
+//   (8 e 390x844), a Biblioteca (2 estados em 5 tamanhos, JANELAS_INICIO): 379 combinações;
 //   --estado quebrado: só a prova (um botão de largura fixa com texto longo), que tem de falhar
 //   (com --only 390x844, a prova da moldura do celular).
 // Sai com código 1 se alguma combinação falhar (ou não responder). Resultados em scripts/verify-layout/results/.
@@ -35,7 +36,9 @@ const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'reper
   // Demais telas da Parte 3 (faixa C), a mesma lista de telasEstados.ts.
   'metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'download-celular', 'aovivo', 'aovivo-cheio', 'aovivo-erro', 'adminlogin',
   // Separador (Parte 3, faixa D), a mesma lista de telasEstados.ts.
-  'separador-inicio', 'separador-opcoes', 'separador-player', 'separador-bpm', 'separador-voz', 'separador-publicar']
+  'separador-inicio', 'separador-opcoes', 'separador-player', 'separador-bpm', 'separador-voz', 'separador-publicar',
+  // Biblioteca na Nuvem (Parte 3, partes 3 a 5), a mesma lista de telasEstados.ts.
+  'biblioteca', 'biblioteca-editar']
 /**
  * Telas da faixa C que abrem no celular: sem --only, medem também em 390x844. O Modo Ao Vivo do host
  * só existe no computador, então fica de fora.
@@ -67,6 +70,13 @@ const PAGINAS_SEPARADOR_SIZES = ['1024x740', '1280x800', '1920x1080', '390x844',
  */
 const JANELAS_SEPARADOR = ['separador-bpm', 'separador-voz', 'separador-publicar']
 const JANELAS_SEPARADOR_SIZES = ['390x844', '1024x740']
+/**
+ * Janelas do começo do app (Parte 3, partes 3 a 5: Biblioteca e Planos): abrem em qualquer tela,
+ * nos dois palcos e no celular, então medem em 1024x740, 1280x800, 1920x1080, 390x844 e 844x390
+ * (celular deitado, onde a janela fica baixa e a lista rola dentro).
+ */
+const JANELAS_INICIO = ['biblioteca', 'biblioteca-editar']
+const JANELAS_INICIO_SIZES = ['1024x740', '1280x800', '1920x1080', '390x844', '844x390']
 /** Largura de celular: abaixo da janela mínima do Chrome headless, roda na moldura (/moldura). */
 const CELULAR = '390x844'
 const PROVA = 'quebrado'
@@ -213,6 +223,7 @@ const sizesFor = (estado) => {
   if (ESTADOS_B.includes(estado)) return TELAS_B_SIZES
   if (PAGINAS_SEPARADOR.includes(estado)) return PAGINAS_SEPARADOR_SIZES
   if (JANELAS_SEPARADOR.includes(estado)) return JANELAS_SEPARADOR_SIZES
+  if (JANELAS_INICIO.includes(estado)) return JANELAS_INICIO_SIZES
   if (TELAS_C_SO_CELULAR.includes(estado)) return [CELULAR]
   if (TELAS_C_CELULAR.includes(estado) || ESTADOS_CELULAR.includes(estado)) return [...SIZES, CELULAR]
   return SIZES

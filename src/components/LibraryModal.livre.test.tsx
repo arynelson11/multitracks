@@ -3,7 +3,7 @@
 // cabe nas do mês (onBeforeDownload). Falso não baixa nada; verdadeiro (ou sem a pergunta, como
 // quem paga) baixa e entrega a música pro palco como sempre.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { CloudSong } from '../lib/supabase'
 
 const SONG = {
@@ -16,15 +16,17 @@ const RESULT = {
   lyrics: null, lyricsSynced: null, chords: null,
 }
 
-const lib = vi.hoisted(() => ({ downloadSong: vi.fn(), refreshSongs: vi.fn() }))
+const lib = vi.hoisted(() => ({
+  downloadSong: vi.fn(), refreshSongs: vi.fn(), removeSong: vi.fn(), isOnline: true, cached: new Set<string>(), isAdmin: false,
+}))
 vi.mock('../hooks/useCloudLibrary', () => ({
   useCloudLibrary: () => ({
     songs: [SONG], searchQuery: '', setSearchQuery: () => {}, isLoadingList: false, downloadingSongId: null, downloadProgress: 0,
-    deletingSongId: null, downloadSong: lib.downloadSong, refreshSongs: lib.refreshSongs, removeSong: vi.fn(), cancelDownload: vi.fn(),
-    cachedSongIds: new Set<string>(), isOnline: true,
+    deletingSongId: null, downloadSong: lib.downloadSong, refreshSongs: lib.refreshSongs, removeSong: lib.removeSong, cancelDownload: vi.fn(),
+    cachedSongIds: lib.cached, isOnline: lib.isOnline,
   }),
 }))
-vi.mock('../hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 'livre' }, isAdmin: false }) }))
+vi.mock('../hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 'livre' }, isAdmin: lib.isAdmin }) }))
 vi.mock('../lib/supabase', () => ({ updateSong: vi.fn() }))
 vi.mock('../lib/offlineCache', () => ({ updateCachedSongMeta: vi.fn() }))
 vi.mock('../lib/r2', () => ({ uploadToR2: vi.fn() }))
@@ -34,6 +36,9 @@ const { LibraryModal } = await import('./LibraryModal')
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  lib.isOnline = true
+  lib.cached = new Set<string>()
+  lib.isAdmin = false
 })
 
 const importButton = () => screen.getByTitle('Baixar e importar da Nuvem')
@@ -76,5 +81,58 @@ describe('biblioteca: pergunta ao Livre antes de baixar', () => {
     fireEvent.click(importButton())
     await waitFor(() => expect(onDownload).toHaveBeenCalledTimes(1))
     expect(lib.downloadSong).toHaveBeenCalledWith('n1')
+  })
+})
+
+describe('biblioteca: baixar e excluir no contêiner (Parte 3, T3)', () => {
+  it('ADICIONADA só depois do download que deu certo', async () => {
+    lib.downloadSong.mockResolvedValue(null)
+    const onDownload = vi.fn()
+    render(<LibraryModal isOpen onClose={() => {}} onDownload={onDownload} />)
+    fireEvent.click(importButton())
+    await waitFor(() => expect(lib.downloadSong).toHaveBeenCalledWith('n1'))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(onDownload).not.toHaveBeenCalled()
+    expect(screen.queryByText('ADICIONADA')).toBeNull()
+    expect(importButton()).toBeTruthy()
+    lib.downloadSong.mockResolvedValue(RESULT)
+    fireEvent.click(importButton())
+    await waitFor(() => expect(screen.getByText('ADICIONADA')).toBeTruthy())
+    expect(onDownload).toHaveBeenCalledTimes(1)
+  })
+
+  it('a confirmação de excluir: Cancelar não exclui; Excluir chama removeSong uma vez; Esc fecha só a confirmação', async () => {
+    lib.isAdmin = true
+    lib.removeSong.mockResolvedValue(undefined)
+    render(<LibraryModal isOpen onClose={() => {}} onDownload={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir da Nuvem' }))
+    expect(screen.getByRole('dialog', { name: 'Excluir da nuvem?' }).textContent).toContain('Isso removerá permanentemente para todos os usuários.')
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Excluir da nuvem?' })).getByRole('button', { name: 'Cancelar' }))
+    expect(screen.queryByRole('dialog', { name: 'Excluir da nuvem?' })).toBeNull()
+    expect(lib.removeSong).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir da Nuvem' }))
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Excluir da nuvem?' })).toBeNull()
+    expect(screen.getByRole('dialog', { name: 'Biblioteca na Nuvem' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir da Nuvem' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Excluir da nuvem?' })).getByRole('button', { name: /Excluir/ }))
+    await waitFor(() => expect(lib.removeSong).toHaveBeenCalledTimes(1))
+    expect(lib.removeSong).toHaveBeenCalledWith('n1')
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Excluir da nuvem?' })).toBeNull())
+  })
+
+  it('excluir sem internet pergunta "Remover do cache offline" e só aparece com a música no cache', () => {
+    lib.isOnline = false
+    const first = render(<LibraryModal isOpen onClose={() => {}} onDownload={() => {}} />)
+    // Fora do cache e sem internet: nem excluir, nem editar, e o baixar fica OFFLINE desligado.
+    expect(screen.queryByRole('button', { name: 'Remover do Cache Local' })).toBeNull()
+    expect((screen.getByRole('button', { name: 'OFFLINE' }) as HTMLButtonElement).disabled).toBe(true)
+    first.unmount()
+    lib.cached = new Set(['n1'])
+    render(<LibraryModal isOpen onClose={() => {}} onDownload={() => {}} />)
+    expect(screen.queryByRole('button', { name: 'Editar metadados' })).toBeNull()
+    expect(screen.getByTitle('Carregar do cache local offline')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Remover do Cache Local' }))
+    expect(screen.getByRole('dialog', { name: 'Remover do aparelho?' }).textContent).toContain('Remover "Fé" do Cache Offline local?')
   })
 })

@@ -8,7 +8,7 @@ nova: usa o Vite, o React e o Tailwind do repo e o Google Chrome da máquina.
 
 ```bash
 source ~/.nvm/nvm.sh && nvm use 24
-node scripts/verify-layout/run.mjs                                    # rodada inteira (360 combinações, abaixo)
+node scripts/verify-layout/run.mjs                                    # rodada inteira (379 combinações, abaixo)
 node scripts/verify-layout/run.mjs --only 1280x800 --estado quebrado  # prova: tem de sair com 1
 node scripts/verify-layout/run.mjs --only 390x844 --estado quebrado   # prova da moldura do celular: tem de sair com 1
 node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
@@ -28,7 +28,9 @@ Modo Ao Vivo do host, que só existe no computador, mais o `download-celular`,
 que só existe no celular) e os 10 estados das 3 telas da faixa B em 5 tamanhos
 (50): 307 combinações; com a faixa D (a gaveta SEPARAÇÃO nas abas FAIXAS, VOZ GUIA e
 BPM E CLICK e a janela "Publicar na Nuvem" do palco nos 8 tamanhos, as três páginas do
-Separador em 5 tamanhos e as três janelas dele em 2), 360. A prova da moldura
+Separador em 5 tamanhos e as três janelas dele em 2), 360; com as partes 3 a 5 da Parte 3
+(o `inicio-anuncio` nos 8 tamanhos e em 390x844, e a Biblioteca, 2 estados em
+5 tamanhos), 379. A prova da moldura
 (`--only 390x844 --estado quebrado`) tem de sair com 1: mostra que a página no
 iframe do celular também acusa falha.
 
@@ -127,6 +129,8 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `config` | as duas seções da T19 numa página própria: placa de 2 canais (caindo de 4 ou mais, com avisos) e de 8 canais |
 | `inicio` | a tela inicial (`HomeScreen`, Parte 3, partes 3 a 5) no layout do palco: o logo, "Playback Studio", "A plataforma do domingo" e os dois cartões Multitracks e Separação de Faixas, sem anúncio; nos 8 tamanhos e em 390x844 (celular em pé, pela moldura, acima) |
 | `inicio-anuncio` | a mesma tela com o cartão "O que o Pro faz por você" do `AdSlot` (o de verdade, no Livre e parado) no `ad` da `HomeScreen`, embaixo dos dois cartões (até 448 px); nos 8 tamanhos e em 390x844 (era o `inicio` da frente 1b, que media o cartão sobre duas caixas no lugar dos botões) |
+| `biblioteca` | a Biblioteca na Nuvem (Parte 3, `LibraryView` solta, em `pages.tsx`) com 8 músicas de pior caso (`pageFixtures.ts`: nome e artista longos, uma em cada estado do baixar, o andamento mais longo, uma sem artista, tom nem BPM, uma do admin com editar e excluir e uma excluindo); em 1024x740, 1280x800, 1920x1080, 390x844 e 844x390 (`JANELAS_INICIO` no `run.mjs`) |
+| `biblioteca-editar` | a mesma, com a edição aberta na primeira música (valores longos, a capa escolhida com nome longo e o erro do BPM inválido); nos mesmos 5 tamanhos |
 | `quebrado` | prova: o palco normal com um botão de largura fixa e texto longo e um caso pra cada ramo das regras (18 falhas: uma por ramo; o texto acima do começo da rolagem cai em duas, na regra do texto cortado e na de nada acima do topo de uma área que rola, da revisão macro BC; as duas da casca que rola de lado e do aviso SAÍDAS em cima do ONLINE vêm do palco de mentira, da frente 1b) |
 
 O fixture é o pior caso de texto: 14 canais com os nomes organizados mais
