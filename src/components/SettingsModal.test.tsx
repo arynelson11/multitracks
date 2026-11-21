@@ -570,7 +570,8 @@ describe('SettingsModal: teclado e foco', () => {
     expect(screen.getByTestId('pricing')).toBeTruthy()
     fireEvent.keyDown(screen.getByText('fechar planos'), { key: 'Escape', code: 'Escape' })
     expect(p.onClose).not.toHaveBeenCalled()
-    // O Planos de mentira não segura o clique: ele sobe pra camada, como o fundo dos Planos de verdade.
+    // O Planos de mentira não segura o clique, que pode subir pra camada (por isso a conta parte do que
+    // já houve). Os de verdade seguram: o toque no fundo deles fecha só eles (SettingsModal.planos.test.tsx).
     fireEvent.click(screen.getByText('fechar planos'))
     const antes = vi.mocked(p.onClose).mock.calls.length
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape', code: 'Escape' })

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PRICES } from '../../content/site'
-import { PRICING_COPY, PRICING_PLANS } from './pricingCatalog'
+import { PRICING_COPY, PRICING_PLANS, reais } from './pricingCatalog'
+import { PLAN_PRICING } from '../../../api/_lib/pricing'
 
 const plan = (name: string) => PRICING_PLANS.find((p) => p.name === name)!
 const TRAVESSAO = String.fromCharCode(0x2014)
@@ -18,6 +19,16 @@ describe('catálogo dos Planos', () => {
     // A mesma tabela do site e do FATOS.
     expect(PRICES.pro).toMatchObject({ monthly: 49.9, annualTotal: 454.8 })
     expect(PRICES.studio).toMatchObject({ monthly: 119.9, annualTotal: 1078.8 })
+  })
+
+  it('o preço de cada cartão é o que o servidor cobra (PLAN_PRICING), com o mesmo período (inicio-2 Minor 8)', () => {
+    for (const p of PRICING_PLANS) {
+      const server = PLAN_PRICING[p.planKey]
+      expect(p.price, p.planKey).toBe(reais(server.value))
+      expect(p.period, p.planKey).toBe(server.cycle === 'YEARLY' ? '/ano' : '/mês')
+      expect(p.name, p.planKey).toBe(server.label)
+    }
+    expect(PRICING_PLANS.map((p) => p.planKey).sort()).toEqual(Object.keys(PLAN_PRICING).sort())
   })
 
   it('nomes, descrições e recursos de hoje', () => {
