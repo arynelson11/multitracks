@@ -124,7 +124,13 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
     const handleDownload = async (songId: string, songName: string) => {
         // No Livre a música conta nas do mês: sem vaga, o App mostra a tela de limite e nada baixa.
         if (onBeforeDownload && !onBeforeDownload(songId)) return;
+        setMessage(null);
         const result = await downloadSong(songId);
+        // Sem espaço no aparelho: a frase aparece na janela (antes era o aviso do navegador, inicio-1 M2).
+        if (result && 'refused' in result) {
+            setMessage(result.refused);
+            return;
+        }
         // files vazio + cachedSourceId = música no cache: o engine carrega lendo do
         // cache 1 stem por vez (sem segurar todos os blobs na memória = OOM mobile).
         if (result && (result.files.length > 0 || result.cachedSourceId)) {

@@ -47,7 +47,7 @@ export const LIBRARY_ROWS: LibraryRow[] = [
     key: 'G#m', bpm: 72.5, canEdit: true, canDelete: true,
   }),
   libRow('b2', { name: 'Te Louvarei com Todo o Meu Coração e Toda a Minha Alma Para Sempre', artist: 'Comunidade Evangélica Internacional da Zona Sul', key: 'F#', bpm: 140, cached: true, state: 'open', canDelete: true }),
-  libRow('b3', { name: 'Ousado Amor', artist: 'Isaías Saad', key: 'A#', bpm: 120, state: 'downloading', progress: 'Rede: 128.4 MB lidos (11/12 concluídos)' }),
+  libRow('b3', { name: 'Ousado Amor', artist: 'Isaías Saad', key: 'A#', bpm: 120, state: 'downloading', progress: 'Baixando as multitracks: 1024,8 MB (11 de 12)' }),
   libRow('b4', { name: 'Santo', artist: 'Fernandinho', key: 'C', bpm: 96, state: 'added' }),
   libRow('b5', { name: 'Lugar Secreto (Versão Acústica Estendida com Ministração)', artist: 'Gabriela Rocha', key: 'E', bpm: 64.25, state: 'offline' }),
   libRow('b6', { name: 'Música Sem Nome do Ensaio', artist: null, key: null, bpm: undefined }),

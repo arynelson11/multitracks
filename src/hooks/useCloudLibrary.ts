@@ -6,6 +6,28 @@ import { type Marker } from '../types';
 import type { TimeSignatureType } from '../lib/AudioAnalyzer';
 import { preciseBpm, sanitizeTimeSignature } from '../lib/cloudBpm';
 
+const mb = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1).replace('.', ',');
+
+/** As frases do baixar, na linha da música (inicio-1 I2, Ruling textos-biblioteca): pro usuário,
+ *  sem termo técnico, com "multitracks" e o número com vírgula. */
+export const LIBRARY_PROGRESS = {
+    offline: 'Carregando offline...',
+    offlineMissing: 'Erro: Indisponível offline',
+    fetching: 'Buscando as multitracks...',
+    empty: 'Nenhuma multitrack encontrada.',
+    downloading: (bytes: number, done: number, total: number) => `Baixando as multitracks: ${mb(bytes)} MB (${done} de ${total})`,
+    saving: 'Guardando no aparelho...',
+    tooBig: 'Grande demais pra guardar no aparelho.',
+    cancelled: 'Cancelado.',
+    failed: 'Erro ao baixar.',
+    /** Sem espaço: vira frase na janela da Biblioteca (inicio-1 M2), não o aviso do navegador. */
+    lowSpace: 'Espaço em disco insuficiente. Por favor, libere pelo menos 150MB no dispositivo.',
+} as const;
+
+export type CloudDownload = { files: File[], coverUrl: string | null, markers: Marker[] | null, originalKey: string | null, artist?: string, bpm?: number, timeSignature: TimeSignatureType | null, lyrics?: string | null, lyricsSynced?: string | null, chords?: string | null, cachedSourceId?: string };
+/** O baixar que nem começou, com a frase pra janela mostrar. */
+export type CloudDownloadRefused = { refused: string };
+
 export function useCloudLibrary() {
     const [songs, setSongs] = useState<CloudSong[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
@@ -86,13 +108,13 @@ export function useCloudLibrary() {
     }, [searchQuery, isOnline]);
 
     // Download a song (or load from local cache if offline/cached)
-    const downloadSong = useCallback(async (songId: string): Promise<{ files: File[], coverUrl: string | null, markers: Marker[] | null, originalKey: string | null, artist?: string, bpm?: number, timeSignature: TimeSignatureType | null, lyrics?: string | null, lyricsSynced?: string | null, chords?: string | null, cachedSourceId?: string } | null> => {
+    const downloadSong = useCallback(async (songId: string): Promise<CloudDownload | CloudDownloadRefused | null> => {
         setDownloadingSongId(songId);
 
         // Check cache first
         const isCached = cachedSongIds.has(songId);
         if (!isOnline || isCached) {
-            setDownloadProgress('Carregando offline...');
+            setDownloadProgress(LIBRARY_PROGRESS.offline);
             try {
                 // Música no cache: NÃO carrega os blobs na memória aqui. Devolve só
                 // a meta + cachedSourceId; o engine decodifica lendo do cache 1 stem
@@ -121,7 +143,7 @@ export function useCloudLibrary() {
             } catch (e) {
                 console.error('Failed to retrieve cached song:', e);
                 if (!isOnline) {
-                    setDownloadProgress('Erro: Indisponível offline');
+                    setDownloadProgress(LIBRARY_PROGRESS.offlineMissing);
                     setDownloadingSongId(null);
                     return null;
                 }
@@ -137,9 +159,8 @@ export function useCloudLibrary() {
                 const freeSpace = quota - usage;
                 const MIN_FREE_SPACE = 150 * 1024 * 1024; // 150 MB
                 if (freeSpace < MIN_FREE_SPACE) {
-                    alert('Espaço em disco insuficiente. Por favor, libere pelo menos 150MB no dispositivo.');
                     setDownloadingSongId(null);
-                    return null;
+                    return { refused: LIBRARY_PROGRESS.lowSpace };
                 }
             } catch (err) {
                 console.warn('Failed to estimate storage:', err);
@@ -150,11 +171,11 @@ export function useCloudLibrary() {
         const controller = new AbortController();
         abortControllersRef.current[songId] = controller;
 
-        setDownloadProgress('Buscando stems...');
+        setDownloadProgress(LIBRARY_PROGRESS.fetching);
         try {
             const stems: CloudStem[] = await fetchStems(songId);
             if (stems.length === 0) {
-                setDownloadProgress('Nenhum stem encontrado.');
+                setDownloadProgress(LIBRARY_PROGRESS.empty);
                 setDownloadingSongId(null);
                 return null;
             }
@@ -165,8 +186,7 @@ export function useCloudLibrary() {
             const updateGlobalProgress = () => {
                 if (controller.signal.aborted) return;
                 const totalLoaded = Object.values(loadedBytesPerStem).reduce((a, b) => a + b, 0);
-                const mbTotal = (totalLoaded / (1024 * 1024)).toFixed(1);
-                setDownloadProgress(`Rede: ${mbTotal} MB lidos (${completed}/${stems.length} concluídos)`);
+                setDownloadProgress(LIBRARY_PROGRESS.downloading(totalLoaded, completed, stems.length));
             };
 
             const downloadTask = async (stem: CloudStem) => {
@@ -214,18 +234,18 @@ export function useCloudLibrary() {
 
             // Cache for offline play. Só marca como OFFLINE se a gravação deu certo
             // de verdade (cacheSong agora verifica e retorna boolean). Antes o erro
-            // era engolido e a música virava "offline" falsa — abria vazia depois.
+            // era engolido e a música virava "offline" falsa e abria vazia depois.
             let cachedOk = false;
             if (song && files.length > 0) {
-                setDownloadProgress('Salvando no cache...');
+                setDownloadProgress(LIBRARY_PROGRESS.saving);
                 cachedOk = await cacheSong(songId, song, files);
                 if (cachedOk) {
                     setCachedSongIds(prev => new Set(prev).add(songId));
                 } else {
                     // Não coube no cache (ex.: multitrack grande demais p/ a quota).
-                    // A música ainda toca agora (online); só não fica offline — melhor
+                    // A música ainda toca agora (online); só não fica offline, o que é melhor
                     // que um selo "offline" mentiroso que abre repertório vazio.
-                    setDownloadProgress('Grande demais para salvar offline.');
+                    setDownloadProgress(LIBRARY_PROGRESS.tooBig);
                 }
             }
 
@@ -256,9 +276,9 @@ export function useCloudLibrary() {
             const err = e as Error;
             console.error('Error downloading song:', err);
             if (err.name === 'AbortError') {
-                setDownloadProgress('Cancelado.');
+                setDownloadProgress(LIBRARY_PROGRESS.cancelled);
             } else {
-                setDownloadProgress('Erro ao baixar.');
+                setDownloadProgress(LIBRARY_PROGRESS.failed);
             }
             setDownloadingSongId(null);
             return null;

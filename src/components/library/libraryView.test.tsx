@@ -124,9 +124,9 @@ describe('Biblioteca: as músicas, editar, excluir e baixar (LibraryView)', () =
   })
 
   it('baixando mostra o progresso e Cancelar chama onCancel; ADICIONADA depois', () => {
-    const { p, rerenderWith } = mount({ rows: [row({ state: 'downloading', progress: 'Rede: 12.3 MB lidos (2/5 concluídos)' })], anyDownloading: true })
+    const { p, rerenderWith } = mount({ rows: [row({ state: 'downloading', progress: 'Baixando as multitracks: 12,3 MB (2 de 5)' })], anyDownloading: true })
     const status = within(rowEl('r1')).getByRole('status')
-    expect(status.textContent).toContain('Rede: 12.3 MB lidos (2/5 concluídos)')
+    expect(status.textContent).toContain('Baixando as multitracks: 12,3 MB (2 de 5)')
     const cancel = within(status).getByRole('button', { name: 'Cancelar' }) as HTMLButtonElement
     expect(cancel.title).toBe('Cancelar download')
     fireEvent.click(cancel)
@@ -223,7 +223,7 @@ describe('Biblioteca: as músicas, editar, excluir e baixar (LibraryView)', () =
   it('linguagem do palco e nenhum texto com travessão', () => {
     mount({
       message: 'erro',
-      rows: [row({ id: 'a', canEdit: true, canDelete: true, cached: true, state: 'open' }), row({ id: 'b', state: 'downloading', progress: 'Buscando stems...' }), row({ id: 'c', state: 'added' }), row({ id: 'd', state: 'offline' })],
+      rows: [row({ id: 'a', canEdit: true, canDelete: true, cached: true, state: 'open' }), row({ id: 'b', state: 'downloading', progress: 'Buscando as multitracks...' }), row({ id: 'c', state: 'added' }), row({ id: 'd', state: 'offline' })],
       confirmDelete: { name: 'x', online: true, busy: false },
     })
     for (const dialog of screen.getAllByRole('dialog')) {
@@ -235,9 +235,11 @@ describe('Biblioteca: as músicas, editar, excluir e baixar (LibraryView)', () =
     }
   })
 
-  it('nenhum window.confirm nem alert sobrou na Biblioteca', () => {
-    const src = readFileSync(join(process.cwd(), 'src/components/LibraryModal.tsx'), 'utf8')
-    expect(src).not.toMatch(/\b(confirm|alert)\s*\(/)
-    expect(src).not.toContain(TRAVESSAO)
+  it('nenhum window.confirm nem alert sobrou na Biblioteca (o contêiner e o hook dele, inicio-1 M2)', () => {
+    for (const f of ['src/components/LibraryModal.tsx', 'src/hooks/useCloudLibrary.ts']) {
+      const src = readFileSync(join(process.cwd(), f), 'utf8')
+      expect(src, f).not.toMatch(/\b(confirm|alert)\s*\(/)
+      expect(src, f).not.toContain(TRAVESSAO)
+    }
   })
 })

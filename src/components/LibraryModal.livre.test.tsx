@@ -101,6 +101,23 @@ describe('biblioteca: baixar e excluir no contêiner (Parte 3, T3)', () => {
     expect(onDownload).toHaveBeenCalledTimes(1)
   })
 
+  it('sem espaço no aparelho, a frase aparece na janela (inicio-1 M2) e nada baixa', async () => {
+    lib.downloadSong.mockResolvedValue({ refused: 'Espaço em disco insuficiente. Por favor, libere pelo menos 150MB no dispositivo.' })
+    const onDownload = vi.fn()
+    render(<LibraryModal isOpen onClose={() => {}} onDownload={onDownload} />)
+    fireEvent.click(importButton())
+    const notice = await screen.findByRole('alert')
+    expect(notice.textContent).toBe('Espaço em disco insuficiente. Por favor, libere pelo menos 150MB no dispositivo.')
+    expect(within(screen.getByRole('dialog', { name: 'Biblioteca na Nuvem' })).getByRole('alert')).toBe(notice)
+    expect(onDownload).not.toHaveBeenCalled()
+    expect(screen.queryByText('ADICIONADA')).toBeNull()
+    // A tentativa seguinte limpa a frase.
+    lib.downloadSong.mockResolvedValue(RESULT)
+    fireEvent.click(importButton())
+    await waitFor(() => expect(screen.getByText('ADICIONADA')).toBeTruthy())
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('a confirmação de excluir: Cancelar não exclui; Excluir chama removeSong uma vez; Esc fecha só a confirmação', async () => {
     lib.isAdmin = true
     lib.removeSong.mockResolvedValue(undefined)
