@@ -128,12 +128,24 @@ function removalRefusedLabel(ids: string): string {
     : 'O Asaas recusou remover as cobranças futuras.'
 }
 
+// Textos que as pendências gravam (runPendingActions, api/_lib/billing.ts) e que são esperados,
+// não falha do servidor: o Asaas ainda sem a assinatura do checkout (tenta de novo em 24 h) e o
+// plano da assinatura que o servidor não conhece. Cada um vira a sua frase, que também passa
+// sem mudar (a T7 aplica a função de novo ao ler).
+const KNOWN_ERRORS: Readonly<Record<string, string>> = {
+  'assinatura nao achada no Asaas': 'O Asaas ainda não mostra esta assinatura. O servidor tenta de novo sozinho.',
+  'plano da assinatura desconhecido': 'A assinatura está com um plano que o servidor não conhece.',
+}
+const KNOWN_LABELS = new Set(Object.values(KNOWN_ERRORS))
+
 export function lastErrorLabel(raw: unknown): string | null {
   if (raw === null || raw === undefined) return null
   if (typeof raw !== 'string') return MSG_UNEXPECTED
   if (OWN_LABELS.some((re) => re.test(raw))) return raw
   // frase pronta que a cobrança já grava em português (a volta pro preço cheio esperando a primeira cobrança)
   if (raw === FIRST_CHARGE_UNPAID) return raw
+  if (KNOWN_LABELS.has(raw)) return raw
+  if (Object.hasOwn(KNOWN_ERRORS, raw)) return KNOWN_ERRORS[raw]
   if (raw.startsWith('Asaas sem resposta')) return 'O Asaas não respondeu.'
   const down = ASAAS_DOWN_STATUS_RE.exec(raw)
   if (down) return `O Asaas não respondeu. Status do Asaas: ${down[1]}.`
