@@ -153,19 +153,23 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
   const stopped = () => !live.current.bridge.busy && busyRef.current === null
 
   // Grava em "Minhas separações": sempre com a id e a data da separação, nunca sem faixas.
-  const persist = useCallback(async (over: Partial<Pick<SavedSeparation, 'stems' | 'songName' | 'artist'>> = {}) => {
-    const { cur: w, store: st, bridge: br } = live.current
+  // `from`: o trabalho de quando a ação começou (a música pode ter trocado no meio de um await).
+  const persist = useCallback(async (over: Partial<Pick<SavedSeparation, 'stems' | 'songName' | 'artist'>> = {}, from?: Work) => {
+    const { store: st, bridge: br } = live.current
+    const w = from ?? live.current.cur
     if (!w?.sep) return
     const stems = over.stems ?? w.sep.stems
     if (stems.length === 0) return
     const data = {
       id: w.sep.id, createdAt: w.sep.createdAt,
       songName: over.songName ?? w.sep.songName, artist: over.artist ?? w.sep.artist,
-      bpm: w.bpm, songKey: br.song?.originalKey || w.sep.songKey,
+      bpm: w.bpm, songKey: (from ? null : br.song?.originalKey) || w.sep.songKey,
       stems, voiceCues: [...w.cues],
     }
     await st.saveSeparation(data)
-    setWork((x) => (x && x.key === w.key && x.sep ? { ...x, dirty: false, sep: { ...x.sep, ...data } } : x))
+    // Mudou algo durante a gravação (uma marcação nova tocando, por exemplo): continua pendente.
+    const same = (x: Work) => x.cues === w.cues && x.bpm === w.bpm
+    setWork((x) => (x && x.key === w.key && x.sep ? { ...x, dirty: same(x) ? false : x.dirty, sep: { ...x.sep, ...data } } : x))
   }, [])
 
   // BPM, marcações e o tom original gravam 800 ms depois da última mudança.
@@ -178,14 +182,13 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
 
   useEffect(() => () => { if (nudgeTimer.current) window.clearTimeout(nudgeTimer.current) }, [])
 
-  const stemsWith = (stem: SavedStem): SavedStem[] => {
-    const stems = live.current.cur?.sep?.stems ?? []
+  const stemsWith = (stem: SavedStem, w: Work): SavedStem[] => {
+    const stems = w.sep?.stems ?? []
     return [...stems.filter((s) => s.id !== stem.id), stem]
   }
 
   // Grade medida no canal de bateria do palco (sem ela, instrumental, baixo...), com cache.
-  const analyze = async (nearBpm: number | undefined, beatsPerBar: number): Promise<{ grid: BeatGrid; name: string } | null> => {
-    const channels = live.current.bridge.song?.channels ?? []
+  const analyze = async (nearBpm: number | undefined, beatsPerBar: number, channels: readonly Channel[] = live.current.bridge.song?.channels ?? []): Promise<{ grid: BeatGrid; name: string } | null> => {
     const source = pickGridSource(channels)
     if (!source?.buffer) return null
     const cacheKey = `${source.id}|${nearBpm ?? 'auto'}|${beatsPerBar}`
@@ -213,8 +216,9 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
   }
 
   const generateClick = async (offsetOverride?: number) => {
-    const w = live.current.cur
-    const s = live.current.bridge.song
+    // A ponte e o trabalho de agora: trocar de música no meio não leva o click pra outra música.
+    const { cur: w, bridge: br, store: st, clickSel: sel } = live.current
+    const s = br.song
     if (!w?.sep || !s || !stopped()) return
     setBusy('click')
     say(null)
@@ -222,17 +226,17 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
       const typed = parseFloat(w.bpm)
       const near = Number.isFinite(typed) && typed >= 20 ? typed : 120
       let grid: BeatGrid | null = null
-      try { grid = (await analyze(near, BEATS_PER_BAR[w.meter]))?.grid ?? null } catch (e) { console.warn('[Click] análise falhou', e) }
+      try { grid = (await analyze(near, BEATS_PER_BAR[w.meter], s.channels))?.grid ?? null } catch (e) { console.warn('[Click] análise falhou', e) }
       const plan = clickPlan({ typedBpm: w.bpm, offsetMs: offsetOverride ?? w.offsetMs, downbeatShift: w.downbeatShift, grid })
-      const url = await generateSeparatorClick({ plan, durationSec: s.duration || 600, sel: live.current.clickSel, accentBeat1: w.accentBeat1, meter: w.meter })
+      const url = await generateSeparatorClick({ plan, durationSec: s.duration || 600, sel, accentBeat1: w.accentBeat1, meter: w.meter })
       const blob = await (await fetch(url)).blob()
       URL.revokeObjectURL(url)
       const file = new File([blob], `${SEPARATOR_CLICK_NAME}.wav`, { type: 'audio/wav' })
       // Um click gerado pelo app por música (P5): troca o do motor ou o de antes, numa troca só.
-      const added = await live.current.bridge.replaceChannel(APP_CLICK_NAMES, file)
+      const added = await br.replaceChannel(APP_CLICK_NAMES, file)
       if (!added) return
-      const remote = await live.current.store.upload(`${live.current.store.userId || 'anon'}/${w.sep.id}/click_${Date.now()}.wav`, file)
-      if (remote) await persist({ stems: stemsWith({ id: 'metronome', name: SEPARATOR_CLICK_NAME, url: remote, color: CLICK_COLOR }) })
+      const remote = await st.upload(`${st.userId || 'anon'}/${w.sep.id}/click_${Date.now()}.wav`, file)
+      if (remote) await persist({ stems: stemsWith({ id: 'metronome', name: SEPARATOR_CLICK_NAME, url: remote, color: CLICK_COLOR }, w) }, w)
     } catch (e) {
       console.error('Erro ao gerar metrônomo', e)
       say(BPM_COPY.clickError)
@@ -242,8 +246,8 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
   }
 
   const commitVoiceGuide = async () => {
-    const w = live.current.cur
-    const s = live.current.bridge.song
+    const { cur: w, bridge: br, store: st } = live.current
+    const s = br.song
     if (!w?.sep || !s || !stopped()) return
     if (w.cues.length === 0) { say(VOICE_COPY.needCues); return }
     setBusy('guide')
@@ -252,11 +256,11 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
       const blob = await renderVoiceGuideWav(w.cues, s.duration || 300, decodeGuide)
       if (!blob) throw new Error('Falha ao renderizar voz guia')
       const file = new File([blob], `${VOICE_GUIDE_NAME}.wav`, { type: 'audio/wav' })
-      const added = await live.current.bridge.replaceChannel([VOICE_GUIDE_NAME], file)
+      const added = await br.replaceChannel([VOICE_GUIDE_NAME], file)
       if (!added) return
-      patch({ cuesPending: false })
-      const remote = await live.current.store.upload(`${live.current.store.userId || 'anon'}/${w.sep.id}/voz_guia_${Date.now()}.wav`, file)
-      await persist(remote ? { stems: stemsWith({ id: 'voiceguide', name: VOICE_GUIDE_NAME, url: remote, color: FAMILY_COLOR.guia }) } : {})
+      setWork((x) => (x && x.key === w.key ? { ...x, cuesPending: false } : x))
+      const remote = await st.upload(`${st.userId || 'anon'}/${w.sep.id}/voz_guia_${Date.now()}.wav`, file)
+      await persist(remote ? { stems: stemsWith({ id: 'voiceguide', name: VOICE_GUIDE_NAME, url: remote, color: FAMILY_COLOR.guia }, w) } : {}, w)
     } catch (e) {
       console.error('Erro ao gerar canal de Voz Guia', e)
       say(VOICE_COPY.renderError)
@@ -385,7 +389,7 @@ export function useStageSeparation(bridge: StageSeparationBridge, store: StageSe
           voiceGuide: cues.length > 0 && !w.sep.stems.some((x) => x.id === 'voiceguide') ? () => renderVoiceGuideWav(cues, s.duration || 300, decodeGuide) : null,
         }, ({ status, progress }) => patch((x) => ({ cloud: { ...x.cloud, status, progress } })))
         patch((x) => ({ cloud: { ...x.cloud, status: PUBLISHED, progress: 100 } }))
-        await persist({ songName: w.cloud.name, artist: w.cloud.artist })
+        await persist({ songName: w.cloud.name, artist: w.cloud.artist }, w)
         return true
       } catch (e) {
         say(CLOUD_COPY.error(e instanceof Error ? e.message : String(e)))

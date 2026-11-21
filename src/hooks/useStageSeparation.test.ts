@@ -224,6 +224,34 @@ describe('useStageSeparation', () => {
     expect(alertSpy).not.toHaveBeenCalled()
   })
 
+  it('trocar de música no meio do Gerar click não leva o click nem a gravação pra outra música', async () => {
+    let release!: () => void
+    mocks.generateSeparatorClick.mockImplementationOnce(() => new Promise((r) => { release = () => r('blob:click') }))
+    const first = { ...bridge, replaceChannel: vi.fn(async (_n: readonly string[], f: File) => ({ id: 'n1', name: f.name } as unknown as Channel)) }
+    const hook = await mount(first)
+    let p!: Promise<void>
+    act(() => { p = hook.result.current.generateClick() })
+    await act(async () => { await vi.advanceTimersByTimeAsync(100) })
+    const other = { ...bridge, song: SONG({ id: 'song_2', separation: { id: 'sep_2', createdAt: 5 } }), replaceChannel: vi.fn() }
+    hook.rerender({ br: other })
+    await act(async () => { release(); await vi.advanceTimersByTimeAsync(10); await p })
+    expect(first.replaceChannel).toHaveBeenCalledTimes(1)
+    expect(other.replaceChannel).not.toHaveBeenCalled()
+    expect(store.saveSeparation).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'sep_1', createdAt: SEP.createdAt }))
+  })
+
+  it('marcação feita durante uma gravação continua pendente e grava depois', async () => {
+    const hook = await mount()
+    let release!: () => void
+    store.saveSeparation.mockImplementationOnce(() => new Promise((r) => { release = () => r('sep_1') }))
+    act(() => { hook.result.current.setBpm('81') })
+    await act(async () => { await vi.advanceTimersByTimeAsync(850) })
+    act(() => { hook.result.current.addCue({ label: 'Tag', file: 'Song Sections/Portugese - Tag.wav' }) })
+    await act(async () => { release(); await vi.advanceTimersByTimeAsync(0) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(900) })
+    expect(store.saveSeparation).toHaveBeenLastCalledWith(expect.objectContaining({ voiceCues: expect.arrayContaining([expect.objectContaining({ label: 'Tag' })]) }))
+  })
+
   it('as ações não mudam entre renders (o palco memorizado não renderiza à toa)', async () => {
     const hook = await mount()
     const first = hook.result.current
