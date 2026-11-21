@@ -17,10 +17,11 @@ import { type BeatGrid } from '../lib/beatGrid';
 import { SyncedTrackPlayer } from '../lib/syncedTrackPlayer';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
 import { useSeparationLibrary, type SavedSeparation } from '../hooks/useSeparationLibrary';
-import { audioBlobToMp3Blob } from '../lib/audioExport';
 import { GuidedTour, type TourStep } from './GuidedTour';
 import { GUIDE_DYNAMICS, GUIDE_SECTIONS, detectVoiceCues, formatCueTime, guideUrl, parseCueTime, renderVoiceGuideWav, voiceSourceTrack, type VoiceCue } from '../lib/separation/voiceGuide';
 import { BEATS_PER_BAR, SEPARATOR_METERS, bpmReport, clickPlan, generateSeparatorClick, measureGrid, normalizeBpm, nudgeOffset, pickGridSource as pickGridTrack, scaleBpm, stepBpm, tapTempo, tempoName, type SeparatorMeter } from '../lib/separation/separatorClick';
+import { downloadStem as downloadStemFile, readDownloadFormat, writeDownloadFormat, type DownloadFormat } from '../lib/separation/stemFiles';
+import { publishToCloud } from '../lib/separation/cloudPublish';
 
 const SEP_TOUR_STEPS: TourStep[] = [
   { title: 'Separação de Faixas', body: 'Aqui você transforma qualquer música em faixas separadas (vocal, bateria, baixo, instrumentos) usando IA. Veja como funciona.' },
@@ -31,8 +32,6 @@ const SEP_TOUR_STEPS: TourStep[] = [
   { title: 'Pronto!', body: 'Carregue uma música e experimente. A separação é o atalho pra ter qualquer faixa pronta pro domingo.' },
 ]
 
-type DownloadFormat = 'wav' | 'mp3';
-const DOWNLOAD_FORMAT_KEY = 'playback-studio:download-format';
 // Densidade da waveform: px por segundo de áudio. Timeline nunca comprime —
 // se a duração * esse valor passar da largura visível, a área rola de lado.
 const WAVEFORM_PX_PER_SECOND = 40;
@@ -78,15 +77,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   // Data da separação aberta: toda gravação leva ela, pra a de outro mês nunca virar "deste mês"
   // (sem ela o saveSeparation usa a da lista, que troca quando o plano muda).
   const [activeSepCreatedAt, setActiveSepCreatedAt] = useState<number | null>(null);
-  const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>(() => {
-    if (typeof window === 'undefined') return 'wav';
-    const stored = window.localStorage.getItem(DOWNLOAD_FORMAT_KEY);
-    return stored === 'mp3' ? 'mp3' : 'wav';
-  });
+  const [downloadFormat, setDownloadFormat] = useState<DownloadFormat>(() => readDownloadFormat());
   const [encodingStemId, setEncodingStemId] = useState<string | null>(null);
-  useEffect(() => {
-    if (typeof window !== 'undefined') window.localStorage.setItem(DOWNLOAD_FORMAT_KEY, downloadFormat);
-  }, [downloadFormat]);
+  useEffect(() => { writeDownloadFormat(downloadFormat); }, [downloadFormat]);
   const [libSaveToast, setLibSaveToast] = useState(false);
   const [publishGlobal, setPublishGlobal] = useState(false);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
@@ -193,18 +186,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     if (!canDownload) { blockDownload(); return; }
     try {
       setEncodingStemId(stem.id);
-      const res = await fetch(stem.url);
-      const wavBlob = await res.blob();
-      const useMp3 = downloadFormat === 'mp3';
-      const outBlob = useMp3 ? await audioBlobToMp3Blob(wavBlob, 320) : wavBlob;
-      const ext = useMp3 ? 'mp3' : 'wav';
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(outBlob);
-      a.download = `${(songName || 'stem').replace(/[^a-zA-Z0-9]/g, '_')}_${stem.name}.${ext}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      await downloadStemFile({ url: stem.url, songName, stemName: stem.name, format: downloadFormat });
     } catch (e) {
       console.error('Download error', e);
       alert('Erro ao baixar a faixa. Tenta de novo.');
@@ -954,93 +936,16 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     setSaveProgress(0);
     setSaveStatus('Gravando banco de dados...');
 
-    let cover_url = null;
     try {
-      if (coverFile) {
-         setSaveStatus('Subindo imagem de capa...');
-         const cName = `${Date.now()}_${coverFile.name.replace(/\\s+/g, '_')}`;
-         const rRes = await uploadToR2('covers', cName, coverFile);
-         if (!rRes.error) cover_url = rRes.url;
-      }
-
-      const songRes = await fetch(apiUrl('/api/insert-song'), {
-        method: 'POST',
-        headers: await getAuthHeaders(),
-        body: JSON.stringify({
-          name: songName, artist: artist || 'Desconhecido',
-          key: songKey, bpm: Number(bpm), cover_url,
-          is_global: isAdmin ? publishGlobal : false
-        }),
-      });
-      if (!songRes.ok) {
-        const b = await songRes.json().catch(() => ({ error: `HTTP ${songRes.status}` }));
-        throw new Error(b.error || 'Falha ao criar música');
-      }
-      const { id: songId } = await songRes.json();
-      if (!songId) throw new Error("Falha ao criar música");
-      setSaveProgress(10);
-
-      const stemsData: { song_id: string; name: string; file_url: string; order: number }[] = [];
-      const total = stems.length;
-
-      for (let i = 0; i < stems.length; i++) {
-        const stem = stems[i];
-        setSaveStatus(`Implantando Nuvem ☁️: ${stem.name} (${i+1}/${total})...`);
-
-        let fileUrl: string;
-        const isRemoteUrl = stem.url.startsWith('http://') || stem.url.startsWith('https://');
-        if (isRemoteUrl) {
-          const key = `stems/${user?.id}/${songId}/${stem.id}_${Date.now()}.wav`;
-          const copyRes = await fetch(apiUrl('/api/upload-stem-from-url'), {
-            method: 'POST',
-            headers: await getAuthHeaders(),
-            body: JSON.stringify({ sourceUrl: stem.url, key, contentType: 'audio/wav' }),
-          });
-          if (!copyRes.ok) {
-            const err = await copyRes.json().catch(() => ({}));
-            throw new Error((err as any).error || `Falha no upload server-side: HTTP ${copyRes.status}`);
-          }
-          const data = await copyRes.json();
-          fileUrl = (data as any).url;
-        } else {
-          const response = await fetch(stem.url);
-          const blob = await response.blob();
-          const stemFile = new File([blob], `${stem.id}.wav`, { type: blob.type || 'audio/wav' });
-          const uploadResult = await uploadToR2('stems', `${songId}/IA_${Date.now()}_${stem.id}.wav`, stemFile);
-          if (uploadResult.error || !uploadResult.url) throw new Error(uploadResult.error!);
-          fileUrl = uploadResult.url;
-        }
-
-        stemsData.push({ song_id: songId, name: stem.name || stem.id, file_url: fileUrl, order: i + 1 });
-        setSaveProgress(10 + Math.floor(((i + 1) / total) * 80));
-      }
-
-      // Render & upload Voz Guia stem if cues exist — só quando o canal não foi
-      // commitado ainda (senão ele já subiu junto no loop de stems acima).
-      if (voiceCues.length > 0 && !stems.some(s => s.id === 'voiceguide')) {
-        setSaveStatus('Renderizando Voz Guia...');
-        try {
-          const guideBlob = await renderVoiceGuideToBlob();
-          if (guideBlob) {
-            const guideFile = new File([guideBlob], 'voz_guia.wav', { type: 'audio/wav' });
-            const uploadResult = await uploadToR2('stems', `${songId}/voz_guia_${Date.now()}.wav`, guideFile);
-            if (!uploadResult.error && uploadResult.url) {
-              stemsData.push({ song_id: songId, name: 'Voz Guia', file_url: uploadResult.url, order: total + 1 });
-            }
-          }
-        } catch (e) { console.error('Voz Guia render error', e); }
-      }
-
-      setSaveStatus('Finalizando registros...');
-      const stemsRes = await fetch(apiUrl('/api/insert-stems'), {
-        method: 'POST',
-        headers: await getAuthHeaders(),
-        body: JSON.stringify({ stems: stemsData }),
-      });
-      if (!stemsRes.ok) {
-        const b = await stemsRes.json().catch(() => ({ error: `HTTP ${stemsRes.status}` }));
-        throw new Error(b.error || 'Falha ao registrar stems');
-      }
+      await publishToCloud({
+        songName, artist, songKey, bpm: Number(bpm), cover: coverFile,
+        isGlobal: isAdmin ? publishGlobal : false,
+        userId: user?.id ?? null,
+        stems,
+        // Voz guia renderizada só quando o canal não foi commitado ainda (senão ela já sobe
+        // junto com as faixas).
+        voiceGuide: voiceCues.length > 0 && !stems.some(s => s.id === 'voiceguide') ? renderVoiceGuideToBlob : null,
+      }, ({ status, progress }) => { setSaveStatus(status); setSaveProgress(progress); });
 
       // Update local library if this session is saved
       if (activeSepId) {
