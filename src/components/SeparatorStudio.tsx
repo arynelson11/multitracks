@@ -13,16 +13,14 @@ import { isQuiet, separationIsThisMonth, separationKey, type EngineBusy } from '
 import { PricingModal } from './PricingModal';
 import { LimitGate } from './livre/LimitGate';
 import { AdSlot } from './livre/AdSlot';
-import { generateManualClickTrackFromSample } from '../lib/AudioAnalyzer';
-import { detectBeatGrid, formatBpm, type BeatGrid } from '../lib/beatGrid';
-import { separatorGridUsable } from '../lib/autoClick';
+import { type BeatGrid } from '../lib/beatGrid';
 import { SyncedTrackPlayer } from '../lib/syncedTrackPlayer';
 import { CLICK_TYPES, CLICK_SUBDIVISIONS, loadClickSelection, saveClickSelection, getClickSampleUrl } from '../lib/clickLibrary';
 import { useSeparationLibrary, type SavedSeparation } from '../hooks/useSeparationLibrary';
 import { audioBlobToMp3Blob } from '../lib/audioExport';
 import { GuidedTour, type TourStep } from './GuidedTour';
-import { channelFamily, resolveChannelRole } from '../lib/channelNames';
 import { GUIDE_DYNAMICS, GUIDE_SECTIONS, detectVoiceCues, formatCueTime, guideUrl, parseCueTime, renderVoiceGuideWav, voiceSourceTrack, type VoiceCue } from '../lib/separation/voiceGuide';
+import { BEATS_PER_BAR, SEPARATOR_METERS, bpmReport, clickPlan, generateSeparatorClick, measureGrid, normalizeBpm, nudgeOffset, pickGridSource as pickGridTrack, scaleBpm, stepBpm, tapTempo, tempoName, type SeparatorMeter } from '../lib/separation/separatorClick';
 
 const SEP_TOUR_STEPS: TourStep[] = [
   { title: 'Separação de Faixas', body: 'Aqui você transforma qualquer música em faixas separadas (vocal, bateria, baixo, instrumentos) usando IA. Veja como funciona.' },
@@ -161,7 +159,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   const [isKeyPickerOpen, setIsKeyPickerOpen] = useState(false);
   const [isGeneratingClick, setIsGeneratingClick] = useState(false);
   const [clickSel, setClickSel] = useState(() => loadClickSelection());
-  const [timeSignature, setTimeSignature] = useState<'3/4' | '4/4' | '5/4' | '6/8' | '7/8' | '12/8'>('4/4');
+  const [timeSignature, setTimeSignature] = useState<SeparatorMeter>('4/4');
   const [accentBeat1, setAccentBeat1] = useState(true);
   const bpmTapsRef = useRef<number[]>([]);
 
@@ -216,13 +214,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   };
 
   const handleTapTempo = () => {
-    const now = Date.now();
-    bpmTapsRef.current.push(now);
-    if (bpmTapsRef.current.length > 8) bpmTapsRef.current.shift();
-    if (bpmTapsRef.current.length < 2) return;
-    const gaps = bpmTapsRef.current.slice(1).map((t, i) => t - bpmTapsRef.current[i]);
-    const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
-    setBpm(String(Math.round(60000 / avg)));
+    const tapped = tapTempo(bpmTapsRef.current, Date.now());
+    bpmTapsRef.current = tapped.taps;
+    if (tapped.bpm) setBpm(tapped.bpm);
   };
 
   // Voz Guia
@@ -258,16 +252,6 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   const isPlayingRef = useRef(false);
 
   const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-  const getTempoName = (b: number) => {
-    if (b < 60) return 'Largo';
-    if (b < 76) return 'Adagio';
-    if (b < 108) return 'Andante';
-    if (b < 112) return 'Moderato';
-    if (b < 120) return 'Allegretto';
-    if (b < 156) return 'Allegro';
-    if (b < 176) return 'Vivace';
-    return 'Presto';
-  };
 
   // ── Click sincronizado ──
   // Ajuste fino (ms) que vai GRAVADO no arquivo do click na hora de gerar
@@ -1087,18 +1071,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   };
 
   // ── Click sincronizado com a música ──
-  const BEATS_PER_BAR: Record<typeof timeSignature, number> = { '3/4': 3, '4/4': 4, '5/4': 5, '6/8': 6, '7/8': 7, '12/8': 12 };
-
   // Faixa usada pra medir a grade: bateria é a referência; sem ela, instrumental/baixo.
-  const pickGridSource = (): StemData | undefined => {
-    const notGenerated = (s: StemData) => !['metronome', 'click', 'voiceguide', 'vocals'].includes(s.id)
-      && resolveChannelRole({ id: s.id, name: s.name }) === 'normal';
-    return stems.find(s => s.id === 'drums')
-      || stems.find(s => channelFamily({ id: s.id, name: s.name }) === 'bateria')
-      || stems.find(s => s.id === 'no_vocals')
-      || stems.find(s => s.id === 'bass')
-      || stems.find(notGenerated);
-  };
+  const pickGridSource = (): StemData | undefined => pickGridTrack(stems);
 
   // Mede BPM exato + 1º tempo no áudio decodificado (o mesmo que está tocando,
   // então a grade fica na mesma linha do tempo do player). Cacheado por faixa/BPM.
@@ -1121,7 +1095,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     }
     // Deixa o spinner pintar antes do cálculo (roda na thread principal, ~0,2-1 s).
     await new Promise(r => setTimeout(r, 30));
-    const grid = detectBeatGrid(channels, sampleRate, { nearBpm, beatsPerBar });
+    const grid = measureGrid(channels, sampleRate, { nearBpm, beatsPerBar });
     beatGridRef.current = { key, grid };
     return { grid, source };
   };
@@ -1133,11 +1107,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     try {
       const res = await analyzeGrid(undefined, BEATS_PER_BAR[timeSignature]);
       if (!res) { setGridInfo('Nenhuma faixa pra analisar.'); return; }
-      setBpm(formatBpm(res.grid.bpm));
+      const report = bpmReport(res.grid, res.source.name);
+      setBpm(report.bpm);
       setDownbeatShift(0);
-      setGridInfo(!separatorGridUsable(res.grid)
-        ? `Pulso pouco claro nessa música (${res.source.name}). Confira o BPM no TAP.`
-        : `${res.grid.bpm.toFixed(2)} BPM medido na faixa ${res.source.name}.`);
+      setGridInfo(report.info);
     } catch (e) {
       console.error('[Click] detecção de BPM falhou', e);
       setGridInfo('Não deu pra analisar o áudio. Tenta de novo.');
@@ -1175,17 +1148,11 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
       } catch (e) {
         console.warn('[Click] análise falhou, gerando no BPM digitado a partir de 0:00', e);
       }
-      const aligned = separatorGridUsable(grid) ? grid : null;
-      const clickBpm = aligned ? aligned.bpm : bpmNum;
-      const firstBeat = (aligned ? aligned.firstBeat : 0) + offsetMs / 1000;
-      const downbeat = (aligned ? aligned.downbeat : 0) + downbeatShift;
+      const plan = clickPlan({ typedBpm: bpm, offsetMs, downbeatShift, grid });
 
       const master = getMasterWs();
       const duration = (master && master.getDuration() > 0 ? master.getDuration() : 0) || songDuration || 600;
-      const { clickTrackUrl } = await generateManualClickTrackFromSample(
-        clickSel.type, clickSel.subdivision, clickBpm, duration, accentBeat1, timeSignature, { firstBeat, downbeat }
-      );
-      if (!clickTrackUrl) throw new Error('Falha ao gerar metrônomo');
+      const clickTrackUrl = await generateSeparatorClick({ plan, durationSec: duration, sel: clickSel, accentBeat1, meter: timeSignature });
 
       // Entra na hora (URL local), já tocando junto se a música estiver rodando.
       const oldUrl = stems.find(s => s.id === 'metronome')?.url;
@@ -1226,7 +1193,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   const nudgeTimerRef = useRef<number | null>(null);
   const hasMetronome = stems.some(s => s.id === 'metronome');
   const nudgeClick = (deltaMs: number) => {
-    const next = Math.max(-500, Math.min(500, clickOffsetMs + deltaMs));
+    const next = nudgeOffset(clickOffsetMs, deltaMs);
     setClickOffsetMs(next);
     if (!hasMetronome) return;
     if (nudgeTimerRef.current) clearTimeout(nudgeTimerRef.current);
@@ -1886,24 +1853,24 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-white text-sm font-bold tracking-wide">BPM</span>
-                <span className="text-white/40 text-xs font-medium ml-2">{getTempoName(parseInt(bpm) || 120)}</span>
+                <span className="text-white/40 text-xs font-medium ml-2">{tempoName(parseInt(bpm) || 120)}</span>
               </div>
               <button onClick={() => !isGeneratingClick && setShowBpmModal(false)} className="text-white/40 hover:text-white transition-colors cursor-pointer p-1"><X size={18} /></button>
             </div>
 
             {/* BPM stepper */}
             <div className="flex items-center justify-between bg-[#141415] border border-white/5 rounded-xl p-2">
-              <button onClick={() => setBpm(String(Math.max(40, Math.round(parseFloat(bpm) || 120) - 1)))} disabled={isGeneratingClick}
+              <button onClick={() => setBpm(stepBpm(bpm, -1))} disabled={isGeneratingClick}
                 className="w-12 h-12 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg active:scale-95 transition-all text-white/80 cursor-pointer disabled:opacity-50">
                 <Minus size={20} />
               </button>
               <input type="number" value={bpm}
                 onChange={e => setBpm(e.target.value)}
-                onBlur={() => { const n = parseFloat(bpm); if (isNaN(n)) setBpm('120'); else setBpm(formatBpm(Math.max(40, Math.min(300, n)))); }}
+                onBlur={() => setBpm(normalizeBpm(bpm))}
                 disabled={isGeneratingClick}
                 className="text-white font-black text-4xl w-24 text-center bg-transparent focus:outline-none"
               />
-              <button onClick={() => setBpm(String(Math.min(300, Math.round(parseFloat(bpm) || 120) + 1)))} disabled={isGeneratingClick}
+              <button onClick={() => setBpm(stepBpm(bpm, 1))} disabled={isGeneratingClick}
                 className="w-12 h-12 flex items-center justify-center bg-[#2a2a2d] hover:bg-[#343438] rounded-lg active:scale-95 transition-all text-white/80 cursor-pointer disabled:opacity-50">
                 <Plus size={20} />
               </button>
@@ -1918,13 +1885,13 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
                 TAP TEMPO
               </button>
               <button
-                onClick={() => setBpm(formatBpm(Math.min(300, (parseFloat(bpm) || 120) * 2)))}
+                onClick={() => setBpm(scaleBpm(bpm, 2))}
                 disabled={isGeneratingClick}
                 className="px-4 py-3 rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40">
                 2×
               </button>
               <button
-                onClick={() => setBpm(formatBpm(Math.max(40, (parseFloat(bpm) || 120) / 2)))}
+                onClick={() => setBpm(scaleBpm(bpm, 0.5))}
                 disabled={isGeneratingClick}
                 className="px-4 py-3 rounded-xl text-xs font-black uppercase tracking-wider cursor-pointer active:scale-95 transition-all bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40">
                 ½×
@@ -1946,7 +1913,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
             <div>
               <p className="text-white/40 text-[9px] uppercase tracking-widest font-bold mb-2">Compasso</p>
               <div className="grid grid-cols-6 gap-1">
-                {(['3/4', '4/4', '5/4', '6/8', '7/8', '12/8'] as const).map(ts => (
+                {SEPARATOR_METERS.map(ts => (
                   <button key={ts} onClick={() => setTimeSignature(ts)} disabled={isGeneratingClick}
                     className={`py-2 rounded-lg text-[10px] font-black transition-all cursor-pointer active:scale-95 border ${timeSignature === ts ? 'bg-primary/15 border-primary text-primary' : 'bg-[#2a2a2d] border-white/5 text-white/60 hover:bg-[#343438]'}`}>
                     {ts}

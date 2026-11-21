@@ -48,10 +48,11 @@ describe('gerador do click: prazo da amostra', () => {
 // Junção da 1b com as faixas B e C (FATOS, prazo da amostra): o click gerado no Separador também
 // sai do gerador com prazo, com a grade da música. A prévia do som ao trocar o click não prende nada.
 describe('click gerado no Separador: o mesmo prazo da amostra', () => {
-  const separador = readFileSync(fileURLToPath(new URL('../components/SeparatorStudio.tsx', import.meta.url)), 'utf8')
+  // Parte 3: a geração do click do Separador mora em src/lib/separation/separatorClick.ts.
+  const separador = readFileSync(fileURLToPath(new URL('./separation/separatorClick.ts', import.meta.url)), 'utf8')
 
   it('o metrônomo do Separador gera pelo gerador com prazo (generateManualClickTrackFromSample)', () => {
-    expect(separador).toMatch(/import \{[^}]*\bgenerateManualClickTrackFromSample\b[^}]*\} from '\.\.\/lib\/AudioAnalyzer'/)
+    expect(separador).toMatch(/import \{[^}]*\bgenerateManualClickTrackFromSample\b[^}]*\} from '\.\.\/AudioAnalyzer'/)
     expect(separador).toMatch(/await generateManualClickTrackFromSample\(\s*clickSel\.type, clickSel\.subdivision,[^)]*\{ firstBeat, downbeat \}\s*\)/)
   })
 

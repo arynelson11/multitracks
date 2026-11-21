@@ -263,10 +263,16 @@ describe('Separador: corte próprio da grade do click', () => {
     }
   }, LENTO)
 
-  it('o SeparatorStudio decide pelo corte próprio nos dois lugares, sem número solto', () => {
-    const src = readFileSync(fileURLToPath(new URL('../components/SeparatorStudio.tsx', import.meta.url)), 'utf8')
-    expect(src).not.toMatch(/confidence\s*(>=|<)\s*0?\.\d/)
-    expect(src).not.toMatch(/CONFIDENCE_CUT|AUTO_CLICK_MIN_CONFIDENCE/)
+  // Parte 3: as contas do click do Separador moram em src/lib/separation/separatorClick.ts (o
+  // Separador de reserva e o painel SEPARAÇÃO do palco usam as duas); nenhuma ficou na tela.
+  it('o click do Separador decide pelo corte próprio nos dois lugares, sem número solto', () => {
+    const src = readFileSync(fileURLToPath(new URL('./separation/separatorClick.ts', import.meta.url)), 'utf8')
+    const sep = readFileSync(fileURLToPath(new URL('../components/SeparatorStudio.tsx', import.meta.url)), 'utf8')
+    for (const s of [src, sep]) {
+      expect(s).not.toMatch(/confidence\s*(>=|<)\s*0?\.\d/)
+      expect(s).not.toMatch(/CONFIDENCE_CUT|AUTO_CLICK_MIN_CONFIDENCE/)
+    }
     expect(src.match(/separatorGridUsable\(/g) ?? []).toHaveLength(2)
+    expect(sep.match(/separatorGridUsable\(/g) ?? []).toHaveLength(0)
   })
 })
