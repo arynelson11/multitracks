@@ -13,6 +13,7 @@ vi.mock('../lib/desktop', () => ({
 }))
 
 import { PricingModal } from './PricingModal'
+import { StageDialog } from './stage/StageDialog'
 
 const fetchMock = vi.fn()
 beforeEach(() => {
@@ -259,5 +260,19 @@ describe('PricingModal: primeiro mês com desconto', () => {
     r.rerender(<PricingModal isOpen={false} onClose={() => {}} />)
     r.rerender(<PricingModal isOpen onClose={() => {}} />)
     await vi.waitFor(() => expect(bodies('/api/checkout?action=offer')).toHaveLength(2))
+  })
+})
+
+// Parte 3: a Biblioteca virou uma janela do palco (StageDialog, z-[120]). Os Planos que abrem com
+// ela aberta (o "Ver os planos" da tela de limite do Livre) ficam por cima, nunca atrás.
+describe('PricingModal: por cima das janelas do palco', () => {
+  const zOf = (el: HTMLElement) => Number(el.style.zIndex || /\bz-\[(\d+)\]/.exec(el.className)?.[1] || 0)
+  it('com a Biblioteca aberta, os Planos abrem por cima dela', () => {
+    auth.userPlan = 'free'
+    render(<StageDialog open title="Biblioteca na Nuvem" onClose={() => {}} size="lg"><p>lista</p></StageDialog>)
+    render(<PricingModal isOpen onClose={() => {}} />)
+    const library = screen.getByRole('dialog', { name: 'Biblioteca na Nuvem' }).parentElement as HTMLElement
+    const plans = screen.getByRole('heading', { name: 'Escolha seu Plano' }).closest('div.fixed') as HTMLElement
+    expect(zOf(plans)).toBeGreaterThan(zOf(library))
   })
 })

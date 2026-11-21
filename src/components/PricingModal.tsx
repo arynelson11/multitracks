@@ -6,6 +6,7 @@ import { startCheckout, type CheckoutPlanKey } from '../lib/checkout';
 import { fetchOffer, toOfferView } from '../lib/offer';
 import { formatReais } from '../lib/prices';
 import type { OfferView } from './livre/limitCopy';
+import { openDialogs } from './stage/stageDialogStack';
 
 interface PricingModalProps {
     isOpen: boolean;
@@ -62,6 +63,11 @@ const PLANS: PlanCard[] = [
 ];
 
 const NO_OFFER: OfferView = { status: 'none' };
+
+/** Camada dos Planos: a de sempre (110), ou um degrau acima da janela do palco mais alta aberta agora. */
+function aboveStageDialogs(): number {
+    return openDialogs.reduce((z, d) => Math.max(z, d.z + 1), 110);
+}
 
 export function PricingModal({ isOpen, onClose, hideOffer = false }: PricingModalProps) {
     const { user, userPlan, planExpiresAt } = useAuth();
@@ -140,7 +146,9 @@ export function PricingModal({ isOpen, onClose, hideOffer = false }: PricingModa
     };
 
     return (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={onClose}>
+        // Por cima de qualquer janela do palco aberta (a Biblioteca virou uma, Parte 3): os Planos
+        // nunca abrem atrás dela, como o "Ver os planos" da tela de limite do Livre na Biblioteca.
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" style={{ zIndex: aboveStageDialogs() }} onClick={onClose}>
             <div className="daw-panel w-full max-w-5xl rounded-lg flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
                 
                 {/* Header */}

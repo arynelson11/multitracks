@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, X, Download, Cloud, Loader2, Music, RefreshCcw, Trash2, Edit2, Save, UploadCloud } from 'lucide-react';
+import { X, Download, Cloud, Loader2, Music, Trash2, Edit2, Save, UploadCloud } from 'lucide-react';
 import { useCloudLibrary } from '../hooks/useCloudLibrary';
 import { useAuth } from '../hooks/useAuth';
 import { updateSong, type CloudSong } from '../lib/supabase';
@@ -8,6 +8,8 @@ import { uploadToR2 } from '../lib/r2';
 import { type Marker } from '../types';
 import { INVALID_BPM_MESSAGE, editedBpmColumns, preciseBpm } from '../lib/cloudBpm';
 import type { TimeSignatureType } from '../lib/AudioAnalyzer';
+import { LibraryView } from './library/LibraryView';
+import { libraryCountText, libraryEmptyText, songsForTab, type LibraryTab } from './library/libraryRows';
 
 interface LibraryModalProps {
     isOpen: boolean;
@@ -42,7 +44,7 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
     // bpmText: o que está digitado no campo de BPM (undefined = não mexeu).
     const [editingSong, setEditingSong] = useState<Partial<CloudSong> & { file?: File | null; bpmText?: string }>({});
     const [isSavingEdit, setIsSavingEdit] = useState(false);
-    const [activeTab, setActiveTab] = useState<'platform' | 'personal'>('platform');
+    const [activeTab, setActiveTab] = useState<LibraryTab>('platform');
 
     useEffect(() => {
         if (isOpen) refreshSongs();
@@ -127,87 +129,23 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
         }
     };
 
+    const shownSongs = songsForTab(songs, activeTab, user?.id);
+
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-3 sm:p-6">
-            <div className="daw-panel w-full max-w-3xl h-full max-h-[85vh] rounded-lg flex flex-col overflow-hidden">
-
-                {/* Header */}
-                <div className="flex items-center justify-between p-3 border-b border-border shrink-0">
-                    <div className="flex items-center gap-2">
-                        <Cloud size={16} className="text-secondary" />
-                        <h2 className="text-white font-black text-sm uppercase tracking-wider">Biblioteca na Nuvem</h2>
-                    </div>
-                    <div className="flex items-center gap-1">
-                        <button onClick={refreshSongs} className="p-1.5 text-text-muted hover:text-white hover:bg-white/5 rounded-md transition-all active:scale-90 cursor-pointer">
-                            <RefreshCcw size={14} />
-                        </button>
-                        <button onClick={onClose} className="p-1.5 text-text-muted hover:text-white hover:bg-white/5 rounded-md transition-all active:scale-90 cursor-pointer">
-                            <X size={16} />
-                        </button>
-                    </div>
-                </div>
-
-                {/* Search Bar & Tabs */}
-                <div className="flex flex-col border-b border-border shrink-0 bg-[#0a0a0c]">
-                    <div className="px-3 py-2">
-                        <div className="relative">
-                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-                            <input
-                                type="text"
-                                placeholder="Pesquisar por nome, artista ou tom..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full daw-input text-white text-xs pl-9 pr-4 py-2 rounded-md placeholder:text-text-muted/30 font-mono"
-                            />
-                            {searchQuery && (
-                                <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-white transition-all active:scale-90 cursor-pointer p-1">
-                                    <X size={12} />
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                    <div className="flex px-3 gap-4">
-                        <button 
-                            onClick={() => setActiveTab('platform')}
-                            className={`pb-2 text-[10px] font-black uppercase tracking-wider transition-colors border-b-2 cursor-pointer ${activeTab === 'platform' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-white'}`}>
-                            Plataforma
-                        </button>
-                        <button 
-                            onClick={() => setActiveTab('personal')}
-                            className={`pb-2 text-[10px] font-black uppercase tracking-wider transition-colors border-b-2 cursor-pointer ${activeTab === 'personal' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-white'}`}>
-                            Minhas Músicas
-                        </button>
-                    </div>
-                </div>
-
-                {/* Song List */}
-                <div className="flex-1 overflow-y-auto p-3 bg-[#0e0e10]">
-                    {isLoadingList ? (
-                        <div className="flex flex-col items-center justify-center h-full gap-3 text-text-muted">
-                            <Loader2 size={24} className="animate-spin text-secondary" />
-                            <span className="text-[10px] font-mono uppercase tracking-wider">Carregando a biblioteca...</span>
-                        </div>
-                    ) : (
-                        (() => {
-                            const filteredSongs = songs.filter((s: CloudSong) => {
-                                if (activeTab === 'platform') return s.is_global === true;
-                                return s.is_global !== true && s.user_id === user?.id;
-                            });
-
-                            if (filteredSongs.length === 0) {
-                                return (
-                                    <div className="flex flex-col items-center justify-center h-full gap-3 text-text-muted">
-                                        <Cloud size={40} className="opacity-15" />
-                                        <span className="text-[10px] font-mono">
-                                            {searchQuery ? 'Nenhuma música encontrada.' : (activeTab === 'platform' ? 'Plataforma vazia.' : 'Nenhuma música pessoal encontrada.')}
-                                        </span>
-                                    </div>
-                                );
-                            }
-
-                            return (
-                                <div className="grid gap-2">
-                                    {filteredSongs.map((song: CloudSong) => {
+        <LibraryView
+            open
+            onClose={onClose}
+            onRefresh={() => { void refreshSongs(); }}
+            query={searchQuery}
+            onQuery={setSearchQuery}
+            tab={activeTab}
+            onTab={setActiveTab}
+            loading={isLoadingList}
+            countText={libraryCountText(shownSongs.length)}
+            emptyText={shownSongs.length === 0 ? libraryEmptyText(searchQuery, activeTab) : null}
+        >
+            <div className="grid gap-2">
+                                    {shownSongs.map((song: CloudSong) => {
                                         const isDownloading = downloadingSongId === song.id;
                                         const isDownloaded = downloadedIds.has(song.id);
                                         const isEditing = editingSong.id === song.id;
@@ -370,18 +308,6 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
                                 );
                                     })}
                                 </div>
-                            );
-                        })()
-                    )}
-                </div>
-
-                {/* Footer */}
-                <div className="px-3 py-2 border-t border-border text-center shrink-0">
-                    <span className="text-[9px] text-text-muted/30 font-mono uppercase tracking-wider">
-                        {songs.filter((s: CloudSong) => activeTab === 'platform' ? s.is_global : !s.is_global && s.user_id === user?.id).length} música(s) exibida(s)
-                    </span>
-                </div>
-            </div>
-        </div>
+        </LibraryView>
     );
 }
