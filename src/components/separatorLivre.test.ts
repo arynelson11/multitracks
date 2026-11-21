@@ -63,13 +63,20 @@ describe('Separador no Livre: limites, tela de limite e anúncio (T19)', () => {
     expect(sep).toMatch(/const busy: EngineBusy = \{ isPlaying: isPlaying \|\| stageBusy\.isPlaying, isCountingIn: stageBusy\.isCountingIn \};/)
     expect(sep).toMatch(/const quiet = isQuiet\(busy\);/)
     // Os minutos do Ao Vivo só correm na instância do App.
-    expect(sep).toMatch(/useLivre\(\{ userId: user\?\.id \?\? null, plan: userPlan, isAdmin, busy, liveActive: false, onLiveExpired: \(\) => \{\} \}\)/)
-    expect(app).toMatch(/<SeparatorStudio onClose=\{\(\) => setIsSeparatorOpen\(false\)\} stageBusy=\{\{ isPlaying, isCountingIn \}\} \/>/)
+    expect(sep).toMatch(/useLivre\(\{ userId, plan: userPlan, isAdmin, busy, liveActive: false, onLiveExpired: \(\) => \{\} \}\)/)
   })
 
-  it('regra do Livre só com o plano lido: o useAuth desta tela começa em Livre até ler o perfil', () => {
-    expect(sep).toMatch(/const \{ user, userPlan, isAdmin, loading: authLoading \} = useAuth\(\);/)
-    expect(sep).toMatch(/const isLivre = livre\.isLivre && !authLoading;/)
+  // Revisão macro 1b (parte 2, M4): a conta, o plano e o papel vêm do App, que só passa do
+  // carregando com eles lidos. O Separador não tem useAuth próprio (que começava em Livre até ler
+  // o perfil e, com a rede lenta, abria separação de mês anterior sem contar).
+  it('a conta, o plano e o papel vêm do App, sem useAuth próprio', () => {
+    expect(app).toMatch(/<SeparatorStudio onClose=\{\(\) => setIsSeparatorOpen\(false\)\} stageBusy=\{\{ isPlaying, isCountingIn \}\} userId=\{user\?\.id \?\? null\} userPlan=\{userPlan\} isAdmin=\{isAdmin\} \/>/)
+    expect(sep).toMatch(/userId: string \| null;\s*userPlan: string;\s*isAdmin: boolean;/)
+    expect(sep).toMatch(/= \(\{ onClose, stageBusy, userId, userPlan, isAdmin \}\) =>/)
+    expect(sep).not.toMatch(/\buseAuth\b/)
+    expect(sep).not.toMatch(/authLoading/)
+    expect(sep).not.toMatch(/\buser\?\.|\buser\./)
+    expect(sep).toMatch(/const isLivre = livre\.isLivre;/)
   })
 
   it('limite de separações (contador lido antes e o 402): o Livre pede a tela separations sem alert; quem paga mantém o aviso e os Planos', () => {
@@ -116,7 +123,7 @@ describe('Separador no Livre: limites, tela de limite e anúncio (T19)', () => {
     expect(sep).toMatch(/<AdSlot[\s\S]*?placement="separation-done"[\s\S]*?quiet=\{quiet\}/)
     const at = sep.indexOf('<AdSlot')
     const ad = sep.slice(at, sep.indexOf('/>', at))
-    expect(ad).toMatch(/userId=\{user\?\.id \?\? null\}/)
+    expect(ad).toMatch(/userId=\{userId\}/)
     expect(ad).toMatch(/isLivre=\{isLivre\}/)
     expect(ad).toMatch(/justSeparated=\{justSeparated\}/)
     expect(ad).toMatch(/onCta=\{\(\) => setIsPricingOpen\(true\)\}/)

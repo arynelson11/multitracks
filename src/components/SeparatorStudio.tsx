@@ -6,7 +6,6 @@ import { uploadToR2 } from '../lib/r2';
 import { AUDIO_FILE_ACCEPT } from '../lib/uploadContentType';
 import { getAuthHeaders } from '../lib/supabase';
 import { fetchMonthlyQuota, formatDateBR } from '../lib/separationUsage';
-import { useAuth } from '../hooks/useAuth';
 import { useLivre } from '../hooks/useLivre';
 import { canDownloadStems, canUseVoiceGuide, canUseBpmDetection, planTier, separationStemOptions, ALL_STEM_COUNTS, type StemCount } from '../lib/plans';
 import { isQuiet, separationIsThisMonth, separationKey, type EngineBusy } from '../lib/livreRules';
@@ -162,6 +161,11 @@ interface SeparatorStudioProps {
   // O motor do palco (App), que continua tocando com o Separador aberto. A tela de limite e o
   // anúncio do Livre só aparecem com ele parado também (Ruling R12).
   stageBusy: EngineBusy;
+  // A conta, o plano e o papel lidos no App, que só passa do carregando com eles: o Separador
+  // nunca decide o Livre (nem quem paga, nem o admin) com o plano ainda carregando.
+  userId: string | null;
+  userPlan: string;
+  isAdmin: boolean;
 }
 
 let globalAudioCtx: AudioContext | null = null;
@@ -172,8 +176,7 @@ function getAudioContext() {
   return globalAudioCtx;
 }
 
-export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stageBusy }) => {
-  const { user, userPlan, isAdmin, loading: authLoading } = useAuth();
+export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stageBusy, userId, userPlan, isAdmin }) => {
   const canDownload = isAdmin || canDownloadStems(userPlan);
   const canVoiceGuide = isAdmin || canUseVoiceGuide(userPlan);
   const canBpm = isAdmin || canUseBpmDetection(userPlan);
@@ -224,10 +227,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   // Os minutos do Ao Vivo correm só na instância do App.
   const busy: EngineBusy = { isPlaying: isPlaying || stageBusy.isPlaying, isCountingIn: stageBusy.isCountingIn };
   const quiet = isQuiet(busy);
-  const livre = useLivre({ userId: user?.id ?? null, plan: userPlan, isAdmin, busy, liveActive: false, onLiveExpired: () => {} });
-  // O useAuth desta tela começa em Livre até ler o perfil: quem paga e o admin nunca veem regra do
-  // Livre nesse meio tempo.
-  const isLivre = livre.isLivre && !authLoading;
+  const livre = useLivre({ userId, plan: userPlan, isAdmin, busy, liveActive: false, onLiveExpired: () => {} });
+  const isLivre = livre.isLivre;
   // A separação acabou de terminar (até abrir outra ou voltar): só ela chama o anúncio do fim.
   const [justSeparated, setJustSeparated] = useState(false);
   const [isLooping, setIsLooping] = useState(false);
@@ -470,7 +471,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
       const blob = await renderVoiceGuideToBlob();
       if (!blob) throw new Error('Falha ao renderizar voz guia');
       const file = new File([blob], 'voz_guia.wav', { type: 'audio/wav' });
-      const up = await uploadToR2('stems', `${user?.id || 'anon'}/${activeSepId || 'tmp'}/voz_guia_${Date.now()}.wav`, file);
+      const up = await uploadToR2('stems', `${userId || 'anon'}/${activeSepId || 'tmp'}/voz_guia_${Date.now()}.wav`, file);
       const url = (!up.error && up.url) ? up.url : URL.createObjectURL(blob);
       setStems(prev => {
         const old = prev.find(s => s.id === 'voiceguide');
@@ -1025,9 +1026,9 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
       setProgress(92);
       const songSlug = `sep_${Date.now()}`;
       const persistedStems: StemData[] = await Promise.all(stemsArray.map(async (s) => {
-        if (!user?.id || !/^https?:\/\//.test(s.url)) return s;
+        if (!userId || !/^https?:\/\//.test(s.url)) return s;
         try {
-          const key = `stems/${user.id}/${songSlug}/${s.id}_${Date.now()}.wav`;
+          const key = `stems/${userId}/${songSlug}/${s.id}_${Date.now()}.wav`;
           const copyRes = await fetch(apiUrl('/api/upload-stem-from-url'), {
             method: 'POST',
             headers: await getAuthHeaders(),
@@ -1297,7 +1298,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
         let fileUrl: string;
         const isRemoteUrl = stem.url.startsWith('http://') || stem.url.startsWith('https://');
         if (isRemoteUrl) {
-          const key = `stems/${user?.id}/${songId}/${stem.id}_${Date.now()}.wav`;
+          const key = `stems/${userId}/${songId}/${stem.id}_${Date.now()}.wav`;
           const copyRes = await fetch(apiUrl('/api/upload-stem-from-url'), {
             method: 'POST',
             headers: await getAuthHeaders(),
@@ -1493,7 +1494,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
         try {
           const blob = await (await fetch(clickTrackUrl)).blob();
           const file = new File([blob], 'click.wav', { type: 'audio/wav' });
-          const up = await uploadToR2('stems', `${user?.id || 'anon'}/${activeSepId || 'tmp'}/click_${Date.now()}.wav`, file);
+          const up = await uploadToR2('stems', `${userId || 'anon'}/${activeSepId || 'tmp'}/click_${Date.now()}.wav`, file);
           if (up.error || !up.url) { console.warn('[Click] upload falhou, fica só nesta sessão:', up.error); return; }
           const remoteUrl = up.url;
           urlAliases.current.set(remoteUrl, clickTrackUrl);
@@ -2074,7 +2075,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
           música parada (a daqui e a do palco). No fluxo, embaixo das faixas, sem cobrir nada.
           "Conhecer o Pro" abre os Planos aqui mesmo. */}
       <div className="shrink-0 grid grid-cols-[minmax(0,28rem)] justify-center border-t border-[#222] bg-[#111113] px-3 py-3 empty:hidden">
-        <AdSlot placement="separation-done" userId={user?.id ?? null} isLivre={isLivre} quiet={quiet} justSeparated={justSeparated} onCta={() => setIsPricingOpen(true)} />
+        <AdSlot placement="separation-done" userId={userId} isLivre={isLivre} quiet={quiet} justSeparated={justSeparated} onCta={() => setIsPricingOpen(true)} />
       </div>
 
       {/* SAVE MODAL */}

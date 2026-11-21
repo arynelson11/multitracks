@@ -1403,7 +1403,7 @@ export default function App() {
   // O motor do palco segue tocando com o Separador aberto: ele recebe o estado pra a tela de limite
   // e o anúncio do Livre esperarem a música parar (Ruling R12).
   if (isSeparatorOpen) {
-    return <SeparatorStudio onClose={() => setIsSeparatorOpen(false)} stageBusy={{ isPlaying, isCountingIn }} />
+    return <SeparatorStudio onClose={() => setIsSeparatorOpen(false)} stageBusy={{ isPlaying, isCountingIn }} userId={user?.id ?? null} userPlan={userPlan} isAdmin={isAdmin} />
   }
 
   // ───────────────── ADMIN (dentro do app, só pra quem tem o papel) ─────────────────
