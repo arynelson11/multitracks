@@ -8,6 +8,9 @@ import { LIBRARY_EDIT, LIBRARY_ROWS, PLAYER_SONG, PLAYER_TRACKS, SEPARATIONS } f
 import { LibraryView } from '../../src/components/library/LibraryView'
 import { libraryCountText } from '../../src/components/library/libraryRows'
 import { INVALID_BPM_MESSAGE } from '../../src/lib/cloudBpm'
+import { PricingView } from '../../src/components/pricing/PricingView'
+import type { PricingCardView } from '../../src/components/pricing/PricingView'
+import { PRICING_PLANS } from '../../src/components/pricing/pricingCatalog'
 import { laneFloor } from '../../src/components/separator/separatorCopy'
 import { BpmClickEditor } from '../../src/components/separation/BpmClickEditor'
 import { CloudSaveForm } from '../../src/components/separation/CloudSaveForm'
@@ -121,3 +124,25 @@ export function LibraryPage({ estado }: { estado: 'biblioteca' | 'biblioteca-edi
   )
 }
 
+/**
+ * Planos (Parte 3): `planos` é quem já paga (Pro Mensal, o plano atual desligado, a linha da troca e o
+ * aviso do pagamento aberto no navegador); `planos-oferta` é o Livre com a janela do primeiro mês
+ * aberta (R$ 24,90 e R$ 59,90 nos mensais), o Studio Mensal abrindo o pagamento e a frase de erro.
+ */
+export function PlansPage({ estado }: { estado: 'planos' | 'planos-oferta' }) {
+  const oferta = estado === 'planos-oferta'
+  const cards: PricingCardView[] = PRICING_PLANS.map((p) => {
+    const current = !oferta && p.planKey === 'essencial_mensal'
+    const loading = oferta && p.planKey === 'pro_mensal'
+    const offerPrice = oferta && p.planKey === 'essencial_mensal' ? 'R$ 24,90' : oferta && p.planKey === 'pro_mensal' ? 'R$ 59,90' : null
+    return { ...p, offerPrice, current, loading, disabled: current || loading }
+  })
+  return (
+    <PricingView
+      open onClose={noop} switching={!oferta} currentName={oferta ? 'Livre' : 'Pro Mensal'} cards={cards}
+      openedExternally={!oferta} pending={null} onConfirmSwitch={noop} onCancelSwitch={noop}
+      message={oferta ? 'Não foi possível conectar com o servidor. Confira a internet e tente de novo.' : null}
+      onChoose={noop}
+    />
+  )
+}

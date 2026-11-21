@@ -13,7 +13,7 @@ import { UpdateBanner } from '../../src/components/UpdateBanner'
 import { WhatsNewModal } from '../../src/components/WhatsNewModal'
 import type { Channel, Song } from '../../src/types'
 import type { TelaEstado } from './telasEstados'
-import { LibraryPage, SeparatorPage } from './pages'
+import { LibraryPage, PlansPage, SeparatorPage } from './pages'
 
 const noop = () => {}
 
@@ -138,6 +138,7 @@ export function TelaPage({ estado }: { estado: TelaEstado }) {
       {(estado === 'separador-inicio' || estado === 'separador-opcoes' || estado === 'separador-player'
         || estado === 'separador-bpm' || estado === 'separador-voz' || estado === 'separador-publicar') && <SeparatorPage estado={estado} />}
       {(estado === 'biblioteca' || estado === 'biblioteca-editar') && <LibraryPage estado={estado} />}
+      {(estado === 'planos' || estado === 'planos-oferta') && <PlansPage estado={estado} />}
       {(estado === 'padsnuvem' || estado === 'padsnuvem-editar') && (
         <PadSetsModal isOpen onClose={noop} onSelect={noop} selectedPadSet={{ id: 'p2', name: 'Ambiente Suave', base_path: 'p2' }} isAdmin />
       )}

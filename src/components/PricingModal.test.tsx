@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
-const auth = { user: { id: 'u1' }, userPlan: 'essencial_mensal', planExpiresAt: null as string | null }
+const auth = { user: { id: 'u1' } as { id: string } | null, userPlan: 'essencial_mensal', planExpiresAt: null as string | null }
 vi.mock('../hooks/useAuth', () => ({ useAuth: () => auth }))
 vi.mock('../lib/supabase', () => ({ getAuthHeaders: async () => ({ Authorization: 'Bearer t' }) }))
 vi.mock('../lib/api', () => ({ apiUrl: (p: string) => p }))
@@ -19,6 +21,7 @@ const fetchMock = vi.fn()
 beforeEach(() => {
   desktop.isElectron = false
   desktop.openExternalUrl.mockReset()
+  auth.user = { id: 'u1' }
   auth.userPlan = 'essencial_mensal'
   auth.planExpiresAt = null
   fetchMock.mockReset()
@@ -28,7 +31,7 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-const card = (name: string) => screen.getByRole('heading', { name }).closest('div.relative') as HTMLElement
+const card = (name: string) => screen.getByRole('heading', { name }).closest('[data-plan-card]') as HTMLElement
 
 describe('PricingModal: Alterar Plano', () => {
   it('quem já paga vê, antes de confirmar, que o novo é cobrado cheio e o atual termina na hora', () => {
@@ -38,7 +41,7 @@ describe('PricingModal: Alterar Plano', () => {
     expect(dialog.textContent).toContain('cobrado cheio')
     expect(dialog.textContent).toContain('Pro Mensal termina na hora')
     expect(dialog.textContent).toContain('sem desconto proporcional')
-    expect(dialog.textContent).not.toContain('—')
+    expect(dialog.textContent).not.toContain(String.fromCharCode(0x2014))
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -63,7 +66,7 @@ describe('PricingModal: Alterar Plano', () => {
     auth.userPlan = 'free'
     render(<PricingModal isOpen onClose={() => {}} />)
     fireEvent.click(within(card('Pro Mensal')).getByRole('button', { name: 'Assinar Agora' }))
-    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'Trocar de plano?' })).toBeNull()
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
   })
 })
@@ -216,7 +219,7 @@ describe('PricingModal: primeiro mês com desconto', () => {
     expect(bodies('/api/checkout')[1]).toEqual({ planKey: 'essencial_mensal', confirmedSwitch: false })
   })
 
-  it('409 sem offerEnded e 500 seguem no aviso de sempre, com a frase do servidor', async () => {
+  it('409 sem offerEnded e 500 viram frase na janela (antes o aviso do navegador), com a frase do servidor', async () => {
     const HAS = 'Você já tem o Pro Mensal ativo. Não precisa assinar de novo; para mudar, escolha outro plano.'
     const DOWN = 'Não deu para abrir o pagamento agora. Tente de novo em alguns minutos.'
     let checkout = () => answer(409, { error: HAS })
@@ -224,20 +227,19 @@ describe('PricingModal: primeiro mês com desconto', () => {
     render(<PricingModal isOpen onClose={() => {}} />)
     await vi.waitFor(() => expect(card('Pro Mensal').textContent).toContain('Primeiro mês por'))
     subscribe('Pro Mensal')
-    await vi.waitFor(() => expect(window.alert).toHaveBeenCalledWith(HAS))
+    expect((await screen.findByRole('alert')).textContent).toBe(HAS)
     // O desconto continua: não foi a oferta que terminou.
     expect(card('Pro Mensal').textContent).toContain('Primeiro mês por')
-    expect(screen.queryByRole('alert')).toBeNull()
 
-    // O 500 (pagamento fora) também vai pelo aviso de sempre, e o desconto continua.
+    // O 500 (pagamento fora) também vira a frase (a de agora troca a de antes), e o desconto continua.
     checkout = () => answer(500, { error: DOWN })
     subscribe('Pro Mensal')
-    await vi.waitFor(() => expect(window.alert).toHaveBeenCalledWith(DOWN))
-    expect(window.alert).toHaveBeenCalledTimes(2)
+    await vi.waitFor(() => expect(screen.getByRole('alert').textContent).toBe(DOWN))
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(window.alert).not.toHaveBeenCalled()
     expect(bodies('/api/checkout')).toHaveLength(2)
     expect(bodies('/api/checkout')[1]).toEqual({ planKey: 'essencial_mensal', confirmedSwitch: false, offer: true })
     expect(card('Pro Mensal').textContent).toContain('Primeiro mês por')
-    expect(screen.queryByRole('alert')).toBeNull()
     expect(desktop.openExternalUrl).not.toHaveBeenCalled()
   })
 
@@ -263,8 +265,9 @@ describe('PricingModal: primeiro mês com desconto', () => {
   })
 })
 
-// Parte 3: a Biblioteca virou uma janela do palco (StageDialog, z-[120]). Os Planos que abrem com
-// ela aberta (o "Ver os planos" da tela de limite do Livre) ficam por cima, nunca atrás.
+// Parte 3: a Biblioteca virou uma janela do palco (StageDialog, z-[120]) e os Planos também (pilha
+// do palco). Os Planos que abrem com ela aberta (o "Ver os planos" da tela de limite do Livre) ficam
+// por cima, nunca atrás.
 describe('PricingModal: por cima das janelas do palco', () => {
   const zOf = (el: HTMLElement) => Number(el.style.zIndex || /\bz-\[(\d+)\]/.exec(el.className)?.[1] || 0)
   it('com a Biblioteca aberta, os Planos abrem por cima dela', () => {
@@ -274,5 +277,66 @@ describe('PricingModal: por cima das janelas do palco', () => {
     const library = screen.getByRole('dialog', { name: 'Biblioteca na Nuvem' }).parentElement as HTMLElement
     const plans = screen.getByRole('heading', { name: 'Escolha seu Plano' }).closest('div.fixed') as HTMLElement
     expect(zOf(plans)).toBeGreaterThan(zOf(library))
+  })
+})
+
+// Parte 3, T4: os avisos do navegador viraram frase dentro da janela (o app de computador roda de
+// file:// e o alert some atrás da janela no Electron).
+describe('PricingModal: erros na janela, sem alert', () => {
+  it('erro de rede vira frase na janela, sem alert', async () => {
+    auth.userPlan = 'free'
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/checkout?action=offer') return { ok: true, status: 200, statusText: 'OK', text: async () => '{"status":"none"}' }
+      throw new TypeError('Failed to fetch')
+    })
+    render(<PricingModal isOpen onClose={() => {}} />)
+    fireEvent.click(within(card('Pro Mensal')).getByRole('button', { name: 'Assinar Agora' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('Não foi possível conectar com o servidor.')
+    expect(screen.getByRole('dialog', { name: 'Escolha seu Plano' }).contains(alert)).toBe(true)
+    expect(window.alert).not.toHaveBeenCalled()
+    // O botão volta a assinar.
+    expect(within(card('Pro Mensal')).getByRole('button', { name: 'Assinar Agora' })).toBeTruthy()
+  })
+
+  it('sem login, a frase de hoje na janela e nada de checkout', async () => {
+    auth.user = null
+    auth.userPlan = 'free'
+    render(<PricingModal isOpen onClose={() => {}} />)
+    fireEvent.click(within(card('Studio Anual')).getByRole('button', { name: 'Assinar Agora' }))
+    expect((await screen.findByRole('alert')).textContent).toBe('Por favor, faça login para assinar um plano.')
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(window.alert).not.toHaveBeenCalled()
+  })
+
+  it('a frase de erro some ao fechar e abrir de novo', async () => {
+    auth.user = null
+    auth.userPlan = 'free'
+    const r = render(<PricingModal isOpen onClose={() => {}} />)
+    fireEvent.click(within(card('Pro Mensal')).getByRole('button', { name: 'Assinar Agora' }))
+    await screen.findByRole('alert')
+    r.rerender(<PricingModal isOpen={false} onClose={() => {}} />)
+    r.rerender(<PricingModal isOpen onClose={() => {}} />)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('Esc e o X fecham os Planos; com o "Trocar de plano?" aberto, o Esc fecha só ele', () => {
+    const onClose = vi.fn()
+    render(<PricingModal isOpen onClose={onClose} />)
+    fireEvent.click(within(card('Studio Mensal')).getByRole('button', { name: 'Assinar Agora' }))
+    expect(screen.getByRole('dialog', { name: 'Trocar de plano?' })).toBeTruthy()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Trocar de plano?' })).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Escolha seu Plano' })).getByRole('button', { name: 'Fechar' }))
+    expect(onClose).toHaveBeenCalledTimes(2)
+  })
+
+  it('nenhum alert sobrou nos Planos', () => {
+    const src = readFileSync(join(process.cwd(), 'src/components/PricingModal.tsx'), 'utf8')
+    expect(src).not.toMatch(/\balert\s*\(/)
+    expect(src).not.toContain(String.fromCharCode(0x2014))
   })
 })

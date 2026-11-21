@@ -6,7 +6,9 @@ export const TELA_ESTADOS = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letr
   // As janelas do Separador de reserva, uma por vez por cima do player (revisão sep-2 I5).
   'separador-bpm', 'separador-voz', 'separador-publicar',
   // Biblioteca na Nuvem (Parte 3, partes 3 a 5): a vista solta, em pages.tsx.
-  'biblioteca', 'biblioteca-editar'] as const
+  'biblioteca', 'biblioteca-editar',
+  // Planos (Parte 3, partes 3 a 5): a vista solta, em pages.tsx.
+  'planos', 'planos-oferta'] as const
 export type TelaEstado = (typeof TELA_ESTADOS)[number]
 
 export function isTela(value: string): value is TelaEstado {
@@ -44,6 +46,8 @@ export const TELA_EXPECT: Record<TelaEstado, { sel: string; text?: string; count
   'separador-publicar': { sel: '[role="dialog"] [data-cloud-form] [role="switch"]' },
   biblioteca: { sel: '[role="dialog"] [data-library] [data-library-row]', count: 8 },
   'biblioteca-editar': { sel: '[role="dialog"] [data-library-edit="b1"] input[inputmode="decimal"]' },
+  planos: { sel: '[role="dialog"] [data-plan-card]', count: 4 },
+  'planos-oferta': { sel: '[role="dialog"] [data-plan-card="pro_mensal"] [data-offer]' },
 }
 
 /** Toque de ponteiro (click com detail 1), como o dedo. */

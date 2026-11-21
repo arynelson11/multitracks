@@ -6,7 +6,7 @@
 //   download-celular, só de celular) e os 10 estados da faixa B (login e Configurações) em 1024x740,
 //   1280x800, 1920x1080, 390x844 e 844x390 (50); com a faixa D (gaveta e janela de publicar do palco nos
 //   8, páginas do Separador em 5 tamanhos e as janelas dele em 2): 360; com a tela inicial com o anúncio
-//   (8 e 390x844), a Biblioteca (2 estados em 5 tamanhos, JANELAS_INICIO): 379 combinações;
+//   (8 e 390x844), a Biblioteca e os Planos (4 estados em 5 tamanhos, JANELAS_INICIO): 389 combinações;
 //   --estado quebrado: só a prova (um botão de largura fixa com texto longo), que tem de falhar
 //   (com --only 390x844, a prova da moldura do celular).
 // Sai com código 1 se alguma combinação falhar (ou não responder). Resultados em scripts/verify-layout/results/.
@@ -38,7 +38,7 @@ const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'reper
   // Separador (Parte 3, faixa D), a mesma lista de telasEstados.ts.
   'separador-inicio', 'separador-opcoes', 'separador-player', 'separador-bpm', 'separador-voz', 'separador-publicar',
   // Biblioteca na Nuvem (Parte 3, partes 3 a 5), a mesma lista de telasEstados.ts.
-  'biblioteca', 'biblioteca-editar']
+  'biblioteca', 'biblioteca-editar', 'planos', 'planos-oferta']
 /**
  * Telas da faixa C que abrem no celular: sem --only, medem também em 390x844. O Modo Ao Vivo do host
  * só existe no computador, então fica de fora.
@@ -75,7 +75,7 @@ const JANELAS_SEPARADOR_SIZES = ['390x844', '1024x740']
  * nos dois palcos e no celular, então medem em 1024x740, 1280x800, 1920x1080, 390x844 e 844x390
  * (celular deitado, onde a janela fica baixa e a lista rola dentro).
  */
-const JANELAS_INICIO = ['biblioteca', 'biblioteca-editar']
+const JANELAS_INICIO = ['biblioteca', 'biblioteca-editar', 'planos', 'planos-oferta']
 const JANELAS_INICIO_SIZES = ['1024x740', '1280x800', '1920x1080', '390x844', '844x390']
 /** Largura de celular: abaixo da janela mínima do Chrome headless, roda na moldura (/moldura). */
 const CELULAR = '390x844'

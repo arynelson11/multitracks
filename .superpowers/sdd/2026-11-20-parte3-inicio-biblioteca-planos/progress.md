@@ -8,7 +8,8 @@ Worktree: `~/playback-studio-work/parte3-inicio`. Uma linha por tarefa: commit e
 | T0 motor (N1 e gaveta) | 92ff71a | grid 49/49 (N1 RED antes), useStageSeparation 22/22 (2 RED antes) |
 | T1 tela inicial | 3a556c4 | home 7/7, appWiring 57/57, livre ok; verify-layout inicio e inicio-anuncio 18/18 |
 | T2 casca da Biblioteca | 02c31e7 | library 14/14 (com os 5 de hoje do LibraryModal), PricingModal 15/15 (1 novo: Planos por cima da janela do palco) |
-| T3 linhas, editar, excluir e baixar | (este commit) | library + LibraryModal 29/29 (bpm 4, livre 6, view 15, rows 4); verify-layout biblioteca e biblioteca-editar 10/10 (5 tamanhos) |
+| T3 linhas, editar, excluir e baixar | 491dac3 | library + LibraryModal 29/29 (bpm 4, livre 6, view 15, rows 4); verify-layout biblioteca e biblioteca-editar 10/10 (5 tamanhos) |
+| T4 Planos | (este commit) | pricing + PricingModal 32/32 (catálogo 4, vista 8, contêiner 20 com os 9 da T16 da 1b nos seletores novos); verify-layout planos e planos-oferta 10/10 (5 tamanhos) |
 
 ## Decisões
 
@@ -27,5 +28,13 @@ Worktree: `~/playback-studio-work/parte3-inicio`. Uma linha por tarefa: commit e
 - Decisão (T3): a capa nova ganhou o "Tirar" do `FilePicker` (voltar pra nenhuma capa escolhida). Por quê: prático e de função clara (antes não dava pra desfazer a escolha sem fechar a edição). Custo se errado: um botão a mais.
 - Decisão (T3): a confirmação de excluir fica aberta, girando, até o `removeSong` terminar, e fecha sozinha depois (antes o `confirm` fechava na hora e a lixeira girava). Custo se errado: nenhum (a lixeira da linha também gira).
 - Decisão (T3): `biblioteca` e `biblioteca-editar` medem também em 844x390 (celular deitado), além dos 4 do plano. Custo se errado: 2 combinações a mais.
+- Decisão (T4): o preço do primeiro mês fica neutro (`bone`, o mesmo tamanho do preço cheio), com "Primeiro mês por" em `ps-label`, e o anel do Pro Mensal é o `line-3` (mais forte), não laranja (o plano pedia o preço em `ps-or` e o anel laranja, Q9). Por quê: laranja quer dizer ligado ou ação principal; a tela de limite da 1b também mostra o preço da oferta neutro e deixa o laranja no botão. O laranja da tela fica só no botão do Pro Mensal (`primary`). Custo se errado: duas classes.
+- Decisão (T4): "Abrimos o pagamento...", a oferta que terminou e os erros ficam no pé da janela (rodapé do `StageDialog`), sempre à vista. Por quê: antes os erros eram avisos do navegador por cima de tudo; no alto da lista, com os cartões em uma coluna no celular, a frase ficaria fora da tela de quem tocou no Studio Anual. Custo se errado: mover os `Notice` pro alto do conteúdo.
+- Decisão (T4): a frase da oferta que terminou (`offerNote`) e a do erro (`message`) são separadas, como antes (a da oferta fica até fechar; o erro some a cada tentativa nova e ao abrir de novo). Custo se errado: nenhum.
+- Decisão (T4): o clique dentro dos Planos (e no fundo deles) não sai da `PricingView` (`stopPropagation` numa volta `contents`). Por quê: as Configurações montam os Planos dentro da camada delas e fecham com clique que não cai na caixa delas; antes a caixa dos Planos parava o clique. O toque no fundo dos Planos agora fecha só os Planos (antes fechava as Configurações junto). Custo se errado: nenhum que eu tenha achado; quem quiser o clique de dentro terá de ouvir na captura.
+- Decisão (T4): com os Planos virando janela do palco, a camada provisória da T2 (`aboveStageDialogs`) saiu: a pilha do kit põe os Planos por cima de qualquer janela aberta antes. Esc e toque fora fecham os Planos (antes só o X e o toque fora); com o "Trocar de plano?" aberto, o Esc fecha só ele. Custo se errado: nenhum.
 
-## Tarefas
+## Motor (Tarefa 0): verify-pitch e section-jump, antes (e4dab79) e depois (92ff71a)
+
+- verify-pitch completo: antes 521 critérios, 3 falhas; depois 521, 4 falhas. As 3 dos dois lados são o SPLIT sem a referência da v1.4.15 ("falta a referência"); a 4ª do depois foi a STALL (folga agendada fora por 2,663 ms, 1 bloco de relógio, carga perto de 6, com testes rodando ao lado). Rodados de novo sozinhos: STALL depois 13/13 e antes 13/13 (carga 4,7); referência `SPLIT --rev b53a95c --tag v1415` 27/27; SPLIT antes 38/38 e depois 38/38.
+- section-jump: antes 13/13 OK, depois 13/13 OK.
