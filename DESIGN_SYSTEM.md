@@ -2,7 +2,7 @@
 
 > **Versão:** 1.0
 > **Data:** 2026-05-20
-> **Atualizado:** 2026-11-19 (seção 2.8: `<HouseAdCard>`, o cartão do anúncio da casa, e `<LivreBadge>`, o selo do Livre na barra do palco novo, Parte 3, não publicado; seção 2.8: `<LimitScreen>`, a tela de limite do Livre com a oferta do primeiro mês, Parte 3, não publicado; seção 2.7: `<StageDialog>`, a janela por cima da Parte 3, não publicado; seções 1.7 e 2.7: palco novo da Parte 2, publicado na v1.4.19 atrás da chave que nascia em Antigo; as correções da revisão macro e a chave nascendo em Novo saíram na v1.4.20, publicada em 2026-11-19; seções 1.7 e 2.6: linguagem nova da Parte 1, publicada na v1.4.15)
+> **Atualizado:** 2026-11-20 (seções 2.7 e 2.8 conferidas com o código na T20 da Parte 3, não publicado, sai na Publicação 1b: entram na 2.8 o `<LimitGate>`, a tela de limite ligada ao servidor, e o `<AdSlot>`, o lugar do anúncio da casa; o cartão do fim da separação fica embaixo das faixas no Separador); 2026-11-19 (seção 2.8: `<HouseAdCard>`, o cartão do anúncio da casa, e `<LivreBadge>`, o selo do Livre na barra do palco novo, Parte 3, não publicado; seção 2.8: `<LimitScreen>`, a tela de limite do Livre com a oferta do primeiro mês, Parte 3, não publicado; seção 2.7: `<StageDialog>`, a janela por cima da Parte 3, não publicado; seções 1.7 e 2.7: palco novo da Parte 2, publicado na v1.4.19 atrás da chave que nascia em Antigo; as correções da revisão macro e a chave nascendo em Novo saíram na v1.4.20, publicada em 2026-11-19; seções 1.7 e 2.6: linguagem nova da Parte 1, publicada na v1.4.15)
 > **Pareado com:** `PLAYBACK_STUDIO_BRAND_BOOK.md` (estratégia + briefing pros designers)
 > **Este documento:** referência operacional pareando código existente com vocabulário atomic design (Brad Frost). Lê este se você vai TOCAR o código.
 
@@ -410,7 +410,7 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 - **Knob que não muda o som fica travado** (apagado, sem arrasto, motivo no `title`): em "Click e Guia separados"; em "4 ou mais", no Click e na Guia; e, na v1.4.20, em "Tudo junto" com o pan automático ligado (o lado vem do papel). O medidor do PRINCIPAL mostra as saídas 1 e 2 da placa, não a VS: a dica do fader e a descrição do grupo dizem o que cada barra é em cada modo (v1.4.20).
 - **Verificador:** `scripts/verify-layout/` monta a casca com dados de teste e mede no Chrome headless texto cortado, texto encostando, alvos de toque, rolagem de lado e ordem das faixas. Na Parte 3 (não publicado): 12 estados (o novo `selo`, barra com o selo do Livre, e o `inicio`, o cartão do anúncio da tela inicial, seção 2.8), a casca sem rolar de lado a partir de 1024px e o aviso SAÍDAS sem cobrir os selos nem o menu. Na v1.4.20: 10 estados (o novo `semtom`, grade de tons sem tom original) e 8 tamanhos (1024x740, 1024x768, 1280x760, 1280x800, 1440x900, 1920x1080 e, abaixo de 1024, 900x740 e 810x1080, onde vale "nada inalcançável"), mais a regra do botão só de ícone (o X do PRÓXIMA). Peça nova ou mudança de layout no palco roda ele antes de entregar.
 
-#### `<StageDialog>`: janela por cima (`src/components/stage/StageDialog.tsx`, Parte 3, não publicado)
+#### `<StageDialog>`: janela por cima (`src/components/stage/StageDialog.tsx`, Parte 3, não publicado; sai na Publicação 1b)
 
 ```tsx
 <StageDialog
@@ -424,7 +424,7 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 </StageDialog>
 ```
 
-- **Quando usar:** janela que pede uma decisão antes de seguir, por cima do palco novo, do antigo e do Separador (primeiro uso: a tela de limite do Livre). Não é pra cartão que não bloqueia nada (o anúncio da casa é cartão no fluxo da tela), nem pra gaveta do palco (REPERTÓRIOS e pads usam `panelDismiss.ts`), nem pra pergunta de uma linha (`TextPromptDialog`). Uma janela dessas por vez. Quem abre garante a regra do Livre: nunca com a música tocando ou na pré-contagem.
+- **Quando usar:** janela que pede uma decisão antes de seguir, por cima do palco novo, do antigo e do Separador. Hoje só o Livre usa: a tela de limite (`LimitScreen`) e o "Pagamento aberto no navegador" do `LimitGate` (seção 2.8). A camada fica acima da tela de Planos (`PricingModal`, `z-[110]`), por isso quem abre os Planos a partir dela fecha ela antes. Não é pra cartão que não bloqueia nada (o anúncio da casa é cartão no fluxo da tela), nem pra gaveta do palco (REPERTÓRIOS e pads usam `panelDismiss.ts`), nem pra pergunta de uma linha (`TextPromptDialog`). Uma janela dessas por vez. Quem abre garante a regra do Livre: nunca com a música tocando ou na pré-contagem.
 - **Props:** `open`, `title` (o `h2`, ligado por `aria-labelledby`), `onClose`, `children` (o conteúdo), `footer` (as ações, fora da rolagem, alinhadas à direita e quebrando linha quando não cabem) e `size`. Fechada não renderiza nada.
 - **Tamanhos:** `md` (padrão, `max-w-lg`, até 512px) e `sm` (`max-w-sm`, até 384px). A camada (`fixed inset-0 z-[120]`, fundo `bg-black/60`) deixa 16px de folga em volta (`p-ps-gutter`), então cabe em 360px de largura. A caixa é o `Panel variant="pop"` (seção 2.6) com padding de 20px, nunca mais alta que a tela: o conteúdo rola dentro e o título e o rodapé ficam parados.
 - **Fechar:** X do palco (`Icon name="x"`) no canto, `aria-label="Fechar"`, 44 x 44px (`min-h-ps-touch` e `min-w-ps-touch`). O título quebra linha ao lado dele, nunca cortado.
@@ -435,7 +435,7 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 
 ### 2.8 Livre (`src/components/livre/`)
 
-> Parte 3 (2026-11-19, não publicado). As peças do Livre como amostra: o que acabou, o que o Pro faz e a oferta do primeiro mês. Usa só tokens `ps-*` (seção 1.7), as peças de `src/components/ui/` (seção 2.6) e o `StageDialog` (seção 2.7). As regras de quando aparecem ficam em `src/lib/livreRules.ts`, nunca na peça.
+> Parte 3 (2026-11-19, não publicado; sai na Publicação 1b). As peças do Livre como amostra: o que acabou, o que o Pro faz e a oferta do primeiro mês. Usa só tokens `ps-*` (seção 1.7), as peças de `src/components/ui/` (seção 2.6) e o `StageDialog` (seção 2.7). As regras de quando aparecem ficam em `src/lib/livreRules.ts`, nunca na peça.
 
 #### `<LimitScreen>`: tela de limite (`src/components/livre/LimitScreen.tsx`, textos em `limitCopy.ts`)
 
@@ -451,7 +451,7 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 />
 ```
 
-- **Quando usar:** quando o Livre bate num limite (`LimitKind`: `separations`, `stage-songs`, `live`, `repertoire`, `download`; mais a tela `live-devices` do celular a mais no Ao Vivo, `LimitScreenKind`, que abre a oferta como `live`), no palco novo, no antigo e no Separador. Quem abre é o `LimitGate` (T16), que busca a oferta, abre o pagamento e passa o erro. A peça só mostra: nunca abre sozinha, e quem chama garante a regra do Livre pela fila de `livreRules.ts` (`queueRequest` e `queueSettle`): **nunca com a música tocando ou na pré-contagem**; pedida tocando, espera a música parar; aberta quando a música volta a tocar, sai e não volta sozinha.
+- **Quando usar:** quando o Livre bate num limite (`LimitKind`: `separations`, `stage-songs`, `live`, `repertoire`, `download`; mais a tela `live-devices` do celular a mais no Ao Vivo, `LimitScreenKind`, que abre a oferta como `live`), no palco novo, no antigo e no Separador. Quem abre é o `LimitGate` (abaixo), que busca a oferta, abre o pagamento e passa o erro. A peça só mostra: nunca abre sozinha, e quem chama garante a regra do Livre pela fila de `livreRules.ts` (`queueRequest` e `queueSettle`): **nunca com a música tocando ou na pré-contagem**; pedida tocando, espera a música parar; aberta quando a música volta a tocar, sai e não volta sozinha.
 - **Partes:** `StageDialog` `size="sm"` com o título do limite (o único `h2`), o texto do que o Pro faz (`mut`) e, com a oferta no ar, um quadro (`bg-ps-s1`, anel `line`, raio 12px) com "Primeiro mês com desconto", o relógio e os dois botões, um embaixo do outro na largura do quadro (cabe em 360px sem cortar o preço), e a frase do preço cheio de depois.
 - **Textos** (`LIMIT_COPY` e `OFFER_COPY`): resultado antes de recurso, sem número de vendas, nenhum travessão. O título das separações não leva o número ("As separações deste mês acabaram"), porque o admin pode dar separações a mais pra conta. O do celular a mais ("No Livre, só 1 celular da banda controla o palco") não fala dos minutos, que ainda sobram (não publicado). O preço com desconto vem do servidor (`offer.prices`); o preço cheio de "Depois do primeiro mês" sai de `PRICES` (`src/content/site.ts`) com `formatReais`, nunca escrito à mão.
 - **Três casos da oferta** (`OfferView`): `active` mostra "Assinar o Pro por R$ 24,90" (laranja, `tone="primary"`, a ação principal), "Assinar o Studio por R$ 59,90" (`default`) e, no rodapé, "Agora não" (`ghost`) e "Ver todos os planos" (`default`). `none` e `loading` mostram só "Agora não" e "Ver os planos" (laranja), sem preço nenhum; oferta `active` já vencida ou com data estragada vira o caso sem oferta.
@@ -460,6 +460,20 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 - **Erro:** frase pronta de quem chama, dentro da tela, em âmbar (`text-ps-alert`, `role="alert"`), embaixo da oferta. Nunca `window.alert` (o app de computador roda de `file://`). Com o erro a oferta continua e dá pra tentar de novo.
 - Teste: `src/components/livre/limitScreen.test.tsx`.
 
+#### `<LimitGate>`: tela de limite ligada ao servidor (`src/components/livre/LimitGate.tsx`)
+
+```tsx
+{livre.limit !== null && (
+  <LimitGate key={livre.limit} kind={livre.limit} onClose={livre.closeLimit} onSeePlans={() => { livre.closeLimit(); abrirPlanos() }} />
+)}
+```
+
+- **Quando usar:** é o que o App (nos dois palcos) e o Separador montam quando o `useLivre` libera um pedido de limite (`livre.limit`), já com a música parada. Um por tipo de limite (`key={livre.limit}`): limite novo é tela nova, com a própria abertura da oferta e o próprio anúncio visto. O Separador monta o dele e, com o Separador aberto, o do App não aparece.
+- **O que faz:** ao montar, pede a janela da oferta ao servidor uma vez (`fetchOffer({ open: true, trigger })`; o celular a mais abre como `live`, `offerTriggerFor`) e grava o `ad_shown` do lugar `limit`; o StrictMode do desenvolvimento reaproveita o mesmo pedido. Mostra a `LimitScreen` com o carregando e depois a oferta. Escolher o Pro ou o Studio só vale com a oferta no ar: grava o `ad_clicked` do `limit`, desliga os botões enquanto o pagamento abre e chama `startCheckout({ planKey, offer: true })`; dois cliques abrem um pagamento só. Erro vira a frase pronta dentro da tela; com `offerEnded`, o desconto sai na hora e a oferta é lida de novo, sem abrir janela.
+- **Pagamento aberto no navegador:** no computador o pagamento abre no navegador do sistema, e a tela troca por um `StageDialog` `size="sm"` com "Pagamento aberto no navegador", "Depois de pagar, volte para o app: o plano atualiza sozinho em alguns instantes." e "Entendi" (laranja). Na web a página do pagamento abre no lugar.
+- **Ver os planos:** quem monta passa um `onSeePlans` que fecha a tela de limite e só depois abre os Planos (a janela do palco fica por cima dos Planos). Ainda não grava clique (vai na onda de correção da revisão macro).
+- Teste: `src/components/livre/limitGate.test.tsx`.
+
 #### `<HouseAdCard>`: cartão do anúncio da casa (`src/components/livre/HouseAdCard.tsx`, textos em `adCopy.ts`)
 
 ```tsx
@@ -467,12 +481,24 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 <HouseAdCard placement="separation-done" onCta={abrirPlanos} onDismiss={esconder} />
 ```
 
-- **Quando usar:** o anúncio da casa do Livre em dois lugares (spec seção 6): `home` na tela inicial, no máximo uma vez por dia, e `separation-done` ao lado do resultado de uma separação que acabou de terminar. Quem monta é o `AdSlot` (T18), que decide pelas regras de `livreRules.ts` (`shouldShowHomeAd`, `shouldShowSeparationAd`, um anúncio grande por sessão), grava `ad_shown` e `ad_clicked` e garante a regra do Livre: **nunca com a música tocando ou na pré-contagem**. A peça só mostra.
+- **Quando usar:** o anúncio da casa do Livre em dois lugares (spec seção 6): `home` na tela inicial, no máximo uma vez por dia, e `separation-done` embaixo das faixas de uma separação que acabou de terminar, no Separador. Quem monta é o `AdSlot` (abaixo), que decide pelas regras de `livreRules.ts` (`shouldShowHomeAd`, `shouldShowSeparationAd`, um anúncio grande por sessão), grava `ad_shown` e `ad_clicked` e garante a regra do Livre: **nunca com a música tocando ou na pré-contagem**. A peça só mostra.
 - **Partes:** `Panel variant="raised"` (seção 2.6) com padding de 16px, `role="region"` com o nome do título; título em `bone` (16px, negrito), a frase do resultado em `mut` (só no `home`) e, embaixo à direita, "Agora não" (`ghost`) e "Conhecer o Pro" (`primary`, laranja, a ação principal), com alvo de 44px, largura pelo texto e quebrando linha quando não cabem. Títulos e frases quebram linha, nunca cortam.
 - **Textos** (`HOME_AD` e `SEPARATION_AD`): "O que o Pro faz por você" com "Seu culto inteiro no palco, a banda acompanhando no celular e cada faixa pronta pra levar pro ensaio." e "No Pro você baixa essas faixas e salva na nuvem". Resultado antes de recurso, sem número de vendas, nenhum travessão.
 - **É cartão, não janela:** fica no fluxo da tela, sem som, sem vídeo, sem camada por cima, sem posição fixa e sem puxar o foco; nada em volta fica bloqueado. "Agora não" chama `onDismiss` (quem monta esconde de vez).
 - Teste: `src/components/livre/houseAd.test.tsx` (e o `AdSlot` em `adSlot.test.tsx`).
-- **Na tela inicial** (T18, não publicado): embaixo dos dois botões, num `div` `mt-6 w-full max-w-md` da coluna `px-6` do App (no celular de 390px, o cartão fica com 342px). Verificador: estado `inicio` em `scripts/verify-layout/` (o `AdSlot` de verdade na largura da janela, nos 8 tamanhos, e numa moldura de 390px).
+- **Na tela inicial** (não publicado): embaixo dos dois botões, num `div` `mt-6 w-full max-w-md` da coluna `px-6` do App (no celular de 390px, o cartão fica com 342px). Verificador: estado `inicio` em `scripts/verify-layout/` (o `AdSlot` de verdade na largura da janela, nos 8 tamanhos, e numa moldura de 390px).
+- **No Separador** (não publicado, a tela ainda no visual antigo): numa faixa no fim da tela, embaixo das faixas, com `border-t` e o cartão no centro com até 28rem de largura (`grid-cols-[minmax(0,28rem)] justify-center`); a faixa some sem o cartão (`empty:hidden`).
+
+#### `<AdSlot>`: lugar do anúncio da casa (`src/components/livre/AdSlot.tsx`)
+
+```tsx
+<AdSlot placement="home" userId={user.id} isLivre={livre.isLivre} quiet={engineQuiet} onCta={abrirPlanos} />
+<AdSlot placement="separation-done" userId={userId} isLivre={isLivre} quiet={quiet} justSeparated={justSeparated} onCta={abrirPlanos} />
+```
+
+- **Quando usar:** onde o anúncio da casa pode aparecer (tela inicial e fim da separação). Ele decide uma vez, na primeira vez em que `quiet` (música parada de verdade: nem tocando nem na pré-contagem; no Separador, a dele e a do palco) chega verdadeiro com ele montado (o do fim da separação espera também `justSeparated`): só no Livre, com conta logada, no máximo um anúncio grande por sessão e, na tela inicial, uma vez por dia de Brasília (`shouldShowHomeAd` e `shouldShowSeparationAd` de `livreRules.ts`, com o dia e a sessão lidos na hora). Ao decidir mostrar, grava a sessão, o dia (tela inicial) e o `ad_shown` do lugar, uma vez.
+- **Comportamento:** a música que começa esconde o cartão e ele volta quando ela para, sem contar de novo; "Conhecer o Pro" grava o `ad_clicked` do lugar e chama `onCta` (os Planos abrem ali mesmo); "Agora não" esconde de vez nesta tela. Nada aqui mexe no som. Sem `setState` em efeito (Ruling R8): a decisão assenta na renderização e o efeito só grava fora do React.
+- Teste: `src/components/livre/adSlot.test.tsx`.
 
 #### `<LivreBadge>`: selo do Livre (`src/components/livre/LivreBadge.tsx`, texto em `adCopy.ts`)
 
@@ -480,7 +506,7 @@ Lixeira de dois toques fora do mixer (seções no EDITAR e músicas no REPERTÓR
 <LivreBadge used={2} limit={3} onClick={abrirPlanos} /> // LIVRE · 2 de 3 músicas este mês
 ```
 
-- **Quando usar:** só na barra do palco novo (`StageAppBar`), ao lado do selo ONLINE/OFFLINE, quando a vista traz `app.livre`. O `buildStageView` só passa `app.livre` com a música parada e fora da pré-contagem (tocando, o selo some); conta paga e admin recebem nulo. O palco antigo e o Separador não têm selo. O toque chama `openLivreBadge` (abre os Planos; a T17 grava o clique como `ad_clicked` no lugar `badge`).
+- **Quando usar:** só na barra do palco novo (`StageAppBar`), ao lado do selo ONLINE/OFFLINE, quando a vista traz `app.livre`. O `buildStageView` só passa `app.livre` com a música parada e fora da pré-contagem (tocando, o selo some); conta paga e admin recebem nulo. O palco antigo e o Separador não têm selo. O toque chama `openLivreBadge`, que grava o `ad_clicked` do lugar `badge` e abre os Planos (o selo não grava anúncio visto).
 - **Partes:** botão de 44px de alvo (`min-h-ps-touch` e `min-w-ps-touch`) com a pílula visível de 22px, as mesmas medidas do selo ONLINE/OFFLINE (`text-ps-micro`, extranegrito, `tracking-[0.14em]`) nas cores neutras do OFFLINE (`bg-ps-s2`, `text-ps-mut`, anel `line-2`): é informação, não alerta (nada de âmbar) nem ação principal (nada de laranja além do anel de foco de todo botão). `title="Ver os planos"`.
 - **Texto** (`livreBadgeText`): "LIVRE · 2 de 3 músicas este mês", nunca mais do que o limite nem número quebrado ou negativo. **Abaixo de 1280px** a barra não tem lugar pro texto inteiro com OFFLINE, HOST e o aviso SAÍDAS: o selo mostra "LIVRE · 2 de 3" (`livreBadgeShort`) e o "Playback Studio" ao lado do PlayMark sai enquanto o selo está na barra; o nome do botão (`aria-label`) continua com o texto inteiro. Medido em 1024px: OFFLINE, o selo curto, SAÍDAS e o menu cabem sem rolar de lado; em 1280px o texto inteiro cabe com o SAÍDAS.
 - **Aviso SAÍDAS:** a casca põe o aviso depois do selo do Livre quando ele está na barra (senão depois do ONLINE) e acerta a posição quando o selo aparece e some com o Play.
