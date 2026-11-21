@@ -67,6 +67,17 @@ describe('PricingModal: Alterar Plano', () => {
   })
 })
 
+// Revisão macro 1b: o Modo Ao Vivo aparece em todos os cartões que o têm, com o limite do FATOS
+// (no Pro, até 4 celulares no controle e os outros acompanham; no Studio, sem limite).
+describe('PricingModal: Modo Ao Vivo nos cartões', () => {
+  it('Pro Mensal e Pro Anual: até 4 celulares no controle; Studio Mensal e Anual: sem limite de aparelhos', () => {
+    render(<PricingModal isOpen onClose={() => {}} />)
+    for (const name of ['Pro Mensal', 'Pro Anual']) expect(card(name).textContent).toContain('Modo Ao Vivo com até 4 celulares no controle')
+    for (const name of ['Studio Mensal', 'Studio Anual']) expect(card(name).textContent).toContain('Modo Ao Vivo sem limite de aparelhos')
+    expect(screen.queryByText(/até 4 aparelhos|Ao Vivo ilimitado/)).toBeNull()
+  })
+})
+
 describe('PricingModal: app de computador', () => {
   it('abre o pagamento no navegador do sistema, não dentro da janela do app', async () => {
     desktop.isElectron = true
