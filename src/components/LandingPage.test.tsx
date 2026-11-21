@@ -48,9 +48,14 @@ describe('LandingPage: textos', () => {
       'Separação em 4 ou 6 faixas',
       'Até 3 músicas diferentes por mês no palco',
       'Seções, troca de tom, BPM pela IA, click e voz guia',
-      'Modo Ao Vivo com 1 celular, até 10 minutos por dia',
+      // Revisão macro 1b (I2): só quem controla tem teto; os outros celulares acompanham.
+      'Modo Ao Vivo com 1 celular no controle (os outros acompanham), até 10 minutos por dia',
     ]) expect(text()).toContain(item)
-    expect(text()).toContain('Download das faixas, repertório com várias músicas, pads e biblioteca na nuvem e Modo Ao Vivo com mais celulares e sem limite de tempo ficam nos planos Pro e Studio.')
+    // M9: pago é o conjunto de pads da nuvem; o painel de pads do aparelho é de todos.
+    expect(text()).toContain('Download das faixas, repertório com várias músicas, pads da nuvem, biblioteca na nuvem e Modo Ao Vivo com mais celulares no controle e sem limite de tempo ficam nos planos Pro e Studio.')
+    expect(text()).toContain('Modo Ao Vivo no app de computador: a banda conecta por QR Code, até 4 celulares no controle')
+    expect(text()).not.toContain('até 4 aparelhos')
+    expect(text()).not.toContain('Modo Ao Vivo com 1 celular,')
     for (const velho of ['5 separações', '5 músicas', '2 faixas (voz e instrumental)', '(2 no Livre)', 'Nos planos Pro e Studio, mude o tom', 'No Pro, você marca as seções']) {
       expect(text()).not.toContain(velho)
     }
@@ -60,7 +65,12 @@ describe('LandingPage: textos', () => {
     expect(selo('BPM detectado pela IA')).toBeNull()
     expect(selo('Voz guia automática')).toBeNull()
     expect(selo('Teleprompter de letras')).toBeNull()
-    for (const pago of ['Repertório com backup .zip', 'Download em WAV ou MP3', 'Banda conecta por QR Code']) expect(selo(pago)).toBe('Pro')
+    // Revisão macro 1b (I1): o Livre tem o Modo Ao Vivo com QR Code, então o QR Code fica sem selo.
+    expect(selo('Banda conecta por QR Code')).toBeNull()
+    for (const pago of ['Repertório com backup .zip', 'Download em WAV ou MP3']) expect(selo(pago)).toBe('Pro')
+    // I3: o teleprompter descreve só o que existe (ninguém fora do admin sobe letra).
+    expect(text()).toContain('Nas músicas com letra, a equipe acompanha a letra na tela, sincronizada com as seções, no palco ou pelo celular.')
+    expect(text()).not.toMatch(/Suba a letra/)
     expect(selo('App desktop que toca offline')).toBeNull()
   })
 
