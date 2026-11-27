@@ -86,3 +86,27 @@ Revisões: `review-inicio-1.md` (motor, Biblioteca, App, verificador e docs) e `
 - Som, com a carga abaixo de 5 (4,8 ao começar): referência `SPLIT --rev b53a95c --tag v1415` 27/27; `verify-pitch` completo 521 critérios, 0 falhas; `section-jump` 13/13 OK.
 - `api/`: 12 funções.
 - Travessão: 0 nas linhas adicionadas contra `origin/main` (5e52512), 0 na onda (ffcb300..HEAD) e 0 nas mensagens de commit.
+
+## Ajustes residuais (2026-11-27, a partir de 53f3eca; `review-inicio-fix.md`, Ruling INICIO-residuais)
+
+| Ajuste | Commit | Testes |
+|---|---|---|
+| 1. A confirmação da lixeira guarda o escopo de quando abriu (`removeScopeHolds`) | dc61aa5 | LibraryModal.livre 2 novos (RED antes: a janela virava "Excluir da nuvem?" com a internet voltando, e "Excluir da nuvem?" virava "Tirar deste aparelho?" com a internet caindo), libraryRows 1 novo |
+| 2. Textos técnicos da Biblioteca viram frases pro usuário | d75cc4b | useCloudLibrary 1 novo (RED antes: "Carregando offline...") e a guarda sem "offline" nem "Erro:", libraryRows 1 novo, 3 travas de texto acertadas (libraryView 2, LibraryModal.livre 1) |
+| 3. A frase de espaço em disco com estado próprio, presa no alto | 7e49114 | LibraryModal.livre 1 novo e libraryView 1 novo (RED antes: a frase ia pro formulário e o IMPORTAR apagava o "BPM inválido"); verificador `biblioteca-editar` com as duas frases |
+
+### Decisões dos ajustes
+
+- Decisão (1): aberta como "Excluir da nuvem?", a internet cair (com a música ainda no aparelho) fecha a janela em vez de manter o título com uma ação que não dá mais pra fazer. Custo se errado: o admin perde a janela aberta e toca a lixeira de novo.
+- Decisão (2): "Abrindo do aparelho...", "Essa música não está no aparelho. Conecte à internet pra baixar.", a dica "Abrir a música guardada neste aparelho" e "da Nuvem e deste aparelho?" no texto de excluir. O selo e o botão OFFLINE ficam (são o rótulo do estado na tela). A frase "Essa música não está no aparelho..." continua sem aparecer na linha (o `downloadingSongId` vai a nulo junto, como antes): só o texto mudou. Custo se errado: trocar a palavra.
+- Decisão (3): a frase de espaço fica dentro do bloco preso da busca e das abas (sempre à vista com a lista rolada), substitui a decisão M2 da onda anterior (baixar não limpa mais o erro da edição) e só sai na próxima tentativa de baixar, como antes; fechar e abrir a Biblioteca não a limpa (igual ao erro da edição). Custo se errado: limpar ao abrir a janela.
+
+### Portão dos ajustes (uma vez, `caffeinate -i`, 2026-11-27)
+
+- `npx vitest run`: 202 arquivos, 4526 testes, 4525 passaram e 1 falhou, sem "Errors": `manualClickTrack.test.ts` "10 min de click: a thread nunca fica presa mais que 50 ms" (teste de tempo, carga de 13,6 no começo a 50,1 no fim). Sozinho, logo depois (carga 44): 6/6.
+- `npx tsc -b`: código 0.
+- `npm run typecheck`: os 7 erros antigos (MetronomeModal.auto.test 1, useAudioEngine.grid.test 1, useAudioEngine.transition.test 5).
+- eslint nos 9 arquivos .ts/.tsx tocados: 0 erros, os 2 avisos antigos de deps (LibraryModal.tsx e useCloudLibrary.ts).
+- `DESKTOP=1 npx vite build`: ok.
+- `node scripts/verify-layout/run.mjs`: 411 combinações, 407 ok e 4 sem resposta em 40 s por carga (de 15,7 a 53,8), 0 falhas de layout; os 4 (`config` 810x1080, `novidades` 1024x740, `aovivo-erro` 900x740, `separador-player` 1920x1080) sozinhos com `--no-build --jobs 1`: 4/4 ok. As 25 da Biblioteca ok, `biblioteca-editar` com as duas frases nos 5 tamanhos.
+- Travessão: 0 nas linhas adicionadas contra `origin/main` (67320d6), 0 nos ajustes (53f3eca..HEAD) e 0 nas mensagens.
