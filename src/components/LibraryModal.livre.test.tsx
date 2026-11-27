@@ -177,6 +177,37 @@ describe('biblioteca: baixar e excluir no contêiner (Parte 3, T3)', () => {
     expect(lib.removeSong).not.toHaveBeenCalled()
   })
 
+  it('com uma edição aberta, a frase de espaço vai pro alto da Biblioteca e não apaga o erro da edição (Ruling INICIO-residuais)', async () => {
+    const LOW_SPACE = 'Espaço em disco insuficiente. Por favor, libere pelo menos 150MB no dispositivo.'
+    lib.isAdmin = true
+    lib.songs = [SONG, { ...SONG, id: 'n2', name: 'Santo' } as CloudSong]
+    lib.downloadSong.mockResolvedValue({ refused: LOW_SPACE })
+    const onDownload = vi.fn()
+    render(<LibraryModal isOpen onClose={() => {}} onDownload={onDownload} />)
+    const rowOf = (id: string) => document.querySelector(`[data-library-row="${id}"]`) as HTMLElement
+    fireEvent.click(within(rowOf('n1')).getByRole('button', { name: 'Editar metadados' }))
+    const form = screen.getByRole('group', { name: 'Editar Música' })
+    fireEvent.change(within(form).getByLabelText('BPM'), { target: { value: 'setenta' } })
+    fireEvent.click(within(form).getByRole('button', { name: /Salvar/i }))
+    expect(within(form).getByRole('alert').textContent).toBe(INVALID_BPM_MESSAGE)
+    // IMPORTAR em outra música, sem espaço no aparelho.
+    fireEvent.click(within(rowOf('n2')).getByTitle('Baixar e importar da Nuvem'))
+    await waitFor(() => expect(screen.getAllByRole('alert').map((a) => a.textContent)).toContain(LOW_SPACE))
+    const space = screen.getAllByRole('alert').find((a) => a.textContent === LOW_SPACE)!
+    // A frase não entra no formulário de outra música, e o erro da edição continua lá.
+    expect(form.contains(space)).toBe(false)
+    expect(within(form).getByRole('alert').textContent).toBe(INVALID_BPM_MESSAGE)
+    // No alto da Biblioteca, antes da lista.
+    expect(within(screen.getByRole('dialog', { name: 'Biblioteca na Nuvem' })).getAllByRole('alert')).toContain(space)
+    const list = screen.getByRole('tabpanel')
+    expect(list.contains(space)).toBe(false)
+    expect(space.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(onDownload).not.toHaveBeenCalled()
+    // Fechar a edição leva o erro dela, não a frase de espaço.
+    fireEvent.click(within(form).getByRole('button', { name: 'Fechar a edição' }))
+    expect(screen.getAllByRole('alert').map((a) => a.textContent)).toEqual([LOW_SPACE])
+  })
+
   it('a confirmação guarda o que abriu: aberta como tirar do aparelho, a internet volta e ela só tira do aparelho (Ruling INICIO-residuais)', async () => {
     lib.isOnline = false
     lib.isAdmin = true

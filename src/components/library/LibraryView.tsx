@@ -25,6 +25,9 @@ export interface LibraryViewProps {
   emptyText: string | null
   /** Erro da última ação (salvar a edição), em alerta dentro da janela (no formulário, quando ele está aberto). */
   message?: string | null
+  /** A frase do baixar que nem começou (sem espaço no aparelho): sempre no alto, presa com a busca e
+   *  as abas, mesmo com uma edição aberta, e separada do erro da edição (Ruling INICIO-residuais). */
+  downloadNotice?: string | null
   /** As músicas da aba. */
   rows: readonly LibraryRow[]
   /** Alguma música baixando: o Importar e o Abrir das outras esperam. */
@@ -158,7 +161,7 @@ function EditForm({ edit, p }: { edit: LibraryEdit; p: LibraryViewProps }) {
 }
 
 export function LibraryView(p: LibraryViewProps) {
-  const { open, onClose, onRefresh, query, onQuery, tab, onTab, loading, countText, emptyText, message, rows, edit, confirmDelete } = p
+  const { open, onClose, onRefresh, query, onQuery, tab, onTab, loading, countText, emptyText, message, downloadNotice, rows, edit, confirmDelete } = p
   const tabsId = useId()
   return (
     <>
@@ -185,6 +188,7 @@ export function LibraryView(p: LibraryViewProps) {
               <Button icon={<RefreshCcw size={14} />} title={LIBRARY_COPY.refreshTitle} onClick={onRefresh}>{LIBRARY_COPY.refresh}</Button>
             </div>
             <Tabs id={tabsId} aria-label={LIBRARY_COPY.tabs} tabs={TABS} value={tab} onChange={onTab} />
+            {downloadNotice ? <Notice tone="alert" role="alert">{downloadNotice}</Notice> : null}
           </div>
           {message && edit === null ? <Notice tone="alert" role="alert">{message}</Notice> : null}
           <TabPanel tabsId={tabsId} value={tab} className="flex flex-col gap-2">

@@ -46,6 +46,9 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
     const [activeTab, setActiveTab] = useState<LibraryTab>('platform');
     // Erro da edição (antes era o aviso do navegador): frase em alerta dentro da janela (Parte 3).
     const [message, setMessage] = useState<string | null>(null);
+    // A frase do baixar que nem começou (sem espaço no aparelho), separada do erro da edição: sempre no
+    // alto da Biblioteca, e baixar não apaga o erro de uma edição aberta (Ruling INICIO-residuais).
+    const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
     // A música da confirmação de excluir (antes era a pergunta do navegador): a segunda janela do palco.
     // Guarda o escopo de quando abriu (Ruling INICIO-residuais): a internet voltando não troca a janela.
     const [deleteAsk, setDeleteAsk] = useState<{ id: string; scope: RemoveScope } | null>(null);
@@ -125,11 +128,11 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
     const handleDownload = async (songId: string, songName: string) => {
         // No Livre a música conta nas do mês: sem vaga, o App mostra a tela de limite e nada baixa.
         if (onBeforeDownload && !onBeforeDownload(songId)) return;
-        setMessage(null);
+        setDownloadNotice(null);
         const result = await downloadSong(songId);
         // Sem espaço no aparelho: a frase aparece na janela (antes era o aviso do navegador, inicio-1 M2).
         if (result && 'refused' in result) {
-            setMessage(result.refused);
+            setDownloadNotice(result.refused);
             return;
         }
         // files vazio + cachedSourceId = música no cache: o engine carrega lendo do
@@ -210,6 +213,7 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
             countText={libraryCountText(shownSongs.length)}
             emptyText={shownSongs.length === 0 ? libraryEmptyText(searchQuery, activeTab) : null}
             message={message}
+            downloadNotice={downloadNotice}
             rows={rows}
             anyDownloading={!!downloadingSongId}
             edit={edit}

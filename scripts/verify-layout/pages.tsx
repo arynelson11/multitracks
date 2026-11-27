@@ -108,7 +108,8 @@ export function SeparatorPage({ estado }: { estado: 'separador-inicio' | 'separa
 
 /**
  * Biblioteca na Nuvem (Parte 3): a vista com as 8 músicas de pior caso, por cima do fundo do app.
- * Em `biblioteca-editar`, a edição aberta na primeira música, com a frase de erro. Em
+ * Em `biblioteca-editar`, a edição aberta na primeira música, com a frase de erro, e no alto, presa
+ * com a busca e as abas, a frase de espaço em disco (as duas juntas, Ruling INICIO-residuais). Em
  * `biblioteca-excluir` (inicio-1 M7), a lixeira aberta por cima: "Excluir da nuvem?" com o nome de
  * 80 caracteres no texto de antes. `biblioteca-carregando` e `biblioteca-vazia` são a lista
  * carregando e a aba Minhas Músicas vazia, como o LibraryModal manda (sem músicas na aba).
@@ -125,6 +126,7 @@ export function LibraryPage({ estado }: { estado: 'biblioteca' | 'biblioteca-edi
       loading={estado === 'biblioteca-carregando'} countText={libraryCountText(rows.length)}
       emptyText={empty ? libraryEmptyText(query, tab) : null}
       message={editing ? INVALID_BPM_MESSAGE : null}
+      downloadNotice={editing ? 'Espaço em disco insuficiente. Por favor, libere pelo menos 150MB no dispositivo.' : null}
       rows={rows} anyDownloading={!empty} edit={editing ? LIBRARY_EDIT : null} savingEdit={false}
       onImport={noop} onCancel={noop} onEdit={noop} onEditChange={noop} onEditSave={noop} onEditClose={noop}
       onAskDelete={noop}

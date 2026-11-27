@@ -180,6 +180,27 @@ describe('Biblioteca: as músicas, editar, excluir e baixar (LibraryView)', () =
     expect(p.onEditChange).toHaveBeenLastCalledWith({ file: null })
   })
 
+  it('a frase do baixar fica no alto, presa com a busca e as abas, mesmo com a edição aberta e separada do erro dela (Ruling INICIO-residuais)', () => {
+    const { rerenderWith } = mount({
+      rows: [row({ id: 'r1' }), row({ id: 'r2', name: 'Santo' })],
+      edit: { id: 'r1', name: 'a', artist: '', bpmText: 'setenta', key: '', file: null },
+      message: 'O BPM precisa ser um número.',
+      downloadNotice: 'Espaço em disco insuficiente.',
+    })
+    const form = screen.getByRole('group', { name: 'Editar Música' })
+    expect(within(form).getByRole('alert').textContent).toBe('O BPM precisa ser um número.')
+    const notice = screen.getAllByRole('alert').find((a) => a.textContent === 'Espaço em disco insuficiente.')!
+    expect(form.contains(notice)).toBe(false)
+    expect(screen.getByRole('tabpanel').contains(notice)).toBe(false)
+    // Presa no alto com a busca e as abas (a lista rola por baixo).
+    expect(notice.closest('.sticky')).toBe(screen.getByRole('searchbox', { name: 'Pesquisar' }).closest('.sticky'))
+    // Sem a edição à vista, as duas frases ficam no alto; sem a frase do baixar, nenhuma sobra.
+    rerenderWith({ edit: null })
+    expect(screen.getAllByRole('alert').map((a) => a.textContent)).toEqual(['Espaço em disco insuficiente.', 'O BPM precisa ser um número.'])
+    rerenderWith({ edit: null, message: null, downloadNotice: null })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('salvando, o Salvar gira desligado; o erro aparece em alerta no formulário', () => {
     mount({ edit: { id: 'r1', name: 'a', artist: '', bpmText: 'setenta', key: '', file: null }, savingEdit: true, message: 'O BPM precisa ser um número.' })
     const form = screen.getByRole('group', { name: 'Editar Música' })
