@@ -11,6 +11,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.25',
+    date: '2026-11-27',
+    title: 'O app inteiro com a cara do palco',
+    items: [
+      'O app inteiro fica com a cara do palco novo: o login, as Configurações, o Metrônomo, os pads, a letra e cifra, o teleprompter, as novidades e a página de download.',
+      'Nada sai cortado: nomes compridos e o endereço do Modo Ao Vivo quebram linha, e a letra comprida rola no teleprompter.',
+      'No app de computador, a banda acha o QR Code mesmo com muitos celulares conectados: a janela do Modo Ao Vivo rola até ele.',
+      'O que você digitou não se perde sem querer: com a letra ou a cifra sem salvar, a janela só fecha pelo X.',
+      'Mais rápido pelo teclado: o Esc fecha o Metrônomo, os pads, a letra e as novidades, e as abas das Configurações andam com as setas.',
+    ],
+  },
+  {
     version: '1.4.24',
     date: '2026-11-21',
     title: 'Livre com o palco completo',
