@@ -74,6 +74,43 @@ describe('Login do admin: nada some', () => {
   })
 })
 
+// Manutenção (2026-11-27): erro de rede no login não deixa o Entrar preso em "carregando".
+describe('Login do admin: erro de rede', () => {
+  const REDE = 'Não deu pra falar com o servidor agora. Confira a internet e tente de novo.'
+
+  it('o pedido falhou de vez (lançou): o Entrar volta e a frase aparece', async () => {
+    h.signIn.mockRejectedValue(new TypeError('Failed to fetch'))
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    preencher()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar' })) })
+    err.mockRestore()
+    const entrar = screen.getByRole('button', { name: 'Entrar' }) as HTMLButtonElement
+    expect(entrar.disabled).toBe(false)
+    expect(entrar.getAttribute('aria-busy')).toBeNull()
+    expect(screen.getByRole('alert').textContent).toBe(REDE)
+  })
+
+  it('o Supabase respondeu que não alcançou o servidor: a frase é a da internet, não a da senha', async () => {
+    h.signIn.mockResolvedValue({ error: { name: 'AuthRetryableFetchError', status: 0, message: 'Failed to fetch' } })
+    preencher()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar' })) })
+    expect(screen.getByRole('alert').textContent).toBe(REDE)
+    expect((screen.getByRole('button', { name: 'Entrar' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('tentar de novo depois da falha limpa a frase e entra', async () => {
+    h.signIn.mockRejectedValueOnce(new TypeError('Failed to fetch')).mockResolvedValueOnce({ error: null })
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    preencher()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar' })) })
+    err.mockRestore()
+    expect(screen.getByRole('alert')).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar' })) })
+    expect(h.signIn).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+})
+
 describe('Login do admin: linguagem do palco', () => {
   it('só classes da linguagem nova, com o erro na tela', async () => {
     h.signIn.mockResolvedValue({ error: { message: 'x' } })
