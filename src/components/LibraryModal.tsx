@@ -8,7 +8,7 @@ import { type Marker } from '../types';
 import { INVALID_BPM_MESSAGE, editedBpmColumns, preciseBpm } from '../lib/cloudBpm';
 import type { TimeSignatureType } from '../lib/AudioAnalyzer';
 import { LibraryView } from './library/LibraryView';
-import { EDIT_COPY, downloadStateOf, libraryCountText, libraryEmptyText, removeScopeOf, songsForTab, type LibraryEdit, type LibraryRow, type LibraryTab } from './library/libraryRows';
+import { EDIT_COPY, downloadStateOf, libraryCountText, libraryEmptyText, removeScopeHolds, removeScopeOf, songsForTab, type LibraryEdit, type LibraryRow, type LibraryTab, type RemoveScope } from './library/libraryRows';
 
 interface LibraryModalProps {
     isOpen: boolean;
@@ -47,7 +47,8 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
     // Erro da edição (antes era o aviso do navegador): frase em alerta dentro da janela (Parte 3).
     const [message, setMessage] = useState<string | null>(null);
     // A música da confirmação de excluir (antes era a pergunta do navegador): a segunda janela do palco.
-    const [deleteId, setDeleteId] = useState<string | null>(null);
+    // Guarda o escopo de quando abriu (Ruling INICIO-residuais): a internet voltando não troca a janela.
+    const [deleteAsk, setDeleteAsk] = useState<{ id: string; scope: RemoveScope } | null>(null);
 
     useEffect(() => {
         if (isOpen) refreshSongs();
@@ -173,19 +174,26 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
         file: editingSong.file ?? null,
     } : null;
 
-    // A lixeira lê a internet e o aparelho na hora: o título, o texto e o removeSong andam juntos.
-    const deleteSong = deleteId ? songs.find((s) => s.id === deleteId) : undefined;
-    const deleteScope = deleteSong ? removeScopeOf({ online: isOnline, isAdmin, cached: cachedSongIds.has(deleteSong.id) }) : null;
-    // A música saiu da lista (a internet caiu e a lista virou a do aparelho) ou a lixeira não vale
-    // mais pra ela: a confirmação fecha de vez e nunca reabre sozinha quando a lista volta (inicio-1 M3).
-    if (deleteId && !deleteScope) setDeleteId(null);
+    // A lixeira lê a internet e o aparelho quando abre e guarda o escopo (Ruling INICIO-residuais): o
+    // título, o texto e o removeSong andam juntos com ele até a janela fechar. Aberta como "Tirar
+    // deste aparelho?", a internet voltar não a vira "Excluir da nuvem?" e confirmar só tira do aparelho.
+    const handleAskDelete = (id: string) => {
+        const scope = removeScopeOf({ online: isOnline, isAdmin, cached: cachedSongIds.has(id) });
+        if (scope) setDeleteAsk({ id, scope });
+    };
+    const deleteSong = deleteAsk ? songs.find((s) => s.id === deleteAsk.id) : undefined;
+    const deleteScope = deleteSong && deleteAsk && removeScopeHolds(deleteAsk.scope, { online: isOnline, isAdmin, cached: cachedSongIds.has(deleteSong.id) })
+        ? deleteAsk.scope : null;
+    // A música saiu da lista (a internet caiu e a lista virou a do aparelho) ou o escopo dela não dá
+    // mais pra fazer: a confirmação fecha de vez e nunca reabre sozinha quando a lista volta (inicio-1 M3).
+    if (deleteAsk && !deleteScope) setDeleteAsk(null);
     const confirmDelete = deleteSong && deleteScope ? { name: deleteSong.name, scope: deleteScope, busy: deletingSongId === deleteSong.id } : null;
     const handleConfirmDelete = async () => {
         if (!deleteSong || !deleteScope) return;
         try {
             await removeSong(deleteSong.id, deleteScope);
         } finally {
-            setDeleteId(null);
+            setDeleteAsk(null);
         }
     };
 
@@ -212,10 +220,10 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
             onEditChange={(p) => setEditingSong((e) => ({ ...e, ...p }))}
             onEditSave={() => { if (editedSong) void handleEditSave(editedSong); }}
             onEditClose={() => { setMessage(null); setEditingSong({}); }}
-            onAskDelete={setDeleteId}
+            onAskDelete={handleAskDelete}
             confirmDelete={confirmDelete}
             onConfirmDelete={() => { void handleConfirmDelete(); }}
-            onCancelDelete={() => setDeleteId(null)}
+            onCancelDelete={() => setDeleteAsk(null)}
         />
     );
 }

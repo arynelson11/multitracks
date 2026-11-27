@@ -57,6 +57,16 @@ export function removeScopeOf(i: { online: boolean; isAdmin: boolean; cached: bo
   return i.cached ? 'device' : null
 }
 
+/**
+ * A confirmação da lixeira guarda o escopo de quando abriu (Ruling INICIO-residuais): a internet
+ * voltar não troca "Tirar deste aparelho?" por "Excluir da nuvem?" na mesma janela. Ela só fica
+ * aberta enquanto esse escopo ainda dá pra fazer: da nuvem, o admin com internet; deste aparelho,
+ * a música nele. Senão fecha (e nunca vira a outra).
+ */
+export function removeScopeHolds(scope: RemoveScope, i: { online: boolean; isAdmin: boolean; cached: boolean }): boolean {
+  return scope === 'cloud' ? i.online && i.isAdmin : i.cached
+}
+
 /** Uma música da lista, pronta pra vista. */
 export interface LibraryRow {
   id: string

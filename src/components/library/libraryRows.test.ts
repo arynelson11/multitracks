@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CloudSong } from '../../lib/supabase'
-import { downloadStateOf, libraryCountText, libraryEmptyText, removeScopeOf, songsForTab } from './libraryRows'
+import { downloadStateOf, libraryCountText, libraryEmptyText, removeScopeHolds, removeScopeOf, songsForTab } from './libraryRows'
 
 const song = (id: string, over: Partial<CloudSong>) => ({ id, name: id, artist: '', key: 'C', bpm: 120, cover_url: null, markers: null, created_at: '', ...over }) as CloudSong
 
@@ -56,5 +56,17 @@ describe('a lixeira (inicio-1 M5, Ruling lixeira-biblioteca)', () => {
     // O dono que não é admin não apaga na nuvem (a RLS não deixa): sem a música no aparelho, nada.
     expect(removeScopeOf({ online: true, isAdmin: false, cached: false })).toBeNull()
     expect(removeScopeOf({ online: false, isAdmin: true, cached: false })).toBeNull()
+  })
+
+  it('removeScopeHolds: a confirmação aberta continua com o escopo dela enquanto ele dá pra fazer (Ruling INICIO-residuais)', () => {
+    // Aberta como tirar do aparelho: a internet voltar (o admin passaria a excluir da nuvem) não muda nada.
+    expect(removeScopeHolds('device', { online: true, isAdmin: true, cached: true })).toBe(true)
+    expect(removeScopeHolds('device', { online: false, isAdmin: false, cached: true })).toBe(true)
+    // A música saiu do aparelho: não tem mais o que tirar.
+    expect(removeScopeHolds('device', { online: true, isAdmin: true, cached: false })).toBe(false)
+    // Aberta como excluir da nuvem: só com internet e sendo admin.
+    expect(removeScopeHolds('cloud', { online: true, isAdmin: true, cached: false })).toBe(true)
+    expect(removeScopeHolds('cloud', { online: false, isAdmin: true, cached: true })).toBe(false)
+    expect(removeScopeHolds('cloud', { online: true, isAdmin: false, cached: true })).toBe(false)
   })
 })

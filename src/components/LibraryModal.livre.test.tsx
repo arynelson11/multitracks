@@ -177,6 +177,45 @@ describe('biblioteca: baixar e excluir no contêiner (Parte 3, T3)', () => {
     expect(lib.removeSong).not.toHaveBeenCalled()
   })
 
+  it('a confirmação guarda o que abriu: aberta como tirar do aparelho, a internet volta e ela só tira do aparelho (Ruling INICIO-residuais)', async () => {
+    lib.isOnline = false
+    lib.isAdmin = true
+    lib.cached = new Set(['n1'])
+    lib.removeSong.mockResolvedValue(true)
+    const modal = () => <LibraryModal isOpen onClose={() => {}} onDownload={() => {}} />
+    const view = render(modal())
+    fireEvent.click(screen.getByRole('button', { name: 'Tirar deste aparelho' }))
+    expect(screen.getByRole('dialog', { name: 'Tirar deste aparelho?' })).toBeTruthy()
+    // A internet volta com a janela aberta: o admin passaria a excluir da nuvem, mas esta janela não muda.
+    lib.isOnline = true
+    view.rerender(modal())
+    expect(screen.queryByRole('dialog', { name: 'Excluir da nuvem?' })).toBeNull()
+    const dialog = screen.getByRole('dialog', { name: 'Tirar deste aparelho?' })
+    expect(dialog.textContent).not.toContain('todos')
+    expect(within(dialog).queryByRole('button', { name: 'Excluir' })).toBeNull()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Tirar' }))
+    await waitFor(() => expect(lib.removeSong).toHaveBeenCalledTimes(1))
+    expect(lib.removeSong).toHaveBeenCalledWith('n1', 'device')
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Tirar deste aparelho?' })).toBeNull())
+  })
+
+  it('aberta como excluir da nuvem, a internet cai com a música no aparelho: ela fecha e não vira tirar do aparelho (Ruling INICIO-residuais)', () => {
+    lib.isAdmin = true
+    lib.cached = new Set(['n1'])
+    const modal = () => <LibraryModal isOpen onClose={() => {}} onDownload={() => {}} />
+    const view = render(modal())
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir da Nuvem' }))
+    expect(screen.getByRole('dialog', { name: 'Excluir da nuvem?' })).toBeTruthy()
+    lib.isOnline = false
+    view.rerender(modal())
+    expect(screen.queryByRole('dialog', { name: /Excluir da nuvem|Tirar deste aparelho/ })).toBeNull()
+    // A internet volta: nada reabre por cima.
+    lib.isOnline = true
+    view.rerender(modal())
+    expect(screen.queryByRole('dialog', { name: /Excluir da nuvem|Tirar deste aparelho/ })).toBeNull()
+    expect(lib.removeSong).not.toHaveBeenCalled()
+  })
+
   it('a edição de uma aba não trava a outra: Esc fecha a Biblioteca, a frase fica no alto e a edição volta com a aba (inicio-1 M4)', () => {
     lib.isAdmin = true
     const onClose = vi.fn()
