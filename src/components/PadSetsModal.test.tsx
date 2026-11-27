@@ -170,6 +170,94 @@ describe('Pads da nuvem: Esc e toque fora', () => {
   })
 })
 
+// Manutenção (2026-11-27): renomear e apagar mostram o envio (sem clique duplo) e dizem quando falham,
+// na própria janela (nada de alert).
+describe('Pads da nuvem: envio de renomear e apagar', () => {
+  // GET do catálogo normal; PATCH e DELETE respondem pelo `envio` do teste.
+  function stubEnvio(envio: (metodo: string) => Promise<Resposta>) {
+    fetchMock = vi.fn((_url: string, init?: RequestInit) => (init?.method ? envio(init.method) : ok(SETS)()))
+    vi.stubGlobal('fetch', fetchMock)
+  }
+  const preso = () => {
+    let soltar!: (r: Resposta) => void
+    const p = new Promise<Resposta>((r) => { soltar = r })
+    return { p, soltar: (r: Resposta) => soltar(r) }
+  }
+  const botao = (nome: string) => screen.getByRole('button', { name: nome }) as HTMLButtonElement
+  let alerta: ReturnType<typeof vi.spyOn>
+  beforeEach(() => { alerta = vi.spyOn(window, 'alert').mockImplementation(() => {}) })
+  afterEach(() => { expect(alerta).not.toHaveBeenCalled(); alerta.mockRestore() })
+
+  it('renomear: enquanto envia, o Salvar diz Salvando, fica desligado e dois toques mandam um pedido só', async () => {
+    const envio = preso()
+    stubEnvio(() => envio.p)
+    abrir(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Renomear Pads Domingo' }))
+    fireEvent.change(screen.getByLabelText('Nome do conjunto'), { target: { value: 'Domingo à noite' } })
+    await act(async () => { fireEvent.click(botao('Salvar')) })
+    const salvando = botao('Salvando...')
+    expect(salvando.disabled).toBe(true)
+    expect(salvando.getAttribute('aria-busy')).toBe('true')
+    expect(botao('Cancelar').disabled).toBe(true)
+    // Os outros conjuntos não abrem edição nem apagar no meio do envio.
+    expect(botao('Renomear Ambiente').disabled).toBe(true)
+    expect(botao('Apagar Ambiente').disabled).toBe(true)
+    await act(async () => { fireEvent.click(salvando) })
+    expect(pedidos('PATCH')).toHaveLength(1)
+    await act(async () => { envio.soltar({ ok: true, json: async () => ({}) }) })
+    expect(await escolha('Domingo à noite')).toBeTruthy()
+    expect(screen.queryByLabelText('Nome do conjunto')).toBeNull()
+  })
+
+  it('renomear falhou (servidor recusou ou sem internet): a edição fica aberta com o nome digitado e a frase na janela', async () => {
+    stubEnvio(async () => ({ ok: false, status: 500, json: async () => ({}) }))
+    abrir(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Renomear Pads Domingo' }))
+    fireEvent.change(screen.getByLabelText('Nome do conjunto'), { target: { value: 'Domingo à noite' } })
+    await act(async () => { fireEvent.click(botao('Salvar')) })
+    expect(screen.getByRole('alert').textContent).toBe('Não deu pra salvar o nome agora. Confira a internet e tente de novo.')
+    expect((screen.getByLabelText('Nome do conjunto') as HTMLInputElement).value).toBe('Domingo à noite')
+    expect(botao('Salvar').disabled).toBe(false)
+    // Sem internet (o fetch lança): a mesma frase, sem erro solto.
+    stubEnvio(async () => { throw new TypeError('Failed to fetch') })
+    await act(async () => { fireEvent.click(botao('Salvar')) })
+    expect(screen.getByRole('alert').textContent).toContain('Não deu pra salvar o nome agora.')
+    // Cancelar some com a frase; o nome de antes fica.
+    fireEvent.click(botao('Cancelar'))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(await escolha('Pads Domingo')).toBeTruthy()
+  })
+
+  it('apagar: enquanto envia, o Apagar diz Apagando e fica desligado; um pedido só', async () => {
+    const envio = preso()
+    stubEnvio(() => envio.p)
+    abrir(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Apagar Pads Domingo' }))
+    await act(async () => { fireEvent.click(botao('Apagar')) })
+    const apagando = botao('Apagando...')
+    expect(apagando.disabled).toBe(true)
+    expect(apagando.getAttribute('aria-busy')).toBe('true')
+    expect(botao('Cancelar').disabled).toBe(true)
+    await act(async () => { fireEvent.click(apagando) })
+    expect(pedidos('DELETE')).toHaveLength(1)
+    await act(async () => { envio.soltar({ ok: true, json: async () => ({}) }) })
+    expect(screen.queryByRole('button', { name: /^Pads Domingo/ })).toBeNull()
+  })
+
+  it('apagar falhou: o conjunto fica, a confirmação fica aberta e a frase aparece na janela', async () => {
+    stubEnvio(async () => { throw new TypeError('Failed to fetch') })
+    abrir(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Apagar Pads Domingo' }))
+    await act(async () => { fireEvent.click(botao('Apagar')) })
+    expect(screen.getByRole('alert').textContent).toBe('Não deu pra apagar agora. Confira a internet e tente de novo.')
+    expect(screen.getByText('Apagar "Pads Domingo"?')).toBeTruthy()
+    expect(botao('Apagar').disabled).toBe(false)
+    fireEvent.click(botao('Cancelar'))
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(await escolha('Pads Domingo')).toBeTruthy()
+  })
+})
+
 describe('Pads da nuvem: linguagem do palco', () => {
   it('só classes da linguagem nova, com o admin aberto', async () => {
     abrir(true)

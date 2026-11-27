@@ -1,5 +1,5 @@
 import { apiUrl } from '../lib/api';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Loader2, Layers, Pencil, Trash2 } from 'lucide-react';
 import type { SelectedPadSet } from '../hooks/usePadSynth';
 import { getAuthHeaders } from '../lib/supabase';
@@ -23,6 +23,10 @@ interface PadSetsModalProps {
     isAdmin?: boolean;
 }
 
+// Renomear e apagar que não chegaram ao servidor (manutenção 2026-11-27): a frase fica na janela.
+const RENAME_ERROR = 'Não deu pra salvar o nome agora. Confira a internet e tente de novo.';
+const DELETE_ERROR = 'Não deu pra apagar agora. Confira a internet e tente de novo.';
+
 export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmin }: PadSetsModalProps) {
     const [sets, setSets] = useState<CatalogEntry[]>([]);
     const [loading, setLoading] = useState(false);
@@ -31,6 +35,11 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
     const [editName, setEditName] = useState('');
     const [editDesc, setEditDesc] = useState('');
     const [deletingId, setDeletingId] = useState<string | null>(null);
+    // Envio do renomear ou do apagar: os botões mostram e travam (o ref barra o segundo toque antes
+    // da renderização), e a falha vira frase na linha, que fica aberta pra tentar de novo.
+    const [sending, setSending] = useState<'save' | 'delete' | null>(null);
+    const sendingRef = useRef(false);
+    const [sendError, setSendError] = useState<string | null>(null);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -60,6 +69,7 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
 
     const startEdit = (padSet: CatalogEntry, e: React.MouseEvent) => {
         e.stopPropagation();
+        setSendError(null);
         setEditingId(padSet.id);
         setEditName(padSet.name);
         setEditDesc(padSet.description || '');
@@ -67,45 +77,67 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
 
     const saveEdit = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (!editingId) return;
-        const res = await fetch(apiUrl('/api/pad-catalog'), {
-            method: 'PATCH',
-            headers: await getAuthHeaders(),
-            body: JSON.stringify({ id: editingId, name: editName.trim() || 'Sem nome', description: editDesc.trim() || null }),
-        });
-        if (res.ok) {
-            setSets(prev => prev.map(s => s.id === editingId
-                ? { ...s, name: editName.trim() || 'Sem nome', description: editDesc.trim() || null }
-                : s
-            ));
+        if (!editingId || sendingRef.current) return;
+        const id = editingId;
+        const name = editName.trim() || 'Sem nome';
+        const description = editDesc.trim() || null;
+        sendingRef.current = true;
+        setSending('save');
+        setSendError(null);
+        try {
+            const res = await fetch(apiUrl('/api/pad-catalog'), {
+                method: 'PATCH',
+                headers: await getAuthHeaders(),
+                body: JSON.stringify({ id, name, description }),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            setSets(prev => prev.map(s => s.id === id ? { ...s, name, description } : s));
+            setEditingId(null);
+        } catch (err) {
+            console.error('[pads] renomear falhou', err);
+            setSendError(RENAME_ERROR);
+        } finally {
+            sendingRef.current = false;
+            setSending(null);
         }
-        setEditingId(null);
     };
 
     const confirmDelete = (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
+        setSendError(null);
         setDeletingId(id);
     };
 
     const executeDelete = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (!deletingId) return;
-        const res = await fetch(apiUrl(`/api/pad-catalog?id=${encodeURIComponent(deletingId)}`), {
-            method: 'DELETE',
-            headers: await getAuthHeaders(),
-        });
-        if (res.ok) {
-            setSets(prev => prev.filter(s => s.id !== deletingId));
+        if (!deletingId || sendingRef.current) return;
+        const id = deletingId;
+        sendingRef.current = true;
+        setSending('delete');
+        setSendError(null);
+        try {
+            const res = await fetch(apiUrl(`/api/pad-catalog?id=${encodeURIComponent(id)}`), {
+                method: 'DELETE',
+                headers: await getAuthHeaders(),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            setSets(prev => prev.filter(s => s.id !== id));
+            setDeletingId(null);
+        } catch (err) {
+            console.error('[pads] apagar falhou', err);
+            setSendError(DELETE_ERROR);
+        } finally {
+            sendingRef.current = false;
+            setSending(null);
         }
-        setDeletingId(null);
     };
 
-    const cancelEdit = () => setEditingId(null);
-    const cancelDelete = () => setDeletingId(null);
+    const cancelEdit = () => { if (sendingRef.current) return; setSendError(null); setEditingId(null); };
+    const cancelDelete = () => { if (sendingRef.current) return; setSendError(null); setDeletingId(null); };
     // Renomeando ou confirmando o apagar, o Esc cancela só isso (a janela não fecha, nem no toque
     // fora) e o foco fica na janela, porque a linha some.
     const cancelOnEscape = (cancel: () => void) => (e: React.KeyboardEvent<HTMLLIElement>) => {
-        if (e.key !== 'Escape') return;
+        if (e.key !== 'Escape' || sendingRef.current) return;
         e.currentTarget.closest<HTMLElement>('[role="dialog"]')?.focus({ preventScroll: true });
         cancel();
     };
@@ -146,9 +178,15 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
                                     <li key={padSet.id} onKeyDown={cancelOnEscape(cancelEdit)} className="flex flex-col gap-3 rounded-ps-lg bg-ps-s1 p-3 inset-ring inset-ring-ps-line-2">
                                         <TextField label="Nome do conjunto" autoFocus value={editName} onChange={e => setEditName(e.target.value)} placeholder="Nome do conjunto" />
                                         <TextField label="Descrição (opcional)" value={editDesc} onChange={e => setEditDesc(e.target.value)} placeholder="Descrição (opcional)" />
+                                        {sendError && <Notice tone="alert" role="alert">{sendError}</Notice>}
                                         <div className="flex flex-wrap justify-end gap-2">
-                                            <Button tone="ghost" onClick={cancelEdit}>Cancelar</Button>
-                                            <Button tone="primary" onClick={saveEdit}>Salvar</Button>
+                                            <Button tone="ghost" disabled={sending !== null} onClick={cancelEdit}>Cancelar</Button>
+                                            <Button
+                                                tone="primary" disabled={sending !== null} aria-busy={sending === 'save' || undefined} onClick={saveEdit}
+                                                icon={sending === 'save' ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : undefined}
+                                            >
+                                                {sending === 'save' ? 'Salvando...' : 'Salvar'}
+                                            </Button>
                                         </div>
                                     </li>
                                 );
@@ -159,10 +197,16 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
                                     <li key={padSet.id} onKeyDown={cancelOnEscape(cancelDelete)} className="flex flex-col gap-2 rounded-ps-lg bg-ps-alert-soft p-3 inset-ring inset-ring-ps-alert-line">
                                         <p className="font-bold text-ps-alert break-words">Apagar "{padSet.name}"?</p>
                                         <p className="text-ps-sm text-ps-mut">Esta ação não pode ser desfeita.</p>
+                                        {sendError && <Notice tone="alert" role="alert">{sendError}</Notice>}
                                         <div className="flex flex-wrap justify-end gap-2">
                                             {/* A lixeira some com a confirmação: o foco vem pro Cancelar, dentro da janela. */}
-                                            <Button tone="ghost" autoFocus onClick={cancelDelete}>Cancelar</Button>
-                                            <Button tone="alert" onClick={executeDelete}>Apagar</Button>
+                                            <Button tone="ghost" autoFocus disabled={sending !== null} onClick={cancelDelete}>Cancelar</Button>
+                                            <Button
+                                                tone="alert" disabled={sending !== null} aria-busy={sending === 'delete' || undefined} onClick={executeDelete}
+                                                icon={sending === 'delete' ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : undefined}
+                                            >
+                                                {sending === 'delete' ? 'Apagando...' : 'Apagar'}
+                                            </Button>
                                         </div>
                                     </li>
                                 );
@@ -191,8 +235,8 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
                                     </button>
                                     {isAdmin && (
                                         <>
-                                            <IconButton tone="ghost" aria-label={`Renomear ${padSet.name}`} title="Renomear" icon={<Pencil size={16} />} onClick={e => startEdit(padSet, e)} />
-                                            <IconButton tone="ghost" aria-label={`Apagar ${padSet.name}`} title="Apagar" icon={<Trash2 size={16} />} onClick={e => confirmDelete(padSet.id, e)} />
+                                            <IconButton tone="ghost" aria-label={`Renomear ${padSet.name}`} title="Renomear" icon={<Pencil size={16} />} disabled={sending !== null} onClick={e => startEdit(padSet, e)} />
+                                            <IconButton tone="ghost" aria-label={`Apagar ${padSet.name}`} title="Apagar" icon={<Trash2 size={16} />} disabled={sending !== null} onClick={e => confirmDelete(padSet.id, e)} />
                                         </>
                                     )}
                                 </li>
