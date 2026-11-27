@@ -39,8 +39,20 @@ describe('ligações do palco novo', () => {
 
   it('marcadores e letra acham a música da nuvem pela id (sourceId), nunca pelo nome com "contém"', () => {
     expect(app).not.toMatch(/\.includes\(\s*cs\.name\s*\)|cs\.name\.includes\(/)
-    expect(app.match(/cloudSongOf\(\s*await fetchCloudSongs\(\)\s*,\s*activeSong\s*\)/g)).toHaveLength(2)
+    // Os marcadores no App; a letra pelo saveSongLyrics (src/lib/lyricsSave.ts), pela música do editor.
+    expect(app.match(/cloudSongOf\(\s*await fetchCloudSongs\(\)\s*,\s*activeSong\s*\)/g)).toHaveLength(1)
+    expect(read('./lib/lyricsSave.ts')).toMatch(/cloudSongOf\(\s*await deps\.fetchCloudSongs\(\)\s*,\s*song\s*\)/)
     expect(app).toContain('os marcadores ficam só neste aparelho')
+  })
+
+  it('letra e cifra: o editor abre com a música ativa de quando abriu e grava pela id dela (manutenção 2026-11-27)', () => {
+    // Abrir guarda a música; o editor não segue mais a música ativa de agora.
+    expect(app).not.toMatch(/<LyricsEditor[\s\S]{0,80}song=\{playlist\[activeSongIndex\]\}/)
+    expect(app).toMatch(/<LyricsEditor[\s\S]{0,80}song=\{lyricsEditorSong\}/)
+    expect(app).toMatch(/songInPlaylist=\{playlist\.some\(\(s\) => s\.id === lyricsEditorSong\.id\)\}/)
+    expect(app).toMatch(/onSave=\{\(songId, data\) => saveSongLyrics\(songId, data,/)
+    expect(app.match(/onClick=\{openLyricsEditor\}/g)).toHaveLength(2)
+    expect(app).not.toMatch(/setIsLyricsEditorOpen/)
   })
 
   it('o motor recebe autoClick: canUseGeneratedClick(userPlan) e os portões das seções', () => {

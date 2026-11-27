@@ -13,12 +13,14 @@ vi.mock('../lib/supabase', () => ({ searchLyrics: vi.fn() }))
 const search = vi.mocked(searchLyrics)
 const TRAVESSAO = String.fromCharCode(0x2014)
 
+type SaveFn = (songId: string, data: unknown) => Promise<boolean | 'missing'>
+
 const SONG = { id: 's1', name: 'Grande é o Senhor', artist: 'Adhemar de Campos', duration: 240, lyrics: '', chords: 'E  B\nGrande é o Senhor' } as unknown as Song
 
-function abrir(onSave = vi.fn(async () => true)) {
+function abrir(onSave = vi.fn<SaveFn>(async () => true)) {
   const onClose = vi.fn()
-  render(<LyricsEditor song={SONG} onSave={onSave} onClose={onClose} />)
-  return { onSave, onClose }
+  const view = render(<LyricsEditor song={SONG} onSave={onSave} onClose={onClose} />)
+  return { onSave, onClose, view }
 }
 
 const area = (nome: string) => screen.getByRole('textbox', { name: nome }) as HTMLTextAreaElement
@@ -76,11 +78,11 @@ describe('Letra e cifra: nada some', () => {
   })
 
   it('Salvar manda o que está nas áreas (vazio vira nulo) e diz onde salvou', async () => {
-    const onSave = vi.fn(async () => true)
+    const onSave = vi.fn<SaveFn>(async () => true)
     abrir(onSave)
     fireEvent.change(area('Letra'), { target: { value: '   ' } })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Salvar' })) })
-    expect(onSave).toHaveBeenCalledWith({ lyrics: null, lyricsSynced: null, chords: 'E  B\nGrande é o Senhor' })
+    expect(onSave).toHaveBeenCalledWith('s1', { lyrics: null, lyricsSynced: null, chords: 'E  B\nGrande é o Senhor' })
     expect(texto()).toContain('Salvo na nuvem e no aparelho.')
     onSave.mockResolvedValueOnce(false)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Salvar' })) })
@@ -138,7 +140,7 @@ describe('Letra e cifra: Esc e toque fora com texto não salvo', () => {
   })
 
   it('depois de salvar, Esc fecha de novo; se o salvar falhou, não', async () => {
-    const onSave = vi.fn(async () => true)
+    const onSave = vi.fn<SaveFn>(async () => true)
     const { onClose } = abrir(onSave)
     fireEvent.change(area('Letra'), { target: { value: 'nova' } })
     onSave.mockRejectedValueOnce(new Error('x'))
@@ -148,6 +150,62 @@ describe('Letra e cifra: Esc e toque fora com texto não salvo', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Salvar' })) })
     esc()
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+})
+
+// Manutenção (2026-11-27): a música ativa muda com o editor aberto (o operador troca, o AUTO passa
+// pra próxima, a banda escolhe pelo celular). O editor guarda a música de quando abriu e grava nela.
+describe('Letra e cifra: a música muda com o editor aberto', () => {
+  const OUTRA = { id: 's2', name: 'Aclame ao Senhor', artist: 'Diante do Trono', duration: 300, lyrics: 'letra da outra', chords: '' } as unknown as Song
+
+  it('Salvar grava na música de quando abriu, não na que ficou ativa', async () => {
+    const { onSave, onClose, view } = abrir()
+    fireEvent.change(area('Letra'), { target: { value: 'letra nova da primeira' } })
+    // O App passa a música ativa de agora: a outra.
+    view.rerender(<LyricsEditor song={OUTRA} onSave={onSave} onClose={onClose} />)
+    expect(texto()).toContain('Grande é o Senhor')
+    expect(texto()).not.toContain('Aclame ao Senhor')
+    expect(area('Letra').value).toBe('letra nova da primeira')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Salvar' })) })
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave.mock.calls[0][0]).toBe('s1')
+    expect(onSave.mock.calls[0][1]).toEqual({ lyrics: 'letra nova da primeira', lyricsSynced: null, chords: 'E  B\nGrande é o Senhor' })
+  })
+
+  it('a busca continua sendo da música de quando abriu', async () => {
+    search.mockResolvedValue(null)
+    const { onSave, onClose, view } = abrir()
+    view.rerender(<LyricsEditor song={OUTRA} onSave={onSave} onClose={onClose} />)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Buscar letra' })) })
+    expect(search).toHaveBeenCalledWith('Adhemar de Campos', 'Grande é o Senhor', 240)
+  })
+
+  it('a música saiu do repertório: avisa na janela, o Salvar desliga e nada é gravado', async () => {
+    const { onSave, onClose, view } = abrir()
+    fireEvent.change(area('Letra'), { target: { value: 'texto que não pode ir pra outra' } })
+    view.rerender(<LyricsEditor song={SONG} songInPlaylist={false} onSave={onSave} onClose={onClose} />)
+    expect(screen.getByRole('alert').textContent).toContain('Esta música saiu do repertório')
+    const salvar = screen.getByRole('button', { name: 'Salvar' }) as HTMLButtonElement
+    expect(salvar.disabled).toBe(true)
+    await act(async () => { fireEvent.click(salvar) })
+    expect(onSave).not.toHaveBeenCalled()
+    // O texto fica na área (dá pra copiar) e o Esc não joga fora.
+    expect(area('Letra').value).toBe('texto que não pode ir pra outra')
+    // Voltou pro repertório: o Salvar volta.
+    view.rerender(<LyricsEditor song={SONG} songInPlaylist onSave={onSave} onClose={onClose} />)
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect((screen.getByRole('button', { name: 'Salvar' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('o App respondeu que a música saiu na hora de gravar: avisa e continua com alteração', async () => {
+    const onSave = vi.fn<SaveFn>(async () => 'missing')
+    const { onClose } = abrir(onSave)
+    fireEvent.change(area('Letra'), { target: { value: 'nova' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Salvar' })) })
+    expect(texto()).toContain('Esta música saiu do repertório')
+    expect(texto()).not.toContain('Salvo')
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape', code: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
   })
 })
 

@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import { Loader2, Save, Sparkles } from 'lucide-react';
 import type { Song } from '../types';
 import { searchLyrics } from '../lib/supabase';
+import type { LyricsData, LyricsSaveResult } from '../lib/lyricsSave';
 import { Button, Notice, TabPanel, Tabs, TextArea, TextField } from './ui';
 import { StageDialog } from './stage/StageDialog';
 
@@ -9,14 +10,22 @@ type EditorTab = 'lyrics' | 'chords';
 const TABS: { value: EditorTab; label: string }[] = [{ value: 'lyrics', label: 'Letra' }, { value: 'chords', label: 'Cifra' }];
 
 interface LyricsEditorProps {
+  // A música ativa quando o editor abriu. O editor guarda essa música (a id, o nome e a duração da
+  // busca) e grava sempre nela, mesmo que a música ativa mude com ele aberto (manutenção 2026-11-27).
   song: Song;
-  // Persiste: atualiza estado local sempre e tenta salvar na nuvem.
-  // Retorna true se conseguiu salvar na nuvem.
-  onSave: (data: { lyrics: string | null; lyricsSynced: string | null; chords: string | null }) => Promise<boolean>;
+  // A música do editor ainda está no repertório? Fora dele, o Salvar desliga e a janela avisa.
+  songInPlaylist?: boolean;
+  // Persiste na música da id: atualiza o estado local e tenta salvar na nuvem. true: salvou na
+  // nuvem; false: só no aparelho; 'missing': a música saiu do repertório e nada foi gravado.
+  onSave: (songId: string, data: LyricsData) => Promise<LyricsSaveResult>;
   onClose: () => void;
 }
 
-export function LyricsEditor({ song, onSave, onClose }: LyricsEditorProps) {
+const MISSING_TEXT = 'Esta música saiu do repertório, então a letra e a cifra não podem ser salvas nela. O texto continua aqui pra você copiar.';
+
+export function LyricsEditor({ song: songProp, songInPlaylist = true, onSave, onClose }: LyricsEditorProps) {
+  // A música de quando abriu: a prop pode passar a ser a nova música ativa, o editor não segue.
+  const [song] = useState(songProp);
   const [artist, setArtist] = useState(song.artist || '');
   const [lyrics, setLyrics] = useState(song.lyrics || '');
   const [lyricsSynced, setLyricsSynced] = useState<string | null>(song.lyricsSynced || null);
@@ -28,6 +37,9 @@ export function LyricsEditor({ song, onSave, onClose }: LyricsEditorProps) {
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  // O App disse, na hora de gravar, que a música tinha saído do repertório.
+  const [missingOnSave, setMissingOnSave] = useState(false);
+  const missing = !songInPlaylist || missingOnSave;
   // O último texto salvo (o da música, até o primeiro Salvar que deu certo). Com alteração, o Esc e
   // o toque fora não fecham (só o X), pra não jogar fora a letra e a cifra digitadas.
   const [saved, setSaved] = useState({ lyrics: song.lyrics || '', lyricsSynced: song.lyricsSynced || null, chords: song.chords || '' });
@@ -53,14 +65,16 @@ export function LyricsEditor({ song, onSave, onClose }: LyricsEditorProps) {
   };
 
   const handleSave = async () => {
+    if (!songInPlaylist) return;
     setSaving(true);
     setSaveMsg(null);
     try {
-      const cloud = await onSave({
+      const cloud = await onSave(song.id, {
         lyrics: lyrics.trim() || null,
         lyricsSynced: lyricsSynced,
         chords: chords.trim() || null,
       });
+      if (cloud === 'missing') { setMissingOnSave(true); return; }
       setSaved({ lyrics, lyricsSynced, chords });
       setSaveMsg(cloud ? 'Salvo na nuvem e no aparelho.' : 'Salvo só no aparelho (a música não está na biblioteca da nuvem).');
     } catch {
@@ -83,7 +97,7 @@ export function LyricsEditor({ song, onSave, onClose }: LyricsEditorProps) {
           <Button
             tone="primary"
             icon={saving ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : <Save size={16} />}
-            disabled={saving}
+            disabled={saving || missing}
             onClick={handleSave}
           >
             Salvar
@@ -93,6 +107,7 @@ export function LyricsEditor({ song, onSave, onClose }: LyricsEditorProps) {
     >
       <div className="flex flex-col gap-4">
         <p className="text-ps-mut break-words">{song.name}</p>
+        {missing && <Notice tone="alert" role="alert">{MISSING_TEXT}</Notice>}
 
         {/* Busca automática da letra pelo artista e pelo nome da música */}
         <div className="flex flex-col gap-2">

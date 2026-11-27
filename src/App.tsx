@@ -100,6 +100,7 @@ import { PricingModal } from './components/PricingModal'
 import { HomeScreen } from './components/home/HomeScreen'
 import { supabase, updateSongMarkers as saveMkToCloud, fetchSongs as fetchCloudSongs, updateSong } from './lib/supabase'
 import { LyricsEditor } from './components/LyricsEditor'
+import { saveSongLyrics } from './lib/lyricsSave'
 import { Teleprompter } from './components/Teleprompter'
 import { useNetworkStatus } from './hooks/useNetworkStatus'
 import { useLiveSync } from './hooks/useLiveSync'
@@ -478,7 +479,11 @@ export default function App() {
   const [isPadSetsModalOpen, setIsPadSetsModalOpen] = useState(false)
   const [isTeleprompterMode, setIsTeleprompterMode] = useState(false)
   const [isMarkerEditorOpen, setIsMarkerEditorOpen] = useState(false)
-  const [isLyricsEditorOpen, setIsLyricsEditorOpen] = useState(false)
+  // Letra e cifra: a música ativa de quando o editor abriu (manutenção 2026-11-27). O editor grava
+  // sempre nela, mesmo que a música ativa mude com ele aberto (troca, AUTO, banda pelo celular).
+  const [lyricsEditorSong, setLyricsEditorSong] = useState<Song | null>(null)
+  const isLyricsEditorOpen = lyricsEditorSong !== null
+  const openLyricsEditor = () => { const s = playlist[activeSongIndex]; if (s) setLyricsEditorSong(s) }
   const [showTour, setShowTour] = useState(false)
   const [showWhatsNew, setShowWhatsNew] = useState(false)
   // Atualização do app desktop: checa no foco e na abertura. Alimenta o botão
@@ -1701,7 +1706,7 @@ export default function App() {
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={() => setIsAdminPanelOpen(true)} icon={<Shield size={14} />}>ADMIN</Button>
         <Button tone={isMarkerEditorOpen ? 'on' : 'default'} onClick={() => setIsMarkerEditorOpen(!isMarkerEditorOpen)} icon={<Pencil size={14} />}>Editor avançado</Button>
-        <Button onClick={() => setIsLyricsEditorOpen(true)} icon={<Edit2 size={14} />}>Letra e cifra</Button>
+        <Button onClick={openLyricsEditor} icon={<Edit2 size={14} />}>Letra e cifra</Button>
       </div>
       {isMarkerEditorOpen && markerEditorPanel()}
     </div>
@@ -2452,7 +2457,7 @@ export default function App() {
                     ✏️ Editor avançado
                   </button>
                   <button
-                    onClick={() => setIsLyricsEditorOpen(true)}
+                    onClick={openLyricsEditor}
                     className="shrink-0 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold tracking-wide cursor-pointer active:scale-95 border transition-all text-text-muted border-white/10 hover:bg-white/5"
                   >
                     📝 Letra/Cifra
@@ -2900,28 +2905,14 @@ export default function App() {
       )}
 
       {/* Editor de Letra & Cifra (Admin) */}
-      {isLyricsEditorOpen && playlist[activeSongIndex] && (
+      {/* A música é a de quando abriu (lyricsEditorSong); fora do repertório, a janela avisa e não grava. */}
+      {lyricsEditorSong && (
         <LyricsEditor
-          song={playlist[activeSongIndex]}
-          onClose={() => setIsLyricsEditorOpen(false)}
-          onSave={async ({ lyrics, lyricsSynced, chords }) => {
-            const activeSong = playlist[activeSongIndex]
-            if (!activeSong) return false
-            // Estado local (reflete no follower e persiste no IndexedDB)
-            setSongLyrics(activeSong.id, { lyrics, lyricsSynced, chords })
-            // Nuvem: só a música com a id que o download gravou (sourceId), nunca pelo nome. Sem ela,
-            // fica só no aparelho e o editor diz isso ("Salvo localmente").
-            if (!activeSong.sourceId) return false
-            try {
-              const match = cloudSongOf(await fetchCloudSongs(), activeSong)
-              if (match) {
-                return await updateSong(match.id, { lyrics, lyrics_synced: lyricsSynced, chords })
-              }
-            } catch (e) {
-              console.error('Falha ao salvar letra/cifra na nuvem:', e)
-            }
-            return false
-          }}
+          song={lyricsEditorSong}
+          songInPlaylist={playlist.some((s) => s.id === lyricsEditorSong.id)}
+          onClose={() => setLyricsEditorSong(null)}
+          // Pela id que o editor guardou: o aparelho e a nuvem (só pelo sourceId, nunca pelo nome).
+          onSave={(songId, data) => saveSongLyrics(songId, data, { playlist, setLocal: setSongLyrics, fetchCloudSongs, updateSong })}
         />
       )}
 
