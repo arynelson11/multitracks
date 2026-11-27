@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CloudSong } from '../../lib/supabase'
-import { downloadStateOf, libraryCountText, libraryEmptyText, removeScopeHolds, removeScopeOf, songsForTab } from './libraryRows'
+import { DELETE_COPY, ROW_COPY, downloadStateOf, libraryCountText, libraryEmptyText, removeScopeHolds, removeScopeOf, songsForTab } from './libraryRows'
 
 const song = (id: string, over: Partial<CloudSong>) => ({ id, name: id, artist: '', key: 'C', bpm: 120, cover_url: null, markers: null, created_at: '', ...over }) as CloudSong
 
@@ -68,5 +68,15 @@ describe('a lixeira (inicio-1 M5, Ruling lixeira-biblioteca)', () => {
     expect(removeScopeHolds('cloud', { online: true, isAdmin: true, cached: false })).toBe(true)
     expect(removeScopeHolds('cloud', { online: false, isAdmin: true, cached: true })).toBe(false)
     expect(removeScopeHolds('cloud', { online: true, isAdmin: false, cached: true })).toBe(false)
+  })
+})
+
+describe('textos pro usuário (Ruling INICIO-residuais)', () => {
+  it('a dica do ABRIR e as janelas da lixeira falam do aparelho, nunca de cache', () => {
+    expect(ROW_COPY.openTitle).toBe('Abrir a música guardada neste aparelho')
+    expect(DELETE_COPY.body('Fé', 'cloud')).toBe('Excluir "Fé" da Nuvem e deste aparelho? Isso removerá permanentemente para todos os usuários.')
+    for (const t of [ROW_COPY.openTitle, ROW_COPY.importTitle, ROW_COPY.offlineTitle, DELETE_COPY.body('Fé', 'cloud'), DELETE_COPY.body('Fé', 'device')]) {
+      expect(t).not.toMatch(/cache|offline/i)
+    }
   })
 })

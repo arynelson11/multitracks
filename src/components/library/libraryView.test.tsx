@@ -115,7 +115,7 @@ describe('Biblioteca: as músicas, editar, excluir e baixar (LibraryView)', () =
     fireEvent.click(importar)
     expect(p.onImport).toHaveBeenCalledWith('a', 'Grande é o Senhor')
     const abrir = within(rowEl('b')).getByRole('button', { name: /ABRIR/ }) as HTMLButtonElement
-    expect(abrir.title).toBe('Carregar do cache local offline')
+    expect(abrir.title).toBe('Abrir a música guardada neste aparelho')
     fireEvent.click(abrir)
     expect(p.onImport).toHaveBeenLastCalledWith('b', 'Santo')
     rerenderWith({ anyDownloading: true })
@@ -195,7 +195,7 @@ describe('Biblioteca: as músicas, editar, excluir e baixar (LibraryView)', () =
     expect(p.onAskDelete).toHaveBeenCalledWith('r1')
     rerenderWith({ confirmDelete: { name: 'Grande é o Senhor', scope: 'cloud', busy: false } })
     const cloud = screen.getByRole('dialog', { name: 'Excluir da nuvem?' })
-    expect(cloud.textContent).toContain('Excluir "Grande é o Senhor" da Nuvem e do Cache Local? Isso removerá permanentemente para todos os usuários.')
+    expect(cloud.textContent).toContain('Excluir "Grande é o Senhor" da Nuvem e deste aparelho? Isso removerá permanentemente para todos os usuários.')
     expect(within(cloud).getByRole('button', { name: 'Excluir' })).toBeTruthy()
     rerenderWith({ rows: [row({ remove: 'device', cached: true, state: 'open' })], confirmDelete: { name: 'Grande é o Senhor', scope: 'device', busy: false } })
     expect(within(rowEl('r1')).getByRole('button', { name: 'Tirar deste aparelho' })).toBeTruthy()

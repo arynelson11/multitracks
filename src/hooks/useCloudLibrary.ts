@@ -11,8 +11,9 @@ const mb = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1).replace('.', ',
 /** As frases do baixar, na linha da música (inicio-1 I2, Ruling textos-biblioteca): pro usuário,
  *  sem termo técnico, com "multitracks" e o número com vírgula. */
 export const LIBRARY_PROGRESS = {
-    offline: 'Carregando offline...',
-    offlineMissing: 'Erro: Indisponível offline',
+    /** Abrir do aparelho (ABRIR, ou sem internet): Ruling INICIO-residuais, sem "offline" nem "Erro:". */
+    offline: 'Abrindo do aparelho...',
+    offlineMissing: 'Essa música não está no aparelho. Conecte à internet pra baixar.',
     fetching: 'Buscando as multitracks...',
     empty: 'Nenhuma multitrack encontrada.',
     downloading: (bytes: number, done: number, total: number) => `Baixando as multitracks: ${mb(bytes)} MB (${done} de ${total})`,

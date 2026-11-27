@@ -153,7 +153,7 @@ describe('biblioteca: baixar e excluir no contêiner (Parte 3, T3)', () => {
     lib.cached = new Set(['n1'])
     render(<LibraryModal isOpen onClose={() => {}} onDownload={() => {}} />)
     expect(screen.queryByRole('button', { name: 'Editar metadados' })).toBeNull()
-    expect(screen.getByTitle('Carregar do cache local offline')).toBeTruthy()
+    expect(screen.getByTitle('Abrir a música guardada neste aparelho')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Tirar deste aparelho' }))
     const dialog = screen.getByRole('dialog', { name: 'Tirar deste aparelho?' })
     expect(dialog.textContent).toContain('Tirar "Fé" deste aparelho? Ela continua na Biblioteca na Nuvem e dá pra baixar de novo.')

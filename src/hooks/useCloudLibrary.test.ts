@@ -81,15 +81,36 @@ describe('Biblioteca: o andamento do baixar em frases pro usuário (inicio-1 I2)
     expect(hook.result.current.downloadProgress).toBe('Nenhuma multitrack encontrada.')
   })
 
-  it('nenhuma frase do andamento usa "stem", "Rede", "cache" nem ponto no número, e todas saem de LIBRARY_PROGRESS', async () => {
+  it('nenhuma frase do andamento usa "stem", "Rede", "cache", "offline", "Erro:" nem ponto no número, e todas saem de LIBRARY_PROGRESS', async () => {
     const { LIBRARY_PROGRESS } = await import('./useCloudLibrary')
     const texts = Object.values(LIBRARY_PROGRESS).map((t) => (typeof t === 'function' ? t(128.4 * MB, 11, 12) : t))
     expect(texts).toContain('Baixando as multitracks: 128,4 MB (11 de 12)')
-    for (const t of texts) expect(t).not.toMatch(/stem|Rede|cache|\d\.\d/i)
+    for (const t of texts) expect(t).not.toMatch(/stem|Rede|cache|offline|Erro:|\d\.\d/i)
     const { readFileSync } = await import('node:fs')
     const { join } = await import('node:path')
     const src = readFileSync(join(process.cwd(), 'src/hooks/useCloudLibrary.ts'), 'utf8')
     expect(src).not.toMatch(/setDownloadProgress\(\s*[`'"][^`'"]/)
+  })
+})
+
+describe('Biblioteca: abrir do aparelho em frases pro usuário (Ruling INICIO-residuais)', () => {
+  it('"Abrindo do aparelho..." enquanto lê; sem a música no aparelho e sem internet, a frase diz o que fazer', async () => {
+    db.getCachedSongsList.mockResolvedValue([SONG])
+    const hook = await mounted()
+    act(() => { window.dispatchEvent(new Event('offline')) })
+    await waitFor(() => expect(hook.result.current.isOnline).toBe(false))
+    const onDevice = deferred<boolean>()
+    db.isSongCached.mockReturnValue(onDevice.promise)
+    let pending!: Promise<unknown>
+    act(() => { pending = hook.result.current.downloadSong('s1') })
+    expect(hook.result.current.downloadProgress).toBe('Abrindo do aparelho...')
+    let result: unknown
+    await act(async () => { onDevice.resolve(false); result = await pending })
+    expect(result).toBeNull()
+    expect(hook.result.current.downloadProgress).toBe('Essa música não está no aparelho. Conecte à internet pra baixar.')
+    expect(hook.result.current.downloadingSongId).toBeNull()
+    expect(db.fetchStems).not.toHaveBeenCalled()
+    act(() => { window.dispatchEvent(new Event('online')) })
   })
 })
 

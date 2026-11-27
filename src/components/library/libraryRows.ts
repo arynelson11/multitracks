@@ -107,7 +107,7 @@ export const ROW_COPY = {
   import: 'IMPORTAR',
   importTitle: 'Baixar e importar da Nuvem',
   open: 'ABRIR',
-  openTitle: 'Carregar do cache local offline',
+  openTitle: 'Abrir a música guardada neste aparelho',
   offline: 'OFFLINE',
   offlineTitle: 'Conecte-se à internet para baixar esta música',
   added: 'ADICIONADA',
@@ -135,7 +135,7 @@ export const EDIT_COPY = {
 export const DELETE_COPY = {
   title: (scope: RemoveScope) => (scope === 'cloud' ? 'Excluir da nuvem?' : 'Tirar deste aparelho?'),
   body: (name: string, scope: RemoveScope) => (scope === 'cloud'
-    ? `Excluir "${name}" da Nuvem e do Cache Local? Isso removerá permanentemente para todos os usuários.`
+    ? `Excluir "${name}" da Nuvem e deste aparelho? Isso removerá permanentemente para todos os usuários.`
     : `Tirar "${name}" deste aparelho? Ela continua na Biblioteca na Nuvem e dá pra baixar de novo.`),
   cancel: 'Cancelar',
   confirmLabel: (scope: RemoveScope) => (scope === 'cloud' ? 'Excluir' : 'Tirar'),
