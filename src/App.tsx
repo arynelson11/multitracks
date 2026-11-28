@@ -746,7 +746,9 @@ export default function App() {
   const separationStemStore: StemStore = { put: putStagedStem, discard: discardStagedStems }
   // As ids que ainda não foram pegas pelo carregamento: as que não vão entrar saem do aparelho.
   const pendingStemsRef = useRef<StoredStem[] | null>(null)
-  const dropStoredStems = (stems: readonly StoredStem[]) => { void discardStagedStems(stems.map((st) => st.id)) }
+  const dropStoredStems = (stems: readonly StoredStem[]) => {
+    void discardStagedStems(stems.map((st) => st.id)).catch((e) => { console.error('[Separação] não deu pra tirar as faixas do aparelho', e) })
+  }
   const [separationArrival, setSeparationArrival] = useState<{ sepId: string; justSeparated: boolean } | null>(null)
   const separationArrivalSeen = useRef<{ sepId: string; justSeparated: boolean } | null>(null)
   // Nada decodificou (sep-1 M3): a frase aparece no palco, com a música parada.

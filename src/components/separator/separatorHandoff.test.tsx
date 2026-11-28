@@ -186,6 +186,27 @@ describe('Separador entregando a separação pro palco', () => {
     expect(disk.size).toBe(0)
   })
 
+  it('M3: tirar as faixas que falha não vira erro solto (fica no console)', async () => {
+    h.lib.separations = [savedSeparation()]
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    stemStore.discard.mockRejectedValue(new DOMException('disco', 'UnknownError'))
+    const rejections: unknown[] = []
+    const onRejection = (r: unknown) => { rejections.push(r) }
+    process.on('unhandledRejection', onRejection)
+    try {
+      // Sem quem receba no palco, as faixas que desceram saem pelo descarte do Separador.
+      mount({ onOpenOnStage: undefined })
+      fireEvent.click(screen.getByRole('button', { name: 'Abrir' }))
+      await flush(20)
+      expect(stemStore.discard).toHaveBeenCalledWith(['st1', 'st2', 'st3'])
+      expect(rejections).toEqual([])
+      expect(err.mock.calls.some((c) => c.some((x) => x instanceof DOMException && x.name === 'UnknownError'))).toBe(true)
+    } finally {
+      process.off('unhandledRejection', onRejection)
+      err.mockRestore()
+    }
+  })
+
   it('Voltar no meio de baixar cancela', async () => {
     h.lib.separations = [savedSeparation()]
     let release!: () => void

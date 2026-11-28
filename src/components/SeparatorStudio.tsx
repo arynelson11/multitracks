@@ -1222,7 +1222,10 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
         signal: ctrl.signal,
         onProgress: (done, total) => { if (!ctrl.signal.aborted) setOpening(o => (o && o.sep.id === sep.id ? { ...o, done, total } : o)); },
       });
-      if (ctrl.signal.aborted || !onOpenOnStage) { void stemStore.discard(stored.map(st => st.id)); return; }
+      if (ctrl.signal.aborted || !onOpenOnStage) {
+        void stemStore.discard(stored.map(st => st.id)).catch((e: unknown) => { console.error('[Separador] não deu pra tirar as faixas do aparelho', e); });
+        return;
+      }
       onOpenOnStage({ sep, stems: stored, justSeparated: justSeparatedNow });
     } catch (e) {
       if (ctrl.signal.aborted) return;

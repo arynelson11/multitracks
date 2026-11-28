@@ -390,6 +390,10 @@ describe('separação abrindo no palco', () => {
     expect(app).not.toMatch(/refused/)
   })
 
+  it('M3: tirar as faixas que falha fica no console, nunca vira erro solto', () => {
+    expect(app).toMatch(/const dropStoredStems = \(stems: readonly StoredStem\[\]\) => \{\s*void discardStagedStems\(stems\.map\(\(st\) => st\.id\)\)\.catch\(\(e\) => \{ console\.error\(/)
+  })
+
   it('com a VS tocando a separação espera a parada pra virar a atual', () => {
     expect(app).toMatch(/separationArrival[\s\S]{0,400}const quietNow = !isPlaying && !isCountingIn[\s\S]{0,80}if \(i < 0 \|\| !quietNow\) return/)
     expect(app).toMatch(/findSeparationSong\(playlist, arrival\.sepId\)/)
