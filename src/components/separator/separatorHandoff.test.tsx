@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { OPEN_ERROR_TEXT, OPEN_MISSING_TEXT, type StageSeparationOpen, type StemStore } from '../../lib/separation/stageHandoff'
+import { OPEN_ERROR_TEXT, OPEN_MISSING_TEXT, OPEN_QUOTA_TEXT, type StageSeparationOpen, type StemStore } from '../../lib/separation/stageHandoff'
 import { FakeAudioContext, resetWaves, savedSeparation } from './separatorTestKit'
 
 const h = vi.hoisted(() => ({
@@ -171,6 +171,19 @@ describe('Separador entregando a separação pro palco', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
     await flush(5)
     expect(onOpenOnStage).toHaveBeenCalledTimes(1)
+  })
+
+  it('M2: disco cheio ao gravar a faixa mostra a frase do espaço e o Abrir aqui no Separador', async () => {
+    h.lib.separations = [savedSeparation()]
+    stemStore.put.mockImplementationOnce(async (file: File) => { disk.set('st1', file); return 'st1' })
+    stemStore.put.mockImplementationOnce(async () => { throw new DOMException('cheio', 'QuotaExceededError') })
+    const { onOpenOnStage } = mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir' }))
+    await flush(5)
+    expect(screen.getByRole('alert').textContent).toBe(OPEN_QUOTA_TEXT)
+    expect(screen.getByRole('button', { name: 'Abrir aqui no Separador' })).toBeTruthy()
+    expect(onOpenOnStage).not.toHaveBeenCalled()
+    expect(disk.size).toBe(0)
   })
 
   it('Voltar no meio de baixar cancela', async () => {

@@ -25,6 +25,8 @@ export interface StageSeparationMeta { name: string; artist?: string; bpm?: numb
 export const OPEN_ERROR_TEXT = 'Não deu pra baixar as faixas da separação. Confira a internet e tente de novo.'
 /** O servidor respondeu que uma faixa não existe mais (4xx, sep-2 I3): a internet não é o problema. */
 export const OPEN_MISSING_TEXT = 'Uma das faixas dessa separação não está mais na nuvem. Abra aqui no Separador pra usar as outras.'
+/** Disco cheio ao gravar a faixa no aparelho (revisão do item 4, M2): o Separador de reserva não grava, então abre. */
+export const OPEN_QUOTA_TEXT = 'Não tem espaço no aparelho pra abrir essa separação no palco. Libere espaço ou abra aqui no Separador.'
 
 /** O servidor respondeu com erro ao baixar uma faixa (o status vai junto, sep-2 I3). */
 export class SeparationFetchError extends Error {
@@ -35,8 +37,9 @@ export class SeparationFetchError extends Error {
   }
 }
 
-/** A frase do erro ao abrir no palco: faixa que não existe mais (4xx) ou falta de internet (o resto). */
+/** A frase do erro ao abrir no palco: disco cheio, faixa que não existe mais (4xx) ou falta de internet (o resto). */
 export function openErrorText(e: unknown): string {
+  if ((e as { name?: unknown } | null)?.name === 'QuotaExceededError') return OPEN_QUOTA_TEXT
   return e instanceof SeparationFetchError && e.status >= 400 && e.status < 500 ? OPEN_MISSING_TEXT : OPEN_ERROR_TEXT
 }
 

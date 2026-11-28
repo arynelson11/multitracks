@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SavedSeparation } from '../../hooks/useSeparationLibrary'
 import {
-  OPEN_ERROR_TEXT, OPEN_MISSING_TEXT, STAGE_LOAD_ERROR_TEXT, SeparationFetchError, fetchSeparationStems, openErrorText, type StemStore, findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen,
+  OPEN_ERROR_TEXT, OPEN_MISSING_TEXT, OPEN_QUOTA_TEXT, STAGE_LOAD_ERROR_TEXT, SeparationFetchError, fetchSeparationStems, openErrorText, type StemStore, findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen,
 } from './stageHandoff'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
@@ -139,6 +139,19 @@ describe('stageHandoff', () => {
     expect(pendingSeparationStep('sep_1', { isReady: true, isRestoring: false }, restored)).toBe('pular')
     expect(pendingSeparationStep('nova', { isReady: true, isRestoring: false }, restored)).toBe('carregar')
     expect(pendingSeparationStep('nova', { isReady: true, isRestoring: false }, [])).toBe('carregar')
+  })
+
+  // Revisão do item 4 (M2): disco cheio ao gravar a faixa no aparelho não culpa a internet.
+  it('openErrorText: disco cheio (QuotaExceededError) tem a frase do espaço', async () => {
+    const store = fakeStore()
+    const put = store.put as ReturnType<typeof vi.fn>
+    put.mockImplementationOnce(async () => { throw new DOMException('cheio', 'QuotaExceededError') })
+    const err = await fetchSeparationStems(stemsToOpen(sep()), { store, fetchImpl: vi.fn(async () => okResponse('a')) as unknown as typeof fetch }).catch((e: unknown) => e)
+    expect(openErrorText(err)).toBe(OPEN_QUOTA_TEXT)
+    expect(OPEN_QUOTA_TEXT).toBe('Não tem espaço no aparelho pra abrir essa separação no palco. Libere espaço ou abra aqui no Separador.')
+    // Erro com o mesmo nome que não é DOMException (o Safari antigo) também.
+    expect(openErrorText({ name: 'QuotaExceededError' })).toBe(OPEN_QUOTA_TEXT)
+    expect(openErrorText(new DOMException('x', 'AbortError'))).toBe(OPEN_ERROR_TEXT)
   })
 
   // sep-2 I3: faixa que o servidor diz que não existe (4xx) não culpa a internet.
