@@ -49,6 +49,14 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
     // A frase do baixar que nem começou (sem espaço no aparelho), separada do erro da edição: sempre no
     // alto da Biblioteca, e baixar não apaga o erro de uma edição aberta (Ruling INICIO-residuais).
     const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
+    // A frase sai quando a Biblioteca fecha, a mesma regra do erro dos Planos (inicio-residuais-2
+    // Minor 1): o LibraryModal fica montado, e sem isto ela voltava presa no alto a cada abertura. A
+    // que chega com a Biblioteca já fechada fica pra próxima abertura, pra nunca sumir calada.
+    const [seenOpen, setSeenOpen] = useState(isOpen);
+    if (seenOpen !== isOpen) {
+        setSeenOpen(isOpen);
+        if (!isOpen) setDownloadNotice(null);
+    }
     // A música da confirmação de excluir (antes era a pergunta do navegador): a segunda janela do palco.
     // Guarda o escopo de quando abriu (Ruling INICIO-residuais): a internet voltando não troca a janela.
     const [deleteAsk, setDeleteAsk] = useState<{ id: string; scope: RemoveScope } | null>(null);
@@ -126,9 +134,10 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
     if (!isOpen) return null;
 
     const handleDownload = async (songId: string, songName: string) => {
+        // Cada toque no IMPORTAR ou no ABRIR tira a frase velha, também no Livre sem vaga (inicio-residuais-2 Minor 1).
+        setDownloadNotice(null);
         // No Livre a música conta nas do mês: sem vaga, o App mostra a tela de limite e nada baixa.
         if (onBeforeDownload && !onBeforeDownload(songId)) return;
-        setDownloadNotice(null);
         const result = await downloadSong(songId);
         // Sem espaço no aparelho: a frase aparece na janela (antes era o aviso do navegador, inicio-1 M2).
         if (result && 'refused' in result) {

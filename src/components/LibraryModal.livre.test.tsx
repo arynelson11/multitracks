@@ -3,7 +3,7 @@
 // cabe nas do mês (onBeforeDownload). Falso não baixa nada; verdadeiro (ou sem a pergunta, como
 // quem paga) baixa e entrega a música pro palco como sempre.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { CloudSong } from '../lib/supabase'
 import { INVALID_BPM_MESSAGE } from '../lib/cloudBpm'
 
@@ -119,6 +119,43 @@ describe('biblioteca: baixar e excluir no contêiner (Parte 3, T3)', () => {
     fireEvent.click(importButton())
     await waitFor(() => expect(screen.getByText('ADICIONADA')).toBeTruthy())
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('a frase de espaço sai quando a Biblioteca fecha, e o Livre sem vaga também tira a frase velha (inicio-residuais-2 Minor 1)', async () => {
+    const LOW_SPACE = 'Espaço em disco insuficiente. Por favor, libere pelo menos 150MB no dispositivo.'
+    lib.downloadSong.mockResolvedValue({ refused: LOW_SPACE })
+    const modal = (isOpen: boolean, onBeforeDownload?: (id: string) => boolean) => (
+      <LibraryModal isOpen={isOpen} onClose={() => {}} onDownload={() => {}} onBeforeDownload={onBeforeDownload} />
+    )
+    const view = render(modal(true))
+    fireEvent.click(importButton())
+    expect((await screen.findByRole('alert')).textContent).toBe(LOW_SPACE)
+    // Fechar e abrir: nenhum aviso.
+    view.rerender(modal(false))
+    view.rerender(modal(true))
+    expect(screen.queryByRole('alert')).toBeNull()
+    // No Livre sem vaga, o toque no IMPORTAR também tira a frase velha (nada baixa).
+    fireEvent.click(importButton())
+    expect((await screen.findByRole('alert')).textContent).toBe(LOW_SPACE)
+    const noSlot = vi.fn(() => false)
+    view.rerender(modal(true, noSlot))
+    fireEvent.click(importButton())
+    expect(noSlot).toHaveBeenCalledWith('n1')
+    expect(lib.downloadSong).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('a frase que chega com a Biblioteca já fechada aparece na próxima abertura, como nos Planos (inicio-residuais-2 Minor 1)', async () => {
+    const LOW_SPACE = 'Espaço em disco insuficiente. Por favor, libere pelo menos 150MB no dispositivo.'
+    let answer!: (v: unknown) => void
+    lib.downloadSong.mockReturnValue(new Promise((r) => { answer = r }))
+    const modal = (isOpen: boolean) => <LibraryModal isOpen={isOpen} onClose={() => {}} onDownload={() => {}} />
+    const view = render(modal(true))
+    fireEvent.click(importButton())
+    view.rerender(modal(false))
+    await act(async () => { answer({ refused: LOW_SPACE }) })
+    view.rerender(modal(true))
+    expect(screen.getByRole('alert').textContent).toBe(LOW_SPACE)
   })
 
   it('a confirmação de excluir: Cancelar não exclui; Excluir chama removeSong uma vez; Esc fecha só a confirmação', async () => {
