@@ -36,7 +36,8 @@ if (!args.includes('--no-build')) {
   process.stdout.write('build de computador (DESKTOP=1 npx vite build)... ')
   let log = ''
   const code = await new Promise((resolve) => {
-    const b = spawn('npx', ['vite', 'build'], { cwd: ROOT, env: { ...process.env, DESKTOP: '1' }, stdio: ['ignore', 'pipe', 'pipe'] })
+    // No Windows o npx é um .cmd: sem o shell o spawn não acha.
+    const b = spawn('npx', ['vite', 'build'], { cwd: ROOT, env: { ...process.env, DESKTOP: '1' }, stdio: ['ignore', 'pipe', 'pipe'], shell: process.platform === 'win32' })
     b.stdout.on('data', (c) => { log += c })
     b.stderr.on('data', (c) => { log += c })
     b.once('exit', resolve)

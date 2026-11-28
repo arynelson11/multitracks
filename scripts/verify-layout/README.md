@@ -244,6 +244,12 @@ node scripts/verify-lan/run.mjs --no-build   # usa o dist/ que já está lá
   aparece; também confere que a página abriu fora de contexto seguro (senão a medida não vale).
 - Entra no portão de toda onda que mexe no que carrega com o app (o pacote principal) e no da
   junção de cada versão.
+- No portão da junção de cada versão, rode com o `.env` da versão na raiz (o mesmo do app que vai
+  sair): sem ele o Supabase não nasce no build e um erro que só aparece com ele não é medido.
+- O que fica de fora: sem líder, o que só aparece com o `HOST_STATE` (música, seção, letra) não é
+  medido, e um erro solto que aparece mais de 1,5 s depois de a tela montar não entra.
+- No Windows, o `npx` do build roda pelo shell (`shell: true` só lá) e o Chrome vem da variável
+  `CHROME` (o padrão é o caminho do Mac).
 
 ## Como funciona
 
