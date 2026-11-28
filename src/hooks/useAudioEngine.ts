@@ -2988,13 +2988,13 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         // A música entrou com menos canais do que o carregamento gravou (uma faixa não decodificou):
         // o arquivo da que falhou não é de música nenhuma e sai do disco (re-revisão do item 4, N1).
         // Na música do cache offline (cacheSrcId) as chaves por faixa não existem: nada a apagar.
+        // O apagar não segura o fim do carregamento (Ruling v1426-faseB-extras): corre sozinho e, se
+        // falhar, fica no console; a música já entrou com os canais que decodificaram.
         const failed = prepared.filter((p) => !newChannels.some((ch) => ch.id === p.uuid));
         if (failed.length > 0) {
-            try {
-                await Promise.all(failed.map((p) => del(fileKey(p.uuid))));
-            } catch (e) {
+            void Promise.all(failed.map((p) => del(fileKey(p.uuid)))).catch((e) => {
                 console.error('loadFiles: não deu pra tirar do aparelho as faixas que não decodificaram', e);
-            }
+            });
         }
         // A música já entrou: daqui pra frente um erro não pode virar "não entrou" (quem chamou
         // tiraria do aparelho as faixas de uma música do repertório).

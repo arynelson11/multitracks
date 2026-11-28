@@ -50,6 +50,8 @@ const mem = vi.hoisted(() => ({
   // Gravação que estoura (disco cheio) nas chaves que casam, e o detectKey que quebra no meio do carregamento.
   failSet: null as RegExp | null,
   failDetect: false,
+  // Apagar que não responde (o disco lento) na chave escolhida, até o teste liberar.
+  delGate: null as { key: string; until: Promise<void> } | null,
   // Decodes juntos: o atraso de cada um e o máximo ao mesmo tempo (o "uma por vez" do toque).
   decodeDelay: 0,
   decodeInFlight: 0,
@@ -76,7 +78,10 @@ vi.mock('idb-keyval', () => ({
     if (isMetaKey(key)) mem.metaWrites.push(structuredClone(value))
     mem.db.set(key, isMetaKey(key) ? structuredClone(value) : value)
   },
-  del: async (key: string) => { mem.db.delete(key) },
+  del: async (key: string) => {
+    if (mem.delGate?.key === key) await mem.delGate.until
+    mem.db.delete(key)
+  },
   keys: async () => [...mem.db.keys()],
 }))
 vi.mock('tone', () => ({ setContext: () => {} }))
@@ -200,6 +205,7 @@ beforeEach(() => {
   mem.failDecode = null
   mem.failSet = null
   mem.failDetect = false
+  mem.delGate = null
   mem.decodeDelay = 0
   mem.decodeInFlight = 0
   mem.maxDecodeInFlight = 0
@@ -983,6 +989,36 @@ describe('separação no palco', () => {
     errors.mockRestore()
     expect(ok).toBe(true)
     expect(result.current.playlist[0].channels.map((c) => c.name)).toEqual(['Vocais'])
+    expect(mem.db.has(stemKey(stored[0].id))).toBe(true)
+    expect(mem.db.has(stemKey(stored[1].id))).toBe(false)
+  })
+
+  // Ruling v1426-faseB-extras: o apagar da faixa que não decodificou não segura o fim do carregamento.
+  // Com o disco lento, a música entra, o carregando sai e o arquivo some quando o apagar responde.
+  it('N1: o apagar da faixa que não decodifica não segura o fim do carregamento', async () => {
+    const { result } = await openApp()
+    const stored: { id: string; name: string }[] = []
+    for (const n of ['Vocais.wav', 'Ruim.wav']) {
+      let id = ''
+      await act(async () => { id = await result.current.putStagedStem(new File([n], n, { type: 'audio/wav' })) })
+      stored.push({ id, name: n })
+    }
+    mem.failDecode = /^Ruim/
+    let release!: () => void
+    mem.delGate = { key: stemKey(stored[1].id), until: new Promise<void>((resolve) => { release = resolve }) }
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    let ok: unknown = 'pendente'
+    await act(async () => {
+      const run = result.current.loadFiles(NO_FILES, 'Separada', undefined, undefined, null, undefined, { separation: { id: 'sep_lento', createdAt: 1 }, storedStems: stored })
+        .then((v) => { ok = v })
+      await Promise.race([run, new Promise((r) => setTimeout(r, 200))])
+    })
+    expect(ok).toBe(true)
+    expect(result.current.isLoading).toBe(false)
+    expect(result.current.playlist[0].channels.map((c) => c.name)).toEqual(['Vocais'])
+    expect(mem.db.has(stemKey(stored[1].id))).toBe(true)
+    await act(async () => { release(); await new Promise((r) => setTimeout(r, 0)) })
+    errors.mockRestore()
     expect(mem.db.has(stemKey(stored[0].id))).toBe(true)
     expect(mem.db.has(stemKey(stored[1].id))).toBe(false)
   })
