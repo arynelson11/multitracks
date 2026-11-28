@@ -213,6 +213,31 @@ Tipo da regra, caminho do elemento (até 5 níveis, pelos `data-*`, `role`,
 (aviso COMPASSO ASSUMIDO quebrando linha no PRÓXIMA em 1280 px), corrigido na
 própria T20.
 
+## Rede local: a tela da banda (`scripts/verify-lan`)
+
+O celular da banda abre o app pelo computador, em `http://<IP da rede local>:<porta>` (o express de
+`electron/main.ts` serve o mesmo `dist/`). Esse endereço não é contexto seguro: lá não existem
+`crypto.randomUUID`, service worker e outras APIs. Este verificador e o vitest rodam em `localhost`,
+que é contexto seguro, então um erro que só acontece fora dele passa pelos dois (revisão do item 4 da
+manutenção, C1: a tela da banda ficou em branco). Por isso há uma verificação à parte:
+
+```bash
+source ~/.nvm/nvm.sh && nvm use 24
+node scripts/verify-lan/run.mjs              # monta o build de computador (DESKTOP=1 npx vite build) e abre
+node scripts/verify-lan/run.mjs --no-build   # usa o dist/ que já está lá
+```
+
+- Acha um IPv4 da rede local da máquina (10.x, 172.16 a 31.x ou 192.168.x, por
+  `os.networkInterfaces`); sem rede local, sai com 1 e diz isso.
+- Serve o `dist/` nesse IP como o express do app (arquivo ou `index.html`) e abre no Chrome
+  headless. A página entra como a tela da banda (`isFollowerLAN` do `useLiveSync`), sem líder: fica
+  em "Reconectando", e isso basta.
+- Antes do app, um script anota os erros soltos (os "Uncaught" do console, inclusive em promessa).
+  Passa quando a tela da banda (`[data-follower-view]` no `#root`) monta e nenhum erro solto
+  aparece; também confere que a página abriu fora de contexto seguro (senão a medida não vale).
+- Entra no portão de toda onda que mexe no que carrega com o app (o pacote principal) e no da
+  junção de cada versão.
+
 ## Como funciona
 
 - `vite.config.ts`: raiz nesta pasta, `@vitejs/plugin-react` e

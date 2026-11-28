@@ -142,7 +142,8 @@ export function FollowerView({ state, isConnected, sendCommand }: FollowerViewPr
   }, [activeIndex, useSynced]);
 
   return (
-    <div className="h-[100dvh] bg-zinc-950 text-white flex flex-col font-sans relative overflow-hidden">
+    // data-follower-view: a verificação da rede local (scripts/verify-lan) confere que a tela da banda montou.
+    <div data-follower-view className="h-[100dvh] bg-zinc-950 text-white flex flex-col font-sans relative overflow-hidden">
       {/* Glow sutil com a cor da seção atual */}
       <div
         className="absolute inset-0 pointer-events-none opacity-30 transition-colors duration-700"
