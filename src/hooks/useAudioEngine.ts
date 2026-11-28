@@ -22,6 +22,7 @@ import { sanitizeSemitones } from '../lib/pitchRules';
 import { shouldAutoAdvance } from '../lib/autoAdvance';
 import { NO_CURRENT_SONG, songOpenedByRemoval } from '../lib/songRemoval';
 import { getCachedStem, getCachedStemNames, isSongCached } from '../lib/offlineCache';
+import { discardStagedStems as discardStaged, putStagedStem as putStaged, sweepStagedStems } from '../lib/stagedStems';
 import { applyChannelMetaToList, autoPanFor, channelGain, findClickChannel, isPitchExempt, pickMainChannel, pitchChangeAction, wantsFormantCompensation, type ChannelMetaPatch } from '../lib/channelRoles';
 import { arrangeChannels, resolveChannelRole, type ChannelIdentity } from '../lib/channelNames';
 import { REPERTOIRE_SCHEMA_VERSION, migrateManifestSong, migrateSavedSong, sanitizeSeparationLink, toManifestSong, toSavedSong, type SavedSong } from '../lib/repertoireSchema';
@@ -742,6 +743,12 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         if (perStem) return perStem;
         return legacyMap?.get(channelId);
     };
+    // A separação que abre no palco desce faixa por faixa direto pras chaves por faixa do repertório
+    // (Ruling SEP-memoria, manutenção 2026-11-27): o Separador grava cada uma aqui enquanto baixa, o
+    // loadFiles lê de lá (storedStems) e a que não vai entrar sai. A restauração tira o que sobrar
+    // de uma sessão que caiu no meio (src/lib/stagedStems.ts).
+    const putStagedStem = (file: File) => putStaged(DB_KEY_FILES, fileKey, file);
+    const discardStagedStems = (ids: readonly string[]) => discardStaged(DB_KEY_FILES, fileKey, ids);
     const { settings, updateSetting } = useSettings();
     // Pra volta dos pans antigos na restauração (Ruling I1-rota), que roda fora da renderização:
     // se o aparelho veio do pan automático ligado e como gravar a saída nova.
@@ -1996,6 +2003,13 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
                 const savedMeta = clickHasOwnRoute(graph.plan, autoPanRef.current) ? fixed.songs : fixed.songs.map(withGeneratedClickMuted);
                 if (savedMeta.some((s, i) => s !== migratedMeta[i])) await set(DB_KEY_META, savedMeta);
                 if (resetLegacyPans) writeLocal(LEGACY_PANS_DONE_KEY, '1');
+                // Faixas que uma sessão anterior gravou pra uma separação e que não entraram em música
+                // nenhuma (o app caiu no meio): saem do aparelho. Falhar aqui não atrapalha a restauração.
+                try {
+                    await sweepStagedStems(DB_KEY_FILES, fileKey, new Set(savedMeta.flatMap((s) => s.channels.map((c) => c.id))));
+                } catch (e) {
+                    console.error('[Repertório] limpeza das faixas soltas falhou', e);
+                }
                 // Map legado (repertórios gravados antes da migração por-stem). Pode
                 // não existir mais; os arquivos novos vivem em chaves por-stem.
                 const savedFiles = await get<Map<string, File>>(DB_KEY_FILES);
@@ -2700,7 +2714,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // `separation` (Parte 3): a música veio de uma separação do Separador. `channelStates`: o mixer
     // salvo na separação, na ordem dos arquivos; valor que falta ou fora da faixa fica no padrão.
     // Devolve se a música entrou no repertório (sep-1 M3: nada decodificou, ela não entra).
-    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string, songMarkers?: Marker[], overrideOriginalKey?: string | null, overrideBpm?: number, meta?: { artist?: string; lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null; sourceId?: string; timeSignature?: TimeSignature | null; separation?: SeparationLink; channelStates?: readonly (ChannelStartState | undefined)[] }): Promise<boolean> => {
+    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string, songMarkers?: Marker[], overrideOriginalKey?: string | null, overrideBpm?: number, meta?: { artist?: string; lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null; sourceId?: string; timeSignature?: TimeSignature | null; separation?: SeparationLink; channelStates?: readonly (ChannelStartState | undefined)[]; storedStems?: readonly { id: string; name: string }[] }): Promise<boolean> => {
         if (!audioCtxRef.current || !masterGainRef.current) return false;
         const timeSignature = sanitizeTimeSignature(meta?.timeSignature) ?? undefined;
         const separation = sanitizeSeparationLink(meta?.separation);
@@ -2738,12 +2752,18 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
 
         // Lista de stems a processar (sem decodificar ainda). file é opcional:
         // no modo cache-streaming os bytes vêm do cache no momento do decode.
-        type Prep = { uuid: string; idx: number; pan: number; bus: '1' | '2' | '1/2'; name: string; file?: File; mix: Omit<ChannelStartState, 'pan'> };
+        // `stored`: a faixa já está no aparelho, na chave por faixa do repertório (a separação que
+        // desceu direto pra lá, Ruling SEP-memoria): lida no decode, uma por vez, sem segunda cópia.
+        type Prep = { uuid: string; idx: number; pan: number; bus: '1' | '2' | '1/2'; name: string; file?: File; stored?: true; mix: Omit<ChannelStartState, 'pan'> };
         let prepared: Prep[];
         if (filesArray.length === 0 && cacheSrcId) {
             const names = (await getCachedStemNames(cacheSrcId)) || [];
             prepared = names.map((nm, idx) => {
                 return { uuid: crypto.randomUUID(), idx, ...startOf(meta?.channelStates?.[idx]), name: nm.replace(/\.[^/.]+$/, "") };
+            });
+        } else if (filesArray.length === 0 && meta?.storedStems?.length) {
+            prepared = meta.storedStems.map((st, idx) => {
+                return { uuid: st.id, idx, ...startOf(meta?.channelStates?.[idx]), name: st.name.replace(/\.[^/.]+$/, ""), stored: true as const };
             });
         } else {
             prepared = filesArray.map((file, idx) => {
@@ -2784,7 +2804,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         // offline (cacheSrcId), reusa sem 2ª cópia.
         if (!cacheSrcId) {
             for (const p of prepared) {
-                await set(fileKey(p.uuid), p.file);
+                if (p.file) await set(fileKey(p.uuid), p.file);
             }
         }
         const existingMeta = await get<SavedSong[]>(DB_KEY_META) || [];
@@ -2832,7 +2852,9 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
                     // Bytes vêm da memória (import local) OU do cache 1 por vez
                     // (música baixada). srcFile sai de escopo após o decode, então
                     // só 1 blob fica vivo por vez — não todos juntos.
-                    const srcFile = p.file ?? (cacheSrcId ? await getCachedStem(cacheSrcId, p.idx) : null);
+                    const srcFile = p.file
+                        ?? (cacheSrcId ? await getCachedStem(cacheSrcId, p.idx) : null)
+                        ?? (p.stored ? await get<File>(fileKey(p.uuid)) ?? null : null);
                     if (!srcFile) {
                         console.error(`Sem fonte para o stem ${p.idx} (${p.name})`);
                         return null;
@@ -4514,6 +4536,8 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         isReady,
         initEngine,
         loadFiles,
+        putStagedStem,
+        discardStagedStems,
         isLoading,
         isRestoring,
 

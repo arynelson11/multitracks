@@ -810,6 +810,73 @@ describe('separação no palco', () => {
     expect(saved().map((s) => s.name)).toEqual(['Boa'])
   })
 
+  // Sem arquivos na mão (o jsdom não tem DataTransfer; o App passa um FileList vazio).
+  const NO_FILES = [] as unknown as FileList
+  // Manutenção (2026-11-27, Ruling SEP-memoria): as faixas da separação descem direto pro aparelho e
+  // o loadFiles lê uma por vez de lá, sem receber os arquivos e sem gravar uma segunda cópia.
+  it('loadFiles com storedStems lê as faixas do aparelho, sem segunda cópia, e a música volta ao reabrir', async () => {
+    const first = await openApp()
+    const stored: { id: string; name: string }[] = []
+    for (const n of ['Vocais.wav', 'Bateria.wav']) {
+      let id = ''
+      await act(async () => { id = await first.result.current.putStagedStem(new File([n], n, { type: 'audio/wav' })) })
+      stored.push({ id, name: n })
+    }
+    expect(mem.db.has(stemKey(stored[0].id))).toBe(true)
+    mem.writes.length = 0
+    let ok: unknown = null
+    await act(async () => {
+      ok = await first.result.current.loadFiles(NO_FILES, 'Separada', undefined, undefined, null, undefined, {
+        separation: { id: 'sep_g', createdAt: 5 }, storedStems: stored, channelStates: [undefined, { volume: 0.4, muted: false, soloed: false, pan: 0 }],
+      })
+    })
+    expect(ok).toBe(true)
+    // Nenhuma faixa gravada de novo: só o repertório (provisório e final).
+    expect(mem.writes.filter((k) => k.includes(':ch:'))).toEqual([])
+    const nova = first.result.current.playlist[0]
+    expect(nova.channels.map((c) => c.id).sort()).toEqual(stored.map((s) => s.id).sort())
+    expect(nova.channels.find((c) => c.name === 'Bateria')).toMatchObject({ volume: 0.4 })
+    expect(nova.separation).toEqual({ id: 'sep_g', createdAt: 5 })
+    expect(saved()[0].channels.map((c) => c.id).sort()).toEqual(stored.map((s) => s.id).sort())
+    first.unmount()
+
+    const again = await openApp()
+    expect(again.result.current.playlist[0].channels.map((c) => c.name).sort()).toEqual(['Bateria', 'Vocais'])
+    expect(mem.db.has(stemKey(stored[0].id))).toBe(true)
+  })
+
+  it('storedStems que não decodificam: a música não entra e as faixas gravadas saem do aparelho', async () => {
+    const { result } = await openApp()
+    let id = ''
+    await act(async () => { id = await result.current.putStagedStem(new File(['Ruim'], 'Ruim.wav', { type: 'audio/wav' })) })
+    mem.failDecode = /^Ruim/
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    let ok: unknown = null
+    await act(async () => { ok = await result.current.loadFiles(NO_FILES, 'Ruim', undefined, undefined, null, undefined, { storedStems: [{ id, name: 'Ruim.wav' }] }) })
+    errors.mockRestore()
+    expect(ok).toBe(false)
+    expect(result.current.playlist).toHaveLength(0)
+    expect(mem.db.has(stemKey(id))).toBe(false)
+  })
+
+  it('discardStagedStems tira as faixas gravadas que não vão entrar', async () => {
+    const { result } = await openApp()
+    let id = ''
+    await act(async () => { id = await result.current.putStagedStem(new File(['x'], 'x.wav', { type: 'audio/wav' })) })
+    await act(async () => { await result.current.discardStagedStems([id]) })
+    expect(mem.db.has(stemKey(id))).toBe(false)
+  })
+
+  it('a restauração tira as faixas que uma sessão que caiu deixou no aparelho, e não as do repertório', async () => {
+    seed(sepSong)
+    const old = Date.now() - 2 * 60 * 60 * 1000
+    mem.db.set(stemKey('orfa'), new File(['o'], 'o.wav'))
+    mem.db.set('mt_files_u1:staged', [{ id: 'orfa', session: 'velha', at: old }, { id: 'dr', session: 'velha', at: old }])
+    await openApp()
+    expect(mem.db.has(stemKey('orfa'))).toBe(false)
+    expect(mem.db.has(stemKey('dr'))).toBe(true)
+  })
+
   it('loadFiles sem separation continua como antes', async () => {
     const { result } = await openApp()
     const files = ['GTR_1.wav', 'CLICK.wav'].map((n) => new File([n], n, { type: 'audio/wav' }))
