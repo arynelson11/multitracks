@@ -150,7 +150,7 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
         if (result && (result.files.length > 0 || result.cachedSourceId)) {
             onDownload(result.files, songName, result.coverUrl, result.markers || undefined, result.originalKey, result.artist, result.bpm, { lyrics: result.lyrics, lyricsSynced: result.lyricsSynced, chords: result.chords, timeSignature: result.timeSignature }, songId);
             setDownloadedIds(prev => new Set(prev).add(songId));
-            // Abriu, mas não coube no aparelho: a frase aparece no alto (inicio-residuais-2).
+            // Abriu, mas não ficou guardada no aparelho: a frase aparece no alto (inicio-residuais-2).
             if (result.notice) setDownloadNotice(result.notice);
         }
     };
