@@ -209,6 +209,30 @@ describe('Pads da nuvem: envio de renomear e apagar', () => {
     expect(screen.queryByLabelText('Nome do conjunto')).toBeNull()
   })
 
+  // Revisão das telas (M2): os dois toques no mesmo act chegam antes de o React aplicar o desligado;
+  // só o ref barra o segundo (com o botão já desligado, o React nem chamaria o onClick).
+  it('toque duplo no Salvar antes de o botão desligar manda um PATCH só', async () => {
+    const envio = preso()
+    stubEnvio(() => envio.p)
+    abrir(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Renomear Pads Domingo' }))
+    const salvar = botao('Salvar')
+    await act(async () => { fireEvent.click(salvar); fireEvent.click(salvar) })
+    expect(pedidos('PATCH')).toHaveLength(1)
+    await act(async () => { envio.soltar({ ok: true, json: async () => ({}) }) })
+  })
+
+  it('toque duplo no Apagar antes de o botão desligar manda um DELETE só', async () => {
+    const envio = preso()
+    stubEnvio(() => envio.p)
+    abrir(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Apagar Pads Domingo' }))
+    const apagar = botao('Apagar')
+    await act(async () => { fireEvent.click(apagar); fireEvent.click(apagar) })
+    expect(pedidos('DELETE')).toHaveLength(1)
+    await act(async () => { envio.soltar({ ok: true, json: async () => ({}) }) })
+  })
+
   it('renomear falhou (servidor recusou ou sem internet): a edição fica aberta com o nome digitado e a frase na janela', async () => {
     stubEnvio(async () => ({ ok: false, status: 500, json: async () => ({}) }))
     abrir(true)
