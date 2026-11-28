@@ -155,6 +155,35 @@ describe('Login do admin: as respostas reais do Supabase', () => {
   })
 })
 
+// Onda de correção (item 18): muitas tentativas e erro do servidor não culpam a senha.
+describe('Login do admin: muitas tentativas e erro do servidor', () => {
+  const SERVIDOR = 'O servidor teve um problema agora. Tente de novo em alguns minutos.'
+  const entrarCom = async (error: unknown) => {
+    h.signIn.mockResolvedValue({ error })
+    preencher()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar' })) })
+    return screen.getByRole('alert').textContent
+  }
+
+  it('429 (muitas tentativas): a frase de esperar', async () => {
+    expect(await entrarCom({ name: 'AuthApiError', status: 429, code: 'over_request_rate_limit', message: 'Request rate limit reached' })).toBe('Muitas tentativas. Espere um pouco e tente de novo.')
+  })
+
+  it('500 do servidor: a frase do servidor', async () => {
+    expect(await entrarCom({ name: 'AuthApiError', status: 500, message: 'Database error querying schema' })).toBe(SERVIDOR)
+  })
+
+  it('AuthUnknownError (resposta que não é do Supabase): a frase do servidor', async () => {
+    expect(await entrarCom({ name: 'AuthUnknownError', status: 502, message: 'Unexpected token <' })).toBe(SERVIDOR)
+    cleanup()
+    expect(await entrarCom({ name: 'AuthUnknownError', message: 'sem status' })).toBe(SERVIDOR)
+  })
+
+  it('senha errada continua com a frase da senha', async () => {
+    expect(await entrarCom({ name: 'AuthApiError', status: 400, code: 'invalid_credentials', message: 'Invalid login credentials' })).toBe('E-mail ou senha inválidos.')
+  })
+})
+
 describe('Login do admin: linguagem do palco', () => {
   it('só classes da linguagem nova, com o erro na tela', async () => {
     h.signIn.mockResolvedValue({ error: { message: 'x' } })
