@@ -285,6 +285,28 @@ describe('Pads da nuvem: envio de renomear e apagar', () => {
 // Revisão das telas (I1): no Chromium o botão focado que fica desligado perde o foco pro body, e aí o
 // Esc não cancela, o Tab sai pra trás da janela e, no palco antigo, o Espaço toca a música por baixo. O
 // foco fica dentro da janela no envio e volta pro botão (falha) ou pra janela (sucesso) no fim.
+// Revisão das telas (M3): uma linha aberta por vez (Ruling: mais simples que uma frase por linha). Antes,
+// renomeando um conjunto, a lixeira de outro abria junto e a frase de falha aparecia nas duas.
+describe('Pads da nuvem: uma linha aberta por vez', () => {
+  it('abrir o apagar de outro conjunto fecha a edição; abrir a edição fecha o apagar', async () => {
+    fetchMock = vi.fn((_url: string, init?: RequestInit) => (init?.method ? Promise.resolve({ ok: false, status: 500, json: async () => ({}) }) : ok(SETS)()))
+    vi.stubGlobal('fetch', fetchMock)
+    abrir(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Renomear Pads Domingo' }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Salvar' })) })
+    expect(screen.getByRole('alert').textContent).toContain('Não deu pra salvar o nome agora.')
+    fireEvent.click(screen.getByRole('button', { name: 'Apagar Ambiente' }))
+    expect(screen.queryByLabelText('Nome do conjunto')).toBeNull()
+    expect(screen.getByText('Apagar "Ambiente"?')).toBeTruthy()
+    // A frase da falha do renomear não aparece no apagar.
+    expect(screen.queryByRole('alert')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Renomear Pads Domingo' }))
+    expect(screen.queryByText('Apagar "Ambiente"?')).toBeNull()
+    expect(screen.getByLabelText('Nome do conjunto')).toBeTruthy()
+    expect(screen.getAllByRole('textbox', { name: 'Nome do conjunto' })).toHaveLength(1)
+  })
+})
+
 describe('Pads da nuvem: o foco no envio', () => {
   function stubEnvio(envio: () => Promise<Resposta>) {
     fetchMock = vi.fn((_url: string, init?: RequestInit) => (init?.method ? envio() : ok(SETS)()))

@@ -86,9 +86,12 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
         onClose();
     };
 
+    // Uma linha aberta por vez (revisão das telas, M3): abrir a edição fecha o apagar e vice-versa,
+    // e a frase de falha é sempre da linha aberta.
     const startEdit = (padSet: CatalogEntry, e: React.MouseEvent) => {
         e.stopPropagation();
         setSendError(null);
+        setDeletingId(null);
         setEditingId(padSet.id);
         setEditName(padSet.name);
         setEditDesc(padSet.description || '');
@@ -127,6 +130,7 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
     const confirmDelete = (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
         setSendError(null);
+        setEditingId(null);
         setDeletingId(id);
     };
 
