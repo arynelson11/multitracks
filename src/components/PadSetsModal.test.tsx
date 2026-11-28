@@ -239,7 +239,8 @@ describe('Pads da nuvem: envio de renomear e apagar', () => {
     await act(async () => { fireEvent.click(botao('Apagar')) })
     const ambiente = await escolha('Ambiente')
     expect((ambiente as HTMLButtonElement).disabled).toBe(true)
-    // Mesmo um toque que chegue antes de o botão desligar não escolhe (o ref barra).
+    // Com o botão já desligado, o toque nem chega ao onClick: quem barra aqui é o disabled (o ref do
+    // escolher é provado no teste seguinte, com os dois toques no mesmo act).
     fireEvent.click(ambiente)
     expect(onSelect).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
