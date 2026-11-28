@@ -966,6 +966,39 @@ describe('separação no palco', () => {
     expect(await run(false)).toBe(3)
   })
 
+  // Re-revisão do item 4 (N1): a música entra com menos canais do que desceram (uma faixa não decodificou).
+  // A faixa que falhou não está no repertório nem na lista das soltas: sem apagar aqui, ficava no disco pra sempre.
+  it('N1: a faixa que não decodifica numa música que entra sai do disco; as outras ficam', async () => {
+    const { result } = await openApp()
+    const stored: { id: string; name: string }[] = []
+    for (const n of ['Vocais.wav', 'Ruim.wav']) {
+      let id = ''
+      await act(async () => { id = await result.current.putStagedStem(new File([n], n, { type: 'audio/wav' })) })
+      stored.push({ id, name: n })
+    }
+    mem.failDecode = /^Ruim/
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    let ok: unknown = null
+    await act(async () => { ok = await result.current.loadFiles(NO_FILES, 'Separada', undefined, undefined, null, undefined, { separation: { id: 'sep_n1', createdAt: 1 }, storedStems: stored }) })
+    errors.mockRestore()
+    expect(ok).toBe(true)
+    expect(result.current.playlist[0].channels.map((c) => c.name)).toEqual(['Vocais'])
+    expect(mem.db.has(stemKey(stored[0].id))).toBe(true)
+    expect(mem.db.has(stemKey(stored[1].id))).toBe(false)
+  })
+
+  it('N1: o mesmo com arquivos do computador: só fica no disco o arquivo dos canais que entraram', async () => {
+    const { result } = await openApp()
+    mem.failDecode = /^Ruim/
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const files = ['GTR.wav', 'Ruim.wav'].map((n) => new File([n], n, { type: 'audio/wav' }))
+    await act(async () => { await result.current.loadFiles(files, 'Comum') })
+    errors.mockRestore()
+    const song = result.current.playlist[0]
+    expect(song.channels.map((c) => c.name)).toEqual(['GTR'])
+    expect([...mem.db.keys()].filter((k) => k.includes(':ch:')).sort()).toEqual(song.channels.map((c) => stemKey(c.id)).sort())
+  })
+
   it('discardStagedStems tira as faixas gravadas que não vão entrar', async () => {
     const { result } = await openApp()
     let id = ''
