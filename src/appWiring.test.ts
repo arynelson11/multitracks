@@ -58,7 +58,13 @@ describe('ligações do palco novo', () => {
   it('letra e cifra: o editor abre com a música ativa de quando abriu e grava pela id dela (manutenção 2026-11-27)', () => {
     // Abrir guarda a música; o editor não segue mais a música ativa de agora.
     expect(app).not.toMatch(/<LyricsEditor[\s\S]{0,80}song=\{playlist\[activeSongIndex\]\}/)
-    expect(app).toMatch(/<LyricsEditor[\s\S]{0,80}song=\{lyricsEditorSong\}/)
+    // Revisão das telas (M6): o App guarda só a id, o nome, o artista, a duração e os três textos
+    // (lyricsSongOf, sem canais nem áudio); na montagem o editor recebe a versão viva pela id.
+    expect(app).toMatch(/const openLyricsEditor = \(\) => \{ const s = playlist\[activeSongIndex\]; if \(s\) setLyricsEditorSong\(lyricsSongOf\(s\)\) \}/)
+    expect(app).toMatch(/useState<LyricsSong \| null>\(null\)/)
+    expect(app).toMatch(/<LyricsEditor\s+key=\{lyricsEditorSong\.id\}\s+song=\{playlist\.find\(\(s\) => s\.id === lyricsEditorSong\.id\) \?\? lyricsEditorSong\}/)
+    // A conta mudou (saiu, caiu ou entrou outra): o editor da conta de antes sai e não volta sozinho.
+    expect(app).toMatch(/if \(lyricsEditorOwner !== \(user\?\.id \?\? null\)\) \{\s*setLyricsEditorOwner\(user\?\.id \?\? null\)\s*setLyricsEditorSong\(null\)\s*\}/)
     expect(app).toMatch(/songInPlaylist=\{playlist\.some\(\(s\) => s\.id === lyricsEditorSong\.id\)\}/)
     expect(app).toMatch(/onSave=\{\(songId, data\) => saveSongLyrics\(songId, data,/)
     expect(app.match(/onClick=\{openLyricsEditor\}/g)).toHaveLength(2)

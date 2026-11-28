@@ -4,8 +4,20 @@
 // só pela id que o download gravou (sourceId), nunca pelo nome. Se a música saiu do repertório,
 // nada é gravado e o editor avisa.
 import { cloudSongOf } from './cloudMatch'
+import type { Song } from '../types'
 
 export type LyricsData = { lyrics: string | null; lyricsSynced: string | null; chords: string | null }
+
+/**
+ * O que o editor precisa da música (revisão das telas, M6): a id, o nome e o artista e a duração da
+ * busca, e os três textos. Nunca a música inteira, que segura os canais (o áudio decodificado, os nós
+ * do som e os arquivos) enquanto o editor está aberto.
+ */
+export type LyricsSong = Pick<Song, 'id' | 'name' | 'artist' | 'duration' | 'lyrics' | 'lyricsSynced' | 'chords'>
+
+export function lyricsSongOf(song: LyricsSong): LyricsSong {
+  return { id: song.id, name: song.name, artist: song.artist, duration: song.duration, lyrics: song.lyrics, lyricsSynced: song.lyricsSynced, chords: song.chords }
+}
 
 /** true: na nuvem e no aparelho; false: só no aparelho; 'missing': a música saiu do repertório, nada gravado. */
 export type LyricsSaveResult = boolean | 'missing'

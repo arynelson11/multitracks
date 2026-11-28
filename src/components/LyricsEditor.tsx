@@ -1,8 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Loader2, Save, Sparkles } from 'lucide-react';
-import type { Song } from '../types';
 import { searchLyrics } from '../lib/supabase';
-import type { LyricsData, LyricsSaveResult } from '../lib/lyricsSave';
+import { lyricsSongOf, type LyricsData, type LyricsSaveResult, type LyricsSong } from '../lib/lyricsSave';
 import { Button, Notice, TabPanel, Tabs, TextArea, TextField } from './ui';
 import { StageDialog } from './stage/StageDialog';
 
@@ -12,7 +11,7 @@ const TABS: { value: EditorTab; label: string }[] = [{ value: 'lyrics', label: '
 interface LyricsEditorProps {
   // A música ativa quando o editor abriu. O editor guarda essa música (a id, o nome e a duração da
   // busca) e grava sempre nela, mesmo que a música ativa mude com ele aberto (manutenção 2026-11-27).
-  song: Song;
+  song: LyricsSong;
   // A música do editor ainda está no repertório? Fora dele, o Salvar desliga e a janela avisa.
   songInPlaylist?: boolean;
   // Persiste na música da id: atualiza o estado local e tenta salvar na nuvem. true: salvou na
@@ -25,7 +24,8 @@ const MISSING_TEXT = 'Esta música saiu do repertório, então a letra e a cifra
 
 export function LyricsEditor({ song: songProp, songInPlaylist = true, onSave, onClose }: LyricsEditorProps) {
   // A música de quando abriu: a prop pode passar a ser a nova música ativa, o editor não segue.
-  const [song] = useState(songProp);
+  // Só o que o editor precisa (revisão M6): a música que saiu do repertório não fica presa aqui com os canais.
+  const [song] = useState(() => lyricsSongOf(songProp));
   const [artist, setArtist] = useState(song.artist || '');
   const [lyrics, setLyrics] = useState(song.lyrics || '');
   const [lyricsSynced, setLyricsSynced] = useState<string | null>(song.lyricsSynced || null);

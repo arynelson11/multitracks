@@ -101,7 +101,7 @@ import { PricingModal } from './components/PricingModal'
 import { HomeScreen } from './components/home/HomeScreen'
 import { supabase, updateSongMarkers as saveMkToCloud, fetchSongs as fetchCloudSongs, updateSong } from './lib/supabase'
 import { LyricsEditor } from './components/LyricsEditor'
-import { saveSongLyrics } from './lib/lyricsSave'
+import { lyricsSongOf, saveSongLyrics, type LyricsSong } from './lib/lyricsSave'
 import { Teleprompter } from './components/Teleprompter'
 import { useNetworkStatus } from './hooks/useNetworkStatus'
 import { useLiveSync } from './hooks/useLiveSync'
@@ -482,9 +482,18 @@ export default function App() {
   const [isMarkerEditorOpen, setIsMarkerEditorOpen] = useState(false)
   // Letra e cifra: a música ativa de quando o editor abriu (manutenção 2026-11-27). O editor grava
   // sempre nela, mesmo que a música ativa mude com ele aberto (troca, AUTO, banda pelo celular).
-  const [lyricsEditorSong, setLyricsEditorSong] = useState<Song | null>(null)
+  // Guarda só a id, o nome, o artista, a duração e os três textos (revisão das telas, M6), nunca a
+  // música inteira com os canais; na montagem o editor recebe a versão viva pela id.
+  const [lyricsEditorSong, setLyricsEditorSong] = useState<LyricsSong | null>(null)
+  // A conta mudou (saiu, a sessão caiu ou entrou outra): o editor da conta de antes sai e não volta
+  // sozinho com a cópia de quando abriu (ajuste de estado na renderização, sem efeito).
+  const [lyricsEditorOwner, setLyricsEditorOwner] = useState<string | null>(user?.id ?? null)
+  if (lyricsEditorOwner !== (user?.id ?? null)) {
+    setLyricsEditorOwner(user?.id ?? null)
+    setLyricsEditorSong(null)
+  }
   const isLyricsEditorOpen = lyricsEditorSong !== null
-  const openLyricsEditor = () => { const s = playlist[activeSongIndex]; if (s) setLyricsEditorSong(s) }
+  const openLyricsEditor = () => { const s = playlist[activeSongIndex]; if (s) setLyricsEditorSong(lyricsSongOf(s)) }
   const [showTour, setShowTour] = useState(false)
   const [showWhatsNew, setShowWhatsNew] = useState(false)
   // Atualização do app desktop: checa no foco e na abertura. Alimenta o botão
@@ -2935,7 +2944,8 @@ export default function App() {
       {/* A música é a de quando abriu (lyricsEditorSong); fora do repertório, a janela avisa e não grava. */}
       {lyricsEditorSong && (
         <LyricsEditor
-          song={lyricsEditorSong}
+          key={lyricsEditorSong.id}
+          song={playlist.find((s) => s.id === lyricsEditorSong.id) ?? lyricsEditorSong}
           songInPlaylist={playlist.some((s) => s.id === lyricsEditorSong.id)}
           onClose={() => setLyricsEditorSong(null)}
           // Pela id que o editor guardou: o aparelho e a nuvem (só pelo sourceId, nunca pelo nome).
