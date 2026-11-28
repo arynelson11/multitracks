@@ -47,6 +47,9 @@ const mem = vi.hoisted(() => ({
   pitchGate: null as Promise<void> | null,
   // Conteúdo de arquivo que não decodifica (arquivo estragado).
   failDecode: null as RegExp | null,
+  // Gravação que estoura (disco cheio) nas chaves que casam, e o detectKey que quebra no meio do carregamento.
+  failSet: null as RegExp | null,
+  failDetect: false,
   sources: [] as FakeSource[],
   pitchNodes: [] as FakePitchNode[],
   // Passa-baixa de cada bipe da contagem (um por tempo): a saída dele é a entrada da contagem.
@@ -64,6 +67,7 @@ vi.mock('idb-keyval', () => ({
     return isMetaKey(key) ? structuredClone(mem.db.get(key)) : mem.db.get(key)
   },
   set: async (key: string, value: unknown) => {
+    if (mem.failSet?.test(key)) throw new DOMException('cota estourada (teste)', 'QuotaExceededError')
     mem.writes.push(key)
     if (isMetaKey(key)) mem.metaWrites.push(structuredClone(value))
     mem.db.set(key, isMetaKey(key) ? structuredClone(value) : value)
@@ -89,7 +93,7 @@ vi.mock('signalsmith-stretch', () => ({
   },
 }))
 vi.mock('../contexts/SettingsContext', () => ({ useSettings: () => ({ settings: mem.settings }) }))
-vi.mock('../lib/AudioAnalyzer', () => ({ detectKey: () => 'C', generateEndlessClickTrackFromSample: async () => ({ clickBlob: new Blob(['click']) }) }))
+vi.mock('../lib/AudioAnalyzer', () => ({ detectKey: () => { if (mem.failDetect) throw new Error('detectKey quebrou (teste)'); return 'C' }, generateEndlessClickTrackFromSample: async () => ({ clickBlob: new Blob(['click']) }) }))
 vi.mock('../lib/clickLibrary', () => ({ loadClickSelection: () => ({ type: 'wood', subdivision: 1 }) }))
 vi.mock('../lib/offlineCache', () => ({
   getCachedStem: async (songId: string, idx: number) => new File([`${songId}#${idx}`], `${idx}.wav`, { type: 'audio/wav' }),
@@ -186,6 +190,8 @@ beforeEach(() => {
   mem.metaGate = null
   mem.pitchGate = null
   mem.failDecode = null
+  mem.failSet = null
+  mem.failDetect = false
   mem.onStart = null
   mem.settings.autoPan = true
   mem.settings.outputs = undefined
@@ -883,6 +889,46 @@ describe('separação no palco', () => {
     expect(ok).toBe(false)
     expect(result.current.playlist).toHaveLength(0)
     expect(mem.db.has(stemKey(id))).toBe(false)
+  })
+
+  // Revisão do item 4 (M1): uma exceção antes de a música entrar no repertório da memória desfaz como o
+  // "nada decodificou": o registro provisório sai, os arquivos (inclusive os que desceram) saem e a exceção sobe.
+  it('M1: disco cheio no registro provisório desfaz tudo e a exceção sobe', async () => {
+    seed(sepSong)
+    const { result } = await openApp()
+    let id = ''
+    await act(async () => { id = await result.current.putStagedStem(new File(['Vocais'], 'Vocais.wav', { type: 'audio/wav' })) })
+    mem.failSet = /^mt_meta_playlist/
+    let err: unknown = null
+    await act(async () => {
+      err = await result.current.loadFiles(NO_FILES, 'Separada', undefined, undefined, null, undefined, { storedStems: [{ id, name: 'Vocais.wav' }] }).catch((e: unknown) => e)
+    })
+    mem.failSet = null
+    expect((err as DOMException).name).toBe('QuotaExceededError')
+    expect(mem.db.has(stemKey(id))).toBe(false)
+    expect(saved().map((s) => s.id)).toEqual(['sp'])
+    expect(result.current.playlist.map((s) => s.id)).toEqual(['sp'])
+    expect(result.current.isLoading).toBe(false)
+  })
+
+  it('M1: exceção depois do registro provisório (no meio do carregamento) tira o registro e os arquivos', async () => {
+    const { result } = await openApp()
+    let id = ''
+    await act(async () => { id = await result.current.putStagedStem(new File(['Vocais'], 'Vocais.wav', { type: 'audio/wav' })) })
+    mem.failDetect = true
+    const files = [new File(['GTR'], 'GTR.wav', { type: 'audio/wav' })]
+    let err1: unknown = null
+    let err2: unknown = null
+    await act(async () => {
+      err1 = await result.current.loadFiles(NO_FILES, 'Separada', undefined, undefined, undefined, undefined, { storedStems: [{ id, name: 'Vocais.wav' }] }).catch((e: unknown) => e)
+      err2 = await result.current.loadFiles(files as unknown as FileList, 'Comum').catch((e: unknown) => e)
+    })
+    expect((err1 as Error).message).toContain('detectKey')
+    expect((err2 as Error).message).toContain('detectKey')
+    // Nada ficou: nem o registro provisório, nem os arquivos (o que desceu e o que o carregamento gravou).
+    expect(saved() ?? []).toEqual([])
+    expect([...mem.db.keys()].filter((k) => k.includes(':ch:'))).toEqual([])
+    expect(result.current.playlist).toHaveLength(0)
   })
 
   it('discardStagedStems tira as faixas gravadas que não vão entrar', async () => {

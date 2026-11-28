@@ -797,16 +797,15 @@ export default function App() {
     const dt = new DataTransfer()
     // Pelo mesmo carregamento do Livre (Ruling R9); a chegada abaixo faz a música virar a atual em todos os planos.
     let entered = false
-    let refused = false
     void loadAsCurrent(() => loadFiles(dt.files, meta.name, undefined, undefined, meta.originalKey, meta.bpm, {
       artist: meta.artist, separation: meta.separation, channelStates: separationChannelStates(stemsToOpen(o.sep)), storedStems: stems,
-    }).then((ok) => { entered = ok; refused = !ok }))
+    }).then((ok) => { entered = ok }))
       .catch((e) => { console.error('[Separação] o palco não carregou as faixas', e) })
       .then(() => {
         if (entered) { arrived(); return }
-        // O motor disse que a música não entrou: as faixas saem do aparelho. Se o carregamento quebrou
-        // no meio, ficam pra restauração seguinte, que só tira as que nenhuma música usa.
-        if (refused) dropStoredStems(stems)
+        // A música não entrou (o motor recusou, nada decodificou ou o carregamento quebrou antes de ela
+        // entrar, quando o motor já desfaz o registro provisório, revisão M1): as faixas saem do aparelho.
+        dropStoredStems(stems)
         setSeparationLoadFailed(true)
       })
     // Roda quando a separação chega, o motor fica pronto ou a restauração termina; o loadFiles, o

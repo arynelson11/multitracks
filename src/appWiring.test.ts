@@ -384,8 +384,10 @@ describe('separação abrindo no palco', () => {
     // A que não entra sai do aparelho: outra separação chegou antes, já estava no repertório, ou o motor recusou.
     expect(app).toMatch(/if \(pendingStemsRef\.current\) dropStoredStems\(pendingStemsRef\.current\)\s*pendingStemsRef\.current = o\.stems/)
     expect(app).toMatch(/setPendingSeparation\(null\)\s*pendingStemsRef\.current = null/)
-    expect(app).toMatch(/\.then\(\(ok\) => \{ entered = ok; refused = !ok \}\)/)
-    expect(app).toMatch(/if \(refused\) dropStoredStems\(stems\)\s*setSeparationLoadFailed\(true\)/)
+    // Revisão M1: em todo caso que a música não entrou, as faixas saem (o motor já desfaz o registro).
+    expect(app).toMatch(/\.then\(\(ok\) => \{ entered = ok \}\)/)
+    expect(app).toMatch(/if \(entered\) \{ arrived\(\); return \}[\s\S]{0,300}\n\s*dropStoredStems\(stems\)\s*setSeparationLoadFailed\(true\)/)
+    expect(app).not.toMatch(/refused/)
   })
 
   it('com a VS tocando a separação espera a parada pra virar a atual', () => {
@@ -455,7 +457,7 @@ describe('separação abrindo no palco', () => {
   })
 
   it('sep-1 M3: nada decodificou, a frase aparece no palco (nunca tocando) e a chegada não fica pendente', () => {
-    expect(app).toMatch(/\.then\(\(ok\) => \{ entered = ok; refused = !ok \}\)\)/)
+    expect(app).toMatch(/\.then\(\(ok\) => \{ entered = ok \}\)\)/)
     expect(app).toMatch(/\.then\(\(\) => \{\s*if \(entered\) \{ arrived\(\); return \}[\s\S]{0,300}setSeparationLoadFailed\(true\)\s*\}\)/)
     expect(app).toMatch(/<Toast open=\{separationLoadFailed\}[\s\S]{0,200}playing=\{isPlaying \|\| isCountingIn\}[\s\S]{0,80}\{STAGE_LOAD_ERROR_TEXT\}/)
   })

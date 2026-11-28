@@ -2720,6 +2720,13 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         const separation = sanitizeSeparationLink(meta?.separation);
         setIsLoading(true);
 
+        // Desfaz o registro provisório e os arquivos que este carregamento gravou (inclusive os que
+        // desceram da separação, storedStems) quando a música não entra: nada decodificou, ou uma
+        // exceção antes de ela entrar no repertório da memória (revisão do item 4, M1). Depois de
+        // entrar, nada desfaz.
+        let undo: (() => Promise<void>) | null = null;
+        let entered = false;
+
         // try/finally garante que o loading sempre desligue: se qualquer decode
         // ou worklet falhar no meio, a UI não fica presa em "carregando".
         try {
@@ -2789,6 +2796,13 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         }
 
         const newSongId = crypto.randomUUID();
+        undo = async () => {
+            // Os arquivos antes do registro: com o disco cheio, apagar primeiro abre espaço pra gravar.
+            // Na música do cache offline (cacheSrcId) as chaves por faixa não existem: nada a apagar.
+            await Promise.all(prepared.map((p) => del(fileKey(p.uuid))));
+            const revertMeta = await get<SavedSong[]>(DB_KEY_META) || [];
+            if (revertMeta.some((s) => s.id === newSongId)) await set(DB_KEY_META, revertMeta.filter((s) => s.id !== newSongId));
+        };
 
         // PERSISTE ANTES DO DECODE, POR STEM. No celular, decodificar todos os
         // stems de uma vez segura ~1GB de AudioBuffer e a aba estoura a memória: o
@@ -2920,9 +2934,7 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
         // desliga o loading. Vale pro caso da Estações com cache incompleto.
         if (newChannels.length === 0) {
             console.error('loadFiles: nenhuma faixa decodificou — música não adicionada.');
-            const revertMeta = await get<SavedSong[]>(DB_KEY_META) || [];
-            await set(DB_KEY_META, revertMeta.filter((s) => s.id !== newSongId));
-            await Promise.all(prepared.map((p) => del(fileKey(p.uuid))));
+            await undo();
             return false;
         }
 
@@ -2969,14 +2981,30 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             setCurrentTime(0);
         }
         // A fila da grade (abaixo) já acha a música nova, antes da renderização.
+        entered = true;
         playlistRef.current = newPlaylist;
         updatePlaylistAndSave(newPlaylist);
-        // Grade (T27): a leitura do click (e, sem click, o click gerado) entra na fila, que só
-        // anda com a VS parada e depois deste carregamento: nada pesado aqui nem no play.
-        gridReadSeenRef.current.add(newSongId);
-        gridGenSeenRef.current.add(newSongId);
-        scheduleSongGrid(newSong, { read: true, generate: true });
+        // A música já entrou: daqui pra frente um erro não pode virar "não entrou" (quem chamou
+        // tiraria do aparelho as faixas de uma música do repertório).
+        try {
+            // Grade (T27): a leitura do click (e, sem click, o click gerado) entra na fila, que só
+            // anda com a VS parada e depois deste carregamento: nada pesado aqui nem no play.
+            gridReadSeenRef.current.add(newSongId);
+            gridGenSeenRef.current.add(newSongId);
+            scheduleSongGrid(newSong, { read: true, generate: true });
+        } catch (e) {
+            console.error('loadFiles: a fila da grade não aceitou a música nova', e);
+        }
         return true;
+        } catch (e) {
+            if (!entered && undo) {
+                try {
+                    await undo();
+                } catch (err) {
+                    console.error('loadFiles: não deu pra desfazer o carregamento', err);
+                }
+            }
+            throw e;
         } finally {
             setIsLoading(false);
         }
