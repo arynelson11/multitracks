@@ -98,3 +98,14 @@ describe('fora de contexto seguro (sem crypto.randomUUID)', () => {
     }
   })
 })
+
+describe('a música entrou (revisão do item 4, I1)', () => {
+  it('releaseStagedStems tira a anotação sem apagar o arquivo', async () => {
+    const { putStagedStem: put, releaseStagedStems, stagedRegistryKey: regKey } = await import('./stagedStems')
+    const a = await put(FILES, fileKey, wav('a'))
+    const b = await put(FILES, fileKey, wav('b'))
+    await releaseStagedStems(FILES, [a])
+    expect((db.get(regKey(FILES)) as { id: string }[]).map((e) => e.id)).toEqual([b])
+    expect(db.has(fileKey(a))).toBe(true)
+  })
+})

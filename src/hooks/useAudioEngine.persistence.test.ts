@@ -845,6 +845,32 @@ describe('separação no palco', () => {
     expect(mem.db.has(stemKey(stored[0].id))).toBe(true)
   })
 
+  // Revisão do item 4 (I1): com duas abas, o repertório lido do disco pode estar sem a música (a outra
+  // aba gravou o repertório inteiro dela por cima). A anotação sai da lista assim que a música entra no
+  // registro provisório, e a limpeza de outra sessão nunca mais olha pra essas faixas.
+  it('I1: a anotação das faixas sai da lista quando a música entra, e a limpeza de outra sessão não apaga elas', async () => {
+    const first = await openApp()
+    const stored: { id: string; name: string }[] = []
+    for (const n of ['Vocais.wav', 'Bateria.wav']) {
+      let id = ''
+      await act(async () => { id = await first.result.current.putStagedStem(new File([n], n, { type: 'audio/wav' })) })
+      stored.push({ id, name: n })
+    }
+    const REG = 'mt_files_u1:staged'
+    const reg = () => (mem.db.get(REG) ?? []) as { id: string; session: string; at: number }[]
+    expect(reg().map((e) => e.id)).toEqual(stored.map((s) => s.id))
+    let ok: unknown = null
+    await act(async () => { ok = await first.result.current.loadFiles(NO_FILES, 'Separada', undefined, undefined, null, undefined, { separation: { id: 'sep_i1', createdAt: 1 }, storedStems: stored }) })
+    expect(ok).toBe(true)
+    expect(reg().map((e) => e.id)).toEqual([])
+    first.unmount()
+    // A outra aba gravou o repertório sem a música; o que sobrasse anotado viraria de outra sessão, 2 h atrás.
+    mem.db.set(META, [])
+    mem.db.set(REG, reg().map((e) => ({ ...e, session: 'outra-aba', at: Date.now() - 2 * 60 * 60 * 1000 })))
+    await openApp()
+    for (const s of stored) expect(mem.db.has(stemKey(s.id))).toBe(true)
+  })
+
   it('storedStems que não decodificam: a música não entra e as faixas gravadas saem do aparelho', async () => {
     const { result } = await openApp()
     let id = ''

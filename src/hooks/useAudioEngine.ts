@@ -22,7 +22,7 @@ import { sanitizeSemitones } from '../lib/pitchRules';
 import { shouldAutoAdvance } from '../lib/autoAdvance';
 import { NO_CURRENT_SONG, songOpenedByRemoval } from '../lib/songRemoval';
 import { getCachedStem, getCachedStemNames, isSongCached } from '../lib/offlineCache';
-import { discardStagedStems as discardStaged, putStagedStem as putStaged, sweepStagedStems } from '../lib/stagedStems';
+import { discardStagedStems as discardStaged, putStagedStem as putStaged, releaseStagedStems, sweepStagedStems } from '../lib/stagedStems';
 import { applyChannelMetaToList, autoPanFor, channelGain, findClickChannel, isPitchExempt, pickMainChannel, pitchChangeAction, wantsFormantCompensation, type ChannelMetaPatch } from '../lib/channelRoles';
 import { arrangeChannels, resolveChannelRole, type ChannelIdentity } from '../lib/channelNames';
 import { REPERTOIRE_SCHEMA_VERSION, migrateManifestSong, migrateSavedSong, sanitizeSeparationLink, toManifestSong, toSavedSong, type SavedSong } from '../lib/repertoireSchema';
@@ -2832,6 +2832,16 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
             ...(separation ? { separation } : {})
         };
         await set(DB_KEY_META, [...existingMeta, preliminarySaved]);
+        // As faixas que desceram da separação já são da música (o registro provisório aponta pra elas):
+        // saem da lista das soltas, e a limpeza da restauração nunca mais olha pra elas (revisão I1).
+        const storedIds = prepared.filter((p) => p.stored).map((p) => p.uuid);
+        if (storedIds.length > 0) {
+            try {
+                await releaseStagedStems(DB_KEY_FILES, storedIds);
+            } catch (e) {
+                console.error('[Repertório] não deu pra tirar as faixas da lista das soltas', e);
+            }
+        }
 
         const results: (Channel | null)[] = [];
         // Use small batches on touch devices to keep peak memory low.

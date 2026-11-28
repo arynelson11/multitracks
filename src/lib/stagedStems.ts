@@ -54,6 +54,17 @@ export async function putStagedStem(filesKey: string, fileKey: (id: string) => s
   return id
 }
 
+/**
+ * A música entrou no repertório (o registro provisório do loadFiles já aponta pras faixas): a
+ * anotação sai da lista e o arquivo fica. Daí em diante a limpeza nunca olha pra essas faixas, nem
+ * quando outra aba grava um repertório sem a música (revisão do item 4, I1).
+ */
+export async function releaseStagedStems(filesKey: string, ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return
+  const entered = new Set(ids)
+  await updateList(filesKey, (list) => list.filter((e) => !entered.has(e.id)))
+}
+
 /** Tira do aparelho as faixas que não vão entrar no repertório. */
 export async function discardStagedStems(filesKey: string, fileKey: (id: string) => string, ids: readonly string[]): Promise<void> {
   if (ids.length === 0) return
@@ -63,8 +74,9 @@ export async function discardStagedStems(filesKey: string, fileKey: (id: string)
 }
 
 /**
- * Na restauração: o que outra sessão (já antiga) deixou anotado sai do aparelho se nenhuma música do
- * repertório usa; o que uma música usa fica (ela entrou). As anotações desta sessão não mudam.
+ * Na restauração: o que outra sessão (já antiga) deixou anotado é faixa que nunca entrou em música
+ * (a que entra sai da lista no registro provisório); sai do aparelho se nenhuma música do repertório
+ * usa, por garantia. As anotações desta sessão não mudam.
  */
 export async function sweepStagedStems(filesKey: string, fileKey: (id: string) => string, usedIds: ReadonlySet<string>): Promise<void> {
   const now = Date.now()
