@@ -72,3 +72,16 @@ Base das medições de áudio: verify-pitch e section-jump com `--rev 53f3eca` (
 - verify-layout dos estados tocados (letra, cifra, letra-fora, os 6 dos pads, adminlogin): 90/90.
 - Travessão: 0 nas linhas acrescentadas contra origin/main, 0 nas mensagens da onda e da branch.
 - Fora do portão pedido (o loadFiles mudou nesta onda): verify-pitch inteiro 521 critérios, 0 falhas (carga 3 a 5); section-jump 13/13 OK.
+
+## Rodada curta 2 (a partir de e7dab94, roteiro `parte3-faixas/manutencao-fix2-brief.md`, commits com [manut-fix2])
+
+| Item | Commit | Testes |
+|------|--------|--------|
+| 1. N1 da memória: o arquivo da faixa que não decodifica sai do disco quando a música entra | 689b0f2 | RED 2 (separação e arquivos do computador); GREEN motor 49 |
+| 2. N1 das telas: `useBusyFocus` único (pads e letra), o foco só volta se estiver perdido ou na janela | 66d84a3 | RED 2 (o campo do nome perdia o foco pro Salvar; a janela por cima perdia o foco); GREEN 89 (com um teste novo da letra na área do texto) |
+| 3. N2: com uma linha aberta, o lápis e a lixeira dos outros desligam | 4fafe5e | RED 2; GREEN 30 |
+| 4. Guarda da letra: `lyricsSaveBlocked` decide o desligado e a guarda; sai o teste por `__reactProps$` | 2028162 | RED 1 (função ausente); GREEN 25 |
+| 5. Comentário de quem barra o escolher, a falha do descarte com quem trate, a linha da regra do loadFiles no ledger | 185cd63 | mutação: sem o `.catch` do Separador, o teste novo cai |
+| 6. verify-lan com `shell` no Windows e o README com o .env da versão e os limites | 2904d72 | sem teste automático (Windows); verify-lan no Mac passa |
+
+Portão da rodada (carga 3 a 7, logs em `gate-fix2/`): testes dos tocados 16 arquivos, 329 testes, 0 falhas; `npx tsc -b` 0; eslint nos 11 tocados sem erro nem aviso novo; `DESKTOP=1 npx vite build` ok (dentro do verify-lan); verify-lan: tela da banda montada fora de contexto seguro, 0 erros; verify-layout dos 9 estados dos pads e da letra: 81/81; travessão 0 contra origin/main e nas mensagens.
