@@ -70,7 +70,7 @@ describe('Separador no Livre: limites, tela de limite e anúncio (T19)', () => {
     // Os minutos do Ao Vivo só correm na instância do App.
     expect(sep).toMatch(/useLivre\(\{ userId, plan: userPlan, isAdmin, busy, liveActive: false, onLiveExpired: \(\) => \{\} \}\)/)
     // Parte 3 (faixa D): o App passa também o palco disponível e a entrega pro palco.
-    expect(app).toMatch(/<SeparatorStudio onClose=\{\(\) => setIsSeparatorOpen\(false\)\} stageBusy=\{\{ isPlaying, isCountingIn \}\}[\s\S]{0,200}\/>/)
+    expect(app).toMatch(/<SeparatorStudio onClose=\{\(\) => setIsSeparatorOpen\(false\)\} stageBusy=\{\{ isPlaying, isCountingIn \}\}[\s\S]{0,300}\/>/)
   })
 
   // Revisão macro 1b (parte 2, M4): a conta, o plano e o papel vêm do App, que só passa do
@@ -91,9 +91,9 @@ describe('Separador no Livre: limites, tela de limite e anúncio (T19)', () => {
 
   it('a conta, o plano e o papel vêm do App, sem useAuth próprio', () => {
     // Junção com o Separador no palco (faixa D): depois da conta vêm as props do palco.
-    expect(app).toMatch(/<SeparatorStudio onClose=\{\(\) => setIsSeparatorOpen\(false\)\} stageBusy=\{\{ isPlaying, isCountingIn \}\} userId=\{user\?\.id \?\? null\} userPlan=\{userPlan\} isAdmin=\{isAdmin\}[\s\S]{0,200}\/>/)
+    expect(app).toMatch(/<SeparatorStudio onClose=\{\(\) => setIsSeparatorOpen\(false\)\} stageBusy=\{\{ isPlaying, isCountingIn \}\} userId=\{user\?\.id \?\? null\} userPlan=\{userPlan\} isAdmin=\{isAdmin\}[\s\S]{0,300}\/>/)
     expect(sep).toMatch(/userId: string \| null;\s*userPlan: string;\s*isAdmin: boolean;/)
-    expect(sep).toMatch(/= \(\{ onClose, stageBusy, userId, userPlan, isAdmin, stageAvailable = false, stageSeparationIds = NO_STAGE_SEPARATIONS, onOpenOnStage \}\) =>/)
+    expect(sep).toMatch(/= \(\{ onClose, stageBusy, userId, userPlan, isAdmin, stageAvailable = false, stageSeparationIds = NO_STAGE_SEPARATIONS, onOpenOnStage, stemStore \}\) =>/)
     expect(sep).not.toMatch(/\buseAuth\b/)
     expect(sep).not.toMatch(/authLoading/)
     expect(sep).not.toMatch(/\buser\?\.|\buser\./)

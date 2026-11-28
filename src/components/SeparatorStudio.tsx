@@ -20,7 +20,7 @@ import { SeparatorHome } from './separator/SeparatorHome';
 import { SeparatorOptions } from './separator/SeparatorOptions';
 import { SeparatorProgress } from './separator/SeparatorProgress';
 import { HOME_COPY, OPENING_COPY, PLAYER_COPY, PROGRESS_COPY, laneFloor } from './separator/separatorCopy';
-import { fetchSeparationFiles, openErrorText, stemsToOpen, type StageSeparationOpen } from '../lib/separation/stageHandoff';
+import { fetchSeparationStems, openErrorText, stemsToOpen, type StageSeparationOpen, type StemStore } from '../lib/separation/stageHandoff';
 import { SeparatorPlayerBar } from './separator/SeparatorPlayerBar';
 import { SeparatorTrackStrip } from './separator/SeparatorTrackStrip';
 import { FAMILY_COLOR } from '../lib/channelNames';
@@ -82,6 +82,9 @@ interface SeparatorStudioProps {
   // As separações que já estão no repertório do palco (não são baixadas de novo, P7).
   stageSeparationIds?: ReadonlySet<string>;
   onOpenOnStage?: (o: StageSeparationOpen) => void;
+  // Onde as faixas descem antes de irem pro palco: cada uma é gravada no aparelho enquanto baixa
+  // (Ruling SEP-memoria, manutenção 2026-11-27). Sem ele, a separação abre aqui no player de reserva.
+  stemStore?: StemStore;
 }
 
 let globalAudioCtx: AudioContext | null = null;
@@ -92,7 +95,7 @@ function getAudioContext() {
   return globalAudioCtx;
 }
 
-export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stageBusy, userId, userPlan, isAdmin, stageAvailable = false, stageSeparationIds = NO_STAGE_SEPARATIONS, onOpenOnStage }) => {
+export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stageBusy, userId, userPlan, isAdmin, stageAvailable = false, stageSeparationIds = NO_STAGE_SEPARATIONS, onOpenOnStage, stemStore }) => {
   const canDownload = isAdmin || canDownloadStems(userPlan);
   const canVoiceGuide = isAdmin || canUseVoiceGuide(userPlan);
   const canBpm = isAdmin || canUseBpmDetection(userPlan);
@@ -812,7 +815,7 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
 
       // Palco novo na tela e a separação salva: ela abre no palco (com o anúncio do fim no painel).
       // Sem registro (P10) ou sem o palco novo, o player daqui, como antes.
-      if (sepId && stageAvailable) {
+      if (sepId && stageAvailable && stemStore) {
         setIsProcessing(false);
         setFile(null);
         void openOnStage({ id: sepId, songName: songTitle, artist: '', bpm, songKey, stems: savedStems, voiceCues: [], createdAt }, true);
@@ -1203,21 +1206,24 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
   };
 
   // ── Abrir no palco ──
-  // Baixa as faixas uma por vez (tudo ou nada) e entrega ao App, que fecha o Separador e carrega no
-  // palco. "Voltar" cancela; erro mostra a frase com Tentar de novo, e nada vai pro App.
+  // Baixa as faixas uma por vez, gravando cada uma no aparelho enquanto desce (tudo ou nada), e
+  // entrega as ids ao App, que fecha o Separador e carrega no palco lendo de lá. "Voltar" cancela;
+  // erro mostra a frase com Tentar de novo, e nada vai pro App (o que desceu sai do aparelho).
   const openOnStage = async (sep: SavedSeparation, justSeparatedNow: boolean) => {
+    if (!stemStore) return;
     openAbortRef.current?.abort();
     const ctrl = new AbortController();
     openAbortRef.current = ctrl;
     const toOpen = stemsToOpen(sep);
     setOpening({ sep, justSeparated: justSeparatedNow, done: 0, total: toOpen.length, error: null });
     try {
-      const files = await fetchSeparationFiles(toOpen, {
+      const stored = await fetchSeparationStems(toOpen, {
+        store: stemStore,
         signal: ctrl.signal,
         onProgress: (done, total) => { if (!ctrl.signal.aborted) setOpening(o => (o && o.sep.id === sep.id ? { ...o, done, total } : o)); },
       });
-      if (ctrl.signal.aborted) return;
-      onOpenOnStage?.({ sep, files, justSeparated: justSeparatedNow });
+      if (ctrl.signal.aborted || !onOpenOnStage) { void stemStore.discard(stored.map(st => st.id)); return; }
+      onOpenOnStage({ sep, stems: stored, justSeparated: justSeparatedNow });
     } catch (e) {
       if (ctrl.signal.aborted) return;
       console.error('[Separador] abrir no palco falhou', e);
@@ -1244,9 +1250,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     // Palco novo na tela: a separação abre no palco. Já no repertório, só pula pra ela (P7). Quem
     // conta no Livre é o palco, quando ela vira a atual (sep-2 M1: cancelar ou falhar não gasta a vaga).
     if (stageAvailable) {
-      if (stageSeparationIds.has(sep.id)) { onOpenOnStage?.({ sep, files: null, justSeparated: false }); return; }
-      void openOnStage(sep, false);
-      return;
+      if (stageSeparationIds.has(sep.id)) { onOpenOnStage?.({ sep, stems: null, justSeparated: false }); return; }
+      if (stemStore) { void openOnStage(sep, false); return; }
     }
     openInReserve(sep, false);
   };

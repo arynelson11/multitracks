@@ -33,7 +33,7 @@ import { SeparationPanel } from './components/separation/SeparationPanel'
 import { CloudSaveForm } from './components/separation/CloudSaveForm'
 import { CLOUD_COPY, PAUSE_TO_USE, type SeparationTab } from './components/separation/toolsCopy'
 import { StageDialog } from './components/stage/StageDialog'
-import { STAGE_LOAD_ERROR_TEXT, findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen, type StageSeparationOpen } from './lib/separation/stageHandoff'
+import { STAGE_LOAD_ERROR_TEXT, findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen, type StageSeparationOpen, type StemStore, type StoredStem } from './lib/separation/stageHandoff'
 import { nextSongAfter, removalOpensRefusedSong } from './lib/songRemoval'
 import { cycleEndMode, shownEndMode, type EndMode } from './lib/autoAdvance'
 import { trackAd } from './lib/productEvents'
@@ -398,7 +398,7 @@ export default function App() {
   const sectionGates = useMemo(() => stageGatesFor(userPlan), [userPlan])
 
   const {
-    isReady, initEngine, loadFiles, isLoading, isRestoring,
+    isReady, initEngine, loadFiles, putStagedStem, discardStagedStems, isLoading, isRestoring,
     playlist, activeSongIndex, setPlaylistOrder, removeSongFromPlaylist, jumpToSong,
     renameSong, setCoverImage, clearSession,
     setChannelBus, exportPlaylist, importPlaylist,
@@ -739,9 +739,14 @@ export default function App() {
   // a atual com a VS parada (P8) e a gaveta SEPARAÇÃO abre na aba FAIXAS. O anúncio do fim (Livre)
   // fica ligado enquanto a separação que acabou de terminar for a atual.
   const separationLib = useSeparationLibrary({ loadList: false })
-  // As faixas baixadas ficam aqui só até o carregamento pegar elas (sep-1 I5): o estado volta a nulo
-  // na hora, e os arquivos saem da memória quando o loadFiles termina.
+  // As faixas da separação descem direto pro aparelho, uma por vez (Ruling SEP-memoria, manutenção
+  // 2026-11-27): o Separador grava cada uma pelo motor enquanto baixa e o App só segura as ids até o
+  // loadFiles ler de lá, uma por vez. O estado volta a nulo quando o carregamento pega elas (sep-1 I5).
   const [pendingSeparation, setPendingSeparation] = useState<StageSeparationOpen | null>(null)
+  const separationStemStore: StemStore = { put: putStagedStem, discard: discardStagedStems }
+  // As ids que ainda não foram pegas pelo carregamento: as que não vão entrar saem do aparelho.
+  const pendingStemsRef = useRef<StoredStem[] | null>(null)
+  const dropStoredStems = (stems: readonly StoredStem[]) => { void discardStagedStems(stems.map((st) => st.id)) }
   const [separationArrival, setSeparationArrival] = useState<{ sepId: string; justSeparated: boolean } | null>(null)
   const separationArrivalSeen = useRef<{ sepId: string; justSeparated: boolean } | null>(null)
   // Nada decodificou (sep-1 M3): a frase aparece no palco, com a música parada.
@@ -766,29 +771,44 @@ export default function App() {
     setIsSeparatorOpen(false)
     setForceShowSplash(false)
     if (!isReady) void initEngine()
-    if (o.files) setPendingSeparation(o)
+    if (o.stems) {
+      // Outra separação chegou antes de a anterior ser carregada: a anterior não entra mais.
+      if (pendingStemsRef.current) dropStoredStems(pendingStemsRef.current)
+      pendingStemsRef.current = o.stems
+      setPendingSeparation(o)
+    }
     else setSeparationArrival({ sepId: o.sep.id, justSeparated: o.justSeparated })
   }
   useEffect(() => {
     const o = pendingSeparation
-    if (!o?.files) return
+    if (!o?.stems) return
     // Espera o motor pronto e o repertório salvo restaurado (sep-1 C1); a que já está nele só pula.
     const step = pendingSeparationStep(o.sep.id, { isReady, isRestoring }, playlist)
     if (step === 'esperar') return
-    // Pegou: o estado solta as faixas (sep-1 I5); quem segura até o fim do carregamento é só este efeito.
+    // Pegou: o estado solta as ids (sep-1 I5); quem segura até o fim do carregamento é só este efeito.
     setPendingSeparation(null)
+    pendingStemsRef.current = null
+    const stems = o.stems
     const arrived = () => setSeparationArrival({ sepId: o.sep.id, justSeparated: o.justSeparated })
-    if (step === 'pular') { arrived(); return }
+    // Já no repertório: as faixas que desceram agora sobram e saem do aparelho.
+    if (step === 'pular') { dropStoredStems(stems); arrived(); return }
     const meta = separationStageMeta(o.sep)
+    // Nenhum arquivo na mão: o loadFiles lê cada faixa do aparelho (storedStems), uma por vez.
     const dt = new DataTransfer()
-    for (const f of o.files) dt.items.add(f)
     // Pelo mesmo carregamento do Livre (Ruling R9); a chegada abaixo faz a música virar a atual em todos os planos.
     let entered = false
+    let refused = false
     void loadAsCurrent(() => loadFiles(dt.files, meta.name, undefined, undefined, meta.originalKey, meta.bpm, {
-      artist: meta.artist, separation: meta.separation, channelStates: separationChannelStates(stemsToOpen(o.sep)),
-    }).then((ok) => { entered = ok }))
+      artist: meta.artist, separation: meta.separation, channelStates: separationChannelStates(stemsToOpen(o.sep)), storedStems: stems,
+    }).then((ok) => { entered = ok; refused = !ok }))
       .catch((e) => { console.error('[Separação] o palco não carregou as faixas', e) })
-      .then(() => { if (entered) arrived(); else setSeparationLoadFailed(true) })
+      .then(() => {
+        if (entered) { arrived(); return }
+        // O motor disse que a música não entrou: as faixas saem do aparelho. Se o carregamento quebrou
+        // no meio, ficam pra restauração seguinte, que só tira as que nenhuma música usa.
+        if (refused) dropStoredStems(stems)
+        setSeparationLoadFailed(true)
+      })
     // Roda quando a separação chega, o motor fica pronto ou a restauração termina; o loadFiles, o
     // loadAsCurrent e o repertório são os da renderização de agora, e a separação sai do estado ao ser pega.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1567,7 +1587,7 @@ export default function App() {
   if (isSeparatorOpen) {
     return (
       <SeparatorStudio onClose={() => setIsSeparatorOpen(false)} stageBusy={{ isPlaying, isCountingIn }} userId={user?.id ?? null} userPlan={userPlan} isAdmin={isAdmin}
-        stageAvailable={wantNewStage} stageSeparationIds={stageSeparationIds} onOpenOnStage={openSeparationOnStage} />
+        stageAvailable={wantNewStage} stageSeparationIds={stageSeparationIds} onOpenOnStage={openSeparationOnStage} stemStore={separationStemStore} />
     )
   }
 
