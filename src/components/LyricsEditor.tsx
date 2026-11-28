@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Loader2, Save, Sparkles } from 'lucide-react';
 import type { Song } from '../types';
 import { searchLyrics } from '../lib/supabase';
@@ -45,9 +45,41 @@ export function LyricsEditor({ song: songProp, songInPlaylist = true, onSave, on
   const [saved, setSaved] = useState({ lyrics: song.lyrics || '', lyricsSynced: song.lyricsSynced || null, chords: song.chords || '' });
   const dirty = lyrics !== saved.lyrics || chords !== saved.chords || lyricsSynced !== saved.lyricsSynced;
 
+  // O foco nos botões que desligam (revisão das telas, I1 na letra): no Chromium o botão focado que
+  // desliga (Salvar salvando ou com a música fora do repertório, Buscar letra buscando) perde o foco
+  // pro body, e aí o Tab sai pra trás da janela e as teclas chegam ao palco antigo. O foco vai pra
+  // janela enquanto o botão está desligado e volta pra ele no fim, se ele religar.
+  const contentRef = useRef<HTMLDivElement>(null);
+  const focusBack = useRef<'save' | 'search' | null>(null);
+  const dialogEl = () => contentRef.current?.closest<HTMLElement>('[role="dialog"]') ?? null;
+  const buttonEl = (which: 'save' | 'search') => dialogEl()?.querySelector<HTMLButtonElement>(`[data-send="${which}"]`) ?? null;
+  const holdFocus = (which: 'save' | 'search') => {
+    const button = buttonEl(which);
+    if (!button || document.activeElement !== button) return;
+    focusBack.current = which;
+    dialogEl()?.focus({ preventScroll: true });
+  };
+  useEffect(() => {
+    const which = focusBack.current;
+    if (saving || searching || !which) return;
+    focusBack.current = null;
+    // Quem levou o foco pra outro lugar no meio (o campo do texto) fica onde está.
+    const dialog = dialogEl();
+    if (document.activeElement !== document.body && document.activeElement !== dialog) return;
+    const button = buttonEl(which);
+    if (button && !button.disabled) button.focus({ preventScroll: true });
+    else dialog?.focus({ preventScroll: true });
+  }, [saving, searching]);
+  // A música saiu do repertório com o foco no Salvar: ele desliga e o foco vai pra janela.
+  useEffect(() => {
+    if (!missing) return;
+    if (document.activeElement === buttonEl('save') || document.activeElement === document.body) dialogEl()?.focus({ preventScroll: true });
+  }, [missing]);
+
   const handleSearch = async () => {
     setSearching(true);
     setSearchMsg(null);
+    holdFocus('search');
     try {
       const result = await searchLyrics(artist, song.name, song.duration);
       if (result && (result.plain || result.synced)) {
@@ -68,6 +100,7 @@ export function LyricsEditor({ song: songProp, songInPlaylist = true, onSave, on
     if (!songInPlaylist) return;
     setSaving(true);
     setSaveMsg(null);
+    holdFocus('save');
     try {
       const cloud = await onSave(song.id, {
         lyrics: lyrics.trim() || null,
@@ -95,7 +128,7 @@ export function LyricsEditor({ song: songProp, songInPlaylist = true, onSave, on
         <>
           {saveMsg && <p role="status" className="mr-auto self-center text-ps-sm text-ps-mut break-words">{saveMsg}</p>}
           <Button
-            tone="primary"
+            tone="primary" data-send="save"
             icon={saving ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : <Save size={16} />}
             disabled={saving || missing}
             onClick={handleSave}
@@ -105,7 +138,7 @@ export function LyricsEditor({ song: songProp, songInPlaylist = true, onSave, on
         </>
       }
     >
-      <div className="flex flex-col gap-4">
+      <div ref={contentRef} className="flex flex-col gap-4">
         <p className="text-ps-mut break-words">{song.name}</p>
         {missing && <Notice tone="alert" role="alert">{MISSING_TEXT}</Notice>}
 
@@ -117,6 +150,7 @@ export function LyricsEditor({ song: songProp, songInPlaylist = true, onSave, on
               placeholder="Ex.: Aline Barros" className="min-w-48 flex-1"
             />
             <Button
+              data-send="search"
               icon={searching ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : <Sparkles size={16} />}
               disabled={searching}
               onClick={handleSearch}

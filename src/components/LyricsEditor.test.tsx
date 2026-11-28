@@ -209,6 +209,58 @@ describe('Letra e cifra: a música muda com o editor aberto', () => {
   })
 })
 
+// Revisão das telas (I1 na letra): o Salvar desligado (salvando, ou a música que saiu do repertório)
+// não pode ficar com o foco, senão ele cai no body (Chromium) e as teclas chegam ao palco antigo.
+describe('Letra e cifra: o foco no Salvar', () => {
+  const dialogo = () => screen.getByRole('dialog', { name: 'Letra e cifra' })
+  const salvar = () => screen.getByRole('button', { name: 'Salvar' }) as HTMLButtonElement
+
+  it('salvando, o foco vai do Salvar pra janela e volta pro Salvar no fim', async () => {
+    let soltar!: (v: boolean) => void
+    const onSave = vi.fn<SaveFn>(() => new Promise((r) => { soltar = r }))
+    abrir(onSave)
+    fireEvent.change(area('Letra'), { target: { value: 'nova' } })
+    salvar().focus()
+    await act(async () => { fireEvent.click(salvar()) })
+    expect(document.activeElement).toBe(dialogo())
+    ;(document.activeElement as HTMLElement).blur()
+    await act(async () => { soltar(true) })
+    expect(document.activeElement).toBe(salvar())
+  })
+
+  it("o App respondeu 'missing': o Salvar fica desligado e o foco fica na janela", async () => {
+    const onSave = vi.fn<SaveFn>(async () => 'missing')
+    abrir(onSave)
+    fireEvent.change(area('Letra'), { target: { value: 'nova' } })
+    salvar().focus()
+    await act(async () => { fireEvent.click(salvar()) })
+    expect(salvar().disabled).toBe(true)
+    expect(document.activeElement).toBe(dialogo())
+  })
+
+  it('buscando a letra, o foco do Buscar letra vai pra janela e volta pra ele no fim', async () => {
+    let soltar!: (v: null) => void
+    // Once: o beforeEach devolve o mock, e o vitest chama ele no fim do teste (como limpeza).
+    search.mockImplementationOnce(() => new Promise((r) => { soltar = r }))
+    abrir()
+    const buscar = () => screen.getByRole('button', { name: 'Buscar letra' }) as HTMLButtonElement
+    buscar().focus()
+    await act(async () => { fireEvent.click(buscar()) })
+    expect(document.activeElement).toBe(dialogo())
+    ;(document.activeElement as HTMLElement).blur()
+    await act(async () => { soltar(null) })
+    expect(document.activeElement).toBe(buscar())
+  })
+
+  it('a música sai do repertório com o foco no Salvar: o foco vai pra janela', () => {
+    const { onSave, onClose, view } = abrir()
+    salvar().focus()
+    view.rerender(<LyricsEditor song={SONG} songInPlaylist={false} onSave={onSave} onClose={onClose} />)
+    expect(salvar().disabled).toBe(true)
+    expect(document.activeElement).toBe(dialogo())
+  })
+})
+
 describe('Letra e cifra: linguagem do palco', () => {
   it('só classes da linguagem nova, sem travessão nem emoji', async () => {
     search.mockResolvedValue({ plain: 'x', synced: '[00:01.00]x', source: 'LRCLIB' })

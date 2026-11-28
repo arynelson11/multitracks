@@ -40,6 +40,25 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
     const [sending, setSending] = useState<'save' | 'delete' | null>(null);
     const sendingRef = useRef(false);
     const [sendError, setSendError] = useState<string | null>(null);
+    // O foco no envio (revisão das telas, I1): no Chromium o botão focado que fica desligado perde o
+    // foco pro body, e aí o Esc não cancela, o Tab sai pra trás da janela e o palco antigo recebe a
+    // tecla. O foco que está num botão vai pra janela enquanto envia e, no fim, volta pro botão
+    // apertado (falha, pra tentar de novo) ou fica na janela (sucesso: a linha some).
+    const contentRef = useRef<HTMLDivElement>(null);
+    const focusAfterSend = useRef<'save' | 'delete' | 'dialog' | null>(null);
+    const dialogEl = () => contentRef.current?.closest<HTMLElement>('[role="dialog"]') ?? null;
+    const holdFocusInDialog = () => {
+        const dialog = dialogEl();
+        if (document.activeElement instanceof HTMLButtonElement && dialog?.contains(document.activeElement)) dialog.focus({ preventScroll: true });
+    };
+    useEffect(() => {
+        const target = focusAfterSend.current;
+        if (sending !== null || !target) return;
+        focusAfterSend.current = null;
+        // Janela fechada no meio do envio: nada a focar.
+        const el = target === 'dialog' ? dialogEl() : contentRef.current?.querySelector<HTMLElement>(`[data-send="${target}"]`) ?? dialogEl();
+        el?.focus({ preventScroll: true });
+    }, [sending]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -84,6 +103,7 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
         sendingRef.current = true;
         setSending('save');
         setSendError(null);
+        holdFocusInDialog();
         try {
             const res = await fetch(apiUrl('/api/pad-catalog'), {
                 method: 'PATCH',
@@ -93,9 +113,11 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             setSets(prev => prev.map(s => s.id === id ? { ...s, name, description } : s));
             setEditingId(null);
+            focusAfterSend.current = 'dialog';
         } catch (err) {
             console.error('[pads] renomear falhou', err);
             setSendError(RENAME_ERROR);
+            focusAfterSend.current = 'save';
         } finally {
             sendingRef.current = false;
             setSending(null);
@@ -115,6 +137,7 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
         sendingRef.current = true;
         setSending('delete');
         setSendError(null);
+        holdFocusInDialog();
         try {
             const res = await fetch(apiUrl(`/api/pad-catalog?id=${encodeURIComponent(id)}`), {
                 method: 'DELETE',
@@ -123,9 +146,11 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             setSets(prev => prev.filter(s => s.id !== id));
             setDeletingId(null);
+            focusAfterSend.current = 'dialog';
         } catch (err) {
             console.error('[pads] apagar falhou', err);
             setSendError(DELETE_ERROR);
+            focusAfterSend.current = 'delete';
         } finally {
             sendingRef.current = false;
             setSending(null);
@@ -144,7 +169,7 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
 
     return (
         <StageDialog open title="Pads da nuvem" size="sm" onClose={onClose} dismissible={!editingId && !deletingId}>
-            <div className="flex flex-col gap-3">
+            <div ref={contentRef} className="flex flex-col gap-3">
                 <p className="text-ps-mut">Escolha um conjunto de pads.</p>
 
                 {loading && (
@@ -182,7 +207,7 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
                                         <div className="flex flex-wrap justify-end gap-2">
                                             <Button tone="ghost" disabled={sending !== null} onClick={cancelEdit}>Cancelar</Button>
                                             <Button
-                                                tone="primary" disabled={sending !== null} aria-busy={sending === 'save' || undefined} onClick={saveEdit}
+                                                tone="primary" data-send="save" disabled={sending !== null} aria-busy={sending === 'save' || undefined} onClick={saveEdit}
                                                 icon={sending === 'save' ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : undefined}
                                             >
                                                 {sending === 'save' ? 'Salvando...' : 'Salvar'}
@@ -202,7 +227,7 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
                                             {/* A lixeira some com a confirmação: o foco vem pro Cancelar, dentro da janela. */}
                                             <Button tone="ghost" autoFocus disabled={sending !== null} onClick={cancelDelete}>Cancelar</Button>
                                             <Button
-                                                tone="alert" disabled={sending !== null} aria-busy={sending === 'delete' || undefined} onClick={executeDelete}
+                                                tone="alert" data-send="delete" disabled={sending !== null} aria-busy={sending === 'delete' || undefined} onClick={executeDelete}
                                                 icon={sending === 'delete' ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : undefined}
                                             >
                                                 {sending === 'delete' ? 'Apagando...' : 'Apagar'}

@@ -258,6 +258,86 @@ describe('Pads da nuvem: envio de renomear e apagar', () => {
   })
 })
 
+// Revisão das telas (I1): no Chromium o botão focado que fica desligado perde o foco pro body, e aí o
+// Esc não cancela, o Tab sai pra trás da janela e, no palco antigo, o Espaço toca a música por baixo. O
+// foco fica dentro da janela no envio e volta pro botão (falha) ou pra janela (sucesso) no fim.
+describe('Pads da nuvem: o foco no envio', () => {
+  function stubEnvio(envio: () => Promise<Resposta>) {
+    fetchMock = vi.fn((_url: string, init?: RequestInit) => (init?.method ? envio() : ok(SETS)()))
+    vi.stubGlobal('fetch', fetchMock)
+  }
+  const preso = () => {
+    let soltar!: (r: Resposta) => void
+    const p = new Promise<Resposta>((r) => { soltar = r })
+    return { p, soltar: (r: Resposta) => soltar(r) }
+  }
+  const botao = (nome: string) => screen.getByRole('button', { name: nome }) as HTMLButtonElement
+  const dialogo = () => screen.getByRole('dialog', { name: 'Pads da nuvem' })
+  const falha: Resposta = { ok: false, status: 500, json: async () => ({}) }
+  const sucesso: Resposta = { ok: true, json: async () => ({}) }
+
+  it('renomear: com o foco no Salvar, o envio leva o foco pra janela; a falha devolve pro Salvar', async () => {
+    const envio = preso()
+    stubEnvio(() => envio.p)
+    abrir(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Renomear Pads Domingo' }))
+    botao('Salvar').focus()
+    await act(async () => { fireEvent.click(botao('Salvar')) })
+    // O Salvar desligado não fica com o foco: a janela fica.
+    expect(document.activeElement).toBe(dialogo())
+    // Como o Chromium faria com o botão desligado: o foco cai no body no meio do envio.
+    ;(document.activeElement as HTMLElement).blur()
+    await act(async () => { envio.soltar(falha) })
+    expect(document.activeElement).toBe(botao('Salvar'))
+  })
+
+  it('renomear: no sucesso a linha some e o foco fica na janela', async () => {
+    const envio = preso()
+    stubEnvio(() => envio.p)
+    abrir(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Renomear Pads Domingo' }))
+    botao('Salvar').focus()
+    await act(async () => { fireEvent.click(botao('Salvar')) })
+    ;(document.activeElement as HTMLElement).blur()
+    await act(async () => { envio.soltar(sucesso) })
+    expect(screen.queryByLabelText('Nome do conjunto')).toBeNull()
+    expect(document.activeElement).toBe(dialogo())
+  })
+
+  it('apagar: o foco do Cancelar (autoFocus) vai pra janela no envio; a falha leva pro Apagar; o sucesso, pra janela', async () => {
+    const envio = preso()
+    stubEnvio(() => envio.p)
+    abrir(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Apagar Pads Domingo' }))
+    expect(document.activeElement?.textContent).toBe('Cancelar')
+    await act(async () => { fireEvent.click(botao('Apagar')) })
+    expect(document.activeElement).toBe(dialogo())
+    ;(document.activeElement as HTMLElement).blur()
+    await act(async () => { envio.soltar(falha) })
+    expect(document.activeElement).toBe(botao('Apagar'))
+    const segundo = preso()
+    stubEnvio(() => segundo.p)
+    await act(async () => { fireEvent.click(botao('Apagar')) })
+    ;(document.activeElement as HTMLElement).blur()
+    await act(async () => { segundo.soltar(sucesso) })
+    expect(screen.queryByText('Apagar "Pads Domingo"?')).toBeNull()
+    expect(document.activeElement).toBe(dialogo())
+  })
+
+  it('com o foco no campo do nome, o envio não tira o foco dele', async () => {
+    const envio = preso()
+    stubEnvio(() => envio.p)
+    abrir(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Renomear Pads Domingo' }))
+    const nome = screen.getByLabelText('Nome do conjunto')
+    nome.focus()
+    await act(async () => { fireEvent.click(botao('Salvar')) })
+    expect(document.activeElement).toBe(nome)
+    await act(async () => { envio.soltar(falha) })
+    expect(document.activeElement).toBe(botao('Salvar'))
+  })
+})
+
 describe('Pads da nuvem: linguagem do palco', () => {
   it('só classes da linguagem nova, com o admin aberto', async () => {
     abrir(true)
