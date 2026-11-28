@@ -110,3 +110,24 @@ Revisões: `review-inicio-1.md` (motor, Biblioteca, App, verificador e docs) e `
 - `DESKTOP=1 npx vite build`: ok.
 - `node scripts/verify-layout/run.mjs`: 411 combinações, 407 ok e 4 sem resposta em 40 s por carga (de 15,7 a 53,8), 0 falhas de layout; os 4 (`config` 810x1080, `novidades` 1024x740, `aovivo-erro` 900x740, `separador-player` 1920x1080) sozinhos com `--no-build --jobs 1`: 4/4 ok. As 25 da Biblioteca ok, `biblioteca-editar` com as duas frases nos 5 tamanhos.
 - Travessão: 0 nas linhas adicionadas contra `origin/main` (67320d6), 0 nos ajustes (53f3eca..HEAD) e 0 nas mensagens.
+
+## Ajustes residuais, segunda rodada (2026-11-27, a partir de c799627; `review-inicio-residuais.md`)
+
+| Item | Commit | Testes |
+|---|---|---|
+| 1. Minor 1: a frase de espaço sai ao fechar a Biblioteca e no toque do Livre sem vaga | 3527014 | LibraryModal.livre 2 novos (o de fechar e abrir RED antes; o da resposta que chega fechada prende a regra dos Planos) |
+| 2. As frases do fim do baixar chegam à tela, cancelar calado | 0357030 | LibraryModal.frases novo, com o useCloudLibrary de verdade: 5 testes (4 RED antes, sem alerta na tela; cancelar já passava e fica preso); useCloudLibrary 2 acertados (`refused` no lugar de nulo) |
+| 3. Notas de depois no histórico da T3 e da I2 (FATOS) | 3dc2975 | só docs |
+
+### Decisões da rodada
+
+- Decisão (1): a frase sai na virada de aberta pra fechada, no próprio render (`seenOpen`), como o `message` dos Planos, e não num efeito: o lint liga `react-hooks/set-state-in-effect`. A resposta que chega com a Biblioteca já fechada fica pra próxima abertura. Custo se errado: limpar também ao abrir.
+- Decisão (2): o hook devolve `{ refused }` pro baixar que parou sem a pessoa pedir (fora do aparelho sem internet, sem faixas, falha) e `notice` junto com a música que abriu mas não coube no aparelho; cancelar continua nulo. "Erro ao baixar." virou "Não deu pra baixar a música. Confira a internet e tente de novo." (não promete a causa). Custo se errado: o texto.
+- Decisão (3): "Remover do aparelho?" mudou na revisão macro (2026-11-21, M5), não nos ajustes de 2026-11-27; a nota diz a data certa.
+
+### Portão da rodada (2026-11-27)
+
+- Testes dos arquivos tocados (LibraryModal.frases, .livre, .bpm, library/, useCloudLibrary): 6 arquivos, 55/55.
+- `npx tsc -b`: código 0. eslint nos 5 arquivos .ts/.tsx tocados: 0 erros, os 2 avisos antigos de deps.
+- `verify-layout --estado biblioteca*`: 25 combinações, 25 ok.
+- Travessão: 0 contra `origin/main` (67320d6), 0 na rodada e 0 nas mensagens.
