@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { PadSetsModal } from './PadSetsModal'
+import { StageDialog } from './stage/StageDialog'
 import { oldLanguageClasses } from '../test/psLanguage'
 
 vi.mock('../lib/supabase', () => ({ getAuthHeaders: vi.fn(async () => ({ Authorization: 'Bearer t' })) }))
@@ -418,7 +419,9 @@ describe('Pads da nuvem: o foco no envio', () => {
     expect(document.activeElement).toBe(dialogo())
   })
 
-  it('com o foco no campo do nome, o envio não tira o foco dele', async () => {
+  // Re-revisão das telas (N1): o fim do envio só devolve o foco quando ele está perdido (body) ou na própria
+  // janela. Quem está no campo de texto fica nele (no iPad, pular pro botão fecharia o teclado).
+  it('com o foco no campo do nome, o envio e a falha não tiram o foco dele', async () => {
     const envio = preso()
     stubEnvio(() => envio.p)
     abrir(true)
@@ -428,7 +431,24 @@ describe('Pads da nuvem: o foco no envio', () => {
     await act(async () => { fireEvent.click(botao('Salvar')) })
     expect(document.activeElement).toBe(nome)
     await act(async () => { envio.soltar(falha) })
-    expect(document.activeElement).toBe(botao('Salvar'))
+    expect(document.activeElement).toBe(nome)
+  })
+
+  it('outra janela do palco aberta por cima no meio do envio não perde o foco no fim', async () => {
+    const envio = preso()
+    stubEnvio(() => envio.p)
+    const props = { isOpen: true, onClose: vi.fn(), onSelect: vi.fn(), selectedPadSet: null, isAdmin: true }
+    const view = render(<PadSetsModal {...props} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Renomear Pads Domingo' }))
+    botao('Salvar').focus()
+    await act(async () => { fireEvent.click(botao('Salvar')) })
+    view.rerender(<><PadSetsModal {...props} /><StageDialog open title="Por cima" onClose={vi.fn()}><button type="button">Ok de cima</button></StageDialog></>)
+    const deCima = screen.getByRole('dialog', { name: 'Por cima' })
+    expect(deCima.contains(document.activeElement)).toBe(true)
+    const antes = document.activeElement
+    await act(async () => { envio.soltar(falha) })
+    expect(document.activeElement).toBe(antes)
+    expect(deCima.contains(document.activeElement)).toBe(true)
   })
 })
 

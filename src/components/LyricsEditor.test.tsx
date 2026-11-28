@@ -270,6 +270,19 @@ describe('Letra e cifra: o foco no Salvar', () => {
     expect(document.activeElement).toBe(buscar())
   })
 
+  // Re-revisão das telas (N1, o mesmo ajudante dos pads): quem está na área de texto fica nela.
+  it('com o foco na área da letra, salvar não tira o foco dela', async () => {
+    let soltar!: (v: boolean) => void
+    const onSave = vi.fn<SaveFn>(() => new Promise((r) => { soltar = r }))
+    abrir(onSave)
+    fireEvent.change(area('Letra'), { target: { value: 'nova' } })
+    area('Letra').focus()
+    await act(async () => { fireEvent.click(salvar()) })
+    expect(document.activeElement).toBe(area('Letra'))
+    await act(async () => { soltar(true) })
+    expect(document.activeElement).toBe(area('Letra'))
+  })
+
   it('a música sai do repertório com o foco no Salvar: o foco vai pra janela', () => {
     const { onSave, onClose, view } = abrir()
     salvar().focus()

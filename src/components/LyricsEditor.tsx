@@ -4,6 +4,7 @@ import { searchLyrics } from '../lib/supabase';
 import { lyricsSongOf, type LyricsData, type LyricsSaveResult, type LyricsSong } from '../lib/lyricsSave';
 import { Button, Notice, TabPanel, Tabs, TextArea, TextField } from './ui';
 import { StageDialog } from './stage/StageDialog';
+import { dialogOf, useBusyFocus } from './stage/useBusyFocus';
 
 type EditorTab = 'lyrics' | 'chords';
 const TABS: { value: EditorTab; label: string }[] = [{ value: 'lyrics', label: 'Letra' }, { value: 'chords', label: 'Cifra' }];
@@ -19,11 +20,6 @@ interface LyricsEditorProps {
   onSave: (songId: string, data: LyricsData) => Promise<LyricsSaveResult>;
   onClose: () => void;
 }
-
-// A janela do editor e os botões que desligam (revisão das telas, I1), achados a partir do conteúdo.
-type SendButton = 'save' | 'search';
-const dialogOf = (el: HTMLElement | null) => el?.closest<HTMLElement>('[role="dialog"]') ?? null;
-const sendButtonOf = (el: HTMLElement | null, which: SendButton) => dialogOf(el)?.querySelector<HTMLButtonElement>(`[data-send="${which}"]`) ?? null;
 
 const MISSING_TEXT = 'Esta música saiu do repertório, então a letra e a cifra não podem ser salvas nela. O texto continua aqui pra você copiar.';
 
@@ -50,40 +46,23 @@ export function LyricsEditor({ song: songProp, songInPlaylist = true, onSave, on
   const [saved, setSaved] = useState({ lyrics: song.lyrics || '', lyricsSynced: song.lyricsSynced || null, chords: song.chords || '' });
   const dirty = lyrics !== saved.lyrics || chords !== saved.chords || lyricsSynced !== saved.lyricsSynced;
 
-  // O foco nos botões que desligam (revisão das telas, I1 na letra): no Chromium o botão focado que
-  // desliga (Salvar salvando ou com a música fora do repertório, Buscar letra buscando) perde o foco
-  // pro body, e aí o Tab sai pra trás da janela e as teclas chegam ao palco antigo. O foco vai pra
-  // janela enquanto o botão está desligado e volta pra ele no fim, se ele religar.
+  // O foco nos botões que desligam (revisão das telas, I1 e N1, useBusyFocus, o mesmo dos pads): o Salvar
+  // salvando e o Buscar letra buscando levam o foco pra janela e, no fim, devolvem pro botão (ou pra
+  // janela, se ele ficou desligado), só se o foco estiver perdido ou na janela.
   const contentRef = useRef<HTMLDivElement>(null);
-  const focusBack = useRef<SendButton | null>(null);
-  const holdFocus = (which: SendButton) => {
-    const button = sendButtonOf(contentRef.current, which);
-    if (!button || document.activeElement !== button) return;
-    focusBack.current = which;
-    dialogOf(contentRef.current)?.focus({ preventScroll: true });
-  };
-  useEffect(() => {
-    const which = focusBack.current;
-    if (saving || searching || !which) return;
-    focusBack.current = null;
-    // Quem levou o foco pra outro lugar no meio (o campo do texto) fica onde está.
-    const dialog = dialogOf(contentRef.current);
-    if (document.activeElement !== document.body && document.activeElement !== dialog) return;
-    const button = sendButtonOf(contentRef.current, which);
-    if (button && !button.disabled) button.focus({ preventScroll: true });
-    else dialog?.focus({ preventScroll: true });
-  }, [saving, searching]);
+  const busyFocus = useBusyFocus(contentRef, saving || searching);
   // A música saiu do repertório com o foco no Salvar: ele desliga e o foco vai pra janela.
   useEffect(() => {
     if (!missing) return;
+    const dialog = dialogOf(contentRef.current);
     const active = document.activeElement;
-    if (active === sendButtonOf(contentRef.current, 'save') || active === document.body) dialogOf(contentRef.current)?.focus({ preventScroll: true });
+    if (active === dialog?.querySelector('[data-send="save"]') || active === document.body) dialog?.focus({ preventScroll: true });
   }, [missing]);
 
   const handleSearch = async () => {
     setSearching(true);
     setSearchMsg(null);
-    holdFocus('search');
+    busyFocus.hold();
     try {
       const result = await searchLyrics(artist, song.name, song.duration);
       if (result && (result.plain || result.synced)) {
@@ -96,6 +75,7 @@ export function LyricsEditor({ song: songProp, songInPlaylist = true, onSave, on
     } catch {
       setSearchMsg('Falha na busca. Verifique a conexão ou cole manualmente.');
     } finally {
+      busyFocus.release('search');
       setSearching(false);
     }
   };
@@ -104,7 +84,7 @@ export function LyricsEditor({ song: songProp, songInPlaylist = true, onSave, on
     if (!songInPlaylist) return;
     setSaving(true);
     setSaveMsg(null);
-    holdFocus('save');
+    busyFocus.hold();
     try {
       const cloud = await onSave(song.id, {
         lyrics: lyrics.trim() || null,
@@ -117,6 +97,7 @@ export function LyricsEditor({ song: songProp, songInPlaylist = true, onSave, on
     } catch {
       setSaveMsg('Erro ao salvar.');
     } finally {
+      busyFocus.release('save');
       setSaving(false);
     }
   };
