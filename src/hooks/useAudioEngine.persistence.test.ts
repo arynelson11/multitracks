@@ -827,8 +827,8 @@ describe('separação no palco', () => {
     expect(saved().map((s) => s.name)).toEqual(['Boa'])
   })
 
-  // Sem arquivos na mão (o jsdom não tem DataTransfer; o App passa um FileList vazio).
-  const NO_FILES = [] as unknown as FileList
+  // Sem arquivos na mão: o App passa uma lista vazia (revisão M5, sem fabricar um FileList).
+  const NO_FILES: File[] = []
   // Manutenção (2026-11-27, Ruling SEP-memoria): as faixas da separação descem direto pro aparelho e
   // o loadFiles lê uma por vez de lá, sem receber os arquivos e sem gravar uma segunda cópia.
   it('loadFiles com storedStems lê as faixas do aparelho, sem segunda cópia, e a música volta ao reabrir', async () => {

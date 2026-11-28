@@ -798,11 +798,10 @@ export default function App() {
     // Já no repertório: as faixas que desceram agora sobram e saem do aparelho.
     if (step === 'pular') { dropStoredStems(stems, 'ja-no-repertorio'); arrived(); return }
     const meta = separationStageMeta(o.sep)
-    // Nenhum arquivo na mão: o loadFiles lê cada faixa do aparelho (storedStems), uma por vez.
-    const dt = new DataTransfer()
     // Pelo mesmo carregamento do Livre (Ruling R9); a chegada abaixo faz a música virar a atual em todos os planos.
+    // Nenhum arquivo na mão ([]): o loadFiles lê cada faixa do aparelho (storedStems), uma por vez.
     let entered = false
-    void loadAsCurrent(() => loadFiles(dt.files, meta.name, undefined, undefined, meta.originalKey, meta.bpm, {
+    void loadAsCurrent(() => loadFiles([], meta.name, undefined, undefined, meta.originalKey, meta.bpm, {
       artist: meta.artist, separation: meta.separation, channelStates: separationChannelStates(stemsToOpen(o.sep)), storedStems: stems,
     }).then((ok) => { entered = ok }))
       .catch((e) => { console.error('[Separação] o palco não carregou as faixas', e) })

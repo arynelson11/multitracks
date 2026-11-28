@@ -2714,7 +2714,8 @@ export function useAudioEngine(userId?: string, opts?: { autoClick?: boolean; se
     // `separation` (Parte 3): a música veio de uma separação do Separador. `channelStates`: o mixer
     // salvo na separação, na ordem dos arquivos; valor que falta ou fora da faixa fica no padrão.
     // Devolve se a música entrou no repertório (sep-1 M3: nada decodificou, ela não entra).
-    const loadFiles = async (files: FileList, overrideSongName?: string, coverImage?: string, songMarkers?: Marker[], overrideOriginalKey?: string | null, overrideBpm?: number, meta?: { artist?: string; lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null; sourceId?: string; timeSignature?: TimeSignature | null; separation?: SeparationLink; channelStates?: readonly (ChannelStartState | undefined)[]; storedStems?: readonly { id: string; name: string }[] }): Promise<boolean> => {
+    // `files`: o FileList do seletor ou uma lista (vazia quando as faixas já estão no aparelho, storedStems).
+    const loadFiles = async (files: FileList | readonly File[], overrideSongName?: string, coverImage?: string, songMarkers?: Marker[], overrideOriginalKey?: string | null, overrideBpm?: number, meta?: { artist?: string; lyrics?: string | null; lyricsSynced?: string | null; chords?: string | null; sourceId?: string; timeSignature?: TimeSignature | null; separation?: SeparationLink; channelStates?: readonly (ChannelStartState | undefined)[]; storedStems?: readonly { id: string; name: string }[] }): Promise<boolean> => {
         if (!audioCtxRef.current || !masterGainRef.current) return false;
         const timeSignature = sanitizeTimeSignature(meta?.timeSignature) ?? undefined;
         const separation = sanitizeSeparationLink(meta?.separation);

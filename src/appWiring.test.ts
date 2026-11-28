@@ -361,7 +361,9 @@ describe('ligações do palco novo', () => {
 describe('separação abrindo no palco', () => {
   it('o App entrega a separação pro palco pelo loadFiles com a ligação e o mixer salvo', () => {
     expect(app).toMatch(/const openSeparationOnStage = \(o: StageSeparationOpen\) => \{[\s\S]{0,200}setIsSeparatorOpen\(false\)[\s\S]{0,80}setForceShowSplash\(false\)[\s\S]{0,80}initEngine\(\)/)
-    expect(app).toMatch(/loadFiles\(dt\.files, meta\.name, undefined, undefined, meta\.originalKey, meta\.bpm, \{/)
+    // Revisão M5: nenhum arquivo na mão, sem fabricar um FileList (new DataTransfer pode lançar e deixar as faixas sem aviso).
+    expect(app).toMatch(/loadAsCurrent\(\(\) => loadFiles\(\[\], meta\.name, undefined, undefined, meta\.originalKey, meta\.bpm, \{/)
+    expect(app).not.toMatch(/const dt = new DataTransfer\(\)\s*\/\/ Pelo mesmo carregamento do Livre/)
     expect(app).toMatch(/separation:\s*meta\.separation/)
     expect(app).toMatch(/channelStates:\s*separationChannelStates\(stemsToOpen\(o\.sep\)\)/)
     // Espera o motor pronto e o repertório restaurado (a regra em si: stageHandoff.test.ts).
@@ -371,7 +373,7 @@ describe('separação abrindo no palco', () => {
   it('sep-1 C1: a separação que o repertório restaurado já tem só pula, sem carregar de novo', () => {
     expect(app).toMatch(/const arrived = \(\) => setSeparationArrival\(\{ sepId: o\.sep\.id, justSeparated: o\.justSeparated \}\)[\s\S]{0,120}if \(step === 'pular'\) \{ dropStoredStems\(stems, 'ja-no-repertorio'\); arrived\(\); return \}/)
     // O pular vem antes do carregamento.
-    expect(app.indexOf("if (step === 'pular')")).toBeLessThan(app.indexOf('loadFiles(dt.files'))
+    expect(app.indexOf("if (step === 'pular')")).toBeLessThan(app.indexOf('loadFiles([], meta.name'))
   })
 
   it('Ruling SEP-memoria (manutenção 2026-11-27): as faixas descem pro aparelho e o palco lê de lá; a que não entra sai', () => {
