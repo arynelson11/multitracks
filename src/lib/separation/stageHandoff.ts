@@ -1,19 +1,32 @@
 // Abrir a separação no palco (Parte 3): o que o Separador entrega ao App e as contas da entrega.
 // O nome, o BPM e o tom que o palco recebe, as faixas que abrem (só as remotas), o mixer salvo de
 // cada uma e o download das faixas, tudo ou nada (uma falha derruba o conjunto: nada entra pela
-// metade no repertório). Tudo puro; o fetch entra por parâmetro.
+// metade no repertório). Cada faixa é gravada no aparelho enquanto desce (Ruling SEP-memoria,
+// manutenção 2026-11-27) e só a id dela segue pro App. Tudo puro; o fetch e o aparelho entram por
+// parâmetro.
 import type { SavedSeparation, SavedStem } from '../../hooks/useSeparationLibrary'
 import type { ChannelStartState, SeparationLink } from '../../types'
 import { KEY_NAMES } from '../keyNames'
 
-/** O que o Separador entrega ao App. `files` nulo: a separação já está no repertório, só pular. */
-export interface StageSeparationOpen { sep: SavedSeparation; files: File[] | null; justSeparated: boolean }
+/** Uma faixa já gravada no aparelho (a id é a do canal no repertório) e o nome do arquivo. */
+export interface StoredStem { id: string; name: string }
+
+/** Onde as faixas descem: `put` grava no aparelho e devolve a id; `discard` tira as que não vão entrar. */
+export interface StemStore {
+  put(file: File): Promise<string>
+  discard(ids: readonly string[]): Promise<void>
+}
+
+/** O que o Separador entrega ao App. `stems` nulo: a separação já está no repertório, só pular. */
+export interface StageSeparationOpen { sep: SavedSeparation; stems: StoredStem[] | null; justSeparated: boolean }
 
 export interface StageSeparationMeta { name: string; artist?: string; bpm?: number; originalKey?: string; separation: SeparationLink }
 
 export const OPEN_ERROR_TEXT = 'Não deu pra baixar as faixas da separação. Confira a internet e tente de novo.'
 /** O servidor respondeu que uma faixa não existe mais (4xx, sep-2 I3): a internet não é o problema. */
 export const OPEN_MISSING_TEXT = 'Uma das faixas dessa separação não está mais na nuvem. Abra aqui no Separador pra usar as outras.'
+/** Disco cheio ao gravar a faixa no aparelho (revisão do item 4, M2): o Separador de reserva não grava, então abre. */
+export const OPEN_QUOTA_TEXT = 'Não tem espaço no aparelho pra abrir essa separação no palco. Libere espaço ou abra aqui no Separador.'
 
 /** O servidor respondeu com erro ao baixar uma faixa (o status vai junto, sep-2 I3). */
 export class SeparationFetchError extends Error {
@@ -24,8 +37,9 @@ export class SeparationFetchError extends Error {
   }
 }
 
-/** A frase do erro ao abrir no palco: faixa que não existe mais (4xx) ou falta de internet (o resto). */
+/** A frase do erro ao abrir no palco: disco cheio, faixa que não existe mais (4xx) ou falta de internet (o resto). */
 export function openErrorText(e: unknown): string {
+  if ((e as { name?: unknown } | null)?.name === 'QuotaExceededError') return OPEN_QUOTA_TEXT
   return e instanceof SeparationFetchError && e.status >= 400 && e.status < 500 ? OPEN_MISSING_TEXT : OPEN_ERROR_TEXT
 }
 
@@ -59,29 +73,53 @@ export function separationChannelStates(stems: readonly SavedStem[]): (ChannelSt
 }
 
 /**
- * Baixa as faixas uma por vez (memória do iPad), cada uma como `<nome>.wav` ("Faixa N" sem nome),
- * com o tipo do arquivo ou `audio/wav`. Qualquer falha ou `abort` lança e nada é devolvido.
+ * Baixa as faixas uma por vez, cada uma como `<nome>.wav` ("Faixa N" sem nome), com o tipo do
+ * arquivo ou `audio/wav`, e grava cada uma no aparelho (`store.put`) antes de pedir a próxima: só
+ * uma faixa crua fica na memória por vez (memória do iPad, Ruling SEP-memoria). Devolve as ids e os
+ * nomes. Qualquer falha (rede, servidor, gravar no aparelho) ou `abort`, inclusive depois da última,
+ * tira do aparelho o que já tinha sido gravado (`store.discard`) e lança: nada entra pela metade.
  */
-export async function fetchSeparationFiles(
+export async function fetchSeparationStems(
   stems: readonly SavedStem[],
-  i: { fetchImpl?: typeof fetch; signal?: AbortSignal; onProgress?(done: number, total: number): void } = {},
-): Promise<File[]> {
+  i: { store: StemStore; fetchImpl?: typeof fetch; signal?: AbortSignal; onProgress?(done: number, total: number): void },
+): Promise<StoredStem[]> {
   if (stems.length === 0) throw new Error('Nenhuma faixa pra abrir')
   const doFetch = i.fetchImpl ?? fetch
-  const files: File[] = []
-  i.onProgress?.(0, stems.length)
-  for (let n = 0; n < stems.length; n++) {
-    if (i.signal?.aborted) throw new DOMException('Cancelado', 'AbortError')
-    const stem = stems[n]
-    const res = await doFetch(stem.url, { signal: i.signal })
-    if (!res.ok) throw new SeparationFetchError(res.status)
-    const blob = await res.blob()
-    if (i.signal?.aborted) throw new DOMException('Cancelado', 'AbortError')
-    const name = stem.name?.trim() || `Faixa ${n + 1}`
-    files.push(new File([blob], `${name}.wav`, { type: blob.type || 'audio/wav' }))
-    i.onProgress?.(n + 1, stems.length)
+  const stored: StoredStem[] = []
+  const cancelled = () => new DOMException('Cancelado', 'AbortError')
+  try {
+    i.onProgress?.(0, stems.length)
+    for (let n = 0; n < stems.length; n++) {
+      if (i.signal?.aborted) throw cancelled()
+      const stem = stems[n]
+      const res = await doFetch(stem.url, { signal: i.signal })
+      if (!res.ok) throw new SeparationFetchError(res.status)
+      const blob = await res.blob()
+      if (i.signal?.aborted) throw cancelled()
+      const name = `${stem.name?.trim() || `Faixa ${n + 1}`}.wav`
+      stored.push({ id: await i.store.put(new File([blob], name, { type: blob.type || 'audio/wav' })), name })
+      i.onProgress?.(n + 1, stems.length)
+    }
+    // O Voltar chegou enquanto a última gravava: também não entra.
+    if (i.signal?.aborted) throw cancelled()
+    return stored
+  } catch (e) {
+    await i.store.discard(stored.map((s) => s.id)).catch((err: unknown) => { console.error('[Separação] não deu pra tirar as faixas gravadas', err) })
+    throw e
   }
-  return files
+}
+
+/** O que aconteceu com a separação que desceu pro aparelho, pra decidir se as faixas ficam. */
+export type StoredStemsOutcome = 'esperando' | 'entrou' | 'ja-no-repertorio' | 'nao-entrou' | 'substituida'
+
+/**
+ * As ids das faixas gravadas que saem do aparelho (revisão do item 4, M4). Ficam só enquanto a
+ * separação espera o motor e quando a música entrou no repertório. Saem quando ela já estava no
+ * repertório (pular), quando não entrou (o motor recusou, nada decodificou ou o carregamento quebrou,
+ * e aí o motor já desfez o registro provisório) e quando outra separação chegou antes de ela carregar.
+ */
+export function storedStemsToDrop(stems: readonly StoredStem[], outcome: StoredStemsOutcome): string[] {
+  return outcome === 'esperando' || outcome === 'entrou' ? [] : stems.map((s) => s.id)
 }
 
 /** Posição da música que veio desta separação no repertório; -1 sem. */

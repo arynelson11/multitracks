@@ -35,12 +35,23 @@ const PAD_SETS = [
   { id: 'p3', name: 'Shimmer Atmosférico com Guitarra Ambiente e Teclado', description: 'Camadas de shimmer', base_path: 'p3', created_at: '2026-11-03' },
 ]
 
-// O catálogo de pads vem da API: aqui a página responde sozinha (o resto passa direto).
+// O catálogo de pads vem da API: aqui a página responde sozinha (o resto passa direto). O renomear
+// (PATCH) e o apagar (DELETE) respondem pelo estado: 500 nas falhas e presos no envio em curso.
 const realFetch = window.fetch.bind(window)
-window.fetch = (input: RequestInfo | URL, init?: RequestInit) =>
-  String(input).includes('/api/pad-catalog')
-    ? Promise.resolve(new Response(JSON.stringify({ sets: PAD_SETS }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
-    : realFetch(input, init)
+const PAD_SEND: Record<string, { method: string; reply: 'falha' | 'preso' }> = {
+  'padsnuvem-falha': { method: 'PATCH', reply: 'falha' },
+  'padsnuvem-salvando': { method: 'PATCH', reply: 'preso' },
+  'padsnuvem-apagando': { method: 'DELETE', reply: 'preso' },
+  'padsnuvem-apagar-falha': { method: 'DELETE', reply: 'falha' },
+}
+window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+  if (!String(input).includes('/api/pad-catalog')) return realFetch(input, init)
+  const send = PAD_SEND[new URLSearchParams(location.search).get('estado') ?? '']
+  if (send && init?.method === send.method) {
+    return send.reply === 'preso' ? new Promise<Response>(() => {}) : Promise.resolve(new Response('{}', { status: 500, headers: { 'Content-Type': 'application/json' } }))
+  }
+  return Promise.resolve(new Response(JSON.stringify({ sets: PAD_SETS }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+}
 
 /** Música com letra sincronizada, artista e cifra longos (o pior caso do editor de letra). */
 const LYRIC_SONG = {
@@ -114,6 +125,7 @@ export function TelaPage({ estado }: { estado: TelaEstado }) {
     <div className="min-h-dvh bg-ps-ink font-ps-sans text-ps-bone">
       {estado === 'metronomo' && <MetronomeModal isOpen onClose={noop} playlistCurrentSong={SONG} onAddClick={noop} />}
       {(estado === 'letra' || estado === 'cifra') && <LyricsEditor song={LYRIC_SONG} onSave={async () => true} onClose={noop} />}
+      {estado === 'letra-fora' && <LyricsEditor song={LYRIC_SONG} songInPlaylist={false} onSave={async () => true} onClose={noop} />}
       {estado === 'teleprompter' && (
         <Teleprompter
           songName={SONG.name} hasMarkers currentTime={95} duration={300} onClose={noop}
@@ -139,7 +151,8 @@ export function TelaPage({ estado }: { estado: TelaEstado }) {
         || estado === 'separador-bpm' || estado === 'separador-voz' || estado === 'separador-publicar') && <SeparatorPage estado={estado} />}
       {(estado === 'biblioteca' || estado === 'biblioteca-editar' || estado === 'biblioteca-excluir' || estado === 'biblioteca-carregando' || estado === 'biblioteca-vazia') && <LibraryPage estado={estado} />}
       {(estado === 'planos' || estado === 'planos-oferta' || estado === 'planos-troca') && <PlansPage estado={estado} />}
-      {(estado === 'padsnuvem' || estado === 'padsnuvem-editar') && (
+      {(estado === 'padsnuvem' || estado === 'padsnuvem-editar' || estado === 'padsnuvem-falha' || estado === 'padsnuvem-salvando'
+        || estado === 'padsnuvem-apagando' || estado === 'padsnuvem-apagar-falha') && (
         <PadSetsModal isOpen onClose={noop} onSelect={noop} selectedPadSet={{ id: 'p2', name: 'Ambiente Suave', base_path: 'p2' }} isAdmin />
       )}
     </div>

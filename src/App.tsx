@@ -33,7 +33,8 @@ import { SeparationPanel } from './components/separation/SeparationPanel'
 import { CloudSaveForm } from './components/separation/CloudSaveForm'
 import { CLOUD_COPY, PAUSE_TO_USE, type SeparationTab } from './components/separation/toolsCopy'
 import { StageDialog } from './components/stage/StageDialog'
-import { STAGE_LOAD_ERROR_TEXT, findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen, type StageSeparationOpen } from './lib/separation/stageHandoff'
+import { hasOpenStageDialog } from './components/stage/stageDialogStack'
+import { STAGE_LOAD_ERROR_TEXT, findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen, storedStemsToDrop, type StageSeparationOpen, type StemStore, type StoredStem, type StoredStemsOutcome } from './lib/separation/stageHandoff'
 import { nextSongAfter, removalOpensRefusedSong } from './lib/songRemoval'
 import { cycleEndMode, shownEndMode, type EndMode } from './lib/autoAdvance'
 import { trackAd } from './lib/productEvents'
@@ -100,6 +101,7 @@ import { PricingModal } from './components/PricingModal'
 import { HomeScreen } from './components/home/HomeScreen'
 import { supabase, updateSongMarkers as saveMkToCloud, fetchSongs as fetchCloudSongs, updateSong } from './lib/supabase'
 import { LyricsEditor } from './components/LyricsEditor'
+import { lyricsSongOf, saveSongLyrics, type LyricsSong } from './lib/lyricsSave'
 import { Teleprompter } from './components/Teleprompter'
 import { useNetworkStatus } from './hooks/useNetworkStatus'
 import { useLiveSync } from './hooks/useLiveSync'
@@ -397,7 +399,7 @@ export default function App() {
   const sectionGates = useMemo(() => stageGatesFor(userPlan), [userPlan])
 
   const {
-    isReady, initEngine, loadFiles, isLoading, isRestoring,
+    isReady, initEngine, loadFiles, putStagedStem, discardStagedStems, isLoading, isRestoring,
     playlist, activeSongIndex, setPlaylistOrder, removeSongFromPlaylist, jumpToSong,
     renameSong, setCoverImage, clearSession,
     setChannelBus, exportPlaylist, importPlaylist,
@@ -478,7 +480,20 @@ export default function App() {
   const [isPadSetsModalOpen, setIsPadSetsModalOpen] = useState(false)
   const [isTeleprompterMode, setIsTeleprompterMode] = useState(false)
   const [isMarkerEditorOpen, setIsMarkerEditorOpen] = useState(false)
-  const [isLyricsEditorOpen, setIsLyricsEditorOpen] = useState(false)
+  // Letra e cifra: a música ativa de quando o editor abriu (manutenção 2026-11-27). O editor grava
+  // sempre nela, mesmo que a música ativa mude com ele aberto (troca, AUTO, banda pelo celular).
+  // Guarda só a id, o nome, o artista, a duração e os três textos (revisão das telas, M6), nunca a
+  // música inteira com os canais; na montagem o editor recebe a versão viva pela id.
+  const [lyricsEditorSong, setLyricsEditorSong] = useState<LyricsSong | null>(null)
+  // A conta mudou (saiu, a sessão caiu ou entrou outra): o editor da conta de antes sai e não volta
+  // sozinho com a cópia de quando abriu (ajuste de estado na renderização, sem efeito).
+  const [lyricsEditorOwner, setLyricsEditorOwner] = useState<string | null>(user?.id ?? null)
+  if (lyricsEditorOwner !== (user?.id ?? null)) {
+    setLyricsEditorOwner(user?.id ?? null)
+    setLyricsEditorSong(null)
+  }
+  const isLyricsEditorOpen = lyricsEditorSong !== null
+  const openLyricsEditor = () => { const s = playlist[activeSongIndex]; if (s) setLyricsEditorSong(lyricsSongOf(s)) }
   const [showTour, setShowTour] = useState(false)
   const [showWhatsNew, setShowWhatsNew] = useState(false)
   // Atualização do app desktop: checa no foco e na abertura. Alimenta o botão
@@ -734,9 +749,19 @@ export default function App() {
   // a atual com a VS parada (P8) e a gaveta SEPARAÇÃO abre na aba FAIXAS. O anúncio do fim (Livre)
   // fica ligado enquanto a separação que acabou de terminar for a atual.
   const separationLib = useSeparationLibrary({ loadList: false })
-  // As faixas baixadas ficam aqui só até o carregamento pegar elas (sep-1 I5): o estado volta a nulo
-  // na hora, e os arquivos saem da memória quando o loadFiles termina.
+  // As faixas da separação descem direto pro aparelho, uma por vez (Ruling SEP-memoria, manutenção
+  // 2026-11-27): o Separador grava cada uma pelo motor enquanto baixa e o App só segura as ids até o
+  // loadFiles ler de lá, uma por vez. O estado volta a nulo quando o carregamento pega elas (sep-1 I5).
   const [pendingSeparation, setPendingSeparation] = useState<StageSeparationOpen | null>(null)
+  const separationStemStore: StemStore = { put: putStagedStem, discard: discardStagedStems }
+  // As ids que ainda não foram pegas pelo carregamento: as que não vão entrar saem do aparelho.
+  const pendingStemsRef = useRef<StoredStem[] | null>(null)
+  // Quais saem é a regra do storedStemsToDrop (stageHandoff.ts, com teste); aqui só se tira do aparelho.
+  const dropStoredStems = (stems: readonly StoredStem[], outcome: StoredStemsOutcome) => {
+    const ids = storedStemsToDrop(stems, outcome)
+    if (ids.length === 0) return
+    void discardStagedStems(ids).catch((e) => { console.error('[Separação] não deu pra tirar as faixas do aparelho', e) })
+  }
   const [separationArrival, setSeparationArrival] = useState<{ sepId: string; justSeparated: boolean } | null>(null)
   const separationArrivalSeen = useRef<{ sepId: string; justSeparated: boolean } | null>(null)
   // Nada decodificou (sep-1 M3): a frase aparece no palco, com a música parada.
@@ -761,29 +786,42 @@ export default function App() {
     setIsSeparatorOpen(false)
     setForceShowSplash(false)
     if (!isReady) void initEngine()
-    if (o.files) setPendingSeparation(o)
+    if (o.stems) {
+      // Outra separação chegou antes de a anterior ser carregada: a anterior não entra mais.
+      if (pendingStemsRef.current) dropStoredStems(pendingStemsRef.current, 'substituida')
+      pendingStemsRef.current = o.stems
+      setPendingSeparation(o)
+    }
     else setSeparationArrival({ sepId: o.sep.id, justSeparated: o.justSeparated })
   }
   useEffect(() => {
     const o = pendingSeparation
-    if (!o?.files) return
+    if (!o?.stems) return
     // Espera o motor pronto e o repertório salvo restaurado (sep-1 C1); a que já está nele só pula.
     const step = pendingSeparationStep(o.sep.id, { isReady, isRestoring }, playlist)
     if (step === 'esperar') return
-    // Pegou: o estado solta as faixas (sep-1 I5); quem segura até o fim do carregamento é só este efeito.
+    // Pegou: o estado solta as ids (sep-1 I5); quem segura até o fim do carregamento é só este efeito.
     setPendingSeparation(null)
+    pendingStemsRef.current = null
+    const stems = o.stems
     const arrived = () => setSeparationArrival({ sepId: o.sep.id, justSeparated: o.justSeparated })
-    if (step === 'pular') { arrived(); return }
+    // Já no repertório: as faixas que desceram agora sobram e saem do aparelho.
+    if (step === 'pular') { dropStoredStems(stems, 'ja-no-repertorio'); arrived(); return }
     const meta = separationStageMeta(o.sep)
-    const dt = new DataTransfer()
-    for (const f of o.files) dt.items.add(f)
     // Pelo mesmo carregamento do Livre (Ruling R9); a chegada abaixo faz a música virar a atual em todos os planos.
+    // Nenhum arquivo na mão ([]): o loadFiles lê cada faixa do aparelho (storedStems), uma por vez.
     let entered = false
-    void loadAsCurrent(() => loadFiles(dt.files, meta.name, undefined, undefined, meta.originalKey, meta.bpm, {
-      artist: meta.artist, separation: meta.separation, channelStates: separationChannelStates(stemsToOpen(o.sep)),
+    void loadAsCurrent(() => loadFiles([], meta.name, undefined, undefined, meta.originalKey, meta.bpm, {
+      artist: meta.artist, separation: meta.separation, channelStates: separationChannelStates(stemsToOpen(o.sep)), storedStems: stems,
     }).then((ok) => { entered = ok }))
       .catch((e) => { console.error('[Separação] o palco não carregou as faixas', e) })
-      .then(() => { if (entered) arrived(); else setSeparationLoadFailed(true) })
+      .then(() => {
+        // Não entrou (o motor recusou, nada decodificou ou o carregamento quebrou antes de ela entrar,
+        // quando o motor já desfaz o registro provisório, revisão M1): as faixas saem do aparelho.
+        dropStoredStems(stems, entered ? 'entrou' : 'nao-entrou')
+        if (entered) arrived()
+        else setSeparationLoadFailed(true)
+      })
     // Roda quando a separação chega, o motor fica pronto ou a restauração termina; o loadFiles, o
     // loadAsCurrent e o repertório são os da renderização de agora, e a separação sai do estado ao ser pega.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1134,6 +1172,9 @@ export default function App() {
       if (textPrompt !== null) return
       // Tela de limite do Livre aberta: mesma coisa (Ruling R9).
       if (livre.limit !== null) return
+      // Janela do palco aberta (pads, letra, metrônomo, Planos...; Ruling defesa da revisão das telas):
+      // nenhuma tecla age por baixo dela, nem com o foco caído no body (botão que desligou no envio).
+      if (hasOpenStageDialog()) return
       const el = e.target as HTMLElement | null
       const tag = el?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return
@@ -1562,7 +1603,7 @@ export default function App() {
   if (isSeparatorOpen) {
     return (
       <SeparatorStudio onClose={() => setIsSeparatorOpen(false)} stageBusy={{ isPlaying, isCountingIn }} userId={user?.id ?? null} userPlan={userPlan} isAdmin={isAdmin}
-        stageAvailable={wantNewStage} stageSeparationIds={stageSeparationIds} onOpenOnStage={openSeparationOnStage} />
+        stageAvailable={wantNewStage} stageSeparationIds={stageSeparationIds} onOpenOnStage={openSeparationOnStage} stemStore={separationStemStore} />
     )
   }
 
@@ -1701,7 +1742,7 @@ export default function App() {
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={() => setIsAdminPanelOpen(true)} icon={<Shield size={14} />}>ADMIN</Button>
         <Button tone={isMarkerEditorOpen ? 'on' : 'default'} onClick={() => setIsMarkerEditorOpen(!isMarkerEditorOpen)} icon={<Pencil size={14} />}>Editor avançado</Button>
-        <Button onClick={() => setIsLyricsEditorOpen(true)} icon={<Edit2 size={14} />}>Letra e cifra</Button>
+        <Button onClick={openLyricsEditor} icon={<Edit2 size={14} />}>Letra e cifra</Button>
       </div>
       {isMarkerEditorOpen && markerEditorPanel()}
     </div>
@@ -2452,7 +2493,7 @@ export default function App() {
                     ✏️ Editor avançado
                   </button>
                   <button
-                    onClick={() => setIsLyricsEditorOpen(true)}
+                    onClick={openLyricsEditor}
                     className="shrink-0 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold tracking-wide cursor-pointer active:scale-95 border transition-all text-text-muted border-white/10 hover:bg-white/5"
                   >
                     📝 Letra/Cifra
@@ -2901,28 +2942,15 @@ export default function App() {
       )}
 
       {/* Editor de Letra & Cifra (Admin) */}
-      {isLyricsEditorOpen && playlist[activeSongIndex] && (
+      {/* A música é a de quando abriu (lyricsEditorSong); fora do repertório, a janela avisa e não grava. */}
+      {lyricsEditorSong && (
         <LyricsEditor
-          song={playlist[activeSongIndex]}
-          onClose={() => setIsLyricsEditorOpen(false)}
-          onSave={async ({ lyrics, lyricsSynced, chords }) => {
-            const activeSong = playlist[activeSongIndex]
-            if (!activeSong) return false
-            // Estado local (reflete no follower e persiste no IndexedDB)
-            setSongLyrics(activeSong.id, { lyrics, lyricsSynced, chords })
-            // Nuvem: só a música com a id que o download gravou (sourceId), nunca pelo nome. Sem ela,
-            // fica só no aparelho e o editor diz isso ("Salvo localmente").
-            if (!activeSong.sourceId) return false
-            try {
-              const match = cloudSongOf(await fetchCloudSongs(), activeSong)
-              if (match) {
-                return await updateSong(match.id, { lyrics, lyrics_synced: lyricsSynced, chords })
-              }
-            } catch (e) {
-              console.error('Falha ao salvar letra/cifra na nuvem:', e)
-            }
-            return false
-          }}
+          key={lyricsEditorSong.id}
+          song={playlist.find((s) => s.id === lyricsEditorSong.id) ?? lyricsEditorSong}
+          songInPlaylist={playlist.some((s) => s.id === lyricsEditorSong.id)}
+          onClose={() => setLyricsEditorSong(null)}
+          // Pela id que o editor guardou: o aparelho e a nuvem (só pelo sourceId, nunca pelo nome).
+          onSave={(songId, data) => saveSongLyrics(songId, data, { playlist, setLocal: setSongLyrics, fetchCloudSongs, updateSong })}
         />
       )}
 

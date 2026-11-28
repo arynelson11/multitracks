@@ -8,7 +8,7 @@ nova: usa o Vite, o React e o Tailwind do repo e o Google Chrome da máquina.
 
 ```bash
 source ~/.nvm/nvm.sh && nvm use 24
-node scripts/verify-layout/run.mjs                                    # rodada inteira (411 combinações, abaixo)
+node scripts/verify-layout/run.mjs                                    # rodada inteira (456 combinações, abaixo)
 node scripts/verify-layout/run.mjs --only 1280x800 --estado quebrado  # prova: tem de sair com 1
 node scripts/verify-layout/run.mjs --only 390x844 --estado quebrado   # prova da moldura do celular: tem de sair com 1
 node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
@@ -21,15 +21,15 @@ node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
 | `--jobs N` | quantos Chrome ao mesmo tempo (padrão 3) |
 | `--no-build` | usa a página já montada em `.build/` |
 
-Sem opção, a rodada mede 411 combinações:
+Sem opção, a rodada mede 456 combinações:
 
 | Grupo | Estados | Tamanhos | Combinações |
 |---|---|---|---|
 | Palco e Configurações da T19 (`normal` a `compasso` e `config`) | 11 | os 8 | 88 |
 | Gaveta SEPARAÇÃO do palco (faixa D: `separacao`, `separacao-voz`, `separacao-bpm`, `separacao-publicar`) | 4 | os 8 | 32 |
 | Tela inicial (`inicio` e `inicio-anuncio`) | 2 | os 8, 390x844 e 844x390 | 20 |
-| Telas da faixa C (sem o `download-celular`) | 18 | os 8 | 144 |
-| Telas da faixa C que abrem no celular (sem os três do Modo Ao Vivo do host, que só existe no computador) | 15 | 390x844 | 15 |
+| Telas da faixa C (sem o `download-celular`; com os 5 da manutenção) | 23 | os 8 | 184 |
+| Telas da faixa C que abrem no celular (sem os três do Modo Ao Vivo do host, que só existe no computador) | 20 | 390x844 | 20 |
 | `download-celular` (só existe no celular) | 1 | 390x844 | 1 |
 | Páginas do Separador (faixa D) | 3 | 5 (`PAGINAS_SEPARADOR_SIZES`) | 15 |
 | Janelas do Separador de reserva | 3 | 390x844 e 1024x740 | 6 |
@@ -38,7 +38,9 @@ Sem opção, a rodada mede 411 combinações:
 
 Histórico: 307 até a faixa C; 360 com a faixa D; 389 com as partes 3 a 5 da Parte 3; 411
 com a revisão macro delas (a lixeira, a lista carregando e vazia da Biblioteca, o "Trocar de
-plano?" com o pé cheio e a tela inicial em 844x390). A prova da moldura
+plano?" com o pé cheio e a tela inicial em 844x390); 429 com a manutenção de 2026-11-27 (`letra-fora`
+e `padsnuvem-falha`); 456 com a onda de correção dela (`padsnuvem-salvando`, `padsnuvem-apagando` e
+`padsnuvem-apagar-falha`). A prova da moldura
 (`--only 390x844 --estado quebrado`) tem de sair com 1: mostra que a página no
 iframe do celular também acusa falha.
 
@@ -118,8 +120,13 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `metronomo` | Metrônomo (Parte 3, faixa C) numa página própria, com uma música que já tem click |
 | `padsnuvem` | Pads da nuvem (faixa C) como admin, 3 conjuntos com nome e descrição longos, um em uso |
 | `padsnuvem-editar` | o mesmo, renomeando o primeiro conjunto |
+| `padsnuvem-falha` | o renomear recusado pelo servidor: a linha aberta com a frase da falha (manutenção 2026-11-27) |
+| `padsnuvem-salvando` | o renomear enviando: o "Salvando..." com o giro, os botões desligados e os campos só de leitura |
+| `padsnuvem-apagando` | o apagar enviando: o "Apagando..." com o giro |
+| `padsnuvem-apagar-falha` | o apagar recusado pelo servidor: a confirmação aberta com a frase da falha |
 | `letra` | Letra e cifra (faixa C), aba Letra com a versão sincronizada, artista longo |
 | `cifra` | o mesmo, na aba Cifra (linhas longas rolando de lado dentro da área) |
+| `letra-fora` | o mesmo, com a música fora do repertório: o aviso em âmbar e o Salvar desligado (manutenção 2026-11-27) |
 | `teleprompter` | Teleprompter (faixa C) no "Refrão Final Estendido" com 4 linhas longas de letra |
 | `teleprompter-vazio` | Teleprompter sem música e sem seções |
 | `novidades` | Novidades (faixa C) com a entrada mais nova do changelog de verdade |
@@ -212,6 +219,37 @@ Tipo da regra, caminho do elemento (até 5 níveis, pelos `data-*`, `role`,
 `aria-label` e `title`), o texto e as medidas. Esse exemplo é da primeira rodada
 (aviso COMPASSO ASSUMIDO quebrando linha no PRÓXIMA em 1280 px), corrigido na
 própria T20.
+
+## Rede local: a tela da banda (`scripts/verify-lan`)
+
+O celular da banda abre o app pelo computador, em `http://<IP da rede local>:<porta>` (o express de
+`electron/main.ts` serve o mesmo `dist/`). Esse endereço não é contexto seguro: lá não existem
+`crypto.randomUUID`, service worker e outras APIs. Este verificador e o vitest rodam em `localhost`,
+que é contexto seguro, então um erro que só acontece fora dele passa pelos dois (revisão do item 4 da
+manutenção, C1: a tela da banda ficou em branco). Por isso há uma verificação à parte:
+
+```bash
+source ~/.nvm/nvm.sh && nvm use 24
+node scripts/verify-lan/run.mjs              # monta o build de computador (DESKTOP=1 npx vite build) e abre
+node scripts/verify-lan/run.mjs --no-build   # usa o dist/ que já está lá
+```
+
+- Acha um IPv4 da rede local da máquina (10.x, 172.16 a 31.x ou 192.168.x, por
+  `os.networkInterfaces`); sem rede local, sai com 1 e diz isso.
+- Serve o `dist/` nesse IP como o express do app (arquivo ou `index.html`) e abre no Chrome
+  headless. A página entra como a tela da banda (`isFollowerLAN` do `useLiveSync`), sem líder: fica
+  em "Reconectando", e isso basta.
+- Antes do app, um script anota os erros soltos (os "Uncaught" do console, inclusive em promessa).
+  Passa quando a tela da banda (`[data-follower-view]` no `#root`) monta e nenhum erro solto
+  aparece; também confere que a página abriu fora de contexto seguro (senão a medida não vale).
+- Entra no portão de toda onda que mexe no que carrega com o app (o pacote principal) e no da
+  junção de cada versão.
+- No portão da junção de cada versão, rode com o `.env` da versão na raiz (o mesmo do app que vai
+  sair): sem ele o Supabase não nasce no build e um erro que só aparece com ele não é medido.
+- O que fica de fora: sem líder, o que só aparece com o `HOST_STATE` (música, seção, letra) não é
+  medido, e um erro solto que aparece mais de 1,5 s depois de a tela montar não entra.
+- No Windows, o `npx` do build roda pelo shell (`shell: true` só lá) e o Chrome vem da variável
+  `CHROME` (o padrão é o caminho do Mac).
 
 ## Como funciona
 

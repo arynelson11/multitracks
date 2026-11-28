@@ -15,6 +15,16 @@ describe('ligações do palco novo', () => {
 
   it('o atalho antigo sai cedo com o palco novo', () => expect(app).toMatch(/if\s*\(\s*useNewStage\s*\)\s*return/))
 
+  // Ruling defesa (revisão das telas, I1): com uma janela do palco aberta (pads, letra, metrônomo...),
+  // nenhuma tecla do palco antigo age por baixo dela, mesmo com o foco caído no body. O hasOpenStageDialog
+  // diz se há janela na pilha (stageDialog.test.tsx); aqui, que o atalho sai cedo com ela, antes do Espaço.
+  it('o atalho do palco antigo sai cedo com uma janela do palco aberta', () => {
+    expect(app).toMatch(/import \{[^}]*\bhasOpenStageDialog\b[^}]*\} from '\.\/components\/stage\/stageDialogStack'/)
+    const onKey = app.slice(app.indexOf('const onKey = (e: KeyboardEvent) => {'), app.indexOf("window.addEventListener('keydown', onKey)"))
+    expect(onKey).toMatch(/if \(hasOpenStageDialog\(\)\) return/)
+    expect(onKey.indexOf('if (hasOpenStageDialog()) return')).toBeLessThan(onKey.indexOf("e.code === 'Space'"))
+  })
+
   it('o App monta o StageShell e passa o stageMode pro motor', () => {
     expect(app).toMatch(/<StageShell[\s>]/)
     expect(app).toMatch(/stageMode/)
@@ -39,8 +49,26 @@ describe('ligações do palco novo', () => {
 
   it('marcadores e letra acham a música da nuvem pela id (sourceId), nunca pelo nome com "contém"', () => {
     expect(app).not.toMatch(/\.includes\(\s*cs\.name\s*\)|cs\.name\.includes\(/)
-    expect(app.match(/cloudSongOf\(\s*await fetchCloudSongs\(\)\s*,\s*activeSong\s*\)/g)).toHaveLength(2)
+    // Os marcadores no App; a letra pelo saveSongLyrics (src/lib/lyricsSave.ts), pela música do editor.
+    expect(app.match(/cloudSongOf\(\s*await fetchCloudSongs\(\)\s*,\s*activeSong\s*\)/g)).toHaveLength(1)
+    expect(read('./lib/lyricsSave.ts')).toMatch(/cloudSongOf\(\s*await deps\.fetchCloudSongs\(\)\s*,\s*song\s*\)/)
     expect(app).toContain('os marcadores ficam só neste aparelho')
+  })
+
+  it('letra e cifra: o editor abre com a música ativa de quando abriu e grava pela id dela (manutenção 2026-11-27)', () => {
+    // Abrir guarda a música; o editor não segue mais a música ativa de agora.
+    expect(app).not.toMatch(/<LyricsEditor[\s\S]{0,80}song=\{playlist\[activeSongIndex\]\}/)
+    // Revisão das telas (M6): o App guarda só a id, o nome, o artista, a duração e os três textos
+    // (lyricsSongOf, sem canais nem áudio); na montagem o editor recebe a versão viva pela id.
+    expect(app).toMatch(/const openLyricsEditor = \(\) => \{ const s = playlist\[activeSongIndex\]; if \(s\) setLyricsEditorSong\(lyricsSongOf\(s\)\) \}/)
+    expect(app).toMatch(/useState<LyricsSong \| null>\(null\)/)
+    expect(app).toMatch(/<LyricsEditor\s+key=\{lyricsEditorSong\.id\}\s+song=\{playlist\.find\(\(s\) => s\.id === lyricsEditorSong\.id\) \?\? lyricsEditorSong\}/)
+    // A conta mudou (saiu, caiu ou entrou outra): o editor da conta de antes sai e não volta sozinho.
+    expect(app).toMatch(/if \(lyricsEditorOwner !== \(user\?\.id \?\? null\)\) \{\s*setLyricsEditorOwner\(user\?\.id \?\? null\)\s*setLyricsEditorSong\(null\)\s*\}/)
+    expect(app).toMatch(/songInPlaylist=\{playlist\.some\(\(s\) => s\.id === lyricsEditorSong\.id\)\}/)
+    expect(app).toMatch(/onSave=\{\(songId, data\) => saveSongLyrics\(songId, data,/)
+    expect(app.match(/onClick=\{openLyricsEditor\}/g)).toHaveLength(2)
+    expect(app).not.toMatch(/setIsLyricsEditorOpen/)
   })
 
   it('o motor recebe autoClick: canUseGeneratedClick(userPlan) e os portões das seções', () => {
@@ -358,7 +386,9 @@ describe('ligações do palco novo', () => {
 describe('separação abrindo no palco', () => {
   it('o App entrega a separação pro palco pelo loadFiles com a ligação e o mixer salvo', () => {
     expect(app).toMatch(/const openSeparationOnStage = \(o: StageSeparationOpen\) => \{[\s\S]{0,200}setIsSeparatorOpen\(false\)[\s\S]{0,80}setForceShowSplash\(false\)[\s\S]{0,80}initEngine\(\)/)
-    expect(app).toMatch(/loadFiles\(dt\.files, meta\.name, undefined, undefined, meta\.originalKey, meta\.bpm, \{/)
+    // Revisão M5: nenhum arquivo na mão, sem fabricar um FileList (new DataTransfer pode lançar e deixar as faixas sem aviso).
+    expect(app).toMatch(/loadAsCurrent\(\(\) => loadFiles\(\[\], meta\.name, undefined, undefined, meta\.originalKey, meta\.bpm, \{/)
+    expect(app).not.toMatch(/const dt = new DataTransfer\(\)\s*\/\/ Pelo mesmo carregamento do Livre/)
     expect(app).toMatch(/separation:\s*meta\.separation/)
     expect(app).toMatch(/channelStates:\s*separationChannelStates\(stemsToOpen\(o\.sep\)\)/)
     // Espera o motor pronto e o repertório restaurado (a regra em si: stageHandoff.test.ts).
@@ -366,9 +396,31 @@ describe('separação abrindo no palco', () => {
   })
 
   it('sep-1 C1: a separação que o repertório restaurado já tem só pula, sem carregar de novo', () => {
-    expect(app).toMatch(/const arrived = \(\) => setSeparationArrival\(\{ sepId: o\.sep\.id, justSeparated: o\.justSeparated \}\)\s*if \(step === 'pular'\) \{ arrived\(\); return \}/)
+    expect(app).toMatch(/const arrived = \(\) => setSeparationArrival\(\{ sepId: o\.sep\.id, justSeparated: o\.justSeparated \}\)[\s\S]{0,120}if \(step === 'pular'\) \{ dropStoredStems\(stems, 'ja-no-repertorio'\); arrived\(\); return \}/)
     // O pular vem antes do carregamento.
-    expect(app.indexOf("if (step === 'pular')")).toBeLessThan(app.indexOf('loadFiles(dt.files'))
+    expect(app.indexOf("if (step === 'pular')")).toBeLessThan(app.indexOf('loadFiles([], meta.name'))
+  })
+
+  it('Ruling SEP-memoria (manutenção 2026-11-27): as faixas descem pro aparelho e o palco lê de lá; a que não entra sai', () => {
+    // O Separador grava cada faixa pelo motor enquanto baixa; o App só segura as ids.
+    expect(app).toMatch(/const separationStemStore: StemStore = \{ put: putStagedStem, discard: discardStagedStems \}/)
+    expect(app).toMatch(/<SeparatorStudio [\s\S]{0,400}stemStore=\{separationStemStore\} \/>/)
+    // O loadFiles recebe as ids (storedStems) e nenhum arquivo na mão.
+    expect(app).toMatch(/channelStates: separationChannelStates\(stemsToOpen\(o\.sep\)\), storedStems: stems,/)
+    expect(app).not.toMatch(/for \(const f of o\.\w+\) dt\.items\.add/)
+    // A que não entra sai do aparelho: outra separação chegou antes, já estava no repertório, ou o motor recusou.
+    expect(app).toMatch(/if \(pendingStemsRef\.current\) dropStoredStems\(pendingStemsRef\.current, 'substituida'\)\s*pendingStemsRef\.current = o\.stems/)
+    expect(app).toMatch(/setPendingSeparation\(null\)\s*pendingStemsRef\.current = null/)
+    // Revisão M1: em todo caso que a música não entrou, as faixas saem (o motor já desfaz o registro).
+    expect(app).toMatch(/\.then\(\(ok\) => \{ entered = ok \}\)/)
+    // Quais saem: storedStemsToDrop (stageHandoff.test.ts); o App passa o que aconteceu.
+    expect(app).toMatch(/dropStoredStems\(stems, entered \? 'entrou' : 'nao-entrou'\)\s*if \(entered\) arrived\(\)\s*else setSeparationLoadFailed\(true\)/)
+    expect(app).toMatch(/const ids = storedStemsToDrop\(stems, outcome\)\s*if \(ids\.length === 0\) return\s*void discardStagedStems\(ids\)/)
+    expect(app).not.toMatch(/refused/)
+  })
+
+  it('M3: tirar as faixas que falha fica no console, nunca vira erro solto', () => {
+    expect(app).toMatch(/void discardStagedStems\(ids\)\.catch\(\(e\) => \{ console\.error\(/)
   })
 
   it('com a VS tocando a separação espera a parada pra virar a atual', () => {
@@ -377,7 +429,7 @@ describe('separação abrindo no palco', () => {
   })
 
   it('separação já no repertório: só pula, sem baixar de novo', () => {
-    expect(app).toMatch(/if \(o\.files\) setPendingSeparation\(o\)\s*else setSeparationArrival\(/)
+    expect(app).toMatch(/if \(o\.stems\) \{[\s\S]{0,300}setPendingSeparation\(o\)\s*\}\s*else setSeparationArrival\(/)
     expect(app).toMatch(/stageSeparationIds = useMemo\(\(\) => new Set\(playlist\.flatMap\(\(s\) => \(s\.separation \? \[s\.separation\.id\] : \[\]\)\)\)/)
   })
 
@@ -439,7 +491,7 @@ describe('separação abrindo no palco', () => {
 
   it('sep-1 M3: nada decodificou, a frase aparece no palco (nunca tocando) e a chegada não fica pendente', () => {
     expect(app).toMatch(/\.then\(\(ok\) => \{ entered = ok \}\)\)/)
-    expect(app).toMatch(/\.then\(\(\) => \{ if \(entered\) arrived\(\); else setSeparationLoadFailed\(true\) \}\)/)
+    expect(app).toMatch(/\.then\(\(\) => \{[\s\S]{0,300}if \(entered\) arrived\(\)\s*else setSeparationLoadFailed\(true\)\s*\}\)/)
     expect(app).toMatch(/<Toast open=\{separationLoadFailed\}[\s\S]{0,200}playing=\{isPlaying \|\| isCountingIn\}[\s\S]{0,80}\{STAGE_LOAD_ERROR_TEXT\}/)
   })
 

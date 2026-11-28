@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { OPEN_ERROR_TEXT, OPEN_MISSING_TEXT, type StageSeparationOpen } from '../../lib/separation/stageHandoff'
+import { OPEN_ERROR_TEXT, OPEN_MISSING_TEXT, OPEN_QUOTA_TEXT, type StageSeparationOpen, type StemStore } from '../../lib/separation/stageHandoff'
 import { FakeAudioContext, resetWaves, savedSeparation } from './separatorTestKit'
 
 const h = vi.hoisted(() => ({
@@ -60,10 +60,22 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals() })
 
 const flush = async (ms = 0) => { await act(async () => { await new Promise((r) => setTimeout(r, ms)) }) }
 
+// O aparelho falso (Ruling SEP-memoria, manutenção 2026-11-27): as faixas descem direto pra ele.
+let disk: Map<string, File>
+let stemStore: StemStore & { put: ReturnType<typeof vi.fn>; discard: ReturnType<typeof vi.fn> }
+beforeEach(() => {
+  disk = new Map()
+  let n = 0
+  stemStore = {
+    put: vi.fn(async (file: File) => { const id = `st${++n}`; disk.set(id, file); return id }),
+    discard: vi.fn(async (ids: readonly string[]) => { for (const id of ids) disk.delete(id) }),
+  }
+})
+
 function mount(over: Partial<React.ComponentProps<typeof SeparatorStudio>> = {}) {
   const onOpenOnStage = vi.fn<(o: StageSeparationOpen) => void>()
   // A conta, o plano e o papel vêm do App (1b, sem useAuth no Separador); o mock do useAuth fica pros Planos.
-  const utils = render(<SeparatorStudio onClose={vi.fn()} stageBusy={{ isPlaying: false, isCountingIn: false }} userId="u1" userPlan={h.auth.userPlan} isAdmin={h.auth.isAdmin} stageAvailable onOpenOnStage={onOpenOnStage} {...over} />)
+  const utils = render(<SeparatorStudio onClose={vi.fn()} stageBusy={{ isPlaying: false, isCountingIn: false }} userId="u1" userPlan={h.auth.userPlan} isAdmin={h.auth.isAdmin} stageAvailable onOpenOnStage={onOpenOnStage} stemStore={stemStore} {...over} />)
   return { onOpenOnStage, ...utils }
 }
 
@@ -93,7 +105,9 @@ describe('Separador entregando a separação pro palco', () => {
     expect(o.justSeparated).toBe(true)
     expect(o.sep).toMatchObject({ id: 'sep_new', songName: 'Louvor Novo' })
     expect(typeof o.sep.createdAt).toBe('number')
-    expect(o.files?.map((f) => f.name)).toEqual(['Vocais.wav', 'Bateria.wav'])
+    // Só a id e o nome vão pro App: as faixas já estão no aparelho.
+    expect(o.stems?.map((st) => st.name)).toEqual(['Vocais.wav', 'Bateria.wav'])
+    expect(o.stems?.map((st) => disk.get(st.id)?.name)).toEqual(['Vocais.wav', 'Bateria.wav'])
     // O player de reserva nunca apareceu.
     expect(document.querySelector('[data-separator-player]')).toBeNull()
   })
@@ -115,15 +129,16 @@ describe('Separador entregando a separação pro palco', () => {
     expect(document.querySelector('[data-separator-player]')).toBeTruthy()
   })
 
-  it('separação já no repertório: onOpenOnStage com files nulo e o App só pula', async () => {
+  it('separação já no repertório: onOpenOnStage com stems nulo e o App só pula', async () => {
     const sep = savedSeparation()
     h.lib.separations = [sep]
     const fetchSpy = vi.mocked(fetch)
     const { onOpenOnStage } = mount({ stageSeparationIds: new Set(['sep_1']) })
     fetchSpy.mockClear()
     fireEvent.click(document.querySelector('[data-separation-id="sep_1"]')!)
-    expect(onOpenOnStage).toHaveBeenCalledWith({ sep, files: null, justSeparated: false })
+    expect(onOpenOnStage).toHaveBeenCalledWith({ sep, stems: null, justSeparated: false })
     expect(fetchSpy).not.toHaveBeenCalled()
+    expect(stemStore.put).not.toHaveBeenCalled()
   })
 
   it('reabrir de Minhas separações baixa as faixas remotas e entrega sem justSeparated', async () => {
@@ -134,7 +149,8 @@ describe('Separador entregando a separação pro palco', () => {
     await flush(5)
     expect(onOpenOnStage).toHaveBeenCalledTimes(1)
     expect(onOpenOnStage.mock.calls[0][0].justSeparated).toBe(false)
-    expect(onOpenOnStage.mock.calls[0][0].files).toHaveLength(3)
+    expect(onOpenOnStage.mock.calls[0][0].stems).toHaveLength(3)
+    expect(disk.size).toBe(3)
   })
 
   it('erro ao baixar mostra a frase e Tentar de novo, sem chamar onOpenOnStage', async () => {
@@ -148,25 +164,82 @@ describe('Separador entregando a separação pro palco', () => {
     expect(screen.getByRole('alert').textContent).toBe(OPEN_ERROR_TEXT)
     expect(onOpenOnStage).not.toHaveBeenCalled()
     expect(alertSpy).not.toHaveBeenCalled()
+    // Tudo ou nada: a faixa que já tinha descido sai do aparelho.
+    expect(stemStore.discard).toHaveBeenCalledWith(['st1'])
+    expect(disk.size).toBe(0)
     route = async (url: string) => okAudio(url)
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
     await flush(5)
     expect(onOpenOnStage).toHaveBeenCalledTimes(1)
   })
 
-  it('Voltar no meio de baixar cancela', async () => {
+  it('M2: disco cheio ao gravar a faixa mostra a frase do espaço e o Abrir aqui no Separador', async () => {
     h.lib.separations = [savedSeparation()]
-    let release!: () => void
-    route = (url: string) => new Promise((resolve) => { release = () => resolve(okAudio(url)) })
+    stemStore.put.mockImplementationOnce(async (file: File) => { disk.set('st1', file); return 'st1' })
+    stemStore.put.mockImplementationOnce(async () => { throw new DOMException('cheio', 'QuotaExceededError') })
     const { onOpenOnStage } = mount()
     fireEvent.click(screen.getByRole('button', { name: 'Abrir' }))
-    await flush(0)
+    await flush(5)
+    expect(screen.getByRole('alert').textContent).toBe(OPEN_QUOTA_TEXT)
+    expect(screen.getByRole('button', { name: 'Abrir aqui no Separador' })).toBeTruthy()
+    expect(onOpenOnStage).not.toHaveBeenCalled()
+    expect(disk.size).toBe(0)
+  })
+
+  it('M3: tirar as faixas que falha não vira erro solto (fica no console)', async () => {
+    h.lib.separations = [savedSeparation()]
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    // O descarte devolve uma promessa que anota se alguém tratou a falha (o .catch do Separador). Sem o
+    // .catch, ninguém trata: o ouvinte de unhandledRejection não pega nada neste ambiente (re-revisão).
+    let tratada = false
+    const falha = new DOMException('disco', 'UnknownError')
+    const descarte = {
+      then: (ok?: (v: void) => unknown, erro?: (e: unknown) => unknown) => { if (erro) { tratada = true; erro(falha) } return Promise.resolve() },
+      catch: (erro: (e: unknown) => unknown) => { tratada = true; erro(falha); return Promise.resolve() },
+    }
+    stemStore.discard.mockReturnValue(descarte as unknown as Promise<void>)
+    try {
+      // Sem quem receba no palco, as faixas que desceram saem pelo descarte do Separador.
+      mount({ onOpenOnStage: undefined })
+      fireEvent.click(screen.getByRole('button', { name: 'Abrir' }))
+      await flush(20)
+      expect(stemStore.discard).toHaveBeenCalledWith(['st1', 'st2', 'st3'])
+      expect(tratada).toBe(true)
+      expect(err.mock.calls.some((c) => c.some((x) => x === falha))).toBe(true)
+    } finally {
+      err.mockRestore()
+    }
+  })
+
+  it('Voltar no meio de baixar cancela', async () => {
+    h.lib.separations = [savedSeparation()]
+    // A 1ª faixa desce e grava; a 2ª fica presa até o Voltar.
+    let release!: () => void
+    let n = 0
+    route = (url: string) => (++n === 1 ? Promise.resolve(okAudio(url)) : new Promise((resolve) => { release = () => resolve(okAudio(url)) }))
+    const { onOpenOnStage } = mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir' }))
+    await flush(5)
+    expect(stemStore.put).toHaveBeenCalledTimes(1)
+    expect(disk.size).toBe(1)
     fireEvent.click(screen.getByRole('button', { name: 'Voltar' }))
     expect(document.querySelector('[data-separator-home]')).toBeTruthy()
     route = async (url: string) => okAudio(url)
     release()
     await flush(5)
     expect(onOpenOnStage).not.toHaveBeenCalled()
+    // O que desceu antes do Voltar não fica no aparelho.
+    expect(stemStore.discard).toHaveBeenCalledWith(['st1'])
+    expect(disk.size).toBe(0)
+  })
+
+  it('sem onde gravar as faixas (stemStore), a separação abre no player do Separador', async () => {
+    h.lib.separations = [savedSeparation()]
+    const { onOpenOnStage } = mount({ stemStore: undefined })
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir' }))
+    await flush(5)
+    expect(onOpenOnStage).not.toHaveBeenCalled()
+    expect(document.querySelector('[data-separator-player]')).toBeTruthy()
   })
 
   it('abrir no palco não grava a separação com faixas vazias', async () => {

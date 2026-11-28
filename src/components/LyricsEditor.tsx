@@ -1,22 +1,32 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Loader2, Save, Sparkles } from 'lucide-react';
-import type { Song } from '../types';
 import { searchLyrics } from '../lib/supabase';
+import { lyricsSaveBlocked, lyricsSongOf, type LyricsData, type LyricsSaveResult, type LyricsSong } from '../lib/lyricsSave';
 import { Button, Notice, TabPanel, Tabs, TextArea, TextField } from './ui';
 import { StageDialog } from './stage/StageDialog';
+import { dialogOf, useBusyFocus } from './stage/useBusyFocus';
 
 type EditorTab = 'lyrics' | 'chords';
 const TABS: { value: EditorTab; label: string }[] = [{ value: 'lyrics', label: 'Letra' }, { value: 'chords', label: 'Cifra' }];
 
 interface LyricsEditorProps {
-  song: Song;
-  // Persiste: atualiza estado local sempre e tenta salvar na nuvem.
-  // Retorna true se conseguiu salvar na nuvem.
-  onSave: (data: { lyrics: string | null; lyricsSynced: string | null; chords: string | null }) => Promise<boolean>;
+  // A música ativa quando o editor abriu. O editor guarda essa música (a id, o nome e a duração da
+  // busca) e grava sempre nela, mesmo que a música ativa mude com ele aberto (manutenção 2026-11-27).
+  song: LyricsSong;
+  // A música do editor ainda está no repertório? Fora dele, o Salvar desliga e a janela avisa.
+  songInPlaylist?: boolean;
+  // Persiste na música da id: atualiza o estado local e tenta salvar na nuvem. true: salvou na
+  // nuvem; false: só no aparelho; 'missing': a música saiu do repertório e nada foi gravado.
+  onSave: (songId: string, data: LyricsData) => Promise<LyricsSaveResult>;
   onClose: () => void;
 }
 
-export function LyricsEditor({ song, onSave, onClose }: LyricsEditorProps) {
+const MISSING_TEXT = 'Esta música saiu do repertório, então a letra e a cifra não podem ser salvas nela. O texto continua aqui pra você copiar.';
+
+export function LyricsEditor({ song: songProp, songInPlaylist = true, onSave, onClose }: LyricsEditorProps) {
+  // A música de quando abriu: a prop pode passar a ser a nova música ativa, o editor não segue.
+  // Só o que o editor precisa (revisão M6): a música que saiu do repertório não fica presa aqui com os canais.
+  const [song] = useState(() => lyricsSongOf(songProp));
   const [artist, setArtist] = useState(song.artist || '');
   const [lyrics, setLyrics] = useState(song.lyrics || '');
   const [lyricsSynced, setLyricsSynced] = useState<string | null>(song.lyricsSynced || null);
@@ -28,14 +38,33 @@ export function LyricsEditor({ song, onSave, onClose }: LyricsEditorProps) {
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  // O App disse, na hora de gravar, que a música tinha saído do repertório.
+  const [missingOnSave, setMissingOnSave] = useState(false);
+  const missing = !songInPlaylist || missingOnSave;
+  // O desligado do Salvar e a guarda do clique, pela mesma regra (lyricsSaveBlocked, com teste).
+  const saveBlocked = lyricsSaveBlocked({ songInPlaylist, missingOnSave, saving });
   // O último texto salvo (o da música, até o primeiro Salvar que deu certo). Com alteração, o Esc e
   // o toque fora não fecham (só o X), pra não jogar fora a letra e a cifra digitadas.
   const [saved, setSaved] = useState({ lyrics: song.lyrics || '', lyricsSynced: song.lyricsSynced || null, chords: song.chords || '' });
   const dirty = lyrics !== saved.lyrics || chords !== saved.chords || lyricsSynced !== saved.lyricsSynced;
 
+  // O foco nos botões que desligam (revisão das telas, I1 e N1, useBusyFocus, o mesmo dos pads): o Salvar
+  // salvando e o Buscar letra buscando levam o foco pra janela e, no fim, devolvem pro botão (ou pra
+  // janela, se ele ficou desligado), só se o foco estiver perdido ou na janela.
+  const contentRef = useRef<HTMLDivElement>(null);
+  const busyFocus = useBusyFocus(contentRef, saving || searching);
+  // A música saiu do repertório com o foco no Salvar: ele desliga e o foco vai pra janela.
+  useEffect(() => {
+    if (!missing) return;
+    const dialog = dialogOf(contentRef.current);
+    const active = document.activeElement;
+    if (active === dialog?.querySelector('[data-send="save"]') || active === document.body) dialog?.focus({ preventScroll: true });
+  }, [missing]);
+
   const handleSearch = async () => {
     setSearching(true);
     setSearchMsg(null);
+    busyFocus.hold();
     try {
       const result = await searchLyrics(artist, song.name, song.duration);
       if (result && (result.plain || result.synced)) {
@@ -48,24 +77,29 @@ export function LyricsEditor({ song, onSave, onClose }: LyricsEditorProps) {
     } catch {
       setSearchMsg('Falha na busca. Verifique a conexão ou cole manualmente.');
     } finally {
+      busyFocus.release('search');
       setSearching(false);
     }
   };
 
   const handleSave = async () => {
+    if (saveBlocked) return;
     setSaving(true);
     setSaveMsg(null);
+    busyFocus.hold();
     try {
-      const cloud = await onSave({
+      const cloud = await onSave(song.id, {
         lyrics: lyrics.trim() || null,
         lyricsSynced: lyricsSynced,
         chords: chords.trim() || null,
       });
+      if (cloud === 'missing') { setMissingOnSave(true); return; }
       setSaved({ lyrics, lyricsSynced, chords });
       setSaveMsg(cloud ? 'Salvo na nuvem e no aparelho.' : 'Salvo só no aparelho (a música não está na biblioteca da nuvem).');
     } catch {
       setSaveMsg('Erro ao salvar.');
     } finally {
+      busyFocus.release('save');
       setSaving(false);
     }
   };
@@ -81,9 +115,9 @@ export function LyricsEditor({ song, onSave, onClose }: LyricsEditorProps) {
         <>
           {saveMsg && <p role="status" className="mr-auto self-center text-ps-sm text-ps-mut break-words">{saveMsg}</p>}
           <Button
-            tone="primary"
+            tone="primary" data-send="save"
             icon={saving ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : <Save size={16} />}
-            disabled={saving}
+            disabled={saveBlocked}
             onClick={handleSave}
           >
             Salvar
@@ -91,8 +125,9 @@ export function LyricsEditor({ song, onSave, onClose }: LyricsEditorProps) {
         </>
       }
     >
-      <div className="flex flex-col gap-4">
+      <div ref={contentRef} className="flex flex-col gap-4">
         <p className="text-ps-mut break-words">{song.name}</p>
+        {missing && <Notice tone="alert" role="alert">{MISSING_TEXT}</Notice>}
 
         {/* Busca automática da letra pelo artista e pelo nome da música */}
         <div className="flex flex-col gap-2">
@@ -102,6 +137,7 @@ export function LyricsEditor({ song, onSave, onClose }: LyricsEditorProps) {
               placeholder="Ex.: Aline Barros" className="min-w-48 flex-1"
             />
             <Button
+              data-send="search"
               icon={searching ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : <Sparkles size={16} />}
               disabled={searching}
               onClick={handleSearch}

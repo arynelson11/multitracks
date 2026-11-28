@@ -47,6 +47,13 @@ const mem = vi.hoisted(() => ({
   pitchGate: null as Promise<void> | null,
   // Conteúdo de arquivo que não decodifica (arquivo estragado).
   failDecode: null as RegExp | null,
+  // Gravação que estoura (disco cheio) nas chaves que casam, e o detectKey que quebra no meio do carregamento.
+  failSet: null as RegExp | null,
+  failDetect: false,
+  // Decodes juntos: o atraso de cada um e o máximo ao mesmo tempo (o "uma por vez" do toque).
+  decodeDelay: 0,
+  decodeInFlight: 0,
+  maxDecodeInFlight: 0,
   sources: [] as FakeSource[],
   pitchNodes: [] as FakePitchNode[],
   // Passa-baixa de cada bipe da contagem (um por tempo): a saída dele é a entrada da contagem.
@@ -64,6 +71,7 @@ vi.mock('idb-keyval', () => ({
     return isMetaKey(key) ? structuredClone(mem.db.get(key)) : mem.db.get(key)
   },
   set: async (key: string, value: unknown) => {
+    if (mem.failSet?.test(key)) throw new DOMException('cota estourada (teste)', 'QuotaExceededError')
     mem.writes.push(key)
     if (isMetaKey(key)) mem.metaWrites.push(structuredClone(value))
     mem.db.set(key, isMetaKey(key) ? structuredClone(value) : value)
@@ -89,7 +97,7 @@ vi.mock('signalsmith-stretch', () => ({
   },
 }))
 vi.mock('../contexts/SettingsContext', () => ({ useSettings: () => ({ settings: mem.settings }) }))
-vi.mock('../lib/AudioAnalyzer', () => ({ detectKey: () => 'C', generateEndlessClickTrackFromSample: async () => ({ clickBlob: new Blob(['click']) }) }))
+vi.mock('../lib/AudioAnalyzer', () => ({ detectKey: () => { if (mem.failDetect) throw new Error('detectKey quebrou (teste)'); return 'C' }, generateEndlessClickTrackFromSample: async () => ({ clickBlob: new Blob(['click']) }) }))
 vi.mock('../lib/clickLibrary', () => ({ loadClickSelection: () => ({ type: 'wood', subdivision: 1 }) }))
 vi.mock('../lib/offlineCache', () => ({
   getCachedStem: async (songId: string, idx: number) => new File([`${songId}#${idx}`], `${idx}.wav`, { type: 'audio/wav' }),
@@ -158,6 +166,10 @@ class FakeAudioContext {
   createAnalyser() { return { ...audioNode(), fftSize: 2048, smoothingTimeConstant: 0.8, getFloatTimeDomainData() {} } }
   async decodeAudioData(ab: ArrayBuffer) {
     if (mem.failDecode?.test(new TextDecoder().decode(ab))) throw new Error('arquivo estragado (teste)')
+    mem.decodeInFlight++
+    mem.maxDecodeInFlight = Math.max(mem.maxDecodeInFlight, mem.decodeInFlight)
+    if (mem.decodeDelay) await new Promise((r) => setTimeout(r, mem.decodeDelay))
+    mem.decodeInFlight--
     return { duration: 300 }
   }
   async resume() {}
@@ -186,6 +198,11 @@ beforeEach(() => {
   mem.metaGate = null
   mem.pitchGate = null
   mem.failDecode = null
+  mem.failSet = null
+  mem.failDetect = false
+  mem.decodeDelay = 0
+  mem.decodeInFlight = 0
+  mem.maxDecodeInFlight = 0
   mem.onStart = null
   mem.settings.autoPan = true
   mem.settings.outputs = undefined
@@ -808,6 +825,196 @@ describe('separação no palco', () => {
     expect(bad).toBe(false)
     expect(result.current.playlist.map((s) => s.name)).toEqual(['Boa'])
     expect(saved().map((s) => s.name)).toEqual(['Boa'])
+  })
+
+  // Sem arquivos na mão: o App passa uma lista vazia (revisão M5, sem fabricar um FileList).
+  const NO_FILES: File[] = []
+  // Manutenção (2026-11-27, Ruling SEP-memoria): as faixas da separação descem direto pro aparelho e
+  // o loadFiles lê uma por vez de lá, sem receber os arquivos e sem gravar uma segunda cópia.
+  it('loadFiles com storedStems lê as faixas do aparelho, sem segunda cópia, e a música volta ao reabrir', async () => {
+    const first = await openApp()
+    const stored: { id: string; name: string }[] = []
+    for (const n of ['Vocais.wav', 'Bateria.wav']) {
+      let id = ''
+      await act(async () => { id = await first.result.current.putStagedStem(new File([n], n, { type: 'audio/wav' })) })
+      stored.push({ id, name: n })
+    }
+    expect(mem.db.has(stemKey(stored[0].id))).toBe(true)
+    mem.writes.length = 0
+    let ok: unknown = null
+    await act(async () => {
+      ok = await first.result.current.loadFiles(NO_FILES, 'Separada', undefined, undefined, null, undefined, {
+        separation: { id: 'sep_g', createdAt: 5 }, storedStems: stored, channelStates: [undefined, { volume: 0.4, muted: false, soloed: false, pan: 0 }],
+      })
+    })
+    expect(ok).toBe(true)
+    // Nenhuma faixa gravada de novo: só o repertório (provisório e final).
+    expect(mem.writes.filter((k) => k.includes(':ch:'))).toEqual([])
+    const nova = first.result.current.playlist[0]
+    expect(nova.channels.map((c) => c.id).sort()).toEqual(stored.map((s) => s.id).sort())
+    expect(nova.channels.find((c) => c.name === 'Bateria')).toMatchObject({ volume: 0.4 })
+    expect(nova.separation).toEqual({ id: 'sep_g', createdAt: 5 })
+    expect(saved()[0].channels.map((c) => c.id).sort()).toEqual(stored.map((s) => s.id).sort())
+    first.unmount()
+
+    const again = await openApp()
+    expect(again.result.current.playlist[0].channels.map((c) => c.name).sort()).toEqual(['Bateria', 'Vocais'])
+    expect(mem.db.has(stemKey(stored[0].id))).toBe(true)
+  })
+
+  // Revisão do item 4 (I1): com duas abas, o repertório lido do disco pode estar sem a música (a outra
+  // aba gravou o repertório inteiro dela por cima). A anotação sai da lista assim que a música entra no
+  // registro provisório, e a limpeza de outra sessão nunca mais olha pra essas faixas.
+  it('I1: a anotação das faixas sai da lista quando a música entra, e a limpeza de outra sessão não apaga elas', async () => {
+    const first = await openApp()
+    const stored: { id: string; name: string }[] = []
+    for (const n of ['Vocais.wav', 'Bateria.wav']) {
+      let id = ''
+      await act(async () => { id = await first.result.current.putStagedStem(new File([n], n, { type: 'audio/wav' })) })
+      stored.push({ id, name: n })
+    }
+    const REG = 'mt_files_u1:staged'
+    const reg = () => (mem.db.get(REG) ?? []) as { id: string; session: string; at: number }[]
+    expect(reg().map((e) => e.id)).toEqual(stored.map((s) => s.id))
+    let ok: unknown = null
+    await act(async () => { ok = await first.result.current.loadFiles(NO_FILES, 'Separada', undefined, undefined, null, undefined, { separation: { id: 'sep_i1', createdAt: 1 }, storedStems: stored }) })
+    expect(ok).toBe(true)
+    expect(reg().map((e) => e.id)).toEqual([])
+    first.unmount()
+    // A outra aba gravou o repertório sem a música; o que sobrasse anotado viraria de outra sessão, 2 h atrás.
+    mem.db.set(META, [])
+    mem.db.set(REG, reg().map((e) => ({ ...e, session: 'outra-aba', at: Date.now() - 2 * 60 * 60 * 1000 })))
+    await openApp()
+    for (const s of stored) expect(mem.db.has(stemKey(s.id))).toBe(true)
+  })
+
+  it('storedStems que não decodificam: a música não entra e as faixas gravadas saem do aparelho', async () => {
+    const { result } = await openApp()
+    let id = ''
+    await act(async () => { id = await result.current.putStagedStem(new File(['Ruim'], 'Ruim.wav', { type: 'audio/wav' })) })
+    mem.failDecode = /^Ruim/
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    let ok: unknown = null
+    await act(async () => { ok = await result.current.loadFiles(NO_FILES, 'Ruim', undefined, undefined, null, undefined, { storedStems: [{ id, name: 'Ruim.wav' }] }) })
+    errors.mockRestore()
+    expect(ok).toBe(false)
+    expect(result.current.playlist).toHaveLength(0)
+    expect(mem.db.has(stemKey(id))).toBe(false)
+  })
+
+  // Revisão do item 4 (M1): uma exceção antes de a música entrar no repertório da memória desfaz como o
+  // "nada decodificou": o registro provisório sai, os arquivos (inclusive os que desceram) saem e a exceção sobe.
+  it('M1: disco cheio no registro provisório desfaz tudo e a exceção sobe', async () => {
+    seed(sepSong)
+    const { result } = await openApp()
+    let id = ''
+    await act(async () => { id = await result.current.putStagedStem(new File(['Vocais'], 'Vocais.wav', { type: 'audio/wav' })) })
+    mem.failSet = /^mt_meta_playlist/
+    let err: unknown = null
+    await act(async () => {
+      err = await result.current.loadFiles(NO_FILES, 'Separada', undefined, undefined, null, undefined, { storedStems: [{ id, name: 'Vocais.wav' }] }).catch((e: unknown) => e)
+    })
+    mem.failSet = null
+    expect((err as DOMException).name).toBe('QuotaExceededError')
+    expect(mem.db.has(stemKey(id))).toBe(false)
+    expect(saved().map((s) => s.id)).toEqual(['sp'])
+    expect(result.current.playlist.map((s) => s.id)).toEqual(['sp'])
+    expect(result.current.isLoading).toBe(false)
+  })
+
+  it('M1: exceção depois do registro provisório (no meio do carregamento) tira o registro e os arquivos', async () => {
+    const { result } = await openApp()
+    let id = ''
+    await act(async () => { id = await result.current.putStagedStem(new File(['Vocais'], 'Vocais.wav', { type: 'audio/wav' })) })
+    mem.failDetect = true
+    const files = [new File(['GTR'], 'GTR.wav', { type: 'audio/wav' })]
+    let err1: unknown = null
+    let err2: unknown = null
+    await act(async () => {
+      err1 = await result.current.loadFiles(NO_FILES, 'Separada', undefined, undefined, undefined, undefined, { storedStems: [{ id, name: 'Vocais.wav' }] }).catch((e: unknown) => e)
+      err2 = await result.current.loadFiles(files as unknown as FileList, 'Comum').catch((e: unknown) => e)
+    })
+    expect((err1 as Error).message).toContain('detectKey')
+    expect((err2 as Error).message).toContain('detectKey')
+    // Nada ficou: nem o registro provisório, nem os arquivos (o que desceu e o que o carregamento gravou).
+    expect(saved() ?? []).toEqual([])
+    expect([...mem.db.keys()].filter((k) => k.includes(':ch:'))).toEqual([])
+    expect(result.current.playlist).toHaveLength(0)
+  })
+
+  // Revisão do item 4 (M4): o "uma por vez" do iPad pelo caminho das faixas do aparelho (storedStems).
+  it('M4: no toque, as faixas do aparelho decodificam uma por vez; no computador, juntas (até 4)', async () => {
+    const run = async (coarse: boolean) => {
+      vi.stubGlobal('matchMedia', (q: string) => ({ matches: coarse && q.includes('coarse'), media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }))
+      const hook = await openApp()
+      const stored: { id: string; name: string }[] = []
+      for (const n of ['Vocais.wav', 'Bateria.wav', 'Baixo.wav']) {
+        let id = ''
+        await act(async () => { id = await hook.result.current.putStagedStem(new File([n], n, { type: 'audio/wav' })) })
+        stored.push({ id, name: n })
+      }
+      mem.decodeDelay = 5
+      mem.maxDecodeInFlight = 0
+      let ok: unknown = null
+      await act(async () => { ok = await hook.result.current.loadFiles(NO_FILES, 'Separada', undefined, undefined, null, undefined, { storedStems: stored }) })
+      mem.decodeDelay = 0
+      expect(ok).toBe(true)
+      hook.unmount()
+      return mem.maxDecodeInFlight
+    }
+    expect(await run(true)).toBe(1)
+    expect(await run(false)).toBe(3)
+  })
+
+  // Re-revisão do item 4 (N1): a música entra com menos canais do que desceram (uma faixa não decodificou).
+  // A faixa que falhou não está no repertório nem na lista das soltas: sem apagar aqui, ficava no disco pra sempre.
+  it('N1: a faixa que não decodifica numa música que entra sai do disco; as outras ficam', async () => {
+    const { result } = await openApp()
+    const stored: { id: string; name: string }[] = []
+    for (const n of ['Vocais.wav', 'Ruim.wav']) {
+      let id = ''
+      await act(async () => { id = await result.current.putStagedStem(new File([n], n, { type: 'audio/wav' })) })
+      stored.push({ id, name: n })
+    }
+    mem.failDecode = /^Ruim/
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    let ok: unknown = null
+    await act(async () => { ok = await result.current.loadFiles(NO_FILES, 'Separada', undefined, undefined, null, undefined, { separation: { id: 'sep_n1', createdAt: 1 }, storedStems: stored }) })
+    errors.mockRestore()
+    expect(ok).toBe(true)
+    expect(result.current.playlist[0].channels.map((c) => c.name)).toEqual(['Vocais'])
+    expect(mem.db.has(stemKey(stored[0].id))).toBe(true)
+    expect(mem.db.has(stemKey(stored[1].id))).toBe(false)
+  })
+
+  it('N1: o mesmo com arquivos do computador: só fica no disco o arquivo dos canais que entraram', async () => {
+    const { result } = await openApp()
+    mem.failDecode = /^Ruim/
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const files = ['GTR.wav', 'Ruim.wav'].map((n) => new File([n], n, { type: 'audio/wav' }))
+    await act(async () => { await result.current.loadFiles(files, 'Comum') })
+    errors.mockRestore()
+    const song = result.current.playlist[0]
+    expect(song.channels.map((c) => c.name)).toEqual(['GTR'])
+    expect([...mem.db.keys()].filter((k) => k.includes(':ch:')).sort()).toEqual(song.channels.map((c) => stemKey(c.id)).sort())
+  })
+
+  it('discardStagedStems tira as faixas gravadas que não vão entrar', async () => {
+    const { result } = await openApp()
+    let id = ''
+    await act(async () => { id = await result.current.putStagedStem(new File(['x'], 'x.wav', { type: 'audio/wav' })) })
+    await act(async () => { await result.current.discardStagedStems([id]) })
+    expect(mem.db.has(stemKey(id))).toBe(false)
+  })
+
+  it('a restauração tira as faixas que uma sessão que caiu deixou no aparelho, e não as do repertório', async () => {
+    seed(sepSong)
+    const old = Date.now() - 2 * 60 * 60 * 1000
+    mem.db.set(stemKey('orfa'), new File(['o'], 'o.wav'))
+    mem.db.set('mt_files_u1:staged', [{ id: 'orfa', session: 'velha', at: old }, { id: 'dr', session: 'velha', at: old }])
+    await openApp()
+    expect(mem.db.has(stemKey('orfa'))).toBe(false)
+    expect(mem.db.has(stemKey('dr'))).toBe(true)
   })
 
   it('loadFiles sem separation continua como antes', async () => {
