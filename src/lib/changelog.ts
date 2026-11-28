@@ -11,6 +11,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '1.4.26',
+    date: '2026-11-28',
+    title: 'A separação abre direto no palco',
+    items: [
+      'A música separada abre direto no palco, com baixar, salvar na nuvem, voz guia, BPM e SYNC no painel Separação.',
+      'A tela inicial, a Biblioteca, os Planos e as Minhas separações ficam com a cara do palco.',
+      'A Biblioteca agora avisa o que aconteceu: falta de espaço, internet que caiu no meio do download ou música que não ficou guardada no aparelho.',
+      'No iPad, abrir uma separação no palco usa bem menos memória.',
+      'Com uma janela aberta no palco antigo, o teclado não mexe mais na música por baixo dela.',
+    ],
+  },
+  {
     version: '1.4.25',
     date: '2026-11-27',
     title: 'O app inteiro com a cara do palco',
