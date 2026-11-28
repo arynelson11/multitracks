@@ -8,7 +8,7 @@ nova: usa o Vite, o React e o Tailwind do repo e o Google Chrome da máquina.
 
 ```bash
 source ~/.nvm/nvm.sh && nvm use 24
-node scripts/verify-layout/run.mjs                                    # rodada inteira (411 combinações, abaixo)
+node scripts/verify-layout/run.mjs                                    # rodada inteira (456 combinações, abaixo)
 node scripts/verify-layout/run.mjs --only 1280x800 --estado quebrado  # prova: tem de sair com 1
 node scripts/verify-layout/run.mjs --only 390x844 --estado quebrado   # prova da moldura do celular: tem de sair com 1
 node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
@@ -21,15 +21,15 @@ node scripts/verify-layout/run.mjs --estado tom,compasso --only 1024x768
 | `--jobs N` | quantos Chrome ao mesmo tempo (padrão 3) |
 | `--no-build` | usa a página já montada em `.build/` |
 
-Sem opção, a rodada mede 411 combinações:
+Sem opção, a rodada mede 456 combinações:
 
 | Grupo | Estados | Tamanhos | Combinações |
 |---|---|---|---|
 | Palco e Configurações da T19 (`normal` a `compasso` e `config`) | 11 | os 8 | 88 |
 | Gaveta SEPARAÇÃO do palco (faixa D: `separacao`, `separacao-voz`, `separacao-bpm`, `separacao-publicar`) | 4 | os 8 | 32 |
 | Tela inicial (`inicio` e `inicio-anuncio`) | 2 | os 8, 390x844 e 844x390 | 20 |
-| Telas da faixa C (sem o `download-celular`) | 18 | os 8 | 144 |
-| Telas da faixa C que abrem no celular (sem os três do Modo Ao Vivo do host, que só existe no computador) | 15 | 390x844 | 15 |
+| Telas da faixa C (sem o `download-celular`; com os 5 da manutenção) | 23 | os 8 | 184 |
+| Telas da faixa C que abrem no celular (sem os três do Modo Ao Vivo do host, que só existe no computador) | 20 | 390x844 | 20 |
 | `download-celular` (só existe no celular) | 1 | 390x844 | 1 |
 | Páginas do Separador (faixa D) | 3 | 5 (`PAGINAS_SEPARADOR_SIZES`) | 15 |
 | Janelas do Separador de reserva | 3 | 390x844 e 1024x740 | 6 |
@@ -38,7 +38,9 @@ Sem opção, a rodada mede 411 combinações:
 
 Histórico: 307 até a faixa C; 360 com a faixa D; 389 com as partes 3 a 5 da Parte 3; 411
 com a revisão macro delas (a lixeira, a lista carregando e vazia da Biblioteca, o "Trocar de
-plano?" com o pé cheio e a tela inicial em 844x390). A prova da moldura
+plano?" com o pé cheio e a tela inicial em 844x390); 429 com a manutenção de 2026-11-27 (`letra-fora`
+e `padsnuvem-falha`); 456 com a onda de correção dela (`padsnuvem-salvando`, `padsnuvem-apagando` e
+`padsnuvem-apagar-falha`). A prova da moldura
 (`--only 390x844 --estado quebrado`) tem de sair com 1: mostra que a página no
 iframe do celular também acusa falha.
 
@@ -118,8 +120,13 @@ parar, R-25); ali a casca rola de lado (Ruling I2-estreito) e a regra vira
 | `metronomo` | Metrônomo (Parte 3, faixa C) numa página própria, com uma música que já tem click |
 | `padsnuvem` | Pads da nuvem (faixa C) como admin, 3 conjuntos com nome e descrição longos, um em uso |
 | `padsnuvem-editar` | o mesmo, renomeando o primeiro conjunto |
+| `padsnuvem-falha` | o renomear recusado pelo servidor: a linha aberta com a frase da falha (manutenção 2026-11-27) |
+| `padsnuvem-salvando` | o renomear enviando: o "Salvando..." com o giro, os botões desligados e os campos só de leitura |
+| `padsnuvem-apagando` | o apagar enviando: o "Apagando..." com o giro |
+| `padsnuvem-apagar-falha` | o apagar recusado pelo servidor: a confirmação aberta com a frase da falha |
 | `letra` | Letra e cifra (faixa C), aba Letra com a versão sincronizada, artista longo |
 | `cifra` | o mesmo, na aba Cifra (linhas longas rolando de lado dentro da área) |
+| `letra-fora` | o mesmo, com a música fora do repertório: o aviso em âmbar e o Salvar desligado (manutenção 2026-11-27) |
 | `teleprompter` | Teleprompter (faixa C) no "Refrão Final Estendido" com 4 linhas longas de letra |
 | `teleprompter-vazio` | Teleprompter sem música e sem seções |
 | `novidades` | Novidades (faixa C) com a entrada mais nova do changelog de verdade |

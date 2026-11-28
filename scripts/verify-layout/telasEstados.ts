@@ -7,6 +7,8 @@ import { LIBRARY_DELETE_NAME } from './pageFixtures'
 export const TELA_ESTADOS = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'download-celular', 'aovivo', 'aovivo-cheio', 'aovivo-erro', 'adminlogin',
   // Manutenção (2026-11-27): o aviso da letra fora do repertório e a falha de renomear os pads.
   'letra-fora', 'padsnuvem-falha',
+  // A onda de correção da manutenção: o envio em curso dos pads e a falha do apagar.
+  'padsnuvem-salvando', 'padsnuvem-apagando', 'padsnuvem-apagar-falha',
   // Separador (Parte 3, faixa D): vistas soltas, em pages.tsx.
   'separador-inicio', 'separador-opcoes', 'separador-player',
   // As janelas do Separador de reserva, uma por vez por cima do player (revisão sep-2 I5).
@@ -48,6 +50,9 @@ export const TELA_EXPECT: Record<TelaEstado, { sel: string; text?: string; count
   adminlogin: { sel: 'form input[type="password"]' },
   'letra-fora': { sel: '[role="dialog"] [role="alert"]' },
   'padsnuvem-falha': { sel: '[role="dialog"] li [role="alert"]' },
+  'padsnuvem-salvando': { sel: '[role="dialog"] li button[aria-busy="true"]', text: 'Salvando...' },
+  'padsnuvem-apagando': { sel: '[role="dialog"] li button[aria-busy="true"]', text: 'Apagando...' },
+  'padsnuvem-apagar-falha': { sel: '[role="dialog"] li [role="alert"]', text: 'Não deu pra apagar agora. Confira a internet e tente de novo.' },
   'separador-inicio': { sel: '[data-separator-home] [data-separation-id="v6"]' },
   'separador-opcoes': { sel: '[data-separator-options] section button', text: 'Vocais, Instrumental2 faixas' },
   'separador-player': { sel: '[data-separator-player] [data-track-strip]:nth-of-type(8) button[data-touch-exception="ms"]', text: 'M' },
@@ -73,6 +78,17 @@ export function tapTela(selector: string): void {
   el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
 }
 
+/** Abre a linha do primeiro conjunto (Renomear ou Apagar), toca no botão de enviar e espera o que tem de aparecer. */
+async function sendPad(open: 'Renomear' | 'Apagar', send: 'Salvar' | 'Apagar', wait: string): Promise<void> {
+  for (let i = 0; i < 50 && !document.querySelector(`button[aria-label^="${open}"]`); i++) await new Promise((r) => setTimeout(r, 50))
+  tapTela(`button[aria-label^="${open}"]`)
+  await new Promise((r) => setTimeout(r, 50))
+  const button = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] li button')].find((b) => b.textContent?.trim() === send)
+  if (!button) throw new Error(`não achei o ${send} da linha`)
+  button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+  for (let i = 0; i < 50 && !document.querySelector(wait); i++) await new Promise((r) => setTimeout(r, 50))
+}
+
 /** O que abrir depois de montar (abas, edição, ajuda). */
 export const TELA_PREPARE: Partial<Record<TelaEstado, () => void | Promise<void>>> = {
   // A lista vem do fetch: espera o primeiro Renomear aparecer e toca nele.
@@ -80,6 +96,10 @@ export const TELA_PREPARE: Partial<Record<TelaEstado, () => void | Promise<void>
     for (let i = 0; i < 50 && !document.querySelector('button[aria-label^="Renomear"]'); i++) await new Promise((r) => setTimeout(r, 50))
     tapTela('button[aria-label^="Renomear"]')
   },
+  // O envio em curso (o PATCH e o DELETE ficam presos, telas.tsx) e o apagar recusado (500).
+  'padsnuvem-salvando': () => sendPad('Renomear', 'Salvar', '[role="dialog"] li button[aria-busy="true"]'),
+  'padsnuvem-apagando': () => sendPad('Apagar', 'Apagar', '[role="dialog"] li button[aria-busy="true"]'),
+  'padsnuvem-apagar-falha': () => sendPad('Apagar', 'Apagar', '[role="dialog"] li [role="alert"]'),
   // Renomear e Salvar com o servidor recusando (telas.tsx responde 500 ao PATCH neste estado).
   'padsnuvem-falha': async () => {
     for (let i = 0; i < 50 && !document.querySelector('button[aria-label^="Renomear"]'); i++) await new Promise((r) => setTimeout(r, 50))

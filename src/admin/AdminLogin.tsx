@@ -27,7 +27,8 @@ export function AdminLogin() {
       if (error) setError(isNetworkError(error) ? NETWORK_TEXT : 'E-mail ou senha inválidos.');
       // Sucesso: onAuthStateChange do useAuth atualiza o guard automaticamente.
     } catch (e) {
-      console.error('[admin] login falhou', e);
+      // Só o nome e a mensagem: o objeto do erro pode carregar o pedido, com a senha (revisão M8).
+      console.error('[admin] login falhou', e instanceof Error ? `${e.name}: ${e.message}` : 'erro desconhecido');
       setError(NETWORK_TEXT);
     } finally {
       setLoading(false);

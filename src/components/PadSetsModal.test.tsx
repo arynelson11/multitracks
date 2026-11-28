@@ -432,6 +432,59 @@ describe('Pads da nuvem: o foco no envio', () => {
   })
 })
 
+// Revisão das telas (M8): a resposta chegando com a janela fechada e o Esc no meio do envio.
+describe('Pads da nuvem: envio com a janela fechada e Esc', () => {
+  function stubEnvio(envio: () => Promise<Resposta>) {
+    fetchMock = vi.fn((_url: string, init?: RequestInit) => (init?.method ? envio() : ok(SETS)()))
+    vi.stubGlobal('fetch', fetchMock)
+  }
+  const preso = () => {
+    let soltar!: (r: Resposta) => void
+    const p = new Promise<Resposta>((r) => { soltar = r })
+    return { p, soltar: (r: Resposta) => soltar(r) }
+  }
+  const props = { onClose: vi.fn(), onSelect: vi.fn(), selectedPadSet: { id: 'b', name: 'Ambiente', base_path: 'pads/b' }, isAdmin: true }
+
+  it('a janela fecha no meio do renomear; a resposta chega e, reaberta, os botões estão de volta', async () => {
+    const envio = preso()
+    stubEnvio(() => envio.p)
+    const view = render(<PadSetsModal isOpen {...props} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Renomear Pads Domingo' }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Salvar' })) })
+    expect(screen.getByRole('button', { name: 'Salvando...' })).toBeTruthy()
+    view.rerender(<PadSetsModal isOpen={false} {...props} />)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await act(async () => { envio.soltar({ ok: true, json: async () => ({}) }) })
+    // Fechada, nada foca nem quebra.
+    expect(document.activeElement).toBe(document.body)
+    view.rerender(<PadSetsModal isOpen {...props} />)
+    const renomear = await screen.findByRole('button', { name: 'Renomear Ambiente' }) as HTMLButtonElement
+    expect(renomear.disabled).toBe(false)
+    expect(screen.queryByRole('button', { name: 'Salvando...' })).toBeNull()
+  })
+
+  it('o Esc no meio do envio não cancela a linha nem fecha a janela', async () => {
+    const envio = preso()
+    stubEnvio(() => envio.p)
+    const onClose = vi.fn()
+    render(<PadSetsModal isOpen {...props} onClose={onClose} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Renomear Pads Domingo' }))
+    const nome = screen.getByLabelText('Nome do conjunto')
+    nome.focus()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Salvar' })) })
+    fireEvent.keyDown(nome, { key: 'Escape', code: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Nome do conjunto')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Salvando...' })).toBeTruthy()
+    await act(async () => { envio.soltar({ ok: false, status: 500, json: async () => ({}) }) })
+    expect(screen.getByRole('alert').textContent).toContain('Não deu pra salvar o nome agora.')
+    // Terminado o envio, o Esc volta a cancelar a edição.
+    fireEvent.keyDown(screen.getByLabelText('Nome do conjunto'), { key: 'Escape', code: 'Escape' })
+    expect(screen.queryByLabelText('Nome do conjunto')).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+})
+
 describe('Pads da nuvem: linguagem do palco', () => {
   it('só classes da linguagem nova, com o admin aberto', async () => {
     abrir(true)

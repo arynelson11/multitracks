@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Verificador de texto cortado e de alvos de toque do palco novo (T20), no Chrome headless.
 // Uso: node scripts/verify-layout/run.mjs [--only 1280x800[,1440x900]] [--estado normal[,tom]] [--jobs 3] [--no-build]
-//   sem --estado: 429 combinações. Nos 8 tamanhos, 37 estados (296): os 11 do palco e das Configurações
-//   da T19, os 4 da gaveta SEPARAÇÃO, os 2 da tela inicial e 20 dos 21 da faixa C (com os 2 da
-//   manutenção de 2026-11-27). Em 390x844, 20 (a tela inicial, os 17 da faixa C que abrem no celular e
+//   sem --estado: 456 combinações. Nos 8 tamanhos, 40 estados (320): os 11 do palco e das Configurações
+//   da T19, os 4 da gaveta SEPARAÇÃO, os 2 da tela inicial e 23 dos 24 da faixa C (com os 5 da
+//   manutenção de 2026-11-27). Em 390x844, 23 (a tela inicial, os 20 da faixa C que abrem no celular e
 //   o download-celular, só de celular); em
 //   844x390, a tela inicial (2). O Separador: 3 páginas em 5 tamanhos e 3 janelas em 2 (21). A
 //   Biblioteca e os Planos: 8 estados em 5 tamanhos (40, JANELAS_INICIO). A faixa B (login e
@@ -35,7 +35,7 @@ const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'reper
   // Gaveta SEPARAÇÃO do palco (Parte 3, faixa D), nos 8 tamanhos do palco.
   'separacao', 'separacao-voz', 'separacao-bpm', 'separacao-publicar',
   // Demais telas da Parte 3 (faixa C), a mesma lista de telasEstados.ts.
-  'metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'download-celular', 'aovivo', 'aovivo-cheio', 'aovivo-erro', 'adminlogin', 'letra-fora', 'padsnuvem-falha',
+  'metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'download-celular', 'aovivo', 'aovivo-cheio', 'aovivo-erro', 'adminlogin', 'letra-fora', 'padsnuvem-falha', 'padsnuvem-salvando', 'padsnuvem-apagando', 'padsnuvem-apagar-falha',
   // Separador (Parte 3, faixa D), a mesma lista de telasEstados.ts.
   'separador-inicio', 'separador-opcoes', 'separador-player', 'separador-bpm', 'separador-voz', 'separador-publicar',
   // Biblioteca na Nuvem e Planos (Parte 3, partes 3 a 5), a mesma lista de telasEstados.ts.
@@ -44,7 +44,7 @@ const ESTADOS = ['normal', 'contando', 'pads', 'editar', 'livre', 'selo', 'reper
  * Telas da faixa C que abrem no celular: sem --only, medem também em 390x844. O Modo Ao Vivo do host
  * só existe no computador, então fica de fora.
  */
-const TELAS_C_CELULAR = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'adminlogin', 'letra-fora', 'padsnuvem-falha']
+const TELAS_C_CELULAR = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'adminlogin', 'letra-fora', 'padsnuvem-falha', 'padsnuvem-salvando', 'padsnuvem-apagando', 'padsnuvem-apagar-falha']
 /**
  * Estados que abrem no celular: a tela inicial (`inicio`) e ela com o cartão do anúncio da casa
  * (`inicio-anuncio`). Sem --only, medem também em 390x844, pela mesma moldura das faixas B e C, e em

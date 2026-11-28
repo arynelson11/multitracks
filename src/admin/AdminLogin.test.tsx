@@ -111,6 +111,50 @@ describe('Login do admin: erro de rede', () => {
   })
 })
 
+// Revisão das telas (M8): as formas reais do auth-js 2.97.0 no { error } e o console sem a senha.
+describe('Login do admin: as respostas reais do Supabase', () => {
+  const REDE = 'Não deu pra falar com o servidor agora. Confira a internet e tente de novo.'
+
+  it('senha errada chega como AuthApiError 400: a frase da senha', async () => {
+    h.signIn.mockResolvedValue({ error: { name: 'AuthApiError', status: 400, code: 'invalid_credentials', message: 'Invalid login credentials' } })
+    preencher()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar' })) })
+    expect(screen.getByRole('alert').textContent).toBe('E-mail ou senha inválidos.')
+  })
+
+  it('servidor fora (503) chega como AuthRetryableFetchError: a frase da internet, pelo nome', async () => {
+    h.signIn.mockResolvedValue({ error: { name: 'AuthRetryableFetchError', status: 503, message: 'Service Unavailable' } })
+    preencher()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar' })) })
+    expect(screen.getByRole('alert').textContent).toBe(REDE)
+  })
+
+  it('o console nunca leva a senha, nem quando o erro carrega o pedido', async () => {
+    const pedido = new Error('falhou no meio') as Error & { request?: unknown }
+    pedido.request = { body: { email: 'dono@playbackstudio.com.br', password: 'segredo123' } }
+    h.signIn.mockRejectedValue(pedido)
+    const calls: unknown[][] = []
+    const spies = (['error', 'warn', 'log', 'info', 'debug'] as const).map((m) => vi.spyOn(console, m).mockImplementation((...a: unknown[]) => { calls.push(a) }))
+    preencher()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Entrar' })) })
+    for (const sp of spies) sp.mockRestore()
+    expect(calls.length).toBeGreaterThan(0)
+    // Tudo o que foi pro console, a fundo (propriedades próprias de cada objeto, inclusive as do Error).
+    const textos: string[] = []
+    const visto = new Set<unknown>()
+    const junta = (x: unknown): void => {
+      if (typeof x === 'string') { textos.push(x); return }
+      if (!x || typeof x !== 'object' || visto.has(x)) return
+      visto.add(x)
+      for (const k of Object.getOwnPropertyNames(x)) junta((x as Record<string, unknown>)[k])
+    }
+    calls.forEach((a) => a.forEach(junta))
+    const dito = textos.join('\n')
+    expect(dito).not.toContain('segredo123')
+    expect(screen.getByRole('alert').textContent).toBe(REDE)
+  })
+})
+
 describe('Login do admin: linguagem do palco', () => {
   it('só classes da linguagem nova, com o erro na tela', async () => {
     h.signIn.mockResolvedValue({ error: { message: 'x' } })
