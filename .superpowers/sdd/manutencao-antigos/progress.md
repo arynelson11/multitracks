@@ -25,7 +25,7 @@ Base das medições de áudio: verify-pitch e section-jump com `--rev 53f3eca` (
 - verify-pitch ANTES (53f3eca, carga 46 a 52): 521 critérios, 6 falhas: 3 do SPLIT sem a referência da v1.4.15 (feita depois com `SPLIT --rev b53a95c --tag v1415`; o SPLIT de 53f3eca com ela: 38 critérios, 0 falhas), SONGS e SONGS_ANTIGO no relógio de áudio e SONGS_ANTIGO "som em todas as 30 faixas". Sozinhos (carga 10 a 19): SONGS, SONGS_ANTIGO e STALL, 101 critérios, 0 falhas.
 - verify-pitch DEPOIS (HEAD, carga 9 subindo até 83): 521 critérios, 2 falhas: SONGS_ANTIGO no relógio de áudio (0,852) e STALL "folga agendada exata" (fora por 1 bloco, 2,667 ms). Sozinhos (carga 19 a 20): SONGS_ANTIGO e STALL passam; SONGS caiu só no relógio (0,929); SONGS sozinho de novo (carga 8): 44 critérios, 0 falhas.
 - section-jump: antes 13/13 OK, depois 13/13 OK.
-- vitest (carga 151 a 58): 204 arquivos, 4547 testes, 8 falhas em 6 arquivos não tocados (5 de prazo ou tempo, 3 asserções em outputs, voices e SubscribersTab); os 6 sozinhos (carga 25 a 20): 161/161. Fora da carga: 4547 testes, 0 falhas.
+- vitest (carga 151 a 58): 204 arquivos, 4547 testes, 8 falhas em 6 arquivos não tocados (5 de prazo ou tempo, 3 asserções em outputs, voices e SubscribersTab); os 6 sozinhos (carga 25 a 20): 161/161. Somando, os 4547 passam (não rodei a suíte inteira de novo).
 - tsc -b: 0. npm run typecheck: os mesmos 7 erros antigos (MetronomeModal.auto.test 1, useAudioEngine.grid.test 1, useAudioEngine.transition.test 5).
 - eslint nos 22 arquivos tocados: nenhum erro novo (App 6, SeparatorStudio 7, useAudioEngine 1, todos de antes; PadSetsModal de 1 pra 0).
 - DESKTOP=1 vite build: ok.
