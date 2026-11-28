@@ -68,6 +68,9 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
 
     if (!isOpen) return null;
 
+    // Uma linha aberta (renomear ou apagar) ou um envio em curso: o lápis e a lixeira dos outros desligam.
+    const rowOpen = sending !== null || editingId !== null || deletingId !== null;
+
     const handleSelect = (padSet: CatalogEntry) => {
         // Editando, não escolhe; enviando (renomear ou apagar), também não (revisão das telas, M5):
         // escolher fecha a janela, e a frase da falha do envio ficaria pra próxima abertura.
@@ -76,8 +79,9 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
         onClose();
     };
 
-    // Uma linha aberta por vez (revisão das telas, M3): abrir a edição fecha o apagar e vice-versa,
-    // e a frase de falha é sempre da linha aberta.
+    // Uma linha aberta por vez (revisão das telas, M3): com uma aberta, o lápis e a lixeira dos outros
+    // ficam desligados (re-revisão, N2), então nada some sem Cancelar ou Salvar. Fechar a outra aqui é
+    // só defesa, e a frase de falha é sempre da linha aberta.
     const startEdit = (padSet: CatalogEntry, e: React.MouseEvent) => {
         e.stopPropagation();
         setSendError(null);
@@ -257,8 +261,10 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
                                     </button>
                                     {isAdmin && (
                                         <>
-                                            <IconButton tone="ghost" aria-label={`Renomear ${padSet.name}`} title="Renomear" icon={<Pencil size={16} />} disabled={sending !== null} onClick={e => startEdit(padSet, e)} />
-                                            <IconButton tone="ghost" aria-label={`Apagar ${padSet.name}`} title="Apagar" icon={<Trash2 size={16} />} disabled={sending !== null} onClick={e => confirmDelete(padSet.id, e)} />
+                                            {/* Com uma linha aberta (renomear ou apagar) ou enviando, os outros conjuntos não abrem nada:
+                                                nada some sem Cancelar ou Salvar (re-revisão das telas, N2). */}
+                                            <IconButton tone="ghost" aria-label={`Renomear ${padSet.name}`} title="Renomear" icon={<Pencil size={16} />} disabled={rowOpen} onClick={e => startEdit(padSet, e)} />
+                                            <IconButton tone="ghost" aria-label={`Apagar ${padSet.name}`} title="Apagar" icon={<Trash2 size={16} />} disabled={rowOpen} onClick={e => confirmDelete(padSet.id, e)} />
                                         </>
                                     )}
                                 </li>
