@@ -209,11 +209,15 @@ describe('Separador entregando a separação pro palco', () => {
 
   it('Voltar no meio de baixar cancela', async () => {
     h.lib.separations = [savedSeparation()]
+    // A 1ª faixa desce e grava; a 2ª fica presa até o Voltar.
     let release!: () => void
-    route = (url: string) => new Promise((resolve) => { release = () => resolve(okAudio(url)) })
+    let n = 0
+    route = (url: string) => (++n === 1 ? Promise.resolve(okAudio(url)) : new Promise((resolve) => { release = () => resolve(okAudio(url)) }))
     const { onOpenOnStage } = mount()
     fireEvent.click(screen.getByRole('button', { name: 'Abrir' }))
-    await flush(0)
+    await flush(5)
+    expect(stemStore.put).toHaveBeenCalledTimes(1)
+    expect(disk.size).toBe(1)
     fireEvent.click(screen.getByRole('button', { name: 'Voltar' }))
     expect(document.querySelector('[data-separator-home]')).toBeTruthy()
     route = async (url: string) => okAudio(url)
@@ -221,6 +225,7 @@ describe('Separador entregando a separação pro palco', () => {
     await flush(5)
     expect(onOpenOnStage).not.toHaveBeenCalled()
     // O que desceu antes do Voltar não fica no aparelho.
+    expect(stemStore.discard).toHaveBeenCalledWith(['st1'])
     expect(disk.size).toBe(0)
   })
 

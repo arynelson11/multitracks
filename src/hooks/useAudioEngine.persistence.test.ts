@@ -50,6 +50,10 @@ const mem = vi.hoisted(() => ({
   // Gravação que estoura (disco cheio) nas chaves que casam, e o detectKey que quebra no meio do carregamento.
   failSet: null as RegExp | null,
   failDetect: false,
+  // Decodes juntos: o atraso de cada um e o máximo ao mesmo tempo (o "uma por vez" do toque).
+  decodeDelay: 0,
+  decodeInFlight: 0,
+  maxDecodeInFlight: 0,
   sources: [] as FakeSource[],
   pitchNodes: [] as FakePitchNode[],
   // Passa-baixa de cada bipe da contagem (um por tempo): a saída dele é a entrada da contagem.
@@ -162,6 +166,10 @@ class FakeAudioContext {
   createAnalyser() { return { ...audioNode(), fftSize: 2048, smoothingTimeConstant: 0.8, getFloatTimeDomainData() {} } }
   async decodeAudioData(ab: ArrayBuffer) {
     if (mem.failDecode?.test(new TextDecoder().decode(ab))) throw new Error('arquivo estragado (teste)')
+    mem.decodeInFlight++
+    mem.maxDecodeInFlight = Math.max(mem.maxDecodeInFlight, mem.decodeInFlight)
+    if (mem.decodeDelay) await new Promise((r) => setTimeout(r, mem.decodeDelay))
+    mem.decodeInFlight--
     return { duration: 300 }
   }
   async resume() {}
@@ -192,6 +200,9 @@ beforeEach(() => {
   mem.failDecode = null
   mem.failSet = null
   mem.failDetect = false
+  mem.decodeDelay = 0
+  mem.decodeInFlight = 0
+  mem.maxDecodeInFlight = 0
   mem.onStart = null
   mem.settings.autoPan = true
   mem.settings.outputs = undefined
@@ -929,6 +940,30 @@ describe('separação no palco', () => {
     expect(saved() ?? []).toEqual([])
     expect([...mem.db.keys()].filter((k) => k.includes(':ch:'))).toEqual([])
     expect(result.current.playlist).toHaveLength(0)
+  })
+
+  // Revisão do item 4 (M4): o "uma por vez" do iPad pelo caminho das faixas do aparelho (storedStems).
+  it('M4: no toque, as faixas do aparelho decodificam uma por vez; no computador, juntas (até 4)', async () => {
+    const run = async (coarse: boolean) => {
+      vi.stubGlobal('matchMedia', (q: string) => ({ matches: coarse && q.includes('coarse'), media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }))
+      const hook = await openApp()
+      const stored: { id: string; name: string }[] = []
+      for (const n of ['Vocais.wav', 'Bateria.wav', 'Baixo.wav']) {
+        let id = ''
+        await act(async () => { id = await hook.result.current.putStagedStem(new File([n], n, { type: 'audio/wav' })) })
+        stored.push({ id, name: n })
+      }
+      mem.decodeDelay = 5
+      mem.maxDecodeInFlight = 0
+      let ok: unknown = null
+      await act(async () => { ok = await hook.result.current.loadFiles(NO_FILES, 'Separada', undefined, undefined, null, undefined, { storedStems: stored }) })
+      mem.decodeDelay = 0
+      expect(ok).toBe(true)
+      hook.unmount()
+      return mem.maxDecodeInFlight
+    }
+    expect(await run(true)).toBe(1)
+    expect(await run(false)).toBe(3)
   })
 
   it('discardStagedStems tira as faixas gravadas que não vão entrar', async () => {

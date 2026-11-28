@@ -369,7 +369,7 @@ describe('separação abrindo no palco', () => {
   })
 
   it('sep-1 C1: a separação que o repertório restaurado já tem só pula, sem carregar de novo', () => {
-    expect(app).toMatch(/const arrived = \(\) => setSeparationArrival\(\{ sepId: o\.sep\.id, justSeparated: o\.justSeparated \}\)[\s\S]{0,120}if \(step === 'pular'\) \{ dropStoredStems\(stems\); arrived\(\); return \}/)
+    expect(app).toMatch(/const arrived = \(\) => setSeparationArrival\(\{ sepId: o\.sep\.id, justSeparated: o\.justSeparated \}\)[\s\S]{0,120}if \(step === 'pular'\) \{ dropStoredStems\(stems, 'ja-no-repertorio'\); arrived\(\); return \}/)
     // O pular vem antes do carregamento.
     expect(app.indexOf("if (step === 'pular')")).toBeLessThan(app.indexOf('loadFiles(dt.files'))
   })
@@ -382,16 +382,18 @@ describe('separação abrindo no palco', () => {
     expect(app).toMatch(/channelStates: separationChannelStates\(stemsToOpen\(o\.sep\)\), storedStems: stems,/)
     expect(app).not.toMatch(/for \(const f of o\.\w+\) dt\.items\.add/)
     // A que não entra sai do aparelho: outra separação chegou antes, já estava no repertório, ou o motor recusou.
-    expect(app).toMatch(/if \(pendingStemsRef\.current\) dropStoredStems\(pendingStemsRef\.current\)\s*pendingStemsRef\.current = o\.stems/)
+    expect(app).toMatch(/if \(pendingStemsRef\.current\) dropStoredStems\(pendingStemsRef\.current, 'substituida'\)\s*pendingStemsRef\.current = o\.stems/)
     expect(app).toMatch(/setPendingSeparation\(null\)\s*pendingStemsRef\.current = null/)
     // Revisão M1: em todo caso que a música não entrou, as faixas saem (o motor já desfaz o registro).
     expect(app).toMatch(/\.then\(\(ok\) => \{ entered = ok \}\)/)
-    expect(app).toMatch(/if \(entered\) \{ arrived\(\); return \}[\s\S]{0,300}\n\s*dropStoredStems\(stems\)\s*setSeparationLoadFailed\(true\)/)
+    // Quais saem: storedStemsToDrop (stageHandoff.test.ts); o App passa o que aconteceu.
+    expect(app).toMatch(/dropStoredStems\(stems, entered \? 'entrou' : 'nao-entrou'\)\s*if \(entered\) arrived\(\)\s*else setSeparationLoadFailed\(true\)/)
+    expect(app).toMatch(/const ids = storedStemsToDrop\(stems, outcome\)\s*if \(ids\.length === 0\) return\s*void discardStagedStems\(ids\)/)
     expect(app).not.toMatch(/refused/)
   })
 
   it('M3: tirar as faixas que falha fica no console, nunca vira erro solto', () => {
-    expect(app).toMatch(/const dropStoredStems = \(stems: readonly StoredStem\[\]\) => \{\s*void discardStagedStems\(stems\.map\(\(st\) => st\.id\)\)\.catch\(\(e\) => \{ console\.error\(/)
+    expect(app).toMatch(/void discardStagedStems\(ids\)\.catch\(\(e\) => \{ console\.error\(/)
   })
 
   it('com a VS tocando a separação espera a parada pra virar a atual', () => {
@@ -462,7 +464,7 @@ describe('separação abrindo no palco', () => {
 
   it('sep-1 M3: nada decodificou, a frase aparece no palco (nunca tocando) e a chegada não fica pendente', () => {
     expect(app).toMatch(/\.then\(\(ok\) => \{ entered = ok \}\)\)/)
-    expect(app).toMatch(/\.then\(\(\) => \{\s*if \(entered\) \{ arrived\(\); return \}[\s\S]{0,300}setSeparationLoadFailed\(true\)\s*\}\)/)
+    expect(app).toMatch(/\.then\(\(\) => \{[\s\S]{0,300}if \(entered\) arrived\(\)\s*else setSeparationLoadFailed\(true\)\s*\}\)/)
     expect(app).toMatch(/<Toast open=\{separationLoadFailed\}[\s\S]{0,200}playing=\{isPlaying \|\| isCountingIn\}[\s\S]{0,80}\{STAGE_LOAD_ERROR_TEXT\}/)
   })
 

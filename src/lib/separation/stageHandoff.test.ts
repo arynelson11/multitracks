@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SavedSeparation } from '../../hooks/useSeparationLibrary'
 import {
-  OPEN_ERROR_TEXT, OPEN_MISSING_TEXT, OPEN_QUOTA_TEXT, STAGE_LOAD_ERROR_TEXT, SeparationFetchError, fetchSeparationStems, openErrorText, type StemStore, findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen,
+  OPEN_ERROR_TEXT, OPEN_MISSING_TEXT, OPEN_QUOTA_TEXT, STAGE_LOAD_ERROR_TEXT, SeparationFetchError, fetchSeparationStems, openErrorText, type StemStore, findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen, storedStemsToDrop,
 } from './stageHandoff'
 
 const TRAVESSAO = String.fromCharCode(0x2014)
@@ -105,9 +105,13 @@ describe('stageHandoff', () => {
   it('abort no meio para de baixar e tira o que foi gravado; abort depois da última também', async () => {
     const store = fakeStore()
     const ctrl = new AbortController()
-    const fetchImpl = vi.fn(async () => { ctrl.abort(); return okResponse('a') }) as unknown as typeof fetch
+    // O Voltar chega enquanto a 2ª faixa desce: a 1ª já estava gravada no aparelho e sai.
+    let n = 0
+    const fetchImpl = vi.fn(async () => { if (++n === 2) ctrl.abort(); return okResponse('a') }) as unknown as typeof fetch
     await expect(fetchSeparationStems(stemsToOpen(sep()), { store, fetchImpl, signal: ctrl.signal })).rejects.toThrow()
-    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(store.put).toHaveBeenCalledTimes(1)
+    expect(store.discard).toHaveBeenCalledWith(['id1'])
     expect(store.disk.size).toBe(0)
     // O Voltar chegou enquanto a última faixa gravava: nada fica no aparelho.
     const late = new AbortController()
@@ -122,6 +126,17 @@ describe('stageHandoff', () => {
     const store = fakeStore()
     await expect(fetchSeparationStems([], { store, fetchImpl: vi.fn() as unknown as typeof fetch })).rejects.toThrow()
     expect(store.put).not.toHaveBeenCalled()
+  })
+
+  // Revisão do item 4 (M4): quais faixas gravadas saem do aparelho, dado o que aconteceu com a separação.
+  it('storedStemsToDrop: só a que entrou (ou ainda espera) fica', () => {
+    const stems = [{ id: 'a', name: 'Vocais.wav' }, { id: 'b', name: 'Bateria.wav' }]
+    expect(storedStemsToDrop(stems, 'esperando')).toEqual([])
+    expect(storedStemsToDrop(stems, 'entrou')).toEqual([])
+    expect(storedStemsToDrop(stems, 'ja-no-repertorio')).toEqual(['a', 'b'])
+    expect(storedStemsToDrop(stems, 'nao-entrou')).toEqual(['a', 'b'])
+    expect(storedStemsToDrop(stems, 'substituida')).toEqual(['a', 'b'])
+    expect(storedStemsToDrop([], 'nao-entrou')).toEqual([])
   })
 
   it('findSeparationSong acha a separação no repertório', () => {

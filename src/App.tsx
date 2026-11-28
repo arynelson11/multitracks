@@ -33,7 +33,7 @@ import { SeparationPanel } from './components/separation/SeparationPanel'
 import { CloudSaveForm } from './components/separation/CloudSaveForm'
 import { CLOUD_COPY, PAUSE_TO_USE, type SeparationTab } from './components/separation/toolsCopy'
 import { StageDialog } from './components/stage/StageDialog'
-import { STAGE_LOAD_ERROR_TEXT, findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen, type StageSeparationOpen, type StemStore, type StoredStem } from './lib/separation/stageHandoff'
+import { STAGE_LOAD_ERROR_TEXT, findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen, storedStemsToDrop, type StageSeparationOpen, type StemStore, type StoredStem, type StoredStemsOutcome } from './lib/separation/stageHandoff'
 import { nextSongAfter, removalOpensRefusedSong } from './lib/songRemoval'
 import { cycleEndMode, shownEndMode, type EndMode } from './lib/autoAdvance'
 import { trackAd } from './lib/productEvents'
@@ -746,8 +746,11 @@ export default function App() {
   const separationStemStore: StemStore = { put: putStagedStem, discard: discardStagedStems }
   // As ids que ainda não foram pegas pelo carregamento: as que não vão entrar saem do aparelho.
   const pendingStemsRef = useRef<StoredStem[] | null>(null)
-  const dropStoredStems = (stems: readonly StoredStem[]) => {
-    void discardStagedStems(stems.map((st) => st.id)).catch((e) => { console.error('[Separação] não deu pra tirar as faixas do aparelho', e) })
+  // Quais saem é a regra do storedStemsToDrop (stageHandoff.ts, com teste); aqui só se tira do aparelho.
+  const dropStoredStems = (stems: readonly StoredStem[], outcome: StoredStemsOutcome) => {
+    const ids = storedStemsToDrop(stems, outcome)
+    if (ids.length === 0) return
+    void discardStagedStems(ids).catch((e) => { console.error('[Separação] não deu pra tirar as faixas do aparelho', e) })
   }
   const [separationArrival, setSeparationArrival] = useState<{ sepId: string; justSeparated: boolean } | null>(null)
   const separationArrivalSeen = useRef<{ sepId: string; justSeparated: boolean } | null>(null)
@@ -775,7 +778,7 @@ export default function App() {
     if (!isReady) void initEngine()
     if (o.stems) {
       // Outra separação chegou antes de a anterior ser carregada: a anterior não entra mais.
-      if (pendingStemsRef.current) dropStoredStems(pendingStemsRef.current)
+      if (pendingStemsRef.current) dropStoredStems(pendingStemsRef.current, 'substituida')
       pendingStemsRef.current = o.stems
       setPendingSeparation(o)
     }
@@ -793,7 +796,7 @@ export default function App() {
     const stems = o.stems
     const arrived = () => setSeparationArrival({ sepId: o.sep.id, justSeparated: o.justSeparated })
     // Já no repertório: as faixas que desceram agora sobram e saem do aparelho.
-    if (step === 'pular') { dropStoredStems(stems); arrived(); return }
+    if (step === 'pular') { dropStoredStems(stems, 'ja-no-repertorio'); arrived(); return }
     const meta = separationStageMeta(o.sep)
     // Nenhum arquivo na mão: o loadFiles lê cada faixa do aparelho (storedStems), uma por vez.
     const dt = new DataTransfer()
@@ -804,11 +807,11 @@ export default function App() {
     }).then((ok) => { entered = ok }))
       .catch((e) => { console.error('[Separação] o palco não carregou as faixas', e) })
       .then(() => {
-        if (entered) { arrived(); return }
-        // A música não entrou (o motor recusou, nada decodificou ou o carregamento quebrou antes de ela
-        // entrar, quando o motor já desfaz o registro provisório, revisão M1): as faixas saem do aparelho.
-        dropStoredStems(stems)
-        setSeparationLoadFailed(true)
+        // Não entrou (o motor recusou, nada decodificou ou o carregamento quebrou antes de ela entrar,
+        // quando o motor já desfaz o registro provisório, revisão M1): as faixas saem do aparelho.
+        dropStoredStems(stems, entered ? 'entrou' : 'nao-entrou')
+        if (entered) arrived()
+        else setSeparationLoadFailed(true)
       })
     // Roda quando a separação chega, o motor fica pronto ou a restauração termina; o loadFiles, o
     // loadAsCurrent e o repertório são os da renderização de agora, e a separação sai do estado ao ser pega.

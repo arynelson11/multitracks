@@ -109,6 +109,19 @@ export async function fetchSeparationStems(
   }
 }
 
+/** O que aconteceu com a separação que desceu pro aparelho, pra decidir se as faixas ficam. */
+export type StoredStemsOutcome = 'esperando' | 'entrou' | 'ja-no-repertorio' | 'nao-entrou' | 'substituida'
+
+/**
+ * As ids das faixas gravadas que saem do aparelho (revisão do item 4, M4). Ficam só enquanto a
+ * separação espera o motor e quando a música entrou no repertório. Saem quando ela já estava no
+ * repertório (pular), quando não entrou (o motor recusou, nada decodificou ou o carregamento quebrou,
+ * e aí o motor já desfez o registro provisório) e quando outra separação chegou antes de ela carregar.
+ */
+export function storedStemsToDrop(stems: readonly StoredStem[], outcome: StoredStemsOutcome): string[] {
+  return outcome === 'esperando' || outcome === 'entrou' ? [] : stems.map((s) => s.id)
+}
+
 /** Posição da música que veio desta separação no repertório; -1 sem. */
 export function findSeparationSong(playlist: readonly { separation?: { id: string } }[], sepId: string): number {
   return playlist.findIndex((s) => s.separation?.id === sepId)
