@@ -20,6 +20,11 @@ interface LyricsEditorProps {
   onClose: () => void;
 }
 
+// A janela do editor e os botões que desligam (revisão das telas, I1), achados a partir do conteúdo.
+type SendButton = 'save' | 'search';
+const dialogOf = (el: HTMLElement | null) => el?.closest<HTMLElement>('[role="dialog"]') ?? null;
+const sendButtonOf = (el: HTMLElement | null, which: SendButton) => dialogOf(el)?.querySelector<HTMLButtonElement>(`[data-send="${which}"]`) ?? null;
+
 const MISSING_TEXT = 'Esta música saiu do repertório, então a letra e a cifra não podem ser salvas nela. O texto continua aqui pra você copiar.';
 
 export function LyricsEditor({ song: songProp, songInPlaylist = true, onSave, onClose }: LyricsEditorProps) {
@@ -50,30 +55,29 @@ export function LyricsEditor({ song: songProp, songInPlaylist = true, onSave, on
   // pro body, e aí o Tab sai pra trás da janela e as teclas chegam ao palco antigo. O foco vai pra
   // janela enquanto o botão está desligado e volta pra ele no fim, se ele religar.
   const contentRef = useRef<HTMLDivElement>(null);
-  const focusBack = useRef<'save' | 'search' | null>(null);
-  const dialogEl = () => contentRef.current?.closest<HTMLElement>('[role="dialog"]') ?? null;
-  const buttonEl = (which: 'save' | 'search') => dialogEl()?.querySelector<HTMLButtonElement>(`[data-send="${which}"]`) ?? null;
-  const holdFocus = (which: 'save' | 'search') => {
-    const button = buttonEl(which);
+  const focusBack = useRef<SendButton | null>(null);
+  const holdFocus = (which: SendButton) => {
+    const button = sendButtonOf(contentRef.current, which);
     if (!button || document.activeElement !== button) return;
     focusBack.current = which;
-    dialogEl()?.focus({ preventScroll: true });
+    dialogOf(contentRef.current)?.focus({ preventScroll: true });
   };
   useEffect(() => {
     const which = focusBack.current;
     if (saving || searching || !which) return;
     focusBack.current = null;
     // Quem levou o foco pra outro lugar no meio (o campo do texto) fica onde está.
-    const dialog = dialogEl();
+    const dialog = dialogOf(contentRef.current);
     if (document.activeElement !== document.body && document.activeElement !== dialog) return;
-    const button = buttonEl(which);
+    const button = sendButtonOf(contentRef.current, which);
     if (button && !button.disabled) button.focus({ preventScroll: true });
     else dialog?.focus({ preventScroll: true });
   }, [saving, searching]);
   // A música saiu do repertório com o foco no Salvar: ele desliga e o foco vai pra janela.
   useEffect(() => {
     if (!missing) return;
-    if (document.activeElement === buttonEl('save') || document.activeElement === document.body) dialogEl()?.focus({ preventScroll: true });
+    const active = document.activeElement;
+    if (active === sendButtonOf(contentRef.current, 'save') || active === document.body) dialogOf(contentRef.current)?.focus({ preventScroll: true });
   }, [missing]);
 
   const handleSearch = async () => {
