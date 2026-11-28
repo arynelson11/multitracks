@@ -29,6 +29,15 @@ export interface LyricsSaveDeps {
   updateSong: (cloudId: string, updates: { lyrics: string | null; lyrics_synced: string | null; chords: string | null }) => Promise<boolean>
 }
 
+/**
+ * O Salvar da letra fica desligado, e a guarda do clique barra, pela mesma regra (re-revisão das
+ * telas): salvando, com a música fora do repertório ou depois de o App dizer que ela saiu na hora de
+ * gravar ('missing').
+ */
+export function lyricsSaveBlocked(s: { songInPlaylist: boolean; missingOnSave: boolean; saving: boolean }): boolean {
+  return s.saving || !s.songInPlaylist || s.missingOnSave
+}
+
 export async function saveSongLyrics(songId: string, data: LyricsData, deps: LyricsSaveDeps): Promise<LyricsSaveResult> {
   const song = deps.playlist.find((s) => s.id === songId)
   if (!song) return 'missing'

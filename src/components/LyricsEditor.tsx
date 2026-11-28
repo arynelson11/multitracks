@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Loader2, Save, Sparkles } from 'lucide-react';
 import { searchLyrics } from '../lib/supabase';
-import { lyricsSongOf, type LyricsData, type LyricsSaveResult, type LyricsSong } from '../lib/lyricsSave';
+import { lyricsSaveBlocked, lyricsSongOf, type LyricsData, type LyricsSaveResult, type LyricsSong } from '../lib/lyricsSave';
 import { Button, Notice, TabPanel, Tabs, TextArea, TextField } from './ui';
 import { StageDialog } from './stage/StageDialog';
 import { dialogOf, useBusyFocus } from './stage/useBusyFocus';
@@ -41,6 +41,8 @@ export function LyricsEditor({ song: songProp, songInPlaylist = true, onSave, on
   // O App disse, na hora de gravar, que a música tinha saído do repertório.
   const [missingOnSave, setMissingOnSave] = useState(false);
   const missing = !songInPlaylist || missingOnSave;
+  // O desligado do Salvar e a guarda do clique, pela mesma regra (lyricsSaveBlocked, com teste).
+  const saveBlocked = lyricsSaveBlocked({ songInPlaylist, missingOnSave, saving });
   // O último texto salvo (o da música, até o primeiro Salvar que deu certo). Com alteração, o Esc e
   // o toque fora não fecham (só o X), pra não jogar fora a letra e a cifra digitadas.
   const [saved, setSaved] = useState({ lyrics: song.lyrics || '', lyricsSynced: song.lyricsSynced || null, chords: song.chords || '' });
@@ -81,7 +83,7 @@ export function LyricsEditor({ song: songProp, songInPlaylist = true, onSave, on
   };
 
   const handleSave = async () => {
-    if (!songInPlaylist) return;
+    if (saveBlocked) return;
     setSaving(true);
     setSaveMsg(null);
     busyFocus.hold();
@@ -115,7 +117,7 @@ export function LyricsEditor({ song: songProp, songInPlaylist = true, onSave, on
           <Button
             tone="primary" data-send="save"
             icon={saving ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : <Save size={16} />}
-            disabled={saving || missing}
+            disabled={saveBlocked}
             onClick={handleSave}
           >
             Salvar

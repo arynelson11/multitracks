@@ -200,21 +200,6 @@ describe('Letra e cifra: a música muda com o editor aberto', () => {
     expect((screen.getByRole('button', { name: 'Salvar' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
-  // Revisão das telas (M2): o botão desligado não deixa o clique chegar; a guarda do handleSave é a
-  // segunda barreira. Aqui o onClick do botão é chamado direto (o que um clique que chegasse faria).
-  it('a guarda do Salvar: fora do repertório, o onClick que chegue não grava', async () => {
-    const { onSave, onClose, view } = abrir()
-    fireEvent.change(area('Letra'), { target: { value: 'nova' } })
-    view.rerender(<LyricsEditor song={SONG} songInPlaylist={false} onSave={onSave} onClose={onClose} />)
-    const salvar = screen.getByRole('button', { name: 'Salvar' })
-    const propsKey = Object.keys(salvar).find((k) => k.startsWith('__reactProps$'))
-    expect(propsKey).toBeTruthy()
-    const props = (salvar as unknown as Record<string, { onClick: () => Promise<void> }>)[propsKey!]
-    await act(async () => { await props.onClick() })
-    expect(onSave).not.toHaveBeenCalled()
-    expect(texto()).not.toContain('Salvo')
-  })
-
   it('o App respondeu que a música saiu na hora de gravar: avisa e continua com alteração', async () => {
     const onSave = vi.fn<SaveFn>(async () => 'missing')
     const { onClose } = abrir(onSave)

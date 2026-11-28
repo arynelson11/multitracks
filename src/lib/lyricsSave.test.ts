@@ -1,7 +1,7 @@
 // Manutenção (2026-11-27): a letra e a cifra vão pra música da id que o editor guardou ao abrir,
 // no aparelho e na nuvem, mesmo que a música ativa tenha mudado; fora do repertório, nada é gravado.
 import { describe, expect, it, vi } from 'vitest'
-import { lyricsSongOf, saveSongLyrics } from './lyricsSave'
+import { lyricsSaveBlocked, lyricsSongOf, saveSongLyrics } from './lyricsSave'
 import type { Song } from '../types'
 
 const DATA = { lyrics: 'Grande é o Senhor', lyricsSynced: null, chords: 'E  B' }
@@ -66,5 +66,17 @@ describe('lyricsSongOf', () => {
     } as unknown as Song
     expect(lyricsSongOf(song)).toEqual({ id: 's1', name: 'Grande é o Senhor', artist: 'Adhemar de Campos', duration: 240, lyrics: 'letra', lyricsSynced: '[00:01.00]x', chords: 'E B' })
     expect(Object.keys(lyricsSongOf({ id: 'x', name: 'Sem texto', duration: 0 } as unknown as Song)).sort()).toEqual(['artist', 'chords', 'duration', 'id', 'lyrics', 'lyricsSynced', 'name'])
+  })
+})
+
+// Re-revisão das telas: o Salvar da letra desliga e a guarda do clique barra pela mesma regra, numa função só.
+describe('lyricsSaveBlocked', () => {
+  it('barra salvando, com a música fora do repertório e quando o App disse que ela saiu; libera o resto', () => {
+    const caso = (songInPlaylist: boolean, missingOnSave: boolean, saving: boolean) => lyricsSaveBlocked({ songInPlaylist, missingOnSave, saving })
+    expect(caso(true, false, false)).toBe(false)
+    expect(caso(true, false, true)).toBe(true)
+    expect(caso(false, false, false)).toBe(true)
+    expect(caso(true, true, false)).toBe(true)
+    expect(caso(false, true, true)).toBe(true)
   })
 })
