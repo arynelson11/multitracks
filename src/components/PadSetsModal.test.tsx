@@ -211,6 +211,23 @@ describe('Pads da nuvem: envio de renomear e apagar', () => {
 
   // Revisão das telas (M2): os dois toques no mesmo act chegam antes de o React aplicar o desligado;
   // só o ref barra o segundo (com o botão já desligado, o React nem chamaria o onClick).
+  // Revisão das telas (M4): o que se digitasse durante o "Salvando..." sumia no sucesso (o pedido leva o
+  // nome do clique). Os campos ficam só de leitura (não desligados: o foco continua neles).
+  it('enquanto envia, o nome e a descrição ficam só de leitura e voltam no fim', async () => {
+    const envio = preso()
+    stubEnvio(() => envio.p)
+    abrir(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Renomear Pads Domingo' }))
+    const nome = screen.getByLabelText('Nome do conjunto') as HTMLInputElement
+    const desc = screen.getByLabelText('Descrição (opcional)') as HTMLInputElement
+    expect([nome.readOnly, desc.readOnly]).toEqual([false, false])
+    await act(async () => { fireEvent.click(botao('Salvar')) })
+    expect([nome.readOnly, desc.readOnly]).toEqual([true, true])
+    expect([nome.disabled, desc.disabled]).toEqual([false, false])
+    await act(async () => { envio.soltar({ ok: false, status: 500, json: async () => ({}) }) })
+    expect([nome.readOnly, desc.readOnly]).toEqual([false, false])
+  })
+
   it('toque duplo no Salvar antes de o botão desligar manda um PATCH só', async () => {
     const envio = preso()
     stubEnvio(() => envio.p)

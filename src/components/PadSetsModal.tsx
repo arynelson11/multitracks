@@ -205,8 +205,10 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
                             if (editingId === padSet.id) {
                                 return (
                                     <li key={padSet.id} onKeyDown={cancelOnEscape(cancelEdit)} className="flex flex-col gap-3 rounded-ps-lg bg-ps-s1 p-3 inset-ring inset-ring-ps-line-2">
-                                        <TextField label="Nome do conjunto" autoFocus value={editName} onChange={e => setEditName(e.target.value)} placeholder="Nome do conjunto" />
-                                        <TextField label="Descrição (opcional)" value={editDesc} onChange={e => setEditDesc(e.target.value)} placeholder="Descrição (opcional)" />
+                                        {/* Só de leitura enquanto envia (revisão das telas, M4): o pedido leva o nome do clique, e o que se
+                                            digitasse no meio sumiria no sucesso. Não desligado: o foco fica no campo. */}
+                                        <TextField label="Nome do conjunto" autoFocus readOnly={sending !== null} value={editName} onChange={e => setEditName(e.target.value)} placeholder="Nome do conjunto" />
+                                        <TextField label="Descrição (opcional)" readOnly={sending !== null} value={editDesc} onChange={e => setEditDesc(e.target.value)} placeholder="Descrição (opcional)" />
                                         {sendError && <Notice tone="alert" role="alert">{sendError}</Notice>}
                                         <div className="flex flex-wrap justify-end gap-2">
                                             <Button tone="ghost" disabled={sending !== null} onClick={cancelEdit}>Cancelar</Button>
