@@ -33,6 +33,7 @@ import { SeparationPanel } from './components/separation/SeparationPanel'
 import { CloudSaveForm } from './components/separation/CloudSaveForm'
 import { CLOUD_COPY, PAUSE_TO_USE, type SeparationTab } from './components/separation/toolsCopy'
 import { StageDialog } from './components/stage/StageDialog'
+import { hasOpenStageDialog } from './components/stage/stageDialogStack'
 import { STAGE_LOAD_ERROR_TEXT, findSeparationSong, pendingSeparationStep, separationChannelStates, separationStageMeta, stemsToOpen, storedStemsToDrop, type StageSeparationOpen, type StemStore, type StoredStem, type StoredStemsOutcome } from './lib/separation/stageHandoff'
 import { nextSongAfter, removalOpensRefusedSong } from './lib/songRemoval'
 import { cycleEndMode, shownEndMode, type EndMode } from './lib/autoAdvance'
@@ -1162,6 +1163,9 @@ export default function App() {
       if (textPrompt !== null) return
       // Tela de limite do Livre aberta: mesma coisa (Ruling R9).
       if (livre.limit !== null) return
+      // Janela do palco aberta (pads, letra, metrônomo, Planos...; Ruling defesa da revisão das telas):
+      // nenhuma tecla age por baixo dela, nem com o foco caído no body (botão que desligou no envio).
+      if (hasOpenStageDialog()) return
       const el = e.target as HTMLElement | null
       const tag = el?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return

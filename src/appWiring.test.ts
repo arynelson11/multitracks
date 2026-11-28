@@ -15,6 +15,16 @@ describe('ligações do palco novo', () => {
 
   it('o atalho antigo sai cedo com o palco novo', () => expect(app).toMatch(/if\s*\(\s*useNewStage\s*\)\s*return/))
 
+  // Ruling defesa (revisão das telas, I1): com uma janela do palco aberta (pads, letra, metrônomo...),
+  // nenhuma tecla do palco antigo age por baixo dela, mesmo com o foco caído no body. O hasOpenStageDialog
+  // diz se há janela na pilha (stageDialog.test.tsx); aqui, que o atalho sai cedo com ela, antes do Espaço.
+  it('o atalho do palco antigo sai cedo com uma janela do palco aberta', () => {
+    expect(app).toMatch(/import \{[^}]*\bhasOpenStageDialog\b[^}]*\} from '\.\/components\/stage\/stageDialogStack'/)
+    const onKey = app.slice(app.indexOf('const onKey = (e: KeyboardEvent) => {'), app.indexOf("window.addEventListener('keydown', onKey)"))
+    expect(onKey).toMatch(/if \(hasOpenStageDialog\(\)\) return/)
+    expect(onKey.indexOf('if (hasOpenStageDialog()) return')).toBeLessThan(onKey.indexOf("e.code === 'Space'"))
+  })
+
   it('o App monta o StageShell e passa o stageMode pro motor', () => {
     expect(app).toMatch(/<StageShell[\s>]/)
     expect(app).toMatch(/stageMode/)
