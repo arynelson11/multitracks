@@ -31,3 +31,44 @@ Base das medições de áudio: verify-pitch e section-jump com `--rev 53f3eca` (
 - DESKTOP=1 vite build: ok.
 - verify-layout: 429 combinações, 428 ok e 1 sem resposta em 40 s (tom 1920x1080, carga 28 a 78); sozinha: ok. 0 falhas de medida.
 - Travessão (U+2014): 0 nas linhas acrescentadas contra 53f3eca e contra origin/main, 0 nas mensagens de commit.
+
+## Onda de correção das revisões (a partir de c3fe872, roteiro `parte3-faixas/manutencao-fix-brief.md`, commits com [manut-fix])
+
+| Item | Commit | Testes (RED, depois GREEN) |
+|------|--------|----------------------------|
+| 1. C1: sessão do stagedStems sob demanda, id com reserva fora de contexto seguro | e7a287a | RED 1 ("crypto.randomUUID is not a function" ao carregar sem randomUUID); GREEN stagedStems 6 + motor 43. Busca em src/: os outros crypto.randomUUID só rodam em ações do computador (App: marcar seção e marcadores; motor: loadFiles, canais), nenhum ao carregar nem na tela da banda |
+| 2. Verificação da rede local (scripts/verify-lan, README do verify-layout) | 1f3e370 | RED no build com o C1 (#root vazio, "Uncaught TypeError: crypto.randomUUID is not a function"); GREEN depois do C1 (montada, 0 erros). FollowerView 24 |
+| 3. I1: anotação sai da lista no registro provisório | c6c2990 | RED 2; GREEN stagedStems + motor 51 |
+| 4. M1: exceção no loadFiles desfaz; App tira em todo caso que não entrou | 39de60b | RED 2 (disco cheio no registro provisório, exceção depois dele); GREEN motor 46, appWiring 59 |
+| 5. M2: frase do disco cheio | 3eff215 | RED 2; GREEN 34 |
+| 6. M3: .catch nos dois descartes soltos | 05912c6 | RED 2; GREEN 82 |
+| 7. M4: storedStemsToDrop puro; Voltar depois de um put; uma por vez no toque | 000d997 | RED 1 (função ausente); mutação: sem o descarte os dois testes de Voltar falham; GREEN 143 |
+| 8. M5: lista vazia sem DataTransfer; frase do ledger | e2fa2a2 | RED 2 (appWiring); GREEN 107; tsc 0 |
+| 9. I1 telas: foco no envio (pads e letra) | ec83ffe | RED 7; GREEN 38 (com o Buscar letra; mutação confirma) |
+| 10. Ruling defesa: onKey do palco antigo com janela aberta | 53a0f83 | RED 1; GREEN 101 |
+| 11. M2 telas: toque duplo no mesmo act, guarda da letra, o Esc do comentário | 6c05749 | testes novos; mutação: sem o ref e sem a guarda os 3 falham; GREEN 41 |
+| 12. M3 pads: uma linha aberta por vez | b95a6a9 | RED 1; GREEN 23 |
+| 13. M4 pads: campos só de leitura no envio | f3548ee | RED 1; GREEN 24 |
+| 14. M5 pads: escolher desligado no envio | 3d31cc2 | RED 2; GREEN 26 |
+| 15. M6 letra: só id, nome, artista, duração e textos; viva pela id; sai quando a conta muda | c718ee1 | RED 2; GREEN 85 |
+| 16. M7: frase do FATOS do login | c3f204d | docs |
+| 17. M8: login com as formas reais, console sem a senha, pads com a janela fechada e Esc, estados do verificador | 796496c | RED 1 (console levava a senha no objeto do erro); os outros cobrem o que já funcionava; verificador 90/90 nos estados tocados |
+| 18. Login 429 e 500/AuthUnknownError | 4c45bfd | RED 3; GREEN src/admin 441 |
+
+### Decisões da onda
+- Item 2: script próprio (`scripts/verify-lan/run.mjs`) documentado no README do verify-layout, em vez de um modo do verify-layout: ele serve o `dist/` real (não a página de medida) e mede outra coisa. O marcador da tela da banda é `data-follower-view` no FollowerView (só atributo). Custo se errado: nenhum.
+- Item 9: o foco vai pra janela no começo do envio (o botão desligado não fica com ele) e, no fim, volta pro botão apertado (falha) ou fica na janela (sucesso). O campo de texto com foco fica com ele. Na letra também no Buscar letra (mesmo defeito, mesmo arquivo).
+- Item 11: a guarda `if (!songInPlaylist) return` só é alcançável se um clique chegar com o botão desligado; o teste chama o onClick do botão pelas props do React (`__reactProps$`), com comentário. Sem a guarda o teste falha.
+- Item 17: estado `adminlogin-rede` no verificador fica de fora: o build do verificador não tem o Supabase (sem .env), então o login só chega no "Supabase não configurado.".
+- Item 18: a frase do servidor é "O servidor teve um problema agora. Tente de novo em alguns minutos." (não havia uma frase do servidor no app pra reaproveitar). O `AuthRetryableFetchError` (rede e os 502, 503 e 504 que o auth-js repete) continua com a frase da internet, pelo nome.
+- Item 9 (complemento, 2cc5d6a): os ajudantes do foco da letra saíram do componente (o lint acusava 2 avisos novos de dependência).
+
+### Portão da onda (logs em `gate-fix/`, carga 5 a 8)
+- Testes dos arquivos tocados (e vizinhos: admin, appWiring, FollowerView, letra, pads, Separador, StageDialog, motor, useLiveSync, letra e cifra, separação, stagedStems, teleprompter, blockedGate): 43 arquivos, 810 testes, 0 falhas.
+- `npx tsc -b`: 0. `npm run typecheck`: os mesmos 7 erros antigos.
+- eslint nos 23 arquivos tocados: nenhum erro nem aviso novo (App 6 erros e 1 aviso, SeparatorStudio 7, useAudioEngine 1 e 21 avisos, todos de antes).
+- `DESKTOP=1 npx vite build` (dentro do verify-lan): ok.
+- `node scripts/verify-lan/run.mjs`: a tela da banda monta em http://192.168.18.210, fora de contexto seguro (sem randomUUID), 0 erros soltos. No build de antes do C1: #root vazio e 1 erro solto.
+- verify-layout dos estados tocados (letra, cifra, letra-fora, os 6 dos pads, adminlogin): 90/90.
+- Travessão: 0 nas linhas acrescentadas contra origin/main, 0 nas mensagens da onda e da branch.
+- Fora do portão pedido (o loadFiles mudou nesta onda): verify-pitch inteiro 521 critérios, 0 falhas (carga 3 a 5); section-jump 13/13 OK.
