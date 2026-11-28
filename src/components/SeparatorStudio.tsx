@@ -1305,6 +1305,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
           onOpenHere={() => { const { sep, justSeparated: just } = opening; cancelOpening(); openInReserve(sep, just); }}
           onBack={cancelOpening}
         />
+        {/* "Ver os planos" da tela de limite também abre os Planos aqui (revisão da junção da v1.4.26). */}
+        <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} hideOffer={hidePlansOffer} />
         {limitGate}
       </>
     );
@@ -1356,6 +1358,8 @@ export const SeparatorStudio: React.FC<SeparatorStudioProps> = ({ onClose, stage
     return (
       <>
         <SeparatorProgress title={PROGRESS_COPY.title} subtitle={PROGRESS_COPY.subtitle} percent={progress} detail={progressMsg} />
+        {/* "Ver os planos" da tela de limite também abre os Planos aqui (revisão da junção da v1.4.26). */}
+        <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} hideOffer={hidePlansOffer} />
         {limitGate}
       </>
     );

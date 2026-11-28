@@ -85,8 +85,11 @@ describe('Separador no Livre: limites, tela de limite e anúncio (T19)', () => {
     expect(body('detectBpmFromAudio')).toMatch(/openPlans\(\)/)
     expect(sep).toMatch(/onVoice=\{\(\) => canVoiceGuide \? setShowVoiceGuide\(true\) : openPlans\(\)\}/)
     const modals = sep.match(/<PricingModal [\s\S]*?\/>/g) ?? []
-    expect(modals).toHaveLength(3)
+    // Revisão da junção da v1.4.26: "Abrindo no palco" e "Analisando Frequências" também têm os
+    // Planos, então toda tela que mostra a tela de limite tem os Planos pro "Ver os planos" dela.
+    expect(modals).toHaveLength(5)
     for (const m of modals) expect(m).toMatch(/hideOffer=\{hidePlansOffer\}/)
+    expect(sep.match(/\{limitGate\}/g) ?? []).toHaveLength(modals.length)
   })
 
   it('a conta, o plano e o papel vêm do App, sem useAuth próprio', () => {

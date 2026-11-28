@@ -9,7 +9,7 @@ import { FakeAudioContext, resetWaves, savedSeparation } from './separatorTestKi
 
 const h = vi.hoisted(() => ({
   lib: { separations: [] as unknown[], saveSeparation: vi.fn<(d: unknown) => Promise<string | null>>(async () => 'sep_new'), deleteSeparation: vi.fn(), getSeparation: vi.fn(), isLoading: false },
-  livre: { isLivre: false, canOpen: true, requestLimit: vi.fn(), noteSongOpened: vi.fn() },
+  livre: { isLivre: false, canOpen: true, requestLimit: vi.fn(), noteSongOpened: vi.fn(), limit: null as string | null, closeLimit: vi.fn() },
   auth: { isAdmin: true, userPlan: 'essencial_mensal' },
 }))
 vi.mock('wavesurfer.js', async () => (await import('./separatorTestKit')).wavesurferModule())
@@ -20,16 +20,19 @@ vi.mock('../../hooks/useLivre', () => ({
   useLivre: () => ({
     isLivre: h.livre.isLivre, stage: { used: 3, limit: 3 }, canOpenSong: () => h.livre.canOpen, canOpenNewSong: () => h.livre.canOpen,
     noteSongOpened: h.livre.noteSongOpened, live: { remainingMs: Infinity, limitMs: null }, canStartLive: () => true,
-    limit: null, requestLimit: h.livre.requestLimit, closeLimit: vi.fn(),
+    limit: h.livre.limit, requestLimit: h.livre.requestLimit, closeLimit: h.livre.closeLimit,
   }),
 }))
 vi.mock('../../lib/r2', () => ({ uploadToR2: vi.fn(async () => ({ url: 'https://r2/temp.mp3' })) }))
 vi.mock('../../lib/supabase', () => ({ getAuthHeaders: async () => ({}) }))
 vi.mock('../GuidedTour', () => ({ GuidedTour: () => null }))
 // Os Planos abertos ficam marcados na página (pra provar que nunca abrem atrás de uma janela).
-vi.mock('../PricingModal', () => ({ PricingModal: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div data-pricing-open="" /> : null) }))
+vi.mock('../PricingModal', () => ({
+  PricingModal: ({ isOpen, hideOffer }: { isOpen: boolean; hideOffer?: boolean }) => (isOpen ? <div data-pricing-open="" data-hide-offer={String(!!hideOffer)} /> : null),
+}))
 vi.mock('../livre/AdSlot', () => ({ AdSlot: () => null }))
-vi.mock('../livre/LimitGate', () => ({ LimitGate: () => null }))
+// A tela de limite só aparece com o limite pedido (h.livre.limit); o "Ver os planos" dela chama o onSeePlans.
+vi.mock('../livre/LimitGate', () => ({ LimitGate: (p: { onSeePlans(): void }) => <button type="button" onClick={p.onSeePlans}>Ver os planos</button> }))
 
 import { SeparatorStudio } from '../SeparatorStudio'
 
@@ -47,6 +50,8 @@ beforeEach(() => {
   h.livre.canOpen = true
   h.livre.requestLimit.mockReset()
   h.livre.noteSongOpened.mockReset()
+  h.livre.limit = null
+  h.livre.closeLimit.mockReset()
   h.auth.isAdmin = true
   h.auth.userPlan = 'essencial_mensal'
   localStorage.setItem('sep_tour_seen', '1')
@@ -375,5 +380,45 @@ describe('Separador de reserva: Livre, Planos e o caminho que sobra (revisão se
     const src = readFileSync(join(process.cwd(), 'src/components/SeparatorStudio.tsx'), 'utf8')
     expect(src).not.toMatch(/repertório do Multitracks/)
     expect(src).toContain('Tudo que você separa fica salvo aqui. Reabra quando quiser e continue de onde parou.')
+  })
+})
+
+// Ruling v1426-faseB-extras (revisão da junção da v1.4.26, fora do escopo): nas telas de espera do
+// Separador ("Abrindo no palco" e "Analisando Frequências") a tela de limite aparecia sem os Planos,
+// e o "Ver os planos" dela não abria nada. Agora as duas têm os Planos, com o hideOffer de sempre.
+describe('Separador: o "Ver os planos" da tela de limite abre os Planos também nas telas de espera', () => {
+  it('na "Abrindo no palco": os Planos abrem, sem o desconto com o palco tocando atrás', async () => {
+    h.livre.isLivre = true
+    h.auth.isAdmin = false
+    h.auth.userPlan = 'free'
+    h.lib.separations = [savedSeparation()]
+    route = () => new Promise(() => {})
+    h.livre.limit = 'download'
+    mount({ stageBusy: { isPlaying: true, isCountingIn: false } })
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir' }))
+    expect(screen.getByText('Abrindo no palco')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Ver os planos' }))
+    expect(h.livre.closeLimit).toHaveBeenCalledTimes(1)
+    const plans = document.querySelector('[data-pricing-open]')
+    expect(plans).toBeTruthy()
+    expect(plans?.getAttribute('data-hide-offer')).toBe('true')
+    expect(screen.getByText('Abrindo no palco')).toBeTruthy()
+  })
+
+  it('na "Analisando Frequências": os Planos abrem, com o desconto com a música parada', async () => {
+    route = async (url: string) => (url.includes('/api/separate-audio') ? new Promise(() => {}) : okAudio(url))
+    h.livre.limit = 'download'
+    mount()
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [new File(['a'], 'Louvor Novo.mp3', { type: 'audio/mpeg' })] } })
+    fireEvent.click(screen.getByRole('button', { name: /Vocais, Instrumental/ }))
+    await flush(5)
+    expect(screen.getByText('Analisando Frequências')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Ver os planos' }))
+    expect(h.livre.closeLimit).toHaveBeenCalledTimes(1)
+    const plans = document.querySelector('[data-pricing-open]')
+    expect(plans).toBeTruthy()
+    expect(plans?.getAttribute('data-hide-offer')).toBe('false')
+    expect(screen.getByText('Analisando Frequências')).toBeTruthy()
   })
 })
