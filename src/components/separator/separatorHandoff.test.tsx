@@ -199,7 +199,7 @@ describe('Separador entregando a separação pro palco', () => {
     let tratada = false
     const falha = new DOMException('disco', 'UnknownError')
     const descarte = {
-      then: (ok?: (v: void) => unknown, erro?: (e: unknown) => unknown) => { if (erro) { tratada = true; erro(falha) } return Promise.resolve() },
+      then: (_ok?: (v: void) => unknown, erro?: (e: unknown) => unknown) => { if (erro) { tratada = true; erro(falha) } return Promise.resolve() },
       catch: (erro: (e: unknown) => unknown) => { tratada = true; erro(falha); return Promise.resolve() },
     }
     stemStore.discard.mockReturnValue(descarte as unknown as Promise<void>)
