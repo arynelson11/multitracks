@@ -228,6 +228,37 @@ describe('Pads da nuvem: envio de renomear e apagar', () => {
     expect([nome.readOnly, desc.readOnly]).toEqual([false, false])
   })
 
+  // Revisão das telas (M5): escolher outro conjunto no meio do apagar fechava a janela no meio do envio, e
+  // a frase da falha só aparecia na próxima abertura.
+  it('enquanto envia, escolher um conjunto fica desligado e não fecha a janela', async () => {
+    const envio = preso()
+    stubEnvio(() => envio.p)
+    const { onSelect, onClose } = abrir(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Apagar Pads Domingo' }))
+    await act(async () => { fireEvent.click(botao('Apagar')) })
+    const ambiente = await escolha('Ambiente')
+    expect((ambiente as HTMLButtonElement).disabled).toBe(true)
+    // Mesmo um toque que chegue antes de o botão desligar não escolhe (o ref barra).
+    fireEvent.click(ambiente)
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+    await act(async () => { envio.soltar({ ok: false, status: 500, json: async () => ({}) }) })
+    expect(((await escolha('Ambiente')) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByRole('alert').textContent).toContain('Não deu pra apagar agora.')
+  })
+
+  it('o ref barra escolher no mesmo act do apagar, antes de o React desligar o botão', async () => {
+    const envio = preso()
+    stubEnvio(() => envio.p)
+    const { onSelect, onClose } = abrir(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Apagar Pads Domingo' }))
+    const ambiente = await escolha('Ambiente')
+    await act(async () => { fireEvent.click(botao('Apagar')); fireEvent.click(ambiente) })
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+    await act(async () => { envio.soltar({ ok: true, json: async () => ({}) }) })
+  })
+
   it('toque duplo no Salvar antes de o botão desligar manda um PATCH só', async () => {
     const envio = preso()
     stubEnvio(() => envio.p)

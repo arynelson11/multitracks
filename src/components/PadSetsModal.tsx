@@ -81,7 +81,9 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
     if (!isOpen) return null;
 
     const handleSelect = (padSet: CatalogEntry) => {
-        if (editingId) return; // don't select while editing
+        // Editando, não escolhe; enviando (renomear ou apagar), também não (revisão das telas, M5):
+        // escolher fecha a janela, e a frase da falha do envio ficaria pra próxima abertura.
+        if (editingId || sendingRef.current) return;
         onSelect({ id: padSet.id, name: padSet.name, base_path: padSet.base_path, note_urls: padSet.note_urls });
         onClose();
     };
@@ -252,8 +254,9 @@ export function PadSetsModal({ isOpen, onClose, onSelect, selectedPadSet, isAdmi
                                     <button
                                         type="button"
                                         aria-current={isActive ? 'true' : undefined}
+                                        disabled={sending !== null}
                                         onClick={() => handleSelect(padSet)}
-                                        className="flex min-h-ps-touch min-w-0 flex-1 items-center gap-3 rounded-ps-md px-2 py-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or"
+                                        className="flex min-h-ps-touch min-w-0 flex-1 items-center gap-3 rounded-ps-md px-2 py-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ps-or disabled:opacity-35"
                                     >
                                         <Layers size={18} aria-hidden="true" className={cx('shrink-0', isActive ? 'text-ps-or' : 'text-ps-mut')} />
                                         <span className="min-w-0 flex-1">
