@@ -5,6 +5,8 @@ import { PRICING_COPY } from '../../src/components/pricing/pricingCatalog'
 import { LIBRARY_DELETE_NAME } from './pageFixtures'
 
 export const TELA_ESTADOS = ['metronomo', 'padsnuvem', 'padsnuvem-editar', 'letra', 'cifra', 'teleprompter', 'teleprompter-vazio', 'novidades', 'atualizacao', 'atualizacao-web', 'tour', 'tour-centro', 'download', 'download-ajuda', 'download-celular', 'aovivo', 'aovivo-cheio', 'aovivo-erro', 'adminlogin',
+  // Manutenção (2026-11-27): o aviso da letra fora do repertório e a falha de renomear os pads.
+  'letra-fora', 'padsnuvem-falha',
   // Separador (Parte 3, faixa D): vistas soltas, em pages.tsx.
   'separador-inicio', 'separador-opcoes', 'separador-player',
   // As janelas do Separador de reserva, uma por vez por cima do player (revisão sep-2 I5).
@@ -44,6 +46,8 @@ export const TELA_EXPECT: Record<TelaEstado, { sel: string; text?: string; count
   'aovivo-cheio': { sel: '[role="dialog"] li:nth-child(6) [aria-pressed]' },
   'aovivo-erro': { sel: '[role="dialog"] [role="alert"]' },
   adminlogin: { sel: 'form input[type="password"]' },
+  'letra-fora': { sel: '[role="dialog"] [role="alert"]' },
+  'padsnuvem-falha': { sel: '[role="dialog"] li [role="alert"]' },
   'separador-inicio': { sel: '[data-separator-home] [data-separation-id="v6"]' },
   'separador-opcoes': { sel: '[data-separator-options] section button', text: 'Vocais, Instrumental2 faixas' },
   'separador-player': { sel: '[data-separator-player] [data-track-strip]:nth-of-type(8) button[data-touch-exception="ms"]', text: 'M' },
@@ -75,6 +79,16 @@ export const TELA_PREPARE: Partial<Record<TelaEstado, () => void | Promise<void>
   'padsnuvem-editar': async () => {
     for (let i = 0; i < 50 && !document.querySelector('button[aria-label^="Renomear"]'); i++) await new Promise((r) => setTimeout(r, 50))
     tapTela('button[aria-label^="Renomear"]')
+  },
+  // Renomear e Salvar com o servidor recusando (telas.tsx responde 500 ao PATCH neste estado).
+  'padsnuvem-falha': async () => {
+    for (let i = 0; i < 50 && !document.querySelector('button[aria-label^="Renomear"]'); i++) await new Promise((r) => setTimeout(r, 50))
+    tapTela('button[aria-label^="Renomear"]')
+    await new Promise((r) => setTimeout(r, 50))
+    const salvar = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] li button')].find((b) => b.textContent?.trim() === 'Salvar')
+    if (!salvar) throw new Error('não achei o Salvar da edição')
+    salvar.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+    for (let i = 0; i < 50 && !document.querySelector('[role="dialog"] li [role="alert"]'); i++) await new Promise((r) => setTimeout(r, 50))
   },
   cifra: () => tapTela('[role="dialog"] [role="tab"]:nth-child(2)'),
   'download-ajuda': () => tapTela('button[aria-label="Como instalar no Mac"]'),
