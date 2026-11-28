@@ -7,8 +7,23 @@
 // índice e o sourceId) e não sai quando a música sai do repertório.
 import { del, get, set } from 'idb-keyval'
 
-/** Esta abertura do app. O que outra sessão anotou e nenhuma música usa sai na restauração. */
-const SESSION = crypto.randomUUID()
+/**
+ * Uma id nova. `crypto.randomUUID` só existe em contexto seguro: o celular da banda abre o app por
+ * http://<IP da rede local>, onde ele falta (revisão do item 4, C1). Lá vão 16 bytes do
+ * `crypto.getRandomValues` em hex.
+ */
+function newId(): string {
+  const c = globalThis.crypto
+  if (typeof c.randomUUID === 'function') return c.randomUUID()
+  return Array.from(c.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * Esta abertura do app, criada na primeira vez que precisa (nunca ao carregar o módulo, que entra no
+ * pacote principal pelo motor). O que outra sessão anotou e nenhuma música usa sai na restauração.
+ */
+let session: string | null = null
+const sessionId = () => (session ??= newId())
 
 /** Outra sessão recente pode ser outra aba baixando agora: só sai depois deste tempo. */
 export const STAGED_STALE_MS = 60 * 60 * 1000
@@ -32,9 +47,9 @@ function updateList(filesKey: string, change: (list: StagedEntry[]) => StagedEnt
 
 /** Grava uma faixa no aparelho, na chave por faixa do repertório, e devolve a id dela (a do canal). */
 export async function putStagedStem(filesKey: string, fileKey: (id: string) => string, file: File): Promise<string> {
-  const id = crypto.randomUUID()
+  const id = newId()
   // A lista antes do arquivo: se o app cair entre os dois, sobra só a anotação (inofensiva).
-  await updateList(filesKey, (list) => [...list, { id, session: SESSION, at: Date.now() }])
+  await updateList(filesKey, (list) => [...list, { id, session: sessionId(), at: Date.now() }])
   await set(fileKey(id), file)
   return id
 }
@@ -54,7 +69,7 @@ export async function discardStagedStems(filesKey: string, fileKey: (id: string)
 export async function sweepStagedStems(filesKey: string, fileKey: (id: string) => string, usedIds: ReadonlySet<string>): Promise<void> {
   const now = Date.now()
   // Sem hora (anotação estragada) conta como antiga.
-  const stale = (await readList(filesKey)).filter((e) => e.session !== SESSION && !(now - e.at < STAGED_STALE_MS))
+  const stale = (await readList(filesKey)).filter((e) => e.session !== sessionId() && !(now - e.at < STAGED_STALE_MS))
   if (stale.length === 0) return
   await Promise.all(stale.filter((e) => !usedIds.has(e.id)).map((e) => del(fileKey(e.id))))
   const done = new Set(stale.map((e) => e.id))

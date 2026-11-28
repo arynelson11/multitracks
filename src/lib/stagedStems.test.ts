@@ -67,3 +67,34 @@ describe('faixas gravadas antes de entrar no repertório', () => {
     expect(registry().map((e) => e.id)).toEqual([id])
   })
 })
+
+// Revisão do item 4 (C1): fora de contexto seguro (o celular da banda abre http://<IP da rede local>)
+// não existe crypto.randomUUID. O módulo entra no pacote principal pelo motor: carregar não pode
+// lançar, senão o app inteiro não abre e a tela da banda fica em branco.
+describe('fora de contexto seguro (sem crypto.randomUUID)', () => {
+  it('o módulo carrega sem lançar, e gravar e limpar continuam funcionando', async () => {
+    vi.resetModules()
+    const real = globalThis.crypto
+    vi.stubGlobal('crypto', { getRandomValues: <T extends ArrayBufferView>(a: T) => real.getRandomValues(a as unknown as Uint8Array) as unknown as T })
+    try {
+      expect(typeof (globalThis.crypto as Crypto & { randomUUID?: unknown }).randomUUID).toBe('undefined')
+      const mod = await import('./stagedStems')
+      const a = await mod.putStagedStem(FILES, fileKey, wav('Vocais'))
+      const b = await mod.putStagedStem(FILES, fileKey, wav('Bateria'))
+      expect(a).toMatch(/^[0-9a-f]{32}$|^[0-9a-f-]{36}$/)
+      expect(a).not.toBe(b)
+      expect((db.get(fileKey(a)) as File).name).toBe('Vocais.wav')
+      // A limpeza de outra sessão também funciona (a sessão desta nasce sob demanda).
+      db.set(fileKey('orfa'), wav('orfa'))
+      db.set(mod.stagedRegistryKey(FILES), [...registry(), { id: 'orfa', session: 'outra', at: 0 }])
+      await mod.sweepStagedStems(FILES, fileKey, new Set())
+      expect(db.has(fileKey('orfa'))).toBe(false)
+      expect(db.has(fileKey(a))).toBe(true)
+      await mod.discardStagedStems(FILES, fileKey, [a, b])
+      expect(registry()).toEqual([])
+    } finally {
+      vi.unstubAllGlobals()
+      vi.resetModules()
+    }
+  })
+})
