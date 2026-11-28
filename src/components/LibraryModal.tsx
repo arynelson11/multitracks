@@ -139,7 +139,8 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
         // No Livre a música conta nas do mês: sem vaga, o App mostra a tela de limite e nada baixa.
         if (onBeforeDownload && !onBeforeDownload(songId)) return;
         const result = await downloadSong(songId);
-        // Sem espaço no aparelho: a frase aparece na janela (antes era o aviso do navegador, inicio-1 M2).
+        // Sem espaço no aparelho (antes era o aviso do navegador, inicio-1 M2), e o baixar que parou sem
+        // a pessoa pedir (inicio-residuais-2): a frase aparece no alto da janela e nada baixa.
         if (result && 'refused' in result) {
             setDownloadNotice(result.refused);
             return;
@@ -149,6 +150,8 @@ export function LibraryModal({ isOpen, onClose, onDownload, onBeforeDownload, on
         if (result && (result.files.length > 0 || result.cachedSourceId)) {
             onDownload(result.files, songName, result.coverUrl, result.markers || undefined, result.originalKey, result.artist, result.bpm, { lyrics: result.lyrics, lyricsSynced: result.lyricsSynced, chords: result.chords, timeSignature: result.timeSignature }, songId);
             setDownloadedIds(prev => new Set(prev).add(songId));
+            // Abriu, mas não coube no aparelho: a frase aparece no alto (inicio-residuais-2).
+            if (result.notice) setDownloadNotice(result.notice);
         }
     };
 

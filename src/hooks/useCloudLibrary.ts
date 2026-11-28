@@ -20,13 +20,17 @@ export const LIBRARY_PROGRESS = {
     saving: 'Guardando no aparelho...',
     tooBig: 'Grande demais pra guardar no aparelho.',
     cancelled: 'Cancelado.',
-    failed: 'Erro ao baixar.',
+    /** Falha no meio (a rede, o servidor): diz o que dá pra fazer, sem prometer a causa. */
+    failed: 'Não deu pra baixar a música. Confira a internet e tente de novo.',
     /** Sem espaço: vira frase na janela da Biblioteca (inicio-1 M2), não o aviso do navegador. */
     lowSpace: 'Espaço em disco insuficiente. Por favor, libere pelo menos 150MB no dispositivo.',
 } as const;
 
-export type CloudDownload = { files: File[], coverUrl: string | null, markers: Marker[] | null, originalKey: string | null, artist?: string, bpm?: number, timeSignature: TimeSignatureType | null, lyrics?: string | null, lyricsSynced?: string | null, chords?: string | null, cachedSourceId?: string };
-/** O baixar que nem começou, com a frase pra janela mostrar. */
+/** `notice`: a música abriu, mas com uma frase pra janela mostrar (não coube no aparelho). */
+export type CloudDownload = { files: File[], coverUrl: string | null, markers: Marker[] | null, originalKey: string | null, artist?: string, bpm?: number, timeSignature: TimeSignatureType | null, lyrics?: string | null, lyricsSynced?: string | null, chords?: string | null, cachedSourceId?: string, notice?: string };
+/** O baixar que não entregou a música (nem começou, ou parou sem a pessoa pedir), com a frase pra
+ *  janela mostrar (inicio-residuais-2): antes ela ia pro andamento e sumia junto com a linha baixando.
+ *  Cancelar devolve nulo, sem frase: foi a pessoa que pediu. */
 export type CloudDownloadRefused = { refused: string };
 
 export function useCloudLibrary() {
@@ -146,7 +150,7 @@ export function useCloudLibrary() {
                 if (!isOnline) {
                     setDownloadProgress(LIBRARY_PROGRESS.offlineMissing);
                     setDownloadingSongId(null);
-                    return null;
+                    return { refused: LIBRARY_PROGRESS.offlineMissing };
                 }
             }
         }
@@ -178,7 +182,7 @@ export function useCloudLibrary() {
             if (stems.length === 0) {
                 setDownloadProgress(LIBRARY_PROGRESS.empty);
                 setDownloadingSongId(null);
-                return null;
+                return { refused: LIBRARY_PROGRESS.empty };
             }
 
             let completed = 0;
@@ -237,6 +241,7 @@ export function useCloudLibrary() {
             // de verdade (cacheSong agora verifica e retorna boolean). Antes o erro
             // era engolido e a música virava "offline" falsa e abria vazia depois.
             let cachedOk = false;
+            let notice: string | undefined;
             if (song && files.length > 0) {
                 setDownloadProgress(LIBRARY_PROGRESS.saving);
                 cachedOk = await cacheSong(songId, song, files);
@@ -247,6 +252,8 @@ export function useCloudLibrary() {
                     // A música ainda toca agora (online); só não fica offline, o que é melhor
                     // que um selo "offline" mentiroso que abre repertório vazio.
                     setDownloadProgress(LIBRARY_PROGRESS.tooBig);
+                    // A linha baixando sai já no lote seguinte: a frase vai junto com a música, pra janela.
+                    notice = LIBRARY_PROGRESS.tooBig;
                 }
             }
 
@@ -272,17 +279,17 @@ export function useCloudLibrary() {
             }
 
             // Sem cache (offline grande demais): cai no carregamento em memória.
-            return { files, coverUrl, markers, originalKey, artist, bpm, timeSignature, lyrics, lyricsSynced, chords };
+            return { files, coverUrl, markers, originalKey, artist, bpm, timeSignature, lyrics, lyricsSynced, chords, notice };
         } catch (e) {
             const err = e as Error;
             console.error('Error downloading song:', err);
+            setDownloadingSongId(null);
             if (err.name === 'AbortError') {
                 setDownloadProgress(LIBRARY_PROGRESS.cancelled);
-            } else {
-                setDownloadProgress(LIBRARY_PROGRESS.failed);
+                return null;
             }
-            setDownloadingSongId(null);
-            return null;
+            setDownloadProgress(LIBRARY_PROGRESS.failed);
+            return { refused: LIBRARY_PROGRESS.failed };
         } finally {
             delete abortControllersRef.current[songId];
         }

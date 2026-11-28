@@ -77,8 +77,7 @@ describe('Biblioteca: o andamento do baixar em frases pro usuário (inicio-1 I2)
   it('sem nenhuma faixa na nuvem: "Nenhuma multitrack encontrada."', async () => {
     db.fetchStems.mockResolvedValue([])
     const hook = await mounted()
-    await act(async () => { expect(await hook.result.current.downloadSong('s1')).toBeNull() })
-    expect(hook.result.current.downloadProgress).toBe('Nenhuma multitrack encontrada.')
+    await act(async () => { expect(await hook.result.current.downloadSong('s1')).toEqual({ refused: 'Nenhuma multitrack encontrada.' }) })
   })
 
   it('nenhuma frase do andamento usa "stem", "Rede", "cache", "offline", "Erro:" nem ponto no número, e todas saem de LIBRARY_PROGRESS', async () => {
@@ -106,8 +105,7 @@ describe('Biblioteca: abrir do aparelho em frases pro usuário (Ruling INICIO-re
     expect(hook.result.current.downloadProgress).toBe('Abrindo do aparelho...')
     let result: unknown
     await act(async () => { onDevice.resolve(false); result = await pending })
-    expect(result).toBeNull()
-    expect(hook.result.current.downloadProgress).toBe('Essa música não está no aparelho. Conecte à internet pra baixar.')
+    expect(result).toEqual({ refused: 'Essa música não está no aparelho. Conecte à internet pra baixar.' })
     expect(hook.result.current.downloadingSongId).toBeNull()
     expect(db.fetchStems).not.toHaveBeenCalled()
     act(() => { window.dispatchEvent(new Event('online')) })
