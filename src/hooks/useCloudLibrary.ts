@@ -18,7 +18,9 @@ export const LIBRARY_PROGRESS = {
     empty: 'Nenhuma multitrack encontrada.',
     downloading: (bytes: number, done: number, total: number) => `Baixando as multitracks: ${mb(bytes)} MB (${done} de ${total})`,
     saving: 'Guardando no aparelho...',
-    tooBig: 'Grande demais pra guardar no aparelho.',
+    /** A música abriu, mas o aparelho não guardou (pouco espaço, disco cheio ou a gravação que falha):
+     *  diz a consequência, sem afirmar a causa (junção da v1.4.26). Em âmbar, na janela. */
+    notKept: 'A música abriu, mas não ficou guardada neste aparelho: sem internet, ela não abre pela Biblioteca.',
     cancelled: 'Cancelado.',
     /** Falha no meio (a rede, o servidor): diz o que dá pra fazer, sem prometer a causa. */
     failed: 'Não deu pra baixar a música. Confira a internet e tente de novo.',
@@ -26,7 +28,7 @@ export const LIBRARY_PROGRESS = {
     lowSpace: 'Espaço em disco insuficiente. Por favor, libere pelo menos 150MB no dispositivo.',
 } as const;
 
-/** `notice`: a música abriu, mas com uma frase pra janela mostrar (não coube no aparelho). */
+/** `notice`: a música abriu, mas com uma frase pra janela mostrar (não ficou guardada no aparelho). */
 export type CloudDownload = { files: File[], coverUrl: string | null, markers: Marker[] | null, originalKey: string | null, artist?: string, bpm?: number, timeSignature: TimeSignatureType | null, lyrics?: string | null, lyricsSynced?: string | null, chords?: string | null, cachedSourceId?: string, notice?: string };
 /** O baixar que não entregou a música (nem começou, ou parou sem a pessoa pedir), com a frase pra
  *  janela mostrar (inicio-residuais-2): antes ela ia pro andamento e sumia junto com a linha baixando.
@@ -256,12 +258,12 @@ export function useCloudLibrary() {
                 if (cachedOk) {
                     setCachedSongIds(prev => new Set(prev).add(songId));
                 } else {
-                    // Não coube no cache (ex.: multitrack grande demais p/ a quota).
+                    // Não ficou no cache (a quota, o disco cheio ou a gravação que falha).
                     // A música ainda toca agora (online); só não fica offline, o que é melhor
                     // que um selo "offline" mentiroso que abre repertório vazio.
-                    setDownloadProgress(LIBRARY_PROGRESS.tooBig);
+                    setDownloadProgress(LIBRARY_PROGRESS.notKept);
                     // A linha baixando sai já no lote seguinte: a frase vai junto com a música, pra janela.
-                    notice = LIBRARY_PROGRESS.tooBig;
+                    notice = LIBRARY_PROGRESS.notKept;
                 }
             }
 
@@ -286,7 +288,7 @@ export function useCloudLibrary() {
                 return { files: [], cachedSourceId: songId, coverUrl, markers, originalKey, artist, bpm, timeSignature, lyrics, lyricsSynced, chords };
             }
 
-            // Sem cache (offline grande demais): cai no carregamento em memória.
+            // Sem cache (não ficou guardada no aparelho): cai no carregamento em memória.
             return { files, coverUrl, markers, originalKey, artist, bpm, timeSignature, lyrics, lyricsSynced, chords, notice };
         } catch (e) {
             const err = e as Error;

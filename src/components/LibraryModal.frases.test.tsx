@@ -2,7 +2,8 @@
 // As frases do fim do baixar chegam à tela (inicio-residuais-2): a Biblioteca com o useCloudLibrary
 // de verdade, só a nuvem e o aparelho simulados. Antes, o hook escrevia a frase no andamento e zerava
 // a música baixando no mesmo lote, e ninguém via "Nenhuma multitrack encontrada.", a falha de rede
-// nem "Grande demais pra guardar no aparelho.". Cancelar continua calado: foi a pessoa que pediu.
+// nem a frase da música que abriu sem ficar guardada no aparelho. Cancelar continua calado: foi a
+// pessoa que pediu.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { CloudSong, CloudStem } from '../lib/supabase'
@@ -91,13 +92,17 @@ describe('Biblioteca: as frases do fim do baixar aparecem na tela (inicio-residu
     expect(screen.queryByText('ADICIONADA')).toBeNull()
   })
 
-  it('a música abre mas não cabe no aparelho: ADICIONADA e "Grande demais pra guardar no aparelho."', async () => {
+  // Junção da v1.4.26 (observação da re-revisão inicio-residuais-2): o cacheSong devolve falso também
+  // com o disco cheio ou na gravação que falha, então a frase diz a consequência, sem dizer a causa.
+  it('a música abre mas não fica guardada no aparelho: ADICIONADA e a frase da consequência, em âmbar, sem afirmar a causa', async () => {
     db.fetchStems.mockResolvedValue([STEM])
     db.downloadFileAsBlobWithProgress.mockImplementation(async (_url: string, name: string) => new File(['a'], name))
     db.cacheSong.mockResolvedValue(false)
     const onDownload = await openLibrary()
     fireEvent.click(within(row()).getByRole('button', { name: /IMPORTAR/ }))
-    await seenNotice('Grande demais pra guardar no aparelho.')
+    const notice = await seenNotice('A música abriu, mas não ficou guardada neste aparelho: sem internet, ela não abre pela Biblioteca.')
+    expect(notice.className).toContain('text-ps-alert')
+    expect(notice.textContent).not.toMatch(/grande demais/i)
     expect(onDownload).toHaveBeenCalledTimes(1)
     expect(onDownload.mock.calls[0][0]).toHaveLength(1)
     expect(within(row()).getByText('ADICIONADA')).toBeTruthy()
