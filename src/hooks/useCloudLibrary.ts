@@ -148,6 +148,14 @@ export function useCloudLibrary() {
             } catch (e) {
                 console.error('Failed to retrieve cached song:', e);
                 if (!isOnline) {
+                    // A música não abre do aparelho: a linha deixa de oferecer ABRIR (só repetiria a
+                    // frase) e fica no OFFLINE desligado, com a dica de conectar (junção da v1.4.26).
+                    setCachedSongIds(prev => {
+                        if (!prev.has(songId)) return prev;
+                        const next = new Set(prev);
+                        next.delete(songId);
+                        return next;
+                    });
                     setDownloadProgress(LIBRARY_PROGRESS.offlineMissing);
                     setDownloadingSongId(null);
                     return { refused: LIBRARY_PROGRESS.offlineMissing };

@@ -103,6 +103,22 @@ describe('Biblioteca: as frases do fim do baixar aparecem na tela (inicio-residu
     expect(within(row()).getByText('ADICIONADA')).toBeTruthy()
   })
 
+  // Junção da v1.4.26 (observação da re-revisão inicio-residuais-2): a frase diz que a música não está
+  // no aparelho, então a linha deixa de oferecer ABRIR (que só repetiria a frase) e fica no OFFLINE
+  // desligado, com a dica de sempre pra quem está sem internet.
+  it('depois da frase do ABRIR sem internet, a linha não oferece ABRIR de novo: OFFLINE desligado com a dica', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
+    db.getCachedSongIds.mockResolvedValue(new Set(['s1']))
+    await openLibrary()
+    fireEvent.click(await within(row()).findByRole('button', { name: /ABRIR/ }))
+    await seenNotice('Essa música não está no aparelho. Conecte à internet pra baixar.')
+    await waitFor(() => expect(within(row()).queryByRole('button', { name: /ABRIR/ })).toBeNull())
+    const offline = within(row()).getByRole('button', { name: 'OFFLINE' }) as HTMLButtonElement
+    expect(offline.disabled).toBe(true)
+    expect(offline.closest('[title]')?.getAttribute('title')).toBe('Conecte-se à internet para baixar esta música')
+    expect(db.isSongCached).toHaveBeenCalledTimes(1)
+  })
+
   it('cancelar não mostra frase nenhuma (foi a pessoa que pediu)', async () => {
     db.fetchStems.mockResolvedValue([STEM])
     db.downloadFileAsBlobWithProgress.mockImplementation((_url: string, _name: string, _p: unknown, signal: AbortSignal) => new Promise((_resolve, reject) => {
