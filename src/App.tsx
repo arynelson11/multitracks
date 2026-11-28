@@ -2815,6 +2815,7 @@ export default function App() {
         isPlaying={isPlaying || isCountingIn}
         maxOutputChannels={maxOutputChannels}
         outputWarning={outputPlan.warning}
+        hideOffer={hidePlansOffer}
         channels={channels}
         onSetChannelBus={setChannelBus}
         onOpenAdmin={() => setIsAdminOpen(true)}

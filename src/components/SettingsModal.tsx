@@ -45,11 +45,13 @@ interface SettingsModalProps {
     // Canais do aparelho de saída de agora e o aviso do plano do motor (inclusive o sink-timeout).
     maxOutputChannels?: number;
     outputWarning?: OutputWarning | null;
+    // Livre com a música tocando ou na pré-contagem: os Planos daqui não mostram o desconto, como os outros do App (Ruling pads-tocando).
+    hideOffer?: boolean;
 }
 
 type Tab = 'Perfil' | 'Geral' | 'Buses' | 'Novidades' | 'Assinatura' | 'Sobre';
 
-export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin, onReplayTour, desktopUpdate, onInstallUpdate, focusSection = null, isPlaying = false, maxOutputChannels = 2, outputWarning = null }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOpenAdmin, onReplayTour, desktopUpdate, onInstallUpdate, focusSection = null, isPlaying = false, maxOutputChannels = 2, outputWarning = null, hideOffer = false }: SettingsModalProps) {
     const { settings, updateSetting, canPickOutput, outputLoadWarnings } = useSettings();
     // Plano efetivo (cancelado vale até a data de fim, depois é Livre).
     const { user, userPlan, isAdmin, refreshPlan, updateProfile, updatePassword, signOutEverywhere, deleteAccount } = useAuth();
@@ -378,7 +380,7 @@ export function SettingsModal({ isOpen, onClose, channels, onSetChannelBus, onOp
                     )}
                 </TabPanel>
             </Panel>
-            <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} />
+            <PricingModal isOpen={isPricingOpen} onClose={() => setIsPricingOpen(false)} hideOffer={hideOffer} />
         </div>
     );
 }
